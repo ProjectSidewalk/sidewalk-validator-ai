@@ -57,4 +57,4 @@ After the job is finished, you'll have some files generated in each label type f
 
 ## Model Deployment
 
-To use the newly trained models in production, upload the contents of the dinov2 folder into a new Hugging Face model. Example [here](https://huggingface.co/projectsidewalk/sidewalk-validator-ai-crosswalk/tree/main). In the future, it might be helpful to have a script to automatically upload to Hugging Face instead of manually doing it.
+To use the newly trained models in production, upload the contents the best checkpoint in the dinov2 folder into a new Hugging Face model. Example [here](https://huggingface.co/projectsidewalk/sidewalk-validator-ai-crosswalk/tree/main). In the future, it might be helpful to have a script to automatically upload to Hugging Face instead of manually doing it.
