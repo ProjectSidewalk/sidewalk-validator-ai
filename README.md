@@ -1,4 +1,4 @@
-<img width="1132" height="336" alt="image" src="https://github.com/user-attachments/assets/faba194b-5a0a-474c-b5b1-e45a7e3d5712" /># sidewalk-validator-ai
+# sidewalk-validator-ai
 
 This project trains and tests AI models to automatically validate crowdsourced accessibility labels—such as Crosswalks, Curb Ramps, Surface Problems, and Obstacles—for Project Sidewalk. 
 
