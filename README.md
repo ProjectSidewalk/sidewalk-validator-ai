@@ -1,6 +1,10 @@
-# sidewalk-validator-ai
+<img width="1132" height="336" alt="image" src="https://github.com/user-attachments/assets/faba194b-5a0a-474c-b5b1-e45a7e3d5712" /># sidewalk-validator-ai
 
-This is the code for training and testing validator models for Project Sidewalk. The models are based on the dinov2 architecture.
+This project trains and tests AI models to automatically validate crowdsourced accessibility labels—such as Crosswalks, Curb Ramps, Surface Problems, and Obstacles—for Project Sidewalk. 
+
+* The system first creates a dataset by fetching Google Street View panoramas and utilizing the "Depth Anything V2" model to generate precise, depth-aware image crops of specific accessibility features.
+* It then fine-tunes a computer vision model based on the DINOv2 architecture to classify these labels as either "correct" or "incorrect" based on user agreement data.
+* Finally, the pipeline includes comprehensive evaluation tools that generate precision-recall curves and confidence statistics to determine the model's readiness for deployment
 
 ## Setup
 First, please setup the conda environment:
