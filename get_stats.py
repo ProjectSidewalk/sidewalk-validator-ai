@@ -4,12 +4,13 @@ import torch
 import random
 from PIL import Image
 import torch.nn.functional as F
-from sklearn.metrics import precision_recall_curve, classification_report, confusion_matrix, balanced_accuracy_score, precision_score
+from sklearn.metrics import precision_recall_curve, classification_report, confusion_matrix, precision_score
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import numpy as np
 import os
 import json
+from evaluation import accuracy_metrics, precision_recall_at_level, save_figure_and_close
 
 # Load dataset
 import argparse
@@ -74,15 +75,17 @@ predicted_probs = torch.cat(predicted_logits).softmax(dim=-1).numpy()
 predicted_labels = predicted_probs.argmax(axis=-1)
 
 # Evaluate metrics
-accuracy = balanced_accuracy_score(true_labels, predicted_labels)
+accuracy, balanced_accuracy = accuracy_metrics(true_labels, predicted_labels)
 report = classification_report(true_labels, predicted_labels, target_names=model.config.id2label.values())
 conf_matrix = confusion_matrix(true_labels, predicted_labels)
 
 print("Classification Report:\n", report)
 print("Confusion Matrix:\n", conf_matrix)
 print(f"Accuracy: {accuracy:.4f}")
+print(f"Balanced Accuracy: {balanced_accuracy:.4f}")
 
 # Precision vs Recall Curve
+pvr_fig = plt.figure()
 for class_id, class_name in model.config.id2label.items():
     precision, recall, _ = precision_recall_curve(
         [1 if label == class_id else 0 for label in true_labels],
@@ -94,8 +97,7 @@ plt.xlabel("Recall")
 plt.ylabel("Precision")
 plt.title("Precision vs Recall Curve")
 plt.legend(loc="lower left")
-plt.savefig(f"{label_type}/pvr.png")
-plt.show()
+save_figure_and_close(pvr_fig, f"{label_type}/pvr.png")
 
 # Import necessary libraries for text rendering
 from matplotlib.gridspec import GridSpec
@@ -141,14 +143,15 @@ for class_id, class_name in model.config.id2label.items():
     recallAtVariousPrecisionLevelsText += f"Recall at precision levels for class '{class_name}':\n"
     print(f"Recall at precision levels for class '{class_name}':\n")
     for precision_level in precision_levels:
-        # Find the threshold for the given precision level
-        precision_idx = np.searchsorted(precision, precision_level)
-        if precision_idx < len(precision):
-            corresponding_recall = recall[precision_idx]
+        corresponding_recall, _ = precision_recall_at_level(
+            precision, recall, thresholds, precision_level
+        )
+        if corresponding_recall is not None:
             print(f"  Precision {precision_level*100:.0f}%: Recall = {corresponding_recall:.4f}")
             recallAtVariousPrecisionLevelsText += f"  Precision {precision_level*100:.0f}%: Recall = {corresponding_recall:.4f}\n"
         else:
             print(f"  Precision {precision_level*100:.0f}%: Recall = N/A (no value found)")
+            recallAtVariousPrecisionLevelsText += f"  Precision {precision_level*100:.0f}%: Recall = N/A (no value found)\n"
 
 # Convert classification report to string and render as text
 classification_report_text = classification_report(
@@ -167,8 +170,7 @@ ax_report.text(
 
 # Save the combined report to an image file
 plt.tight_layout()
-plt.savefig(f"{label_type}/report.png")
-plt.show()
+save_figure_and_close(fig, f"{label_type}/report.png")
 
 confidence_scores = predicted_probs.max(axis=-1)
 confidence_bins = np.linspace(0.5, 1, 20001)  # Bins from 0.5 to 1.0
@@ -198,7 +200,7 @@ for bin_id in range(1, len(confidence_bins)):
 
 # Plot Precision vs Confidence for each class
 # Plot Precision vs Confidence for each class
-plt.figure()
+confidence_fig = plt.figure()
 for cls in classes:
     class_name = model.config.id2label[cls]  # Get the human-readable class name
     plt.plot(
@@ -212,8 +214,7 @@ plt.ylabel("Precision")
 plt.title("Precision vs Confidence (Cumulative) by Class")
 plt.grid(True)
 plt.legend()
-plt.savefig(f"{label_type}/pvc_cumulative_by_class.png")
-plt.show()
+save_figure_and_close(confidence_fig, f"{label_type}/pvc_cumulative_by_class.png")
 
 # Create a dictionary to store confidence-to-precision mappings for each class
 confidence_precision_map = {}
@@ -253,11 +254,10 @@ for class_id, class_name in model.config.id2label.items():
         predicted_probs[:, class_id],
     )
     
-    # Find the index of the threshold where precision is closest to desired_precision
-    precision_idx = np.searchsorted(precision, desired_precision, side='left')
-
-    if precision_idx < len(precision) and precision[precision_idx] >= desired_precision:
-        threshold = thresholds[precision_idx]
+    _, threshold = precision_recall_at_level(
+        precision, recall, thresholds, desired_precision
+    )
+    if threshold is not None:
         print(f"Class '{class_name}': {desired_precision} Precision corresponds to threshold = {threshold:.4f}")
     else:
         print(f"Class '{class_name}': {desired_precision} Precision is not achievable (no suitable threshold found)")
