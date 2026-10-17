@@ -9,8 +9,11 @@ import numpy as np, pandas as pd
 from sklearn.metrics import cohen_kappa_score
 
 CACHE = sys.argv[1]
-# Expert validators to compare against, as EXPERTS="name1=<user_id>,name2=<user_id>" (kept out of the repo on purpose).
-EXPERTS = dict(kv.split("=", 1) for kv in os.environ.get("EXPERTS", "").split(",") if "=" in kv)
+# Expert validators to compare against, as EXPERTS="<any name>=<user_id>,..." (ids kept out of the repo on purpose).
+# Columns are role-keyed by position (expert1, expert2, ...) whatever the names, so downstream readers such as
+# hard_examples.py can rely on them.
+EXPERTS = {f"expert{i + 1}": kv.split("=", 1)[1]
+           for i, kv in enumerate(kv for kv in os.environ.get("EXPERTS", "").split(",") if "=" in kv)}
 TYPES = ["CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk"]
 
 rows = []

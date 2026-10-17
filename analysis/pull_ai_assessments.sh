@@ -18,13 +18,13 @@ for S in $($P -c "SELECT schema_name FROM information_schema.schemata WHERE sche
     WITH a AS (
       SELECT DISTINCT ON (label_id) label_id,
         CASE validation_result::text WHEN '1' THEN 'Agree' WHEN '2' THEN 'Disagree' WHEN '3' THEN 'Unsure' ELSE validation_result::text END AS r, validation_accuracy, validation_confidence, timestamp::date AS d, validator_model_id
-      FROM $S.label_ai_assessment ORDER BY label_id, timestamp DESC)
+      FROM $S.label_ai_assessment ORDER BY label_id, timestamp DESC, label_ai_assessment_id DESC)
     SELECT '$S', l.label_id, l.label_type::text, l.deleted, l.severity, a.r, a.validation_accuracy, a.validation_confidence, a.d, a.validator_model_id,
       COALESCE(SUM(CASE WHEN v.validation_result::text IN ('1','Agree') THEN 1 ELSE 0 END),0),
       COALESCE(SUM(CASE WHEN v.validation_result::text IN ('2','Disagree') THEN 1 ELSE 0 END),0),
       COALESCE(SUM(CASE WHEN v.validation_result::text IN ('3','Unsure') THEN 1 ELSE 0 END),0),
-      MAX(CASE WHEN v.user_id='$E1' THEN v.validation_result::text END),
-      MAX(CASE WHEN v.user_id='$E2' THEN v.validation_result::text END)
+      MAX(CASE WHEN v.user_id='$E1' THEN CASE v.validation_result::text WHEN '1' THEN 'Agree' WHEN '2' THEN 'Disagree' WHEN '3' THEN 'Unsure' ELSE v.validation_result::text END END),
+      MAX(CASE WHEN v.user_id='$E2' THEN CASE v.validation_result::text WHEN '1' THEN 'Agree' WHEN '2' THEN 'Disagree' WHEN '3' THEN 'Unsure' ELSE v.validation_result::text END END)
     FROM a JOIN $S.label l ON l.label_id=a.label_id
     LEFT JOIN $S.label_validation v ON v.label_id=l.label_id AND v.user_id <> '$AI'
     GROUP BY 1,2,3,4,5,6,7,8,9,10) TO STDOUT WITH CSV" || echo "$S: query failed" >&2

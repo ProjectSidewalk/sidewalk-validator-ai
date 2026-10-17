@@ -6,6 +6,9 @@ on:
   push:
     branches: [master, audit-readme-and-fixes]
 
+permissions:
+  contents: read
+
 jobs:
   pytest:
     runs-on: ubuntu-latest
@@ -16,6 +19,7 @@ jobs:
           python-version: "3.12"
       # Only what the CPU tests import; torch/transformers are imported lazily by the GPU code paths.
       - run: >-
-          pip install numpy pandas scikit-learn matplotlib pytest pillow opencv-python-headless requests
+          pip install "numpy>=1.24" "pandas>=2.0" "scikit-learn>=1.3" "matplotlib>=3.7" "pytest>=7"
+          pillow opencv-python-headless requests
           "sidewalk-panorama-tools @ git+https://github.com/ProjectSidewalk/sidewalk-panorama-tools@b0c8124e4fbb583c47981cc0150b48de787b5388"
       - run: pytest -q

@@ -7,14 +7,15 @@ from evaluate import format_report, recall_at_precision, report
 
 # Scores sorted high to low; positives at ranks 1, 2 and 4. Operating points (threshold: precision, recall):
 #   0.4: 3/6, 1    0.55: 3/5, 1    0.6: 3/4, 1    0.7: 2/3, 2/3    0.8: 2/2, 2/3    0.9: 1/1, 1/3
-# The precision array is not monotone (0.75 then 0.667), which is what broke searchsorted.
+# The precision array is not monotone (0.75 then 0.667), which is what broke searchsorted. Among thresholds with
+# the same best recall, the highest is reported.
 Y = [1, 1, 0, 1, 0, 0]
 S = [0.9, 0.8, 0.7, 0.6, 0.55, 0.4]
 
 
 @pytest.mark.parametrize("level, recall, threshold", [
-    (0.50, 1.0, 0.4),
-    (0.60, 1.0, 0.55),
+    (0.50, 1.0, 0.6),     # recall 1 at thresholds 0.4, 0.55 and 0.6: the highest is reported
+    (0.60, 1.0, 0.6),
     (0.70, 1.0, 0.6),
     (0.75, 1.0, 0.6),
     (0.90, 2 / 3, 0.8),

@@ -4,7 +4,7 @@ Usage: python analyze_calib.py ai_assessments.csv > calib.txt   (input from pull
 the repo). Any columns after h_unsure are treated as individual expert validators' votes (section 6).
 """
 import sys, numpy as np, pandas as pd
-df = pd.read_csv(sys.argv[1], low_memory=False)
+df = pd.read_csv(sys.argv[1], low_memory=False, true_values=["t"], false_values=["f"])  # psql writes t/f
 df = df[df.schema != "sidewalk_validation"]  # internal test deployment
 df["city"] = df.schema.str.replace("sidewalk_", "", regex=False)
 df["h_n"] = df.h_agree + df.h_dis

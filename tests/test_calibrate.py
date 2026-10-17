@@ -32,6 +32,10 @@ def test_prior_reweighting_matches_bayes(tmp_path):
     api_map, rep, _ = cal.calibrate(preds, pi)
     want_correct = pi["correct"] * a / (pi["correct"] * a + pi["incorrect"] * (1 - b))      # 0.81 / 0.83
     want_incorrect = pi["incorrect"] * b / (pi["incorrect"] * b + pi["correct"] * (1 - a))  # 0.08 / 0.17
+    curves, _ = cal.fit_curves(cal.verdicts(preds[preds.split == "val"]), pi)
+    assert float(curves["correct"].value(0.8)[0]) == pytest.approx(want_correct, abs=1e-9)
+    assert float(curves["incorrect"].value(0.8)[0]) == pytest.approx(want_incorrect, abs=1e-9)
+    # blocks of thousands are served at their mean (the thin-block guard does not apply)
     assert im.api_lookup(api_map["correct"], 0.8) == pytest.approx(want_correct, abs=1e-4)
     assert im.api_lookup(api_map["incorrect"], 0.8) == pytest.approx(want_incorrect, abs=1e-4)
     # Without reweighting (55:45) the incorrect verdict would look far better than it is in deployment.
