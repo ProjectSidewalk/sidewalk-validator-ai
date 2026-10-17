@@ -13,7 +13,12 @@ written in sidewalk-ai-api's format (``_isotonic_map``). The eval split is rewei
 ``pi_eval``) and used for the ECE, a reliability diagram, and coverage + precision at the 0.92 gate per verdict,
 printed and saved as ``calibration_report.json`` next to the map.
 
-``deployment_priors.json`` (written by the data-generation step)::
+**Inputs not yet produced on this branch.** ``predictions.csv`` comes from ``evaluate.py``, which reads
+``<label_type>/split.csv``; that manifest and ``deployment_priors.json`` are written by the data-generation changes in
+progress on another branch (panorama-grouped split, idempotent generation: issues #3 and #10). The current
+``data_generation.py`` writes neither, so this script cannot run end to end until that work lands.
+
+``deployment_priors.json``::
 
     {"CurbRamp": {"correct": 3969, "incorrect": 417, "measured_on": "2026-10-17", "source": "..."}, ...}
 
@@ -28,13 +33,13 @@ import argparse
 import json
 import os
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+import warnings
+
 import numpy as np
 import pandas as pd
 
 from calibration import _isotonic_map as im
+from calibration._plots import plot_reliability
 
 CLASSES = im.API_CLASSES
 
@@ -55,8 +60,7 @@ def load_prior(priors_path, label_type):
 def verdicts(df):
     """Add ``verdict`` (argmax class), ``confidence`` (max softmax) and ``correct`` (verdict == true)."""
     df = df.copy()
-    df["verdict"] = np.where(df.p_incorrect.values > df.p_correct.values, "incorrect", "correct")
-    df["confidence"] = np.maximum(df.p_correct.values, df.p_incorrect.values)
+    df["verdict"], df["confidence"] = im.predict_verdicts(df.p_correct.values, df.p_incorrect.values)
     df["correct"] = (df.verdict == df["true"].astype(str)).astype(int)
     return df
 
@@ -104,29 +108,6 @@ def evaluate_map(api_map, eval_df, pi_deploy):
     return out, tables
 
 
-def plot_reliability(tables, label_type, path):
-    """Reliability diagram on the eval split: served (map) value vs observed precision per verdict."""
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), sharey=True)
-    for ax, v in zip(axes, CLASSES):
-        tab = tables[v]
-        ax.axhline(im.GATE, color="#52514e", linestyle="--", linewidth=1, label=f"gate {im.GATE}")
-        if len(tab):
-            x = np.arange(len(tab))
-            ax.plot(x, tab.observed, "o-", color="#2a78d6", linewidth=2, markersize=8, label="observed (reweighted)")
-            ax.plot(x, tab.predicted, "^-", color="#1baf7a", linewidth=2, markersize=8, label="map value")
-            ax.set_xticks(x)
-            ax.set_xticklabels([f"{lo:g}\nn={n}" for lo, n in zip(tab.bin_lo, tab.n)], fontsize=7)
-        ax.set_title(f"{label_type}: verdict {v}")
-        ax.set_xlabel("confidence, bin lower edge (eval split)")
-        ax.set_ylim(0, 1.02)
-        ax.grid(True, axis="y", alpha=0.3)
-    axes[0].set_ylabel("precision of the verdict")
-    axes[0].legend(loc="lower right", fontsize=8)
-    fig.tight_layout()
-    fig.savefig(path, dpi=120)
-    plt.close(fig)
-
-
 def calibrate(predictions, pi_deploy, fit_split="val", eval_split="test"):
     """Fit on ``fit_split`` and evaluate on ``eval_split``. Returns ``(api_map, report_dict, tables)``."""
     df = verdicts(predictions)
@@ -137,12 +118,21 @@ def calibrate(predictions, pi_deploy, fit_split="val", eval_split="test"):
     api_map = im.build_api_map(curves)
     im.validate_api_map(api_map)
     rep = {"prior_deploy": pi_deploy, "fit_split": fit_split, "eval_split": eval_split,
-           "prior_fit": fit_df["true"].value_counts(normalize=True).to_dict(), "n_fit": int(len(fit_df))}
+           "prior_fit": fit_df["true"].value_counts(normalize=True).to_dict(), "n_fit": int(len(fit_df)),
+           "fit_range": {v: im.fit_range(curves[v]) for v in CLASSES}}
     tables = {}
     if len(eval_df):
         rep["prior_eval"] = eval_df["true"].value_counts(normalize=True).to_dict()
         rep["n_eval"] = int(len(eval_df))
-        rep["eval"], tables = evaluate_map(api_map, eval_df, pi_deploy)
+        try:
+            rep["eval"], tables = evaluate_map(api_map, eval_df, pi_deploy)
+        except ValueError as e:      # e.g. the eval split has no examples of one class: cannot reweight it
+            warnings.warn(f"evaluation on {eval_split!r} skipped: {e}")
+            rep["eval"] = "n/a"
+            rep["eval_error"] = str(e)
+    else:
+        warnings.warn(f"no rows with split == {eval_split!r}; evaluation skipped")
+        rep["eval"] = "n/a"
     return api_map, rep, tables
 
 
@@ -168,11 +158,16 @@ def main(argv=None):
     with open(os.path.join(out_dir, "calibration_report.json"), "w") as f:
         json.dump(rep, f, indent=2, default=float)
     if tables:
-        plot_reliability(tables, args.label_type, os.path.join(out_dir, "reliability.png"))
+        plot_reliability([(f"{args.label_type}: verdict {v}", tables[v]) for v in CLASSES],
+                         os.path.join(out_dir, "reliability.png"),
+                         xlabel=f"confidence, bin lower edge ({args.eval_split} split)",
+                         observed_label="observed (reweighted)", new_label="map value")
 
     print(f"{args.label_type}: deployment prior {pi_deploy} (from {entry.get('source', '?')}, "
           f"{entry.get('measured_on', '?')}); fit on {rep['n_fit']} {args.fit_split} rows")
-    if "eval" in rep:
+    if rep["eval"] == "n/a":
+        print(f"eval: n/a ({rep.get('eval_error', 'no eval rows')})")
+    else:
         e = rep["eval"]
         print(f"eval on {rep['n_eval']} {args.eval_split} rows, reweighted: overall ECE {e['overall_ece']:.4f}")
         for v in CLASSES:

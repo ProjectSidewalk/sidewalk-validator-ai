@@ -10,12 +10,19 @@ per-city, so labels are keyed on ``schema:label_id`` throughout.
 For each label type and raw verdict (Agree -> the map's ``correct`` class, Disagree -> ``incorrect``) we keep labels
 with at least ``--min-human-votes`` human Agree/Disagree votes and a strict human majority, define the outcome as
 "the majority agrees with the AI's verdict", fit a non-decreasing isotonic curve of that outcome against
-``ai_confidence`` and write it in sidewalk-ai-api's format (``_isotonic_map``). With ``--holdout-fraction`` the curve
-is fit on a hash-selected part of the labels and checked on the rest, and the maps written are the ones fitted on the
-fit part (what was checked is what ships).
+``ai_confidence`` and write it in sidewalk-ai-api's format (``_isotonic_map``). The shipped maps are fitted on ALL
+labelled rows. With ``--holdout-fraction`` a second, check-only curve is fitted on a hash-selected part of the labels
+and evaluated on the rest; that check drives the reported gate precision, the per-bin acceptance table and the
+hold-back rule.
+
+**Hold-back rule.** A (label type, verdict) class may clear the 0.92 gate only if the held-out precision of the
+verdicts its check map lets through, minus 1.96 standard errors, is >= 0.92. Otherwise its shipped map is capped at
+0.9199 everywhere (it never becomes a vote) and the summary lists it as held back with the numbers that decided it.
+With ``--holdout-fraction 0`` the rule is applied to in-sample numbers, and every such number is labelled in-sample.
 
 Outputs under ``--out-dir``: ``accuracy_mappings/<type>.json`` (drop-in for sidewalk-ai-api), ``reliability_<type>.png``,
-``summary.csv``, ``holdout_bins.csv`` and ``summary.md``.
+``summary.csv``, ``holdout_bins.csv``, ``summary.md`` and ``calibration_report.json`` (fitted confidence range,
+hold-back decision and gate numbers per class).
 
 Caveats, in order of importance:
 
@@ -29,6 +36,8 @@ Caveats, in order of importance:
   routes labels the AI contested to humans first, so labels with a Disagree verdict and >= 2 human votes are
   over-represented among the hard cases. The fitted Disagree curve is therefore pessimistic, which is the safe
   direction for a gate that casts votes against crowd labels. Agree verdicts are less affected.
+* **The hold-out is split per label, not per panorama** (the export has no ``pano_id``), so neighbouring labels on
+  one panorama can fall on both sides and the check is somewhat optimistic.
 * The human majority is a noisy reference (measured expert-vs-crowd agreement is 86-91%), so observed precision
   near 1.0 is bounded by crowd error, not only by the model.
 
@@ -42,22 +51,17 @@ import hashlib
 import json
 import os
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 from calibration import _isotonic_map as im
+from calibration._plots import plot_reliability
 
 LABEL_TYPES = ["CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk"]
 VERDICT_TO_CLASS = {"Agree": "correct", "Disagree": "incorrect"}
 EXCLUDED_SCHEMAS = {"sidewalk_validation"}  # internal test deployment
 ACCEPT_TOLERANCE = 0.01
 ACCEPT_MIN_N = 200
-
-# Reference palette (dataviz skill): observed = blue, old served map = orange, new map = aqua; gate in muted ink.
-COLORS = {"observed": "#2a78d6", "old": "#eb6834", "new": "#1baf7a", "gate": "#52514e"}
 
 
 def load_assessments(path, since=None):
@@ -100,6 +104,8 @@ def check_old_map(rows, api_map, rounding=5e-5):
     Returns:
         dict with ``exact`` (fraction reproduced from the rounded confidence) and ``consistent``.
     """
+    if len(rows) == 0:
+        return {"exact": float("nan"), "consistent": float("nan")}
     exact = consistent = 0
     for verdict, cls in VERDICT_TO_CLASS.items():
         class_map = api_map[cls]
@@ -114,8 +120,26 @@ def check_old_map(rows, api_map, rounding=5e-5):
     return {"exact": exact / len(rows), "consistent": consistent / len(rows)}
 
 
+def hold_back_decision(map_reaches_gate, gate_precision, gate_n, gate=im.GATE):
+    """Apply the hold-back rule to one class. Returns ``(decision, se, lower_bound)``.
+
+    ``decision`` is ``"below gate"`` when the map never reaches the gate (nothing to hold back), ``"clears"`` when
+    ``precision - 1.96 * se >= gate`` on the check set, and ``"held back"`` otherwise (including no evidence at all).
+    """
+    if gate_n > 0:
+        se = float(np.sqrt(gate_precision * (1 - gate_precision) / gate_n))
+        lower = gate_precision - 1.96 * se
+    else:
+        se = lower = float("nan")
+    if not map_reaches_gate:
+        return "below gate", se, lower
+    if gate_n > 0 and lower >= gate:
+        return "clears", se, lower
+    return "held back", se, lower
+
+
 def calibrate(df, min_human_votes=2, holdout_fraction=0.5, seed=42, old_maps=None):
-    """Fit the maps and compute every table. Pure: no file I/O.
+    """Fit the maps, apply the hold-back rule and compute every table. Pure: no file I/O.
 
     Args:
         df: output of ``load_assessments``.
@@ -123,109 +147,114 @@ def calibrate(df, min_human_votes=2, holdout_fraction=0.5, seed=42, old_maps=Non
             reproduce ``ai_accuracy`` (a test of ``api_lookup`` against production).
 
     Returns:
-        dict with ``maps`` ({label_type: api_map}), ``summary`` (DataFrame), ``holdout_bins`` (DataFrame),
-        ``reliability`` ({(label_type, verdict): DataFrame}), ``df`` (input plus ``new_accuracy``, ``heldout``,
-        ``labelled``, ``correct``) and ``old_map_match`` ({label_type: ``check_old_map`` result}).
+        dict with ``maps`` ({label_type: shipped api_map}), ``summary`` and ``holdout_bins`` (DataFrames),
+        ``reliability`` ({(label_type, verdict): DataFrame}), ``classes`` (per-class report: fitted range, gate
+        numbers, decision), ``df`` (input plus ``new_accuracy``, ``heldout``, ``labelled``, ``correct``),
+        ``old_map_match`` ({label_type: ``check_old_map`` result}) and ``in_sample`` (True without a hold-out).
     """
     df = add_outcomes(df, min_human_votes)
     df["heldout"] = holdout_mask(df.label_uid.values, holdout_fraction, seed)
+    in_sample = not df.heldout.any()
     df["new_accuracy"] = np.nan
-    maps, rows, bins, reliability, old_map_match = {}, [], [], {}, {}
+    maps, rows, bins, reliability, classes, old_map_match = {}, [], [], {}, {}, {}
     for t in LABEL_TYPES:
-        curves = {}
+        ship_curves, check_curves = {}, {}
         for verdict, cls in VERDICT_TO_CLASS.items():
-            sel = (df.label_type == t) & (df.ai_result == verdict)
-            fit = df[sel & df.labelled & ~df.heldout]
-            curves[cls] = im.fit_isotonic(fit.ai_confidence.values, fit.correct.values)
-        maps[t] = im.build_api_map(curves)
-        im.validate_api_map(maps[t])
+            lab = df[(df.label_type == t) & (df.ai_result == verdict) & df.labelled]
+            ship_curves[cls] = im.fit_isotonic(lab.ai_confidence.values, lab.correct.values)
+            fit = lab if in_sample else lab[~lab.heldout]
+            check_curves[cls] = im.fit_isotonic(fit.ai_confidence.values, fit.correct.values)
+        ship_map, check_map = im.build_api_map(ship_curves), im.build_api_map(check_curves)
         if old_maps is not None and t in old_maps:
             old_map_match[t] = check_old_map(df[df.label_type == t], old_maps[t])
 
         for verdict, cls in VERDICT_TO_CLASS.items():
             sel = (df.label_type == t) & (df.ai_result == verdict)
-            df.loc[sel, "new_accuracy"] = im.api_lookup_many(maps[t][cls], df.loc[sel, "ai_confidence"].values)
             s = df[sel]
-            ev = s[s.labelled & (s.heldout if holdout_fraction > 0 else True)]
-            old_all = im.gate_summary(s.ai_accuracy, None)
-            new_all = im.gate_summary(s.new_accuracy, None)
+            ev = s[s.labelled & (s.heldout if not in_sample else True)]
+            check_served = im.api_lookup_many(check_map[cls], ev.ai_confidence.values)
+            g = im.gate_summary(check_served, ev.correct)
+            decision, se, lower = hold_back_decision(max(ship_map[cls].values()) >= im.GATE, g["precision"], g["n_pass"])
+            if decision == "held back":
+                ship_map[cls] = im.cap_class_map(ship_map[cls])
+                check_map[cls] = im.cap_class_map(check_map[cls])
+                check_served = np.minimum(check_served, im.HOLD_BACK_CAP)
+            classes[(t, verdict)] = {"label_type": t, "verdict": verdict, "decision": decision,
+                                     "check_gate_n": g["n_pass"], "check_gate_precision": g["precision"],
+                                     "check_gate_se": se, "check_gate_lower_95": lower,
+                                     "fit_range": im.fit_range(ship_curves[cls]),
+                                     "check_fit_range": im.fit_range(check_curves[cls])}
+
+            df.loc[sel, "new_accuracy"] = im.api_lookup_many(ship_map[cls], s.ai_confidence.values)
+            s = df[sel]
+            old_all, new_all = im.gate_summary(s.ai_accuracy, None), im.gate_summary(s.new_accuracy, None)
             old_ev = im.gate_summary(ev.ai_accuracy, ev.correct)
-            new_ev = im.gate_summary(ev.new_accuracy, ev.correct)
+            new_ev = im.gate_summary(check_served, ev.correct)
             lab = s[s.labelled]
+            tab = im.reliability_table(ev.ai_confidence, ev.correct, predicted=check_served)
+            tab["old_predicted"] = im.reliability_table(ev.ai_confidence, ev.correct, predicted=ev.ai_accuracy).predicted.values
+            reliability[(t, verdict)] = tab
             rows.append({"label_type": t, "verdict": verdict, "n_assessed": len(s), "n_labelled": len(lab),
                          "observed_precision": lab.correct.mean() if len(lab) else np.nan,
                          "old_coverage": old_all["coverage"], "old_gate_precision": old_ev["precision"],
                          "old_gate_n": old_ev["n_pass"],
                          "new_coverage": new_all["coverage"], "new_gate_precision": new_ev["precision"],
-                         "new_gate_n": new_ev["n_pass"], "n_eval": len(ev)})
-            tab = im.reliability_table(ev.ai_confidence, ev.correct, predicted=ev.new_accuracy)
-            tab_old = im.reliability_table(ev.ai_confidence, ev.correct, predicted=ev.ai_accuracy)
-            tab["old_predicted"] = tab_old.predicted.values
-            reliability[(t, verdict)] = tab
+                         "new_gate_n": new_ev["n_pass"], "n_eval": len(ev), "decision": decision,
+                         "old_ece": im.expected_calibration_error(tab.assign(predicted=tab.old_predicted)),
+                         "new_ece": im.expected_calibration_error(tab)})
             for _, r in tab.iterrows():
                 diff = r.predicted - r.observed
                 bins.append({"label_type": t, "verdict": verdict, "bin_lo": r.bin_lo, "bin_hi": r.bin_hi, "n": r.n,
                              "new_map": r.predicted, "old_map": r.old_predicted, "observed": r.observed,
-                             "diff": diff, "se": r.se,
-                             "checked": r.n >= ACCEPT_MIN_N,
+                             "diff": diff, "se": r.se, "checked": r.n >= ACCEPT_MIN_N,
                              "within_tol": bool(abs(diff) <= ACCEPT_TOLERANCE) if r.n >= ACCEPT_MIN_N else None,
                              "within_1.96se": bool(abs(diff) <= 1.96 * r.se)})
+        im.validate_api_map(ship_map)
+        maps[t] = ship_map
     return {"maps": maps, "summary": pd.DataFrame(rows), "holdout_bins": pd.DataFrame(bins),
-            "reliability": reliability, "df": df, "old_map_match": old_map_match}
+            "reliability": reliability, "classes": classes, "df": df, "old_map_match": old_map_match,
+            "in_sample": in_sample}
 
 
-def plot_reliability(label_type, reliability, path):
-    """Two panels (Agree, Disagree): observed precision vs the old and new served accuracy per confidence bin."""
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4.8), sharey=True)
-    for ax, verdict in zip(axes, VERDICT_TO_CLASS):
-        tab = reliability[(label_type, verdict)]
-        x = np.arange(len(tab))
-        ax.axhline(im.GATE, color=COLORS["gate"], linestyle="--", linewidth=1, label=f"gate {im.GATE}")
-        if len(tab):
-            ax.plot(x, tab.observed, "o-", color=COLORS["observed"], linewidth=2, markersize=8, label="observed (humans)")
-            ax.plot(x, tab.old_predicted, "s--", color=COLORS["old"], linewidth=2, markersize=7, label="old served map")
-            ax.plot(x, tab.predicted, "^-", color=COLORS["new"], linewidth=2, markersize=8, label="new map")
-            ax.set_xticks(x)
-            ax.set_xticklabels([f"{lo:g}\nn={n:,}" for lo, n in zip(tab.bin_lo, tab.n)], fontsize=7)
-        ax.set_title(f"{label_type}: AI says {verdict} ({VERDICT_TO_CLASS[verdict]})")
-        ax.set_xlabel("raw confidence, bin lower edge (held-out labels with a human majority)")
-        ax.set_ylim(0, 1.02)
-        ax.grid(True, axis="y", alpha=0.3)
-    axes[0].set_ylabel("precision of the verdict")
-    axes[0].legend(loc="lower right", fontsize=8)
-    fig.tight_layout()
-    fig.savefig(path, dpi=120)
-    plt.close(fig)
-
-
-def summary_markdown(summary, holdout_bins, min_human_votes):
-    """Render the summary and the held-out acceptance check as Markdown tables."""
+def summary_markdown(summary, holdout_bins, classes, min_human_votes, in_sample):
+    """Render the summary, the hold-back decisions and the held-out acceptance check as Markdown tables."""
     def pct(x):
         return "—" if pd.isna(x) else f"{x:.1%}"
-    lines = [f"Labels with >= {min_human_votes} human votes and a strict majority; coverage is over all assessed "
-             "labels of that type and verdict; gate precision is measured on the held-out labelled subset.", "",
-             "| type | verdict | assessed | labelled | observed precision | old coverage | old gate precision | "
-             "new coverage | new gate precision |",
-             "|---|---|---:|---:|---:|---:|---:|---:|---:|"]
+    where = "in-sample (no hold-out: these numbers are optimistic)" if in_sample else "held-out"
+    lines = [f"Labels with >= {min_human_votes} human votes and a strict majority. Coverage is over all assessed "
+             "labels of that type and verdict, using the shipped map (fitted on all labelled rows, after the "
+             f"hold-back rule). Gate precision is {where}: the check map on the "
+             f"{'same' if in_sample else 'held-out'} labelled rows.", "",
+             f"| type | verdict | assessed | labelled | observed precision | old coverage | old gate precision ({where.split(' ')[0]}) | "
+             f"new coverage | new gate precision ({where.split(' ')[0]}) | decision |",
+             "|---|---|---:|---:|---:|---:|---:|---:|---:|---|"]
     for r in summary.itertuples():
         lines.append(f"| {r.label_type} | {r.verdict} | {r.n_assessed:,} | {r.n_labelled:,} | {pct(r.observed_precision)} "
                      f"| {pct(r.old_coverage)} | {pct(r.old_gate_precision)} (n={r.old_gate_n:,}) "
-                     f"| {pct(r.new_coverage)} | {pct(r.new_gate_precision)} (n={r.new_gate_n:,}) |")
+                     f"| {pct(r.new_coverage)} | {pct(r.new_gate_precision)} (n={r.new_gate_n:,}) | {r.decision} |")
+    lines += ["", f"Hold-back rule: a class may clear {im.GATE} only if its {where.split(' ')[0]} gate precision − 1.96·SE "
+              f">= {im.GATE}; otherwise its map is capped at {im.HOLD_BACK_CAP}. Numbers are for the uncapped check map.", "",
+              "| type | verdict | gate n | gate precision | SE | precision − 1.96·SE | decision |",
+              "|---|---|---:|---:|---:|---:|---|"]
+    for c in classes.values():
+        se = "—" if pd.isna(c["check_gate_se"]) else f"{c['check_gate_se']:.4f}"
+        lo = "—" if pd.isna(c["check_gate_lower_95"]) else f"{c['check_gate_lower_95']:.4f}"
+        p = "—" if pd.isna(c["check_gate_precision"]) else f"{c['check_gate_precision']:.4f}"
+        lines.append(f"| {c['label_type']} | {c['verdict']} | {c['check_gate_n']:,} | {p} | {se} | {lo} | "
+                     f"**{c['decision']}** |")
     hb = holdout_bins[holdout_bins.checked] if len(holdout_bins) else holdout_bins
-    lines += ["", f"Held-out check: |new map − observed| <= {ACCEPT_TOLERANCE} on bins with n >= {ACCEPT_MIN_N}."]
+    lines += ["", f"{'In-sample' if in_sample else 'Held-out'} check: |new map − observed| <= {ACCEPT_TOLERANCE} "
+              f"on bins with n >= {ACCEPT_MIN_N} (check map, before any hold-back cap)."]
     if len(hb) == 0:
-        lines.append(f"No bin has n >= {ACCEPT_MIN_N} held-out labels, so nothing was checked.")
+        lines.append(f"No bin has n >= {ACCEPT_MIN_N} labels, so nothing was checked.")
     else:
-        lines += ["",
-                  "| type | verdict | bins checked | within ±0.01 | within 1.96·SE | max abs diff | median 1.96·SE |",
+        lines += ["", "| type | verdict | bins checked | within ±0.01 | within 1.96·SE | max abs diff | median 1.96·SE |",
                   "|---|---|---:|---:|---:|---:|---:|"]
         for (t, v), g in hb.groupby(["label_type", "verdict"], sort=False):
             lines.append(f"| {t} | {v} | {len(g)} | {int(g.within_tol.sum())} | {int(g['within_1.96se'].sum())} "
-                         f"| {g['diff'].abs().max():.3f} "
-                         f"| {1.96 * g.se.median():.3f} |")
+                         f"| {g['diff'].abs().max():.3f} | {1.96 * g.se.median():.3f} |")
         lines.append(f"| **all** | | {len(hb)} | {int(hb.within_tol.sum())} | {int(hb['within_1.96se'].sum())} "
-                     f"| {hb['diff'].abs().max():.3f} "
-                     f"| {1.96 * hb.se.median():.3f} |")
+                     f"| {hb['diff'].abs().max():.3f} | {1.96 * hb.se.median():.3f} |")
     return "\n".join(lines) + "\n"
 
 
@@ -253,15 +282,28 @@ def main(argv=None):
         with open(os.path.join(args.out_dir, "accuracy_mappings", f"{t.lower()}.json"), "w") as f:
             json.dump(api_map, f, indent=4)
             f.write("\n")
-        plot_reliability(t, res["reliability"], os.path.join(args.out_dir, f"reliability_{t.lower()}.png"))
+        where = "in-sample" if res["in_sample"] else "held-out"
+        plot_reliability([(f"{t}: AI says {v} ({VERDICT_TO_CLASS[v]})", res["reliability"][(t, v)])
+                          for v in VERDICT_TO_CLASS],
+                         os.path.join(args.out_dir, f"reliability_{t.lower()}.png"),
+                         xlabel=f"raw confidence, bin lower edge ({where} labels with a human majority)",
+                         observed_label="observed (humans)",
+                         new_label="new map (all rows)" if res["in_sample"] else "new map (check fit)")
     res["summary"].to_csv(os.path.join(args.out_dir, "summary.csv"), index=False)
     res["holdout_bins"].to_csv(os.path.join(args.out_dir, "holdout_bins.csv"), index=False)
-    md = summary_markdown(res["summary"], res["holdout_bins"], args.min_human_votes)
+    md = summary_markdown(res["summary"], res["holdout_bins"], res["classes"], args.min_human_votes, res["in_sample"])
+    report = {"in_sample": res["in_sample"], "min_human_votes": args.min_human_votes,
+              "holdout_fraction": args.holdout_fraction, "seed": args.seed, "since": args.since,
+              "model_ids": sorted(df.model_id.dropna().unique()), "gate": im.GATE, "hold_back_cap": im.HOLD_BACK_CAP,
+              "old_map_match": res["old_map_match"],
+              "classes": [{k: (None if isinstance(v, float) and np.isnan(v) else v) for k, v in c.items()}
+                          for c in res["classes"].values()]}
+    with open(os.path.join(args.out_dir, "calibration_report.json"), "w") as f:
+        json.dump(report, f, indent=2, default=float)
     with open(os.path.join(args.out_dir, "summary.md"), "w") as f:
         f.write(md)
     if res["old_map_match"]:
-        print("old maps reproduce served ai_accuracy (exact from rounded confidence / consistent within its "
-              "4-decimal rounding): " + ", ".join(f"{t} {v['exact']:.2%} / {v['consistent']:.2%}"
+        print("old maps reproduce served ai_accuracy (exact / consistent within ±5e-5 of the recorded confidence): " + ", ".join(f"{t} {v['exact']:.2%} / {v['consistent']:.2%}"
                                                    for t, v in res["old_map_match"].items()))
     print(md)
     print(f"wrote {args.out_dir}")

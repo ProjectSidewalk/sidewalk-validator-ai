@@ -16,8 +16,10 @@ The confidence-to-accuracy map the API serves is no longer produced here; it is 
 deployment prior by ``calibration/calibrate.py`` (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4).
 This file also fixes the metric defects in https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6.
 
-Input: ``<label_type>/split.csv`` (written by the data-generation step) with at least the columns
-``label_uid,city,label_id,pano_id,label_type,label_class,crop_path,split,hard``. ``crop_path`` may be absolute or
+Input: ``<label_type>/split.csv`` with at least the columns
+``label_uid,city,label_id,pano_id,label_type,label_class,crop_path,split,hard``. That manifest (and the
+``deployment_priors.json`` that ``calibration/calibrate.py`` needs) is written by the data-generation changes in
+progress on another branch (issues #3 and #10); the current ``data_generation.py`` does not write it. ``crop_path`` may be absolute or
 relative to ``<label_type>/`` (tried first) or the working directory. If ``split.csv`` is absent the old
 ``<label_type>/ds/{train,val,test}/{correct,incorrect}/`` image-folder layout is read instead, with a warning.
 
@@ -39,6 +41,8 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import (accuracy_score, balanced_accuracy_score, classification_report, confusion_matrix,
                              precision_recall_curve, roc_auc_score)
+
+from calibration._isotonic_map import predict_verdicts
 
 CLASSES = ("correct", "incorrect")
 EVAL_SPLITS = ("val", "test", "test_heldout")
@@ -171,7 +175,7 @@ def slice_metrics(df, levels=PRECISION_LEVELS):
     y = df["true"].astype(str).values
     if set(np.unique(y)) - set(CLASSES):
         raise ValueError(f"'true' must be one of {CLASSES}")
-    pred = np.where(df.p_incorrect.values > df.p_correct.values, "incorrect", "correct")
+    pred, _ = predict_verdicts(df.p_correct.values, df.p_incorrect.values)
     out = {"n": int(len(df)), "n_by_class": {c: int((y == c).sum()) for c in CLASSES}}
     if len(df) == 0:
         return out
@@ -297,7 +301,8 @@ def main(argv=None):
     with open(os.path.join(label_type, "report.txt"), "w") as f:
         f.write(text)
     save_figures(predictions, text, label_type, label_type)
-    print(f"next: python -m calibration.calibrate --predictions {pred_path} --priors deployment_priors.json "
+    print("next (needs deployment_priors.json from the in-progress data-generation changes, issues #3/#10):")
+    print(f"  python -m calibration.calibrate --predictions {pred_path} --priors deployment_priors.json "
           f"--label-type {label_type} --out {label_type}/calibration/{label_type.lower()}.json")
 
 

@@ -65,3 +65,12 @@ def test_cli_writes_map_and_report(tmp_path):
     rep = json.loads((tmp_path / "cal" / "calibration_report.json").read_text())
     assert rep["label_type"] == "Obstacle" and "overall_ece" in rep["eval"]
     assert (tmp_path / "cal" / "reliability.png").exists()
+
+
+def test_eval_split_missing_a_class_still_writes_map(tmp_path):
+    preds = pd.concat([_predictions(550, 450, 0.9, 0.8, "val"), _predictions(100, 0, 0.9, 0.8, "test")])
+    with pytest.warns(UserWarning):
+        api_map, rep, tables = cal.calibrate(preds, {"correct": 0.9, "incorrect": 0.1})
+    im.validate_api_map(api_map)
+    assert rep["eval"] == "n/a" and tables == {}
+    assert rep["fit_range"]["correct"]["n"] > 0
