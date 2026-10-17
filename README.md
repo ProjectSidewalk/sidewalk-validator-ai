@@ -74,9 +74,9 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 | File | Role | Key constants |
 |---|---|---|
 | [`data_generation.py`](data_generation.py) | Steps 1–4. Pulls labels, selects classes, writes `deployment_priors.json`, fetches panoramas, renders label-centred views, sizes crops by depth, appends to a resumable `manifest.csv`. | `CITIES`, `CORRECT_PROPORTION = 0.55`, `SEED = 42`, FOV 90°, 2048² view, `6100 / depth`, `--tilt-beta 0.95`, `--depth-encoder vitb` |
-| [`split_data.py`](split_data.py) | Step 5. Assigns manifest rows to train/val/test by panorama (stratified by class), optional held-out cities; writes `split.csv`, never touches images. | 70 / 15 / 15 of rows, `--seed`, `--holdout-cities` |
+| [`split_data.py`](split_data.py) | Step 5. Assigns manifest rows to train/val/test by panorama (stratified by class), optional held-out cities, joins the `hard` flag; writes `split.csv`, never touches images. | 70 / 15 / 15 of rows, `--seed`, `--holdout-cities`, `--hard-examples` |
 | [`fine_tune_classifier.py`](fine_tune_classifier.py) | Step 6. Hugging Face `Trainer` on `facebook/dinov2-large`, from `split.csv`; val uses the checkpoint's image processor (as eval and serving do). | lr 1e-5, batch 8 × 4 accumulation, `--epochs 25`, warm-up 10%, `--seed`, best by macro-F1, `id2label = {0: correct, 1: incorrect}` |
-| [`hard_examples.py`](hard_examples.py) | Builds [`analysis/hard_examples_2026-10-17.csv`](analysis/hard_examples_2026-10-17.csv) (`label_uid,reason`) from a private production export: labels the deployed AI got wrong against a unanimous crowd (≥3 votes) or an expert. Feeds `--hard-examples`. | |
+| [`hard_examples.py`](hard_examples.py) | Builds [`analysis/hard_examples_2026-10-17.csv`](analysis/hard_examples_2026-10-17.csv) (`label_uid,reason`) from a private production export: labels the deployed AI got wrong against a unanimous crowd (≥3 votes) or one of the project leads' accounts (configured via `EXPERTS`, not named). Feeds `split_data.py --hard-examples`. | |
 | [`evaluate.py`](evaluate.py) | Step 7. Predictions for every held-out row, then AUC, accuracy and balanced accuracy, per-class P/R/F1, recall at precision. (`get_stats.py` is a stub that says so.) | splits `val`, `test`, `test_heldout`; `hard` slice |
 | [`calibration/`](calibration) | Step 7b. Isotonic confidence→accuracy maps in the API's format: `calibrate.py` for a retrained model (deployment-prior weighting), `calibrate_from_production.py` for the deployed models from production outcomes. | gate 0.92, grid 0.5–1.0 step 0.0025 |
 | [`analysis/`](analysis) | Scripts behind the production measurements in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md). | outputs live outside the repo |
@@ -185,12 +185,16 @@ sbatch data_generation.slurm
 
 Per label type this writes `<label_type>/{correct,incorrect}/<city>_<label_id>.webp`,
 `<label_type>/manifest.csv` (one row per attempted label: `label_uid` = `<city>:<label_id>`, class, author,
-human votes, pose, `tilt_applied`, `depth_m`, `crop_half_px`, `clipped`, `hard`, `crop_path`, `status`) and
-`generation_run.json`, plus the shared `deployment_priors.json` in the output root. The manifest is written
-row by row, so a killed job can simply be resubmitted: labels already `ok` are skipped. The job then runs
-`split_data.py`, which writes `<label_type>/split.csv` (the `ok` manifest rows plus `split` ∈
-`train`/`val`/`test`/`test_heldout`), grouped by panorama so no panorama appears in two splits, and leaves
-every image where it is. Set `HOLDOUT` in the job file to send whole cities to `test_heldout`. Progress is
+human votes, pose, `tilt_applied`, `depth_m`, `crop_half_px`, `clipped`, `crop_path`, `status`) and
+`generation_run.json` (settings and a hash of the selection), plus the shared `deployment_priors.json` in the
+output root. Views are rendered on the GPU with the package's torch recipe and depth runs on the same device;
+the script stops if there is no CUDA device (`--allow-cpu` is for smoke tests). The manifest is written row by
+row, so a killed job can simply be resubmitted: labels already `ok`, still selected and with the same class are
+skipped. If the selection itself changed (new votes since the first run), the job stops and says how many rows
+are stale; `--force-reselect` drops them and carries on. The job then runs `split_data.py`, which writes
+`<label_type>/split.csv` (the `ok` manifest rows plus `hard`, joined by `label_uid` from
+`--hard-examples`, and `split` ∈ `train`/`val`/`test`/`test_heldout`), grouped by panorama so no panorama
+appears in two splits, and leaves every image where it is. A new hard-example list only needs this step re-run. Set `HOLDOUT` in the job file to send whole cities to `test_heldout`. Progress is
 in the SLURM log; the first lines report the deployment prior and how many labels were selected per class.
 
 **2. Train** (several hours per label type; three run concurrently, then two):
@@ -233,8 +237,9 @@ run on a CPU: `pip install -r requirements.txt` (or just the CPU subset in `.git
 
 To run a single label type outside SLURM: `python data_generation.py --label_type CurbRamp`, then
 `split_data.py`, `fine_tune_classifier.py` and `evaluate.py` with the same flag. For a smoke test add
-`--limit 20 --out /some/scratch/dir`; `--select-only` stops after selection and the priors (no GPU needed),
-and `--rawlabels-cache DIR` reads saved `<city_id>.csv` exports instead of the API.
+`--limit 20 --out /some/scratch/dir --allow-cpu`; `--select-only` stops after selection and the priors (no GPU
+needed), and `--rawlabels-cache DIR` reads saved `<city_id>.csv` exports instead of the API. Runs with `--limit`
+or `--cities` write `deployment_priors.partial.json`, never the real `deployment_priors.json`.
 
 ## Publishing to Hugging Face
 

@@ -17,5 +17,5 @@ jobs:
       # Only what the CPU tests import; torch/transformers are imported lazily by the GPU code paths.
       - run: >-
           pip install numpy pandas scikit-learn matplotlib pytest pillow opencv-python-headless requests
-          "sidewalk-panorama-tools @ git+https://github.com/ProjectSidewalk/sidewalk-panorama-tools@de16d0bb681eb8e5a11c105f93283497d2a83008"
+          "sidewalk-panorama-tools @ git+https://github.com/ProjectSidewalk/sidewalk-panorama-tools@b0c8124e4fbb583c47981cc0150b48de787b5388"
       - run: pytest -q
