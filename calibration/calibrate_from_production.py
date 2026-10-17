@@ -20,8 +20,8 @@ we keep labels with at least ``--min-human-votes`` human Agree/Disagree votes. T
   NoCurbRamp, SurfaceProblem and Obstacle (0.93 CurbRamp, 0.97 Crosswalk), below the 0.92 gate by construction.
 
 The two definitions not used for the maps are run as a sensitivity check. A non-decreasing isotonic curve of the outcome against ``ai_confidence`` is fitted and written in
-sidewalk-ai-api's format (``_isotonic_map``); each map value is the lower end of a 90% Wilson interval for its
-isotonic block, so **the served accuracy is a lower confidence bound on precision**.
+sidewalk-ai-api's format (``_isotonic_map``): each map value is the isotonic block mean, except that blocks with
+fewer than 300 labels are served at their 90% Wilson lower bound (thin-block guard).
 
 **Shipped maps** are fitted on ALL labelled rows.
 
@@ -229,7 +229,11 @@ def calibrate(df, min_human_votes=2, folds=5, seed=42, outcome="tie_half", old_m
             classes[(t, verdict)] = {"label_type": t, "verdict": verdict, "decision": decision,
                                      "decision_at_0.90": context_decision, "oof_gate_n": n_pass,
                                      "oof_gate_precision": prec, "oof_gate_wilson95_lower": lower,
-                                     "fit_range": im.fit_range(curve)}
+                                     "fit_range": im.fit_range(curve),
+                                     "blocks": 0 if curve is None else int(len(curve.block_n)),
+                                     "thin_blocks": 0 if curve is None else int(curve.thin().sum()),
+                                     "guard_mean_shift": float(np.mean(curve.lower(conf) - curve.value(conf)))
+                                     if curve is not None else float("nan")}
             old_pass_lab = df.ai_accuracy.values[lab_idx] >= im.GATE
             new_pass_lab = oof >= im.GATE
             old_pass, new_pass = old_acc >= im.GATE, new_acc >= im.GATE
@@ -279,7 +283,7 @@ def summary_markdown(res, min_human_votes, sensitivity=()):
     where = "in-sample" if in_sample else "out-of-fold"
     outcome = OUTCOME_TEXT[res["outcome"]]
     lines = [f"Outcome: {outcome}; labels with >= {min_human_votes} human votes. Coverage is over all assessed labels "
-             "of that type and verdict, under the shipped map (all labelled rows, 90% Wilson lower-bound values, "
+             "of that type and verdict, under the shipped map (all labelled rows, block means with the thin-block guard, "
              f"after the hold-back rule). Gate precision is the mean outcome of labelled rows whose {where} served "
              f"value clears {im.GATE}{' (optimistic: no cross-fitting)' if in_sample else ''}.", "",
              f"| type | verdict | assessed | labelled (ties) | precision | old coverage | old gate precision "
@@ -308,6 +312,12 @@ def summary_markdown(res, min_human_votes, sensitivity=()):
     for c in classes.values():
         lines.append(f"| {c['label_type']} | {c['verdict']} | {c['oof_gate_n']:,} | {_num(c['oof_gate_precision'])} "
                      f"| {_num(c['oof_gate_wilson95_lower'])} | **{c['decision']}** | {c['decision_at_0.90']} |")
+    lines += ["", f"Thin-block guard: blocks with < {im.THIN_BLOCK_N} labels served at their 90% Wilson lower bound. "
+              "Mean shift = mean over labelled rows of (served − block mean).", "",
+              "| type | verdict | blocks | thin blocks | mean shift |", "|---|---|---:|---:|---:|"]
+    for c in classes.values():
+        lines.append(f"| {c['label_type']} | {c['verdict']} | {c['blocks']} | {c['thin_blocks']} "
+                     f"| {_num(c['guard_mean_shift'], '+.4f')} |")
     for sens in sensitivity:
         lines += ["", f"Sensitivity, `{sens['outcome']}` outcome ({OUTCOME_TEXT[sens['outcome']]}). Not used for the "
                   "shipped maps.", "",
@@ -379,7 +389,7 @@ def main(argv=None):
     report = {"outcome": args.outcome, "in_sample": res["in_sample"], "folds": args.folds, "seed": args.seed,
               "min_human_votes": args.min_human_votes, "since": args.since,
               "model_ids": sorted(df.model_id.dropna().unique()), "gate": im.GATE, "hold_back_cap": im.HOLD_BACK_CAP,
-              "map_values": "lower end of a 90% Wilson interval per isotonic block",
+              "map_values": f"isotonic block mean; blocks with < {im.THIN_BLOCK_N} labels at their 90% Wilson lower bound",
               "old_map_match": res["old_map_match"], "classes": [clean(c) for c in res["classes"].values()],
               "sensitivity": [{"outcome": r["outcome"], "classes": [clean(c) for c in r["classes"].values()]}
                               for r in sens]}

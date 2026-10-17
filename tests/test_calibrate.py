@@ -35,10 +35,9 @@ def test_prior_reweighting_matches_bayes(tmp_path):
     curves, _ = cal.fit_curves(cal.verdicts(preds[preds.split == "val"]), pi)
     assert float(curves["correct"].value(0.8)[0]) == pytest.approx(want_correct, abs=1e-9)
     assert float(curves["incorrect"].value(0.8)[0]) == pytest.approx(want_incorrect, abs=1e-9)
-    # the served map is the 90% Wilson lower bound (on the Kish effective n), a little below the estimate
-    for cls, want in (("correct", want_correct), ("incorrect", want_incorrect)):
-        served = im.api_lookup(api_map[cls], 0.8)
-        assert want - 0.03 < served < want
+    # blocks of thousands are served at their mean (the thin-block guard does not apply)
+    assert im.api_lookup(api_map["correct"], 0.8) == pytest.approx(want_correct, abs=1e-4)
+    assert im.api_lookup(api_map["incorrect"], 0.8) == pytest.approx(want_incorrect, abs=1e-4)
     # Without reweighting (55:45) the incorrect verdict would look far better than it is in deployment.
     unweighted = 0.45 * b / (0.45 * b + 0.55 * (1 - a))
     assert unweighted > 0.85 > want_incorrect

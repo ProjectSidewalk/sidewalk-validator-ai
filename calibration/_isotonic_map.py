@@ -13,8 +13,9 @@ non-decreasing, or a dip in the map becomes a dip in the served accuracy. Sidewa
 the served value is ``>= 0.92``.
 
 This module fits a monotone non-decreasing precision-vs-confidence curve with isotonic regression and samples it on a
-fixed grid (``GRID``). Each map value is the lower end of a 90% Wilson interval for the isotonic block it falls in, so
-**the served accuracy is a lower confidence bound on precision**, not a point estimate. Because the API returns the
+fixed grid (``GRID``). Each map value is the mean of the isotonic block it falls in (a calibrated point estimate),
+except that blocks with fewer than 300 labels are served at their 90% Wilson lower bound (the thin-block guard).
+Because the API returns the
 value at the grid point at or below ``c``, and the curve is non-decreasing, the served value is never above the
 fitted curve at ``c``.
 
@@ -75,7 +76,10 @@ def predict_verdicts(p_correct, p_incorrect):
 
 
 MAP_Z = 1.645
-"""z for the map values: each is the lower end of a two-sided 90% Wilson interval for its isotonic block."""
+"""z for the thin-block guard: the lower end of a two-sided 90% Wilson interval."""
+
+THIN_BLOCK_N = 300
+"""Isotonic blocks with fewer labels than this are served at their 90% Wilson lower bound instead of their mean."""
 
 
 def wilson_lower(p, n, z=MAP_Z):
@@ -131,15 +135,24 @@ class IsotonicCurve:
         b = self._block(c)
         return np.where(b >= 0, self.block_mean[np.clip(b, 0, None)], 0.0)
 
-    def lower(self, c, z=MAP_Z):
-        """Conservative value at ``c``: the running maximum over blocks of each block's Wilson lower bound.
+    def thin(self, min_n=THIN_BLOCK_N):
+        """Boolean mask of the blocks the thin-block guard applies to (fewer than ``min_n`` labels)."""
+        return self.block_n < min_n
 
-        The running maximum keeps the result non-decreasing: under the monotone model, a lower bound for an
-        earlier block is also a lower bound for every later one.
+    def guarded_block_values(self, min_n=THIN_BLOCK_N, z=MAP_Z):
+        """Per-block served values: the block mean, or its 90% Wilson lower bound for thin blocks.
+
+        A running maximum over blocks keeps the result non-decreasing (under the monotone model, a lower bound for
+        an earlier block is also a lower bound for every later one).
         """
-        lb = np.maximum.accumulate(wilson_lower(self.block_mean, self.block_n, z))
+        v = np.where(self.thin(min_n), wilson_lower(self.block_mean, self.block_n, z), self.block_mean)
+        return np.maximum.accumulate(v)
+
+    def lower(self, c, min_n=THIN_BLOCK_N, z=MAP_Z):
+        """Guarded value at ``c`` (see ``guarded_block_values``); 0 below the fitted range."""
+        v = self.guarded_block_values(min_n, z)
         b = self._block(c)
-        return np.where(b >= 0, lb[np.clip(b, 0, None)], 0.0)
+        return np.where(b >= 0, v[np.clip(b, 0, None)], 0.0)
 
 
 def fit_isotonic(confidence, correct, weight=None):
@@ -168,7 +181,8 @@ def fit_range(curve):
 
 
 def curve_value(curve, c, conservative=False):
-    """The curve at confidence(s) ``c`` (block mean, or its lower bound if ``conservative``); 0 with no curve."""
+    """The curve at confidence(s) ``c``: block mean, or with ``conservative`` the thin-block-guarded value; 0 with no
+    curve."""
     c = np.atleast_1d(np.asarray(c, dtype=float))
     if curve is None:
         return np.zeros_like(c)
@@ -178,10 +192,9 @@ def curve_value(curve, c, conservative=False):
 def curve_to_class_map(curve, grid=GRID, conservative=True):
     """Sample the curve on ``grid`` and return one class's inner dict, ascending, values rounded to 4 decimals.
 
-    By default each value is the lower end of a 90% Wilson interval for its block, so **the served accuracy is a
-    lower confidence bound on precision**, not a point estimate: with blocks of thousands this changes the value by
-    well under 0.01, while a thin block at the low end of the confidence range cannot clear the gate on a lucky
-    estimate. Rounding preserves monotonicity.
+    By default (``conservative``) each value is the isotonic block mean, a calibrated point estimate, EXCEPT that a
+    block with fewer than ``THIN_BLOCK_N`` labels is served at its 90% Wilson lower bound, so a thin block (typically
+    at the low-confidence end) cannot clear the gate on a lucky estimate. Rounding preserves monotonicity.
     """
     values = np.round(curve_value(curve, grid, conservative), 4)
     return {threshold_key(t): float(v) for t, v in zip(grid, values)}

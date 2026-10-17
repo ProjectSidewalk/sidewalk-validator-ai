@@ -15,7 +15,8 @@ crosswalk `b7936e5`. A retrained model needs its own map from `calibration/calib
 **Model window.** The API pinned revisions only on 2026-10-15. Before that, a process started before 2025-08-16 could
 have served the previous weights for a few days after the new models were published (late-August volume is about
 2.4k rows), and the assessment table records `model_id` but not the revision. Recording `validator_revision` per
-assessment is now tracked in a SidewalkWebpage issue.
+assessment is now tracked in
+[ProjectSidewalk/SidewalkWebpage#5794](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5794).
 
 ## Data
 
@@ -64,10 +65,25 @@ confidence:
 ## Method
 
 - **Shipped maps:** an isotonic fit of the outcome against raw confidence on all labelled rows. Each grid value is
-  the **lower end of a 90% Wilson interval for its isotonic block**, so the served accuracy is a lower confidence
-  bound on precision, not a point estimate. Blocks hold a median of 210–1,160 labels, depending on the class (68 for
-  Crosswalk Disagree), so this lowers served values by 0.016 on average, from 0.006 for CurbRamp/Crosswalk Agree up to
-  0.064 for Crosswalk Disagree. At the thin low-confidence end a single lucky block can no longer vote.
+  the **mean of its isotonic block**, a calibrated point estimate. The exception is the **thin-block guard**: a block
+  with fewer than 300 labels is served at the lower end of its 90% Wilson interval, with a running maximum to keep
+  the map monotone. That stops a thin end of the curve from voting on a lucky estimate; the 0.5–0.6 CurbRamp and
+  Crosswalk bins are the cases that matter, at n ≈ 100–640. The guard moves served values by −0.0002 to −0.0065
+  depending on the class, except Crosswalk Disagree, where all 36 blocks are thin (−0.064):
+
+| type | verdict | blocks | thin blocks | mean shift |
+|---|---|---:|---:|---:|
+| CurbRamp | Agree | 32 | 8 | -0.0002 |
+| CurbRamp | Disagree | 41 | 20 | -0.0021 |
+| NoCurbRamp | Agree | 41 | 14 | -0.0005 |
+| NoCurbRamp | Disagree | 46 | 28 | -0.0065 |
+| Obstacle | Agree | 35 | 14 | -0.0011 |
+| Obstacle | Disagree | 34 | 17 | -0.0038 |
+| SurfaceProblem | Agree | 48 | 13 | -0.0004 |
+| SurfaceProblem | Disagree | 46 | 22 | -0.0036 |
+| Crosswalk | Agree | 27 | 7 | -0.0005 |
+| Crosswalk | Disagree | 36 | 36 | -0.0641 |
+
 - **Hold-back rule (5-fold cross-fitting):** folds come from a hash of `schema:label_id`. Each labelled label gets an
   out-of-fold served value from a map fitted without its fold. The labels that clear 0.92 out-of-fold are pooled, and
   the class may clear the gate only if the **Wilson 95% lower bound** of their mean outcome is ≥ 0.92. Otherwise the
@@ -77,43 +93,52 @@ confidence:
 
 | type | verdict | assessed | labelled (ties) | precision | old coverage | old gate precision | new coverage | new gate precision (out-of-fold) | decision |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| CurbRamp | Agree | 301,716 | 69,456 (5.3%) | 96.2% | 91.5% | 96.8% (n=63,111) | 88.9% | 97.1% (n=58,263) | clears |
+| CurbRamp | Agree | 301,716 | 69,456 (5.3%) | 96.2% | 91.5% | 96.8% (n=63,111) | 95.3% | 96.6% (n=65,698) | clears |
 | CurbRamp | Disagree | 59,315 | 16,061 (17.0%) | 38.0% | 56.0% | 50.8% (n=9,883) | 0.0% | — (n=0) | below gate |
-| NoCurbRamp | Agree | 82,327 | 33,634 (9.9%) | 89.2% | 89.3% | 91.1% (n=30,663) | 34.5% | 95.1% (n=14,230) | clears |
+| NoCurbRamp | Agree | 82,327 | 33,634 (9.9%) | 89.2% | 89.3% | 91.1% (n=30,663) | 43.3% | 94.8% (n=16,576) | clears |
 | NoCurbRamp | Disagree | 29,860 | 14,119 (13.9%) | 62.2% | 68.4% | 69.3% (n=10,485) | 0.0% | 88.9% (n=9) | below gate |
-| Obstacle | Agree | 114,646 | 25,637 (12.4%) | 80.8% | 0.0% | — (n=0) | 0.2% | 94.8% (n=781) | clears |
+| Obstacle | Agree | 114,646 | 25,637 (12.4%) | 80.8% | 0.0% | — (n=0) | 5.5% | 94.2% (n=2,098) | clears |
 | Obstacle | Disagree | 72,857 | 16,771 (18.2%) | 45.8% | 20.1% | 65.4% (n=3,943) | 0.0% | — (n=0) | below gate |
-| SurfaceProblem | Agree | 160,626 | 44,204 (14.3%) | 86.5% | 59.3% | 91.6% (n=25,432) | 19.3% | 94.7% (n=7,957) | clears |
+| SurfaceProblem | Agree | 160,626 | 44,204 (14.3%) | 86.5% | 59.3% | 91.6% (n=25,432) | 26.6% | 94.5% (n=9,813) | clears |
 | SurfaceProblem | Disagree | 52,509 | 19,264 (22.6%) | 46.6% | 29.8% | 62.4% (n=7,242) | 0.0% | — (n=0) | below gate |
 | Crosswalk | Agree | 110,644 | 31,339 (1.8%) | 98.5% | 73.7% | 98.9% (n=23,104) | 97.3% | 98.6% (n=30,548) | clears |
 | Crosswalk | Disagree | 12,274 | 2,684 (13.3%) | 51.0% | 100.0% | 51.0% (n=2,684) | 0.0% | — (n=0) | below gate |
 
 Coverage is the share of all assessed labels of that type and verdict whose served accuracy under the shipped map is
-≥ 0.92. New gate precision is out-of-fold.
+≥ 0.92. New gate precision is out-of-fold. Where the shipped maps first reach 0.92:
+
+| type | Agree from confidence |
+|---|---|
+| CurbRamp | 0.855 |
+| Crosswalk | 0.8825 |
+| NoCurbRamp | 0.999 |
+| SurfaceProblem | 0.99999 |
+| Obstacle | 0.999998 |
+
+No Disagree map reaches 0.92.
 
 ### Hold-back decisions
 
 | type | verdict | pooled n | precision | Wilson 95% lower | decision | at 0.90 |
 |---|---|---:|---:|---:|---|---|
-| CurbRamp | Agree | 58,263 | 0.9707 | 0.9693 | **clears** | clears |
+| CurbRamp | Agree | 65,698 | 0.9660 | 0.9646 | **clears** | clears |
 | CurbRamp | Disagree | 0 | — | — | **below gate** | below gate |
-| NoCurbRamp | Agree | 14,230 | 0.9511 | 0.9474 | **clears** | clears |
+| NoCurbRamp | Agree | 16,576 | 0.9485 | 0.9450 | **clears** | clears |
 | NoCurbRamp | Disagree | 9 | 0.8889 | 0.5650 | **below gate** | below gate |
-| Obstacle | Agree | 781 | 0.9481 | 0.9303 | **clears** | clears |
+| Obstacle | Agree | 2,098 | 0.9418 | 0.9310 | **clears** | clears |
 | Obstacle | Disagree | 0 | — | — | **below gate** | below gate |
-| SurfaceProblem | Agree | 7,957 | 0.9471 | 0.9420 | **clears** | clears |
+| SurfaceProblem | Agree | 9,813 | 0.9446 | 0.9399 | **clears** | clears |
 | SurfaceProblem | Disagree | 0 | — | — | **below gate** | below gate |
 | Crosswalk | Agree | 30,548 | 0.9863 | 0.9849 | **clears** | clears |
 | Crosswalk | Disagree | 0 | — | — | **below gate** | below gate |
 
-- **Every Agree class clears.** Obstacle Agree clears narrowly: 0.948 on 781 out-of-fold labels, lower bound 0.930.
-  After the Wilson lowering only its highest-confidence verdicts reach 0.92, so it casts about 275 votes over the
-  whole period (0.2% coverage), against none today. SurfaceProblem Agree is the next most marginal: 0.947 on 7,957,
-  lower bound 0.942.
-- **No Disagree class reaches the gate** under `tie_half`. All five fall below it, so the hold-back cap is not even
-  needed: the cross-fitted, tie-aware curves never reach 0.92. Under `strict`, NoCurbRamp Disagree reaches 0.953 on
-  149 labels but its lower bound of 0.906 is borderline, so it is held back conservatively. No Disagree class
-  demonstrates ≥ 0.92 with confidence under any of the three outcomes.
+- **Every Agree class clears.**
+  - Obstacle Agree is the most marginal: 0.942 on 2,098 out-of-fold labels, lower bound 0.931. It votes only at
+    confidence ≥ 0.999998, which comes to about 6.3k votes over the period (5.5% coverage), against none today.
+  - SurfaceProblem Agree is next: 0.945 on 9,813, lower bound 0.940.
+- **No Disagree class reaches the gate** under `tie_half`, so the hold-back cap never fires. Under `strict`,
+  NoCurbRamp Disagree reaches 0.953 on 149 labels but its lower bound of 0.906 is borderline, so it is held back
+  conservatively. No Disagree class demonstrates ≥ 0.92 with confidence under any of the three outcomes.
 
 Sensitivity. These rows are not used for the maps.
 
@@ -121,51 +146,51 @@ Sensitivity. These rows are not used for the maps.
 
 | type | verdict | pooled n | precision | Wilson 95% lower | decision |
 |---|---|---:|---:|---:|---|
-| CurbRamp | Agree | 64,700 | 0.9889 | 0.9880 | clears |
+| CurbRamp | Agree | 65,502 | 0.9884 | 0.9875 | clears |
 | CurbRamp | Disagree | 0 | — | — | below gate |
 | NoCurbRamp | Agree | 21,116 | 0.9749 | 0.9727 | clears |
 | NoCurbRamp | Disagree | 149 | 0.9530 | 0.9062 | held back |
-| Obstacle | Agree | 1,974 | 0.9696 | 0.9611 | clears |
+| Obstacle | Agree | 4,951 | 0.9463 | 0.9396 | clears |
 | Obstacle | Disagree | 0 | — | — | below gate |
-| SurfaceProblem | Agree | 21,260 | 0.9679 | 0.9655 | clears |
+| SurfaceProblem | Agree | 23,562 | 0.9643 | 0.9618 | clears |
 | SurfaceProblem | Disagree | 0 | — | — | below gate |
-| Crosswalk | Agree | 30,292 | 0.9943 | 0.9934 | clears |
+| Crosswalk | Agree | 30,356 | 0.9942 | 0.9932 | clears |
 | Crosswalk | Disagree | 0 | — | — | below gate |
 
 `share` (vote share, capped by human disagreement as explained above):
 
 | type | verdict | pooled n | precision | Wilson 95% lower | decision |
 |---|---|---:|---:|---:|---|
-| CurbRamp | Agree | 50,434 | 0.9573 | 0.9555 | clears |
+| CurbRamp | Agree | 54,617 | 0.9552 | 0.9534 | clears |
 | CurbRamp | Disagree | 0 | — | — | below gate |
-| NoCurbRamp | Agree | 0 | — | — | below gate |
+| NoCurbRamp | Agree | 2,825 | 0.9220 | 0.9116 | held back |
 | NoCurbRamp | Disagree | 0 | — | — | below gate |
 | Obstacle | Agree | 0 | — | — | below gate |
 | Obstacle | Disagree | 0 | — | — | below gate |
-| SurfaceProblem | Agree | 0 | — | — | below gate |
+| SurfaceProblem | Agree | 2,810 | 0.9260 | 0.9157 | held back |
 | SurfaceProblem | Disagree | 0 | — | — | below gate |
-| Crosswalk | Agree | 29,730 | 0.9775 | 0.9757 | clears |
+| Crosswalk | Agree | 30,720 | 0.9763 | 0.9745 | clears |
 | Crosswalk | Disagree | 0 | — | — | below gate |
 
 ### What the website will see
 
 | type | verdict | old votes | new votes | lost (→ Unsure) | gained |
 |---|---|---:|---:|---:|---:|
-| CurbRamp | Agree | 276,019 | 268,367 | 7,652 | 0 |
+| CurbRamp | Agree | 276,019 | 287,678 | 0 | 11,659 |
 | CurbRamp | Disagree | 33,229 | 0 | 33,229 | 0 |
-| NoCurbRamp | Agree | 73,558 | 28,409 | 45,149 | 0 |
+| NoCurbRamp | Agree | 73,558 | 35,645 | 37,913 | 0 |
 | NoCurbRamp | Disagree | 20,435 | 0 | 20,435 | 0 |
-| Obstacle | Agree | 0 | 275 | 0 | 275 |
+| Obstacle | Agree | 0 | 6,343 | 0 | 6,343 |
 | Obstacle | Disagree | 14,634 | 0 | 14,634 | 0 |
-| SurfaceProblem | Agree | 95,178 | 30,960 | 64,218 | 0 |
+| SurfaceProblem | Agree | 95,178 | 42,655 | 52,523 | 0 |
 | SurfaceProblem | Disagree | 15,638 | 0 | 15,638 | 0 |
 | Crosswalk | Agree | 81,563 | 107,634 | 0 | 26,071 |
 | Crosswalk | Disagree | 12,274 | 0 | 12,274 | 0 |
-| **all** | Agree | 526,318 | 435,645 | 117,019 | 26,346 |
+| **all** | Agree | 526,318 | 479,955 | 90,436 | 44,073 |
 | **all** | Disagree | 96,210 | 0 | 96,210 | 0 |
 
-- **Agree:** about 436k Agree votes over the period instead of 526k. 117k are lost and 26k gained: Crosswalk gains
-  26k, and Obstacle gains 275.
+- **Agree:** about 480k Agree votes over the period instead of 526k. 90k are lost (NoCurbRamp 38k, SurfaceProblem
+  53k) and 44k gained (Crosswalk 26k, CurbRamp 12k, Obstacle 6k).
 - **Disagree:** all 96k Disagree votes are lost.
 - **What a lost vote becomes.** A verdict that no longer clears the gate is submitted as an **Unsure** vote by the AI
   account. It counts toward the label's `unsure_count` and uses one of the five crowd-vote slots.
@@ -173,31 +198,36 @@ Sensitivity. These rows are not used for the maps.
   Disagree verdicts would no longer trigger the Triage queue. Keeping Disagree-based triage would need SidewalkWebpage
   to key on the raw `ai_result` instead.
 - **The NoCurbRamp Agree drop is per-label semantics, not miscalibration.** The old gate let through NoCurbRamp Agree
-  verdicts whose pooled precision is 0.911. The new map keeps a subset at 0.951. The 16,433 labelled labels it drops
-  (confidence mostly 0.90–0.999) are right 0.876 of the time individually: each of those votes is below 0.92 on its
-  own, even though the pooled old set looked acceptable. On the website that is about 45k fewer NoCurbRamp Agree votes
+  verdicts whose pooled precision is 0.911. The new map keeps a subset at 0.948. The 14,087 labelled labels it drops
+  (confidence mostly 0.90–0.999) are right 0.866 of the time individually: each of those votes is below 0.92 on its
+  own, even though the pooled old set looked acceptable. On the website that is about 38k fewer NoCurbRamp Agree votes
   and as many more Unsure.
 
 ### Reliability (out-of-fold)
 
 | type | verdict | bins checked | within ±0.01 | within 1.96·SE | max abs diff | mean diff |
 |---|---|---:|---:|---:|---:|---:|
-| CurbRamp | Agree | 13 | 4 | 6 | 0.063 | -0.016 |
-| CurbRamp | Disagree | 13 | 1 | 5 | 0.064 | -0.034 |
-| NoCurbRamp | Agree | 13 | 0 | 5 | 0.071 | -0.027 |
-| NoCurbRamp | Disagree | 13 | 1 | 3 | 0.067 | -0.042 |
-| Obstacle | Agree | 13 | 1 | 5 | 0.070 | -0.025 |
-| Obstacle | Disagree | 13 | 2 | 7 | 0.086 | -0.032 |
-| SurfaceProblem | Agree | 13 | 0 | 6 | 0.059 | -0.025 |
-| SurfaceProblem | Disagree | 13 | 0 | 4 | 0.059 | -0.036 |
-| Crosswalk | Agree | 8 | 4 | 1 | 0.045 | -0.017 |
+| CurbRamp | Agree | 13 | 12 | 12 | 0.046 | -0.005 |
+| CurbRamp | Disagree | 13 | 4 | 10 | 0.037 | -0.011 |
+| NoCurbRamp | Agree | 13 | 11 | 12 | 0.047 | -0.006 |
+| NoCurbRamp | Disagree | 13 | 3 | 7 | 0.055 | -0.016 |
+| Obstacle | Agree | 13 | 10 | 11 | 0.054 | -0.006 |
+| Obstacle | Disagree | 13 | 5 | 9 | 0.055 | -0.010 |
+| SurfaceProblem | Agree | 13 | 10 | 12 | 0.029 | -0.005 |
+| SurfaceProblem | Disagree | 13 | 6 | 9 | 0.031 | -0.009 |
+| Crosswalk | Agree | 8 | 7 | 7 | 0.033 | -0.006 |
 | Crosswalk | Disagree | 3 | 0 | 0 | 0.106 | -0.092 |
-| **all** | | 115 | 13 | 42 | 0.106 | -0.030 |
+| **all** | | 115 | 68 | 89 | 0.106 | -0.011 |
 
-Served values sit on average 0.030 below the observed mean outcome per bin. About half of that is the deliberate
-Wilson lowering, and the rest is the out-of-fold fits being noisier than the all-rows fit. So the ±0.01 criterion is
-met on only 13 of 115 bins, and 42 are within 1.96 binomial SE. The misses are all in the conservative direction
-except one: Obstacle Disagree at 0.8–0.85, where the served value is 0.002 above observed and far below the gate.
+**89 of 115 bins are within 1.96 binomial SE**, and the mean signed gap is −0.011. ±0.01 is met on 68 bins.
+- **Bias outside Crosswalk Disagree:** −0.005 to −0.016 per class. That is the thin-block guard plus out-of-fold fits
+  being noisier than the all-rows fit.
+- **Crosswalk Disagree:** −0.092. All its blocks are thin, and it is far below the gate.
+- **Bins served above observed:** 35, by at most +0.021.
+  - The only ones above 0.92 are two CurbRamp Agree bins: 0.925 vs 0.923, and 0.929 vs 0.926. Both are still above
+    the gate when observed.
+- **Pooled calibration error** (|served − observed| by bin, weighted by n): 0.144 for the old maps, 0.008 for the
+  new.
 
 ### City mix
 
@@ -207,10 +237,12 @@ The labelled sample is not the assessed population:
   Taipei.
 - **Under-represented:** spgg (2.8% vs 9.7%), cdmx (2.2% vs 7.2%) and St. Louis (1.1% vs 6.1%). Coverage numbers for
   these cities are extrapolated from the others.
-- **Per city:** the out-of-fold precision of the new votes is ≥ 0.92 in all 28 cities with ≥ 500 labelled labels.
-  The lowest are spgg at 0.920 and cdmx at 0.930.
-- **Below 0.92:** the only city × type strata with n ≥ 300 are Seattle SurfaceProblem (0.904, n = 1,689) and spgg
-  CurbRamp (0.914, n = 1,033).
+- **Per city (n ≥ 500 labelled):** the out-of-fold precision of the new votes is ≥ 0.92 in 27 of the 28 cities. The
+  exception is **spgg at 0.909** (n = 1,745 new votes); cdmx is next at 0.922.
+- **City × type strata below 0.92 with n ≥ 300:** cdmx NoCurbRamp (0.851, n = 397), spgg CurbRamp (0.902), Seattle
+  SurfaceProblem (0.901) and Seattle Obstacle (0.917).
+
+A per-city gate is a SidewalkWebpage decision; these maps are global.
 
 ## Caveats
 

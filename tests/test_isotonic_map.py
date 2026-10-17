@@ -58,22 +58,24 @@ def test_api_lookup_round_trip():
     assert im.api_lookup(class_map, 0.3) == 0
 
 
-def test_wilson_emission():
-    # hand-checked Wilson bounds
+def test_wilson_and_thin_block_guard():
+    # hand-checked Wilson bound
     assert float(im.wilson_lower(0.95, 100)) == pytest.approx(0.9008, abs=1e-4)   # z=1.645, by hand
     assert float(im.wilson_lower(0.5, 0)) == 0.0
-    # one block of 40 all-correct labels: point estimate 1.0, served value the 90% Wilson lower bound (~0.936)
+    # a thin block (40 < 300 labels, all correct) is served at its Wilson lower bound, not 1.0
     curve = im.fit_isotonic(np.full(40, 0.6), np.ones(40))
-    point = im.curve_to_class_map(curve, conservative=False)
-    served = im.curve_to_class_map(curve)
-    assert point["0.6"] == 1.0
-    assert served["0.6"] == pytest.approx(round(float(im.wilson_lower(1.0, 40)), 4))
-    # a thin, perfect block after a big good block keeps the running maximum, so the map stays monotone
+    assert im.curve_to_class_map(curve, conservative=False)["0.6"] == 1.0
+    assert im.curve_to_class_map(curve)["0.6"] == pytest.approx(round(float(im.wilson_lower(1.0, 40)), 4))
+    assert curve.thin().tolist() == [True]
+    # a big block (>= 300) is served at its mean: no shift
+    big = im.fit_isotonic(np.full(1000, 0.7), np.r_[np.ones(950), np.zeros(50)])
+    assert im.curve_to_class_map(big)["0.7"] == 0.95 and not big.thin().any()
+    # a thin, perfect block after a big good block keeps the running maximum (the big block's mean)
     c = np.r_[np.full(5000, 0.7), np.full(3, 0.99)]
     y = np.r_[np.ones(4700), np.zeros(300), np.ones(3)]
     m = im.curve_to_class_map(im.fit_isotonic(c, y))
     im.validate_api_map({"correct": m, "incorrect": m})
-    assert m["0.99"] == m["0.7"] == pytest.approx(round(float(im.wilson_lower(0.94, 5000)), 4))
+    assert m["0.7"] == 0.94 and m["0.99"] == 0.94
 
 
 def test_fractional_outcomes():
@@ -97,7 +99,7 @@ def test_unsupported_low_confidence_is_zero_and_range_recorded():
     iso = im.fit_isotonic([0.8, 0.9, 0.95, 1.0], [1, 1, 1, 1])
     class_map = im.curve_to_class_map(iso)
     assert im.api_lookup(class_map, 0.6) == 0.0
-    assert im.curve_value(iso, 0.85)[0] == 1.0 and 0 < im.api_lookup(class_map, 0.85) < 1.0  # n=4: a low bound
+    assert im.curve_value(iso, 0.85)[0] == 1.0 and 0 < im.api_lookup(class_map, 0.85) < 1.0  # n=4: thin-block guard
     assert im.fit_range(iso) == {"n": 4, "min_confidence": 0.8, "max_confidence": 1.0}
     capped = im.cap_class_map(im.curve_to_class_map(iso, conservative=False))
     assert max(capped.values()) == im.HOLD_BACK_CAP < im.GATE
