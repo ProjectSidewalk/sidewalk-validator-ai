@@ -122,7 +122,7 @@ production traffic rather than a measurement of it. That matters for how the con
 
 > [!WARNING]
 > Counting human votes only shrinks the classes, most of all CurbRamp `incorrect`, because the AI's
-> disagree votes no longer count. Across the 16 training cities the `incorrect` sets go from (API
+> disagree votes no longer count. Across the 16 cached training cities (of the 19 in `CITIES`) the `incorrect` sets go from (API
 > columns) to (human votes only): CurbRamp 7,957 → 2,626, NoCurbRamp 7,842 → 5,923, Obstacle
 > 4,412 → 3,556, SurfaceProblem 4,688 → 3,623, Crosswalk 1,974 → 1,034. With the 55:45 rule the
 > `correct` class shrinks with them, so a retrain has much less CurbRamp data than the counts in the
