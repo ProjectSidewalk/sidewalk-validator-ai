@@ -27,7 +27,7 @@ def _write_assessments(path, n=2000, seed=0):
                        "ai_accuracy": np.round(np.where(verdict == "Agree", 0.9, 0.95) + 0.04 * (conf - 0.5), 4),
                        "ai_confidence": conf, "ai_date": "2026-01-01",
                        "model_id": ["sidewalk-validator-ai-" + t.lower() for t in types],
-                       "h_agree": h_agree, "h_dis": h_n - h_agree, "h_unsure": 0, "jon": None, "mikey": None})
+                       "h_agree": h_agree, "h_dis": h_n - h_agree, "h_unsure": 0, "expert1": None, "expert2": None})
     # make (schema, label_id) unique although label_id repeats across schemas, as in production
     df["schema"] = np.where(np.arange(n) % 2 == 0, "sidewalk_a", "sidewalk_b")
     test_rows = df.head(20).assign(schema="sidewalk_validation", label_id=np.arange(10_000, 10_020))
@@ -137,3 +137,40 @@ def test_check_old_map_handles_rounded_confidence():
                          "ai_accuracy": [0.95, 0.9, 0.5]})  # 2nd: raw 0.99996 -> 1.0
     r = cfp.check_old_map(rows, api_map)
     assert r["exact"] == 2 / 3 and r["consistent"] == 1.0
+
+
+def test_hold_back_boundary_is_inclusive():
+    lower = float(im.wilson_lower(0.95, 2000, cfp.GATE_Z))
+    assert cfp.hold_back_decision(True, 0.95, 2000, bound=lower)[0] == "clears"       # exactly at the bound
+    assert cfp.hold_back_decision(True, 0.95, 2000, bound=lower + 1e-9)[0] == "held back"
+
+
+def test_same_label_id_in_two_cities_gets_independent_folds():
+    a = cfp.fold_ids(np.array([f"sidewalk_a:{i}" for i in range(200)]), 5, 42)
+    b = cfp.fold_ids(np.array([f"sidewalk_b:{i}" for i in range(200)]), 5, 42)
+    assert (a != b).any()
+
+
+def test_held_back_class_is_capped():
+    # One Agree class whose high-confidence block is 93% right on 1,000 labels: the all-rows map reaches 0.93, but the
+    # pooled out-of-fold precision (~0.93 on <= 1,000) has a Wilson 95% lower bound below 0.92 -> held back and capped.
+    rows = []
+    for i in range(2000):
+        hi = i < 1000
+        right = (i % 100) < 93 if hi else (i % 2 == 0)
+        rows.append({"schema": "sidewalk_x", "label_id": i, "label_type": "CurbRamp", "ai_result": "Agree",
+                     "ai_confidence": 0.99 if hi else 0.6, "ai_accuracy": 0.5, "ai_date": "2026-01-01",
+                     "model_id": "m", "h_agree": 2 if right else 0, "h_dis": 0 if right else 2})
+    df = pd.DataFrame(rows)
+    df["label_uid"] = df.schema + ":" + df.label_id.astype(str)
+    df["h_n"] = df.h_agree + df.h_dis
+    res = cfp.calibrate(df, folds=5, seed=3)
+    c = res["classes"][("CurbRamp", "Agree")]
+    assert c["decision"] == "held back"
+    assert max(res["maps"]["CurbRamp"]["correct"].values()) == im.HOLD_BACK_CAP == 0.9199
+    assert (res["df"].new_accuracy < im.GATE).all()
+
+
+def test_min_human_votes_must_be_positive(tmp_path):
+    with pytest.raises(ValueError):
+        cfp.add_outcomes(pd.DataFrame({"ai_result": ["Agree"], "h_agree": [0], "h_dis": [0], "h_n": [0]}), 0)

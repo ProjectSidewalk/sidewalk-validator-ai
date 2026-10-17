@@ -13,7 +13,7 @@ we keep labels with at least ``--min-human-votes`` human Agree/Disagree votes. T
 * ``tie_half`` (default): 1 if the strict human majority matches the verdict, 0 if it opposes it, 0.5 for a tie.
   Ties count as half right instead of being dropped.
 * ``strict``: the same, with tied labels dropped. At two votes that keeps only unanimous pairs and flatters the
-  marginal classes (in-sample, CurbRamp's gated precision is 0.988 strict vs 0.966 tie_half).
+  marginal classes (out-of-fold, CurbRamp's gated precision is 0.988 strict vs 0.966 tie_half).
 * ``share``: the share of the human votes that match the verdict (1-1 -> 0.5, 2-1 -> 0.667, 3-0 -> 1). This
   measures agreement with one randomly chosen human voter, not with the crowd's verdict, so it is capped by how
   often humans disagree with each other: a model that always sided with the majority would score only 0.85 on
@@ -54,7 +54,8 @@ Caveats, in order of importance:
 
 Usage::
 
-    python -m calibration.calibrate_from_production --assessments ai_assessments.csv --out-dir phase0/ \\
+    python -m calibration.calibrate_from_production --assessments ~/Data/<pull>/ai_assessments.csv \\
+        --out-dir ~/Data/<pull>/phase0 \\
         --min-human-votes 2 --folds 5 --seed 42 --since 2025-08-16 --old-maps-dir ../sidewalk-ai-api/accuracy_mappings
 """
 import argparse
@@ -109,6 +110,8 @@ def add_outcomes(df, min_human_votes, outcome="share"):
     ``tie_half`` 1 / 0 by strict majority and 0.5 on a tie; ``strict`` 1 / 0 by strict majority; ``share`` the share
     of human votes matching the AI's verdict.
     """
+    if min_human_votes < 1:
+        raise ValueError("min_human_votes must be >= 1 (0 would score unvoted labels as ties)")
     if outcome not in OUTCOMES:
         raise ValueError(f"unknown outcome {outcome!r}")
     df = df.copy()
@@ -237,6 +240,7 @@ def calibrate(df, min_human_votes=2, folds=5, seed=42, outcome="tie_half", old_m
             old_pass_lab = df.ai_accuracy.values[lab_idx] >= im.GATE
             new_pass_lab = oof >= im.GATE
             old_pass, new_pass = old_acc >= im.GATE, new_acc >= im.GATE
+            ship_pass_lab = im.api_lookup_many(ship_map[cls], conf) >= im.GATE   # in-sample, the map that ships
             tab = im.reliability_table(conf, y, predicted=oof)
             tab["old_predicted"] = im.reliability_table(conf, y, predicted=df.ai_accuracy.values[lab_idx]).predicted.values
             reliability[(t, verdict)] = tab
@@ -249,6 +253,8 @@ def calibrate(df, min_human_votes=2, folds=5, seed=42, outcome="tie_half", old_m
                          "new_coverage": float(new_pass.mean()) if len(all_idx) else np.nan,
                          "new_gate_precision": float(y[new_pass_lab].mean()) if new_pass_lab.any() else np.nan,
                          "new_gate_n": int(new_pass_lab.sum()),
+                         "shipped_gate_n": int(ship_pass_lab.sum()),
+                         "shipped_gate_precision": float(y[ship_pass_lab].mean()) if ship_pass_lab.any() else np.nan,
                          "old_votes": int(old_pass.sum()), "new_votes": int(new_pass.sum()),
                          "votes_lost": int((old_pass & ~new_pass).sum()),
                          "votes_gained": int((new_pass & ~old_pass).sum()),
@@ -285,15 +291,18 @@ def summary_markdown(res, min_human_votes, sensitivity=()):
     lines = [f"Outcome: {outcome}; labels with >= {min_human_votes} human votes. Coverage is over all assessed labels "
              "of that type and verdict, under the shipped map (all labelled rows, block means with the thin-block guard, "
              f"after the hold-back rule). Gate precision is the mean outcome of labelled rows whose {where} served "
-             f"value clears {im.GATE}{' (optimistic: no cross-fitting)' if in_sample else ''}.", "",
+             f"value clears {im.GATE}{' (optimistic: no cross-fitting)' if in_sample else ''}."
+             + ("" if in_sample else " The out-of-fold check validates the procedure, not this exact map; the "
+                "shipped-map column is the same quantity in-sample for the map that ships (its gate set differs from "
+                "the pooled out-of-fold one at the margin)."), "",
              f"| type | verdict | assessed | labelled (ties) | precision | old coverage | old gate precision "
-             f"| new coverage | new gate precision ({where}) | decision |",
-             "|---|---|---:|---:|---:|---:|---:|---:|---:|---|"]
+             f"| new coverage | new gate precision ({where}) | shipped-map gate precision (in-sample) | decision |",
+             "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|"]
     for r in summary.itertuples():
         lines.append(f"| {r.label_type} | {r.verdict} | {r.n_assessed:,} | {r.n_labelled:,} ({_pct(r.tie_share)}) "
                      f"| {_pct(r.observed_precision)} | {_pct(r.old_coverage)} | {_pct(r.old_gate_precision)} "
                      f"(n={r.old_gate_n:,}) | {_pct(r.new_coverage)} | {_pct(r.new_gate_precision)} "
-                     f"(n={r.new_gate_n:,}) | {r.decision} |")
+                     f"(n={r.new_gate_n:,}) | {_pct(r.shipped_gate_precision)} (n={r.shipped_gate_n:,}) | {r.decision} |")
     lines += ["", "Votes cast over all assessed labels (Disagree verdicts that no longer clear the gate are submitted "
               "as Unsure):", "", "| type | verdict | old votes | new votes | lost (→ Unsure) | gained |",
               "|---|---|---:|---:|---:|---:|"]
@@ -353,6 +362,8 @@ def main(argv=None):
     p.add_argument("--old-maps-dir", default=None, help="sidewalk-ai-api/accuracy_mappings, to check the lookup")
     p.add_argument("--no-sensitivity", action="store_true", help="skip the runs with the other outcome definitions")
     args = p.parse_args(argv)
+    if args.min_human_votes < 1:
+        p.error("--min-human-votes must be >= 1 (0 would score unvoted labels as ties)")
 
     df = load_assessments(args.assessments, args.since)
     print(f"{len(df):,} Agree/Disagree assessments in {df.schema.nunique()} schemas, "
@@ -377,8 +388,9 @@ def main(argv=None):
                          observed_label="observed (mean outcome)", new_label=f"new map ({where})")
     res["summary"].to_csv(os.path.join(args.out_dir, "summary.csv"), index=False)
     res["holdout_bins"].to_csv(os.path.join(args.out_dir, "holdout_bins.csv"), index=False)
-    res["df"][["schema", "label_id", "label_type", "ai_result", "ai_confidence", "ai_accuracy", "new_accuracy",
-               "oof_accuracy", "labelled", "tie", "correct", "h_agree", "h_dis", "fold"]].to_csv(
+    res["df"][["schema", "label_id", "label_type", "ai_result", "ai_date", "ai_confidence", "ai_accuracy",
+               "new_accuracy", "oof_accuracy", "labelled", "tie", "correct", "h_agree", "h_dis", "h_unsure",
+               "fold"]].to_csv(
         os.path.join(args.out_dir, "labels_oof.csv"), index=False)
     md = summary_markdown(res, args.min_human_votes, sens)
     with open(os.path.join(args.out_dir, "summary.md"), "w") as f:

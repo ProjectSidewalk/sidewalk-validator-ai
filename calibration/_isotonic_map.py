@@ -44,10 +44,12 @@ API_CLASSES = ("correct", "incorrect")
 # 0.5 .. 1.0 in steps of 0.0025, plus extra points near 1.0 where most confidences sit: in production (Oct 2026) half
 # of all verdicts have confidence above 0.99905 and 29% above 0.9999, spread down to the 6th decimal. The API serves
 # the value at the grid point at or below c, so without these points everything in (0.9999, 1.0) would get the
-# curve's value at 0.9999. Built from integers so the string keys are exact ("0.8475", never "0.8474999999999999").
+# curve's value at 0.9999. Isotonic blocks are finer still near 1.0 (float32 spacing is ~6e-8), so from 0.99998 the
+# grid steps by 1e-6, the finest a 6-decimal key allows: with coarser points there, Obstacle Agree lost 32% and
+# SurfaceProblem Agree 10% of the votes their curves support (the gating block started between grid points). Built from integers so the string keys are exact ("0.8475", never "0.8474999999999999").
 _GRID_STEPS = [i / 10000 for i in range(5000, 10001, 25)]
-_TOP_STEPS = [0.999, 0.9993, 0.9995, 0.9997, 0.9998, 0.9999,
-              0.99992, 0.99994, 0.99996, 0.99997, 0.99998, 0.99999, 0.999995, 0.999998, 0.999999, 1.0]
+_TOP_STEPS = ([0.999, 0.9993, 0.9995, 0.9997, 0.9998, 0.9999, 0.99992, 0.99994, 0.99996, 0.99997]
+              + [i / 1_000_000 for i in range(999_980, 1_000_001)])   # 0.99998 .. 1.0 every 1e-6
 GRID = np.array(sorted(set(_GRID_STEPS) | set(_TOP_STEPS)))
 
 RELIABILITY_EDGES = np.array([0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 0.97, 0.98, 0.99, 0.995, 0.999, 0.9999, 1.0])
@@ -194,9 +196,11 @@ def curve_to_class_map(curve, grid=GRID, conservative=True):
 
     By default (``conservative``) each value is the isotonic block mean, a calibrated point estimate, EXCEPT that a
     block with fewer than ``THIN_BLOCK_N`` labels is served at its 90% Wilson lower bound, so a thin block (typically
-    at the low-confidence end) cannot clear the gate on a lucky estimate. Rounding preserves monotonicity.
+    at the low-confidence end) cannot clear the gate on a lucky estimate. Values are rounded DOWN to 4 decimals,
+    which preserves monotonicity and keeps every served value at or below the curve.
     """
-    values = np.round(curve_value(curve, grid, conservative), 4)
+    # Round DOWN to 4 decimals, so rounding can never lift a value onto the gate (0.91996 is served as 0.9199).
+    values = np.floor(curve_value(curve, grid, conservative) * 1e4 + 1e-9) / 1e4
     return {threshold_key(t): float(v) for t, v in zip(grid, values)}
 
 
@@ -226,6 +230,8 @@ def api_lookup(class_map, confidence):
 def api_lookup_many(class_map, confidences):
     """Vectorised ``api_lookup`` for an ascending map (what ``validate_api_map`` checks). Returns a float array."""
     thresholds = np.array([float(k) for k in class_map], dtype=float)
+    if np.any(np.diff(thresholds) <= 0):
+        raise ValueError("api_lookup_many needs strictly ascending thresholds (the API's loop would differ)")
     values = np.array(list(class_map.values()), dtype=float)
     idx = np.searchsorted(thresholds, np.asarray(confidences, dtype=float), side="right") - 1
     out = np.where(idx >= 0, values[np.clip(idx, 0, None)], 0.0)

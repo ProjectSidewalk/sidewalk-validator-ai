@@ -13,6 +13,10 @@ written in sidewalk-ai-api's format (``_isotonic_map``). The eval split is rewei
 ``pi_eval``) and used for the ECE, a reliability diagram, and coverage + precision at the 0.92 gate per verdict,
 printed and saved as ``calibration_report.json`` next to the map.
 
+**Fit split.** The default fits on ``val``, which is also the split ``fine_tune_classifier.py`` uses to choose the
+checkpoint, so the fit is mildly optimistic. With a ``test_heldout`` split available, prefer
+``--fit-split test --eval-split test_heldout``.
+
 **Inputs not yet produced on this branch.** ``predictions.csv`` comes from ``evaluate.py``, which reads
 ``<label_type>/split.csv``; that manifest and ``deployment_priors.json`` are written by the data-generation changes in
 progress on another branch (panorama-grouped split, idempotent generation: issues #3 and #10). The current

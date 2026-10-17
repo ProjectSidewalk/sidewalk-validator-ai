@@ -55,9 +55,13 @@ PREDICTION_COLUMNS = ["label_uid", "split", "true", "p_correct", "p_incorrect"]
 # Input
 # ---------------------------------------------------------------------------------------------------------------------
 
-def load_split(label_type):
-    """Return the split manifest as a DataFrame with ``SPLIT_COLUMNS`` and resolved ``crop_path``s."""
-    path = os.path.join(label_type, "split.csv")
+def load_split(label_type, data_dir="."):
+    """Return the split manifest as a DataFrame with ``SPLIT_COLUMNS`` and resolved ``crop_path``s.
+
+    Reads ``<data_dir>/<label_type>/split.csv`` (the layout data_generation.py's ``--out`` writes).
+    """
+    base = os.path.normpath(os.path.join(data_dir, label_type))
+    path = os.path.join(base, "split.csv")
     if os.path.exists(path):
         df = pd.read_csv(path)
         missing = set(SPLIT_COLUMNS) - set(df.columns)
@@ -69,21 +73,21 @@ def load_split(label_type):
         def resolve(p):
             if os.path.isabs(p):
                 return p
-            under = os.path.join(label_type, p)
+            under = os.path.join(base, p)
             return under if os.path.exists(under) else p
         df["crop_path"] = df.crop_path.map(resolve)
         return df
-    warnings.warn(f"{path} not found; falling back to the old image-folder layout under {label_type}/ds/. "
+    warnings.warn(f"{path} not found; falling back to the old image-folder layout under {base}/ds/. "
                   "That layout has no panorama grouping, no test_heldout split and no hard-example flag.")
-    return load_imagefolder(label_type)
+    return load_imagefolder(label_type, data_dir)
 
 
-def load_imagefolder(label_type):
+def load_imagefolder(label_type, data_dir="."):
     """Build a manifest from ``<label_type>/ds/<split>/<class>/<city>_<label_id>.<ext>`` (split_data.py output)."""
     rows = []
     for split_dir in ("train", "val", "validation", "test"):
         for cls in CLASSES:
-            for f in sorted(glob.glob(os.path.join(label_type, "ds", split_dir, cls, "*"))):
+            for f in sorted(glob.glob(os.path.join(data_dir, label_type, "ds", split_dir, cls, "*"))):
                 stem = os.path.splitext(os.path.basename(f))[0]
                 city, _, label_id = stem.rpartition("_")
                 rows.append({"label_uid": f"{city}:{label_id}", "city": city, "label_id": label_id, "pano_id": None,
@@ -94,9 +98,9 @@ def load_imagefolder(label_type):
     return pd.DataFrame(rows, columns=SPLIT_COLUMNS)
 
 
-def find_best_checkpoint(label_type):
+def find_best_checkpoint(label_type, data_dir="."):
     """Path of ``best_model_checkpoint`` from the latest checkpoint's ``trainer_state.json``."""
-    base = os.path.join(label_type, "dinov2")
+    base = os.path.join(data_dir, label_type, "dinov2")
     dirs = [d for d in os.listdir(base) if d.startswith("checkpoint-") and os.path.isdir(os.path.join(base, d))]
     if not dirs:
         raise FileNotFoundError(f"no checkpoint-* directories under {base}")
@@ -150,14 +154,14 @@ def recall_at_precision(y_true, scores, level):
     ``precision_recall_curve`` returns precision that is NOT monotone in the threshold, so this takes
     ``max(recall[precision >= level])`` rather than a binary search (issue #6). ``thresholds`` has one element fewer
     than ``precision``: the final (precision 1, recall 0) point has no threshold, so it is reported as ``None``.
-    Ties in recall resolve to the lowest such threshold.
+    Ties in recall resolve to the highest such threshold (same recall, fewest false positives).
 
     Returns:
         ``(recall, threshold)``; ``(0.0, None)`` when no operating point reaches ``level``.
 
     Example::
 
-        >>> recall_at_precision([1, 1, 0, 1, 0, 0], [0.9, 0.8, 0.7, 0.6, 0.55, 0.4], 0.75)
+        >>> recall_at_precision([1, 1, 0, 1, 0, 0], [0.9, 0.8, 0.7, 0.6, 0.55, 0.4], 0.5)
         (1.0, 0.6)
     """
     precision, recall, thresholds = precision_recall_curve(y_true, scores)
@@ -165,7 +169,8 @@ def recall_at_precision(y_true, scores, level):
     ok = np.flatnonzero(precision >= level)
     if len(ok) == 0:
         return 0.0, None
-    idx = ok[np.argmax(recall[ok])]
+    best = recall[ok].max()
+    idx = ok[recall[ok] == best].max()   # the highest threshold reaching the best recall
     threshold = float(thresholds[idx]) if idx < len(thresholds) else None
     return float(recall[idx]), threshold
 
@@ -277,16 +282,20 @@ def save_figures(predictions_df, text, label_type, out_dir):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Evaluate one label type's best checkpoint.")
     parser.add_argument("--label_type", required=True)
+    parser.add_argument("--data-dir", default=".",
+                        help="root holding <label_type>/split.csv, <label_type>/dinov2/ and deployment_priors.json "
+                             "(data_generation.py's --out); outputs go to <data-dir>/<label_type>/")
     parser.add_argument("--skip-inference", action="store_true", help="reuse <label_type>/predictions.csv")
     args = parser.parse_args(argv)
     label_type = args.label_type
-    pred_path = os.path.join(label_type, "predictions.csv")
+    base = os.path.join(args.data_dir, label_type)
+    pred_path = os.path.join(base, "predictions.csv")
 
-    manifest = load_split(label_type)
+    manifest = load_split(label_type, args.data_dir)
     if args.skip_inference:
         predictions = pd.read_csv(pred_path)
     else:
-        checkpoint = find_best_checkpoint(label_type)
+        checkpoint = find_best_checkpoint(label_type, args.data_dir)
         print(f"best checkpoint: {checkpoint}")
         predictions = run_inference(manifest, checkpoint)
         predictions.to_csv(pred_path, index=False)
@@ -296,14 +305,15 @@ def main(argv=None):
     metrics = report(with_hard)
     text = format_report(metrics)
     print(text)
-    with open(os.path.join(label_type, "metrics.json"), "w") as f:
+    with open(os.path.join(base, "metrics.json"), "w") as f:
         json.dump(metrics, f, indent=2)
-    with open(os.path.join(label_type, "report.txt"), "w") as f:
+    with open(os.path.join(base, "report.txt"), "w") as f:
         f.write(text)
-    save_figures(predictions, text, label_type, label_type)
-    print("next (needs deployment_priors.json from the in-progress data-generation changes, issues #3/#10):")
-    print(f"  python -m calibration.calibrate --predictions {pred_path} --priors deployment_priors.json "
-          f"--label-type {label_type} --out {label_type}/calibration/{label_type.lower()}.json")
+    save_figures(predictions, text, label_type, base)
+    priors = os.path.join(args.data_dir, "deployment_priors.json")
+    print("next (needs deployment_priors.json from the data-generation changes, issues #3/#10):")
+    print(f"  python -m calibration.calibrate --predictions {pred_path} --priors {priors} "
+          f"--label-type {label_type} --out {os.path.join(base, 'calibration', label_type.lower() + '.json')}")
 
 
 if __name__ == "__main__":
