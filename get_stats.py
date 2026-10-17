@@ -3,7 +3,8 @@
 Outputs, under ``<label_type>/``: ``pvr.png`` (precision-recall curve), ``report.png`` (curve + classification
 report), ``pvc_cumulative_by_class.png`` and ``confidence_precision_map.json``. The JSON is what
 https://github.com/ProjectSidewalk/sidewalk-ai-api/blob/main/main.py serves as ``validation_estimated_accuracy``
-(copied into its ``accuracy_mappings/``), and SidewalkWebpage only records an AI vote when that value is >= 0.92.
+(copied into its ``accuracy_mappings/``); SidewalkWebpage records an Agree/Disagree vote when that value is >= 0.92
+and an Unsure vote below it.
 Two caveats are tracked in the issues: the map is computed under the dataset's 55:45 class prior rather than the
 deployment prior (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4), and the "recall at precision"
 numbers below use searchsorted on an unsorted array (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6).

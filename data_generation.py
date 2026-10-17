@@ -4,7 +4,7 @@ For every label of ``--label_type`` across the cities listed in ``CITIES``, this
 
 1. pulls the label and its validations from the public v3 API (``/v3/api/rawLabels``);
 2. keeps labels the crowd clearly endorsed (net >= 3 human agree votes) or clearly rejected
-   (net >= 2 human disagree votes), downsampling the majority class to ``CORRECT_PROPORTION``;
+   (net >= 2 human disagree votes), downsampling the ``correct`` class to ``CORRECT_PROPORTION``;
 3. reassembles the Google Street View panorama from tiles, renders a 90-degree perspective view
    toward the label, estimates metric depth at the label with Depth Anything V2, and cuts a crop
    whose size scales with 1/depth so near and far features fill the frame similarly;
@@ -83,7 +83,7 @@ HEADERS = {
     "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
 }
 
-# City deployments to pull labels from. Not the full list of ~52 deployments; discovering them from
+# City deployments to pull labels from. Not the full list of 59 deployments (41 public, 18 private); discovering them from
 # /v3/api/cities is https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8.
 CITIES = ["cdmx", "la-piedad", "spgg", "amsterdam", "blackhawk-hills", "chicago", "cliffside-park",
           "columbus", "knox", "mendota", "newberg", "oradell", "pittsburgh", "sea", "st-louis",
@@ -126,8 +126,8 @@ def select_training_labels(all_labels, label_type, seed=SEED, correct_proportion
     prior (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4).
     """
     df = all_labels[all_labels['label_type'] == label_type].copy()
-    # GSV panoramas only (the tile fetcher below cannot fetch other providers), and drop legacy DC labels whose
-    # pano coordinates were never converted (negative pano_y). See issue #9.
+    # GSV panoramas only (the tile fetcher below cannot fetch other providers), and drop legacy labels whose
+    # pano coordinates were never converted (negative pano_y: Seattle 193, CDMX 14, Pittsburgh 8, SPGG 1). See #9.
     df = df[(df['pano_source'].astype(str).str.lower() == 'gsv') & (df['pano_y'] >= 0)]
     counts = df['validations'].apply(human_vote_counts)
     df['human_agree'] = [a for a, _ in counts]
@@ -240,8 +240,8 @@ def fetch_panorama(pano_id):
     def _fetch_remaining_tiles(max_x, max_y, existing_tiles):
         tiles_cache = existing_tiles.copy()
 
-        # 100 workers, as in sidewalk-ai-api. Five label-type processes run in parallel under SLURM, and the
-        # earlier 1,000-thread pool per process is the kind of burst that gets a source IP rate-limited.
+        # 100 workers, as in sidewalk-ai-api. A zoom-4 pano is 128 tiles (two fetched above), so at most 126
+        # threads run whether the pool is 100 or the earlier 1,000: tidying, not a rate-limit fix.
         with ThreadPoolExecutor(max_workers=100) as executor:
             futures = []
             for x in range(max_x + 1):
@@ -462,8 +462,9 @@ def create_perspective_crop(equi_img, label_x_norm, label_y_norm):
 
     center_x, center_y = persp_coords
     if not (0 <= center_x < img_w and 0 <= center_y < img_h):
-        # Label projects outside the 90-degree frame (about 0.6% of labels). Without this check a negative row
-        # index would silently read depth from the opposite edge of the frame. See issue #9.
+        # Label projects outside the 90-degree (+-45 deg) frame. Below it (y/h > 0.75, ~0.6% of Teaneck labels) the
+        # depth lookup used to raise IndexError and the label was skipped as an error; above it (y/h < 0.25, none
+        # in 1,071,562 cached rows) a negative row would silently read the opposite edge. Reject both. See #9.
         return None
 
     depth = model.infer_image(perspective_img)
