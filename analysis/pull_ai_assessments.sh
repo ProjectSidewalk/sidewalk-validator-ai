@@ -1,6 +1,7 @@
 #!/bin/bash
 # One row per AI-assessed label in every city schema: the AI's latest raw verdict, served accuracy and confidence,
-# plus the HUMAN votes on that label (the AI's own vote excluded). Read-only; run on the database host.
+# plus the HUMAN votes on that label (the AI's own vote excluded). Accuracy and confidence are exported unrounded:
+# most confidences sit within 1e-4 of 1.0, where the map's top grid cells are. Read-only; run on the database host.
 #   EXPERT1_ID=<user_id> EXPERT2_ID=<user_id> ./pull_ai_assessments.sh > ai_assessments.csv
 # EXPERT1_ID / EXPERT2_ID are optional sidewalk_login user_ids whose individual votes get their own columns
 # (kept out of the repo on purpose). The output contains private-city data: never commit it.
@@ -15,9 +16,10 @@ for S in $($P -c "SELECT schema_name FROM information_schema.schemata WHERE sche
   [ "$has" = "t" ] || { echo "$S: no label_ai_assessment" >&2; continue; }
   $P -c "COPY (
     WITH a AS (
-      SELECT DISTINCT ON (label_id) label_id, validation_result::text AS r, validation_accuracy, validation_confidence, timestamp::date AS d, validator_model_id
+      SELECT DISTINCT ON (label_id) label_id,
+        CASE validation_result::text WHEN '1' THEN 'Agree' WHEN '2' THEN 'Disagree' WHEN '3' THEN 'Unsure' ELSE validation_result::text END AS r, validation_accuracy, validation_confidence, timestamp::date AS d, validator_model_id
       FROM $S.label_ai_assessment ORDER BY label_id, timestamp DESC)
-    SELECT '$S', l.label_id, l.label_type::text, l.deleted, l.severity, a.r, round(a.validation_accuracy::numeric,4), round(a.validation_confidence::numeric,4), a.d, a.validator_model_id,
+    SELECT '$S', l.label_id, l.label_type::text, l.deleted, l.severity, a.r, a.validation_accuracy, a.validation_confidence, a.d, a.validator_model_id,
       COALESCE(SUM(CASE WHEN v.validation_result::text IN ('1','Agree') THEN 1 ELSE 0 END),0),
       COALESCE(SUM(CASE WHEN v.validation_result::text IN ('2','Disagree') THEN 1 ELSE 0 END),0),
       COALESCE(SUM(CASE WHEN v.validation_result::text IN ('3','Unsure') THEN 1 ELSE 0 END),0),

@@ -6,11 +6,10 @@ cities = requests.get("https://sidewalk-teaneck.cs.washington.edu/v3/api/cities"
 pub = [c for c in cities if c["visibility"] == "public" and c["url"]]
 print(f"{len(pub)} public cities", flush=True)
 json.dump(pub, open(os.path.join(CACHE, "cities.json"), "w"), indent=1)
-NCOL = 41
-
 def ok(text):
+    """True if the export parses and its last rows are as wide as its own header (a truncated export is not)."""
     rows = list(csv.reader(io.StringIO(text)))
-    return len(rows) > 1 and all(len(r) == NCOL for r in rows[-3:]), len(rows) - 1
+    return len(rows) > 1 and all(len(r) == len(rows[0]) for r in rows[-3:]), len(rows) - 1
 
 for c in pub:
     cid, url = c["city_id"], c["url"].rstrip("/")
@@ -29,7 +28,8 @@ for c in pub:
         continue
     # bbox tile fallback: 4x4 grid over city bounds
     print(f"{cid}: whole-city export truncated ({n} rows), tiling", flush=True)
-    b = c["bounds"]; parts = []; header = None
+    # Labels on a tile edge can come back from two tiles, so rows are deduplicated on (city, label_id).
+    b = c["bounds"]; header = None; rows = {}
     for i in range(4):
         for j in range(4):
             s = b["south"] + (b["north"]-b["south"])*i/4; nn = b["south"] + (b["north"]-b["south"])*(i+1)/4
@@ -37,8 +37,12 @@ for c in pub:
             rr = requests.get(f"{url}/v3/api/rawLabels?filetype=csv&bbox={w},{s},{e},{nn}", timeout=900)
             g, k = ok(rr.text)
             if not g: print(f"  tile {i},{j} still bad ({k})", flush=True)
-            lines = rr.text.splitlines(keepends=True)
-            if header is None: header = lines[0]
-            parts.extend(lines[1:])
-    open(out, "w").write(header + "".join(parts))
-    print(f"{cid}: tiled, {len(parts)} rows {time.time()-t:.0f}s", flush=True)
+            tile = list(csv.reader(io.StringIO(rr.text)))
+            if not tile: continue
+            if header is None: header = tile[0]
+            key = header.index("label_id")
+            for r in tile[1:]:
+                if len(r) == len(header): rows[(cid, r[key])] = r
+    with open(out, "w", newline="") as f:
+        wr = csv.writer(f); wr.writerow(header); wr.writerows(rows.values())
+    print(f"{cid}: tiled, {len(rows)} unique labels {time.time()-t:.0f}s", flush=True)

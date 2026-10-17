@@ -71,7 +71,10 @@ print(c[c.n>=300].sort_values("Disagree obs").to_string(float_format=lambda x: f
 
 # 6. experts vs AI by confidence
 print("\n== Experts: where the AI contradicts an expert validator, what was its confidence? ==")
-for k in [c for c in df.columns if c not in BASE]:
+experts = [c for c in df.columns if c not in BASE and df[c].isin(["Agree","Disagree"]).any()]
+if not experts:
+    print("  (skipped: no expert columns with votes; set EXPERT1_ID/EXPERT2_ID when pulling)")
+for k in experts:
     s = df[df[k].isin(["Agree","Disagree"])]
     dis = s[s[k] != s.ai_result]
     print(f"  {k}: AI assessed {len(s):,} labels {k} voted on; contradicts {k} on {len(dis):,} ({len(dis)/len(s):.1%}); of those, gated (actually voted) {dis.gate.mean():.1%}; median conf {dis.ai_confidence.median():.3f} vs {s[s[k]==s.ai_result].ai_confidence.median():.3f} when agreeing")
