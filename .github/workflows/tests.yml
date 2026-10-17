@@ -1,8 +1,10 @@
 name: tests
 
+# pull_request covers every PR; push only for the long-lived branches, so a PR branch does not run twice.
 on:
-  push:
   pull_request:
+  push:
+    branches: [master, audit-readme-and-fixes]
 
 jobs:
   pytest:
