@@ -16,8 +16,9 @@ we keep labels with at least ``--min-human-votes`` human Agree/Disagree votes. T
   marginal classes (out-of-fold, CurbRamp's gated precision is 0.988 strict vs 0.966 tie_half).
 * ``share``: the share of the human votes that match the verdict (1-1 -> 0.5, 2-1 -> 0.667, 3-0 -> 1). This
   measures agreement with one randomly chosen human voter, not with the crowd's verdict, so it is capped by how
-  often humans disagree with each other: a model that always sided with the majority would score only 0.85 on
-  NoCurbRamp, SurfaceProblem and Obstacle (0.93 CurbRamp, 0.97 Crosswalk), below the 0.92 gate by construction.
+  often humans disagree with each other: a model that always sided with the majority would score only 0.851 on
+  NoCurbRamp, 0.848 on SurfaceProblem and 0.829 on Obstacle (0.928 CurbRamp, 0.970 Crosswalk), below the 0.92 gate
+  by construction for three types.
 
 The two definitions not used for the maps are run as a sensitivity check. A non-decreasing isotonic curve of the outcome against ``ai_confidence`` is fitted and written in
 sidewalk-ai-api's format (``_isotonic_map``): each map value is the isotonic block mean, except that blocks with

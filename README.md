@@ -83,7 +83,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 | [`split_data.py`](split_data.py) | Step 5. Shuffles each class folder into train/val/test image folders. | 70 / 15 / 15, `--seed` |
 | [`fine_tune_classifier.py`](fine_tune_classifier.py) | Step 6. Hugging Face `Trainer` on `facebook/dinov2-large`. | lr 1e-5, batch 8 × 4 accumulation, 25 epochs, warm-up 10%, best by macro-F1 |
 | [`evaluate.py`](evaluate.py) | Step 7. Predictions for every held-out row, then AUC, accuracy and balanced accuracy, per-class P/R/F1, recall at precision. (`get_stats.py` is a stub that says so.) | splits `val`, `test`, `test_heldout`; `hard` slice |
-| [`calibration/`](calibration) | Step 7b. Isotonic confidence→accuracy maps in the API's format: `calibrate.py` for a retrained model (deployment-prior weighting), `calibrate_from_production.py` for the deployed models from production outcomes. | gate 0.92, grid 0.5–1.0 step 0.0025 |
+| [`calibration/`](calibration) | Step 7b. Isotonic confidence→accuracy maps in the API's format: `calibrate.py` for a retrained model (deployment-prior weighting), `calibrate_from_production.py` for the deployed models from production outcomes. | gate 0.92; grid 0.5–1.0 at 0.0025, plus 1e-6 steps from 0.99998 to 1.0 |
 | [`analysis/`](analysis) | Scripts behind the production measurements in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md). | outputs live outside the repo |
 | `*.slurm` | Hyak job files for steps 1–5, 6 and 7 (five label types per job). | `gpu-l40s`, 100 GB, 1 GPU |
 | `Depth-Anything-V2/` | Vendored upstream code (unmodified); the checkpoint is downloaded separately. | `depth_anything_v2_metric_vkitti_vitl.pth` |

@@ -1,7 +1,7 @@
 """Fit the served accuracy map for a RETRAINED model from its predictions, under the deployment class prior.
 
 The training data are downsampled to a fixed correct:incorrect ratio (55:45), but production sees roughly 90:10
-(issue #4). Precision depends on the prior, so each fit-split example is weighted by
+(issue #4; that figure is a proxy, the Teaneck labels on which the human crowd was decisive). Precision depends on the prior, so each fit-split example is weighted by
 
     w(y) = pi_deploy(y) / pi_fit(y)
 

@@ -26,10 +26,10 @@ def test_split_csv_missing_column(tmp_path, monkeypatch):
 
 def test_imagefolder_fallback(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    for split, cls, name in [("val", "correct", "seattle_12.webp"), ("test", "incorrect", "new_taipei_7.webp")]:
+    for split, cls, name in [("val", "correct", "seattle_12.webp"), ("test", "incorrect", "st_louis_7.webp")]:
         (tmp_path / "Toy" / "ds" / split / cls).mkdir(parents=True)
         (tmp_path / "Toy" / "ds" / split / cls / name).write_bytes(b"")
     with pytest.warns(UserWarning):
         df = evaluate.load_split("Toy")
-    assert sorted(df.label_uid) == ["new_taipei:7", "seattle:12"]
+    assert sorted(df.label_uid) == ["seattle:12", "st_louis:7"]
     assert set(df.split) == {"val", "test"}
