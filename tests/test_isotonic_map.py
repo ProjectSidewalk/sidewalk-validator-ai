@@ -39,22 +39,47 @@ def test_validate_rejects_bad_maps():
 
 def test_api_lookup_round_trip():
     c, y = _noisy_curve()
-    iso = im.fit_isotonic(c, y)
-    class_map = im.curve_to_class_map(iso)
-    # On grid points the dict serves exactly the (rounded) curve.
+    curve = im.fit_isotonic(c, y)
+    class_map = im.curve_to_class_map(curve)
+    # On grid points the dict serves exactly the (rounded) conservative curve.
     for t in im.GRID:
-        assert im.api_lookup(class_map, t) == pytest.approx(round(float(im.curve_value(iso, t)[0]), 4), abs=1e-12)
-    # Anywhere else it serves the curve at the grid point at or below c, which never exceeds the curve at c.
+        assert im.api_lookup(class_map, t) == pytest.approx(round(float(im.curve_value(curve, t, True)[0]), 4), abs=1e-12)
+    # Anywhere else it serves the curve at the grid point at or below c, never above the curve at c.
     rng = np.random.default_rng(1)
     for q in rng.uniform(0.5, 1.0, 500):
         floor = im.GRID[im.GRID <= q].max()
         served = im.api_lookup(class_map, q)
-        assert served == pytest.approx(round(float(im.curve_value(iso, floor)[0]), 4), abs=1e-12)
-        assert served <= float(im.curve_value(iso, q)[0]) + 5e-5
+        assert served == pytest.approx(round(float(im.curve_value(curve, floor, True)[0]), 4), abs=1e-12)
+        assert served <= float(im.curve_value(curve, q, True)[0]) + 5e-5
+        assert served <= float(im.curve_value(curve, q)[0]) + 5e-5   # and never above the point estimate
     # The vectorised lookup agrees with the copied loop, including below the first threshold.
     qs = np.r_[0.3, rng.uniform(0.5, 1.0, 200), 1.0]
     assert np.allclose(im.api_lookup_many(class_map, qs), [im.api_lookup(class_map, q) for q in qs])
     assert im.api_lookup(class_map, 0.3) == 0
+
+
+def test_wilson_emission():
+    # hand-checked Wilson bounds
+    assert float(im.wilson_lower(0.95, 100)) == pytest.approx(0.9008, abs=1e-4)   # z=1.645, by hand
+    assert float(im.wilson_lower(0.5, 0)) == 0.0
+    # one block of 40 all-correct labels: point estimate 1.0, served value the 90% Wilson lower bound (~0.936)
+    curve = im.fit_isotonic(np.full(40, 0.6), np.ones(40))
+    point = im.curve_to_class_map(curve, conservative=False)
+    served = im.curve_to_class_map(curve)
+    assert point["0.6"] == 1.0
+    assert served["0.6"] == pytest.approx(round(float(im.wilson_lower(1.0, 40)), 4))
+    # a thin, perfect block after a big good block keeps the running maximum, so the map stays monotone
+    c = np.r_[np.full(5000, 0.7), np.full(3, 0.99)]
+    y = np.r_[np.ones(4700), np.zeros(300), np.ones(3)]
+    m = im.curve_to_class_map(im.fit_isotonic(c, y))
+    im.validate_api_map({"correct": m, "incorrect": m})
+    assert m["0.99"] == m["0.7"] == pytest.approx(round(float(im.wilson_lower(0.94, 5000)), 4))
+
+
+def test_fractional_outcomes():
+    # vote shares (1-1 -> 0.5, 2-1 -> 0.667) are fitted as means
+    curve = im.fit_isotonic([0.9, 0.9, 0.9], [0.5, 2 / 3, 1.0])
+    assert float(curve.value(0.9)[0]) == pytest.approx((0.5 + 2 / 3 + 1) / 3)
 
 
 def test_reliability_and_ece():
@@ -71,9 +96,10 @@ def test_reliability_and_ece():
 def test_unsupported_low_confidence_is_zero_and_range_recorded():
     iso = im.fit_isotonic([0.8, 0.9, 0.95, 1.0], [1, 1, 1, 1])
     class_map = im.curve_to_class_map(iso)
-    assert im.api_lookup(class_map, 0.6) == 0.0 and im.api_lookup(class_map, 0.85) == 1.0
+    assert im.api_lookup(class_map, 0.6) == 0.0
+    assert im.curve_value(iso, 0.85)[0] == 1.0 and 0 < im.api_lookup(class_map, 0.85) < 1.0  # n=4: a low bound
     assert im.fit_range(iso) == {"n": 4, "min_confidence": 0.8, "max_confidence": 1.0}
-    capped = im.cap_class_map(class_map)
+    capped = im.cap_class_map(im.curve_to_class_map(iso, conservative=False))
     assert max(capped.values()) == im.HOLD_BACK_CAP < im.GATE
     im.validate_api_map({"correct": capped, "incorrect": class_map})
 

@@ -39,7 +39,7 @@ def test_end_to_end(tmp_path):
     src = tmp_path / "ai_assessments.csv"
     _write_assessments(src)
     out = tmp_path / "phase0"
-    cfp.main(["--assessments", str(src), "--out-dir", str(out), "--holdout-fraction", "0.5", "--seed", "7"])
+    cfp.main(["--assessments", str(src), "--out-dir", str(out), "--folds", "5", "--seed", "7"])
     for t in cfp.LABEL_TYPES:
         api_map = json.loads((out / "accuracy_mappings" / f"{t.lower()}.json").read_text())
         im.validate_api_map(api_map)
@@ -52,10 +52,15 @@ def test_end_to_end(tmp_path):
     assert (agree.observed_precision.values > disagree.observed_precision.values).all()
     # the synthetic old map passes every Disagree verdict; the new one (true precision <= 0.7) should pass few
     assert (disagree.old_coverage == 1.0).all() and disagree.new_coverage.mean() < 0.2
-    assert (out / "holdout_bins.csv").exists() and "Held-out" in (out / "summary.md").read_text()
+    assert (out / "holdout_bins.csv").exists() and "out-of-fold" in (out / "summary.md").read_text()
     rep = json.loads((out / "calibration_report.json").read_text())
     assert {c["decision"] for c in rep["classes"]} <= {"clears", "held back", "below gate"}
     assert all(c["fit_range"]["n"] > 0 for c in rep["classes"])
+    assert rep["outcome"] == "tie_half"
+    assert [r["outcome"] for r in rep["sensitivity"]] == ["strict", "share"]
+    assert "Sensitivity" in (out / "summary.md").read_text()
+    oof = pd.read_csv(out / "labels_oof.csv")
+    assert oof[oof.labelled].oof_accuracy.notna().all()
 
 
 def test_in_sample_is_labelled_and_missing_type_is_tolerated(tmp_path):
@@ -63,10 +68,10 @@ def test_in_sample_is_labelled_and_missing_type_is_tolerated(tmp_path):
     df = _write_assessments(src)
     df[df.label_type != "Obstacle"].to_csv(src, index=False)     # a type with no assessments at all
     out = tmp_path / "phase0"
-    cfp.main(["--assessments", str(src), "--out-dir", str(out), "--holdout-fraction", "0",
+    cfp.main(["--assessments", str(src), "--out-dir", str(out), "--folds", "1",
               "--old-maps-dir", str(_old_maps(tmp_path))])
     md = (out / "summary.md").read_text()
-    assert "in-sample" in md and "held-out labelled rows" not in md
+    assert "in-sample" in md and "out-of-fold" not in md
     obstacle = json.loads((out / "accuracy_mappings" / "obstacle.json").read_text())
     assert set(obstacle["correct"].values()) == {0.0}             # no data -> never clears the gate
 
@@ -82,19 +87,48 @@ def _old_maps(tmp_path):
 def test_hold_back_rule():
     assert cfp.hold_back_decision(False, 0.99, 1000)[0] == "below gate"
     assert cfp.hold_back_decision(True, 0.99, 1000)[0] == "clears"
-    # the NoCurbRamp Disagree case on the rounded export: 0.907 observed, SE 0.012 -> held back
-    decision, se, lower = cfp.hold_back_decision(True, 0.907, 580)
-    assert decision == "held back" and se == pytest.approx(0.012, abs=0.001) and lower < 0.92
-    assert cfp.hold_back_decision(True, 0.95, 50)[0] == "held back"   # 0.95 - 1.96*0.031 < 0.92
+    # 0.944 on 126 labels: Wilson 95% lower bound ~0.89 -> held back; at the 0.90 context bound still held back
+    decision, lower = cfp.hold_back_decision(True, 0.944, 126)
+    assert decision == "held back" and lower == pytest.approx(0.890, abs=0.005)
+    assert cfp.hold_back_decision(True, 0.95, 2000)[0] == "clears"            # lower ~0.940
+    assert cfp.hold_back_decision(True, 0.93, 2000)[0] == "held back"         # lower ~0.918
+    assert cfp.hold_back_decision(True, 0.93, 2000, bound=0.90)[0] == "clears"
     assert cfp.hold_back_decision(True, float("nan"), 0)[0] == "held back"
 
 
-def test_holdout_is_deterministic_and_keyed_on_uid():
-    uids = np.array([f"sidewalk_x:{i}" for i in range(4000)])
-    a = cfp.holdout_mask(uids, 0.5, 42)
-    assert (a == cfp.holdout_mask(uids, 0.5, 42)).all()
-    assert 0.45 < a.mean() < 0.55
-    assert not cfp.holdout_mask(uids, 0.0, 42).any()
+def test_outcome_definitions():
+    df = pd.DataFrame({"ai_result": ["Agree", "Agree", "Disagree", "Agree", "Agree"],
+                       "h_agree": [1, 2, 1, 3, 1], "h_dis": [1, 1, 2, 0, 0]})
+    df["h_n"] = df.h_agree + df.h_dis
+    share = cfp.add_outcomes(df, 2, "share")
+    assert share.labelled.tolist() == [True, True, True, True, False]
+    assert share.correct[:4].tolist() == pytest.approx([0.5, 2 / 3, 2 / 3, 1.0])
+    half = cfp.add_outcomes(df, 2, "tie_half")
+    assert half.labelled.tolist() == [True, True, True, True, False]
+    assert half.correct[:4].tolist() == [0.5, 1.0, 1.0, 1.0]                 # majority wins count fully
+    strict = cfp.add_outcomes(df, 2, "strict")
+    assert strict.labelled.tolist() == [False, True, True, True, False]       # the 1-1 tie is dropped
+    assert strict.correct[1:4].tolist() == [1.0, 1.0, 1.0]
+
+
+def test_folds_are_deterministic_and_keyed_on_uid():
+    uids = np.array([f"sidewalk_x:{i}" for i in range(5000)])
+    f = cfp.fold_ids(uids, 5, 42)
+    assert (f == cfp.fold_ids(uids, 5, 42)).all() and set(f) == set(range(5))
+    assert np.bincount(f).min() > 900
+    assert not cfp.fold_ids(uids, 1, 42).any()
+    assert (cfp.fold_ids(uids, 5, 43) != f).mean() > 0.5                   # a different seed reshuffles
+
+
+def test_cross_fitting_uses_out_of_fold_maps(tmp_path):
+    # A class whose high-confidence labels are right only by luck in-sample must not clear on out-of-fold values.
+    src = tmp_path / "a.csv"
+    df = _write_assessments(src, n=2000)
+    res = cfp.calibrate(cfp.load_assessments(src), folds=5, seed=1)
+    lab = res["df"][res["df"].labelled]
+    assert lab.oof_accuracy.notna().all()
+    # out-of-fold values differ from the shipped (all-rows) map's values for some labels
+    assert (lab.oof_accuracy - lab.new_accuracy).abs().max() > 0
 
 
 def test_check_old_map_handles_rounded_confidence():

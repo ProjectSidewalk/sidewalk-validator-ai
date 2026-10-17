@@ -13,8 +13,10 @@ non-decreasing, or a dip in the map becomes a dip in the served accuracy. Sidewa
 the served value is ``>= 0.92``.
 
 This module fits a monotone non-decreasing precision-vs-confidence curve with isotonic regression and samples it on a
-fixed grid (``GRID``). Because the API returns the value at the grid point at or below ``c``, and the curve is
-non-decreasing, the served value is never above the fitted curve at ``c`` (a conservative step function).
+fixed grid (``GRID``). Each map value is the lower end of a 90% Wilson interval for the isotonic block it falls in, so
+**the served accuracy is a lower confidence bound on precision**, not a point estimate. Because the API returns the
+value at the grid point at or below ``c``, and the curve is non-decreasing, the served value is never above the
+fitted curve at ``c``.
 
 Below the lowest confidence seen in the fit data the curve is 0.0, not a flat extrapolation, so a grid point with no
 support can never clear the gate. Above the highest it is held flat (confidences top out at 1.0).
@@ -72,49 +74,116 @@ def predict_verdicts(p_correct, p_incorrect):
     return verdict, np.maximum(p_correct, p_incorrect)
 
 
+MAP_Z = 1.645
+"""z for the map values: each is the lower end of a two-sided 90% Wilson interval for its isotonic block."""
+
+
+def wilson_lower(p, n, z=MAP_Z):
+    """Lower end of the Wilson score interval for a mean ``p`` (may be a fractional outcome rate) on ``n`` examples.
+
+    Returns 0 where ``n`` is 0. Example: ``wilson_lower(0.95, 100)`` is 0.9008 at the default 90% level.
+    """
+    p = np.asarray(p, dtype=float)
+    n = np.asarray(n, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        z2n = z * z / n
+        lo = (p + z2n / 2 - z * np.sqrt(p * (1 - p) / n + z2n / (4 * n))) / (1 + z2n)
+    return np.where(n > 0, np.clip(lo, 0.0, 1.0), 0.0)
+
+
+class IsotonicCurve:
+    """A fitted non-decreasing step curve of P(verdict correct) against confidence, with its isotonic blocks.
+
+    Attributes:
+        block_start: ascending confidence at which each block starts (its smallest fitted confidence).
+        block_mean: the block's (weighted) mean outcome, i.e. the isotonic fit.
+        block_n: the block's size (Kish effective size when weighted), used for the confidence bound.
+        n, x_min, x_max: number of examples and the fitted confidence range.
+
+    The curve at ``c`` is the mean of the last block starting at or before ``c``, and 0 below ``x_min``: no
+    extrapolation below the data, and no linear interpolation between blocks (the step value is never above it).
+    """
+
+    def __init__(self, confidence, correct, weight=None):
+        confidence = np.asarray(confidence, dtype=float)
+        correct = np.asarray(correct, dtype=float)
+        weight = np.ones_like(confidence) if weight is None else np.asarray(weight, dtype=float)
+        order = np.argsort(confidence, kind="mergesort")
+        x, w = confidence[order], weight[order]
+        iso = IsotonicRegression(increasing=True, out_of_bounds="clip", y_min=0.0, y_max=1.0)
+        iso.fit(confidence, correct, sample_weight=weight)
+        fitted = iso.predict(x)
+        # a new block starts wherever the fitted value changes
+        starts = np.r_[0, np.flatnonzero(np.diff(fitted) != 0) + 1]
+        ends = np.r_[starts[1:], len(x)]
+        self.block_start = x[starts]
+        self.block_mean = fitted[starts]
+        sw = np.array([w[a:b].sum() for a, b in zip(starts, ends)])
+        sw2 = np.array([(w[a:b] ** 2).sum() for a, b in zip(starts, ends)])
+        self.block_n = np.where(sw2 > 0, sw ** 2 / np.where(sw2 > 0, sw2, 1), 0.0)
+        self.n, self.x_min, self.x_max = len(x), float(x[0]), float(x[-1])
+
+    def _block(self, c):
+        return np.searchsorted(self.block_start, np.atleast_1d(np.asarray(c, dtype=float)), side="right") - 1
+
+    def value(self, c):
+        """Point estimate (block mean) at confidence(s) ``c``; 0 below the fitted range."""
+        b = self._block(c)
+        return np.where(b >= 0, self.block_mean[np.clip(b, 0, None)], 0.0)
+
+    def lower(self, c, z=MAP_Z):
+        """Conservative value at ``c``: the running maximum over blocks of each block's Wilson lower bound.
+
+        The running maximum keeps the result non-decreasing: under the monotone model, a lower bound for an
+        earlier block is also a lower bound for every later one.
+        """
+        lb = np.maximum.accumulate(wilson_lower(self.block_mean, self.block_n, z))
+        b = self._block(c)
+        return np.where(b >= 0, lb[np.clip(b, 0, None)], 0.0)
+
+
 def fit_isotonic(confidence, correct, weight=None):
     """Fit a non-decreasing curve of P(verdict correct) against confidence.
 
     Args:
         confidence: array of softmax confidences for the predicted class (0.5..1.0 for a binary model).
-        correct: array of 0/1, whether the verdict was right.
+        correct: outcome per example in [0, 1]: 0/1, or a fractional share (e.g. the share of human votes that
+            agree with the verdict); isotonic regression fits the mean either way.
         weight: optional per-example weights (e.g. prior-correction weights); defaults to 1.
 
     Returns:
-        A fitted ``sklearn.isotonic.IsotonicRegression`` (``increasing=True``, clipped outside the data), or ``None``
-        when there is no data, which ``curve_to_class_map`` turns into an all-zero map (the verdict never gates).
+        An ``IsotonicCurve``, or ``None`` when there is no data, which ``curve_to_class_map`` turns into an
+        all-zero map (the verdict never gates).
     """
-    confidence = np.asarray(confidence, dtype=float)
-    correct = np.asarray(correct, dtype=float)
-    if len(confidence) == 0:
+    if len(np.asarray(confidence)) == 0:
         return None
-    iso = IsotonicRegression(increasing=True, out_of_bounds="clip", y_min=0.0, y_max=1.0)
-    iso.fit(confidence, correct, sample_weight=None if weight is None else np.asarray(weight, dtype=float))
-    iso.n_fit_ = len(confidence)
-    return iso
+    return IsotonicCurve(confidence, correct, weight)
 
 
-def fit_range(iso):
+def fit_range(curve):
     """The confidence range a curve was fitted on, for reports: ``{"n", "min_confidence", "max_confidence"}``."""
-    if iso is None:
+    if curve is None:
         return {"n": 0, "min_confidence": None, "max_confidence": None}
-    return {"n": int(iso.n_fit_), "min_confidence": float(iso.X_min_), "max_confidence": float(iso.X_max_)}
+    return {"n": int(curve.n), "min_confidence": curve.x_min, "max_confidence": curve.x_max}
 
 
-def curve_value(iso, c):
-    """Evaluate a fitted curve at confidence(s) ``c``: 0 where there is no curve or ``c`` is below the fitted range."""
+def curve_value(curve, c, conservative=False):
+    """The curve at confidence(s) ``c`` (block mean, or its lower bound if ``conservative``); 0 with no curve."""
     c = np.atleast_1d(np.asarray(c, dtype=float))
-    if iso is None:
+    if curve is None:
         return np.zeros_like(c)
-    return np.where(c < iso.X_min_, 0.0, iso.predict(c))
+    return curve.lower(c) if conservative else curve.value(c)
 
 
-def curve_to_class_map(iso, grid=GRID):
+def curve_to_class_map(curve, grid=GRID, conservative=True):
     """Sample the curve on ``grid`` and return one class's inner dict, ascending, values rounded to 4 decimals.
 
-    Rounding preserves monotonicity, so the result is non-decreasing whenever the curve is.
+    By default each value is the lower end of a 90% Wilson interval for its block, so **the served accuracy is a
+    lower confidence bound on precision**, not a point estimate: with blocks of thousands this changes the value by
+    well under 0.01, while a thin block at the low end of the confidence range cannot clear the gate on a lucky
+    estimate. Rounding preserves monotonicity.
     """
-    values = np.round(curve_value(iso, grid), 4)
+    values = np.round(curve_value(curve, grid, conservative), 4)
     return {threshold_key(t): float(v) for t, v in zip(grid, values)}
 
 
@@ -123,9 +192,9 @@ def cap_class_map(class_map, cap=HOLD_BACK_CAP):
     return {k: min(v, cap) for k, v in class_map.items()}
 
 
-def build_api_map(curves, grid=GRID):
-    """Build the full API map from ``{"correct": iso_or_None, "incorrect": iso_or_None}``."""
-    return {cls: curve_to_class_map(curves.get(cls), grid) for cls in API_CLASSES}
+def build_api_map(curves, grid=GRID, conservative=True):
+    """Build the full API map from ``{"correct": curve_or_None, "incorrect": curve_or_None}``."""
+    return {cls: curve_to_class_map(curves.get(cls), grid, conservative) for cls in API_CLASSES}
 
 
 def api_lookup(class_map, confidence):
