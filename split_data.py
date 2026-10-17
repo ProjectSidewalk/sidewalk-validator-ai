@@ -1,6 +1,7 @@
 """Split one label type's crops into train/val/test image folders for ``datasets.load_dataset("imagefolder")``.
 
-The split is drawn per file. Labels cluster on panoramas (about 2.8 per panorama in Project Sidewalk data), so
+The split is drawn per file. Labels cluster on panoramas (2.8 per panorama across all types in Teaneck; within one
+type's selected set, e.g. CurbRamp 1.66 with 62% of labels sharing a panorama), so
 overlapping crops from one panorama can land on both sides of the split; grouping by panorama is tracked in
 https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3 and making this step idempotent in
 https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10.

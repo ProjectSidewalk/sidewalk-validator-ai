@@ -1,6 +1,6 @@
 """Fine-tune a DINOv2-Large binary classifier ("correct" / "incorrect") for one Project Sidewalk label type.
 
-Reads ``<label_type>/ds/{train,validation,test}/{correct,incorrect}`` (written by split_data.py), fine-tunes
+Reads ``<label_type>/ds/{train,val,test}/{correct,incorrect}`` (written by split_data.py), fine-tunes
 ``facebook/dinov2-large`` (Oquab et al., 2023, https://arxiv.org/abs/2304.07193) with the Hugging Face Trainer,
 and keeps the checkpoint with the best validation macro-F1 under ``<label_type>/dinov2/``. The published models
 are at https://huggingface.co/collections/projectsidewalk/project-sidewalk-validator-models-6797bd158d5e385e464dbe45
