@@ -26,7 +26,8 @@ LABEL_TYPES=(Crosswalk CurbRamp NoCurbRamp Obstacle SurfaceProblem)
 
 # 1. Pull rawLabels once, only if there is no cache yet (or FRESH=1). Reusing it on resubmission keeps the
 #    selection identical, so a resumed run is not refused for new votes that arrived in between.
-if [ "$FRESH" = "1" ] || [ ! -d "$CACHE" ]; then
+# A cache without its .complete marker (an interrupted pull from before the atomic move) counts as absent.
+if [ "$FRESH" = "1" ] || [ ! -f "$CACHE/.complete" ]; then
     rm -rf "$CACHE.tmp" && mkdir -p "$CACHE.tmp"
     python -u - "$CACHE.tmp" <<'PY' || { echo "rawLabels pull failed" >&2; exit 1; }
 import sys, data_generation as dg
@@ -34,7 +35,7 @@ for city_id, sub in dg.CITIES.items():
     dg.load_city(city_id, sub).drop(columns="city").to_csv(f"{sys.argv[1]}/{city_id}.csv", index=False)
     print("pulled", city_id)
 PY
-    rm -rf "$CACHE" && mv "$CACHE.tmp" "$CACHE"   # only a complete pull replaces the cache
+    rm -rf "$CACHE" && mv "$CACHE.tmp" "$CACHE" && touch "$CACHE/.complete"   # only a complete pull replaces it
 else
     echo "Using the existing rawLabels cache $CACHE (FRESH=1 to re-pull)."
 fi

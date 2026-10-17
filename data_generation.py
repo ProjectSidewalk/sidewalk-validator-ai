@@ -369,11 +369,14 @@ class ManifestWriter:
         self.base_dir = base_dir
         self.done = set()
         self.stale = Counter()
+        self.previously_missing_panos = set()  # pano_ids whose last row was no_pano / incomplete_pano
         kept = []
         if os.path.exists(path) and os.path.getsize(path) > 0:
             old = pd.read_csv(path, dtype=str, keep_default_na=False)
             old = old.drop_duplicates('label_uid', keep='last')
             for row in old.to_dict('records'):
+                if row.get('status') in ("no_pano", "incomplete_pano"):
+                    self.previously_missing_panos.add(row.get('pano_id'))
                 if row.get('status') != 'ok' or not os.path.exists(os.path.join(base_dir, row.get('crop_path', ''))):
                     continue
                 uid = row['label_uid']
@@ -535,6 +538,10 @@ def fetch_panorama(pano_id, info=None):
                 return None
             tile = tile_info[2]
 
+            if tile is None and not is_first:
+                # A failed request on the diagonal walk: retry once before giving the pano up.
+                print(f"pano {pano_id}: probe tile ({x}, {y}) failed; retrying once")
+                tile = _fetch_tile(x, y)[2]
             if tile is None:
                 return None  # Invalid panorama
 
@@ -986,7 +993,10 @@ def main(argv=None):
                         print(e)
                         last_pano = (row['pano_id'], 'incomplete_pano', None)
                     if isinstance(last_pano[1], str):
-                        consecutive_missing += 1
+                        # Only panoramas missing for the first time count: a resume re-fetches exactly the panos that
+                        # failed before, back to back, and must not read that as an outage.
+                        if row['pano_id'] not in manifest.previously_missing_panos:
+                            consecutive_missing += 1
                         if consecutive_missing >= MAX_CONSECUTIVE_MISSING_PANOS:
                             sys.exit(f"Aborting: {consecutive_missing} panoramas in a row could not be fetched "
                                      f"(last: {last_pano[1]}). Check the tile endpoint; the run is resumable.")
@@ -1025,15 +1035,20 @@ def main(argv=None):
     final = pd.read_csv(manifest_path, dtype=str)
     assert final['label_uid'].is_unique, f"{manifest_path}: label_uid is not unique"
     n_ok = int((final['status'] == 'ok').sum())
-    attempted = sum(n for k, n in status_counts.items() if not k.startswith('skipped'))
-    missing = sum(status_counts[k] for k in MISSING_STATUSES)
+    # Cumulative over the whole manifest (this run and previous ones), so a resume that only retries the panos that
+    # failed before is judged on the dataset, not on its own all-missing batch.
+    attempted = len(final)
+    missing = int(final['status'].isin(MISSING_STATUSES).sum())
+    if not any(not k.startswith('skipped') for k in status_counts):
+        print(f"Nothing to do: all {len(final)} attempted labels in {manifest_path} are already ok.")
     print("Processing complete.")
     print(f"  dropped for unusable pano geometry (before selection): {dict(dropped) or 'none'}")
     print(f"  status counts: {dict(status_counts)}; {n_ok} ok rows in {manifest_path}")
     print(f"  panoramas fetched by tile zoom: {dict(zoom_counts) or 'none'} "
           f"(zoom-3 fallbacks: {zoom_counts.get(3, 0)})")
     if attempted and missing / attempted > args.max_missing_frac:
-        sys.exit(f"{missing} of {attempted} attempted labels ({missing / attempted:.0%}) ended no_pano/incomplete_pano, "
+        sys.exit(f"{missing} of {attempted} attempted labels in the manifest ({missing / attempted:.0%}) are "
+                 f"no_pano/incomplete_pano, "
                  f"above --max-missing-frac {args.max_missing_frac}: the dataset would shrink silently.")
     if n_ok == 0:
         # e.g. the tile endpoint refusing every request: fail the SLURM job instead of an empty dataset with exit 0

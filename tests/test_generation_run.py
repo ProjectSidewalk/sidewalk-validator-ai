@@ -237,3 +237,66 @@ def test_assign_splits_order_is_deterministic():
     b = split_data.assign_splits(m.sample(frac=1, random_state=1), seed=5)
     pd.testing.assert_frame_equal(a, b)
     assert a.label_uid.tolist() == sorted(a.label_uid)
+
+
+# ---------------------------------------------------------------- resume regressions (verification of 8975153)
+
+def _maybe_missing(missing):
+    return lambda pano_id, info=None: None if pano_id in missing else np.full((1024, 2048, 3), 90, np.uint8)
+
+
+def test_resume_after_one_missing_pano_passes(stubbed, monkeypatch, capsys):
+    """1 of 5 labels no_pano (20%, not above 0.2): the first run and a plain resume both exit 0. The resume retries
+    only that label, which fails again, and is judged on the cumulative manifest (still 1 of 5)."""
+    monkeypatch.setattr(dg, "fetch_panorama", _maybe_missing({"p3"}))
+    m = run_main(stubbed["tmp"])
+    assert (m.status == "no_pano").sum() == 1 and len(m) == 5
+    m = run_main(stubbed["tmp"])
+    assert (m.status == "no_pano").sum() == 1 and len(m) == 5
+
+
+def test_completed_run_rerun_has_nothing_to_do(stubbed, capsys):
+    run_main(stubbed["tmp"])
+    capsys.readouterr()
+    run_main(stubbed["tmp"])
+    assert "Nothing to do" in capsys.readouterr().out
+
+
+def test_resume_does_not_count_previously_missing_panos_as_consecutive(tmp_path, monkeypatch):
+    """Four missing panos among 20 with the consecutive limit at 3: the first run passes (they are spread out), and
+    so does the resume, which fetches exactly those four back to back."""
+    rows = ([label(i, 0, 3, pano=f"p{i:02d}") for i in range(1, 11)]
+            + [label(i, 5, 0, pano=f"p{i:02d}") for i in range(11, 21)])
+    write_city(tmp_path, rows)
+    monkeypatch.setattr(dg, "CITIES", {"toy-city": "toy"})
+    monkeypatch.setattr(dg, "load_depth_model", lambda e, d: FakeDepth())
+    monkeypatch.setattr(dg, "fetch_panorama", _maybe_missing({"p02", "p05", "p08", "p12"}))
+    monkeypatch.setattr(dg, "MAX_CONSECUTIVE_MISSING_PANOS", 3)
+    m = run_main(tmp_path, "--max-missing-frac", "0.9")
+    assert len(m) == 20 and (m.status == "no_pano").sum() == 4
+    m = run_main(tmp_path, "--max-missing-frac", "0.9")
+    assert len(m) == 20 and (m.status == "no_pano").sum() == 4
+
+
+def test_changed_package_commit_refuses_resume(stubbed, monkeypatch):
+    run_main(stubbed["tmp"])
+    monkeypatch.setattr(dg, "package_source", lambda dist="sidewalk-panorama-tools": "https://example@deadbeef")
+    with pytest.raises(SystemExit, match="package_source"):
+        run_main(stubbed["tmp"])
+    run_main(stubbed["tmp"], "--force-reselect")
+
+
+def test_priors_are_not_written_on_a_refused_resume(stubbed):
+    tmp = stubbed["tmp"]
+    run_main(tmp)
+    priors = tmp / "out" / "deployment_priors.json"
+    assert priors.exists()
+    priors.unlink()
+    with pytest.raises(SystemExit, match="Refusing to resume"):
+        run_main(tmp, "--tilt-beta", "0.5")
+    assert not priors.exists()
+
+
+def test_probe_retries_a_failed_diagonal_tile(monkeypatch):
+    monkeypatch.setattr(dg, "_http_get", tile_server(fail_first={(7, 4): 1}))  # on the diagonal from (5, 2)
+    assert REAL_FETCH("p").shape == (4096, 8192, 3)
