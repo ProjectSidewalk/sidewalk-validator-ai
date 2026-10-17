@@ -240,7 +240,7 @@ def fetch_panorama(pano_id):
     def _fetch_remaining_tiles(max_x, max_y, existing_tiles):
         tiles_cache = existing_tiles.copy()
 
-        # 100 workers, as in sidewalk-ai-api. A zoom-4 pano is 128 tiles (two fetched above), so at most 126
+        # 100 workers, as in sidewalk-ai-api. A zoom-4 pano is 128 tiles (a handful fetched by the probe above), so < 128
         # threads run whether the pool is 100 or the earlier 1,000: tidying, not a rate-limit fix.
         with ThreadPoolExecutor(max_workers=100) as executor:
             futures = []
