@@ -1,0 +1,305 @@
+"""Evaluate one label type's best checkpoint: predictions for every held-out row, then metrics.
+
+Replaces ``get_stats.py``. Two stages, kept separate so the metrics are testable without a GPU:
+
+(a) **Inference** (``run_inference``, needs torch + transformers): loads the best checkpoint named in the latest
+    ``<label_type>/dinov2/checkpoint-*/trainer_state.json``, preprocesses each crop with the checkpoint's
+    ``AutoImageProcessor`` and writes ``<label_type>/predictions.csv`` with columns
+    ``label_uid,split,true,p_correct,p_incorrect`` for every row whose split is ``val``, ``test`` or
+    ``test_heldout``. ``true`` is the class name (``correct`` / ``incorrect``).
+(b) **Metrics** (``report``, pure pandas/scikit-learn): AUC, plain and balanced accuracy, per-class
+    precision/recall/F1, and recall at precision 0.90..0.99 with the matching score threshold, for the ``test``
+    split, for ``test_heldout`` if present, and for the ``hard == 1`` slice of the two. Written to
+    ``<label_type>/metrics.json`` and ``<label_type>/report.txt``, with ``pvr.png`` and ``report.png``.
+
+The confidence-to-accuracy map the API serves is no longer produced here; it is fitted on the val split under the
+deployment prior by ``calibration/calibrate.py`` (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4).
+This file also fixes the metric defects in https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6.
+
+Input: ``<label_type>/split.csv`` (written by the data-generation step) with at least the columns
+``label_uid,city,label_id,pano_id,label_type,label_class,crop_path,split,hard``. ``crop_path`` may be absolute or
+relative to ``<label_type>/`` (tried first) or the working directory. If ``split.csv`` is absent the old
+``<label_type>/ds/{train,val,test}/{correct,incorrect}/`` image-folder layout is read instead, with a warning.
+
+Usage::
+
+    python evaluate.py --label_type CurbRamp                 # inference + metrics
+    python evaluate.py --label_type CurbRamp --skip-inference # metrics from an existing predictions.csv
+"""
+import argparse
+import glob
+import json
+import os
+import warnings
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from sklearn.metrics import (accuracy_score, balanced_accuracy_score, classification_report, confusion_matrix,
+                             precision_recall_curve, roc_auc_score)
+
+CLASSES = ("correct", "incorrect")
+EVAL_SPLITS = ("val", "test", "test_heldout")
+PRECISION_LEVELS = (0.90, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99)
+SPLIT_COLUMNS = ["label_uid", "city", "label_id", "pano_id", "label_type", "label_class", "crop_path", "split", "hard"]
+PREDICTION_COLUMNS = ["label_uid", "split", "true", "p_correct", "p_incorrect"]
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Input
+# ---------------------------------------------------------------------------------------------------------------------
+
+def load_split(label_type):
+    """Return the split manifest as a DataFrame with ``SPLIT_COLUMNS`` and resolved ``crop_path``s."""
+    path = os.path.join(label_type, "split.csv")
+    if os.path.exists(path):
+        df = pd.read_csv(path)
+        missing = set(SPLIT_COLUMNS) - set(df.columns)
+        if missing:
+            raise ValueError(f"{path} is missing columns {sorted(missing)}")
+        if not df.label_uid.is_unique:
+            raise ValueError(f"{path}: label_uid is not unique")
+
+        def resolve(p):
+            if os.path.isabs(p):
+                return p
+            under = os.path.join(label_type, p)
+            return under if os.path.exists(under) else p
+        df["crop_path"] = df.crop_path.map(resolve)
+        return df
+    warnings.warn(f"{path} not found; falling back to the old image-folder layout under {label_type}/ds/. "
+                  "That layout has no panorama grouping, no test_heldout split and no hard-example flag.")
+    return load_imagefolder(label_type)
+
+
+def load_imagefolder(label_type):
+    """Build a manifest from ``<label_type>/ds/<split>/<class>/<city>_<label_id>.<ext>`` (split_data.py output)."""
+    rows = []
+    for split_dir in ("train", "val", "validation", "test"):
+        for cls in CLASSES:
+            for f in sorted(glob.glob(os.path.join(label_type, "ds", split_dir, cls, "*"))):
+                stem = os.path.splitext(os.path.basename(f))[0]
+                city, _, label_id = stem.rpartition("_")
+                rows.append({"label_uid": f"{city}:{label_id}", "city": city, "label_id": label_id, "pano_id": None,
+                             "label_type": label_type, "label_class": cls, "crop_path": f,
+                             "split": "val" if split_dir == "validation" else split_dir, "hard": 0})
+    if not rows:
+        raise FileNotFoundError(f"no split.csv and no images under {label_type}/ds/")
+    return pd.DataFrame(rows, columns=SPLIT_COLUMNS)
+
+
+def find_best_checkpoint(label_type):
+    """Path of ``best_model_checkpoint`` from the latest checkpoint's ``trainer_state.json``."""
+    base = os.path.join(label_type, "dinov2")
+    dirs = [d for d in os.listdir(base) if d.startswith("checkpoint-") and os.path.isdir(os.path.join(base, d))]
+    if not dirs:
+        raise FileNotFoundError(f"no checkpoint-* directories under {base}")
+    latest = max(dirs, key=lambda d: int(d.split("-")[1]))
+    with open(os.path.join(base, latest, "trainer_state.json")) as f:
+        best = json.load(f).get("best_model_checkpoint")
+    if not best:
+        raise ValueError("best_model_checkpoint not found in trainer_state.json")
+    return best
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# (a) Inference -- GPU; not covered by the unit tests
+# ---------------------------------------------------------------------------------------------------------------------
+
+def run_inference(manifest, checkpoint_dir):
+    """Score every row of ``manifest`` whose split is in ``EVAL_SPLITS``; return a predictions DataFrame."""
+    import torch
+    from PIL import Image
+    from tqdm import tqdm
+    from transformers import AutoImageProcessor, AutoModelForImageClassification
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    image_processor = AutoImageProcessor.from_pretrained(checkpoint_dir)
+    model = AutoModelForImageClassification.from_pretrained(checkpoint_dir).to(device).eval()
+    label2id = {v: int(k) for k, v in model.config.id2label.items()}
+    if set(label2id) != set(CLASSES):
+        raise ValueError(f"unexpected id2label {model.config.id2label}")
+
+    rows = manifest[manifest.split.isin(EVAL_SPLITS)]
+    probs = []
+    for path in tqdm(rows.crop_path, desc="inference"):
+        image = Image.open(path).convert("RGB")
+        inputs = image_processor(image, return_tensors="pt").to(device)
+        with torch.no_grad():
+            probs.append(model(**inputs).logits.softmax(dim=-1).cpu().numpy()[0])
+    probs = np.array(probs).reshape(-1, len(CLASSES))
+    return pd.DataFrame({"label_uid": rows.label_uid.values, "split": rows.split.values,
+                         "true": rows.label_class.values,
+                         "p_correct": probs[:, label2id["correct"]], "p_incorrect": probs[:, label2id["incorrect"]]},
+                        columns=PREDICTION_COLUMNS)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# (b) Metrics -- pure functions, unit-tested
+# ---------------------------------------------------------------------------------------------------------------------
+
+def recall_at_precision(y_true, scores, level):
+    """Largest recall achievable with precision >= ``level``, and the score threshold that achieves it.
+
+    ``precision_recall_curve`` returns precision that is NOT monotone in the threshold, so this takes
+    ``max(recall[precision >= level])`` rather than a binary search (issue #6). ``thresholds`` has one element fewer
+    than ``precision``: the final (precision 1, recall 0) point has no threshold, so it is reported as ``None``.
+    Ties in recall resolve to the lowest such threshold.
+
+    Returns:
+        ``(recall, threshold)``; ``(0.0, None)`` when no operating point reaches ``level``.
+
+    Example::
+
+        >>> recall_at_precision([1, 1, 0, 1, 0, 0], [0.9, 0.8, 0.7, 0.6, 0.55, 0.4], 0.75)
+        (1.0, 0.6)
+    """
+    precision, recall, thresholds = precision_recall_curve(y_true, scores)
+    assert len(thresholds) == len(precision) - 1
+    ok = np.flatnonzero(precision >= level)
+    if len(ok) == 0:
+        return 0.0, None
+    idx = ok[np.argmax(recall[ok])]
+    threshold = float(thresholds[idx]) if idx < len(thresholds) else None
+    return float(recall[idx]), threshold
+
+
+def slice_metrics(df, levels=PRECISION_LEVELS):
+    """Metrics for one slice of a predictions frame (columns ``true, p_correct, p_incorrect``)."""
+    y = df["true"].astype(str).values
+    if set(np.unique(y)) - set(CLASSES):
+        raise ValueError(f"'true' must be one of {CLASSES}")
+    pred = np.where(df.p_incorrect.values > df.p_correct.values, "incorrect", "correct")
+    out = {"n": int(len(df)), "n_by_class": {c: int((y == c).sum()) for c in CLASSES}}
+    if len(df) == 0:
+        return out
+    out["accuracy"] = float(accuracy_score(y, pred))
+    out["balanced_accuracy"] = float(balanced_accuracy_score(y, pred))
+    both = len(np.unique(y)) == 2
+    out["auc"] = float(roc_auc_score(y == "incorrect", df.p_incorrect.values)) if both else None
+    rep = classification_report(y, pred, labels=list(CLASSES), output_dict=True, zero_division=0)
+    out["per_class"] = {c: {k: float(rep[c][k]) for k in ("precision", "recall", "f1-score", "support")}
+                        for c in CLASSES}
+    out["confusion_matrix"] = confusion_matrix(y, pred, labels=list(CLASSES)).tolist()
+    out["recall_at_precision"] = {}
+    for c in CLASSES:
+        if not (y == c).any():
+            continue
+        out["recall_at_precision"][c] = {f"{p:.2f}": dict(zip(("recall", "threshold"),
+                                                              recall_at_precision(y == c, df[f"p_{c}"].values, p)))
+                                         for p in levels}
+    return out
+
+
+def report(predictions_df, levels=PRECISION_LEVELS):
+    """Metrics for ``test``, ``test_heldout`` (if present) and the ``hard == 1`` slice of the two.
+
+    Args:
+        predictions_df: columns ``label_uid, split, true, p_correct, p_incorrect`` and, optionally, ``hard``.
+
+    Returns:
+        ``{slice_name: slice_metrics(...)}``; render with ``format_report``.
+    """
+    out = {}
+    for split in ("test", "test_heldout"):
+        s = predictions_df[predictions_df.split == split]
+        if len(s):
+            out[split] = slice_metrics(s, levels)
+    if "hard" in predictions_df.columns:
+        h = predictions_df[predictions_df.split.isin(["test", "test_heldout"]) & (predictions_df.hard == 1)]
+        if len(h):
+            out["hard"] = slice_metrics(h, levels)
+    return out
+
+
+def format_report(metrics):
+    """Plain-text rendering of ``report()``'s output."""
+    lines = []
+    for name, m in metrics.items():
+        lines.append(f"== {name}: n={m['n']} ({', '.join(f'{c} {k}' for c, k in m['n_by_class'].items())}) ==")
+        if m["n"] == 0:
+            continue
+        auc = "n/a (one class)" if m["auc"] is None else f"{m['auc']:.4f}"
+        lines.append(f"  accuracy          {m['accuracy']:.4f}")
+        lines.append(f"  balanced accuracy {m['balanced_accuracy']:.4f}")
+        lines.append(f"  AUC (incorrect)   {auc}")
+        lines.append(f"  {'class':10s} {'precision':>9s} {'recall':>7s} {'f1':>7s} {'support':>8s}")
+        for c, r in m["per_class"].items():
+            lines.append(f"  {c:10s} {r['precision']:9.4f} {r['recall']:7.4f} {r['f1-score']:7.4f} {int(r['support']):8d}")
+        for c, table in m["recall_at_precision"].items():
+            lines.append(f"  recall at precision, class '{c}':")
+            for p, r in table.items():
+                th = "n/a" if r["threshold"] is None else f"{r['threshold']:.4f}"
+                lines.append(f"    precision >= {p}: recall {r['recall']:.4f} at score >= {th}")
+    return "\n".join(lines) + "\n"
+
+
+def save_figures(predictions_df, text, label_type, out_dir):
+    """``pvr.png`` (PR curve per class on test) and ``report.png`` (curve plus the text report)."""
+    test = predictions_df[predictions_df.split == "test"]
+    if len(test) == 0:
+        return
+
+    def draw(ax):
+        for c in CLASSES:
+            p, r, _ = precision_recall_curve(test["true"] == c, test[f"p_{c}"])
+            ax.plot(r, p, linewidth=2, label=c)
+        ax.axhline(0.9, color="#52514e", linestyle="--", linewidth=1, label="90% precision")
+        ax.axhline(0.95, color="#52514e", linestyle=":", linewidth=1, label="95% precision")
+        ax.set_xlabel("Recall")
+        ax.set_ylabel("Precision")
+        ax.set_title(f"Precision vs recall, test split ({label_type})")
+        ax.legend(loc="lower left")
+        ax.grid(True, alpha=0.3)
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    draw(ax)
+    fig.savefig(os.path.join(out_dir, "pvr.png"), dpi=120)
+    plt.close(fig)
+
+    fig = plt.figure(figsize=(10, 16))
+    gs = fig.add_gridspec(2, 1, height_ratios=[1, 2])
+    draw(fig.add_subplot(gs[0]))
+    ax = fig.add_subplot(gs[1])
+    ax.axis("off")
+    ax.text(0.01, 1.0, text, fontsize=8, va="top", ha="left", family="monospace", transform=ax.transAxes)
+    fig.tight_layout()
+    fig.savefig(os.path.join(out_dir, "report.png"), dpi=120)
+    plt.close(fig)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Evaluate one label type's best checkpoint.")
+    parser.add_argument("--label_type", required=True)
+    parser.add_argument("--skip-inference", action="store_true", help="reuse <label_type>/predictions.csv")
+    args = parser.parse_args(argv)
+    label_type = args.label_type
+    pred_path = os.path.join(label_type, "predictions.csv")
+
+    manifest = load_split(label_type)
+    if args.skip_inference:
+        predictions = pd.read_csv(pred_path)
+    else:
+        checkpoint = find_best_checkpoint(label_type)
+        print(f"best checkpoint: {checkpoint}")
+        predictions = run_inference(manifest, checkpoint)
+        predictions.to_csv(pred_path, index=False)
+        print(f"wrote {pred_path} ({len(predictions)} rows)")
+
+    with_hard = predictions.merge(manifest[["label_uid", "hard"]], on="label_uid", how="left", validate="one_to_one")
+    metrics = report(with_hard)
+    text = format_report(metrics)
+    print(text)
+    with open(os.path.join(label_type, "metrics.json"), "w") as f:
+        json.dump(metrics, f, indent=2)
+    with open(os.path.join(label_type, "report.txt"), "w") as f:
+        f.write(text)
+    save_figures(predictions, text, label_type, label_type)
+    print(f"next: python -m calibration.calibrate --predictions {pred_path} --priors deployment_priors.json "
+          f"--label-type {label_type} --out {label_type}/calibration/{label_type.lower()}.json")
+
+
+if __name__ == "__main__":
+    main()
