@@ -58,6 +58,10 @@ def main(argv=None):
     print("== Confidence (all assessed) ==")
     print(f"  median {d.ai_confidence.median():.5f}; share above 0.9999: {(d.ai_confidence > 0.9999).mean():.1%}")
 
+    print("\n== Majority-oracle vote share (labelled rows): max(h_agree, h_dis) / (h_agree + h_dis) ==")
+    o = lab.assign(oracle=np.maximum(lab.h_agree, lab.h_dis) / (lab.h_agree + lab.h_dis))
+    print(o.groupby("label_type").oracle.mean().round(3).to_string())
+
     print("\n== Assessments 2025-08-16 .. 2025-08-31 (model-swap window) ==")
     print(f"  {d.ai_date.between('2025-08-16', '2025-08-31').sum():,}")
 

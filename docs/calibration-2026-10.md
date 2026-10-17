@@ -41,8 +41,17 @@ classes other than Crosswalk (1.8%) and 13–23% for Disagree, so dropping them 
 
 **Why not the vote share.** `share` is the fraction of human votes that match the verdict (2–1 → 0.667). It measures
 agreement with one randomly chosen human voter, not with the crowd's verdict, so it is capped by how often humans
-disagree with each other. A model that always sided with the majority would score 0.85 on NoCurbRamp,
-SurfaceProblem and Obstacle, 0.93 on CurbRamp and 0.97 on Crosswalk. It is reported as a sensitivity check.
+disagree with each other. A model that always sided with the majority would score only:
+
+| type | majority-oracle share |
+|---|---:|
+| Crosswalk | 0.970 |
+| CurbRamp | 0.928 |
+| NoCurbRamp | 0.851 |
+| SurfaceProblem | 0.848 |
+| Obstacle | 0.829 |
+
+It is reported as a sensitivity check.
 Measured on the shipped maps' gated Agree votes, it gives:
 
 | type | share |
@@ -74,7 +83,7 @@ confidence:
 - **The Obstacle `correct` map never reaches 0.92** today, so Obstacle never votes Agree. **The Crosswalk
   `incorrect` map reaches 0.92 at confidence 0.5**, so every Crosswalk Disagree verdict becomes a vote.
 - The API's lookup loop on the current maps reproduces the recorded served accuracy for 100.0% of assessments of
-  every type.
+  every type. The run checks this only when given `--old-maps-dir` (the main branch's `accuracy_mappings/`).
 - The median confidence is 0.99905, and 29.4% of verdicts are above 0.9999, spread down to the sixth decimal. The
   grid therefore steps through 0.999–0.99998 and then every 1e-6 from 0.99998 to 1.0, the finest a 6-decimal key
   allows. Isotonic blocks there are finer than any coarser grid: before the 1e-6 points, Obstacle Agree lost about a
@@ -280,7 +289,7 @@ Keeping Disagree-based triage would need SidewalkWebpage to key on the raw `ai_r
 **93 of 115 bins are within 1.96 binomial SE**, and the mean signed gap is −0.010. ±0.01 is met on 68 bins.
 - **Bias outside Crosswalk Disagree:** −0.005 to −0.016 per class: the thin-block guard, rounding down, and
   out-of-fold fits being noisier than the all-rows fit.
-- **Crosswalk Disagree:** −0.092. All its blocks are thin, and it is far below the gate.
+- **Crosswalk Disagree:** −0.090. All its blocks are thin, and it is far below the gate.
 - **Bins served above observed:** 34, by at most +0.021. Three of them are above 0.92, and all three are still above
   the gate when observed:
 
@@ -297,12 +306,12 @@ Keeping Disagree-based triage would need SidewalkWebpage to key on the raw `ai_r
 
 The labelled sample is not the assessed population:
 
-- **Over-represented:** Seattle (25.1% of labelled vs 19.5% of assessed), Chicago (17.1% vs 15.1%) and two private
-  deployments (14.6% vs 8.9%, and 7.4% vs 4.1%).
+- **Over-represented:** Seattle (25.1% of labelled vs 19.5% of assessed), Chicago (17.1% vs 15.1%), Teaneck (3.2% vs
+  1.6%) and two private deployments (14.6% vs 8.9%, and 7.4% vs 4.1%).
 - **Under-represented:** spgg (2.8% vs 9.7%), cdmx (2.2% vs 7.2%) and St. Louis (1.1% vs 6.1%). Coverage numbers for
   these cities are extrapolated from the others.
 - **Per city (n ≥ 500 labelled):** the out-of-fold precision of the new votes is ≥ 0.92 in 27 of the 28 cities. The
-  exception is **spgg at 0.908** (n = 1,801 new votes); cdmx is next at 0.923.
+  exception is **spgg at 0.908** (n = 1,801 new votes); paterson is next at 0.920.
 - **City × type strata below 0.92 with ≥ 300 new votes:** cdmx NoCurbRamp (0.851, n = 397), Seattle SurfaceProblem
   (0.894, n = 2,766) and spgg CurbRamp (0.902, n = 1,395).
 
@@ -312,8 +321,7 @@ A per-city gate would be a SidewalkWebpage decision; these maps are global.
 
 - **Selection.** Humans do not vote on a random sample of AI-assessed labels: the Triage queue routes AI-contested
   labels to them, and labels collect votes at different rates. Disagree precision rises with the number of human votes:
-  NoCurbRamp 0.37 / 0.50 / 0.56 at 1 / 2 / 3 votes, with the same trend for the other types. The routing effect looks
-  small. The direction of the bias on the ≥ 2-vote subset cannot be identified from vote counts alone, because the
+  NoCurbRamp 0.37 / 0.50 / 0.56 at 1 / 2 / 3 votes, with the same trend for the other types. The direction of the bias on the ≥ 2-vote subset cannot be identified from vote counts alone, because the
   order in which votes arrived is not exported. Earlier versions of this note called the subset "pessimistic for
   Disagree, the safe direction"; that claim is withdrawn.
 - **Folds are split per label, not per panorama.** The assessment pull has no `pano_id`, so labels on the same

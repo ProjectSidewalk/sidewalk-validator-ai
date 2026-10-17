@@ -174,3 +174,15 @@ def test_held_back_class_is_capped():
 def test_min_human_votes_must_be_positive(tmp_path):
     with pytest.raises(ValueError):
         cfp.add_outcomes(pd.DataFrame({"ai_result": ["Agree"], "h_agree": [0], "h_dis": [0], "h_n": [0]}), 0)
+
+
+def test_calibrate_folds_on_label_uid():
+    # Through calibrate() itself: the same label_id in two schemas must not always share a fold.
+    rows = [{"schema": sch, "label_id": i, "label_type": "CurbRamp", "ai_result": "Agree", "ai_confidence": 0.9,
+             "ai_accuracy": 0.5, "ai_date": "2026-01-01", "model_id": "m", "h_agree": 2, "h_dis": 0}
+            for sch in ("sidewalk_a", "sidewalk_b") for i in range(100)]
+    df = pd.DataFrame(rows)
+    df["label_uid"] = df.schema + ":" + df.label_id.astype(str)
+    df["h_n"] = df.h_agree + df.h_dis
+    f = cfp.calibrate(df, folds=5, seed=42)["df"].pivot(index="label_id", columns="schema", values="fold")
+    assert (f.sidewalk_a != f.sidewalk_b).any()

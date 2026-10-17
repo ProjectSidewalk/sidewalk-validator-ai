@@ -134,6 +134,7 @@ def test_decreasing_outcome_gives_a_flat_map():
     im.validate_api_map({"correct": m, "incorrect": m})
     vals = [v for k, v in m.items() if float(k) >= c.min()]
     assert len(set(vals)) == 1
+    assert vals[0] == pytest.approx(y.mean(), abs=1e-3)   # the pooled mean, ~0.5
 
 
 def test_thin_guard_uses_kish_effective_n():
@@ -147,3 +148,22 @@ def test_thin_guard_uses_kish_effective_n():
 
 def test_gate_summary_boundary():
     assert im.gate_summary([0.92, 0.9199], [1, 0]) == {"coverage": 0.5, "n_pass": 1, "precision": 1.0}
+
+
+def test_grid_is_fine_near_one():
+    keys = {im.threshold_key(t) for t in im.GRID}
+    # every 1e-6 from 0.99998 to 1.0: 21 keys, the finest a 6-decimal key allows
+    assert {im.threshold_key(i / 1_000_000) for i in range(999_980, 1_000_001)} <= keys
+    assert "0.999987" in keys and "0.999996" in keys and len(im.GRID) == 231
+    # a gating block that starts between coarse grid points is served from its own start, not the next coarse point
+    c = np.r_[np.full(1000, 0.99990), np.full(1000, 0.9999866)]
+    y = np.r_[np.full(1000, 0.8), np.full(1000, 0.95)]
+    m = im.curve_to_class_map(im.fit_isotonic(c, y))
+    assert im.api_lookup(m, 0.9999875) == 0.95   # with only 0.99998/0.99999 this would serve 0.8
+
+
+def test_zero_below_fitted_range():
+    curve = im.fit_isotonic(np.full(500, 0.9), np.ones(500))
+    m = im.curve_to_class_map(curve)
+    assert im.api_lookup(m, 0.8) == 0.0 and im.api_lookup(m, 0.95) == 1.0
+    assert float(curve.value(0.8)[0]) == 0.0
