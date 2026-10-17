@@ -1,0 +1,17 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Only what the CPU tests import; torch/transformers are imported lazily by the GPU code paths.
+      - run: pip install numpy pandas scikit-learn matplotlib pytest
+      - run: pytest -q

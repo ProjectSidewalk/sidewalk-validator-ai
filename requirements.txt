@@ -1,0 +1,14 @@
+# Full pipeline (data generation, training, evaluation). GPU work runs in the conda env from environment.yml;
+# this list is the unpinned equivalent. CI installs only the CPU-testable subset (see .github/workflows/tests.yml).
+torch
+torchvision
+transformers
+datasets
+scikit-learn
+opencv-python
+pillow
+pandas
+requests
+matplotlib
+tqdm
+pytest

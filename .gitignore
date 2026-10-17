@@ -11,3 +11,10 @@ __pycache__/
 *.pyc
 *.log
 slurm-*.out
+
+# Local environments
+.venv/
+
+# Analysis inputs/outputs contain private-city data and live outside the repo; never commit them here
+analysis/*.csv
+analysis/*.txt
