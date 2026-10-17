@@ -1,8 +1,10 @@
 """Assign one label type's crops to train/val/test by panorama, as a manifest (``split.csv``); no files are touched.
 
 Input is ``<out>/<label_type>/manifest.csv`` written by ``data_generation.py``. Output is
-``<out>/<label_type>/split.csv``: the manifest rows with ``status == ok``, sorted by ``label_uid``, plus a ``split``
-column in {``train``, ``val``, ``test``, ``test_heldout``}. ``fine_tune_classifier.py`` trains on it and
+``<out>/<label_type>/split.csv``: the manifest rows with ``status == ok``, sorted by ``label_uid``, plus ``hard``
+(1 if the label is in ``--hard-examples``, else 0; inserted before ``crop_path``) and a ``split`` column in
+{``train``, ``val``, ``test``, ``test_heldout``}. ``hard`` is joined here rather than at generation time so a new
+hard-example list never needs the crops regenerated. ``fine_tune_classifier.py`` trains on it and
 ``evaluate.py`` / ``calibration/calibrate.py`` evaluate on it. Image files are never deleted, moved or copied, so
 the step is idempotent: re-running with the same seed writes a byte-identical file
 (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10).
@@ -24,6 +26,7 @@ Usage::
 
     python split_data.py --label_type CurbRamp                              # ./CurbRamp/manifest.csv
     python split_data.py --label_type CurbRamp --holdout-cities teaneck-nj,taipei --seed 7
+    python split_data.py --label_type CurbRamp --hard-examples analysis/hard_examples_2026-10-17.csv
 """
 import argparse
 import os
@@ -76,6 +79,17 @@ def assign_splits(manifest, seed=42, holdout_cities=()):
     return df
 
 
+def add_hard(df, hard_uids):
+    """Set ``hard`` (``"1"``/``"0"``) from a set of ``label_uid``s, replacing any ``hard`` column the manifest had,
+    and order the columns: ``hard`` just before ``crop_path`` (the place evaluate.py's split.csv always had it),
+    ``split`` last."""
+    df = df.drop(columns=[c for c in ("hard",) if c in df])
+    df["hard"] = df["label_uid"].isin(hard_uids).astype(int).astype(str)
+    cols = [c for c in df.columns if c not in ("hard", "split")]
+    at = cols.index("crop_path") if "crop_path" in cols else len(cols)
+    return df[cols[:at] + ["hard"] + cols[at:] + ["split"]]
+
+
 def check_no_shared_panoramas(df):
     """Assert that no ``pano_id`` appears in two splits."""
     with_pano = df[df["pano_id"].astype(str).str.len() > 0]
@@ -105,6 +119,8 @@ def build_parser():
     p.add_argument("--manifest", default=None, help="default <out>/<label_type>/manifest.csv")
     p.add_argument("--seed", type=int, default=42, help="seed for the group shuffle")
     p.add_argument("--holdout-cities", default="", help="comma list of city ids sent whole to test_heldout")
+    p.add_argument("--hard-examples", default=None,
+                   help="CSV with a label_uid column (e.g. analysis/hard_examples_2026-10-17.csv); those rows get hard = 1")
     return p
 
 
@@ -125,6 +141,8 @@ def main(argv=None):
         print(f"Warning: --holdout-cities {unknown} have no rows in the manifest.", file=sys.stderr)
 
     df = assign_splits(manifest, seed=args.seed, holdout_cities=holdout)
+    hard = set(pd.read_csv(args.hard_examples, dtype=str)["label_uid"]) if args.hard_examples else set()
+    df = add_hard(df, hard)
     check_no_shared_panoramas(df)
     missing = [p for p in df["crop_path"] if not os.path.exists(os.path.join(base, p))]
     if missing:
@@ -133,7 +151,7 @@ def main(argv=None):
     out_path = os.path.join(base, "split.csv")
     df.to_csv(out_path, index=False, lineterminator="\n")
     print(f"Wrote {out_path}: {len(df)} rows of {len(manifest)} in the manifest (seed {args.seed}, "
-          f"held-out cities {holdout or 'none'})")
+          f"held-out cities {holdout or 'none'}, {int((df['hard'] == '1').sum())} hard)")
     print(summary(df).to_string(index=False))
     return 0
 

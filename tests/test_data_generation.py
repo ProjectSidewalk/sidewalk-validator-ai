@@ -41,14 +41,21 @@ def fixture_labels(tmp_path):
     add(1, 5, 0, source="mapillary")
     add(1, 5, 0, pano_y=-5)
     add(1, 5, 0, label_type="Obstacle")
+    rows[-2]["pano_y"] = 5000      # was the legacy row; now pano_y > pano_height: also dropped
+    rows[-3]["pano_width"] = 0     # non-GSV row stays counted as non_gsv (first failing check)
     assert len(rows) == 30
     path = tmp_path / "toy-city.csv"
     pd.DataFrame(rows).to_csv(path, index=False)
     return pd.read_csv(path)
 
 
+def select(labels, **kw):
+    eligible, _ = dg.eligible_labels(labels, "CurbRamp")
+    return dg.select_training_labels(eligible, **kw)
+
+
 def test_select_counts_and_balance(tmp_path):
-    df = dg.select_training_labels(fixture_labels(tmp_path), "CurbRamp")
+    df = select(fixture_labels(tmp_path))
     assert (df.label_class == "incorrect").sum() == 6
     assert (df.label_class == "correct").sum() == int(0.55 / 0.45 * 6)  # 7: downsampled from 12
     assert set(df.author) == {"human"}
@@ -57,24 +64,61 @@ def test_select_counts_and_balance(tmp_path):
 
 def test_select_is_deterministic_and_seeded(tmp_path):
     labels = fixture_labels(tmp_path)
-    a = dg.select_training_labels(labels, "CurbRamp", seed=42)
-    b = dg.select_training_labels(labels, "CurbRamp", seed=42)
-    c = dg.select_training_labels(labels, "CurbRamp", seed=1)
+    a = select(labels, seed=42)
+    b = select(labels, seed=42)
+    c = select(labels, seed=1)
     assert a.label_id.tolist() == b.label_id.tolist()
     assert a.label_id.tolist() != c.label_id.tolist()
 
 
 def test_include_ai_labels(tmp_path):
-    df = dg.select_training_labels(fixture_labels(tmp_path), "CurbRamp", include_ai_labels=True)
+    df = select(fixture_labels(tmp_path), include_ai_labels=True)
     assert (df.label_class == "incorrect").sum() == 8
     assert (df.author == "ai").sum() >= 2  # both AI incorrect rows; AI correct rows compete in the downsample
     assert df.loc[df.author == "ai", "user_id"].eq(AI).all()
 
 
+def test_geometry_bounds_are_dropped_and_counted(tmp_path):
+    eligible, dropped = dg.eligible_labels(fixture_labels(tmp_path), "CurbRamp")
+    assert dict(dropped) == {"non_gsv": 1, "pano_y_out_of_range": 1}
+    bad = pd.DataFrame({"pano_source": ["gsv"] * 4, "pano_x": [1, 1, np.inf, 1], "pano_y": [1, 1, 1, 1],
+                        "pano_width": [10, -1, 10, 10], "pano_height": [10, 10, 10, np.nan]})
+    keep, why = dg.valid_geometry(bad)
+    assert keep.tolist() == [True, False, False, False]
+    assert dict(why) == {"bad_pano_size": 2, "pano_x_nonfinite": 1}
+
+
 def test_deployment_prior_is_pre_downsampling_and_human_authored(tmp_path):
-    e = dg.deployment_prior_entry(fixture_labels(tmp_path), "CurbRamp", ["toy-city"], measured_on="2026-10-17")
+    eligible, _ = dg.eligible_labels(fixture_labels(tmp_path), "CurbRamp")
+    e = dg.deployment_prior_entry(eligible, ["toy-city"], 29, measured_on="2026-10-17")
     assert e == {"correct": 12, "incorrect": 6, "measured_on": "2026-10-17",
-                 "source": "rawLabels of toy-city, human votes only"}
+                 "source": "rawLabels of toy-city, human votes only", "cities": ["toy-city"], "n_rows": 29}
+
+
+@pytest.mark.parametrize("extra, real", [([], True), (["--limit", "3"], False), (["--cities", "toy-city"], False)])
+def test_priors_written_only_by_full_runs(tmp_path, monkeypatch, extra, real):
+    fixture_labels(tmp_path)  # writes toy-city.csv
+    monkeypatch.setattr(dg, "CITIES", {"toy-city": "toy"})
+    dg.main(["--label_type", "CurbRamp", "--select-only", "--rawlabels-cache", str(tmp_path),
+             "--out", str(tmp_path / "out"), *extra])
+    full, part = tmp_path / "out" / "deployment_priors.json", tmp_path / "out" / "deployment_priors.partial.json"
+    assert full.exists() == real and part.exists() == (not real)
+    entry = json.loads((full if real else part).read_text())["CurbRamp"]
+    assert (entry["correct"], entry["incorrect"], entry["cities"], entry["n_rows"]) == (12, 6, ["toy-city"], 29)
+
+
+def test_no_silent_cpu_fallback(monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+
+    def no_cuda_torch(name, *a, **kw):
+        if name == "torch":
+            raise ImportError("no torch")
+        return real_import(name, *a, **kw)
+    monkeypatch.setattr(builtins, "__import__", no_cuda_torch)
+    with pytest.raises(SystemExit, match="allow-cpu"):
+        dg.resolve_device(allow_cpu=False)
+    assert dg.resolve_device(allow_cpu=True) is None
 
 
 def test_deployment_priors_merge(tmp_path):
@@ -96,7 +140,8 @@ def test_manifest_is_resumable(tmp_path):
     base = tmp_path / "CurbRamp"
     (base / "correct").mkdir(parents=True)
     path = str(base / "manifest.csv")
-    with dg.ManifestWriter(path, str(base)) as m:
+    sel = {f"c:{i}": "correct" for i in range(4)}
+    with dg.ManifestWriter(path, str(base), sel) as m:
         for i, status in enumerate(["ok", "ok", "no_pano", "error:ValueError"]):
             crop = f"correct/c_{i}.webp"
             if status == "ok":
@@ -106,7 +151,7 @@ def test_manifest_is_resumable(tmp_path):
             m.write(_row("c:0", "ok", "correct/c_0.webp"))
     (base / "correct" / "c_1.webp").unlink()  # an ok row whose crop vanished is redone
 
-    with dg.ManifestWriter(path, str(base)) as m:
+    with dg.ManifestWriter(path, str(base), sel) as m:
         assert {u for u in [f"c:{i}" for i in range(4)] if m.is_done(u)} == {"c:0"}
         for i in (1, 2, 3):
             m.write(_row(f"c:{i}", "ok", f"correct/c_{i}.webp"))
@@ -115,11 +160,38 @@ def test_manifest_is_resumable(tmp_path):
     assert df.label_uid.is_unique and len(df) == 4 and set(df.status) == {"ok"}
 
 
+def test_resume_drops_rows_from_a_stale_selection(tmp_path):
+    base = tmp_path / "CurbRamp"
+    (base / "correct").mkdir(parents=True)
+    path = str(base / "manifest.csv")
+    with dg.ManifestWriter(path, str(base), {f"c:{i}": "correct" for i in range(3)}) as m:
+        for i in range(3):
+            (base / f"correct/c_{i}.webp").write_bytes(b"x")
+            m.write(_row(f"c:{i}", "ok", f"correct/c_{i}.webp"))
+    # new votes: c:1 flipped to incorrect, c:2 no longer qualifies, c:3 is new
+    new = {"c:0": "correct", "c:1": "incorrect", "c:3": "correct"}
+    with dg.ManifestWriter(path, str(base), new) as m:
+        assert m.done == {"c:0"}
+        assert dict(m.stale) == {"class_changed": 1, "no_longer_selected": 1}
+    assert pd.read_csv(path).label_uid.tolist() == ["c:0"]
+    assert (base / "correct/c_2.webp").exists()  # crops are never deleted
+
+
+def test_selection_hash_detects_a_changed_selection(tmp_path):
+    a = pd.DataFrame({"label_uid": ["x:1", "x:2"], "label_class": ["correct", "incorrect"]})
+    b = a.assign(label_class=["correct", "correct"])
+    run = tmp_path / "generation_run.json"
+    assert dg.check_selection(str(run), dg.selection_hash(a)) is None  # no previous run
+    run.write_text(json.dumps({"selection_sha256": dg.selection_hash(a)}))
+    assert dg.check_selection(str(run), dg.selection_hash(a)) is None
+    assert dg.check_selection(str(run), dg.selection_hash(b)) == dg.selection_hash(a)
+
+
 def test_manifest_row_uid_and_crop_path():
     row = pd.Series({"city": "seattle-wa", "label_id": 12345, "pano_id": "abc", "label_class": "correct",
                      "author": "human", "human_agree": 3, "human_disagree": 0, "camera_pitch": np.nan})
-    rec = dg.manifest_row(row, "CurbRamp", "correct/seattle-wa_12345.webp", True, 0.95)
-    assert rec["label_uid"] == "seattle-wa:12345" and rec["hard"] == 1 and rec["tilt_beta"] == 0.95
+    rec = dg.manifest_row(row, "CurbRamp", "correct/seattle-wa_12345.webp", 0.95)
+    assert rec["label_uid"] == "seattle-wa:12345" and rec["tilt_beta"] == 0.95 and "hard" not in rec
     assert set(rec) == set(dg.MANIFEST_COLUMNS)
 
 
@@ -140,8 +212,27 @@ def test_doctests(module):
 def test_hard_examples_writes_only_uid_and_reason(tmp_path):
     src = tmp_path / "ai_vs_humans.csv"
     pd.DataFrame({"label_uid": ["a:1", "a:2"], "kind": ["false_agree", "ok"], "h_agree": [0, 1], "h_dis": [4, 1],
-                  "jon": [None, "Agree"], "mikey": [None, None], "ai": ["Agree", "Disagree"]}).to_csv(src, index=False)
-    hard_examples.main([str(src), str(tmp_path / "out.csv")])
+                  "expert1": [None, "Agree"], "expert2": [None, None], "ai": ["Agree", "Disagree"]}).to_csv(src, index=False)
+    hard_examples.main([str(src), str(tmp_path / "out.csv"), "--experts", "expert1,expert2"])
     out = pd.read_csv(tmp_path / "out.csv")
     assert list(out.columns) == ["label_uid", "reason"]
     assert out.values.tolist() == [["a:1", "unanimous_crowd"], ["a:2", "expert"]]
+
+
+def test_hard_examples_experts_from_env(monkeypatch):
+    monkeypatch.setenv("EXPERTS", "expert1=uid-a,expert2=uid-b")
+    assert hard_examples.expert_columns() == ["expert1", "expert2"]
+
+
+def test_fine_tune_reads_split_csv_with_stable_label_ids(tmp_path):
+    import fine_tune_classifier as ft
+    base = tmp_path / "Toy"
+    base.mkdir()
+    pd.DataFrame({"label_uid": ["a:1", "a:2", "a:3"], "label_class": ["incorrect", "correct", "correct"],
+                  "crop_path": ["incorrect/a_1.webp", "correct/a_2.webp", "/abs/a_3.webp"],
+                  "split": ["train", "val", "test"]}).to_csv(base / "split.csv", index=False)
+    train, val = ft.load_split_frames("Toy", str(tmp_path))
+    assert ft.ID2LABEL == {0: "correct", 1: "incorrect"}
+    assert train.label.tolist() == [1] and val.label.tolist() == [0]
+    assert train.image.iloc[0] == str(base / "incorrect" / "a_1.webp")
+    assert ft.load_split_frames("Missing", str(tmp_path)) is None

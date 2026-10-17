@@ -23,7 +23,7 @@ def write_manifest(base, n_panos=50, seed=0):
             status = "ok" if i % 17 else "no_pano"
             rows.append({c: "" for c in dg.MANIFEST_COLUMNS} | {
                 "label_uid": f"{city}:{i}", "city": city, "label_id": i, "pano_id": f"pano{p:03d}",
-                "label_type": "Toy", "label_class": cls, "crop_path": crop, "status": status, "hard": 0})
+                "label_type": "Toy", "label_class": cls, "crop_path": crop, "status": status})
             if status == "ok":
                 (base / cls).mkdir(parents=True, exist_ok=True)
                 (base / crop).write_bytes(os.urandom(16))
@@ -55,7 +55,10 @@ def test_grouped_ok_rows_and_target_shares(toy):
     df = pd.read_csv(toy / "Toy" / "split.csv")
     manifest = pd.read_csv(toy / "Toy" / "manifest.csv")
     assert len(df) == (manifest.status == "ok").sum()
-    assert list(df.columns) == dg.MANIFEST_COLUMNS + ["split"]
+    cols = list(dg.MANIFEST_COLUMNS)
+    cols.insert(cols.index("crop_path"), "hard")
+    assert list(df.columns) == cols + ["split"]  # unchanged split.csv layout; hard joined here
+    assert (df.hard == 0).all()
     assert set(df.split) == {"train", "val", "test"}
     assert (df.groupby("pano_id").split.nunique() == 1).all()
     share = df.split.value_counts(normalize=True)
@@ -84,6 +87,23 @@ def test_never_touches_files(toy):
     run(toy, "--holdout-cities", "beta-or")
     assert snapshot(toy / "Toy") == before
     assert sorted(os.listdir(toy / "Toy")) == ["correct", "incorrect", "manifest.csv", "split.csv"]
+
+
+def test_hard_examples_joined_by_label_uid(toy, tmp_path):
+    first = pd.read_csv(toy / "Toy" / "manifest.csv").query("status == 'ok'").label_uid.iloc[:2].tolist()
+    hard = tmp_path / "hard.csv"
+    pd.DataFrame({"label_uid": first + ["nowhere:1"], "reason": "expert"}).to_csv(hard, index=False)
+    run(toy, "--hard-examples", str(hard))
+    df = pd.read_csv(toy / "Toy" / "split.csv")
+    assert sorted(df.loc[df.hard == 1, "label_uid"]) == sorted(first)
+    import evaluate
+    import os as _os
+    cwd = _os.getcwd()
+    try:
+        _os.chdir(toy)
+        assert evaluate.load_split("Toy").hard.sum() == 2  # evaluate.py reads hard from split.csv
+    finally:
+        _os.chdir(cwd)
 
 
 def test_refuses_without_manifest(tmp_path, capsys):

@@ -75,6 +75,8 @@ def main(argv=None):
     parser.add_argument('--output-dir', default=None, help='default <data-dir>/<label_type>/dinov2')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--epochs', type=int, default=25)
+    parser.add_argument('--allow-cpu', action='store_true',
+                        help='run without CUDA (smoke tests only; a real run on the CPU would take weeks)')
     args = parser.parse_args(argv)
 
     import datasets
@@ -85,6 +87,10 @@ def main(argv=None):
     from torchvision.transforms import Compose, Normalize, RandomHorizontalFlip, RandomResizedCrop, ToTensor
     from transformers import AutoImageProcessor, Dinov2ForImageClassification, Trainer, TrainingArguments
 
+    if not torch.cuda.is_available():
+        if not args.allow_cpu:
+            raise SystemExit("No CUDA device found. Fine-tuning requires a GPU; --allow-cpu is for smoke tests only.")
+        warnings.warn("--allow-cpu: training on the CPU (smoke tests only).")
     transformers.set_seed(args.seed)
     label_type = args.label_type
     output_dir = args.output_dir or os.path.join(args.data_dir, label_type, "dinov2")
@@ -140,7 +146,7 @@ def main(argv=None):
         label2id=LABEL2ID,
         ignore_mismatched_sizes=True,
     )
-    model.to("cuda" if torch.cuda.is_available() else "cpu")
+    model.to("cuda" if torch.cuda.is_available() else "cpu")  # CPU only reachable with --allow-cpu
 
     def compute_metrics(pred):
         logits, labels = pred
@@ -168,7 +174,8 @@ def main(argv=None):
         metric_for_best_model="macro_f1",  # Optimize for macro F1 score
         greater_is_better=True,  # Higher F1 is better
         push_to_hub=False,
-        report_to="none"
+        report_to="none",
+        use_cpu=not torch.cuda.is_available(),
     )
 
     trainer = Trainer(

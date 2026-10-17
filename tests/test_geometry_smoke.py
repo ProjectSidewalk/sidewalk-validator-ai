@@ -6,6 +6,7 @@ The rig pixel is chosen at a pixel centre so the square marker's centroid is exa
 """
 import numpy as np
 import pano_pose
+import pytest
 
 import data_generation as dg
 
@@ -53,3 +54,17 @@ def test_without_tilt_the_marker_is_off_centre():
         cx, cy = _centroid(view)
         # 0.95 * 3 * cos(74 deg) = 0.79 deg of elevation, about 14 px at this 1024 px focal length
         assert np.hypot(cx - C, cy - C) > 8, (cx, cy)
+
+
+def test_torch_path_equals_numpy_path():
+    """The GPU recipe (render_view_torch) reproduces the numpy render_view; skipped where torch is absent (CI)."""
+    torch = pytest.importorskip("torch")
+    px, py, mx, my = _stored_point()
+    rng = np.random.default_rng(0)
+    pano = rng.integers(0, 256, (H, W, 3), dtype=np.uint8)
+    pano[:, :8] = pano[:, -8:]  # make the seam irrelevant to tiny grid differences
+    kw = dict(camera_pitch=PITCH, apply_tilt=True, beta=BETA, size=256, fov_deg=20.0)
+    ref, _ = dg.render_label_view(pano, px / W, py / H, **kw)
+    got, _ = dg.render_label_view(pano, px / W, py / H, device="cpu", dtype=torch.float64, **kw)
+    diff = np.abs(ref.astype(int) - got.astype(int))
+    assert diff.max() <= 1 and (diff > 0).mean() < 0.01
