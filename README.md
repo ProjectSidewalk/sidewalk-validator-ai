@@ -64,6 +64,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
  [7] evaluate           evaluate.py        predictions.csv, metrics on test / test_heldout / hard
         ▼
  [7b] calibrate         calibration/calibrate.py   val split reweighted to the deployment prior → accuracy map
+                        (split.csv and deployment_priors.json: data-generation changes in progress, #3/#10)
         ▼
  [8] publish            Hugging Face  →  sidewalk-ai-api /process  →  SidewalkWebpage nightly actor (≤ 800 labels/city, gate 0.92)
 ```
@@ -198,7 +199,11 @@ Writes, per label type:
 | `metrics.json`, `report.txt` | accuracy, balanced accuracy, AUC, per-class precision/recall/F1 and recall at 90–99% precision, for `test`, `test_heldout` and the `hard` slice |
 | `pvr.png`, `report.png` | precision–recall curve per class on the test split, and the curve with the text report |
 
-Then fit the map the API serves, on the val split reweighted to the deployment class prior:
+Then fit the map the API serves, on the val split reweighted to the deployment class prior. Note that
+`split.csv` (read by `evaluate.py`) and `deployment_priors.json` are written by data-generation changes still in
+progress on another branch ([#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3),
+[#10](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10)); today's `data_generation.py` writes
+neither, and `evaluate.py` falls back to the old `ds/` image folders.
 
 ```bash
 python -m calibration.calibrate --predictions CurbRamp/predictions.csv --priors deployment_priors.json \
