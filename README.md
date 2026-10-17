@@ -219,7 +219,16 @@ skipped. If the selection itself changed (new votes since the first run), the jo
 are stale; `--force-reselect` drops them and carries on. The job then runs `split_data.py`, which writes
 `<label_type>/split.csv` (the `ok` manifest rows plus `hard`, joined by `label_uid` from
 `--hard-examples`, and `split` ∈ `train`/`val`/`test`/`test_heldout`), grouped by panorama so no panorama
-appears in two splits, and leaves every image where it is. A new hard-example list only needs this step re-run. Set `HOLDOUT` in the job file to send whole cities to `test_heldout`. Progress is
+appears in two splits, and leaves every image where it is. A new hard-example list only needs this step re-run.
+
+The job pulls `rawLabels` once into `rawlabels/` and reuses it on resubmission (`FRESH=1 sbatch
+data_generation.slurm` re-pulls), so a resumed run sees the same selection. Even after a re-pull the selection
+moves little: the kept `correct` labels are the lowest by a seeded hash of `label_uid`, so one label entering or
+leaving the pool changes at most one kept label in and one out. A run stops rather than shrink the dataset
+silently: after 50 panoramas in a row that could not be fetched, after 50 consecutive per-label errors, or at the
+end if more than 20% of attempted labels ended `no_pano`/`incomplete_pano` (`--max-missing-frac`). A panorama
+whose tile grid is incomplete, or whose assembled image is not 2:1, is `incomplete_pano`, never a stretched crop;
+the tile zoom of each crop is in the manifest (`pano_zoom`) and zoom-3 fallbacks are counted in the summary. Set `HOLDOUT` in the job file to send whole cities to `test_heldout`. Progress is
 in the SLURM log; the first lines report the deployment prior and how many labels were selected per class.
 
 **2. Train** (several hours per label type; three run concurrently, then two):

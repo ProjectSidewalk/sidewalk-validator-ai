@@ -99,8 +99,8 @@ HEADERS = {
 
 # City deployments to pull labels from: city_id (as /v3/api/cities names it, and as it appears in label_uid and in
 # crop filenames) -> the deployment's subdomain, sidewalk-<subdomain>.cs.washington.edu. Not the full list of 59
-# deployments (41 public, 18 private); discovering them from /v3/api/cities is https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8.
-# The three Taiwan deployments are private (url null in /v3/api/cities) but serve rawLabels.
+# deployments; discovering them from /v3/api/cities is https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8.
+# keelung-tw, new-taipei-tw and taipei are reached by hostname because /v3/api/cities lists them without a ``url``.
 CITIES = {
     "cdmx": "cdmx", "la-piedad": "la-piedad", "spgg": "spgg", "amsterdam": "amsterdam",
     "blackhawk-hills-il": "blackhawk-hills", "chicago-il": "chicago", "cliffside-park-nj": "cliffside-park",
@@ -130,7 +130,7 @@ DEPTH_MAX_M = 80
 
 MANIFEST_COLUMNS = [
     "label_uid", "city", "label_id", "pano_id", "label_type", "label_class", "author", "human_agree",
-    "human_disagree", "severity", "tags", "high_quality_user", "image_capture_date", "pano_source", "camera_pitch",
+    "human_disagree", "severity", "tags", "high_quality_user", "image_capture_date", "pano_source", "pano_zoom", "camera_pitch",
     "camera_roll", "tilt_applied", "tilt_beta", "depth_m", "crop_half_px", "clipped", "crop_path", "status",
 ]
 # (``hard`` is not a manifest column: split_data.py --hard-examples joins it, so a new list needs no regeneration.)
@@ -268,6 +268,11 @@ def select_training_labels(eligible, seed=SEED, correct_proportion=CORRECT_PROPO
     The ``correct`` class is downsampled so it makes up ``correct_proportion`` of the result. Note that this ratio is
     not the deployment prior (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4);
     :func:`deployment_prior_entry` records that.
+
+    **Stable under a changing pool.** The kept ``correct`` labels are the ``amount_correct`` with the lowest
+    ``sha256(f"{seed}:{label_uid}")``, not a shuffle of the whole pool. Each label's rank is its own, so when one label
+    enters or leaves the pool (new votes) the selected ``correct`` set changes by at most one label in and one out,
+    and a resumed run keeps nearly all of its crops. The final order is still a seeded shuffle.
     """
     df = eligible if include_ai_labels else eligible[eligible['author'] == 'human']
     # A canonical order first, so the seeded samples below do not depend on the API's row order.
@@ -275,14 +280,21 @@ def select_training_labels(eligible, seed=SEED, correct_proportion=CORRECT_PROPO
     filtered_disagree = df[df['label_class'] == 'incorrect']
     print(f"Incorrect Examples: {len(filtered_disagree)}")
 
-    filtered_agree = df[df['label_class'] == 'correct']
-    filtered_agree = filtered_agree.sample(frac=1, random_state=seed).reset_index(drop=True)
+    filtered_agree = df[df['label_class'] == 'correct'].copy()
     amount_correct = int((correct_proportion / (1 - correct_proportion)) * len(filtered_disagree))
-    filtered_agree = filtered_agree[:amount_correct]
+    filtered_agree['_rank'] = [label_rank(seed, f"{c}:{i}")
+                               for c, i in zip(filtered_agree['city'], filtered_agree['label_id'])]
+    filtered_agree = (filtered_agree.sort_values('_rank', kind='mergesort').head(amount_correct)
+                      .drop(columns='_rank').reset_index(drop=True))
     print(f"Correct Examples: {len(filtered_agree)}")
 
     combined = pd.concat([filtered_agree, filtered_disagree])
     return combined.sample(frac=1, random_state=seed).reset_index(drop=True)  # Shuffle the combined dataframe
+
+
+def label_rank(seed, label_uid):
+    """A label's seeded, pool-independent rank for the downsample: ``sha256(f"{seed}:{label_uid}")`` as hex."""
+    return hashlib.sha256(f"{seed}:{label_uid}".encode()).hexdigest()
 
 
 def deployment_prior_entry(eligible, cities, n_rows, measured_on=None):
@@ -421,6 +433,7 @@ def manifest_row(row, label_type, crop_path, tilt_beta):
         "author": row['author'], "human_agree": row['human_agree'], "human_disagree": row['human_disagree'],
         "severity": row.get('severity'), "tags": row.get('tags'), "high_quality_user": row.get('high_quality_user'),
         "image_capture_date": row.get('image_capture_date'), "pano_source": row.get('pano_source'),
+        "pano_zoom": None,
         "camera_pitch": row.get('camera_pitch'), "camera_roll": row.get('camera_roll'),
         "tilt_applied": 0, "tilt_beta": tilt_beta, "depth_m": None, "crop_half_px": None, "clipped": None,
         "crop_path": crop_path, "status": "",
@@ -441,11 +454,13 @@ def _http_get(url):
     return requests.get(url, headers=HEADERS, timeout=TILE_TIMEOUT)
 
 
-def fetch_panorama(pano_id):
+def fetch_panorama(pano_id, info=None):
     """The panorama as an 8192x4096 BGR array, or None if it cannot be found (black or missing first tiles).
 
     Raises :class:`IncompletePanorama` if any tile of the discovered ``(max_x + 1) x (max_y + 1)`` grid is still
-    missing after one retry: assembling it anyway would leave a black hole in the pano (and in a crop).
+    missing after one retry (assembling it anyway would leave a black hole in the pano and in a crop), or if the
+    assembled image is not 2:1 (``|w / h - 2| >= 0.01``), which is what a transient failure during the size probe
+    produces: a too-narrow grid that would be stretched to 8192 wide. ``info``, if given, receives ``zoom``.
     """
     import cv2
     from PIL import Image
@@ -538,6 +553,10 @@ def fetch_panorama(pano_id):
                     if tile_info is None:
                         return None
                     tile = tile_info[2]
+                    if tile is None:
+                        # A failed request (429, timeout) is not the right edge: retry once before treating it so.
+                        print(f"pano {pano_id}: probe tile ({x}, {y}) failed; retrying once")
+                        tile = _fetch_tile(x, y)[2]
                     tiles_cache[(x, y)] = tile
 
                     if _is_black_tile(tile):
@@ -613,6 +632,11 @@ def fetch_panorama(pano_id):
     if assembled_panorama is None:
         return None
     cropped_panorama = _crop(assembled_panorama)
+    h, w = cropped_panorama.shape[:2]
+    if abs(w / h - 2) >= 0.01:
+        raise IncompletePanorama(f"pano {pano_id}: assembled {w}x{h} is not 2:1 (the size probe likely missed tiles)")
+    if info is not None:
+        info['zoom'] = chosen_zoom
     return cv2.cvtColor(cv2.resize(cropped_panorama, (8192, 4096), interpolation=cv2.INTER_LINEAR), cv2.COLOR_RGB2BGR)
 
 
@@ -760,7 +784,26 @@ def create_perspective_crop(depth_model, pano_rgb, label_x_norm, label_y_norm, c
 
 
 #: Settings that change what a crop looks like; a resume with different values would mix two datasets.
-RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "include_ai_labels")
+RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "include_ai_labels", "package_source")
+
+
+def package_source(dist="sidewalk-panorama-tools"):
+    """The commit a git-installed distribution came from (PEP 610 ``direct_url.json``), else its version, else None.
+
+    The package's version string stays "1.0.0" across commits, so the commit is what identifies the geometry.
+    """
+    from importlib import metadata
+    try:
+        d = metadata.distribution(dist)
+    except metadata.PackageNotFoundError:
+        return None
+    raw = d.read_text("direct_url.json")
+    if raw:
+        info = json.loads(raw)
+        commit = info.get("vcs_info", {}).get("commit_id")
+        if commit:
+            return f"{info.get('url')}@{commit}"
+    return d.version
 
 
 def check_resume(run_path, new_hash, settings):
@@ -799,6 +842,8 @@ def is_fatal(exc):
 
 
 MAX_CONSECUTIVE_ERRORS = 50
+MAX_CONSECUTIVE_MISSING_PANOS = 50  # panoramas in a row that could not be fetched (no_pano / incomplete_pano)
+MISSING_STATUSES = ("no_pano", "incomplete_pano")
 
 
 def parse_cities(arg):
@@ -840,6 +885,8 @@ def build_parser():
     p.add_argument('--select-only', action='store_true',
                    help='select labels and write the priors, then stop (no GPU, no panoramas)')
     p.add_argument('--allow-cpu', action='store_true', help=DEPTH_DEVICE_HELP)
+    p.add_argument('--max-missing-frac', type=float, default=0.2,
+                   help='exit non-zero if more than this fraction of attempted labels ended no_pano/incomplete_pano')
     p.add_argument('--force-reselect', action='store_true',
                    help='resume although the selection changed since the last run (stale manifest rows are dropped)')
     return p
@@ -864,9 +911,11 @@ def main(argv=None):
     eligible, dropped = eligible_labels(all_cities, label_type)  # once, for both the prior and the selection
     print(f"{n_rows} {label_type} rows; dropped for unusable pano geometry: {dict(dropped) or 'none'}")
     entry = deployment_prior_entry(eligible, list(cities), n_rows)
-    update_deployment_priors(priors_path, label_type, entry)
-    print(f"Deployment prior ({priors_path}{', PARTIAL run' if partial else ''}): "
-          f"{entry['correct']} correct, {entry['incorrect']} incorrect")
+
+    def write_priors():
+        update_deployment_priors(priors_path, label_type, entry)
+        print(f"Deployment prior ({priors_path}{', PARTIAL run' if partial else ''}): "
+              f"{entry['correct']} correct, {entry['incorrect']} incorrect")
 
     combined_filtered = select_training_labels(eligible, seed=args.seed, include_ai_labels=args.include_ai_labels)
     combined_filtered['label_uid'] = combined_filtered['city'] + ":" + combined_filtered['label_id'].astype(str)
@@ -876,11 +925,13 @@ def main(argv=None):
     if args.limit is not None:
         combined_filtered = combined_filtered.head(args.limit)
     if args.select_only:
+        write_priors()
         print(f"--select-only: {len(combined_filtered)} labels selected; stopping before rendering.")
         return
 
     settings = {"tilt_beta": args.tilt_beta, "depth_encoder": args.depth_encoder, "depth_dataset": DEPTH_DATASET,
-                "renderer": "torch" if device else "numpy", "include_ai_labels": args.include_ai_labels}
+                "renderer": "torch" if device else "numpy", "include_ai_labels": args.include_ai_labels,
+                "package_source": package_source()}
     previous, changed = check_resume(run_path, sel_hash, settings)
     if (previous or changed) and not args.force_reselect:
         n_ok = count_ok_rows(manifest_path)
@@ -893,6 +944,7 @@ def main(argv=None):
         sys.exit(f"Refusing to resume in {base_dir}: {'; '.join(why)}. The manifest holds {n_ok} ok rows made "
                  f"under the previous run. Re-run with --force-reselect to accept: stale ok rows are dropped "
                  f"(all of them if a setting changed) and redone; old crop files stay on disk until overwritten.")
+    write_priors()  # only once the resume check has passed
     os.makedirs(base_dir, exist_ok=True)
     manifest = ManifestWriter(manifest_path, base_dir, selection, keep_ok=not changed)
     if previous or changed:
@@ -914,8 +966,9 @@ def main(argv=None):
     total_images = len(combined_filtered)
     start_time = time.time()
     status_counts = Counter()
-    last_pano = (None, None)  # (pano_id, BGR array, or the status string it failed with)
-    consecutive_errors = 0
+    last_pano = (None, None, None)  # (pano_id, BGR array or the status string it failed with, tile zoom)
+    consecutive_errors = consecutive_missing = 0
+    zoom_counts = Counter()
     with manifest:
         for processed_count, (_, row) in enumerate(combined_filtered.iterrows(), start=1):
             crop_path = f"{row['label_class']}/{row['city']}_{row['label_id']}.webp"
@@ -925,13 +978,23 @@ def main(argv=None):
                 continue
             try:
                 if last_pano[0] != row['pano_id']:
+                    info = {}
                     try:  # the column was renamed from gsv_panorama_id in the v3 API
-                        fetched = fetch_panorama(row['pano_id'])
-                        last_pano = (row['pano_id'], 'no_pano' if fetched is None else fetched)
+                        fetched = fetch_panorama(row['pano_id'], info=info)
+                        last_pano = (row['pano_id'], 'no_pano' if fetched is None else fetched, info.get('zoom'))
                     except IncompletePanorama as e:
                         print(e)
-                        last_pano = (row['pano_id'], 'incomplete_pano')
+                        last_pano = (row['pano_id'], 'incomplete_pano', None)
+                    if isinstance(last_pano[1], str):
+                        consecutive_missing += 1
+                        if consecutive_missing >= MAX_CONSECUTIVE_MISSING_PANOS:
+                            sys.exit(f"Aborting: {consecutive_missing} panoramas in a row could not be fetched "
+                                     f"(last: {last_pano[1]}). Check the tile endpoint; the run is resumable.")
+                    else:
+                        consecutive_missing = 0
+                        zoom_counts[last_pano[2]] += 1
                 pano_bgr = last_pano[1]
+                rec['pano_zoom'] = last_pano[2]
                 if isinstance(pano_bgr, str):
                     rec['status'] = pano_bgr
                 else:
@@ -962,9 +1025,16 @@ def main(argv=None):
     final = pd.read_csv(manifest_path, dtype=str)
     assert final['label_uid'].is_unique, f"{manifest_path}: label_uid is not unique"
     n_ok = int((final['status'] == 'ok').sum())
+    attempted = sum(n for k, n in status_counts.items() if not k.startswith('skipped'))
+    missing = sum(status_counts[k] for k in MISSING_STATUSES)
     print("Processing complete.")
     print(f"  dropped for unusable pano geometry (before selection): {dict(dropped) or 'none'}")
     print(f"  status counts: {dict(status_counts)}; {n_ok} ok rows in {manifest_path}")
+    print(f"  panoramas fetched by tile zoom: {dict(zoom_counts) or 'none'} "
+          f"(zoom-3 fallbacks: {zoom_counts.get(3, 0)})")
+    if attempted and missing / attempted > args.max_missing_frac:
+        sys.exit(f"{missing} of {attempted} attempted labels ({missing / attempted:.0%}) ended no_pano/incomplete_pano, "
+                 f"above --max-missing-frac {args.max_missing_frac}: the dataset would shrink silently.")
     if n_ok == 0:
         # e.g. the tile endpoint refusing every request: fail the SLURM job instead of an empty dataset with exit 0
         sys.exit(f"No crops in {manifest_path}: every label failed (no_pano or error; non-200 tile responses are reported per pano above).")

@@ -57,25 +57,6 @@ def load_split_frames(label_type, data_dir="."):
             df[df["split"] == "val"][cols].reset_index(drop=True))
 
 
-def package_source(dist):
-    """The commit a git-installed distribution came from (PEP 610 ``direct_url.json``), else its version.
-
-    The package's own version string stays "1.0.0" across commits, so the commit is what identifies the geometry.
-    """
-    from importlib import metadata
-    try:
-        d = metadata.distribution(dist)
-    except metadata.PackageNotFoundError:
-        return None
-    raw = d.read_text("direct_url.json")
-    if raw:
-        info = json.loads(raw)
-        commit = info.get("vcs_info", {}).get("commit_id")
-        if commit:
-            return f"{info.get('url')}@{commit}"
-    return d.version
-
-
 def generation_settings(label_type, data_dir="."):
     """The tilt beta and depth encoder the dataset was built with, from data_generation.py's
     ``<label_type>/generation_run.json`` (empty values if it is missing, e.g. an old imagefolder dataset)."""
@@ -221,6 +202,7 @@ def main(argv=None):
             versions[mod] = __import__(mod).__version__
         except Exception:  # pragma: no cover - provenance is best-effort
             versions[mod] = None
+    from data_generation import package_source
     versions["sidewalk-panorama-tools"] = package_source("sidewalk-panorama-tools")
     best = trainer.state.best_model_checkpoint
     run = {"label_type": label_type, "seed": args.seed, "epochs": args.epochs, "base_checkpoint": CHECKPOINT,

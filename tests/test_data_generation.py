@@ -77,6 +77,37 @@ def test_select_does_not_depend_on_api_row_order(tmp_path):
     assert select(labels).label_id.tolist() == select(shuffled).label_id.tolist()
 
 
+def test_downsample_is_stable_when_the_pool_changes():
+    """Ranking by sha256(seed:label_uid): one correct label leaving the pool changes at most one kept label."""
+    n = 200
+    labels = pd.DataFrame({"city": "c", "label_id": range(n), "author": "human",
+                           "label_class": ["incorrect" if i < 60 else "correct" for i in range(n)]})
+    a = dg.select_training_labels(labels, seed=42)
+    kept = set(a.loc[a.label_class == "correct", "label_id"])
+    gone = sorted(kept)[0]
+    b = dg.select_training_labels(labels[labels.label_id != gone], seed=42)
+    kept_b = set(b.loc[b.label_class == "correct", "label_id"])
+    assert len(kept) == len(kept_b) == int(0.55 / 0.45 * 60)
+    assert kept - kept_b == {gone} and len(kept_b - kept) == 1
+    unkept = (set(range(60, n)) - kept).pop()  # removing a label that was not kept changes nothing
+    c = dg.select_training_labels(labels[labels.label_id != unkept], seed=42)
+    assert set(c.loc[c.label_class == "correct", "label_id"]) == kept
+
+
+def test_priors_lock_keeps_concurrent_writers(tmp_path):
+    import multiprocessing as mp
+    path = str(tmp_path / "deployment_priors.json")
+    ctx = mp.get_context("spawn")
+    procs = [ctx.Process(target=_write_priors_many, args=(path, lt)) for lt in ("CurbRamp", "Obstacle")]
+    for p in procs:
+        p.start()
+    for p in procs:
+        p.join(60)
+        assert p.exitcode == 0
+    with open(path) as f:
+        assert set(json.load(f)) == {"CurbRamp", "Obstacle"}
+
+
 def test_include_ai_labels(tmp_path):
     df = select(fixture_labels(tmp_path), include_ai_labels=True)
     assert (df.label_class == "incorrect").sum() == 8
@@ -249,3 +280,8 @@ def test_fine_tune_reads_split_csv_with_stable_label_ids(tmp_path):
     assert train.label.tolist() == [1] and val.label.tolist() == [0]
     assert train.image.iloc[0] == str(base / "incorrect" / "a_1.webp")
     assert ft.load_split_frames("Missing", str(tmp_path)) is None
+
+
+def _write_priors_many(path, label_type):  # module level, so a spawned process can import it
+    for i in range(40):
+        dg.update_deployment_priors(path, label_type, {"correct": i, "incorrect": i})

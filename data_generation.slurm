@@ -17,20 +17,27 @@
 set -uo pipefail
 
 OUT=.
-CACHE="$OUT/rawlabels"            # one rawLabels pull, shared by the five label-type processes
+CACHE="$OUT/rawlabels"            # one rawLabels pull, shared by the five label-type processes and by resubmissions
+FRESH="${FRESH:-0}"               # FRESH=1 sbatch data_generation.slurm  re-pulls rawLabels (a new selection snapshot)
 HARD=analysis/hard_examples_2026-10-17.csv
 # Optional held-out cities for split_data.py (whole cities to test_heldout), e.g. HOLDOUT="teaneck-nj,taipei"
 HOLDOUT=""
 LABEL_TYPES=(Crosswalk CurbRamp NoCurbRamp Obstacle SurfaceProblem)
 
-# 1. Pull rawLabels once (a fresh directory per job, so every label type sees the same snapshot).
-rm -rf "$CACHE" && mkdir -p "$CACHE"
-python -u - "$CACHE" <<'PY' || { echo "rawLabels pull failed" >&2; exit 1; }
+# 1. Pull rawLabels once, only if there is no cache yet (or FRESH=1). Reusing it on resubmission keeps the
+#    selection identical, so a resumed run is not refused for new votes that arrived in between.
+if [ "$FRESH" = "1" ] || [ ! -d "$CACHE" ]; then
+    rm -rf "$CACHE.tmp" && mkdir -p "$CACHE.tmp"
+    python -u - "$CACHE.tmp" <<'PY' || { echo "rawLabels pull failed" >&2; exit 1; }
 import sys, data_generation as dg
 for city_id, sub in dg.CITIES.items():
     dg.load_city(city_id, sub).drop(columns="city").to_csv(f"{sys.argv[1]}/{city_id}.csv", index=False)
     print("pulled", city_id)
 PY
+    rm -rf "$CACHE" && mv "$CACHE.tmp" "$CACHE"   # only a complete pull replaces the cache
+else
+    echo "Using the existing rawLabels cache $CACHE (FRESH=1 to re-pull)."
+fi
 
 # 2. Five label types in parallel, reading the cache; wait on every PID and stop on any failure.
 declare -A PIDS

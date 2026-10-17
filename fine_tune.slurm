@@ -9,18 +9,25 @@
 #SBATCH --time=20:00:00
 
 # Step 6. Reads <DATA>/<label_type>/split.csv; writes <DATA>/<label_type>/dinov2/ with checkpoints, split.csv,
-# deployment_priors.json and training_run.json.
+# deployment_priors.json and training_run.json. Three label types run concurrently, then two; the job fails if any
+# of them fails.
+set -uo pipefail
 DATA=.
 SEED=42
 EPOCHS=25
 
-python -u fine_tune_classifier.py --label_type="Crosswalk" --data-dir "$DATA" --seed $SEED --epochs $EPOCHS &
-python -u fine_tune_classifier.py --label_type="CurbRamp" --data-dir "$DATA" --seed $SEED --epochs $EPOCHS &
-python -u fine_tune_classifier.py --label_type="Obstacle" --data-dir "$DATA" --seed $SEED --epochs $EPOCHS &
+run_batch() {
+    declare -A pids
+    for LT in "$@"; do
+        python -u fine_tune_classifier.py --label_type="$LT" --data-dir "$DATA" --seed $SEED --epochs $EPOCHS &
+        pids[$LT]=$!
+    done
+    local failed=0
+    for LT in "$@"; do
+        wait "${pids[$LT]}" || { echo "fine_tune_classifier.py failed for $LT" >&2; failed=1; }
+    done
+    return $failed
+}
 
-wait
-
-python -u fine_tune_classifier.py --label_type="NoCurbRamp" --data-dir "$DATA" --seed $SEED --epochs $EPOCHS &
-python -u fine_tune_classifier.py --label_type="SurfaceProblem" --data-dir "$DATA" --seed $SEED --epochs $EPOCHS &
-
-wait
+run_batch Crosswalk CurbRamp Obstacle || exit 1
+run_batch NoCurbRamp SurfaceProblem || exit 1

@@ -30,3 +30,4 @@ phase0/
 *.lock
 predictions.csv
 /rawlabels/
+/rawlabels.tmp/

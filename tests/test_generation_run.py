@@ -11,6 +11,8 @@ from PIL import Image
 import data_generation as dg
 import split_data
 
+REAL_FETCH = dg.fetch_panorama
+
 AI = dg.AI_USER_ID
 DEPTH_AT_CENTRE = 7.3
 
@@ -59,7 +61,7 @@ def stubbed(tmp_path, monkeypatch):
     monkeypatch.setattr(dg, "CITIES", {"toy-city": "toy"})
     fetched = []
 
-    def fake_fetch(pano_id):
+    def fake_fetch(pano_id, info=None):
         fetched.append(pano_id)
         return np.full((1024, 2048, 3), 90, np.uint8)
     depth = FakeDepth()
@@ -84,7 +86,8 @@ def test_main_records_tilt_depth_and_crop_size(stubbed):
     assert stubbed["fetched"].count("shared") == 1  # consecutive labels on one pano reuse it
     run = json.loads((stubbed["tmp"] / "out" / "CurbRamp" / "generation_run.json").read_text())
     assert run["settings"] == {"tilt_beta": 0.95, "depth_encoder": "vitb", "depth_dataset": "vkitti",
-                               "renderer": "numpy", "include_ai_labels": True}
+                               "renderer": "numpy", "include_ai_labels": True,
+                               "package_source": dg.package_source()}
 
 
 def test_resume_refuses_changed_settings_and_keeps_the_record(stubbed):
@@ -141,15 +144,20 @@ class FakeResponse:
         self.status_code, self.content = status, content
 
 
-def tile_server(drop=()):
-    """zoom-4 GSV-like grid 16 x 8: real tiles inside, black tiles outside, 404 for ``drop``."""
+def tile_server(drop=(), fail_first=None):
+    """zoom-4 GSV-like grid 16 x 8: real tiles inside, black tiles outside, 404 for ``drop``; ``fail_first`` is
+    ``{(x, y): n}``: answer 429 to the first n requests for that tile."""
     real, black = _tile_bytes((120, 80, 40)), _tile_bytes((0, 0, 0))
+    fail_first = dict(fail_first or {})
 
     def get(url):
         q = dict(kv.split("=") for kv in url.split("?")[1].split("&"))
         x, y = int(q["x"]), int(q["y"])
         if (x, y) in drop:
             return FakeResponse(404)
+        if fail_first.get((x, y), 0) > 0:
+            fail_first[(x, y)] -= 1
+            return FakeResponse(429)
         return FakeResponse(200, real if x < 16 and y < 8 else black)
     return get
 
@@ -167,11 +175,52 @@ def test_fetch_panorama_refuses_an_incomplete_grid(monkeypatch, capsys):
     assert "404" in capsys.readouterr().out  # non-200 responses are reported
 
 
+def test_probe_retries_a_failed_bottom_row_tile(monkeypatch, capsys):
+    """(13, 7) is on the size probe's bottom-row walk. One 429 there used to read as the right edge (a 13-tile-wide
+    pano stretched to 8192); now it is retried, and the pano comes out whole at zoom 4."""
+    monkeypatch.setattr(dg, "_http_get", tile_server(fail_first={(13, 7): 1}))
+    info = {}
+    assert dg.fetch_panorama("p", info=info).shape == (4096, 8192, 3) and info["zoom"] == 4
+    assert "probe tile (13, 7) failed; retrying once" in capsys.readouterr().out
+
+
+def test_probe_failure_that_persists_is_incomplete_never_ok(monkeypatch, stubbed):
+    """If the probe tile fails twice, the grid comes out 13 x 8 tiles: not 2:1, so incomplete_pano, never ok."""
+    monkeypatch.setattr(dg, "_http_get", tile_server(fail_first={(13, 7): 2}))
+    with pytest.raises(dg.IncompletePanorama, match="not 2:1"):
+        REAL_FETCH("p")
+    monkeypatch.setattr(dg, "_http_get", tile_server(fail_first={(13, 7): 2}))
+    monkeypatch.setattr(dg, "fetch_panorama", REAL_FETCH)  # the real fetcher against the stub server
+    with pytest.raises(SystemExit):
+        run_main(stubbed["tmp"], "--limit", "1")
+    m = pd.read_csv(stubbed["tmp"] / "out" / "CurbRamp" / "manifest.csv")
+    assert m.status.tolist() == ["incomplete_pano"]
+
+
+def test_too_many_missing_panos_fails_the_run(stubbed, monkeypatch):
+    calls = {"n": 0}
+
+    def flaky(pano_id, info=None):  # every other pano missing: 2 of 5 labels' panos
+        calls["n"] += 1
+        return None if calls["n"] % 2 == 0 else np.full((1024, 2048, 3), 90, np.uint8)
+    monkeypatch.setattr(dg, "fetch_panorama", flaky)
+    with pytest.raises(SystemExit, match="above --max-missing-frac 0.2"):
+        run_main(stubbed["tmp"])
+    run_main(stubbed["tmp"], "--max-missing-frac", "0.9")  # the same shrinkage, accepted explicitly
+
+
+def test_consecutive_missing_panos_abort(stubbed, monkeypatch):
+    monkeypatch.setattr(dg, "fetch_panorama", lambda pano_id, info=None: None)
+    monkeypatch.setattr(dg, "MAX_CONSECUTIVE_MISSING_PANOS", 3)
+    with pytest.raises(SystemExit, match="3 panoramas in a row"):
+        run_main(stubbed["tmp"])
+
+
 def test_incomplete_pano_is_a_status(stubbed, monkeypatch):
-    def incomplete(pano_id):
+    def incomplete(pano_id, info=None):
         raise dg.IncompletePanorama("missing tiles")
     monkeypatch.setattr(dg, "fetch_panorama", incomplete)
-    with pytest.raises(SystemExit, match="No crops"):  # nothing ok at all -> non-zero exit
+    with pytest.raises(SystemExit, match="no_pano/incomplete_pano"):  # all missing -> non-zero exit
         run_main(stubbed["tmp"])
     m = pd.read_csv(stubbed["tmp"] / "out" / "CurbRamp" / "manifest.csv")
     assert set(m.status) == {"incomplete_pano"}

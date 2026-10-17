@@ -17,9 +17,9 @@ deployment prior by ``calibration/calibrate.py`` (https://github.com/ProjectSide
 This file also fixes the metric defects in https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6.
 
 Input: ``<label_type>/split.csv`` with at least the columns
-``label_uid,city,label_id,pano_id,label_type,label_class,crop_path,split,hard``. That manifest (and the
-``deployment_priors.json`` that ``calibration/calibrate.py`` needs) is written by the data-generation changes in
-progress on another branch (issues #3 and #10); the current ``data_generation.py`` does not write it. ``crop_path`` may be absolute or
+``label_uid,city,label_id,pano_id,label_type,label_class,crop_path,split,hard``, written by ``split_data.py`` from
+``data_generation.py``'s manifest (``data_generation.py`` also writes the ``deployment_priors.json`` that
+``calibration/calibrate.py`` needs; issues #3 and #10). ``crop_path`` may be absolute or
 relative to ``<label_type>/`` (tried first) or the working directory. If ``split.csv`` is absent the old
 ``<label_type>/ds/{train,val,test}/{correct,incorrect}/`` image-folder layout is read instead, with a warning.
 
@@ -312,7 +312,7 @@ def main(argv=None):
         f.write(text)
     save_figures(predictions, text, label_type, base)
     priors = os.path.join(args.data_dir, "deployment_priors.json")
-    print("next (needs deployment_priors.json from the data-generation changes, issues #3/#10):")
+    print(f"next (fit the served map under the deployment prior data_generation.py wrote to {priors}):")
     print(f"  python -m calibration.calibrate --predictions {pred_path} --priors {priors} "
           f"--label-type {label_type} --out {os.path.join(base, 'calibration', label_type.lower() + '.json')}")
 
