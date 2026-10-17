@@ -2,7 +2,8 @@
 # this list is the unpinned equivalent. CI installs only the CPU-testable subset (see .github/workflows/tests.yml).
 torch
 torchvision
-transformers
+# Pinned to environment.yml's version: its slow BitImageProcessor (use_fast=False) matches the API's backend="pil".
+transformers==4.55.0
 datasets
 scikit-learn
 opencv-python

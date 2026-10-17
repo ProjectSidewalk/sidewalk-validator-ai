@@ -183,14 +183,18 @@ def test_resume_drops_rows_from_a_stale_selection(tmp_path):
     assert (base / "correct/c_2.webp").exists()  # crops are never deleted
 
 
-def test_selection_hash_detects_a_changed_selection(tmp_path):
+def test_check_resume_detects_selection_and_settings_changes(tmp_path):
     a = pd.DataFrame({"label_uid": ["x:1", "x:2"], "label_class": ["correct", "incorrect"]})
     b = a.assign(label_class=["correct", "correct"])
+    st = {"tilt_beta": 0.95, "depth_encoder": "vitb", "depth_dataset": "vkitti", "renderer": "torch",
+          "include_ai_labels": False}
     run = tmp_path / "generation_run.json"
-    assert dg.check_selection(str(run), dg.selection_hash(a)) is None  # no previous run
-    run.write_text(json.dumps({"selection_sha256": dg.selection_hash(a)}))
-    assert dg.check_selection(str(run), dg.selection_hash(a)) is None
-    assert dg.check_selection(str(run), dg.selection_hash(b)) == dg.selection_hash(a)
+    assert dg.check_resume(str(run), dg.selection_hash(a), st) == (None, {})  # no previous run
+    run.write_text(json.dumps({"selection_sha256": dg.selection_hash(a), "settings": st}))
+    assert dg.check_resume(str(run), dg.selection_hash(a), st) == (None, {})
+    assert dg.check_resume(str(run), dg.selection_hash(b), st)[0] == dg.selection_hash(a)
+    assert dg.check_resume(str(run), dg.selection_hash(a), {**st, "tilt_beta": 0.5, "renderer": "numpy"})[1] == \
+        {"tilt_beta": (0.95, 0.5), "renderer": ("torch", "numpy")}
 
 
 def test_manifest_row_uid_and_crop_path():

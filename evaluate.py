@@ -124,7 +124,8 @@ def run_inference(manifest, checkpoint_dir):
     from transformers import AutoImageProcessor, AutoModelForImageClassification
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    image_processor = AutoImageProcessor.from_pretrained(checkpoint_dir)
+    # Slow (PIL) BitImageProcessor, matching fine_tune_classifier.py and sidewalk-ai-api's backend="pil".
+    image_processor = AutoImageProcessor.from_pretrained(checkpoint_dir, use_fast=False)
     model = AutoModelForImageClassification.from_pretrained(checkpoint_dir).to(device).eval()
     label2id = {v: int(k) for k, v in model.config.id2label.items()}
     if set(label2id) != set(CLASSES):

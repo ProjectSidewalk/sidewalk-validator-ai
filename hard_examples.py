@@ -10,7 +10,7 @@ A label is *hard* when the deployed validator got it wrong on strong evidence:
   in the export is used, or only those given with ``--experts expert1,expert2``.
 
 A label meeting both is listed once, as ``expert``. Only ``label_uid`` and ``reason`` are written: no vote counts and
-no names, so the output is safe to commit. ``data_generation.py --hard-examples`` sets ``hard = 1`` from it, and
+no names, so the output is safe to commit. ``split_data.py --hard-examples`` sets ``hard = 1`` from it, and
 ``evaluate.py`` reports the ``hard`` slice of the test splits.
 
 The input (``ai_vs_humans.csv``, columns ``label_uid, kind, h_agree, h_dis, ai`` and one per expert, ...) is a private

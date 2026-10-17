@@ -23,3 +23,10 @@ analysis/*.txt
 
 # calibrate_from_production output (labels_oof.csv has per-label private-city rows); write it outside the repo
 phase0/
+
+# Pipeline outputs written at the repo root by default runs
+/deployment_priors.json
+/deployment_priors.partial.json
+*.lock
+predictions.csv
+/rawlabels/

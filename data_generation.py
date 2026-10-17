@@ -34,8 +34,9 @@ it. They are excluded from the training selection by default anyway: production 
 (issue #9, item 2).
 
 The serving-side twin of ``create_perspective_crop`` lives in
-https://github.com/ProjectSidewalk/sidewalk-ai-api/blob/main/main.py ; it still renders without tilt correction and
-at ``pano_width // 4`` pixels, so parity needs the companion change there (ProjectSidewalk/sidewalk-ai-api#8).
+https://github.com/ProjectSidewalk/sidewalk-ai-api/blob/main/main.py ; it applies the same tilt correction with the same
+package in ProjectSidewalk/sidewalk-ai-api#17. **Deployment order:** models retrained on these crops expect
+tilt-corrected input, so that API change must be deployed before a retrained model is published.
 
 Lineage and background:
   * Weld et al., "Deep Learning for Automatically Detecting Sidewalk Accessibility Problems Using
@@ -351,7 +352,7 @@ class ManifestWriter:
                 m.write({...})
     """
 
-    def __init__(self, path, base_dir, selection):
+    def __init__(self, path, base_dir, selection, keep_ok=True):
         self.path = path
         self.base_dir = base_dir
         self.done = set()
@@ -364,7 +365,9 @@ class ManifestWriter:
                 if row.get('status') != 'ok' or not os.path.exists(os.path.join(base_dir, row.get('crop_path', ''))):
                     continue
                 uid = row['label_uid']
-                if uid not in selection:
+                if not keep_ok:
+                    self.stale['settings_changed'] += 1
+                elif uid not in selection:
                     self.stale['no_longer_selected'] += 1
                 elif selection[uid] != row.get('label_class'):
                     self.stale['class_changed'] += 1
@@ -428,9 +431,23 @@ def manifest_row(row, label_type, crop_path, tilt_beta):
 # Panorama
 # ---------------------------------------------------------------------------------------------------------------------
 
-def fetch_panorama(pano_id):
-    import cv2
+class IncompletePanorama(Exception):
+    """Some tiles of the panorama's grid were still missing after one retry (recorded as ``incomplete_pano``)."""
+
+
+def _http_get(url):
+    """One tile request; a seam for the tests, which replace it with a stub."""
     import requests
+    return requests.get(url, headers=HEADERS, timeout=TILE_TIMEOUT)
+
+
+def fetch_panorama(pano_id):
+    """The panorama as an 8192x4096 BGR array, or None if it cannot be found (black or missing first tiles).
+
+    Raises :class:`IncompletePanorama` if any tile of the discovered ``(max_x + 1) x (max_y + 1)`` grid is still
+    missing after one retry: assembling it anyway would leave a black hole in the pano (and in a crop).
+    """
+    import cv2
     from PIL import Image
 
     chosen_zoom = None
@@ -453,7 +470,7 @@ def fetch_panorama(pano_id):
             f"&x={x}&y={y}&zoom={zoom}"
         )
         try:
-            response = requests.get(url, headers=HEADERS, timeout=TILE_TIMEOUT)
+            response = _http_get(url)
             if response.status_code == 200:
                 tile = Image.open(io.BytesIO(response.content))
                 if chosen_zoom != None or not _is_black_tile(tile):
@@ -473,7 +490,7 @@ def fetch_panorama(pano_id):
                 f"&x={x}&y={y}&zoom=3"
             )
             try:
-                response = requests.get(fallback_url, headers=HEADERS, timeout=TILE_TIMEOUT)
+                response = _http_get(fallback_url)
                 if response.status_code == 200:
                     tile = Image.open(io.BytesIO(response.content))
                     chosen_zoom = 3
@@ -570,15 +587,28 @@ def fetch_panorama(pano_id):
             return img_array[np.min(y_nonzero):np.max(y_nonzero) + 1, np.min(x_nonzero):np.max(x_nonzero) + 1]
         return img_array # Return original if all black
 
+    def _report():
+        if http_errors:
+            # e.g. 403 means the request headers stopped working (audit finding 2); 400 is common for retired panos
+            print(f"pano {pano_id}: non-200 tile responses {dict(http_errors)}")
+
     dimension_result = _find_panorama_dimensions()
-    if http_errors:
-        # e.g. 403 means the request headers stopped working (audit finding 2); 400 is common for retired panos
-        print(f"pano {pano_id}: non-200 tile responses {dict(http_errors)}")
     if dimension_result is None:
+        _report()
         return None
 
     max_x, max_y, initial_tiles = dimension_result
-    full_tiles = _fetch_remaining_tiles(max_x, max_y, initial_tiles)
+    full_tiles = {k: t for k, t in _fetch_remaining_tiles(max_x, max_y, initial_tiles).items() if t is not None}
+    missing = [(x, y) for x in range(max_x + 1) for y in range(max_y + 1) if (x, y) not in full_tiles]
+    for x, y in missing:  # one retry each
+        tile = _fetch_tile(x, y)[2]
+        if tile is not None:
+            full_tiles[(x, y)] = tile
+    missing = [xy for xy in missing if xy not in full_tiles]
+    _report()
+    if missing:
+        raise IncompletePanorama(f"pano {pano_id}: {len(missing)} of {(max_x + 1) * (max_y + 1)} tiles missing "
+                                 f"after a retry, e.g. {missing[:3]}")
     assembled_panorama = _assemble_panorama(full_tiles, max_x, max_y)
     if assembled_panorama is None:
         return None
@@ -729,15 +759,46 @@ def create_perspective_crop(depth_model, pano_rgb, label_x_norm, label_y_norm, c
                   "clipped": int(clipped)}
 
 
-def check_selection(run_path, new_hash):
-    """The selection hash a previous run recorded in ``generation_run.json`` if it differs from ``new_hash``, else
-    None. The caller stops on a difference unless ``--force-reselect``; the manifest resume rule already drops stale
-    rows, so accepting is safe."""
+#: Settings that change what a crop looks like; a resume with different values would mix two datasets.
+RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "include_ai_labels")
+
+
+def check_resume(run_path, new_hash, settings):
+    """Compare a resumed run with the ``generation_run.json`` of the previous one.
+
+    Returns ``(old_hash or None, changed_settings)``: the previous selection hash if it differs from ``new_hash``,
+    and ``{name: (old, new)}`` for every :data:`RESUME_SETTINGS` entry that differs. The caller refuses to resume on
+    either unless ``--force-reselect``.
+
+    >>> check_resume("/nonexistent/generation_run.json", "abc", {"tilt_beta": 0.95})
+    (None, {})
+    """
     if not os.path.exists(run_path):
-        return None
+        return None, {}
     with open(run_path) as f:
-        old = json.load(f).get("selection_sha256")
-    return old if old and old != new_hash else None
+        old = json.load(f)
+    old_hash = old.get("selection_sha256")
+    old_settings = old.get("settings", {})
+    changed = {k: (old_settings.get(k), settings.get(k)) for k in RESUME_SETTINGS
+               if k in old_settings and old_settings.get(k) != settings.get(k)}
+    return (old_hash if old_hash and old_hash != new_hash else None), changed
+
+
+def count_ok_rows(manifest_path):
+    """Number of ``ok`` rows in a manifest (0 if there is none)."""
+    if not os.path.exists(manifest_path) or os.path.getsize(manifest_path) == 0:
+        return 0
+    return int((pd.read_csv(manifest_path, dtype=str, usecols=["status"])["status"] == "ok").sum())
+
+
+def is_fatal(exc):
+    """Errors that must stop the run instead of becoming one ``error:*`` row: broken invariants and GPU failures."""
+    if isinstance(exc, AssertionError) or type(exc).__name__ == "OutOfMemoryError":
+        return True
+    return isinstance(exc, RuntimeError) and "CUDA" in str(exc)
+
+
+MAX_CONSECUTIVE_ERRORS = 50
 
 
 def parse_cities(arg):
@@ -818,32 +879,43 @@ def main(argv=None):
         print(f"--select-only: {len(combined_filtered)} labels selected; stopping before rendering.")
         return
 
-    previous = check_selection(run_path, sel_hash)
+    settings = {"tilt_beta": args.tilt_beta, "depth_encoder": args.depth_encoder, "depth_dataset": DEPTH_DATASET,
+                "renderer": "torch" if device else "numpy", "include_ai_labels": args.include_ai_labels}
+    previous, changed = check_resume(run_path, sel_hash, settings)
+    if (previous or changed) and not args.force_reselect:
+        n_ok = count_ok_rows(manifest_path)
+        why = []
+        if previous:
+            why.append(f"the selection changed (sha256 {previous[:12]} -> {sel_hash[:12]})")
+        if changed:
+            why.append("settings changed: " + ", ".join(f"{k} {a!r} -> {b!r}" for k, (a, b) in changed.items()))
+        # generation_run.json is left untouched, so the record still describes the crops on disk.
+        sys.exit(f"Refusing to resume in {base_dir}: {'; '.join(why)}. The manifest holds {n_ok} ok rows made "
+                 f"under the previous run. Re-run with --force-reselect to accept: stale ok rows are dropped "
+                 f"(all of them if a setting changed) and redone; old crop files stay on disk until overwritten.")
     os.makedirs(base_dir, exist_ok=True)
-    manifest = ManifestWriter(manifest_path, base_dir, selection) if (previous is None or args.force_reselect) else None
-    if previous is not None:
-        msg = (f"The selection changed since the last run in {base_dir} (sha256 {previous[:12]} -> {sel_hash[:12]}). ")
-        if manifest is None:
-            sys.exit(msg + "Re-run with --force-reselect to resume: ok rows no longer selected, or selected with "
-                     "another class, are dropped from the manifest (their crops stay on disk, unused).")
-        print("WARNING: " + msg + f"--force-reselect: dropped stale ok rows {dict(manifest.stale) or 'none'}, "
-              f"kept {len(manifest.done)}.")
+    manifest = ManifestWriter(manifest_path, base_dir, selection, keep_ok=not changed)
+    if previous or changed:
+        print(f"WARNING: --force-reselect: selection changed: {bool(previous)}, settings changed: {changed or 'none'}; "
+              f"dropped ok rows {dict(manifest.stale) or 'none'}, kept {len(manifest.done)}.")
 
     with open(run_path, "w") as f:  # read by fine_tune_classifier.py
-        json.dump({"label_type": label_type, "depth_encoder": args.depth_encoder, "depth_dataset": DEPTH_DATASET,
-                   "tilt_beta": args.tilt_beta, "seed": args.seed, "cities": list(cities),
-                   "include_ai_labels": args.include_ai_labels, "limit": args.limit,
-                   "selection_size": len(selection), "selection_sha256": sel_hash,
-                   "renderer": "torch" if device else "numpy", "started": date.today().isoformat()}, f, indent=2)
+        json.dump({"label_type": label_type, "settings": settings, **settings, "seed": args.seed,
+                   "cities": list(cities), "limit": args.limit, "selection_size": len(selection),
+                   "selection_sha256": sel_hash, "started": date.today().isoformat()}, f, indent=2)
         f.write("\n")
 
     depth_model = load_depth_model(args.depth_encoder, device)
     for cls in ("correct", "incorrect"):
         os.makedirs(os.path.join(base_dir, cls), exist_ok=True)
 
+    # Process panorama by panorama (stable, so the order within a pano is the selection's) and reuse the last pano.
+    combined_filtered = combined_filtered.sort_values('pano_id', kind='mergesort')
     total_images = len(combined_filtered)
     start_time = time.time()
     status_counts = Counter()
+    last_pano = (None, None)  # (pano_id, BGR array, or the status string it failed with)
+    consecutive_errors = 0
     with manifest:
         for processed_count, (_, row) in enumerate(combined_filtered.iterrows(), start=1):
             crop_path = f"{row['label_class']}/{row['city']}_{row['label_id']}.webp"
@@ -852,9 +924,16 @@ def main(argv=None):
                 status_counts['skipped (already ok)'] += 1
                 continue
             try:
-                pano_bgr = fetch_panorama(row['pano_id'])  # column was renamed from gsv_panorama_id in the v3 API
-                if pano_bgr is None:
-                    rec['status'] = 'no_pano'
+                if last_pano[0] != row['pano_id']:
+                    try:  # the column was renamed from gsv_panorama_id in the v3 API
+                        fetched = fetch_panorama(row['pano_id'])
+                        last_pano = (row['pano_id'], 'no_pano' if fetched is None else fetched)
+                    except IncompletePanorama as e:
+                        print(e)
+                        last_pano = (row['pano_id'], 'incomplete_pano')
+                pano_bgr = last_pano[1]
+                if isinstance(pano_bgr, str):
+                    rec['status'] = pano_bgr
                 else:
                     pano_rgb = np.ascontiguousarray(pano_bgr[..., ::-1])
                     crop, info = create_perspective_crop(
@@ -865,10 +944,16 @@ def main(argv=None):
                     rec.update(info)
                     rec['status'] = 'ok'
             except Exception as e:
+                if is_fatal(e):
+                    raise
                 traceback.print_exc()
                 rec['status'] = f"error:{type(e).__name__}"
             manifest.write(rec)
             status_counts[rec['status']] += 1
+            consecutive_errors = consecutive_errors + 1 if rec['status'].startswith('error:') else 0
+            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                sys.exit(f"Aborting: {consecutive_errors} consecutive labels failed with error:* (last: "
+                         f"{rec['status']}). The manifest is resumable once the cause is fixed.")
             elapsed = time.time() - start_time
             left = elapsed / processed_count * (total_images - processed_count)
             print(f"Processed {processed_count}/{total_images}: {rec['label_uid']} {rec['status']}. "

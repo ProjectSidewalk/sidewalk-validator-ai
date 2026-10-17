@@ -146,8 +146,16 @@ with the rig-tilt correction from the label's `camera_pitch`/`camera_roll` at `b
 AI-authored labels are already rig-frame and are rendered without it. Depth Anything V2 (metric, VKITTI,
 ViT-B as the API serves, `max_depth = 80`) runs on the view (BGR, as `infer_image` expects); the depth at
 the centre sets the crop half-width as `6100 / depth_m` pixels, clipped to the view (`clipped = 1` in the
-manifest), then the crop's long side is resized to 640 px and saved as WebP quality 95. The serving path
-in `sidewalk-ai-api` does not yet apply the tilt correction (ProjectSidewalk/sidewalk-ai-api#8).
+manifest), then the crop's long side is resized to 640 px and saved as WebP quality 95. The API applies the
+same tilt correction with the same package in [sidewalk-ai-api#17](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/17).
+
+> [!IMPORTANT]
+> **Deployment order.** Models retrained on these crops expect tilt-corrected input, so sidewalk-ai-api#17
+> must be deployed before a retrained model is published; the current models keep working on the
+> uncorrected API until then.
+
+One residual difference remains by design: training reads crops back from WebP quality 95, while the API
+classifies the in-memory PIL crop. On fresh crops the two differ by a mean |Δ| of 1.1 grey levels.
 
 ## Published artifacts
 
@@ -181,7 +189,8 @@ Download the depth checkpoint into the repo root (ViT-B, the one the API serves;
 `--depth-encoder vitl`):
 
 ```bash
-wget https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-VKITTI-Base/resolve/main/depth_anything_v2_metric_vkitti_vitb.pth
+# pinned to the same repo commit as sidewalk-ai-api's download_models.sh
+wget https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-VKITTI-Base/resolve/e96fd0c8cedf1825a55b9c61309f754982948df0/depth_anything_v2_metric_vkitti_vitb.pth
 ```
 
 > [!IMPORTANT]
@@ -235,7 +244,7 @@ Writes, per label type:
 | file | contents |
 |---|---|
 | `predictions.csv` | `label_uid,split,true,p_correct,p_incorrect` for every `val`, `test` and `test_heldout` row |
-| `metrics.json`, `report.txt` | accuracy, balanced accuracy, AUC, per-class precision/recall/F1 and recall at 90–99% precision, for `test`, `test_heldout` and the `hard` slice |
+| `metrics.json`, `report.txt` | accuracy, balanced accuracy, AUC, per-class precision/recall/F1 and recall at 90–99% precision, for `test`, `test_heldout` and the `hard` slice (small: e.g. 15 of 132 CurbRamp test rows, so read its numbers with wide error bars) |
 | `pvr.png`, `report.png` | precision–recall curve per class on the test split, and the curve with the text report |
 
 The same job then fits the map the API serves, on the val split reweighted to the deployment class prior
@@ -274,7 +283,7 @@ the evidence for each item. In order of how much they affect the numbers:
 
 - **Split leaks across panoramas** ([#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3)). Labels average 2.8 per panorama across all types (Teaneck; 64% of panoramas carry more than one), and within one type's selected set CurbRamp averages 1.66 (62% of its labels share a panorama), SurfaceProblem 1.19 (27%), Obstacle 1.00. The file-level split behind the published models put overlapping crops on both sides, so their metrics are optimistic by an unknown amount. `split_data.py` now splits by panorama and can hold out whole cities; the published models have not been retrained on it yet.
 - **Calibration under the wrong prior** ([#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4)). The confidence map is computed on a 55:45 test split and served against traffic that is closer to 90:10 (the decisive-crowd balance in Teaneck, a proxy). Platform-wide, when the AI votes "incorrect" the human majority agrees about 57% of the time; when it votes "correct", 96%. `calibration/calibrate.py` now reweights to the deployment prior, and production-calibrated maps for the deployed models are in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md) (not yet shipped to the API).
-- **Train/serve skew** ([#5](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5), [sidewalk-ai-api#8](https://github.com/ProjectSidewalk/sidewalk-ai-api/issues/8)). Normalisation, camera pitch and depth checkpoint differed between training and serving. Training now uses the serving preprocessing for val, label-centred views from the shared geometry package and the ViT-B depth checkpoint; the API still has to adopt the package's tilt correction, and nothing has been retrained yet.
+- **Train/serve skew** ([#5](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5), [sidewalk-ai-api#8](https://github.com/ProjectSidewalk/sidewalk-ai-api/issues/8)). Normalisation, camera pitch and depth checkpoint differed between training and serving. Training now uses the serving preprocessing for val, label-centred views from the shared geometry package and the ViT-B depth checkpoint; the API applies the same tilt correction in [sidewalk-ai-api#17](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/17), which must be deployed before any retrained model (nothing has been retrained yet).
 - **Evaluation script bugs** ([#6](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6)). Fixed in `evaluate.py`, which replaces `get_stats.py` (PR [#22](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/22), closed unmerged, had proposed a fix first); numbers in `report.png` files made by the old script are not reliable.
 - **Publication** ([#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7)). The CurbRamp dataset on Hugging Face is a copy of the Crosswalk one; model repos carry 2.4 GB of optimizer state.
 - **Imagery path** ([#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8), [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9)). Panoramas are re-downloaded from Google rather than read from the lab's pano store; 19 of 59 deployments are used (41 public, 18 private); the camera-tilt error in stored coordinates ([sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54)) is now corrected in training crops (beta 0.95).
