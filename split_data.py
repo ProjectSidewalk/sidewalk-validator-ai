@@ -14,7 +14,8 @@ Method (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3):
 1. **Held-out cities.** Every row of a ``--holdout-cities`` city goes to ``test_heldout`` (Duan et al. ASSETS'22:
    held-out-city numbers are the ones that predict deployment). A panorama that also carries labels of another city
    (overlapping deployments) goes to ``test_heldout`` whole, so the no-shared-panorama guarantee holds.
-2. **Groups.** The remaining rows are grouped by ``pano_id``: labels cluster about 2.8 per panorama, and two crops
+2. **Groups.** The remaining rows are grouped by ``pano_id``: labels cluster on panoramas (2.8 per panorama across
+   all types in Teaneck; within one type's selected set CurbRamp 1.66, SurfaceProblem 1.19), and two crops
    of one corner must not straddle the split (Weld et al. ASSETS'19 split panoramas for the same reason).
 3. **Approximate stratification.** Each group gets a class-ratio bin, ``round(4 * share_incorrect)`` (0 = all
    correct ... 4 = all incorrect). Bins are processed in order; within a bin the groups (sorted by ``pano_id``) are

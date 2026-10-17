@@ -71,6 +71,12 @@ def test_select_is_deterministic_and_seeded(tmp_path):
     assert a.label_id.tolist() != c.label_id.tolist()
 
 
+def test_select_does_not_depend_on_api_row_order(tmp_path):
+    labels = fixture_labels(tmp_path)
+    shuffled = labels.sample(frac=1, random_state=3).reset_index(drop=True)
+    assert select(labels).label_id.tolist() == select(shuffled).label_id.tolist()
+
+
 def test_include_ai_labels(tmp_path):
     df = select(fixture_labels(tmp_path), include_ai_labels=True)
     assert (df.label_class == "incorrect").sum() == 8

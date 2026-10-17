@@ -32,8 +32,14 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 `SidewalkAI` account.
 
 > [!NOTE]
-> **State of the repo (October 2026).** The five published models were trained on 2025-01-26 from
-> human votes only (AI validation did not exist yet) and are what production runs today. The code on
+> **State of the repo (October 2026).** Production runs the five models' **2025-08-16** uploads: each
+> Hugging Face model repo also holds an earlier 2025-01-26 upload with different weights, but
+> sidewalk-ai-api's `model_map.py` pins the August revisions, and every metric in this README comes from
+> those runs. They were trained around 2025-08-14, after AI validation merged
+> ([SidewalkWebpage#3978](https://github.com/ProjectSidewalk/SidewalkWebpage/pull/3978), 2025-08-01; earliest `label_ai_assessment` row 2025-08-13) and
+> before the nightly `GetAiValidationsActor` sweep was added (2025-09-17,
+> [`7b6e9d720b`](https://github.com/ProjectSidewalk/SidewalkWebpage/commit/7b6e9d720b)). So their training data was most likely free of AI votes, but
+> AI votes cast between 2025-08-01 and the data pull are not ruled out. The code on
 > `master` before [the audit PR](docs/audit-2026-10-14.md) could not run against the current API (a
 > renamed column and a tile endpoint that now needs browser headers); it runs again, but several
 > findings about the training signal, the split and calibration are open as issues and need a retrain
@@ -109,13 +115,23 @@ A label is used only when the crowd was decisive, counting **human** votes only:
 | `correct` | agree − disagree > 2, then randomly downsampled | 55% |
 | (dropped) | unvalidated, unsure, or contested | — |
 
-Labels from non-GSV imagery providers and legacy labels with negative `pano_y` are excluded, and so are
-labels placed by the `SidewalkAI` account (RampNet curb ramps in Vancouver WA, Richmond VA and Laurens IA),
-because production never sends those to the validator; `--include-ai-labels` keeps them, tagged
-`author = ai` in the manifest. The 55:45 ratio is a training-balance choice, not the real prior (roughly
-90:10 in production); `data_generation.py` therefore writes the pre-downsampling class counts to
-`deployment_priors.json`, which `calibration/calibrate.py` reweights to
+Labels from non-GSV imagery providers, rows with unusable pano geometry, and legacy labels with
+unconverted coordinates (negative `pano_y`: Seattle 193, CDMX 14, Pittsburgh 8, SPGG 1) are excluded, and
+so are labels placed by the `SidewalkAI` account (RampNet curb ramps in Vancouver WA, Richmond VA and
+Laurens IA), because production never sends those to the validator; `--include-ai-labels` keeps them,
+tagged `author = ai` in the manifest. The 55:45 ratio is a training-balance choice, not the real prior:
+among labels the crowd decided in Teaneck the balance is roughly 90:10, a proxy for production traffic
+rather than a measurement of it. `data_generation.py` therefore writes the pre-downsampling class counts
+to `deployment_priors.json`, which `calibration/calibrate.py` reweights to
 ([#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4)).
+
+> [!WARNING]
+> Counting human votes only shrinks the classes, most of all CurbRamp `incorrect`, because the AI's
+> disagree votes no longer count. Across the 16 training cities the `incorrect` sets go from (API
+> columns) to (human votes only): CurbRamp 7,957 → 2,626, NoCurbRamp 7,842 → 5,923, Obstacle
+> 4,412 → 3,556, SurfaceProblem 4,688 → 3,623, Crosswalk 1,974 → 1,034. With the 55:45 rule the
+> `correct` class shrinks with them, so a retrain has much less CurbRamp data than the counts in the
+> API columns suggest.
 
 ## Crop geometry
 
@@ -256,12 +272,12 @@ model and dataset cards are [#2](https://github.com/ProjectSidewalk/sidewalk-val
 The October 2026 audit is written up in [`docs/audit-2026-10-14.md`](docs/audit-2026-10-14.md) with
 the evidence for each item. In order of how much they affect the numbers:
 
-- **Split leaks across panoramas** ([#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3)). Labels average 2.8 per panorama; the file-level split behind the published models put overlapping crops on both sides, so their metrics are optimistic by an unknown amount. `split_data.py` now splits by panorama and can hold out whole cities; the published models have not been retrained on it yet.
-- **Calibration under the wrong prior** ([#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4)). The confidence map is computed on a 55:45 test split and served against ~90:10 traffic. Platform-wide, when the AI votes "incorrect" the human majority agrees about 57% of the time; when it votes "correct", 96%. `calibration/calibrate.py` now reweights to the deployment prior, and production-calibrated maps for the deployed models are in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md) (not yet shipped to the API).
+- **Split leaks across panoramas** ([#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3)). Labels average 2.8 per panorama across all types (Teaneck; 64% of panoramas carry more than one), and within one type's selected set CurbRamp averages 1.66 (62% of its labels share a panorama), SurfaceProblem 1.19 (27%), Obstacle 1.00. The file-level split behind the published models put overlapping crops on both sides, so their metrics are optimistic by an unknown amount. `split_data.py` now splits by panorama and can hold out whole cities; the published models have not been retrained on it yet.
+- **Calibration under the wrong prior** ([#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4)). The confidence map is computed on a 55:45 test split and served against traffic that is closer to 90:10 (the decisive-crowd balance in Teaneck, a proxy). Platform-wide, when the AI votes "incorrect" the human majority agrees about 57% of the time; when it votes "correct", 96%. `calibration/calibrate.py` now reweights to the deployment prior, and production-calibrated maps for the deployed models are in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md) (not yet shipped to the API).
 - **Train/serve skew** ([#5](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5), [sidewalk-ai-api#8](https://github.com/ProjectSidewalk/sidewalk-ai-api/issues/8)). Normalisation, camera pitch and depth checkpoint differed between training and serving. Training now uses the serving preprocessing for val, label-centred views from the shared geometry package and the ViT-B depth checkpoint; the API still has to adopt the package's tilt correction, and nothing has been retrained yet.
-- **Evaluation script bugs** ([#6](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6)). Fixed in `evaluate.py`, which replaces `get_stats.py`; numbers in `report.png` files made by the old script are not reliable.
+- **Evaluation script bugs** ([#6](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6)). Fixed in `evaluate.py`, which replaces `get_stats.py` (PR [#22](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/22), closed unmerged, had proposed a fix first); numbers in `report.png` files made by the old script are not reliable.
 - **Publication** ([#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7)). The CurbRamp dataset on Hugging Face is a copy of the Crosswalk one; model repos carry 2.4 GB of optimizer state.
-- **Imagery path** ([#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8), [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9)). Panoramas are re-downloaded from Google rather than read from the lab's pano store; 19 of 52 cities are used; the camera-tilt error in stored coordinates ([sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54)) is now corrected in training crops (beta 0.95).
+- **Imagery path** ([#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8), [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9)). Panoramas are re-downloaded from Google rather than read from the lab's pano store; 19 of 59 deployments are used (41 public, 18 private); the camera-tilt error in stored coordinates ([sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54)) is now corrected in training crops (beta 0.95).
 - **Hygiene** ([#10](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10), [#11](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/11)). No tests or CI; vendored 64 MB depth tree; frozen environment file.
 
 Experiments we think are worth running next, each with a first experiment spelled out: soft targets and

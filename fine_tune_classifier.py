@@ -3,7 +3,7 @@
 Reads ``<data-dir>/<label_type>/split.csv`` (written by split_data.py; rows with ``split`` train and val), fine-tunes
 ``facebook/dinov2-large`` (Oquab et al., 2023, https://arxiv.org/abs/2304.07193) with the Hugging Face Trainer, and
 keeps the checkpoint with the best validation macro-F1 under ``<label_type>/dinov2/`` (``--output-dir``). If
-``split.csv`` is absent, the old ``<label_type>/ds/{train,validation,test}/{correct,incorrect}`` image folders are
+``split.csv`` is absent, the old ``<label_type>/ds/{train,val,test}/{correct,incorrect}`` image folders are
 read instead, with a warning. The published models are at
 https://huggingface.co/collections/projectsidewalk/project-sidewalk-validator-models-6797bd158d5e385e464dbe45
 and are served by https://github.com/ProjectSidewalk/sidewalk-ai-api .

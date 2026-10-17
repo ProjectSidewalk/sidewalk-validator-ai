@@ -4,7 +4,7 @@ For every label of ``--label_type`` across the cities listed in ``CITIES``, this
 
 1. pulls the label and its validations from the public v3 API (``/v3/api/rawLabels``);
 2. keeps human-authored labels the crowd clearly endorsed (net >= 3 human agree votes) or clearly rejected
-   (net >= 2 human disagree votes), downsampling the majority class to ``CORRECT_PROPORTION``, and records the
+   (net >= 2 human disagree votes), downsampling the ``correct`` class to ``CORRECT_PROPORTION``, and records the
    PRE-downsampling class counts in ``deployment_priors.json`` (the prior ``calibration/calibrate.py`` reweights to);
 3. reassembles the Google Street View panorama from tiles, renders a 2048x2048, 90-degree perspective view
    CENTRED on the label with rig-tilt correction (``sidewalk_panorama_tools.geometry``), estimates metric depth at
@@ -62,6 +62,7 @@ import io
 import json
 import os
 import sys
+import threading
 import time
 import traceback
 from collections import Counter
@@ -96,8 +97,8 @@ HEADERS = {
 }
 
 # City deployments to pull labels from: city_id (as /v3/api/cities names it, and as it appears in label_uid and in
-# crop filenames) -> the deployment's subdomain, sidewalk-<subdomain>.cs.washington.edu. Not the full list of ~52
-# deployments; discovering them from /v3/api/cities is https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8.
+# crop filenames) -> the deployment's subdomain, sidewalk-<subdomain>.cs.washington.edu. Not the full list of 59
+# deployments (41 public, 18 private); discovering them from /v3/api/cities is https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8.
 # The three Taiwan deployments are private (url null in /v3/api/cities) but serve rawLabels.
 CITIES = {
     "cdmx": "cdmx", "la-piedad": "la-piedad", "spgg": "spgg", "amsterdam": "amsterdam",
@@ -176,7 +177,7 @@ def human_vote_counts(validations_json):
 
     The API's ``agree_count``/``disagree_count`` columns include the SidewalkAI account's own votes,
     so using them would train the validator on its own output. The ``validations`` column carries a
-    ``validator_type`` per vote ("Human" or "AI"), which is what we count here.
+    ``validator_type`` per vote ("Human" or "AI"), which is what we count here; anything not "Human" is ignored.
 
     >>> human_vote_counts('[{"user_id":"a","validation":"Agree","validator_type":"AI"},'
     ...                   ' {"user_id":"b","validation":"Agree","validator_type":"Human"},'
@@ -184,12 +185,15 @@ def human_vote_counts(validations_json):
     (1, 1)
     >>> human_vote_counts(float('nan'))
     (0, 0)
+    >>> human_vote_counts('[{"validation":"Agree"}, {"validation":"Agree","validator_type":"Bot"}]')
+    (0, 0)
     """
     if not isinstance(validations_json, str) or not validations_json:
         return 0, 0
     votes = json.loads(validations_json)
-    agree = sum(1 for v in votes if v.get("validator_type") != "AI" and v.get("validation") == "Agree")
-    disagree = sum(1 for v in votes if v.get("validator_type") != "AI" and v.get("validation") == "Disagree")
+    # Fail closed: only votes explicitly typed "Human" count, so a new or missing validator_type is excluded.
+    agree = sum(1 for v in votes if v.get("validator_type") == "Human" and v.get("validation") == "Agree")
+    disagree = sum(1 for v in votes if v.get("validator_type") == "Human" and v.get("validation") == "Disagree")
     return agree, disagree
 
 
@@ -207,7 +211,8 @@ def valid_geometry(df):
 
     Drops (counted by reason): non-GSV providers (the tile fetcher cannot fetch them; issue #9), non-finite or
     non-positive ``pano_width``/``pano_height``, non-finite ``pano_x``, and ``pano_y`` outside ``[0, pano_height]``
-    (this covers the legacy DC labels whose pano coordinates were never converted and are negative).
+    (this covers the legacy labels whose pano coordinates were never converted and are negative: Seattle 193,
+    CDMX 14, Pittsburgh 8, SPGG 1).
 
     >>> m, why = valid_geometry(pd.DataFrame({"pano_source": ["gsv", "gsv", "mapillary", "gsv"],
     ...     "pano_x": [1, 1, 1, float("nan")], "pano_y": [5, -3, 5, 5], "pano_width": [10, 10, 10, 10],
@@ -264,6 +269,8 @@ def select_training_labels(eligible, seed=SEED, correct_proportion=CORRECT_PROPO
     :func:`deployment_prior_entry` records that.
     """
     df = eligible if include_ai_labels else eligible[eligible['author'] == 'human']
+    # A canonical order first, so the seeded samples below do not depend on the API's row order.
+    df = df.sort_values(['city', 'label_id'], kind='mergesort').reset_index(drop=True)
     filtered_disagree = df[df['label_class'] == 'incorrect']
     print(f"Incorrect Examples: {len(filtered_disagree)}")
 
@@ -427,6 +434,12 @@ def fetch_panorama(pano_id):
     from PIL import Image
 
     chosen_zoom = None
+    http_errors = Counter()  # non-200 status codes for this pano, reported once (tiles are fetched in parallel)
+    errors_lock = threading.Lock()
+
+    def _note(status):
+        with errors_lock:
+            http_errors[status] += 1
 
     def _fetch_tile(x, y, zoom=4):
         nonlocal chosen_zoom
@@ -446,7 +459,10 @@ def fetch_panorama(pano_id):
                 if chosen_zoom != None or not _is_black_tile(tile):
                     chosen_zoom = zoom
                     return x, y, tile
+            else:
+                _note(response.status_code)
         except Exception as e:
+            _note(type(e).__name__)
             print(e)
 
         if chosen_zoom == None:
@@ -462,7 +478,9 @@ def fetch_panorama(pano_id):
                     tile = Image.open(io.BytesIO(response.content))
                     chosen_zoom = 3
                     return x, y, tile
+                _note(response.status_code)
             except Exception as e:
+                _note(type(e).__name__)
                 print(e)
 
         return x, y, None
@@ -516,8 +534,8 @@ def fetch_panorama(pano_id):
     def _fetch_remaining_tiles(max_x, max_y, existing_tiles):
         tiles_cache = existing_tiles.copy()
 
-        # 100 workers, as in sidewalk-ai-api. Five label-type processes run in parallel under SLURM, and the
-        # earlier 1,000-thread pool per process is the kind of burst that gets a source IP rate-limited.
+        # 100 workers, as in sidewalk-ai-api. A zoom-4 pano is 128 tiles (two fetched above), so at most 126
+        # threads run whether the pool is 100 or the earlier 1,000: tidying, not a rate-limit fix.
         with ThreadPoolExecutor(max_workers=100) as executor:
             futures = []
             for x in range(max_x + 1):
@@ -553,6 +571,9 @@ def fetch_panorama(pano_id):
         return img_array # Return original if all black
 
     dimension_result = _find_panorama_dimensions()
+    if http_errors:
+        # e.g. 403 means the request headers stopped working (audit finding 2); 400 is common for retired panos
+        print(f"pano {pano_id}: non-200 tile responses {dict(http_errors)}")
     if dimension_result is None:
         return None
 
@@ -855,9 +876,13 @@ def main(argv=None):
 
     final = pd.read_csv(manifest_path, dtype=str)
     assert final['label_uid'].is_unique, f"{manifest_path}: label_uid is not unique"
+    n_ok = int((final['status'] == 'ok').sum())
     print("Processing complete.")
     print(f"  dropped for unusable pano geometry (before selection): {dict(dropped) or 'none'}")
-    print(f"  status counts: {dict(status_counts)}")
+    print(f"  status counts: {dict(status_counts)}; {n_ok} ok rows in {manifest_path}")
+    if n_ok == 0:
+        # e.g. the tile endpoint refusing every request: fail the SLURM job instead of an empty dataset with exit 0
+        sys.exit(f"No crops in {manifest_path}: every label failed (no_pano or error; non-200 tile responses are reported per pano above).")
 
 
 if __name__ == "__main__":
