@@ -225,9 +225,12 @@ def test_hard_examples_writes_only_uid_and_reason(tmp_path):
     assert out.values.tolist() == [["a:1", "unanimous_crowd"], ["a:2", "expert"]]
 
 
-def test_hard_examples_experts_from_env(monkeypatch):
-    monkeypatch.setenv("EXPERTS", "expert1=uid-a,expert2=uid-b")
-    assert hard_examples.expert_columns() == ["expert1", "expert2"]
+def test_hard_examples_detects_role_keyed_expert_columns(tmp_path):
+    src = tmp_path / "ai_vs_humans.csv"
+    pd.DataFrame({"label_uid": ["a:1"], "kind": ["ok"], "h_agree": [3], "h_dis": [0], "expert1": [None],
+                  "expert2": ["Disagree"], "ai": ["Agree"]}).to_csv(src, index=False)
+    hard_examples.main([str(src), str(tmp_path / "out.csv")])  # no --experts: expert1, expert2 found
+    assert pd.read_csv(tmp_path / "out.csv").values.tolist() == [["a:1", "expert"]]
 
 
 def test_fine_tune_reads_split_csv_with_stable_label_ids(tmp_path):

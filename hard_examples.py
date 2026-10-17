@@ -5,9 +5,9 @@ A label is *hard* when the deployed validator got it wrong on strong evidence:
 * ``unanimous_crowd``: the AI's verdict disagreed with the human majority (``kind != "ok"``), at least three humans
   voted Agree/Disagree, and none of them voted the other way (Unsure votes are ignored);
 * ``expert``: one of the project leads' accounts (configured, not named) voted Agree or Disagree and that vote
-  differs from the AI's. Their vote columns in the export are named by the ``EXPERTS`` environment variable that
-  ``analysis/analyze.py`` uses (``EXPERTS="expert1=<user_id>,expert2=<user_id>"``; the keys are the column names), or
-  by ``--experts expert1,expert2``.
+  differs from the AI's. ``analysis/analyze.py`` (configured with ``EXPERTS="<name>=<user_id>,..."``) writes their
+  votes as role-keyed columns ``expert1``, ``expert2``, ... by position, whatever the names; every such column
+  in the export is used, or only those given with ``--experts expert1,expert2``.
 
 A label meeting both is listed once, as ``expert``. Only ``label_uid`` and ``reason`` are written: no vote counts and
 no names, so the output is safe to commit. ``data_generation.py --hard-examples`` sets ``hard = 1`` from it, and
@@ -18,26 +18,29 @@ export produced by ``analysis/`` and is never committed.
 
 Usage::
 
-    EXPERTS="expert1=<user_id>,expert2=<user_id>" python hard_examples.py ~/Data/sidewalk-validator-ai-prod-2026-10-17/ai_vs_humans.csv \\
+    python hard_examples.py ~/Data/sidewalk-validator-ai-prod-2026-10-17/ai_vs_humans.csv \\
         analysis/hard_examples_2026-10-17.csv
 """
 import argparse
-import os
+import re
 
 import pandas as pd
 
 VOTES = ("Agree", "Disagree")
 
 
-def expert_columns(arg=None):
-    """Expert vote columns: ``--experts a,b`` if given, else the keys of the ``EXPERTS`` environment variable.
+def expert_columns(columns, arg=None):
+    """Expert vote columns: ``--experts a,b`` if given, else every ``expert<N>`` column (analysis/analyze.py's
+    role-keyed names).
 
-    >>> expert_columns("expert1, expert2")
+    >>> expert_columns(["label_uid", "expert2", "expert1", "ai"])
+    ['expert1', 'expert2']
+    >>> expert_columns([], "expert1, expert2")
     ['expert1', 'expert2']
     """
     if arg:
         return [c.strip() for c in arg.split(",") if c.strip()]
-    return [kv.split("=", 1)[0] for kv in os.environ.get("EXPERTS", "").split(",") if "=" in kv]
+    return sorted(c for c in columns if re.fullmatch(r"expert\d+", c))
 
 
 def hard_examples(df, experts):
@@ -64,16 +67,16 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("ai_vs_humans", help="private ai_vs_humans.csv export")
     p.add_argument("out", help="output CSV (label_uid,reason)")
-    p.add_argument("--experts", default=None, help="comma list of expert vote columns; default: keys of env EXPERTS")
+    p.add_argument("--experts", default=None, help="comma list of expert vote columns; default: every expert<N> column")
     args = p.parse_args(argv)
-    experts = expert_columns(args.experts)
     df = pd.read_csv(args.ai_vs_humans)
+    experts = expert_columns(df.columns, args.experts)
     assert df["label_uid"].is_unique
     missing = sorted(set(experts) - set(df.columns))
     if missing:
         p.error(f"expert columns {missing} are not in {args.ai_vs_humans}")
     if not experts:
-        print("Warning: no expert columns configured (--experts or EXPERTS); only unanimous_crowd examples.")
+        print("Warning: no expert columns (expert<N> or --experts); only unanimous_crowd examples.")
     out = hard_examples(df, experts)
     out.to_csv(args.out, index=False)
     print(f"{len(out)} hard examples of {len(df)}: {out.reason.value_counts().to_dict()}")
