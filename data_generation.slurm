@@ -10,13 +10,15 @@
 
 # Steps 1-5 for all five label types. Writes <OUT>/<label_type>/{correct,incorrect}/*.webp, manifest.csv,
 # generation_run.json and split.csv (hard joined from $HARD), plus the shared <OUT>/deployment_priors.json.
-# Needs CUDA (no CPU fallback) and depth_anything_v2_metric_vkitti_vitb.pth (the checkpoint the API serves) in the
-# repo root. Resumable: resubmitting skips labels whose manifest row is "ok", whose crop exists and which are still
+# Needs CUDA (no CPU fallback), depth_anything_v2_metric_vkitti_vitb.pth (the checkpoint the API serves) in the
+# repo root, and PANO_STORE: the pano store root, laid out <PANO_STORE>/<city_id>/<pano_id[:2]>/<pano_id>.jpg (what
+# sidewalk-ai-api reads as SIDEWALK_SCRAPES_DIR). Panoramas are read only from there; none is downloaded. Resumable: resubmitting skips labels whose manifest row is "ok", whose crop exists and which are still
 # selected with the same class under the same settings. If the selection or a setting changed since the first run,
 # the job stops and reports the stale rows; add --force-reselect to accept.
 set -uo pipefail
 
 OUT=.
+PANO_STORE="${PANO_STORE:?set PANO_STORE to the pano store root}"   # PANO_STORE=/path/to/Panoramas sbatch data_generation.slurm
 CACHE="$OUT/rawlabels"            # one rawLabels pull, shared by the five label-type processes and by resubmissions
 FRESH="${FRESH:-0}"               # FRESH=1 sbatch data_generation.slurm  re-pulls rawLabels (a new selection snapshot)
 HARD=analysis/hard_examples_2026-10-17.csv
@@ -44,7 +46,7 @@ fi
 declare -A PIDS
 for LT in "${LABEL_TYPES[@]}"; do
     python -u data_generation.py --label_type="$LT" --out "$OUT" --rawlabels-cache "$CACHE" \
-        --depth-encoder vitb --tilt-beta 0.95 --seed 42 &
+        --pano-store "$PANO_STORE" --depth-encoder vitb --tilt-beta 0.95 --seed 42 &
     PIDS[$LT]=$!
 done
 FAILED=0

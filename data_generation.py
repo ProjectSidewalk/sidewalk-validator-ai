@@ -6,7 +6,7 @@ For every label of ``--label_type`` across the cities listed in ``CITIES``, this
 2. keeps human-authored labels the crowd clearly endorsed (net >= 3 human agree votes) or clearly rejected
    (net >= 2 human disagree votes), downsampling the ``correct`` class to ``CORRECT_PROPORTION``, and records the
    PRE-downsampling class counts in ``deployment_priors.json`` (the prior ``calibration/calibrate.py`` reweights to);
-3. reassembles the Google Street View panorama from tiles, renders a 2048x2048, 90-degree perspective view
+3. reads the panorama from the lab's pano store (``--pano-store``), renders a 2048x2048, 90-degree perspective view
    CENTRED on the label with rig-tilt correction (``sidewalk_panorama_tools.geometry``), estimates metric depth at
    the view centre with Depth Anything V2, and cuts a crop whose size scales with 1/depth so near and far features
    fill the frame similarly;
@@ -50,10 +50,15 @@ Lineage and background:
 Known limitations are tracked in the repo's issues; the audit that found them is
 docs/audit-2026-10-14.md.
 
+**Panoramas** come only from the pano store: ``<pano-store>/<city>/<pano_id[:2]>/<pano_id>.jpg``, ``<city>`` being the
+``CITIES`` key (the layout sidewalk-ai-api reads through ``SIDEWALK_SCRAPES_DIR``). Each is resized to 8192x4096 with
+``cv2.INTER_LINEAR``, as the API does on its cache path, so training sees the pixels serving sees. Nothing is downloaded:
+a pano missing from the store is ``no_pano``, an unreadable or non-2:1 file is ``bad_pano``.
+
 Usage::
 
-    python data_generation.py --label_type CurbRamp                       # full run, writes ./CurbRamp/
-    python data_generation.py --label_type CurbRamp --limit 20 --out /tmp/smoke --allow-cpu
+    python data_generation.py --label_type CurbRamp --pano-store /path/to/Panoramas   # full run, writes ./CurbRamp/
+    python data_generation.py --label_type CurbRamp --pano-store /path/to/Panoramas --limit 20 --out /tmp/smoke --allow-cpu
     python data_generation.py --label_type CurbRamp --select-only --rawlabels-cache ~/rawlabels  # priors, no GPU
 """
 import argparse
@@ -63,11 +68,9 @@ import io
 import json
 import os
 import sys
-import threading
 import time
 import traceback
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 
 import numpy as np
@@ -84,18 +87,6 @@ SEED = 42
 # The SidewalkAI account (role "AI"). Its labels (RampNet-placed curb ramps) are in the rig frame, and production
 # never sends them to the validator. Its votes carry validator_type "AI" and are excluded from every count.
 AI_USER_ID = "51b0b927-3c8a-45b2-93de-bd878d1e5cf4"
-
-# Google's anonymous tile endpoint returns 403 PERMISSION_DENIED without browser-like headers
-# (measured 2026-10-14; the same headers are used by sidewalk-ai-api/sidewalk_ai_api/panorama.py).
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/125.0.0.0 Safari/537.36"
-    ),
-    "Referer": "https://www.google.com/maps",
-    "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
-}
 
 # City deployments to pull labels from: city_id (as /v3/api/cities names it, and as it appears in label_uid and in
 # crop filenames) -> the deployment's subdomain, sidewalk-<subdomain>.cs.washington.edu. Not the full list of 59
@@ -130,13 +121,15 @@ DEPTH_MAX_M = 80
 
 MANIFEST_COLUMNS = [
     "label_uid", "city", "label_id", "pano_id", "label_type", "label_class", "author", "human_agree",
-    "human_disagree", "severity", "tags", "high_quality_user", "image_capture_date", "pano_source", "pano_zoom", "camera_pitch",
+    "human_disagree", "severity", "tags", "high_quality_user", "image_capture_date", "pano_source", "pano_path", "camera_pitch",
     "camera_roll", "tilt_applied", "tilt_beta", "depth_m", "crop_half_px", "clipped", "crop_path", "status",
 ]
-# (``hard`` is not a manifest column: split_data.py --hard-examples joins it, so a new list needs no regeneration.)
+# ``pano_source`` is the imagery provider from rawLabels (e.g. ``gsv``); ``pano_path`` is the pano-store file that was
+# read (empty when it was missing). (``hard`` is not a manifest column: split_data.py --hard-examples joins it, so a new
+# list needs no regeneration.)
 
-TILE_TIMEOUT = (5, 30)        # (connect, read) seconds per tile request
 CSV_TIMEOUT = (10, 300)       # rawLabels exports run to ~175 MB
+PANO_SIZE = (8192, 4096)      # (width, height) every store pano is resized to, as sidewalk-ai-api does
 DEPTH_DEVICE_HELP = "CUDA is required; --allow-cpu renders with numpy and runs depth on the CPU (smoke tests only)"
 
 
@@ -210,7 +203,8 @@ def label_author(user_id):
 def valid_geometry(df):
     """Boolean mask of rows whose stored pano point is usable, and the reason counts for the rest.
 
-    Drops (counted by reason): non-GSV providers (the tile fetcher cannot fetch them; issue #9), non-finite or
+    Drops (counted by reason): non-GSV providers (serving is GSV-only, and non-GSV training needs per-provider pose
+    handling; issue #9), non-finite or
     non-positive ``pano_width``/``pano_height``, non-finite ``pano_x``, and ``pano_y`` outside ``[0, pano_height]``
     (this covers the legacy labels whose pano coordinates were never converted and are negative: Seattle 193,
     CDMX 14, Pittsburgh 8, SPGG 1).
@@ -369,13 +363,13 @@ class ManifestWriter:
         self.base_dir = base_dir
         self.done = set()
         self.stale = Counter()
-        self.previously_missing_panos = set()  # pano_ids whose last row was no_pano / incomplete_pano
+        self.previously_missing_panos = set()  # pano_ids whose last row was a missing status (MISSING_STATUSES)
         kept = []
         if os.path.exists(path) and os.path.getsize(path) > 0:
             old = pd.read_csv(path, dtype=str, keep_default_na=False)
             old = old.drop_duplicates('label_uid', keep='last')
             for row in old.to_dict('records'):
-                if row.get('status') in ("no_pano", "incomplete_pano"):
+                if row.get('status') in MISSING_STATUSES + LEGACY_MISSING_STATUSES:
                     self.previously_missing_panos.add(row.get('pano_id'))
                 if row.get('status') != 'ok' or not os.path.exists(os.path.join(base_dir, row.get('crop_path', ''))):
                     continue
@@ -436,7 +430,7 @@ def manifest_row(row, label_type, crop_path, tilt_beta):
         "author": row['author'], "human_agree": row['human_agree'], "human_disagree": row['human_disagree'],
         "severity": row.get('severity'), "tags": row.get('tags'), "high_quality_user": row.get('high_quality_user'),
         "image_capture_date": row.get('image_capture_date'), "pano_source": row.get('pano_source'),
-        "pano_zoom": None,
+        "pano_path": None,
         "camera_pitch": row.get('camera_pitch'), "camera_roll": row.get('camera_roll'),
         "tilt_applied": 0, "tilt_beta": tilt_beta, "depth_m": None, "crop_half_px": None, "clipped": None,
         "crop_path": crop_path, "status": "",
@@ -447,204 +441,55 @@ def manifest_row(row, label_type, crop_path, tilt_beta):
 # Panorama
 # ---------------------------------------------------------------------------------------------------------------------
 
-class IncompletePanorama(Exception):
-    """Some tiles of the panorama's grid were still missing after one retry (recorded as ``incomplete_pano``)."""
+def pano_store_path(store, city, pano_id):
+    """Where the pano store keeps a panorama: ``<store>/<city>/<pano_id[:2]>/<pano_id>.jpg``.
+
+    The layout sidewalk-ai-api reads (``SIDEWALK_SCRAPES_DIR``), keyed by the city_id (the ``CITIES`` key), so one
+    store serves both. Nothing in it is provider-specific.
+
+    >>> pano_store_path("/store", "seattle-wa", "abcDEF")
+    '/store/seattle-wa/ab/abcDEF.jpg'
+    """
+    return os.path.join(store, city, pano_id[:2], f"{pano_id}.jpg")
 
 
-def _http_get(url):
-    """One tile request; a seam for the tests, which replace it with a stub."""
-    import requests
-    return requests.get(url, headers=HEADERS, timeout=TILE_TIMEOUT)
+def read_store_panorama(store, city, pano_id):
+    """The panorama from the store: ``(result, path)``.
 
-
-def fetch_panorama(pano_id, info=None):
-    """The panorama as an 8192x4096 BGR array, or None if it cannot be found (black or missing first tiles).
-
-    Raises :class:`IncompletePanorama` if any tile of the discovered ``(max_x + 1) x (max_y + 1)`` grid is still
-    missing after one retry (assembling it anyway would leave a black hole in the pano and in a crop), or if the
-    assembled image is not 2:1 (``|w / h - 2| >= 0.01``), which is what a transient failure during the size probe
-    produces: a too-narrow grid that would be stretched to 8192 wide. ``info``, if given, receives ``zoom``.
+    ``result`` is an 8192x4096 BGR array (``PANO_SIZE``), or the status string ``no_pano`` (no file; ``path`` is then
+    None) or ``bad_pano`` (``cv2.imread`` cannot decode it, or it is not 2:1, ``|w / h - 2| >= 0.01``, checked before
+    resizing so a truncated or cropped file is never stretched into a crop). The read and the resize are the API's
+    cache path (``cv2.imread`` + ``cv2.resize(..., INTER_LINEAR)``), so training sees the pixels serving sees.
     """
     import cv2
-    from PIL import Image
-
-    chosen_zoom = None
-    http_errors = Counter()  # non-200 status codes for this pano, reported once (tiles are fetched in parallel)
-    errors_lock = threading.Lock()
-
-    def _note(status):
-        with errors_lock:
-            http_errors[status] += 1
-
-    def _fetch_tile(x, y, zoom=4):
-        nonlocal chosen_zoom
-
-        if chosen_zoom != None:
-            zoom = chosen_zoom
-        
-        url = (
-            f"https://streetviewpixels-pa.googleapis.com/v1/tile"
-            f"?cb_client=maps_sv.tactile&panoid={pano_id}"
-            f"&x={x}&y={y}&zoom={zoom}"
-        )
-        try:
-            response = _http_get(url)
-            if response.status_code == 200:
-                tile = Image.open(io.BytesIO(response.content))
-                if chosen_zoom != None or not _is_black_tile(tile):
-                    chosen_zoom = zoom
-                    return x, y, tile
-            else:
-                _note(response.status_code)
-        except Exception as e:
-            _note(type(e).__name__)
-            print(e)
-
-        if chosen_zoom == None:
-            # Try fallback with zoom=3
-            fallback_url = (
-                f"https://streetviewpixels-pa.googleapis.com/v1/tile"
-                f"?cb_client=maps_sv.tactile&panoid={pano_id}"
-                f"&x={x}&y={y}&zoom=3"
-            )
-            try:
-                response = _http_get(fallback_url)
-                if response.status_code == 200:
-                    tile = Image.open(io.BytesIO(response.content))
-                    chosen_zoom = 3
-                    return x, y, tile
-                _note(response.status_code)
-            except Exception as e:
-                _note(type(e).__name__)
-                print(e)
-
-        return x, y, None
-
-    def _is_black_tile(tile):
-        if tile is None:
-            return True
-        tile_array = np.array(tile)
-        return np.all(tile_array == 0)
-
-    def _find_panorama_dimensions():
-        tiles_cache = {}
-        x, y = 5, 2
-
-        is_first = True
-
-        while True:
-            tile_info = _fetch_tile(x, y)
-            if tile_info is None:
-                return None
-            tile = tile_info[2]
-
-            if tile is None and not is_first:
-                # A failed request on the diagonal walk: retry once before giving the pano up.
-                print(f"pano {pano_id}: probe tile ({x}, {y}) failed; retrying once")
-                tile = _fetch_tile(x, y)[2]
-            if tile is None:
-                return None  # Invalid panorama
-
-            if is_first:
-                is_first = False
-                if _is_black_tile(tile):
-                    return None  # Invalid panorama
-
-            tiles_cache[(x, y)] = tile
-
-            if _is_black_tile(tile):
-                y = y - 1
-
-                while True:
-                    tile_info = _fetch_tile(x, y)
-                    if tile_info is None:
-                        return None
-                    tile = tile_info[2]
-                    if tile is None:
-                        # A failed request (429, timeout) is not the right edge: retry once before treating it so.
-                        print(f"pano {pano_id}: probe tile ({x}, {y}) failed; retrying once")
-                        tile = _fetch_tile(x, y)[2]
-                    tiles_cache[(x, y)] = tile
-
-                    if _is_black_tile(tile):
-                        return x - 1, y, tiles_cache
-
-                    x += 1
-
-            x += 1
-            y += 1
-
-    def _fetch_remaining_tiles(max_x, max_y, existing_tiles):
-        tiles_cache = existing_tiles.copy()
-
-        # 100 workers, as in sidewalk-ai-api. A zoom-4 pano is 128 tiles (a handful fetched by the probe above), so
-        # fewer than 128 threads run whether the pool is 100 or the earlier 1,000: tidying, not a rate-limit fix.
-        with ThreadPoolExecutor(max_workers=100) as executor:
-            futures = []
-            for x in range(max_x + 1):
-                for y in range(max_y + 1):
-                    if (x, y) not in tiles_cache:
-                        futures.append(executor.submit(_fetch_tile, x, y))
-
-            for future in as_completed(futures):
-                result = future.result()
-                if result is not None:
-                    x, y, tile = result
-                    if tile is not None:
-                        tiles_cache[(x, y)] = tile
-
-        return tiles_cache
-
-    def _assemble_panorama(tiles, max_x, max_y):
-        if not tiles:
-            return None
-        tile_size = list(tiles.values())[0].size[0]
-        panorama = Image.new('RGB', (tile_size * (max_x + 1), tile_size * (max_y + 1)))
-
-        for (x, y), tile in tiles.items():
-            panorama.paste(tile, (x * tile_size, y * tile_size))
-
-        return panorama
-
-    def _crop(image):
-        img_array = np.array(image)
-        y_nonzero, x_nonzero, _ = np.nonzero(img_array)
-        if y_nonzero.size > 0 and x_nonzero.size > 0:
-            return img_array[np.min(y_nonzero):np.max(y_nonzero) + 1, np.min(x_nonzero):np.max(x_nonzero) + 1]
-        return img_array # Return original if all black
-
-    def _report():
-        if http_errors:
-            # e.g. 403 means the request headers stopped working (audit finding 2); 400 is common for retired panos
-            print(f"pano {pano_id}: non-200 tile responses {dict(http_errors)}")
-
-    dimension_result = _find_panorama_dimensions()
-    if dimension_result is None:
-        _report()
-        return None
-
-    max_x, max_y, initial_tiles = dimension_result
-    full_tiles = {k: t for k, t in _fetch_remaining_tiles(max_x, max_y, initial_tiles).items() if t is not None}
-    missing = [(x, y) for x in range(max_x + 1) for y in range(max_y + 1) if (x, y) not in full_tiles]
-    for x, y in missing:  # one retry each
-        tile = _fetch_tile(x, y)[2]
-        if tile is not None:
-            full_tiles[(x, y)] = tile
-    missing = [xy for xy in missing if xy not in full_tiles]
-    _report()
-    if missing:
-        raise IncompletePanorama(f"pano {pano_id}: {len(missing)} of {(max_x + 1) * (max_y + 1)} tiles missing "
-                                 f"after a retry, e.g. {missing[:3]}")
-    assembled_panorama = _assemble_panorama(full_tiles, max_x, max_y)
-    if assembled_panorama is None:
-        return None
-    cropped_panorama = _crop(assembled_panorama)
-    h, w = cropped_panorama.shape[:2]
+    path = pano_store_path(store, city, pano_id)
+    if not os.path.isfile(path):
+        return "no_pano", None
+    img = cv2.imread(path)
+    if img is None:
+        print(f"pano {city}/{pano_id}: {path} is unreadable")
+        return "bad_pano", path
+    h, w = img.shape[:2]
     if abs(w / h - 2) >= 0.01:
-        raise IncompletePanorama(f"pano {pano_id}: assembled {w}x{h} is not 2:1 (the size probe likely missed tiles)")
-    if info is not None:
-        info['zoom'] = chosen_zoom
-    return cv2.cvtColor(cv2.resize(cropped_panorama, (8192, 4096), interpolation=cv2.INTER_LINEAR), cv2.COLOR_RGB2BGR)
+        print(f"pano {city}/{pano_id}: {path} is {w}x{h}, not 2:1")
+        return "bad_pano", path
+    return cv2.resize(img, PANO_SIZE, interpolation=cv2.INTER_LINEAR), path
+
+
+def check_pano_store(store, cities):
+    """Exit unless ``store`` is a directory holding a directory for at least one of ``cities``; warn about the rest.
+
+    Run before any download, so a mistyped path or a store laid out by other city names fails in seconds instead of
+    after 50 ``no_pano`` rows."""
+    if not os.path.isdir(store):
+        sys.exit(f"--pano-store {store} is not a directory.")
+    present = [c for c in cities if os.path.isdir(os.path.join(store, c))]
+    if not present:
+        sys.exit(f"--pano-store {store} has no directory for any selected city ({', '.join(cities)}); the store is "
+                 f"laid out <store>/<city_id>/<pano_id[:2]>/<pano_id>.jpg.")
+    absent = [c for c in cities if c not in present]
+    if absent:
+        print(f"WARNING: no pano-store directory for {', '.join(absent)}; their labels will all be no_pano.")
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -849,8 +694,11 @@ def is_fatal(exc):
 
 
 MAX_CONSECUTIVE_ERRORS = 50
-MAX_CONSECUTIVE_MISSING_PANOS = 50  # panoramas in a row that could not be fetched (no_pano / incomplete_pano)
-MISSING_STATUSES = ("no_pano", "incomplete_pano")
+MAX_CONSECUTIVE_MISSING_PANOS = 50  # panoramas in a row missing from the store or unusable (MISSING_STATUSES)
+MISSING_STATUSES = ("no_pano", "bad_pano")
+# Written by the removed tile fetcher. Such rows are never ok, so a resume drops and retries them, and they cannot reach
+# the final count; they are only read so a pano that failed under the old fetcher is not counted as a new outage.
+LEGACY_MISSING_STATUSES = ("incomplete_pano",)
 
 
 def parse_cities(arg):
@@ -876,6 +724,9 @@ def build_parser():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument('--label_type', required=True, help='Specify the label type')
     p.add_argument('--out', default='.', help='output root; crops and manifest go under <out>/<label_type>/')
+    p.add_argument('--pano-store', default=None,
+                   help='root of the pano store, read as <DIR>/<city_id>/<pano_id[:2]>/<pano_id>.jpg; required '
+                        'unless --select-only')
     p.add_argument('--limit', type=int, default=None, help='process only the first N selected labels (smoke tests)')
     p.add_argument('--manifest', default=None, help='default <out>/<label_type>/manifest.csv')
     p.add_argument('--priors', default=None,
@@ -893,7 +744,7 @@ def build_parser():
                    help='select labels and write the priors, then stop (no GPU, no panoramas)')
     p.add_argument('--allow-cpu', action='store_true', help=DEPTH_DEVICE_HELP)
     p.add_argument('--max-missing-frac', type=float, default=0.2,
-                   help='exit non-zero if more than this fraction of attempted labels ended no_pano/incomplete_pano')
+                   help='exit non-zero if more than this fraction of attempted labels ended no_pano/bad_pano')
     p.add_argument('--force-reselect', action='store_true',
                    help='resume although the selection changed since the last run (stale manifest rows are dropped)')
     return p
@@ -910,7 +761,11 @@ def main(argv=None):
     if partial:
         priors_path = os.path.splitext(priors_path)[0] + ".partial.json"
     cities = parse_cities(args.cities)
-    device = None if args.select_only else resolve_device(args.allow_cpu)  # fail fast, before the downloads
+    if not args.select_only:  # fail fast, before the downloads
+        if not args.pano_store:
+            build_parser().error("--pano-store is required unless --select-only")
+        check_pano_store(args.pano_store, list(cities))
+    device = None if args.select_only else resolve_device(args.allow_cpu)
 
     all_cities = pd.concat([load_city(c, s, args.rawlabels_cache) for c, s in cities.items()], ignore_index=True)
     n_rows = int((all_cities['label_type'] == label_type).sum())
@@ -958,8 +813,11 @@ def main(argv=None):
         print(f"WARNING: --force-reselect: selection changed: {bool(previous)}, settings changed: {changed or 'none'}; "
               f"dropped ok rows {dict(manifest.stale) or 'none'}, kept {len(manifest.done)}.")
 
+    # pano_store is provenance, not a resume setting: it says where the pixels were read, not which labels or how
+    # they were rendered, so moving or remounting the store must not invalidate every crop (see RESUME_SETTINGS).
     with open(run_path, "w") as f:  # read by fine_tune_classifier.py
         json.dump({"label_type": label_type, "settings": settings, **settings, "seed": args.seed,
+                   "pano_store": os.path.abspath(args.pano_store),
                    "cities": list(cities), "limit": args.limit, "selection_size": len(selection),
                    "selection_sha256": sel_hash, "started": date.today().isoformat()}, f, indent=2)
         f.write("\n")
@@ -973,9 +831,8 @@ def main(argv=None):
     total_images = len(combined_filtered)
     start_time = time.time()
     status_counts = Counter()
-    last_pano = (None, None, None)  # (pano_id, BGR array or the status string it failed with, tile zoom)
+    last_pano = (None, None, None)  # ((city, pano_id), BGR array or the status string it failed with, store path)
     consecutive_errors = consecutive_missing = 0
-    zoom_counts = Counter()
     with manifest:
         for processed_count, (_, row) in enumerate(combined_filtered.iterrows(), start=1):
             crop_path = f"{row['label_class']}/{row['city']}_{row['label_id']}.webp"
@@ -984,27 +841,26 @@ def main(argv=None):
                 status_counts['skipped (already ok)'] += 1
                 continue
             try:
-                if last_pano[0] != row['pano_id']:
-                    info = {}
-                    try:  # the column was renamed from gsv_panorama_id in the v3 API
-                        fetched = fetch_panorama(row['pano_id'], info=info)
-                        last_pano = (row['pano_id'], 'no_pano' if fetched is None else fetched, info.get('zoom'))
-                    except IncompletePanorama as e:
-                        print(e)
-                        last_pano = (row['pano_id'], 'incomplete_pano', None)
+                # Keyed on (city, pano_id): the store path includes the city, so the same pano_id in two cities is
+                # two reads (the sort is by pano_id, so they can be adjacent).
+                if last_pano[0] != (row['city'], row['pano_id']):
+                    read, path = read_store_panorama(args.pano_store, row['city'], row['pano_id'])
+                    last_pano = ((row['city'], row['pano_id']), read, path)
                     if isinstance(last_pano[1], str):
                         # Only panoramas missing for the first time count: a resume re-fetches exactly the panos that
                         # failed before, back to back, and must not read that as an outage.
                         if row['pano_id'] not in manifest.previously_missing_panos:
                             consecutive_missing += 1
                         if consecutive_missing >= MAX_CONSECUTIVE_MISSING_PANOS:
-                            sys.exit(f"Aborting: {consecutive_missing} panoramas in a row could not be fetched "
-                                     f"(last: {last_pano[1]}). Check the tile endpoint; the run is resumable.")
+                            sys.exit(f"Aborting: {consecutive_missing} panoramas in a row were missing or unusable "
+                                     f"(last: {last_pano[1]}, {row['city']}/{row['pano_id']}). Check the --pano-store "
+                                     f"path ({args.pano_store}) and that its city directory names match the city_ids "
+                                     f"({pano_store_path(args.pano_store, row['city'], row['pano_id'])} was looked "
+                                     f"for); the run is resumable.")
                     else:
                         consecutive_missing = 0
-                        zoom_counts[last_pano[2]] += 1
                 pano_bgr = last_pano[1]
-                rec['pano_zoom'] = last_pano[2]
+                rec['pano_path'] = last_pano[2]
                 if isinstance(pano_bgr, str):
                     rec['status'] = pano_bgr
                 else:
@@ -1044,15 +900,14 @@ def main(argv=None):
     print("Processing complete.")
     print(f"  dropped for unusable pano geometry (before selection): {dict(dropped) or 'none'}")
     print(f"  status counts: {dict(status_counts)}; {n_ok} ok rows in {manifest_path}")
-    print(f"  panoramas fetched by tile zoom: {dict(zoom_counts) or 'none'} "
-          f"(zoom-3 fallbacks: {zoom_counts.get(3, 0)})")
     if attempted and missing / attempted > args.max_missing_frac:
         sys.exit(f"{missing} of {attempted} attempted labels in the manifest ({missing / attempted:.0%}) are "
-                 f"no_pano/incomplete_pano, "
+                 f"no_pano/bad_pano, "
                  f"above --max-missing-frac {args.max_missing_frac}: the dataset would shrink silently.")
     if n_ok == 0:
-        # e.g. the tile endpoint refusing every request: fail the SLURM job instead of an empty dataset with exit 0
-        sys.exit(f"No crops in {manifest_path}: every label failed (no_pano or error; non-200 tile responses are reported per pano above).")
+        # e.g. a store without these cities' panos: fail the SLURM job instead of an empty dataset with exit 0
+        sys.exit(f"No crops in {manifest_path}: every label failed (no_pano/bad_pano or error; check --pano-store "
+                 f"{args.pano_store}).")
 
 
 if __name__ == "__main__":

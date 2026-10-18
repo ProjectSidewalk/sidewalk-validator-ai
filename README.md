@@ -19,8 +19,8 @@
 **sidewalk-validator-ai** trains the models that let Project Sidewalk check its own crowd. For each of
 five label types (curb ramp, missing curb ramp, obstacle, surface problem, crosswalk) it pulls every
 label and its agree/disagree votes from the public v3 API across deployed cities, keeps the labels the
-crowd clearly endorsed or clearly rejected, and turns each into a training image: it reassembles the
-Google Street View panorama from tiles, renders a 90° perspective view centred on the label (with rig-tilt correction), runs
+crowd clearly endorsed or clearly rejected, and turns each into a training image: it reads the
+panorama from the lab's pano store, renders a 90° perspective view centred on the label (with rig-tilt correction), runs
 [Depth Anything V2](https://github.com/DepthAnything/Depth-Anything-V2) to estimate how far away the
 labelled feature is, and cuts a crop whose size scales with distance so near and far features fill the
 frame similarly. A [DINOv2](https://arxiv.org/abs/2304.07193)-Large classifier is then fine-tuned per
@@ -55,7 +55,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
         │               (AI votes excluded; pre-downsampling counts → deployment_priors.json;
         │                correct class then downsampled to 55%)
         ▼
- [2] fetch panorama     GSV tiles → 8192×4096 equirectangular
+ [2] read panorama      pano store <city>/<pano_id[:2]>/<pano_id>.jpg → 8192×4096 equirectangular
         ▼
  [3] perspective view   90° FOV, 2048², centred on the label, rig-tilt corrected (sidewalk-panorama-tools)
         ▼
@@ -79,7 +79,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 
 | File | Role | Key constants |
 |---|---|---|
-| [`data_generation.py`](data_generation.py) | Steps 1–4. Pulls labels, selects classes, writes `deployment_priors.json`, fetches panoramas, renders label-centred views, sizes crops by depth, appends to a resumable `manifest.csv`. | `CITIES`, `CORRECT_PROPORTION = 0.55`, `SEED = 42`, FOV 90°, 2048² view, `6100 / depth`, `--tilt-beta 0.95`, `--depth-encoder vitb` |
+| [`data_generation.py`](data_generation.py) | Steps 1–4. Pulls labels, selects classes, writes `deployment_priors.json`, reads panoramas from the pano store, renders label-centred views, sizes crops by depth, appends to a resumable `manifest.csv`. | `CITIES`, `CORRECT_PROPORTION = 0.55`, `SEED = 42`, FOV 90°, 2048² view, `6100 / depth`, `--tilt-beta 0.95`, `--depth-encoder vitb` |
 | [`split_data.py`](split_data.py) | Step 5. Assigns manifest rows to train/val/test by panorama (stratified by class), optional held-out cities, joins the `hard` flag; writes `split.csv`, never touches images. | 70 / 15 / 15 of rows, `--seed`, `--holdout-cities`, `--hard-examples` |
 | [`fine_tune_classifier.py`](fine_tune_classifier.py) | Step 6. Hugging Face `Trainer` on `facebook/dinov2-large`, from `split.csv`; val uses the checkpoint's image processor (as eval and serving do). | lr 1e-5, batch 8 × 4 accumulation, `--epochs 25`, warm-up 10%, `--seed`, best by macro-F1, `id2label = {0: correct, 1: incorrect}` |
 | [`hard_examples.py`](hard_examples.py) | Builds [`analysis/hard_examples_2026-10-17.csv`](analysis/hard_examples_2026-10-17.csv) (`label_uid,reason`) from a private production export: labels the deployed AI got wrong against a unanimous crowd (≥3 votes) or one of the project leads' accounts (configured via `EXPERTS`, not named). Feeds `split_data.py --hard-examples`. | |
@@ -202,16 +202,22 @@ wget https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-VKITTI-Base/
 The three job files each process all five label types. They are written for the `makelab` account on
 klone's `gpu-l40s` partition; edit the `#SBATCH` lines for anything else.
 
-**1. Generate datasets** (hours to days; fetches every panorama from Google):
+**1. Generate datasets** (hours to days; reads every panorama from the pano store):
 
 ```bash
-sbatch data_generation.slurm
+PANO_STORE=/path/to/Panoramas sbatch data_generation.slurm
 ```
+
+`PANO_STORE` is required. It is the lab's pano store, laid out `<city_id>/<pano_id[:2]>/<pano_id>.jpg` with the
+city_ids of `CITIES` (the layout sidewalk-ai-api reads through `SIDEWALK_SCRAPES_DIR`), so it has to be mounted
+where the job runs. Each panorama is read with `cv2.imread` and resized to 8192×4096 (`INTER_LINEAR`), as the API
+does, so training sees the pixels serving sees. Nothing is downloaded. The script checks at startup that the
+store exists and holds a directory for at least one selected city, and warns about cities without one.
 
 Per label type this writes `<label_type>/{correct,incorrect}/<city>_<label_id>.webp`,
 `<label_type>/manifest.csv` (one row per attempted label: `label_uid` = `<city>:<label_id>`, class, author,
-human votes, pose, `tilt_applied`, `depth_m`, `crop_half_px`, `clipped`, `crop_path`, `status`) and
-`generation_run.json` (settings and a hash of the selection), plus the shared `deployment_priors.json` in the
+human votes, the provider (`pano_source`) and the store file read (`pano_path`), pose, `tilt_applied`, `depth_m`, `crop_half_px`, `clipped`, `crop_path`, `status`) and
+`generation_run.json` (settings, the store path, and a hash of the selection), plus the shared `deployment_priors.json` in the
 output root. Views are rendered on the GPU with the package's torch recipe and depth runs on the same device;
 the script stops if there is no CUDA device (`--allow-cpu` is for smoke tests). The manifest is written row by
 row, so a killed job can simply be resubmitted: labels already `ok`, still selected and with the same class are
@@ -225,10 +231,11 @@ The job pulls `rawLabels` once into `rawlabels/` and reuses it on resubmission (
 data_generation.slurm` re-pulls), so a resumed run sees the same selection. Even after a re-pull the selection
 moves little: the kept `correct` labels are the lowest by a seeded hash of `label_uid`, so one label entering or
 leaving the pool changes at most one kept label in and one out. A run stops rather than shrink the dataset
-silently: after 50 panoramas in a row that could not be fetched, after 50 consecutive per-label errors, or at the
-end if more than 20% of attempted labels ended `no_pano`/`incomplete_pano` (`--max-missing-frac`). A panorama
-whose tile grid is incomplete, or whose assembled image is not 2:1, is `incomplete_pano`, never a stretched crop;
-the tile zoom of each crop is in the manifest (`pano_zoom`) and zoom-3 fallbacks are counted in the summary. Set `HOLDOUT` in the job file to send whole cities to `test_heldout`. Progress is
+silently: after 50 panoramas in a row missing or unusable (usually a wrong `PANO_STORE` or city directory names that
+are not the city_ids), after 50 consecutive per-label errors, or at the end if more than 20% of attempted labels
+ended `no_pano`/`bad_pano` (`--max-missing-frac`). A panorama not in the store is `no_pano`; a file that cannot be
+decoded, or is not 2:1, is `bad_pano`, never a stretched crop. Moving the store does not invalidate a resume: its
+path is recorded for provenance, not compared. Set `HOLDOUT` in the job file to send whole cities to `test_heldout`. Progress is
 in the SLURM log; the first lines report the deployment prior and how many labels were selected per class.
 
 **2. Train** (several hours per label type; three run concurrently, then two):
@@ -295,7 +302,7 @@ the evidence for each item. In order of how much they affect the numbers:
 - **Train/serve skew** ([#5](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5), [sidewalk-ai-api#8](https://github.com/ProjectSidewalk/sidewalk-ai-api/issues/8)). Normalisation, camera pitch and depth checkpoint differed between training and serving. Training now uses the serving preprocessing for val, label-centred views from the shared geometry package and the ViT-B depth checkpoint; the API applies the same tilt correction in [sidewalk-ai-api#17](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/17), which must be deployed before any retrained model (nothing has been retrained yet).
 - **Evaluation script bugs** ([#6](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6)). Fixed in `evaluate.py`, which replaces `get_stats.py` (PR [#22](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/22), closed unmerged, had proposed a fix first); numbers in `report.png` files made by the old script are not reliable.
 - **Publication** ([#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7)). The CurbRamp dataset on Hugging Face is a copy of the Crosswalk one; model repos carry 2.4 GB of optimizer state.
-- **Imagery path** ([#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8), [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9)). Panoramas are re-downloaded from Google rather than read from the lab's pano store; 19 of 59 deployments are used (41 public, 18 private); the camera-tilt error in stored coordinates ([sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54)) is now corrected in training crops (beta 0.95).
+- **Imagery path** ([#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8), [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9)). Panoramas are read only from the lab's pano store (`--pano-store`), and only GSV labels are used, since serving is GSV-only and other providers need per-provider pose handling; 19 of 59 deployments are used (41 public, 18 private); the camera-tilt error in stored coordinates ([sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54)) is now corrected in training crops (beta 0.95).
 - **Hygiene** ([#10](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10), [#11](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/11)). No tests or CI; vendored 64 MB depth tree; frozen environment file.
 
 Experiments we think are worth running next, each with a first experiment spelled out: soft targets and
