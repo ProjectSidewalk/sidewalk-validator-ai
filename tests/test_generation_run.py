@@ -42,8 +42,14 @@ def write_pano(store, city, pano_id, size=(64, 32), bgr=PANO_BGR):
     return path
 
 
+def mark_store(store, contents="toy store v1\nsecond line\n"):
+    store.mkdir(parents=True, exist_ok=True)
+    (store / dg.PANO_STORE_MARKER).write_text(contents)
+    return store
+
+
 def make_store(tmp_path, rows, city=CITY):
-    store = tmp_path / "store"
+    store = mark_store(tmp_path / "store")
     (store / city).mkdir(parents=True, exist_ok=True)  # the city directory exists even if every pano is removed
     for pano_id in {r["pano_id"] for r in rows}:
         write_pano(store, city, pano_id)
@@ -119,6 +125,7 @@ def test_main_records_tilt_depth_and_crop_size(stubbed):
                                "renderer": "numpy", "include_ai_labels": True,
                                "package_source": dg.package_source()}
     assert run["pano_store"] == str(stubbed["store"].resolve())  # provenance, outside the resume settings
+    assert run["pano_store_marker"] == "toy store v1"  # the marker's first line
 
 
 def test_manifest_records_provider_and_store_path(stubbed):
@@ -126,6 +133,15 @@ def test_manifest_records_provider_and_store_path(stubbed):
     assert "pano_zoom" not in m.columns
     assert (m.pano_source == "gsv").all()  # the provider column is unchanged
     assert m.loc["toy-city:3", "pano_path"] == str(stubbed["store"] / CITY / "p3" / "p3.jpg")
+    assert (m.pano_native_w == 64).all() and (m.pano_native_h == 32).all()  # the stored size, before the resize
+
+
+def test_relative_store_path_is_made_absolute_once(stubbed, monkeypatch):
+    monkeypatch.chdir(stubbed["tmp"])
+    m = run_main(stubbed["tmp"], store="store")  # relative to the working directory
+    assert m.pano_path.str.startswith(str(stubbed["store"].resolve())).all()
+    run = json.loads((stubbed["tmp"] / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["pano_store"] == str(stubbed["store"].resolve())
 
 
 def test_store_pixels_reach_the_crop_as_rgb(stubbed):
@@ -197,40 +213,71 @@ def test_pano_size_is_the_serving_size():
 
 
 def test_read_store_panorama_resizes_like_the_api(tmp_path):
-    """cv2.imread + resize to 8192x4096 with INTER_LINEAR, pixel for pixel what sidewalk-ai-api's cache path does."""
+    """cv2.imread + resize to 8192x4096 with INTER_LINEAR, the method of sidewalk-ai-api's cache path (byte-identity
+    across the two repos also needs the same opencv build)."""
     path = write_pano(tmp_path, "seattle-wa", "abcdef")
-    pano, read_path = dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef")
-    assert read_path == str(path) and pano.shape == (4096, 8192, 3)
+    pano, info = dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef")
+    assert info == {"pano_path": str(path), "pano_native_w": 64, "pano_native_h": 32}
+    assert pano.shape == (4096, 8192, 3)
     expected = cv2.resize(cv2.imread(str(path)), (8192, 4096), interpolation=cv2.INTER_LINEAR)
     assert np.array_equal(pano, expected)
 
 
 def test_missing_file_is_no_pano(tmp_path):
+    mark_store(tmp_path)
     (tmp_path / "seattle-wa").mkdir()
-    assert dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef") == ("no_pano", None)
+    assert dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef") == (
+        "no_pano", {"pano_path": None, "pano_native_w": None, "pano_native_h": None})
+
+
+def test_missing_file_with_the_store_gone_is_fatal(tmp_path):
+    """A no_pano is only believed while the marker and the city directory are still there."""
+    (tmp_path / "seattle-wa").mkdir()  # no marker: e.g. the mount dropped after the startup check
+    with pytest.raises(dg.PanoStoreUnavailable, match="marker"):
+        dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef")
+    mark_store(tmp_path)
+    with pytest.raises(dg.PanoStoreUnavailable, match="city directory"):
+        dg.read_store_panorama(str(tmp_path), "cdmx", "abcdef")
+    assert dg.is_fatal(dg.PanoStoreUnavailable("x"))
+
+
+def test_io_error_other_than_missing_is_fatal(tmp_path, monkeypatch):
+    """A stale NFS handle or a dropped mount (errno 107 here) must stop the run, not become no_pano."""
+    write_pano(tmp_path, "seattle-wa", "abcdef")
+    mark_store(tmp_path)
+    real_stat = dg.os.stat
+
+    def flaky_stat(path, *a, **k):
+        if str(path).endswith(".jpg"):
+            raise OSError(107, "Transport endpoint is not connected", str(path))
+        return real_stat(path, *a, **k)
+    monkeypatch.setattr(dg.os, "stat", flaky_stat)
+    with pytest.raises(dg.PanoStoreUnavailable, match="not connected"):
+        dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef")
 
 
 def test_unreadable_file_is_bad_pano(tmp_path):
     path = tmp_path / "seattle-wa" / "ab" / "abcdef.jpg"
     path.parent.mkdir(parents=True)
     path.write_bytes(b"not a jpeg at all")
-    assert dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef") == ("bad_pano", str(path))
+    assert dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef") == (
+        "bad_pano", {"pano_path": str(path), "pano_native_w": None, "pano_native_h": None})
 
 
 def test_non_2_to_1_file_is_bad_pano(tmp_path):
     path = write_pano(tmp_path, "seattle-wa", "abcdef", size=(64, 48))  # e.g. a cropped or truncated download
-    assert dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef") == ("bad_pano", str(path))
+    assert dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef") == (
+        "bad_pano", {"pano_path": str(path), "pano_native_w": 64, "pano_native_h": 48})
 
 
 def test_city_key_is_part_of_the_path(tmp_path):
     """The same pano_id in two cities is two files; each label reads its own city's."""
     write_pano(tmp_path, "seattle-wa", "abcdef", bgr=(10, 10, 10))
     write_pano(tmp_path, "teaneck-nj", "abcdef", bgr=(240, 240, 240))
-    a, pa = dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef")
-    b, pb = dg.read_store_panorama(str(tmp_path), "teaneck-nj", "abcdef")
-    assert pa.endswith("seattle-wa/ab/abcdef.jpg") and pb.endswith("teaneck-nj/ab/abcdef.jpg")
+    a, ia = dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef")
+    b, ib = dg.read_store_panorama(str(tmp_path), "teaneck-nj", "abcdef")
+    assert ia["pano_path"].endswith("seattle-wa/ab/abcdef.jpg") and ib["pano_path"].endswith("teaneck-nj/ab/abcdef.jpg")
     assert a.mean() < 50 < 200 < b.mean()
-    assert dg.read_store_panorama(str(tmp_path), "cdmx", "abcdef") == ("no_pano", None)
 
 
 def test_missing_store_fails_fast(stubbed, monkeypatch):
@@ -239,12 +286,72 @@ def test_missing_store_fails_fast(stubbed, monkeypatch):
     monkeypatch.setattr(dg, "load_city", no_download)
     with pytest.raises(SystemExit, match="is not a directory"):
         run_main(stubbed["tmp"], store=stubbed["tmp"] / "nope")
-    empty = stubbed["tmp"] / "empty-store"
+    unmarked = stubbed["tmp"] / "unmarked"
+    (unmarked / CITY).mkdir(parents=True)
+    with pytest.raises(SystemExit, match=r"no \.pano-store marker"):
+        run_main(stubbed["tmp"], store=unmarked)
+    empty = mark_store(stubbed["tmp"] / "empty-store")
     (empty / "other-city").mkdir(parents=True)
     with pytest.raises(SystemExit, match="no directory for any selected city"):
         run_main(stubbed["tmp"], store=empty)
     with pytest.raises(SystemExit):  # argparse error: --pano-store is required unless --select-only
         dg.main(["--label_type", "CurbRamp", "--rawlabels-cache", str(stubbed["tmp"]), "--allow-cpu"])
+
+
+def test_empty_marker_is_accepted(stubbed):
+    mark_store(stubbed["store"], contents="")
+    run_main(stubbed["tmp"], "--limit", "1")
+    run = json.loads((stubbed["tmp"] / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["pano_store_marker"] == ""
+
+
+def _second_city(stubbed):
+    """A selected city whose labels are in the rawLabels cache but which has no store directory."""
+    pd.DataFrame([label(10, 0, 3, pano="q10")]).to_csv(stubbed["tmp"] / "other-city.csv", index=False)
+    return ["--cities", f"{CITY},other-city"]
+
+
+def test_absent_city_directory_is_fatal_even_on_a_limit_run(stubbed):
+    for extra in ([], ["--limit", "2"]):
+        with pytest.raises(SystemExit, match="no directory for other-city.*--allow-missing-cities"):
+            run_main(stubbed["tmp"], *_second_city(stubbed), *extra)
+
+
+def test_allow_missing_cities_makes_their_labels_no_pano(stubbed):
+    m = run_main(stubbed["tmp"], *_second_city(stubbed), "--allow-missing-cities").set_index("label_uid")
+    assert m.loc["other-city:10", "status"] == "no_pano"
+    assert (m.drop(index="other-city:10").status == "ok").all()
+
+
+def test_marker_gone_mid_run_is_fatal(stubbed, monkeypatch):
+    """The startup check passes, then the store goes away: the first no_pano is checked against the marker and stops
+    the run instead of writing a row."""
+    remove_panos(stubbed["store"], ["p4"])  # read order p3, p4, p5, shared
+    real_check = dg.check_pano_store
+
+    def check_then_unmount(*a, **k):
+        result = real_check(*a, **k)
+        (stubbed["store"] / dg.PANO_STORE_MARKER).unlink()
+        return result
+    monkeypatch.setattr(dg, "check_pano_store", check_then_unmount)
+    with pytest.raises(dg.PanoStoreUnavailable, match="marker"):
+        run_main(stubbed["tmp"])
+    m = pd.read_csv(stubbed["tmp"] / "out" / "CurbRamp" / "manifest.csv")
+    assert "no_pano" not in set(m.status)
+
+
+def test_dropped_mount_mid_run_is_fatal_not_no_pano(stubbed, monkeypatch):
+    real_stat = dg.os.stat
+
+    def dropped(path, *a, **k):
+        if str(path).endswith("p4.jpg"):
+            raise OSError(107, "Transport endpoint is not connected", str(path))
+        return real_stat(path, *a, **k)
+    monkeypatch.setattr(dg.os, "stat", dropped)
+    with pytest.raises(dg.PanoStoreUnavailable):
+        run_main(stubbed["tmp"])
+    m = pd.read_csv(stubbed["tmp"] / "out" / "CurbRamp" / "manifest.csv")
+    assert set(m.status) == {"ok"}  # p3 only; no row for p4
 
 
 # ---------------------------------------------------------------- missing and unusable panoramas
@@ -273,20 +380,28 @@ def test_bad_pano_is_a_status(stubbed):
     assert set(m.status) == {"bad_pano"} and m.pano_path.str.endswith(".jpg").all()
 
 
-def test_legacy_incomplete_pano_rows_are_retried_and_not_counted_as_new_outages(stubbed, monkeypatch):
-    """A manifest from the tile fetcher: its incomplete_pano rows are redone from the store, and a pano still missing
-    is not a first-time failure for the consecutive-missing stop."""
+def test_legacy_manifest_is_redone_from_the_store(stubbed, monkeypatch, capsys):
+    """A manifest from the tile fetcher (pano_zoom, no pano_path): its ok rows are stale and redone from the store,
+    its incomplete_pano rows are retried, and a pano still missing is not a first-time failure for the
+    consecutive-missing stop."""
     tmp = stubbed["tmp"]
     run_main(tmp)
     path = tmp / "out" / "CurbRamp" / "manifest.csv"
     old = pd.read_csv(path, dtype=str, keep_default_na=False)
     old.loc[old.pano_id.isin(["p3", "p4", "p5"]), "status"] = "incomplete_pano"
-    old.drop(columns="pano_path").assign(pano_zoom="4").to_csv(path, index=False)  # the old column set
+    old = old.drop(columns=["pano_path", "pano_native_w", "pano_native_h"]).assign(pano_zoom="4")
+    old.to_csv(path, index=False)  # the old column set; the "shared" pano's two rows stay ok
     remove_panos(stubbed["store"], ["p3", "p4", "p5"])
     monkeypatch.setattr(dg, "MAX_CONSECUTIVE_MISSING_PANOS", 2)
+    calls = stubbed["depth"].calls
+    capsys.readouterr()
     m = run_main(tmp, "--max-missing-frac", "0.9")
+    out = capsys.readouterr().out
+    assert "Redoing 2 ok rows made by the removed tile fetcher" in out and "predate the pano store" in out
+    assert stubbed["depth"].calls == calls + 2  # both pre-store crops re-rendered
     assert list(m.columns) == dg.MANIFEST_COLUMNS
     assert sorted(m.status) == ["no_pano"] * 3 + ["ok"] * 2
+    assert m.loc[m.status == "ok", "pano_path"].str.endswith("shared.jpg").all()
 
 
 # ---------------------------------------------------------------- split order

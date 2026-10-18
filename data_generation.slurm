@@ -11,20 +11,32 @@
 # Steps 1-5 for all five label types. Writes <OUT>/<label_type>/{correct,incorrect}/*.webp, manifest.csv,
 # generation_run.json and split.csv (hard joined from $HARD), plus the shared <OUT>/deployment_priors.json.
 # Needs CUDA (no CPU fallback), depth_anything_v2_metric_vkitti_vitb.pth (the checkpoint the API serves) in the
-# repo root, and PANO_STORE: the pano store root, laid out <PANO_STORE>/<city_id>/<pano_id[:2]>/<pano_id>.jpg (what
-# sidewalk-ai-api reads as SIDEWALK_SCRAPES_DIR). Panoramas are read only from there; none is downloaded. Resumable: resubmitting skips labels whose manifest row is "ok", whose crop exists and which are still
-# selected with the same class under the same settings. If the selection or a setting changed since the first run,
-# the job stops and reports the stale rows; add --force-reselect to accept.
+# repo root, and PANO_STORE: either the pano store itself or a staged copy of it that keeps the store's layout,
+# <PANO_STORE>/<city_id>/<pano_id[:2]>/<pano_id>.jpg (what sidewalk-ai-api reads as SIDEWALK_SCRAPES_DIR), with a
+# .pano-store marker file at its root (a staged copy writes its own only after a verified pull). Panoramas are read
+# only from there; none is downloaded. Every selected city needs a directory (data_generation.py
+# --allow-missing-cities to run without some). Resumable: resubmitting skips labels whose manifest row is "ok", whose
+# crop exists and which are still selected with the same class under the same settings. If the selection or a
+# setting changed since the first run, the job stops and reports the stale rows; add --force-reselect to accept.
 set -uo pipefail
 
 OUT=.
-PANO_STORE="${PANO_STORE:?set PANO_STORE to the pano store root}"   # PANO_STORE=/path/to/Panoramas sbatch data_generation.slurm
-CACHE="$OUT/rawlabels"            # one rawLabels pull, shared by the five label-type processes and by resubmissions
-FRESH="${FRESH:-0}"               # FRESH=1 sbatch data_generation.slurm  re-pulls rawLabels (a new selection snapshot)
+# PANO_STORE=/path/to/Panoramas sbatch data_generation.slurm
+PANO_STORE="${PANO_STORE:?set PANO_STORE to the pano store root}"
+# One rawLabels pull, shared by the five label-type processes and by resubmissions.
+CACHE="$OUT/rawlabels"
+# FRESH=1 sbatch data_generation.slurm  re-pulls rawLabels (a new selection snapshot).
+FRESH="${FRESH:-0}"
 HARD=analysis/hard_examples_2026-10-17.csv
 # Optional held-out cities for split_data.py (whole cities to test_heldout), e.g. HOLDOUT="teaneck-nj,taipei"
 HOLDOUT=""
 LABEL_TYPES=(Crosswalk CurbRamp NoCurbRamp Obstacle SurfaceProblem)
+
+# 0. Check the store before spending time on the pull (data_generation.py checks it again, with the city directories).
+[ -d "$PANO_STORE" ] && [ -f "$PANO_STORE/.pano-store" ] || {
+    echo "PANO_STORE=$PANO_STORE is not a pano store (no directory, or no .pano-store marker; is it mounted?)" >&2
+    exit 1
+}
 
 # 1. Pull rawLabels once, only if there is no cache yet (or FRESH=1). Reusing it on resubmission keeps the
 #    selection identical, so a resumed run is not refused for new votes that arrived in between.

@@ -170,7 +170,7 @@ def test_deployment_priors_merge(tmp_path):
 def _row(uid, status, crop):
     city, label_id = uid.split(":")
     return {"label_uid": uid, "city": city, "label_id": label_id, "pano_id": "p", "label_class": "correct",
-            "crop_path": crop, "status": status}
+            "crop_path": crop, "status": status, "pano_path": "/store/c/p/p.jpg"}
 
 
 def test_manifest_is_resumable(tmp_path):

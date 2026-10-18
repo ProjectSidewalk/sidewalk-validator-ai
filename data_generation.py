@@ -50,15 +50,18 @@ Lineage and background:
 Known limitations are tracked in the repo's issues; the audit that found them is
 docs/audit-2026-10-14.md.
 
-**Panoramas** come only from the pano store: ``<pano-store>/<city>/<pano_id[:2]>/<pano_id>.jpg``, ``<city>`` being the
-``CITIES`` key (the layout sidewalk-ai-api reads through ``SIDEWALK_SCRAPES_DIR``). Each is resized to 8192x4096 with
-``cv2.INTER_LINEAR``, as the API does on its cache path, so training sees the pixels serving sees. Nothing is downloaded:
-a pano missing from the store is ``no_pano``, an unreadable or non-2:1 file is ``bad_pano``.
+**Panoramas** come only from the pano store, or a staged copy of it with the same layout:
+``<pano-store>/<city>/<pano_id[:2]>/<pano_id>.jpg``, ``<city>`` being the ``CITIES`` key (the layout sidewalk-ai-api
+reads through ``SIDEWALK_SCRAPES_DIR``), with a ``.pano-store`` marker file at the root. Each is resized to 8192x4096
+with ``cv2.INTER_LINEAR``, the same method as the API's cache path (byte-identical pixels also need matching opencv
+builds). Nothing is downloaded: a pano missing from the store is ``no_pano``, an unreadable or non-2:1 file is
+``bad_pano``, and a store that stops answering (a dropped mount, a vanished marker) stops the run.
 
 Usage::
 
     python data_generation.py --label_type CurbRamp --pano-store /path/to/Panoramas   # full run, writes ./CurbRamp/
-    python data_generation.py --label_type CurbRamp --pano-store /path/to/Panoramas --limit 20 --out /tmp/smoke --allow-cpu
+    python data_generation.py --label_type CurbRamp --pano-store /path/to/Panoramas --limit 20 --out /tmp/smoke \
+        --allow-cpu
     python data_generation.py --label_type CurbRamp --select-only --rawlabels-cache ~/rawlabels  # priors, no GPU
 """
 import argparse
@@ -121,15 +124,19 @@ DEPTH_MAX_M = 80
 
 MANIFEST_COLUMNS = [
     "label_uid", "city", "label_id", "pano_id", "label_type", "label_class", "author", "human_agree",
-    "human_disagree", "severity", "tags", "high_quality_user", "image_capture_date", "pano_source", "pano_path", "camera_pitch",
+    "human_disagree", "severity", "tags", "high_quality_user", "image_capture_date", "pano_source", "pano_path",
+    "pano_native_w", "pano_native_h", "camera_pitch",
     "camera_roll", "tilt_applied", "tilt_beta", "depth_m", "crop_half_px", "clipped", "crop_path", "status",
 ]
-# ``pano_source`` is the imagery provider from rawLabels (e.g. ``gsv``); ``pano_path`` is the pano-store file that was
-# read (empty when it was missing). (``hard`` is not a manifest column: split_data.py --hard-examples joins it, so a new
-# list needs no regeneration.)
+# ``pano_source`` is the imagery provider from rawLabels (e.g. ``gsv``); ``pano_path`` is the absolute pano-store file
+# that was read (empty when it was missing, and on rows made by the removed tile fetcher, which a resume redoes), and
+# ``pano_native_w``/``pano_native_h`` its size before the resize (a 2:1 file with black bands passes the 2:1 check, so
+# the native size is what finds them later). (``hard`` is not a manifest column: split_data.py --hard-examples joins
+# it, so a new list needs no regeneration.)
 
 CSV_TIMEOUT = (10, 300)       # rawLabels exports run to ~175 MB
 PANO_SIZE = (8192, 4096)      # (width, height) every store pano is resized to, as sidewalk-ai-api does
+PANO_STORE_MARKER = ".pano-store"  # must exist at the store root (any contents; its first line is recorded)
 DEPTH_DEVICE_HELP = "CUDA is required; --allow-cpu renders with numpy and runs depth on the CPU (smoke tests only)"
 
 
@@ -346,10 +353,12 @@ class ManifestWriter:
 
     On open, an existing manifest is read and de-duplicated (last row per ``label_uid`` wins). A row is kept, and its
     label skipped (:meth:`is_done`), only if its status is ``ok``, its crop file exists, and its ``label_uid`` is in
-    ``selection`` (``{label_uid: label_class}``, the CURRENT full selection) with the same class. Every other row is
-    dropped: a label still selected is attempted again and gets exactly one fresh row, and a label no longer selected
-    leaves the manifest (its crop file stays on disk, unused). ``self.stale`` counts the dropped ``ok`` rows. The kept
-    rows are rewritten atomically before any append, so ``label_uid`` stays unique in the file at every moment.
+    ``selection`` (``{label_uid: label_class}``, the CURRENT full selection) with the same class, and it has a
+    ``pano_path`` (an ``ok`` row without one was made by the removed tile fetcher, not from the store). Every other
+    row is dropped: a label still selected is attempted again and gets exactly one fresh row, and a label no longer
+    selected leaves the manifest (its crop file stays on disk, unused). ``self.stale`` counts the dropped ``ok`` rows
+    by reason. The kept rows are rewritten atomically before any append, so ``label_uid`` stays unique in the file at
+    every moment.
 
     Example::
 
@@ -363,14 +372,14 @@ class ManifestWriter:
         self.base_dir = base_dir
         self.done = set()
         self.stale = Counter()
-        self.previously_missing_panos = set()  # pano_ids whose last row was a missing status (MISSING_STATUSES)
+        self.previously_missing_panos = set()  # (city, pano_id) whose last row was a missing status
         kept = []
         if os.path.exists(path) and os.path.getsize(path) > 0:
             old = pd.read_csv(path, dtype=str, keep_default_na=False)
             old = old.drop_duplicates('label_uid', keep='last')
             for row in old.to_dict('records'):
                 if row.get('status') in MISSING_STATUSES + LEGACY_MISSING_STATUSES:
-                    self.previously_missing_panos.add(row.get('pano_id'))
+                    self.previously_missing_panos.add((row.get('city'), row.get('pano_id')))
                 if row.get('status') != 'ok' or not os.path.exists(os.path.join(base_dir, row.get('crop_path', ''))):
                     continue
                 uid = row['label_uid']
@@ -380,6 +389,8 @@ class ManifestWriter:
                     self.stale['no_longer_selected'] += 1
                 elif selection[uid] != row.get('label_class'):
                     self.stale['class_changed'] += 1
+                elif not row.get('pano_path'):
+                    self.stale['not_from_store'] += 1
                 else:
                     kept.append(row)
                     self.done.add(uid)
@@ -430,7 +441,7 @@ def manifest_row(row, label_type, crop_path, tilt_beta):
         "author": row['author'], "human_agree": row['human_agree'], "human_disagree": row['human_disagree'],
         "severity": row.get('severity'), "tags": row.get('tags'), "high_quality_user": row.get('high_quality_user'),
         "image_capture_date": row.get('image_capture_date'), "pano_source": row.get('pano_source'),
-        "pano_path": None,
+        "pano_path": None, "pano_native_w": None, "pano_native_h": None,
         "camera_pitch": row.get('camera_pitch'), "camera_roll": row.get('camera_roll'),
         "tilt_applied": 0, "tilt_beta": tilt_beta, "depth_m": None, "crop_half_px": None, "clipped": None,
         "crop_path": crop_path, "status": "",
@@ -453,43 +464,84 @@ def pano_store_path(store, city, pano_id):
     return os.path.join(store, city, pano_id[:2], f"{pano_id}.jpg")
 
 
-def read_store_panorama(store, city, pano_id):
-    """The panorama from the store: ``(result, path)``.
+class PanoStoreUnavailable(RuntimeError):
+    """The store itself stopped answering (an I/O error other than a missing file, or its marker or a city directory
+    vanished mid-run): fatal, never a ``no_pano`` row, since a dropped mount would otherwise shrink the dataset
+    silently under ``--max-missing-frac``."""
 
-    ``result`` is an 8192x4096 BGR array (``PANO_SIZE``), or the status string ``no_pano`` (no file; ``path`` is then
-    None) or ``bad_pano`` (``cv2.imread`` cannot decode it, or it is not 2:1, ``|w / h - 2| >= 0.01``, checked before
-    resizing so a truncated or cropped file is never stretched into a crop). The read and the resize are the API's
-    cache path (``cv2.imread`` + ``cv2.resize(..., INTER_LINEAR)``), so training sees the pixels serving sees.
+
+def _require_store(store, city):
+    """Raise :class:`PanoStoreUnavailable` unless the marker and ``city``'s directory are still there."""
+    for what, path in (("marker", os.path.join(store, PANO_STORE_MARKER)),
+                       ("city directory", os.path.join(store, city))):
+        try:
+            os.stat(path)
+        except OSError as e:
+            raise PanoStoreUnavailable(f"pano store {what} {path} is gone ({e}); is the store still mounted?") from e
+
+
+def read_store_panorama(store, city, pano_id):
+    """The panorama from the store: ``(result, info)``.
+
+    ``result`` is an 8192x4096 BGR array (``PANO_SIZE``), or the status string ``no_pano`` (no file) or ``bad_pano``
+    (``cv2.imread`` cannot decode it, or it is not 2:1, ``|w / h - 2| >= 0.01``, checked before resizing so a truncated
+    or cropped file is never stretched into a crop). ``info`` holds the manifest fields ``pano_path`` (None for
+    ``no_pano``), ``pano_native_w`` and ``pano_native_h`` (None unless decoded).
+
+    The read and the resize are the API's cache path (``cv2.imread`` + ``cv2.resize(..., INTER_LINEAR)``); identical
+    bytes also need the same opencv build. Only ``FileNotFoundError`` is ``no_pano``, and only once the store's marker
+    and city directory are confirmed present; any other ``OSError`` raises :class:`PanoStoreUnavailable`.
     """
     import cv2
     path = pano_store_path(store, city, pano_id)
-    if not os.path.isfile(path):
-        return "no_pano", None
+    info = {"pano_path": path, "pano_native_w": None, "pano_native_h": None}
+    try:
+        os.stat(path)
+    except FileNotFoundError:
+        _require_store(store, city)
+        return "no_pano", {**info, "pano_path": None}
+    except OSError as e:
+        raise PanoStoreUnavailable(f"pano store read failed for {path}: {e}") from e
     img = cv2.imread(path)
     if img is None:
         print(f"pano {city}/{pano_id}: {path} is unreadable")
-        return "bad_pano", path
+        return "bad_pano", info
     h, w = img.shape[:2]
+    info.update(pano_native_w=w, pano_native_h=h)
     if abs(w / h - 2) >= 0.01:
         print(f"pano {city}/{pano_id}: {path} is {w}x{h}, not 2:1")
-        return "bad_pano", path
-    return cv2.resize(img, PANO_SIZE, interpolation=cv2.INTER_LINEAR), path
+        return "bad_pano", info
+    return cv2.resize(img, PANO_SIZE, interpolation=cv2.INTER_LINEAR), info
 
 
-def check_pano_store(store, cities):
-    """Exit unless ``store`` is a directory holding a directory for at least one of ``cities``; warn about the rest.
+def check_pano_store(store, cities, allow_missing_cities=False):
+    """Check the store before any download: ``(marker_first_line, absent_cities)``.
 
-    Run before any download, so a mistyped path or a store laid out by other city names fails in seconds instead of
-    after 50 ``no_pano`` rows."""
+    Exits unless ``store`` is a directory with a ``.pano-store`` marker file (any contents; the store or a verified
+    staged copy writes it) and a directory for every one of ``cities``. With ``allow_missing_cities``, absent cities
+    only warn (their labels are ``no_pano``), but at least one must be present. Run first, so a mistyped path, an
+    unmounted store or one laid out by other city names fails in seconds instead of after 50 ``no_pano`` rows, and so
+    a city with no directory cannot hide its ``no_pano`` rows among other cities' successes."""
     if not os.path.isdir(store):
         sys.exit(f"--pano-store {store} is not a directory.")
+    marker = os.path.join(store, PANO_STORE_MARKER)
+    if not os.path.isfile(marker):
+        sys.exit(f"--pano-store {store} has no {PANO_STORE_MARKER} marker file: it is not a pano store, or not a "
+                 f"verified staged copy of one (or the mount is not up).")
+    with open(marker, errors="replace") as f:
+        marker_line = f.readline().strip()
     present = [c for c in cities if os.path.isdir(os.path.join(store, c))]
-    if not present:
-        sys.exit(f"--pano-store {store} has no directory for any selected city ({', '.join(cities)}); the store is "
-                 f"laid out <store>/<city_id>/<pano_id[:2]>/<pano_id>.jpg.")
     absent = [c for c in cities if c not in present]
+    layout = "the store is laid out <store>/<city_id>/<pano_id[:2]>/<pano_id>.jpg"
+    if not present:
+        sys.exit(f"--pano-store {store} has no directory for any selected city ({', '.join(cities)}); {layout}.")
+    if absent and not allow_missing_cities:
+        sys.exit(f"--pano-store {store} has no directory for {', '.join(absent)}; {layout}. Pass "
+                 f"--allow-missing-cities to run anyway (their labels will all be no_pano).")
     if absent:
-        print(f"WARNING: no pano-store directory for {', '.join(absent)}; their labels will all be no_pano.")
+        print(f"WARNING: --allow-missing-cities: no pano-store directory for {', '.join(absent)}; their labels will "
+              f"all be no_pano.")
+    return marker_line, absent
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -687,8 +739,9 @@ def count_ok_rows(manifest_path):
 
 
 def is_fatal(exc):
-    """Errors that must stop the run instead of becoming one ``error:*`` row: broken invariants and GPU failures."""
-    if isinstance(exc, AssertionError) or type(exc).__name__ == "OutOfMemoryError":
+    """Errors that must stop the run instead of becoming one ``error:*`` row: broken invariants, GPU failures and a
+    pano store that stopped answering."""
+    if isinstance(exc, (AssertionError, PanoStoreUnavailable)) or type(exc).__name__ == "OutOfMemoryError":
         return True
     return isinstance(exc, RuntimeError) and "CUDA" in str(exc)
 
@@ -725,8 +778,11 @@ def build_parser():
     p.add_argument('--label_type', required=True, help='Specify the label type')
     p.add_argument('--out', default='.', help='output root; crops and manifest go under <out>/<label_type>/')
     p.add_argument('--pano-store', default=None,
-                   help='root of the pano store, read as <DIR>/<city_id>/<pano_id[:2]>/<pano_id>.jpg; required '
+                   help='root of the pano store or of a staged copy with the same layout, read as '
+                        '<DIR>/<city_id>/<pano_id[:2]>/<pano_id>.jpg; must hold a .pano-store marker file; required '
                         'unless --select-only')
+    p.add_argument('--allow-missing-cities', action='store_true',
+                   help='run although some selected cities have no pano-store directory (their labels are no_pano)')
     p.add_argument('--limit', type=int, default=None, help='process only the first N selected labels (smoke tests)')
     p.add_argument('--manifest', default=None, help='default <out>/<label_type>/manifest.csv')
     p.add_argument('--priors', default=None,
@@ -752,6 +808,8 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if args.pano_store:  # once, so every pano_path in the manifest and the run record is absolute
+        args.pano_store = os.path.abspath(args.pano_store)
     label_type = args.label_type
     base_dir = os.path.join(args.out, label_type)
     manifest_path = args.manifest or os.path.join(base_dir, "manifest.csv")
@@ -761,10 +819,11 @@ def main(argv=None):
     if partial:
         priors_path = os.path.splitext(priors_path)[0] + ".partial.json"
     cities = parse_cities(args.cities)
+    store_marker, absent_cities = None, []
     if not args.select_only:  # fail fast, before the downloads
         if not args.pano_store:
             build_parser().error("--pano-store is required unless --select-only")
-        check_pano_store(args.pano_store, list(cities))
+        store_marker, absent_cities = check_pano_store(args.pano_store, list(cities), args.allow_missing_cities)
     device = None if args.select_only else resolve_device(args.allow_cpu)
 
     all_cities = pd.concat([load_city(c, s, args.rawlabels_cache) for c, s in cities.items()], ignore_index=True)
@@ -812,12 +871,16 @@ def main(argv=None):
     if previous or changed:
         print(f"WARNING: --force-reselect: selection changed: {bool(previous)}, settings changed: {changed or 'none'}; "
               f"dropped ok rows {dict(manifest.stale) or 'none'}, kept {len(manifest.done)}.")
+    not_from_store = manifest.stale.get('not_from_store', 0)
+    if not_from_store:
+        print(f"Redoing {not_from_store} ok rows made by the removed tile fetcher (no pano_path): their crops were "
+              f"not cut from the pano store.")
 
     # pano_store is provenance, not a resume setting: it says where the pixels were read, not which labels or how
     # they were rendered, so moving or remounting the store must not invalidate every crop (see RESUME_SETTINGS).
     with open(run_path, "w") as f:  # read by fine_tune_classifier.py
         json.dump({"label_type": label_type, "settings": settings, **settings, "seed": args.seed,
-                   "pano_store": os.path.abspath(args.pano_store),
+                   "pano_store": args.pano_store, "pano_store_marker": store_marker,
                    "cities": list(cities), "limit": args.limit, "selection_size": len(selection),
                    "selection_sha256": sel_hash, "started": date.today().isoformat()}, f, indent=2)
         f.write("\n")
@@ -831,7 +894,7 @@ def main(argv=None):
     total_images = len(combined_filtered)
     start_time = time.time()
     status_counts = Counter()
-    last_pano = (None, None, None)  # ((city, pano_id), BGR array or the status string it failed with, store path)
+    last_pano = (None, None, None)  # ((city, pano_id), BGR array or the status string it failed with, info)
     consecutive_errors = consecutive_missing = 0
     with manifest:
         for processed_count, (_, row) in enumerate(combined_filtered.iterrows(), start=1):
@@ -844,12 +907,15 @@ def main(argv=None):
                 # Keyed on (city, pano_id): the store path includes the city, so the same pano_id in two cities is
                 # two reads (the sort is by pano_id, so they can be adjacent).
                 if last_pano[0] != (row['city'], row['pano_id']):
-                    read, path = read_store_panorama(args.pano_store, row['city'], row['pano_id'])
-                    last_pano = ((row['city'], row['pano_id']), read, path)
+                    if row['city'] in absent_cities:  # --allow-missing-cities; not a store failure
+                        read, pano_info = "no_pano", {"pano_path": None}
+                    else:
+                        read, pano_info = read_store_panorama(args.pano_store, row['city'], row['pano_id'])
+                    last_pano = ((row['city'], row['pano_id']), read, pano_info)
                     if isinstance(last_pano[1], str):
                         # Only panoramas missing for the first time count: a resume re-fetches exactly the panos that
                         # failed before, back to back, and must not read that as an outage.
-                        if row['pano_id'] not in manifest.previously_missing_panos:
+                        if (row['city'], row['pano_id']) not in manifest.previously_missing_panos:
                             consecutive_missing += 1
                         if consecutive_missing >= MAX_CONSECUTIVE_MISSING_PANOS:
                             sys.exit(f"Aborting: {consecutive_missing} panoramas in a row were missing or unusable "
@@ -860,7 +926,7 @@ def main(argv=None):
                     else:
                         consecutive_missing = 0
                 pano_bgr = last_pano[1]
-                rec['pano_path'] = last_pano[2]
+                rec.update(last_pano[2])
                 if isinstance(pano_bgr, str):
                     rec['status'] = pano_bgr
                 else:
@@ -900,6 +966,8 @@ def main(argv=None):
     print("Processing complete.")
     print(f"  dropped for unusable pano geometry (before selection): {dict(dropped) or 'none'}")
     print(f"  status counts: {dict(status_counts)}; {n_ok} ok rows in {manifest_path}")
+    if not_from_store:
+        print(f"  redone because they predate the pano store (no pano_path): {not_from_store} ok rows")
     if attempted and missing / attempted > args.max_missing_frac:
         sys.exit(f"{missing} of {attempted} attempted labels in the manifest ({missing / attempted:.0%}) are "
                  f"no_pano/bad_pano, "

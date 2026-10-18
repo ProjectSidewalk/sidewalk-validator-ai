@@ -41,7 +41,8 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 > [`7b6e9d720b`](https://github.com/ProjectSidewalk/SidewalkWebpage/commit/7b6e9d720b)). So their training data was most likely free of AI votes, but
 > AI votes cast between 2025-08-01 and the data pull are not ruled out. The code on
 > `master` before [the audit PR](docs/audit-2026-10-14.md) could not run against the current API (a
-> renamed column and a tile endpoint that now needs browser headers); it runs again, but several
+> renamed column and a broken panorama download); it now reads panoramas from the lab's pano store
+> instead and runs again, but several
 > findings about the training signal, the split and calibration are open as issues and need a retrain
 > to resolve. Read [Known limitations](#known-limitations-and-open-issues) before trusting a number.
 
@@ -208,15 +209,22 @@ klone's `gpu-l40s` partition; edit the `#SBATCH` lines for anything else.
 PANO_STORE=/path/to/Panoramas sbatch data_generation.slurm
 ```
 
-`PANO_STORE` is required. It is the lab's pano store, laid out `<city_id>/<pano_id[:2]>/<pano_id>.jpg` with the
-city_ids of `CITIES` (the layout sidewalk-ai-api reads through `SIDEWALK_SCRAPES_DIR`), so it has to be mounted
-where the job runs. Each panorama is read with `cv2.imread` and resized to 8192×4096 (`INTER_LINEAR`), as the API
-does, so training sees the pixels serving sees. Nothing is downloaded. The script checks at startup that the
-store exists and holds a directory for at least one selected city, and warns about cities without one.
+`PANO_STORE` (passed as `--pano-store`) is required. It points either at the lab's pano store itself or at a
+staged copy of it on the cluster that keeps the store's layout, `<city_id>/<pano_id[:2]>/<pano_id>.jpg` with the
+city_ids of `CITIES` (the layout sidewalk-ai-api reads through `SIDEWALK_SCRAPES_DIR`). The root must hold a
+`.pano-store` marker file (any contents; its first line is recorded in `generation_run.json`); a staged copy
+writes its own only after a verified pull. The staging step itself is not in this repo yet. Each panorama is read
+with `cv2.imread` and resized to 8192×4096 (`INTER_LINEAR`), the same method as the API's cache path; identical
+pixels also need the same opencv build, and the API and this environment currently pin different ones. Nothing is
+downloaded. The job and the script check at startup that the store and its marker exist, and the script that
+every selected city has a directory (`--allow-missing-cities` to run without some). A missing file is believed
+only while the marker and the city directory are still there, and any other I/O error stops the run, so a
+dropped mount cannot turn into silent `no_pano` rows.
 
 Per label type this writes `<label_type>/{correct,incorrect}/<city>_<label_id>.webp`,
 `<label_type>/manifest.csv` (one row per attempted label: `label_uid` = `<city>:<label_id>`, class, author,
-human votes, the provider (`pano_source`) and the store file read (`pano_path`), pose, `tilt_applied`, `depth_m`, `crop_half_px`, `clipped`, `crop_path`, `status`) and
+human votes, the provider (`pano_source`), the store file read (`pano_path`, absolute) and its size before the
+resize (`pano_native_w`/`pano_native_h`), pose, `tilt_applied`, `depth_m`, `crop_half_px`, `clipped`, `crop_path`, `status`) and
 `generation_run.json` (settings, the store path, and a hash of the selection), plus the shared `deployment_priors.json` in the
 output root. Views are rendered on the GPU with the package's torch recipe and depth runs on the same device;
 the script stops if there is no CUDA device (`--allow-cpu` is for smoke tests). The manifest is written row by
@@ -235,7 +243,8 @@ silently: after 50 panoramas in a row missing or unusable (usually a wrong `PANO
 are not the city_ids), after 50 consecutive per-label errors, or at the end if more than 20% of attempted labels
 ended `no_pano`/`bad_pano` (`--max-missing-frac`). A panorama not in the store is `no_pano`; a file that cannot be
 decoded, or is not 2:1, is `bad_pano`, never a stretched crop. Moving the store does not invalidate a resume: its
-path is recorded for provenance, not compared. Set `HOLDOUT` in the job file to send whole cities to `test_heldout`. Progress is
+path is recorded for provenance, not compared. `ok` rows without a `pano_path` (made before the pano store) are
+stale and redone, and the summary says how many. Set `HOLDOUT` in the job file to send whole cities to `test_heldout`. Progress is
 in the SLURM log; the first lines report the deployment prior and how many labels were selected per class.
 
 **2. Train** (several hours per label type; three run concurrently, then two):
