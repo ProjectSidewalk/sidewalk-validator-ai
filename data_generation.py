@@ -1,3 +1,32 @@
+"""Build a correct/incorrect crop dataset for one Project Sidewalk label type.
+
+For every label of ``--label_type`` across the cities listed in ``CITIES``, this script:
+
+1. pulls the label and its validations from the public v3 API (``/v3/api/rawLabels``);
+2. keeps labels the crowd clearly endorsed (net >= 3 human agree votes) or clearly rejected
+   (net >= 2 human disagree votes), downsampling the ``correct`` class to ``CORRECT_PROPORTION``;
+3. reassembles the Google Street View panorama from tiles, renders a 90-degree perspective view
+   toward the label, estimates metric depth at the label with Depth Anything V2, and cuts a crop
+   whose size scales with 1/depth so near and far features fill the frame similarly;
+4. writes ``<label_type>/<correct|incorrect>/<city>_<label_id>.webp``.
+
+The serving-side twin of ``create_perspective_crop`` lives in
+https://github.com/ProjectSidewalk/sidewalk-ai-api/blob/main/main.py ; the two should produce the
+same crop for the same label, and currently do not (see
+https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5).
+
+Lineage and background:
+  * Weld et al., "Deep Learning for Automatically Detecting Sidewalk Accessibility Problems Using
+    Streetscape Imagery", ASSETS 2019, https://doi.org/10.1145/3308561.3353798 (first auto-validation
+    of Project Sidewalk labels; depth-sized crops around the label point).
+  * Duan et al., "Scaling Crowd+AI Sidewalk Accessibility Assessments", ASSETS 2022,
+    https://doi.org/10.1145/3517428.3550381 (validated vs unvalidated training data; cross-city transfer).
+  * Depth Anything V2 (Yang et al., NeurIPS 2024), https://github.com/DepthAnything/Depth-Anything-V2 .
+  * Project Sidewalk platform: Saha et al., CHI 2019, https://doi.org/10.1145/3290605.3300292 .
+
+Known limitations are tracked in the repo's issues; the audit that found them is
+docs/audit-2026-10-14.md.
+"""
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -6,6 +35,7 @@ args = parser.parse_args()
 
 label_type = args.label_type
 
+import json
 import pandas as pd
 import io
 import numpy as np
@@ -38,71 +68,86 @@ model = DepthAnythingV2(**{**model_configs[encoder], 'max_depth': max_depth})
 model.load_state_dict(torch.load(f'depth_anything_v2_metric_{dataset}_{encoder}.pth', map_location='cuda'))
 model.to('cuda').eval()
 
-cdmx = pd.read_csv('https://sidewalk-cdmx.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-cdmx['city'] = "cdmx"
-la_piedad = pd.read_csv('https://sidewalk-la-piedad.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-la_piedad['city'] = "la_piedad"
-spgg = pd.read_csv('https://sidewalk-spgg.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-spgg['city'] = "spgg"
-amsterdam = pd.read_csv('https://sidewalk-amsterdam.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-amsterdam['city'] = "amsterdam"
-blackhawk_hills = pd.read_csv('https://sidewalk-blackhawk-hills.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-blackhawk_hills['city'] = "blackhawk_hills"
-# Hot fix. See https://github.com/ProjectSidewalk/SidewalkWebpage/issues/3756
-chicago = pd.read_csv(io.StringIO(requests.get('https://sidewalk-chicago.cs.washington.edu/v3/api/rawLabels?filetype=csv').text.replace("Little Italy, UIC", "").replace("Sauganash,Forest Glen", "")))
-chicago['city'] = "chicago"
-cliffside_park = pd.read_csv('https://sidewalk-cliffside-park.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-cliffside_park['city'] = "cliffside_park"
-columbus = pd.read_csv('https://sidewalk-columbus.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-columbus['city'] = "columbus"
-knox = pd.read_csv('https://sidewalk-knox.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-knox['city'] = "knox"
-mendota = pd.read_csv('https://sidewalk-mendota.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-mendota['city'] = "mendota"
-newberg = pd.read_csv('https://sidewalk-newberg.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-newberg['city'] = "newberg"
-oradell = pd.read_csv('https://sidewalk-oradell.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-oradell['city'] = "oradell"
-pittsburgh = pd.read_csv('https://sidewalk-pittsburgh.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-pittsburgh['city'] = "pittsburgh"
-sea = pd.read_csv('https://sidewalk-sea.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-sea['city'] = "sea"
-st_louis = pd.read_csv('https://sidewalk-st-louis.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-st_louis['city'] = "st_louis"
-teaneck = pd.read_csv('https://sidewalk-teaneck.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-teaneck['city'] = "teaneck"
-keelung = pd.read_csv('https://sidewalk-keelung.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-keelung['city'] = "keelung"
-new_taipei = pd.read_csv('https://sidewalk-new-taipei.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-new_taipei['city'] = "new_taipei"
-taipei = pd.read_csv('https://sidewalk-taipei.cs.washington.edu/v3/api/rawLabels?filetype=csv')
-taipei['city'] = "taipei"
+# One seed for every shuffle in this file, so a dataset can be regenerated exactly.
+SEED = 42
 
-all_cities = pd.concat([cdmx, la_piedad, spgg, amsterdam, blackhawk_hills, chicago,
-                        cliffside_park, columbus, knox, mendota, newberg, oradell,
-                        pittsburgh, sea, st_louis, teaneck, keelung, new_taipei, taipei])
+# Google's anonymous tile endpoint returns 403 PERMISSION_DENIED without browser-like headers
+# (measured 2026-10-14; the same headers are used by sidewalk-ai-api/sidewalk_ai_api/panorama.py).
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/125.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://www.google.com/maps",
+    "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+}
 
-all_cities = all_cities[all_cities['label_type'].isin([label_type])]
+# City deployments to pull labels from. Not the full list of 59 deployments (41 public, 18 private); discovering them from
+# /v3/api/cities is https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8.
+CITIES = ["cdmx", "la-piedad", "spgg", "amsterdam", "blackhawk-hills", "chicago", "cliffside-park",
+          "columbus", "knox", "mendota", "newberg", "oradell", "pittsburgh", "sea", "st-louis",
+          "teaneck", "keelung", "new-taipei", "taipei"]
+
+def load_city(city):
+    df = pd.read_csv(f'https://sidewalk-{city}.cs.washington.edu/v3/api/rawLabels?filetype=csv')
+    df['city'] = city.replace('-', '_')
+    return df
+
+all_cities = pd.concat([load_city(c) for c in CITIES])
 
 CORRECT_PROPORTION = 0.55
 
-filtered_disagree = all_cities[
-    all_cities['disagree_count'] - all_cities['agree_count'] > 1
-].copy()
-filtered_disagree['label_class'] = 'incorrect'
-print(f"Incorrect Examples: {len(filtered_disagree)}")
+def human_vote_counts(validations_json):
+    """Count (agree, disagree) votes from human validators only.
 
-filtered_agree = all_cities[
-    all_cities['agree_count'] - all_cities['disagree_count'] > 2
-].copy()
-filtered_agree['label_class'] = 'correct'
-filtered_agree = filtered_agree.sample(frac=1).reset_index(drop=True)
-amount_correct = int((CORRECT_PROPORTION / (1 - CORRECT_PROPORTION)) * len(filtered_disagree))
-filtered_agree = filtered_agree[:amount_correct]
-print(f"Correct Examples: {len(filtered_agree)}")
+    The API's ``agree_count``/``disagree_count`` columns include the SidewalkAI account's own votes,
+    so using them would train the validator on its own output. The ``validations`` column carries a
+    ``validator_type`` per vote ("Human" or "AI"), which is what we count here.
 
-combined_filtered = pd.concat([filtered_agree, filtered_disagree])
-combined_filtered = combined_filtered.sample(frac=1).reset_index(drop=True) # Shuffle the combined dataframe
+    >>> human_vote_counts('[{"user_id":"a","validation":"Agree","validator_type":"AI"},'
+    ...                   ' {"user_id":"b","validation":"Agree","validator_type":"Human"},'
+    ...                   ' {"user_id":"c","validation":"Disagree","validator_type":"Human"}]')
+    (1, 1)
+    """
+    if not isinstance(validations_json, str) or not validations_json:
+        return 0, 0
+    votes = json.loads(validations_json)
+    agree = sum(1 for v in votes if v.get("validator_type") != "AI" and v.get("validation") == "Agree")
+    disagree = sum(1 for v in votes if v.get("validator_type") != "AI" and v.get("validation") == "Disagree")
+    return agree, disagree
+
+def select_training_labels(all_labels, label_type, seed=SEED, correct_proportion=CORRECT_PROPORTION):
+    """Pick the labels of one type that the crowd clearly endorsed or rejected, balanced to ``correct_proportion``.
+
+    Rule (unchanged since the first models): ``incorrect`` if net human disagree votes > 1, ``correct`` if net
+    human agree votes > 2; everything else (unvalidated, unsure, contested) is left out. The ``correct`` class is
+    downsampled so it makes up ``correct_proportion`` of the result. Note that this ratio is not the deployment
+    prior (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4).
+    """
+    df = all_labels[all_labels['label_type'] == label_type].copy()
+    # GSV panoramas only (the tile fetcher below cannot fetch other providers), and drop legacy labels whose
+    # pano coordinates were never converted (negative pano_y: Seattle 193, CDMX 14, Pittsburgh 8, SPGG 1). See #9.
+    df = df[(df['pano_source'].astype(str).str.lower() == 'gsv') & (df['pano_y'] >= 0)]
+    counts = df['validations'].apply(human_vote_counts)
+    df['human_agree'] = [a for a, _ in counts]
+    df['human_disagree'] = [d for _, d in counts]
+
+    filtered_disagree = df[df['human_disagree'] - df['human_agree'] > 1].copy()
+    filtered_disagree['label_class'] = 'incorrect'
+    print(f"Incorrect Examples: {len(filtered_disagree)}")
+
+    filtered_agree = df[df['human_agree'] - df['human_disagree'] > 2].copy()
+    filtered_agree['label_class'] = 'correct'
+    filtered_agree = filtered_agree.sample(frac=1, random_state=seed).reset_index(drop=True)
+    amount_correct = int((correct_proportion / (1 - correct_proportion)) * len(filtered_disagree))
+    filtered_agree = filtered_agree[:amount_correct]
+    print(f"Correct Examples: {len(filtered_agree)}")
+
+    combined = pd.concat([filtered_agree, filtered_disagree])
+    return combined.sample(frac=1, random_state=seed).reset_index(drop=True)  # Shuffle the combined dataframe
+
+combined_filtered = select_training_labels(all_cities, label_type)
 
 def fetch_panorama(pano_id):
     chosen_zoom = None
@@ -119,7 +164,7 @@ def fetch_panorama(pano_id):
             f"&x={x}&y={y}&zoom={zoom}"
         )
         try:
-            response = requests.get(url)
+            response = requests.get(url, headers=HEADERS)
             if response.status_code == 200:
                 tile = Image.open(io.BytesIO(response.content))
                 if chosen_zoom != None or not _is_black_tile(tile):
@@ -136,7 +181,7 @@ def fetch_panorama(pano_id):
                 f"&x={x}&y={y}&zoom=3"
             )
             try:
-                response = requests.get(fallback_url)
+                response = requests.get(fallback_url, headers=HEADERS)
                 if response.status_code == 200:
                     tile = Image.open(io.BytesIO(response.content))
                     chosen_zoom = 3
@@ -195,7 +240,9 @@ def fetch_panorama(pano_id):
     def _fetch_remaining_tiles(max_x, max_y, existing_tiles):
         tiles_cache = existing_tiles.copy()
 
-        with ThreadPoolExecutor(max_workers=1000) as executor:
+        # 100 workers, as in sidewalk-ai-api. A zoom-4 pano is 128 tiles (a handful fetched by the probe above), so < 128
+        # threads run whether the pool is 100 or the earlier 1,000: tidying, not a rate-limit fix.
+        with ThreadPoolExecutor(max_workers=100) as executor:
             futures = []
             for x in range(max_x + 1):
                 for y in range(max_y + 1):
@@ -380,6 +427,14 @@ def equirectangular_point_to_perspective(label_x, label_y, equi_width, equi_heig
     return int(x_img), int(y_img)
 
 def create_perspective_crop(equi_img, label_x_norm, label_y_norm):
+    """Render a 90-degree perspective view toward the label and cut a depth-sized crop around it.
+
+    The camera yaws to the label's longitude but keeps pitch 0, so the label sits off-centre vertically; the
+    serving code pitches the camera to the label instead, and uses a different depth checkpoint. Both differences
+    are tracked in https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5 . The crop is centred on the
+    stored pano_x/pano_y, which carry a small heading-dependent vertical error from uncorrected camera tilt
+    (https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54).
+    """
     fov = 90
     height = 2048
     width = 2048
@@ -406,10 +461,15 @@ def create_perspective_crop(equi_img, label_x_norm, label_y_norm):
         return None
 
     center_x, center_y = persp_coords
+    if not (0 <= center_x < img_w and 0 <= center_y < img_h):
+        # Label projects outside the 90-degree (+-45 deg) frame. Below it (y/h > 0.75, ~0.6% of Teaneck labels) the
+        # depth lookup used to raise IndexError and the label was skipped as an error; above it (y/h < 0.25, none
+        # in 1,071,562 cached rows) a negative row would silently read the opposite edge. Reject both. See #9.
+        return None
 
     depth = model.infer_image(perspective_img)
     inv_depth = 1 / depth[center_y, center_x]
-    crop_size_half = int(inv_depth * 6100)
+    crop_size_half = int(inv_depth * 6100)  # pixels; the constant is inherited from the first version, see issue #21
 
     start_x = max(0, center_x - crop_size_half)
     start_y = max(0, center_y - crop_size_half)
@@ -432,7 +492,7 @@ start_time = time.time()
 processed_count = 0
 
 for index, row in combined_filtered.iterrows():
-    pano_id = row['gsv_panorama_id']
+    pano_id = row['pano_id']  # column was renamed from gsv_panorama_id in the v3 API
     label_class = row['label_class']
     label_x = row['pano_x']
     label_y = row['pano_y']

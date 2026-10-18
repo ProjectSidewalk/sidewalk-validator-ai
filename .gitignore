@@ -5,3 +5,9 @@ Obstacle
 SurfaceProblem
 
 depth_anything_v2_metric_vkitti_vitl.pth
+
+# Python and SLURM residue
+__pycache__/
+*.pyc
+*.log
+slurm-*.out

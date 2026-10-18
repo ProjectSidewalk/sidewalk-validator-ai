@@ -1,3 +1,14 @@
+"""Evaluate one label type's best checkpoint on the test split and derive the confidence-to-precision map.
+
+Outputs, under ``<label_type>/``: ``pvr.png`` (precision-recall curve), ``report.png`` (curve + classification
+report), ``pvc_cumulative_by_class.png`` and ``confidence_precision_map.json``. The JSON is what
+https://github.com/ProjectSidewalk/sidewalk-ai-api/blob/main/main.py serves as ``validation_estimated_accuracy``
+(copied into its ``accuracy_mappings/``); SidewalkWebpage records an Agree/Disagree vote when that value is >= 0.92
+and an Unsure vote below it.
+Two caveats are tracked in the issues: the map is computed under the dataset's 55:45 class prior rather than the
+deployment prior (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4), and the "recall at precision"
+numbers below use searchsorted on an unsorted array (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6).
+"""
 from datasets import load_dataset
 from transformers import AutoImageProcessor, AutoModelForImageClassification
 import torch
@@ -142,6 +153,8 @@ for class_id, class_name in model.config.id2label.items():
     print(f"Recall at precision levels for class '{class_name}':\n")
     for precision_level in precision_levels:
         # Find the threshold for the given precision level
+        # BUG (issue #6): precision_recall_curve does not return a sorted array, so searchsorted is not well defined
+        # here; the correct quantity is max(recall[precision >= precision_level]). Left as-is pending a retrain.
         precision_idx = np.searchsorted(precision, precision_level)
         if precision_idx < len(precision):
             corresponding_recall = recall[precision_idx]

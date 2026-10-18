@@ -1,7 +1,16 @@
+"""Split one label type's crops into train/val/test image folders for ``datasets.load_dataset("imagefolder")``.
+
+The split is drawn per file. Labels cluster on panoramas (2.8 per panorama across all types in Teaneck; within one
+type's selected set, e.g. CurbRamp 1.66 with 62% of labels sharing a panorama), so
+overlapping crops from one panorama can land on both sides of the split; grouping by panorama is tracked in
+https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3 and making this step idempotent in
+https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10.
+"""
 import os
 import shutil
 import random
 import argparse
+import sys
 
 def generate_train_val_test_split(base_folder, output_folder, train_ratio=0.7, val_ratio=0.15):
     """
@@ -71,7 +80,9 @@ def generate_train_val_test_split(base_folder, output_folder, train_ratio=0.7, v
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Split image data into train, validation, and test sets and clean up original folders.")
     parser.add_argument('--label_type', required=True, help="The name of the parent folder containing the class subdirectories (e.g., 'correct', 'incorrect').")
+    parser.add_argument('--seed', type=int, default=42, help="Seed for the shuffle, so a split can be reproduced.")
     args = parser.parse_args()
+    random.seed(args.seed)
 
     label_type = args.label_type
     base_folder = f"./{label_type}"
@@ -79,6 +90,13 @@ if __name__ == "__main__":
 
     if not os.path.isdir(base_folder):
         print(f"Error: Base folder '{base_folder}' not found. Please ensure it exists.")
+        sys.exit(1)
+    elif not any(os.path.isdir(os.path.join(base_folder, c)) for c in ("correct", "incorrect")):
+        # This script deletes the class folders after splitting, so a second run would find nothing to copy and
+        # would have already wiped the previous 'ds' folder. Refuse instead of destroying the dataset.
+        print(f"Error: neither '{base_folder}/correct' nor '{base_folder}/incorrect' exists; nothing to split. "
+              f"If '{output_folder}' already holds a split, it has been left untouched.")
+        sys.exit(1)
     else:
         # 1. Generate the train/val/test split into the 'ds' subfolder
         print(f"Splitting data from '{base_folder}' into '{output_folder}'...")

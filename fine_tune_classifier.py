@@ -1,3 +1,11 @@
+"""Fine-tune a DINOv2-Large binary classifier ("correct" / "incorrect") for one Project Sidewalk label type.
+
+Reads ``<label_type>/ds/{train,val,test}/{correct,incorrect}`` (written by split_data.py), fine-tunes
+``facebook/dinov2-large`` (Oquab et al., 2023, https://arxiv.org/abs/2304.07193) with the Hugging Face Trainer,
+and keeps the checkpoint with the best validation macro-F1 under ``<label_type>/dinov2/``. The published models
+are at https://huggingface.co/collections/projectsidewalk/project-sidewalk-validator-models-6797bd158d5e385e464dbe45
+and are served by https://github.com/ProjectSidewalk/sidewalk-ai-api .
+"""
 from datasets import load_dataset
 from transformers import AutoImageProcessor, Dinov2ForImageClassification, TrainingArguments, Trainer, EarlyStoppingCallback
 from torchvision.transforms import Compose, ToTensor, Normalize, RandomResizedCrop
@@ -38,6 +46,10 @@ SIZE = (
 )
 
 # Define transforms
+# NOTE: these transforms (random resized crop, no ImageNet normalization) are applied to the train AND validation
+# splits during training, while get_stats.py and the serving code use the checkpoint's AutoImageProcessor
+# (resize 256, center-crop 224, ImageNet normalization). The published models were trained this way; aligning the
+# two is https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5 and needs a retrain to evaluate.
 _transforms = Compose([
     RandomResizedCrop(SIZE, antialias=True),
     ToTensor(),
