@@ -13,5 +13,5 @@ requests
 matplotlib
 tqdm
 pytest
-# Shared label-view geometry with rig-tilt correction (data_generation.py), pinned to a commit.
-sidewalk-panorama-tools @ git+https://github.com/ProjectSidewalk/sidewalk-panorama-tools@b0c8124e4fbb583c47981cc0150b48de787b5388
+# Shared label-view geometry with rig-tilt correction (data_generation.py), pinned to the v1.0.0 release.
+sidewalk-panorama-tools @ git+https://github.com/ProjectSidewalk/sidewalk-panorama-tools@v1.0.0
