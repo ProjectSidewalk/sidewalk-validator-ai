@@ -8,13 +8,26 @@
 #SBATCH --mem=100G
 #SBATCH --time=20:00:00
 
-python -u fine_tune_classifier.py --label_type="Crosswalk" & 
-python -u fine_tune_classifier.py --label_type="CurbRamp" &
-python -u fine_tune_classifier.py --label_type="Obstacle" &
+# Step 6. Reads <DATA>/<label_type>/split.csv; writes <DATA>/<label_type>/dinov2/ with checkpoints, split.csv,
+# deployment_priors.json and training_run.json. Three label types run concurrently, then two; the job fails if any
+# of them fails.
+set -uo pipefail
+DATA=.
+SEED=42
+EPOCHS=25
 
-wait
+run_batch() {
+    declare -A pids
+    for LT in "$@"; do
+        python -u fine_tune_classifier.py --label_type="$LT" --data-dir "$DATA" --seed $SEED --epochs $EPOCHS &
+        pids[$LT]=$!
+    done
+    local failed=0
+    for LT in "$@"; do
+        wait "${pids[$LT]}" || { echo "fine_tune_classifier.py failed for $LT" >&2; failed=1; }
+    done
+    return $failed
+}
 
-python -u fine_tune_classifier.py --label_type="NoCurbRamp" &
-python -u fine_tune_classifier.py --label_type="SurfaceProblem" &
-
-wait
+run_batch Crosswalk CurbRamp Obstacle || exit 1
+run_batch NoCurbRamp SurfaceProblem || exit 1

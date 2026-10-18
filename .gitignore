@@ -4,7 +4,7 @@ NoCurbRamp
 Obstacle
 SurfaceProblem
 
-depth_anything_v2_metric_vkitti_vitl.pth
+depth_anything_v2_metric_*.pth
 
 # Python and SLURM residue
 __pycache__/
@@ -17,7 +17,17 @@ slurm-*.out
 
 # Analysis inputs/outputs contain private-city data and live outside the repo; never commit them here
 analysis/*.csv
+# ...except the public-safe hard-example list (label_uid,reason only; built by hard_examples.py)
+!analysis/hard_examples_*.csv
 analysis/*.txt
 
 # calibrate_from_production output (labels_oof.csv has per-label private-city rows); write it outside the repo
 phase0/
+
+# Pipeline outputs written at the repo root by default runs
+/deployment_priors.json
+/deployment_priors.partial.json
+*.lock
+predictions.csv
+/rawlabels/
+/rawlabels.tmp/

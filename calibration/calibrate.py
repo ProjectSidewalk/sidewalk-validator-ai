@@ -17,10 +17,9 @@ printed and saved as ``calibration_report.json`` next to the map.
 checkpoint, so the fit is mildly optimistic. With a ``test_heldout`` split available, prefer
 ``--fit-split test --eval-split test_heldout``.
 
-**Inputs not yet produced on this branch.** ``predictions.csv`` comes from ``evaluate.py``, which reads
-``<label_type>/split.csv``; that manifest and ``deployment_priors.json`` are written by the data-generation changes in
-progress on another branch (panorama-grouped split, idempotent generation: issues #3 and #10). The current
-``data_generation.py`` writes neither, so this script cannot run end to end until that work lands.
+**Inputs.** ``predictions.csv`` comes from ``evaluate.py``, which reads ``<label_type>/split.csv`` (written by
+``split_data.py`` from ``data_generation.py``'s manifest); ``deployment_priors.json`` is written by
+``data_generation.py`` from the pre-downsampling class counts (issues #3 and #10).
 
 ``deployment_priors.json``::
 
