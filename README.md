@@ -295,6 +295,7 @@ accessibility labels. https://github.com/ProjectSidewalk/sidewalk-validator-ai
 
 ## License
 
-The repository does not yet carry a license file; adding one is tracked in
-[#2](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/2). The vendored
-`Depth-Anything-V2/` code is Apache-2.0 (see its `LICENSE`).
+The code in this repository is released under the [MIT License](LICENSE). The vendored
+`Depth-Anything-V2/` code keeps its own Apache-2.0 license (see its `LICENSE`). Licenses for the
+released datasets and models are tracked separately in
+[#2](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/2).
