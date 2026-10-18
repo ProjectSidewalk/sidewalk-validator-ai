@@ -67,7 +67,10 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
         ▼
  [6] fine-tune          fine_tune_classifier.py   facebook/dinov2-large, best val macro-F1  →  <label_type>/dinov2/
         ▼
- [7] evaluate           get_stats.py       PR curves, report.png, confidence_precision_map.json
+ [7] evaluate           evaluate.py        predictions.csv, metrics on test / test_heldout / hard
+        ▼
+ [7b] calibrate         calibration/calibrate.py   val split reweighted to the deployment prior → accuracy map
+                        (split.csv and deployment_priors.json: data-generation changes in progress, #3/#10)
         ▼
  [8] publish            Hugging Face  →  sidewalk-ai-api /process  →  SidewalkWebpage nightly actor (≤ 800 labels/city, gate 0.92)
 ```
@@ -79,7 +82,9 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 | [`data_generation.py`](data_generation.py) | Steps 1–4. Pulls labels, selects classes, fetches panoramas, renders perspective views, sizes crops by depth. | `CITIES`, `CORRECT_PROPORTION = 0.55`, `SEED = 42`, FOV 90°, 2048² view, `6100 / depth` |
 | [`split_data.py`](split_data.py) | Step 5. Shuffles each class folder into train/val/test image folders. | 70 / 15 / 15, `--seed` |
 | [`fine_tune_classifier.py`](fine_tune_classifier.py) | Step 6. Hugging Face `Trainer` on `facebook/dinov2-large`. | lr 1e-5, batch 8 × 4 accumulation, 25 epochs, warm-up 10%, best by macro-F1 |
-| [`get_stats.py`](get_stats.py) | Step 7. Test-split metrics and the confidence→precision map. | 0.5–1.0 confidence sweep |
+| [`evaluate.py`](evaluate.py) | Step 7. Predictions for every held-out row, then AUC, accuracy and balanced accuracy, per-class P/R/F1, recall at precision. (`get_stats.py` is a stub that says so.) | splits `val`, `test`, `test_heldout`; `hard` slice |
+| [`calibration/`](calibration) | Step 7b. Isotonic confidence→accuracy maps in the API's format: `calibrate.py` for a retrained model (deployment-prior weighting), `calibrate_from_production.py` for the deployed models from production outcomes. | gate 0.92; grid 0.5–1.0 at 0.0025, plus 1e-6 steps from 0.99998 to 1.0 |
+| [`analysis/`](analysis) | Scripts behind the production measurements in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md). | outputs live outside the repo |
 | `*.slurm` | Hyak job files for steps 1–5, 6 and 7 (five label types per job). | `gpu-l40s`, 100 GB, 1 GPU |
 | `Depth-Anything-V2/` | Vendored upstream code (unmodified); the checkpoint is downloaded separately. | `depth_anything_v2_metric_vkitti_vitl.pth` |
 
@@ -206,19 +211,33 @@ Writes, per label type:
 
 | file | contents |
 |---|---|
-| `pvr.png` | precision–recall curve per class on the test split |
-| `report.png` | the curve, the classification report, and recall at 90–99% precision |
-| `pvc_cumulative_by_class.png` | precision of each class among predictions above each confidence |
-| `confidence_precision_map.json` | the same data as `{class: {confidence_threshold: precision}}`; this is what the API serves as `validation_estimated_accuracy` |
+| `predictions.csv` | `label_uid,split,true,p_correct,p_incorrect` for every `val`, `test` and `test_heldout` row |
+| `metrics.json`, `report.txt` | accuracy, balanced accuracy, AUC, per-class precision/recall/F1 and recall at 90–99% precision, for `test`, `test_heldout` and the `hard` slice |
+| `pvr.png`, `report.png` | precision–recall curve per class on the test split, and the curve with the text report |
+
+Then fit the map the API serves, on the val split reweighted to the deployment class prior. Note that
+`split.csv` (read by `evaluate.py`) and `deployment_priors.json` are written by data-generation changes still in
+progress on another branch ([#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3),
+[#10](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10)); today's `data_generation.py` writes
+neither, and `evaluate.py` falls back to the old `ds/` image folders.
+
+```bash
+python -m calibration.calibrate --predictions CurbRamp/predictions.csv --priors deployment_priors.json \
+    --label-type CurbRamp --out CurbRamp/calibration/curbramp.json
+```
+
+This writes the map (drop-in for `sidewalk-ai-api/accuracy_mappings/`), `calibration_report.json` (ECE, coverage and
+precision at the 0.92 gate on the test split) and `reliability.png`. Unit tests for the metric and calibration code
+run on a CPU: `pip install numpy pandas scikit-learn matplotlib pytest && pytest -q`.
 
 To run a single label type outside SLURM: `python data_generation.py --label_type CurbRamp`, then
-`split_data.py`, `fine_tune_classifier.py` and `get_stats.py` with the same flag.
+`split_data.py`, `fine_tune_classifier.py` and `evaluate.py` with the same flag.
 
 ## Publishing to Hugging Face
 
 Today this is manual: upload the *best* checkpoint folder's `model.safetensors`, `config.json` and
 `preprocessor_config.json` to `projectsidewalk/sidewalk-validator-ai-<labeltype>`, and the `ds/` folder
-to `projectsidewalk/sidewalk-validator-ai-dataset-<labeltype>`; copy `confidence_precision_map.json` to
+to `projectsidewalk/sidewalk-validator-ai-dataset-<labeltype>`; copy the map from `calibration/calibrate.py` to
 `sidewalk-ai-api/accuracy_mappings/<labeltype>.json` and update `model_map.py` there with the training
 date. Do not upload `optimizer.pt`, `scheduler.pt` or `rng_state.pth`. A script that does this, with a
 content hash per dataset, is [#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7);
@@ -230,9 +249,9 @@ The October 2026 audit is written up in [`docs/audit-2026-10-14.md`](docs/audit-
 the evidence for each item. In order of how much they affect the numbers:
 
 - **Split leaks across panoramas** ([#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3)). Labels average 2.8 per panorama across all types (Teaneck; 64% of panoramas carry more than one), and within one type's selected set CurbRamp averages 1.66 (62% of its labels share a panorama), SurfaceProblem 1.19 (27%), Obstacle 1.00; the file-level split puts overlapping crops on both sides. Published metrics are optimistic by an unknown amount. There is also no held-out-city evaluation.
-- **Calibration under the wrong prior** ([#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4)). The confidence map is computed on a 55:45 test split and served against traffic that is closer to 90:10 (the decisive-crowd balance in Teaneck, a proxy). Platform-wide, when the AI votes "incorrect" the human majority agrees about 57% of the time; when it votes "correct", 96%.
+- **Calibration under the wrong prior** ([#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4)). The confidence map is computed on a 55:45 test split and served against traffic that is closer to 90:10 (the decisive-crowd balance in Teaneck, a proxy). Platform-wide, when the AI votes "incorrect" the human majority agrees about 57% of the time; when it votes "correct", 96%. `calibration/calibrate.py` now reweights to the deployment prior, and production-calibrated maps for the deployed models are in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md) (not yet shipped to the API).
 - **Train/serve skew** ([#5](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5), [sidewalk-ai-api#8](https://github.com/ProjectSidewalk/sidewalk-ai-api/issues/8)). Normalisation, camera pitch and depth checkpoint differ between training and serving.
-- **Evaluation script bugs** ([#6](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6)). The recall-at-precision numbers in `report.png` are not reliable. PR [#22](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/22) (closed unmerged) proposed a fix.
+- **Evaluation script bugs** ([#6](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6)). Fixed in `evaluate.py`, which replaces `get_stats.py` (PR [#22](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/22), closed unmerged, had proposed a fix first); numbers in `report.png` files made by the old script are not reliable.
 - **Publication** ([#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7)). The CurbRamp dataset on Hugging Face is a copy of the Crosswalk one; model repos carry 2.4 GB of optimizer state.
 - **Imagery path** ([#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8), [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9)). Panoramas are re-downloaded from Google rather than read from the lab's pano store; 19 of 59 deployments are used (41 public, 18 private); crops are centred on stored coordinates that carry a small camera-tilt error ([sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54)).
 - **Hygiene** ([#10](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10), [#11](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/11)). No tests or CI; vendored 64 MB depth tree; frozen environment file.
