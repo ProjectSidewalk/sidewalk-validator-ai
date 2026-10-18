@@ -257,11 +257,29 @@ def test_io_error_other_than_missing_is_fatal(tmp_path, monkeypatch):
 
 
 def test_unreadable_file_is_bad_pano(tmp_path):
+    (tmp_path / dg.PANO_STORE_MARKER).write_text("store\n")
     path = tmp_path / "seattle-wa" / "ab" / "abcdef.jpg"
     path.parent.mkdir(parents=True)
     path.write_bytes(b"not a jpeg at all")
     assert dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef") == (
         "bad_pano", {"pano_path": str(path), "pano_native_w": None, "pano_native_h": None})
+
+
+def test_unreadable_file_on_a_dropped_store_is_fatal(tmp_path):
+    """A mount that drops between the stat and the read makes imread fail; that is an outage, not a bad file."""
+    path = tmp_path / "seattle-wa" / "ab" / "abcdef.jpg"   # no marker: the store is gone
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"not a jpeg at all")
+    with pytest.raises(dg.PanoStoreUnavailable, match="marker"):
+        dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef")
+
+
+def test_mid_run_marker_must_be_a_file(tmp_path):
+    """The mid-run re-check holds the marker to the same standard as startup: a directory of that name is no marker."""
+    (tmp_path / dg.PANO_STORE_MARKER).mkdir()
+    (tmp_path / "seattle-wa").mkdir()
+    with pytest.raises(dg.PanoStoreUnavailable, match="wrong kind"):
+        dg.read_store_panorama(str(tmp_path), "seattle-wa", "abcdef")
 
 
 def test_non_2_to_1_file_is_bad_pano(tmp_path):

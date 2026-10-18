@@ -70,6 +70,7 @@ import hashlib
 import io
 import json
 import os
+import stat
 import sys
 import time
 import traceback
@@ -471,13 +472,15 @@ class PanoStoreUnavailable(RuntimeError):
 
 
 def _require_store(store, city):
-    """Raise :class:`PanoStoreUnavailable` unless the marker and ``city``'s directory are still there."""
-    for what, path in (("marker", os.path.join(store, PANO_STORE_MARKER)),
-                       ("city directory", os.path.join(store, city))):
+    """Raise :class:`PanoStoreUnavailable` unless the marker (a file) and ``city``'s directory are still there."""
+    for what, path, is_kind in (("marker", os.path.join(store, PANO_STORE_MARKER), stat.S_ISREG),
+                                ("city directory", os.path.join(store, city), stat.S_ISDIR)):
         try:
-            os.stat(path)
+            mode = os.stat(path).st_mode
         except OSError as e:
             raise PanoStoreUnavailable(f"pano store {what} {path} is gone ({e}); is the store still mounted?") from e
+        if not is_kind(mode):
+            raise PanoStoreUnavailable(f"pano store {what} {path} is the wrong kind of file; is the store intact?")
 
 
 def read_store_panorama(store, city, pano_id):
@@ -504,6 +507,7 @@ def read_store_panorama(store, city, pano_id):
         raise PanoStoreUnavailable(f"pano store read failed for {path}: {e}") from e
     img = cv2.imread(path)
     if img is None:
+        _require_store(store, city)  # a mount that dropped between the stat and the read is an outage, not a bad file
         print(f"pano {city}/{pano_id}: {path} is unreadable")
         return "bad_pano", info
     h, w = img.shape[:2]
