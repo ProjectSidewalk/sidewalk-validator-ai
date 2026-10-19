@@ -66,7 +66,8 @@ def test_weighted_joins_on_label_uid_and_fails_on_missing_rows(tmp_path):
     _split(tmp_path)
     w = pd.DataFrame({"label_uid": ["c:2", "c:1", "other:1"], "w_agree": [0.0, 2.0, 9.0],
                       "w_disagree": [1.5, 0.0, 0.0]})
-    train, _ = load_split_frames("CurbRamp", str(tmp_path), "weighted", w)
+    with pytest.warns(UserWarning, match="snapshot check skipped"):   # w has no n_votes
+        train, _ = load_split_frames("CurbRamp", str(tmp_path), "weighted", w)
     assert train.soft_target.tolist() == pytest.approx([0.75, 1 / 3.5])
     with pytest.raises(ValueError, match="1 of 2 rows"):
         load_split_frames("CurbRamp", str(tmp_path), "weighted", w[w.label_uid != "c:2"])

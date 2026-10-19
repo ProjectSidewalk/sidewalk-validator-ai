@@ -89,7 +89,7 @@ def soft_targets(df, target, vote_weights=None, path="split.csv"):
     >>> soft_targets(d, "soft").tolist()
     [0.8, 0.25]
     >>> w = pd.DataFrame({"label_uid": ["a:2", "a:1", "b:9"], "w_agree": [0.0, 2.0, 1.0],
-    ...                   "w_disagree": [1.5, 0.0, 0.0]})
+    ...                   "w_disagree": [1.5, 0.0, 0.0], "n_votes": [2, 3, 1]})
     >>> soft_targets(d, "weighted", w).tolist()
     [0.75, 0.2857142857142857]
     """
@@ -118,7 +118,12 @@ def soft_targets(df, target, vote_weights=None, path="split.csv"):
             if bad.any():
                 raise ValueError(f"{int(bad.sum())} of {len(w)} rows of {path} have n_votes in the vote weights != "
                                  f"human_agree + human_disagree (e.g. {w.loc[bad, 'label_uid'].head(3).tolist()}): "
-                                 "the weights come from a different rawLabels snapshot than the manifest")
+                                 "the weights come from a different rawLabels snapshot than the manifest, or a "
+                                 "validator voted twice on a label (validator_reliability.py keeps their last vote; "
+                                 "data_generation.human_vote_counts counts both)")
+        else:
+            warnings.warn(f"vote-count snapshot check skipped: {path} lacks human_agree/human_disagree or the vote "
+                          "weights lack n_votes, so weights from a different rawLabels snapshot cannot be detected")
         agree, disagree = w["w_agree"], w["w_disagree"]
     else:
         raise ValueError(f"no soft target for target {target!r}")

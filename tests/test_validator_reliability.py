@@ -59,6 +59,8 @@ def test_smoothing_prior_and_unscored_validators():
     assert m == 0.5 and table["a"]["reliability"] == pytest.approx(2 / 3) and table["a"]["raw_rate"] == 1.0
     with pytest.raises(ValueError, match="no scored votes"):
         vr.smooth({"a": [0, 0]})
+    with pytest.raises(ValueError, match="pooled hit rate 0"):
+        vr.smooth({"a": [0, 3]})
 
 
 def test_main_writes_outputs_keyed_on_city_and_label_id(tmp_path):
@@ -92,7 +94,7 @@ def test_main_writes_outputs_keyed_on_city_and_label_id(tmp_path):
     assert run["summary"]["gold_labels_with_at_least_3_votes"]["0.85"] == {"agree": 0, "disagree": 0, "mixed": 0}
 
 
-@pytest.mark.parametrize("bad", ["0", "-1", "nan"])
+@pytest.mark.parametrize("bad", ["0", "-1", "nan", "inf"])
 def test_prior_strength_must_be_positive(tmp_path, bad):
     with pytest.raises(SystemExit):
         vr.build_parser().parse_args(["--rawlabels", str(tmp_path), "--out", str(tmp_path), "--prior-strength", bad])

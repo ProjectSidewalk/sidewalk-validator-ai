@@ -59,6 +59,7 @@ Then ``fine_tune_classifier.py --target weighted --vote-weights ~/data/reliabili
 import argparse
 import glob
 import json
+import math
 import os
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -145,6 +146,9 @@ def smooth(counts, prior_strength=PRIOR_STRENGTH):
     if n == 0:
         raise ValueError("no scored votes: no label has enough other human Agree/Disagree votes")
     m = hits / n
+    if m == 0:
+        raise ValueError("no scored vote matched the others' majority (pooled hit rate 0): vote weights r / m are "
+                         "undefined")
     table = {uid: {"reliability": (h + prior_strength * m) / (k + prior_strength), "n": k, "hits": h,
                    "raw_rate": h / k if k else None}
              for uid, (h, k) in sorted(counts.items())}
@@ -217,10 +221,10 @@ def gold_counts(labels, reliability, thresholds=GOLD_THRESHOLDS, min_votes=GOLD_
 
 
 def positive_float(text):
-    """argparse type: a float > 0 (a zero prior strength leaves validators with no scored votes undefined)."""
+    """argparse type: a finite float > 0 (a zero prior strength leaves validators with no scored votes undefined)."""
     value = float(text)
-    if not value > 0:
-        raise argparse.ArgumentTypeError(f"must be > 0, got {text}")
+    if not (math.isfinite(value) and value > 0):
+        raise argparse.ArgumentTypeError(f"must be a finite number > 0, got {text}")
     return value
 
 
