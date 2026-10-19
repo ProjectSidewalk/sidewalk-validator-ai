@@ -23,25 +23,35 @@ so a validator with few scored votes sits near ``m`` and only a long, consistent
 no scored votes gets ``m``. The raw rate ``hits / n`` is reported alongside.
 
 **Vote weights.** For every label with at least one human Agree/Disagree vote, each vote is weighted by its caster's
-reliability: ``w_agree`` / ``w_disagree`` are the summed reliabilities of the Agree / Disagree voters, ``n_votes`` the
-number of votes, ``n_gold`` how many came from validators with reliability ``>= --gold-min-reliability`` (default
-0.95), and ``min_reliability`` the lowest reliability among the label's voters (so a "gold" label, every vote from a
-validator at or above any threshold ``x``, is ``min_reliability >= x``; evaluate.py uses it). Note the reliability of
-a validator is computed from all their votes, including the one on the label being weighted; with ``>= 3`` other votes
-required per scored vote this leak is small, and it is the same for every label.
+reliability divided by the pooled rate, ``r / m`` (weight scheme ``reliability_over_pooled_rate``), so an average
+validator's vote weighs about 1 and the weighted counts stay in vote units. ``w_agree`` / ``w_disagree`` are the summed
+weights of the Agree / Disagree voters, ``n_votes`` the number of votes, and ``min_reliability`` the lowest (unscaled)
+reliability among the label's voters; evaluate.py's "gold" slice is the labels with ``n_votes >= 3`` and
+``min_reliability >= x`` (every voter at or above the threshold ``x``). Why normalise: smoothed reliabilities are
+compressed (on the 2026-10-17 data p10 0.66, p90 0.86) while the soft target's ``+1 / +2`` prior is in raw-vote units,
+so summing raw reliabilities mostly shrinks every target towards 0.5 (an extra prior) instead of reweighting voters.
+
+Own-vote leak: a validator's reliability is computed from all their scored votes, including their vote on the label
+being weighted. If that vote was scored (the label had ``>= 3`` other votes, no tie), it moved their reliability by up
+to ``1 / (n + k)`` (about 0.09 for a validator with one scored vote at ``k = 10``): up if it matched the others'
+majority, down if not. So the leak is not the same for every label: it is largest for validators with few scored
+votes, and in ``weighted`` targets it reinforces itself (a vote with the majority is weighted up, one against it down).
+It shrinks with ``n``; it is not removed.
 
 Outputs, in ``--out`` (a data directory, never the repository: the files hold pseudonymous user ids):
 
 - ``validator_reliability.json``: ``{user_id: {"reliability", "n", "hits", "raw_rate"}}``
-- ``vote_weights.csv``: ``label_uid, w_agree, w_disagree, n_votes, n_gold, min_reliability``, sorted by ``label_uid``
+- ``vote_weights.csv``: ``label_uid, w_agree, w_disagree, n_votes, min_reliability``, sorted by ``label_uid``
   (``<city_id>:<label_id>``, exactly as data_generation.py builds it)
-- ``reliability_run.json``: the settings, the prior mean, the source files and aggregate counts
+- ``reliability_run.json``: the settings, the prior mean, the weight scheme, the source files and aggregate counts
+  (including how many labels with ``>= 3`` votes are unanimous-Agree / unanimous-Disagree with every voter at or above
+  0.85, 0.90 and 0.95)
 
 Usage::
 
     python validator_reliability.py --rawlabels ~/data/rawlabels --out ~/data/reliability
     python validator_reliability.py --rawlabels ~/data/rawlabels --out ~/data/reliability \\
-        --min-other-votes 3 --prior-strength 10 --gold-min-reliability 0.95
+        --min-other-votes 3 --prior-strength 10
 
 Then ``fine_tune_classifier.py --target weighted --vote-weights ~/data/reliability/vote_weights.csv`` and
 ``evaluate.py --vote-weights ~/data/reliability/vote_weights.csv``.
@@ -58,8 +68,10 @@ import pandas as pd
 
 MIN_OTHER_VOTES = 3
 PRIOR_STRENGTH = 10.0
-GOLD_MIN_RELIABILITY = 0.95
-VOTE_WEIGHT_COLUMNS = ["label_uid", "w_agree", "w_disagree", "n_votes", "n_gold", "min_reliability"]
+WEIGHT_SCHEME = "reliability_over_pooled_rate"
+GOLD_MIN_VOTES = 3                      # as evaluate.py's gold slice
+GOLD_THRESHOLDS = (0.85, 0.90, 0.95)    # reported in reliability_run.json
+VOTE_WEIGHT_COLUMNS = ["label_uid", "w_agree", "w_disagree", "n_votes", "min_reliability"]
 
 
 def human_votes(validations_json):
@@ -139,23 +151,26 @@ def smooth(counts, prior_strength=PRIOR_STRENGTH):
     return table, m
 
 
-def vote_weights(labels, reliability, gold_min_reliability=GOLD_MIN_RELIABILITY):
+def vote_weights(labels, reliability, prior_mean):
     """The per-label weighted counts (``VOTE_WEIGHT_COLUMNS``) for labels with at least one vote, by ``label_uid``.
+
+    Each vote weighs ``reliability / prior_mean``; ``min_reliability`` is unscaled.
 
     Args:
         labels: iterable of ``(label_uid, {user_id: agree})``.
         reliability: ``{user_id: float}``; every voter must be in it.
+        prior_mean: the pooled hit rate ``m`` from ``smooth``.
 
-    >>> vote_weights([("x:1", {"a": True, "b": False}), ("x:2", {})], {"a": 0.96, "b": 0.5}).to_dict("records")
-    [{'label_uid': 'x:1', 'w_agree': 0.96, 'w_disagree': 0.5, 'n_votes': 2, 'n_gold': 1, 'min_reliability': 0.5}]
+    >>> vote_weights([("x:1", {"a": True, "b": False}), ("x:2", {})], {"a": 0.75, "b": 0.5}, 0.5).to_dict("records")
+    [{'label_uid': 'x:1', 'w_agree': 1.5, 'w_disagree': 1.0, 'n_votes': 2, 'min_reliability': 0.5}]
     """
     rows = []
     for uid, votes in labels:
         if not votes:
             continue
         r = [(reliability[u], a) for u, a in votes.items()]
-        rows.append((uid, sum(w for w, a in r if a), sum(w for w, a in r if not a), len(r),
-                     sum(1 for w, _ in r if w >= gold_min_reliability), min(w for w, _ in r)))
+        rows.append((uid, sum(w for w, a in r if a) / prior_mean, sum(w for w, a in r if not a) / prior_mean,
+                     len(r), min(w for w, _ in r)))
     df = pd.DataFrame(rows, columns=VOTE_WEIGHT_COLUMNS)
     df = df.sort_values("label_uid", kind="mergesort").reset_index(drop=True)
     if not df["label_uid"].is_unique:
@@ -180,16 +195,43 @@ def load_votes(rawlabels_dir):
     return labels, files, dup
 
 
+def gold_counts(labels, reliability, thresholds=GOLD_THRESHOLDS, min_votes=GOLD_MIN_VOTES):
+    """``{threshold: {"agree", "disagree", "mixed"}}``: labels with ``>= min_votes`` votes whose every voter has
+    reliability ``>= threshold``, by whether the votes are unanimous Agree, unanimous Disagree or mixed.
+
+    >>> gold_counts([("x:1", {"a": True, "b": True, "c": True}), ("x:2", {"a": True})], {"a": .9, "b": .9, "c": .86},
+    ...             thresholds=(0.85, 0.9))
+    {'0.85': {'agree': 1, 'disagree': 0, 'mixed': 0}, '0.90': {'agree': 0, 'disagree': 0, 'mixed': 0}}
+    """
+    out = {f"{t:.2f}": {"agree": 0, "disagree": 0, "mixed": 0} for t in thresholds}
+    for _, votes in labels:
+        if len(votes) < min_votes:
+            continue
+        low = min(reliability[u] for u in votes)
+        agree = sum(votes.values())
+        kind = "agree" if agree == len(votes) else "disagree" if agree == 0 else "mixed"
+        for t in thresholds:
+            if low >= t:
+                out[f"{t:.2f}"][kind] += 1
+    return out
+
+
+def positive_float(text):
+    """argparse type: a float > 0 (a zero prior strength leaves validators with no scored votes undefined)."""
+    value = float(text)
+    if not value > 0:
+        raise argparse.ArgumentTypeError(f"must be > 0, got {text}")
+    return value
+
+
 def build_parser():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--rawlabels", required=True, help="directory of <city_id>.csv rawLabels exports")
     p.add_argument("--out", required=True, help="output directory (a data directory, not the repository)")
     p.add_argument("--min-other-votes", type=int, default=MIN_OTHER_VOTES,
                    help="other human Agree/Disagree votes a label needs before a vote on it is scored (default 3)")
-    p.add_argument("--prior-strength", type=float, default=PRIOR_STRENGTH,
-                   help="Beta prior strength, in pseudo-votes at the pooled hit rate (default 10)")
-    p.add_argument("--gold-min-reliability", type=float, default=GOLD_MIN_RELIABILITY,
-                   help="reliability at or above which a vote counts toward n_gold (default 0.95)")
+    p.add_argument("--prior-strength", type=positive_float, default=PRIOR_STRENGTH,
+                   help="Beta prior strength, in pseudo-votes at the pooled hit rate (> 0; default 10)")
     return p
 
 
@@ -198,7 +240,8 @@ def main(argv=None):
     labels, files, dup = load_votes(args.rawlabels)
     counts = reliability_counts((v for _, v in labels), args.min_other_votes)
     table, prior_mean = smooth(counts, args.prior_strength)
-    weights = vote_weights(labels, {u: t["reliability"] for u, t in table.items()}, args.gold_min_reliability)
+    rel_by_user = {u: t["reliability"] for u, t in table.items()}
+    weights = vote_weights(labels, rel_by_user, prior_mean)
 
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "validator_reliability.json"), "w") as f:
@@ -208,18 +251,19 @@ def main(argv=None):
 
     rel = np.array([t["reliability"] for t in table.values()])
     scored = np.array([t["n"] > 0 for t in table.values()])
-    gold = int(((weights.n_gold == weights.n_votes) & (weights.n_votes >= 1)).sum())
     summary = {
         "n_validators": len(table), "n_validators_scored": int(scored.sum()),
         "median_reliability_scored": float(np.median(rel[scored])) if scored.any() else None,
-        "share_scored_at_or_above_gold": float((rel[scored] >= args.gold_min_reliability).mean()) if scored.any() else None,
+        "n_scored_validators_at_or_above": {f"{t:.2f}": int((rel[scored] >= t).sum()) for t in GOLD_THRESHOLDS},
         "n_scored_votes": int(sum(t["n"] for t in table.values())),
-        "n_labels_with_votes": int(len(weights)), "n_labels_all_gold": gold, "n_duplicate_votes_dropped": dup,
+        "n_labels_with_votes": int(len(weights)),
+        f"gold_labels_with_at_least_{GOLD_MIN_VOTES}_votes": gold_counts(labels, rel_by_user),
+        "n_duplicate_votes_dropped": dup,
     }
     run = {"created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
            "rawlabels": os.path.abspath(args.rawlabels), "files": [os.path.basename(f) for f in files],
            "min_other_votes": args.min_other_votes, "prior_strength": args.prior_strength, "prior_mean": prior_mean,
-           "gold_min_reliability": args.gold_min_reliability, "summary": summary}
+           "weight_scheme": WEIGHT_SCHEME, "summary": summary}
     with open(os.path.join(args.out, "reliability_run.json"), "w") as f:
         json.dump(run, f, indent=2)
         f.write("\n")
