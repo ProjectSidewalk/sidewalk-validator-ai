@@ -32,6 +32,16 @@ HARD=analysis/hard_examples_2026-10-17.csv
 HOLDOUT=""
 LABEL_TYPES=(Crosswalk CurbRamp NoCurbRamp Obstacle SurfaceProblem)
 
+# 0a. Depth Anything V2 is a git submodule (data_generation.py imports it from Depth-Anything-V2/metric_depth). A
+#     clone without --recurse-submodules, or a `git pull` across the commit that made it a submodule, leaves the
+#     directory empty; fetch it here, and stop with a clear message if that is not possible (e.g. no network).
+DEPTH_DPT=Depth-Anything-V2/metric_depth/depth_anything_v2/dpt.py
+[ -f "$DEPTH_DPT" ] || git submodule update --init Depth-Anything-V2
+[ -f "$DEPTH_DPT" ] || {
+    echo "$DEPTH_DPT is missing: run 'git submodule update --init' in the repo root, then resubmit." >&2
+    exit 1
+}
+
 # 0. Check the store before spending time on the pull (data_generation.py checks it again, with the city directories).
 [ -d "$PANO_STORE" ] && [ -f "$PANO_STORE/.pano-store" ] || {
     echo "PANO_STORE=$PANO_STORE is not a pano store (no directory, or no .pano-store marker; is it mounted?)" >&2
