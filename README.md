@@ -152,27 +152,51 @@ regenerating:
 Soft targets use soft-label cross-entropy against the two logits. Validation stays hard (`eval_loss`
 and `macro_f1` on `label_class`), so checkpoint selection means the same thing for every target. A
 non-default target, and the vote-weights file's hash, go into `run_key.json` (a resume never mixes
-targets) and `training_run.json`.
+targets) and `training_run.json`. A non-hard target writes to `<label_type>/dinov2-<target>` by
+default, never to `<label_type>/dinov2`, where `evaluate.py` and `publish_to_hf.py` look for the
+production model.
 
 Per-validator reliability comes from the `validations` column of the cached rawLabels exports, human
 votes only (`validator_type == "Human"`), Agree/Disagree only: each vote is compared with the majority of
 the *other* human votes on the same label, scored only when there are at least 3 of them and they do not
-tie, and the hit rate is smoothed towards the pooled rate with a Beta prior of 10 pseudo-votes.
+tie, and the hit rate is smoothed towards the pooled rate `m` with a Beta prior of 10 pseudo-votes
+(`--prior-strength`, which must be > 0). For `weighted`, each vote counts `r / m` rather than `r`, so an
+average validator's vote weighs 1 and the counts stay in vote units. Summing raw reliabilities would mostly
+add shrinkage: the smoothed reliabilities are compressed (p10 0.66, p90 0.86 on the 2026-10-17 data) and
+the `+1 / +2` prior is in raw-vote units, so every target would just move towards 0.5. Even normalised, the
+weighting changes little on that data: over the 68,493 train-eligible labels the weighted and soft targets
+correlate at 0.999, with a median absolute difference of 0.007.
 `validator_reliability.py` writes the anonymous per-user scores and the per-label weights to a data
-directory (never the repository: the files hold pseudonymous user ids):
+directory (never the repository: the files hold pseudonymous user ids). `--target weighted` checks that
+each train row's `n_votes` equals split.csv's `human_agree + human_disagree`, so weights built from a newer
+rawLabels snapshot than the manifest are refused.
 
 ```bash
 python validator_reliability.py --rawlabels rawlabels/ --out reliability/
-python fine_tune_classifier.py --label_type CurbRamp --target soft --output-dir CurbRamp/dinov2-soft
+python fine_tune_classifier.py --label_type CurbRamp --target soft          # -> CurbRamp/dinov2-soft/
 python fine_tune_classifier.py --label_type CurbRamp --target weighted \
-    --vote-weights reliability/vote_weights.csv --output-dir CurbRamp/dinov2-weighted
-# Adds a "gold" slice: test labels whose every human vote came from validators with reliability >= 0.95
-python evaluate.py --label_type CurbRamp --skip-inference --vote-weights reliability/vote_weights.csv
+    --vote-weights reliability/vote_weights.csv                             # -> CurbRamp/dinov2-weighted/
+# Score an experiment on the same split; --tag keeps its outputs apart from the production model's.
+# The gold slice: test labels with >= 3 human votes, every voter's reliability >= 0.85.
+python evaluate.py --label_type CurbRamp --checkpoint CurbRamp/dinov2-soft/checkpoint-N --tag soft \
+    --vote-weights reliability/vote_weights.csv
 ```
 
-Give each target its own `--output-dir`: the run key refuses to resume one target's checkpoints under
-another. On the 41-city 2026-10-17 cache few validators clear 0.95 (see the PR for #12), so the
-gold slice is small; `--gold-min-reliability` lowers the bar.
+`checkpoint-N` is the `best_model_checkpoint` recorded in that directory's `training_run.json`.
+
+The `gold` slice defaults to `--gold-min-reliability 0.85` because higher bars leave almost nothing.
+Measured on the 41-city 2026-10-17 cache: 13 validators score ≥ 0.95, 231 score ≥ 0.90 and 1,359
+score ≥ 0.85. These are the labels with at least 3 human votes where every voter is at or above the bar:
+
+| bar | unanimous Agree | unanimous Disagree | mixed |
+|---|---|---|---|
+| 0.95 | 0 | 0 | 0 |
+| 0.90 | 169 | 10 | 12 |
+| 0.85 | 5,003 | 163 | 848 |
+
+`incorrect` labels need only 2 votes (net disagree > 1), so the ≥ 3 rule leaves most of them out: with
+≥ 2 votes the unanimous-Disagree counts are 48 at 0.90 and 640 at 0.85. Expect a gold slice heavily
+weighted towards `correct`. `evaluate.py` prints the gold count per split.
 
 ## Crop geometry
 
