@@ -161,7 +161,8 @@ def test_per_city_is_absent_by_default_and_skipped_by_format_report():
     assert format_report(m) == format_report(report(df))
     md = format_per_city(m["per_city"])
     assert "### test: per city (n >= 3)" in md and "| a | 6 (3 / 3) | 0.667 |" in md
-    assert "| b | 4 (4 / 0) | 0.750 | — |" in md and "c (n=1)" in md
+    assert "| b | 4 (4 / 0) | 0.750 | — | 1.000 | 0.750 | — | — |" in md   # no incorrect rows: dashes, not 0.000
+    assert "c (n=1)" in md
 
 
 def test_per_city_needs_a_city_column():

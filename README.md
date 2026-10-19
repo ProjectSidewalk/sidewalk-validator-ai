@@ -331,15 +331,18 @@ mkdir -p $RUN/$LT
 ln -s $DATA/$LT/correct $DATA/$LT/incorrect $DATA/$LT/generation_run.json $RUN/$LT/
 cp $DATA/deployment_priors.json $RUN/
 python split_data.py --label_type $LT --out $RUN --manifest $DATA/$LT/manifest.csv --rawlabels $DATA/rawlabels \
-    --holdout-cities $CITY --seed 42
+    --hard-examples analysis/hard_examples_2026-10-17.csv --holdout-cities $CITY --seed 42
 python fine_tune_classifier.py --label_type $LT --data-dir $RUN --seed 42
 python evaluate.py --label_type $LT --data-dir $RUN --per-city
 ```
 
 `$RUN/$LT/per_city.md` then has the held-out city's accuracy, AUC and per-class precision/recall in its
-`test_heldout` table, next to the seen cities in `test`; compare it with the same city's row in a run where it was
-trained on. For the first run, the issue suggests one small US city, one large US city, Amsterdam, cdmx and a Taiwanese city, each a
-separate training run (five label types × five cities). These jobs are not in the SLURM files yet; on klone, wrap
+`test_heldout` table, next to the seen cities in `test`. The comparison row is that city's row in the main run's
+`test` table (`evaluate.py --per-city` on `$DATA`), where the city was trained on. That row covers only the city's
+test share (about 15% of its rows), while `test_heldout` holds all of its rows, so the two differ in sample as well
+as in training. `--min-city-n` applies to both splits. For the first run, the issue suggests one small US city,
+one large US city, Amsterdam, cdmx and a Taiwanese city, each a separate training run (five label types × five
+cities). These jobs are not in the SLURM files yet; on klone, wrap
 the three commands per city in a copy of `fine_tune.slurm`. The production-side counterpart, whether the 0.92 gate
 holds per city for the deployed models, is [`docs/per-city-calibration-2026-10.md`](docs/per-city-calibration-2026-10.md)
 (`python -m calibration.per_city`).

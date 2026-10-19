@@ -69,6 +69,34 @@ def test_private_and_ambiguous_cities_are_pooled(tmp_path):
     assert "sidewalk_validation" not in names
 
 
+@pytest.mark.parametrize("schema_city, cities, expected", [
+    ("seattle", {"seattle-wa": "public"}, "seattle-wa"),            # region code
+    ("rancagua", {"rancagua-chile": "public"}, "rancagua-chile"),   # country suffix
+    ("newport_ky", {"newport-ky": "public"}, "newport-ky"),         # exact
+    # unlisted schema whose name merely starts a listed id: never named after it
+    ("oak", {"oak-park-gardens": "public"}, None),
+    ("oak", {"oak-park": "public"}, None),
+    ("springfield", {"springfield-il": "public", "springfield-ma": "private"}, None),   # ambiguous
+    ("nowhere", {"seattle-wa": "public"}, None),
+])
+def test_match_city_id(schema_city, cities, expected):
+    assert pc.match_city_id(schema_city, cities) == expected
+
+
+def test_unlisted_schema_is_pooled_not_named():
+    df = pd.DataFrame({"schema": ["sidewalk_oak", "sidewalk_seattle"]})
+    out = pc.assign_display_city(df, {"oak-park": "public", "seattle-wa": "public"})
+    assert list(out.city) == ["other (1 private deployment)", "seattle-wa"]
+
+
+def test_pooled_label_counts_only_deployments_in_the_mask():
+    df = pd.DataFrame({"schema": ["sidewalk_hidden", "sidewalk_quiet", "sidewalk_seattle"]})
+    cities = {"hidden": "private", "quiet": "private", "seattle-wa": "public"}
+    assert set(pc.assign_display_city(df, cities).city) == {"other (2 private deployments)", "seattle-wa"}
+    masked = pc.assign_display_city(df, cities, count_mask=[True, False, True])
+    assert set(masked.city) == {"other (1 private deployment)", "seattle-wa"}
+
+
 def test_without_cities_json_nothing_is_named(tmp_path):
     df = pc.assign_display_city(_load(tmp_path), {})
     assert set(df.city) == {"other (4 private deployments)"}
@@ -89,23 +117,20 @@ def test_per_city_strata_values(tmp_path):
     other = s.loc[("other (2 private deployments)", "Agree")]
     assert (other.n, other.observed) == (2, pytest.approx(0.5))
     assert s.loc[(pc.ALL_CITIES, "Agree")].n == 8
-
-    e = pc.per_city_error(df).set_index(["city", "label_type"]).loc[("seattle-wa", "CurbRamp")]
-    # pooled over both verdicts: served (0.95*2 + 0.97*2 + 0.93*2) / 6, observed 4 / 6
-    assert e.n == 6
-    assert e.error == pytest.approx(0.95 - 4 / 6)
+    # the gap is per verdict, never pooled: Disagree served 0.93, observed 0.5
+    assert s.loc[("seattle-wa", "Disagree")].gap == pytest.approx(0.43)
 
 
 def test_min_n_filters_rows_and_below_gate(tmp_path):
     df = pc.assign_display_city(_load(tmp_path), CITIES)
     strata = pc.per_city_strata(df)
-    errors = pc.per_city_error(df)
-    md = pc.markdown_tables(strata, errors, min_n=3)
+    md = pc.markdown_tables(strata, min_n=3)
     curb = md.split("### CurbRamp")[1].split("###")[0]
     assert "| seattle-wa | 4 | 0.960 | 0.750" in curb
     assert "st-louis-mo" not in curb and "other (" not in curb   # 2 gated votes < 3
     assert "2 more cities have fewer than 3 gated votes" in curb
-    assert "| seattle-wa | 4 | 0.960 | 0.750 (0.301–0.954) | 2 | — | — | +0.283 |" in curb
+    assert "| seattle-wa | 4 | 0.960 | 0.750 (0.301–0.954) | +0.210 | 2 | — | — | — |" in curb
+    assert "calibration error" not in md
 
     b = pc.below_gate(strata[strata.city != pc.ALL_CITIES], min_n=2)
     assert list(b.city) == ["other (2 private deployments)", "seattle-wa", "st-louis-mo"]
@@ -113,11 +138,29 @@ def test_min_n_filters_rows_and_below_gate(tmp_path):
     assert list(pc.below_gate(strata[strata.city != pc.ALL_CITIES], min_n=3).city) == ["seattle-wa"]
 
 
-def test_city_gate():
+def test_city_gate_uses_the_wilson_lower_bound():
     d = pd.DataFrame({"city": "a", "label_type": "T", "ai_result": "Agree", "labelled": True,
-                      "ai_accuracy": [0.93] * 4 + [0.97] * 4, "correct": [0, 0, 1, 1, 1, 1, 1, 1]})
-    assert pc.city_gate(d, "a", "T", min_n=2) == (0.97, 0.5)
-    assert pc.city_gate(d, "a", "T", min_n=5) == (None, 0.0)   # 0.97 keeps only 4 votes
+                      "ai_accuracy": [0.93] * 20 + [0.97] * 80, "correct": [0] * 20 + [1] * 80})
+    # 80/80 at 0.97: lower bound 0.954 >= 0.92
+    assert pc.city_gate(d, "a", "T") == (0.97, 0.8)
+    assert pc.city_gate(d, "a", "T", min_n=81) == (None, 0.0)   # 0.97 keeps only 80 votes
+    # 30/30 has a point estimate of 1.0 but a lower bound of 0.886 < 0.92: not enough
+    small = d.iloc[50:].iloc[:30].assign(ai_accuracy=0.97)
+    assert pc.city_gate(small, "a", "T", min_n=10) == (None, 0.0)
+
+
+def test_below_gate_markdown_pooled_row_and_private_counts(tmp_path):
+    df = pc.assign_display_city(_load(tmp_path), CITIES)
+    strata = pc.per_city_strata(df)
+    md = pc.markdown_below_gate(strata, min_n=2, df=df)
+    assert "| other (2 private deployments) | CurbRamp | 2 |" in md
+    assert md.split("other (2 private deployments) | CurbRamp")[1].split("\n")[0].endswith("n/a (pooled) |")
+    assert "Agree strata with n >= 2: 2 named public city x type strata and 1 pooled private rows" in md
+    # one deployment at a time, the private strata have 1 vote each (< 2): nothing counted, and nothing named
+    assert "0 of 0 deployment x type Agree strata" in md
+    assert "hidden" not in md and "springfield" not in md
+    pb = pc.private_below_gate(df, min_n=1)
+    assert pb == {"strata": 2, "below": 1, "ci_below": 1, "votes_below": 1, "votes_total": 8}   # 0/1: upper 0.79
 
 
 def test_main_end_to_end(tmp_path):

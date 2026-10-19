@@ -285,8 +285,12 @@ def format_per_city(per_city):
     """Markdown tables of ``report(..., per_city=True)["per_city"]``: one per split, one row per city.
 
     Precision and recall are at the argmax verdict (the model's own decision, before any served-accuracy gate);
-    AUC is shown only when the city has both classes.
+    AUC is shown only when the city has both classes, and a class with no rows in that city shows "—" for its
+    precision and recall (scikit-learn's zero_division would print 0.000).
     """
+    def pr(r):
+        return ("—", "—") if r["support"] == 0 else (f"{r['precision']:.3f}", f"{r['recall']:.3f}")
+
     lines = []
     for split, pc in per_city.items():
         lines += [f"### {split}: per city (n >= {pc['min_city_n']})", "",
@@ -295,11 +299,9 @@ def format_per_city(per_city):
                   "|---|---:|---:|---:|---:|---:|---:|---:|"]
         for city, m in pc["cities"].items():
             auc = "—" if m["auc"] is None else f"{m['auc']:.3f}"
-            pcs = m["per_class"]
+            (pc_p, pc_r), (pi_p, pi_r) = pr(m["per_class"]["correct"]), pr(m["per_class"]["incorrect"])
             lines.append(f"| {city} | {m['n']:,} ({m['n_by_class']['correct']:,} / {m['n_by_class']['incorrect']:,}) "
-                         f"| {m['accuracy']:.3f} | {auc} | {pcs['correct']['precision']:.3f} "
-                         f"| {pcs['correct']['recall']:.3f} | {pcs['incorrect']['precision']:.3f} "
-                         f"| {pcs['incorrect']['recall']:.3f} |")
+                         f"| {m['accuracy']:.3f} | {auc} | {pc_p} | {pc_r} | {pi_p} | {pi_r} |")
         if pc["below_min_n"]:
             lines += ["", "Below the minimum: " + ", ".join(f"{c} (n={n})" for c, n in pc["below_min_n"].items())
                       + "."]
@@ -361,7 +363,8 @@ def main(argv=None):
                         help="add per-city metrics for test and test_heldout to metrics.json, and write them as "
                              "markdown to per_city.md (issue #15)")
     parser.add_argument("--min-city-n", type=int, default=50,
-                        help="rows a city needs in a split to get its own --per-city row (default 50)")
+                        help="rows a city needs in a split to get its own --per-city row (default 50); the same "
+                             "minimum applies to test and test_heldout")
     args = parser.parse_args(argv)
     if args.checkpoint and not args.tag:
         parser.error("--checkpoint needs --tag, so its outputs do not overwrite the trained model's")

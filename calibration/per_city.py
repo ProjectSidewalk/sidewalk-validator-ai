@@ -10,20 +10,21 @@ served accuracy is >= 0.92, it reports, for Agree and Disagree verdicts separate
 * ``served``: their mean served accuracy (what the map promised),
 * ``observed``: their mean outcome (``correct``: 1 if the human majority matches the verdict, 0.5 for a tie, 0
   otherwise, under ``calibrate_from_production``'s default ``tie_half``), with a Wilson 95% interval,
-* ``gap`` = served - observed (positive: the map over-promised in that city),
-
-and a per-city ``calibration error``: served minus observed pooled over both verdicts' gated votes.
+* ``gap`` = served - observed, per verdict (positive: the map over-promised in that city). Agree and Disagree are
+  never pooled: their gaps have opposite signs often enough that a pooled number hides both.
 
 **Which served accuracy.** ``--served-column`` picks it: ``ai_accuracy`` (default) is what production served when the
 vote was cast (the maps before sidewalk-ai-api PR #16); ``oof_accuracy`` is the out-of-fold value of the Phase 0 maps
 now live (API 1.0.5), the honest estimate of what they serve; ``new_accuracy`` is the shipped Phase 0 map in-sample.
-The Phase 0 maps hold back every Disagree class (capped at 0.9199), so under them only Agree verdicts vote.
+No Disagree map of the Phase 0 set reaches 0.92 (``summary.csv``: ``below gate`` for all five), so under them only
+Agree verdicts vote; the few out-of-fold Disagree rows above 0.92 come from the fold maps, not the shipped one.
 
 **Naming.** A city is named only if ``--cities-json`` (a saved ``/v3/api/cities`` response) lists it with
 ``visibility == "public"``; it is named by its ``city_id`` (``seattle-wa``), the id ``split.csv`` and
-``split_data.py --holdout-cities`` use. Every other deployment, including any the file does not list or matches
-ambiguously, is pooled into one row ``other (N private deployments)``. Without ``--cities-json`` nothing is named.
-The internal ``sidewalk_validation`` schema is dropped.
+``split_data.py --holdout-cities`` use. Every other deployment, including any the file does not identify (see
+``match_city_id``), is pooled into one row ``other (N private deployments)``, where N counts the pooled deployments
+with at least one gated vote. Without ``--cities-json`` nothing is named. The internal ``sidewalk_validation`` schema
+is dropped. Per private deployment, only a count of strata below the gate is reported, never a name.
 
 Outputs under ``--out-dir``: ``per_city.md`` (one table per label type, the Agree strata below the gate, and the
 run's settings), ``per_city.csv`` (the long table, one row per city x type x verdict, named cities only plus the
@@ -78,22 +79,36 @@ def load_cities(path):
     return {c["city_id"]: c.get("visibility") for c in cities}
 
 
-def match_city_id(schema_city, cities):
-    """The ``city_id`` a schema's city part (``seattle``, ``st_louis``) belongs to, or ``None``.
+COUNTRY_SUFFIXES = {"brazil", "canada", "chile", "ecuador", "india", "mexico", "netherlands", "switzerland",
+                    "taiwan"}
+"""Region suffixes besides two-letter codes that a ``city_id`` may add to its schema's name (``rancagua-chile``)."""
 
-    Exact match on the slug (``_`` -> ``-``) first, else a unique ``city_id`` that starts with ``slug + "-"``
-    (``seattle`` -> ``seattle-wa``). A prefix shared by several ids is ambiguous and matches nothing, so a private
-    ``springfield`` schema is never named after a public ``springfield-il``.
+
+def _is_region_suffix(token):
+    return (len(token) == 2 and token.isalpha()) or token in COUNTRY_SUFFIXES
+
+
+def match_city_id(schema_city, cities):
+    """The ``city_id`` that identifies a schema's city part (``seattle``, ``st_louis``), or ``None``.
+
+    The slug (``_`` -> ``-``) is identified only if it IS a listed ``city_id``, or if exactly one listed ``city_id``
+    is the slug plus one region suffix: a two-letter code or a country in ``COUNTRY_SUFFIXES`` (``seattle`` ->
+    ``seattle-wa``, ``st_louis`` -> ``st-louis-mo``). Anything else matches nothing and is pooled as private: a
+    schema the listing does not contain never borrows the name of a listed city that merely starts with it
+    (``springfield`` is not ``springfield-gardens``), and two candidates are ambiguous.
 
     >>> match_city_id("st_louis", {"st-louis-mo": "public"})
     'st-louis-mo'
+    >>> match_city_id("springfield", {"springfield-gardens": "public"}) is None
+    True
     >>> match_city_id("springfield", {"springfield-ma": "private", "springfield-il": "public"}) is None
     True
     """
     slug = schema_city.replace("_", "-")
     if slug in cities:
         return slug
-    candidates = [cid for cid in cities if cid.startswith(slug + "-")]
+    candidates = [cid for cid in cities
+                  if cid.startswith(slug + "-") and _is_region_suffix(cid[len(slug) + 1:])]
     return candidates[0] if len(candidates) == 1 else None
 
 
@@ -108,16 +123,17 @@ def private_label(n):
     return f"other ({n} private deployment{'s' if n != 1 else ''})"
 
 
-def assign_display_city(df, cities):
+def assign_display_city(df, cities, count_mask=None):
     """Add ``city``: the public ``city_id``, or the pooled private label, from ``schema``. Returns a copy.
 
-    ``df`` must already exclude the internal schema. The pooled label counts the distinct private deployments in
-    ``df`` (all of them, whether or not they have gated votes).
+    ``df`` must already exclude the internal schema. The pooled label counts the distinct private deployments among
+    the rows where ``count_mask`` is true (``main`` passes the gated rows), or among all rows without it.
     """
     out = df.copy()
     schema_city = out["schema"].str.replace("sidewalk_", "", n=1, regex=False)
     names = {s: public_name(s, cities) for s in schema_city.unique()}
-    n_private = sum(v is None for v in names.values())
+    counted = set(schema_city if count_mask is None else schema_city[np.asarray(count_mask, dtype=bool)])
+    n_private = sum(names[s] is None for s in counted)
     out["city"] = schema_city.map(lambda s: names[s] if names[s] is not None else private_label(n_private))
     return out
 
@@ -171,17 +187,6 @@ def per_city_strata(df, served_column="ai_accuracy", gate=im.GATE):
     return pd.DataFrame(rows, columns=STRATA_COLUMNS)
 
 
-def per_city_error(df, served_column="ai_accuracy", gate=im.GATE):
-    """Calibration error per city x label type: mean served minus mean observed, pooled over both verdicts' gated
-    votes. Columns ``city, label_type, n, served, observed, error``; includes the ``all cities`` row per type."""
-    g = gated_rows(df, served_column, gate)
-    pooled = pd.concat([g, g.assign(city=ALL_CITIES)])
-    out = pooled.groupby(["city", "label_type"], sort=True).agg(n=("correct", "size"), served=(served_column, "mean"),
-                                                                observed=("correct", "mean")).reset_index()
-    out["error"] = out.served - out.observed
-    return out
-
-
 def below_gate(strata, min_n=50, gate=im.GATE, verdict="Agree"):
     """Strata of one verdict, n >= ``min_n``, whose observed precision is below the gate, worst first.
 
@@ -194,18 +199,19 @@ def below_gate(strata, min_n=50, gate=im.GATE, verdict="Agree"):
 
 
 def city_gate(df, city, label_type, served_column="ai_accuracy", gate=im.GATE, min_n=50, verdict="Agree"):
-    """The lowest served-accuracy threshold at which one city's gated votes of a type reach ``gate`` precision.
+    """The lowest served-accuracy threshold at which one city's gated votes of a type clear the gate the way the
+    Phase 0 hold-back rule does: the Wilson 95% LOWER bound of their precision is >= ``gate``, on >= ``min_n`` votes.
 
     Scans the distinct served values >= ``gate`` (the maps are step functions, so these are the only thresholds that
-    change anything) and returns ``(threshold, kept)``: the smallest threshold whose votes have observed precision
-    >= ``gate`` on at least ``min_n`` votes, and the share of the city's gated votes it keeps. ``(None, 0.0)`` if no
-    threshold gets there. The threshold is chosen on the same rows it is measured on, so it is optimistic: read it
-    as the size of the change a per-city gate would need, not as a value to ship.
+    change anything) and returns ``(threshold, kept)``: the smallest qualifying threshold and the share of the
+    city's gated votes it keeps; ``(None, 0.0)`` if none qualifies. The threshold is chosen on the same rows it is
+    measured on, so it is optimistic: read it as the size of the change a per-city gate would need, not as a value
+    to ship. Meaningless for the pooled private row, which is not one deployment.
 
     >>> d = pd.DataFrame({"city": "a", "label_type": "T", "ai_result": "Agree", "labelled": True,
-    ...                   "ai_accuracy": [0.93] * 4 + [0.97] * 4, "correct": [0, 0, 1, 1, 1, 1, 1, 1]})
-    >>> city_gate(d, "a", "T", min_n=2)
-    (0.97, 0.5)
+    ...                   "ai_accuracy": [0.93] * 20 + [0.97] * 80, "correct": [0] * 20 + [1] * 80})
+    >>> city_gate(d, "a", "T")
+    (0.97, 0.8)
     """
     g = gated_rows(df, served_column, gate)
     g = g[(g.city == city) & (g.label_type == label_type) & (g.ai_result == verdict)]
@@ -217,9 +223,28 @@ def city_gate(df, city, label_type, served_column="ai_accuracy", gate=im.GATE, m
         keep = served >= t
         if keep.sum() < min_n:
             break
-        if correct[keep].mean() >= gate:
+        if float(im.wilson_lower(correct[keep].mean(), keep.sum(), Z95)) >= gate:
             return float(t), float(keep.mean())
     return None, 0.0
+
+
+def private_below_gate(df, served_column="ai_accuracy", gate=im.GATE, min_n=50, verdict="Agree"):
+    """Counts only, never names: the pooled private deployments' strata taken one deployment at a time.
+
+    Returns ``{"strata", "below", "ci_below", "votes_below", "votes_total"}``: the number of private deployment x
+    type strata of ``verdict`` with >= ``min_n`` gated votes, how many have observed precision below ``gate``, how
+    many have the whole Wilson 95% interval below it, the gated votes in the strata below, and all gated votes of
+    ``verdict`` (every city) for the share.
+    """
+    g = gated_rows(df, served_column, gate)
+    g = g[g.ai_result == verdict]
+    priv = g[g.city.str.startswith("other (")]
+    st = priv.groupby(["schema", "label_type"]).correct.agg(["size", "mean"])
+    st = st[st["size"] >= min_n]
+    below = st[st["mean"] < gate]
+    _, hi = wilson_interval(below["mean"].to_numpy(), below["size"].to_numpy())
+    return {"strata": int(len(st)), "below": int(len(below)), "ci_below": int((np.asarray(hi) < gate).sum()),
+            "votes_below": int(below["size"].sum()), "votes_total": int(len(g))}
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -239,31 +264,28 @@ def _city_order(strata, label_type, min_n):
 
 def _cell(r, min_n):
     if r is None:
-        return ["0", "—", "—"]
+        return ["0", "—", "—", "—"]
     if r.n < min_n:
-        return [f"{r.n:,}", "—", "—"]
-    return [f"{r.n:,}", f"{r.served:.3f}", f"{r.observed:.3f} ({r.ci_lo:.3f}–{r.ci_hi:.3f})"]
+        return [f"{r.n:,}", "—", "—", "—"]
+    return [f"{r.n:,}", f"{r.served:.3f}", f"{r.observed:.3f} ({r.ci_lo:.3f}–{r.ci_hi:.3f})", f"{r.gap:+.3f}"]
 
 
-def markdown_tables(strata, errors, min_n=50, gate=im.GATE):
+def markdown_tables(strata, min_n=50, gate=im.GATE):
     """One markdown table per label type, plus a footnote of strata omitted for n < ``min_n``."""
     lines = []
     for lt in LABEL_TYPES:
         cities = _city_order(strata, lt, min_n)
         lines += [f"### {lt}", "",
-                  "| city | Agree n | Agree served | Agree observed (95% CI) | Disagree n | Disagree served "
-                  "| Disagree observed (95% CI) | calibration error |",
-                  "|---|---:|---:|---:|---:|---:|---:|---:|"]
+                  "| city | Agree n | Agree served | Agree observed (95% CI) | Agree gap "
+                  "| Disagree n | Disagree served | Disagree observed (95% CI) | Disagree gap |",
+                  "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
         s = strata[strata.label_type == lt].set_index(["city", "verdict"])
-        e = errors[errors.label_type == lt].set_index("city")
         for city in cities + [ALL_CITIES]:
             cells = []
             for v in VERDICTS:
                 cells += _cell(s.loc[(city, v)] if (city, v) in s.index else None, min_n)
-            err = e.loc[city] if city in e.index else None
-            err_txt = f"{err.error:+.3f}" if err is not None and err.n >= min_n else "—"
             name = f"**{city}**" if city == ALL_CITIES else city
-            lines.append("| " + " | ".join([name] + cells + [err_txt]) + " |")
+            lines.append("| " + " | ".join([name] + cells) + " |")
         dropped = strata[(strata.label_type == lt) & (strata.city != ALL_CITIES) & ~strata.city.isin(cities)]
         if len(dropped):
             lines.append("")
@@ -276,22 +298,39 @@ def markdown_tables(strata, errors, min_n=50, gate=im.GATE):
 def markdown_below_gate(strata, min_n=50, gate=im.GATE, df=None, served_column="ai_accuracy"):
     """The Agree strata (n >= ``min_n``) whose observed precision is below the gate, as a markdown table.
 
-    With ``df`` (the rows behind ``strata``) it adds the per-city threshold that would reach the gate
-    (``city_gate``) and the share of that stratum's votes it would keep.
+    With ``df`` (the rows behind ``strata``) it adds the per-city threshold whose Wilson lower bound reaches the
+    gate (``city_gate``) and the share of that stratum's votes it would keep; n/a on the pooled private row. A
+    summary line first counts the strata with n >= ``min_n``, named and pooled separately.
     """
+    named_or_pooled = strata[(strata.city != ALL_CITIES) & (strata.verdict == "Agree") & (strata.n >= min_n)]
+    pooled = named_or_pooled.city.str.startswith("other (")
     b = below_gate(strata[strata.city != ALL_CITIES], min_n, gate)
+    b_pooled = b.city.str.startswith("other (")
+    summary = (f"Agree strata with n >= {min_n}: {int((~pooled).sum())} named public city x type strata and "
+               f"{int(pooled.sum())} pooled private rows. Below {gate}: {int((~b_pooled).sum())} named "
+               f"({int(b[~b_pooled].ci_below.sum())} with the whole interval below, "
+               f"{int(b[~b_pooled].n.sum()):,} votes) and {int(b_pooled.sum())} pooled.\n")
+    if df is not None:
+        pb = private_below_gate(df, served_column, gate, min_n)
+        share = pb["votes_below"] / pb["votes_total"] if pb["votes_total"] else 0.0
+        summary += (f"\nPrivate deployments one at a time (counts only): {pb['below']} of {pb['strata']} deployment x "
+                    f"type Agree strata with n >= {min_n} are below {gate} ({pb['ci_below']} with the whole interval "
+                    f"below), holding {pb['votes_below']:,} of all {pb['votes_total']:,} gated Agree votes "
+                    f"({share:.1%}).\n")
     if not len(b):
-        return f"No city x type stratum with n >= {min_n} gated Agree votes is below {gate}.\n"
+        return summary + f"\nNo city x type stratum with n >= {min_n} gated Agree votes is below {gate}.\n"
     head = "| city | type | n | served | observed (95% CI) | below the gate by | whole CI below |"
     rule = "|---|---|---:|---:|---:|---:|---|"
     if df is not None:
-        head += " threshold reaching the gate (votes kept) |"
+        head += " threshold whose lower bound reaches the gate (votes kept) |"
         rule += "---:|"
-    lines = [head, rule]
+    lines = [summary, head, rule]
     for r in b.itertuples():
         line = (f"| {r.city} | {r.label_type} | {r.n:,} | {r.served:.3f} | {r.observed:.3f} "
                 f"({r.ci_lo:.3f}–{r.ci_hi:.3f}) | {r.shortfall:.3f} | {'yes' if r.ci_below else 'no'} |")
-        if df is not None:
+        if df is not None and r.city.startswith("other ("):
+            line += " n/a (pooled) |"
+        elif df is not None:
             t, kept = city_gate(df, r.city, r.label_type, served_column, gate, min_n)
             line += f" {t:.4f} ({kept:.0%}) |" if t is not None else f" none with n >= {min_n} |"
         lines.append(line)
@@ -372,9 +411,10 @@ def main(argv=None):
 
     os.makedirs(args.out_dir, exist_ok=True)
     cities = load_cities(args.cities_json) if args.cities_json else {}
-    df = assign_display_city(load_labels(args.labels), cities)
+    df = load_labels(args.labels)
+    gated_mask = df.index.isin(gated_rows(df, args.served_column).index)
+    df = assign_display_city(df, cities, count_mask=gated_mask)
     strata = per_city_strata(df, args.served_column)
-    errors = per_city_error(df, args.served_column)
 
     gated = gated_rows(df, args.served_column)
     n_named = df.loc[~df.city.str.startswith("other ("), "city"].nunique()
@@ -384,16 +424,14 @@ def main(argv=None):
         f"{len(gated):,} gated votes; {n_named} public deployments in the data are named, the rest pooled. "
         f"Strata with fewer than {args.min_n} gated votes are shown as —.", "",
         "`served` is the mean served accuracy of the gated votes, `observed` their precision against the human "
-        "majority (ties count 0.5) with a Wilson 95% interval, `calibration error` served minus observed over both "
-        "verdicts.", ""]
-    body = markdown_tables(strata, errors, args.min_n)
+        "majority (ties count 0.5) with a Wilson 95% interval, `gap` served minus observed for that verdict.", ""]
+    body = markdown_tables(strata, args.min_n)
     below = ["## Agree strata below the gate", "",
              markdown_below_gate(strata, args.min_n, df=df, served_column=args.served_column)]
     text = "\n".join(header) + "\n" + body + "\n" + "\n".join(below)
     with open(os.path.join(args.out_dir, "per_city.md"), "w") as f:
         f.write(text)
-    strata.merge(errors[["city", "label_type", "error"]], on=["city", "label_type"], how="left",
-                 validate="many_to_one").to_csv(os.path.join(args.out_dir, "per_city.csv"), index=False)
+    strata.to_csv(os.path.join(args.out_dir, "per_city.csv"), index=False)
     served_label = {"ai_accuracy": "served (mean)", "oof_accuracy": "Phase 0 map, out-of-fold (mean)",
                     "new_accuracy": "Phase 0 map (mean)"}[args.served_column]
     for lt in LABEL_TYPES:
