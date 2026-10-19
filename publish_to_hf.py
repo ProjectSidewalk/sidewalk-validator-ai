@@ -44,12 +44,15 @@ dataset repo. Only with ``--yes`` does it upload: each repo gets exactly one ``c
 and deletion, based on the head the preview listed (``parent_commit``), so a concurrent change makes it fail rather
 than interleave, and an interrupted push leaves the repo as it was. ``.gitattributes`` is kept and history is not
 rewritten. ``--yes`` is refused while a card has ``TODO:`` (unless ``--allow-todo``), when a remote cannot be
-listed, or when more than 5% of the crops are found in another type's dataset repo. Repos are never created under
-the default prefix; under another ``--repo-prefix`` (e.g. a personal namespace for a test upload) ``--create-repo``
-creates them private. ``--prune-remote`` deletes only the stray training files from existing model repos, one
+listed, when more than 5% of the crops are found in another type's dataset repo, or when another type's crops
+carry no sha256 to compare. Repos are never created under the ``projectsidewalk`` namespace (in any letter case);
+under another namespace (e.g. a personal one for a test upload) ``--create-repo`` creates them private. ``--prune-remote`` deletes only the stray training files from existing model repos, one
 commit each, again only with ``--yes``.
 
-Exit codes: 0 success, 1 refused (``PublishError``), 3 the Hub could not be reached or listed.
+Exit codes: 0 success, 1 refused (``PublishError``), 3 any Hub failure (unreachable, listing failed, or a
+``create_repo``/``create_commit`` rejected). The model and dataset repos are two separate commits: if the second
+fails, the message names what was already committed and the ``--push-staged --what ... --yes`` command that
+uploads the rest.
 
 Usage::
 
@@ -103,8 +106,8 @@ PRIVATE_RUN_KEYS = ("pano_store", "pano_store_marker")
 EVAL_SPLITS = ("val", "test", "test_heldout")
 """Splits evaluate.py writes predictions for."""
 
-PREFIX_RE = re.compile(r"^[\w.-]+/[\w.-]*\w$")
-"""``--repo-prefix`` must be ``<namespace>/<name>`` ending in a word character (no trailing ``-``)."""
+PREFIX_RE = re.compile(r"[\w.-]+/[\w.-]*\w")
+"""``--repo-prefix`` must fully match ``<namespace>/<name>`` ending in a word character (no trailing ``-``)."""
 
 OVERLAP_LIMIT = 0.05
 """Share of staged crops (by sha256) allowed to appear in another label type's dataset repo before upload stops."""
@@ -123,7 +126,7 @@ class PublishError(Exception):
 
 
 class RemoteError(PublishError):
-    """The Hub could not be reached or listed (exit code ``EXIT_REMOTE``)."""
+    """A Hub failure: unreachable, a failed listing, or a rejected create_repo/create_commit (exit ``EXIT_REMOTE``)."""
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -142,8 +145,15 @@ def validate_prefix(prefix):
         ...
         publish_to_hf.PublishError: ...
     """
-    if not PREFIX_RE.match(prefix or ""):
-        raise PublishError(f"--repo-prefix {prefix!r} must look like <namespace>/<name> and end in a letter or digit")
+    if not PREFIX_RE.fullmatch(prefix or "") or ".." in prefix or "--" in prefix:
+        raise PublishError(f"--repo-prefix {prefix!r} must look like <namespace>/<name>, end in a letter or digit, "
+                           f"and contain no '..' or '--'")
+
+
+def is_org_namespace(prefix):
+    """True if ``prefix`` is under the project's own namespace, in any letter case (the Hub treats namespaces
+    case-insensitively), so ``--create-repo`` can never create a repo there."""
+    return prefix.split("/")[0].lower() == DEFAULT_PREFIX.split("/")[0].lower()
 
 
 def model_repo_id(label_type, prefix=DEFAULT_PREFIX):
@@ -590,17 +600,19 @@ def check_bindings(root, label_type, best_dir, map_path, report):
 
     Refusals (``PublishError``):
 
-    * the calibration report next to the map names another label type (calibrate.py records ``label_type``);
+    * the calibration report next to the map names another label type, or none (calibrate.py records
+      ``label_type``);
     * ``sha256(<T>/split.csv)`` differs from ``split_sha256`` in ``dinov2/run_key.json``, i.e. the split changed
-      after training (fine_tune_classifier.py writes the key), or the key is missing;
-    * the ``label_uid`` set of ``predictions.csv`` differs from the split's ``val``/``test``/``test_heldout`` rows,
-      i.e. the metrics and map were computed on another split (checked when ``metrics.json`` or a map exists).
+      after training (fine_tune_classifier.py writes the key), or the key is missing or for another label type;
+    * ``predictions.csv`` has duplicate ``label_uid`` rows, or its set differs from the split's
+      ``val``/``test``/``test_heldout`` rows, i.e. the metrics and map were computed on another split (checked only
+      when ``metrics.json`` or a map exists).
 
     Warning: file times out of order (weights after predictions, or predictions after metrics/map), the sign of a
     retrain or re-evaluation whose later steps were not re-run.
     """
     base = os.path.join(root, label_type)
-    if report is not None and report.get("label_type") not in (None, label_type):
+    if report is not None and report.get("label_type") != label_type:
         raise PublishError(f"{os.path.join(os.path.dirname(map_path), 'calibration_report.json')} is for "
                            f"{report.get('label_type')!r}, not {label_type!r}; pass the right --calibration-map")
     split_path = os.path.join(base, "split.csv")
@@ -608,6 +620,9 @@ def check_bindings(root, label_type, best_dir, map_path, report):
     if key is None or not key.get("split_sha256"):
         raise PublishError(f"{os.path.join(base, 'dinov2', 'run_key.json')} is missing or has no split_sha256, so "
                            f"the weights cannot be tied to {split_path}")
+    if key.get("label_type") != label_type:
+        raise PublishError(f"{os.path.join(base, 'dinov2', 'run_key.json')} is for {key.get('label_type')!r}, not "
+                           f"{label_type!r}")
     if sha256_file(split_path) != key["split_sha256"]:
         raise PublishError(f"{split_path} changed after training (sha256 differs from run_key.json); retrain or "
                            f"restore the split the model was trained on")
@@ -618,7 +633,11 @@ def check_bindings(root, label_type, best_dir, map_path, report):
             raise PublishError(f"missing {pred_path}: metrics.json and the map cannot be tied to the split")
         split = pd.read_csv(split_path, usecols=["label_uid", "split"])
         want = set(split.loc[split["split"].isin(EVAL_SPLITS), "label_uid"].astype(str))
-        got = set(pd.read_csv(pred_path, usecols=["label_uid"])["label_uid"].astype(str))
+        pred_uids = pd.read_csv(pred_path, usecols=["label_uid"])["label_uid"].astype(str)
+        if not pred_uids.is_unique:
+            raise PublishError(f"{pred_path} has {int(pred_uids.duplicated().sum())} duplicate label_uid rows; "
+                               f"re-run evaluate.py")
+        got = set(pred_uids)
         if want != got:
             raise PublishError(f"{pred_path} covers {len(got)} labels but the split has {len(want)} evaluation rows "
                                f"({len(got - want)} extra, {len(want - got)} missing); re-run evaluate.py and "
@@ -718,9 +737,12 @@ def _staged_record(model_dir, dataset_dir):
     return record
 
 
-def _is_crop_path(rel):
+def _is_crop_path(rel, remote=False):
+    """True for ``<split>/<class>/<name>.webp``. ``remote`` also accepts a ``validation/`` split folder, which older
+    or hand-made uploads use instead of ``val/``."""
     parts = rel.split("/")
-    return len(parts) == 3 and parts[0] in SPLITS and parts[1] in CLASSES and parts[2].endswith(".webp")
+    splits = SPLITS + ("validation",) if remote else SPLITS
+    return len(parts) == 3 and parts[0] in splits and parts[1] in CLASSES and parts[2].endswith(".webp")
 
 
 def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_path=None, dataset_license=None):
@@ -812,9 +834,10 @@ def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None):
     content_hash = sha256_file(os.path.join(dataset_dir, "SHA256SUMS"))
     if content_hash != record["content_hash"]:
         raise PublishError("SHA256SUMS changed since staging; restage")
+    hash_line = f"- **Content hash:** `{content_hash}`"
     with open(os.path.join(dataset_dir, "README.md")) as f:
-        if content_hash not in f.read():
-            raise PublishError(f"{dataset_dir}/README.md no longer states the content hash {content_hash}")
+        if not any(line.startswith(hash_line) for line in f):
+            raise PublishError(f"{dataset_dir}/README.md no longer has the line '{hash_line} ...'")
     best_dir, _ = resolve_checkpoints(root, label_type)
     if os.path.basename(best_dir) != record["best_checkpoint"] or \
             sha256_file(os.path.join(best_dir, "model.safetensors")) != record["files"]["model/model.safetensors"]:
@@ -878,14 +901,35 @@ def authenticated_listing(api, repo_type, repo_id):
                  if not hasattr(f, "tree_id")]   # RepoFolder entries have a tree_id, files do not
     except RepositoryNotFoundError:
         return None
-    except Exception as e:  # HTTP and connection errors from huggingface_hub/requests
+    except hub_errors() as e:
         raise RemoteError(f"could not list {repo_type} {repo_id}: {e}") from e
     return {"sha": info.sha, "files": files}
 
 
+def hub_errors():
+    """Exception classes that mean "the Hub failed or could not be reached" (not a bug in this script):
+    requests' errors (huggingface_hub < 1.0, and our own audit), httpx's (huggingface_hub >= 1.0),
+    huggingface_hub's ``HfHubHTTPError``, and OS-level connection errors."""
+    import importlib
+
+    import requests
+    errors = [requests.RequestException, OSError]
+    try:
+        from huggingface_hub.errors import HfHubHTTPError
+        errors.append(HfHubHTTPError)
+    except ImportError:
+        pass
+    for module in ("httpx", "httpx2"):
+        try:
+            errors.append(importlib.import_module(module).HTTPError)
+        except (ImportError, AttributeError):
+            pass
+    return tuple(errors)
+
+
 def crop_hashes(files):
     """The LFS sha256 of every crop (``<split>/<class>/<name>.webp``) in a listing; crops without one are skipped."""
-    return {f["sha256"] for f in files or [] if f.get("sha256") and _is_crop_path(f["path"])}
+    return {f["sha256"] for f in files or [] if f.get("sha256") and _is_crop_path(f["path"], remote=True)}
 
 
 def overlap_fraction(a, b):
@@ -896,8 +940,9 @@ def overlap_fraction(a, b):
 def remote_overlaps(staged_hashes, label_type, prefix, lister):
     """Share of the staged crops (by sha256) found in each OTHER label type's dataset repo.
 
-    Returns ``[(repo_id, fraction or None if the repo is missing, n_remote_crops_with_hash)]``. Catches a dataset
-    built from another type's crops even when its file names, manifest and local checks all look right."""
+    Returns ``[(repo_id, fraction or None if the repo is missing, n_remote_crops_with_hash, n_remote_crops)]``.
+    Catches a dataset built from another type's crops even when its file names, manifest and local checks all look
+    right. A repo whose crops carry no sha256 (stored without LFS) cannot be compared; the caller refuses it."""
     out = []
     for other in LABEL_TYPES:
         if other == label_type:
@@ -905,10 +950,12 @@ def remote_overlaps(staged_hashes, label_type, prefix, lister):
         repo = dataset_repo_id(other, prefix)
         listing = lister("dataset", repo)
         if listing is None:
-            out.append((repo, None, 0))
+            out.append((repo, None, 0, 0))
             continue
         remote = crop_hashes(listing["files"])
-        out.append((repo, len(staged_hashes & remote) / len(staged_hashes) if staged_hashes else 0.0, len(remote)))
+        n_crops = sum(_is_crop_path(f["path"], remote=True) for f in listing["files"])
+        out.append((repo, len(staged_hashes & remote) / len(staged_hashes) if staged_hashes else 0.0, len(remote),
+                    n_crops))
     return out
 
 
@@ -972,7 +1019,7 @@ def audit(prefix=DEFAULT_PREFIX, fetch=fetch_repo_files):
         datasets.append({"repo": repo, "exists": files is not None, "n_files": len(files or []),
                          "split_counts": dict(sorted(counts.items())), "card_size": _card_size(files)})
         if files:
-            crops[repo] = ({f["path"] for f in files if _is_crop_path(f["path"])}, crop_hashes(files))
+            crops[repo] = ({f["path"] for f in files if _is_crop_path(f["path"], remote=True)}, crop_hashes(files))
 
     duplicates = []
     repos = list(crops)
@@ -1107,9 +1154,9 @@ def check_plan(plan, prefix, allow_todo, create_repo):
     if plan["listing_error"]:
         raise PublishError(f"refusing to upload to {plan['repo_id']}: {plan['listing_error']}")
     if plan["listing"] is None:
-        if prefix == DEFAULT_PREFIX:
-            raise PublishError(f"{plan['repo_id']} does not exist; repos under the default prefix are never created "
-                               f"by this script")
+        if is_org_namespace(prefix):
+            raise PublishError(f"{plan['repo_id']} does not exist; repos under the {prefix.split('/')[0]} "
+                               f"namespace are never created by this script")
         if not create_repo:
             raise PublishError(f"{plan['repo_id']} does not exist; pass --create-repo to create it (private)")
 
@@ -1171,11 +1218,13 @@ def push(label_type, model_dir, dataset_dir, prefix=DEFAULT_PREFIX, what="both",
         except RemoteError as e:
             overlaps = None
             problems.append(f"could not compare with the other dataset repos: {e}")
-        for repo, frac, n in overlaps or []:
-            text = "missing" if frac is None else f"{frac:.1%} of the staged crops ({n} hashed crops there)"
+        for repo, frac, n_hashed, n_crops in overlaps or []:
+            text = "missing" if frac is None else f"{frac:.1%} of the staged crops ({n_hashed} hashed crops there)"
             print(f"  overlap with {repo}: {text}")
             if frac is not None and frac > OVERLAP_LIMIT:
                 problems.append(f"{frac:.1%} of the staged {label_type} crops are already in {repo}")
+            if n_crops and not n_hashed:
+                problems.append(f"could not compare crops with {repo}: none of its {n_crops} crops has a sha256")
     if not yes:
         for p in problems:
             print(f"  WARNING: {p}")
@@ -1185,9 +1234,35 @@ def push(label_type, model_dir, dataset_dir, prefix=DEFAULT_PREFIX, what="both",
         check_plan(plan, prefix, allow_todo, create_repo)
     if problems:
         raise PublishError("; ".join(problems))
+    committed = []
     for plan, message in plans:
-        commit_push(api, plan, message, private=prefix != DEFAULT_PREFIX)
+        try:
+            commit_push(api, plan, message, private=not is_org_namespace(prefix))
+        except Exception as e:  # any Hub failure, including the Hub rejecting the card's YAML
+            if isinstance(e, PublishError) and not isinstance(e, RemoteError):
+                raise
+            remaining = [p for p, _ in plans if p["repo_id"] not in committed]
+            raise RemoteError(
+                f"the upload to {plan['repo_id']} failed: {e}. Each repo's commit is atomic, so nothing of it "
+                f"landed. Already committed in this run: {', '.join(committed) or 'none'}. Retry the rest with: "
+                + retry_command(label_type, dataset_dir, prefix, remaining, allow_todo, create_repo)) from e
+        committed.append(plan["repo_id"])
     return plans
+
+
+def retry_command(label_type, dataset_dir, prefix, remaining, allow_todo=False, create_repo=False):
+    """The ``--push-staged`` command that uploads only the repos in ``remaining`` (plans not yet committed)."""
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(dataset_dir))))
+    what = "both" if len(remaining) > 1 else remaining[0]["repo_type"]
+    parts = ["python publish_to_hf.py", f"--label_type {label_type}", f"--out {root}", "--push-staged",
+             f"--what {what}", "--yes"]
+    if prefix != DEFAULT_PREFIX:
+        parts.append(f"--repo-prefix {prefix}")
+    if create_repo:
+        parts.append("--create-repo")
+    if allow_todo:
+        parts.append("--allow-todo")
+    return " ".join(parts)
 
 
 def prune_remote(repo_id, yes=False, fetch=fetch_repo_listing, api=None):
@@ -1206,9 +1281,12 @@ def prune_remote(repo_id, yes=False, fetch=fetch_repo_listing, api=None):
     print(f"{repo_id}: {'deleting' if yes else 'would delete'} {', '.join(stray)} ({_human_size(size)})")
     if yes:
         api = api or _hf_api()
-        api.delete_files(repo_id=repo_id, delete_patterns=stray, repo_type="model", parent_commit=listing["sha"],
-                         commit_message="Remove training-only files (optimizer, scheduler, RNG state, training "
-                                        "args); see ProjectSidewalk/sidewalk-validator-ai#7")
+        try:
+            api.delete_files(repo_id=repo_id, delete_patterns=stray, repo_type="model", parent_commit=listing["sha"],
+                             commit_message="Remove training-only files (optimizer, scheduler, RNG state, training "
+                                            "args); see ProjectSidewalk/sidewalk-validator-ai#7")
+        except Exception as e:  # any Hub failure; the commit is atomic, so nothing was deleted
+            raise RemoteError(f"pruning {repo_id} failed, nothing was deleted: {e}") from e
     else:
         print("  (dry run; add --yes to delete)")
     return stray
@@ -1241,7 +1319,7 @@ def build_parser():
                    help="delete stray training files from existing model repos (dry run unless --yes)")
     p.add_argument("--what", choices=("both", "model", "dataset"), default="both", help="which repo(s) to upload")
     p.add_argument("--create-repo", action="store_true",
-                   help="create missing repos (private), only for a non-default --repo-prefix")
+                   help="create missing repos (private), only under a --repo-prefix outside the projectsidewalk namespace")
     p.add_argument("--yes", action="store_true", help="really upload / delete")
     p.add_argument("--allow-todo", action="store_true", help="upload cards that still contain TODO: markers")
     return p
@@ -1282,7 +1360,7 @@ def main(argv=None):
                  args.create_repo)
         return 0
     except RemoteError as e:
-        print(f"ERROR (Hub unreachable or refused): {e}", file=sys.stderr)
+        print(f"ERROR (Hub failure): {e}", file=sys.stderr)
         return EXIT_REMOTE
     except PublishError as e:
         print(f"ERROR: {e}", file=sys.stderr)

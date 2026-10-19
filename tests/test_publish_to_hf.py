@@ -386,7 +386,7 @@ def test_model_card_has_the_real_numbers(staged):
     assert f"{staged['report']['eval']['overall_ece']:.4f}" in card
     assert "checkpoint-2" in card
     assert "@inproceedings{saha2019projectsidewalk" in card
-    assert "licens" not in card.lower().replace("license: mit", "")   # no licensing discussion in the body
+    assert "licens" not in card.lower().replace("license: mit", "")
 
 
 def test_dataset_card_has_the_real_numbers(staged):
@@ -666,7 +666,7 @@ def test_network_errors_become_remote_errors(monkeypatch, capsys):
         pub.fetch_repo_listing("model", "org/a", get=down)
     monkeypatch.setattr(requests, "get", down)
     assert pub.main(["--audit"]) == pub.EXIT_REMOTE
-    assert "Hub unreachable" in capsys.readouterr().err
+    assert "Hub failure" in capsys.readouterr().err
 
 
 def test_overlap_fraction():
@@ -703,7 +703,8 @@ class FakeApi:
 
     def repo_info(self, repo_id, repo_type=None):
         if self.fail_listing:
-            raise RuntimeError("503 from the Hub")
+            import requests
+            raise requests.ConnectionError("503 from the Hub")
         if (repo_type, repo_id) not in self.repos:
             raise LookupError(repo_id)          # authenticated_listing treats this as "no such repo" in tests
         return type("Info", (), {"sha": "f" * 40})()
@@ -715,8 +716,13 @@ class FakeApi:
         self.calls.append(("create_repo", repo_id, kw))
         self.repos[(kw["repo_type"], repo_id)] = [".gitattributes"]
 
+    fail_commit_for = None
+    """repo_id whose create_commit raises (after recording the attempt), to simulate a Hub rejection."""
+
     def create_commit(self, **kw):
         self.calls.append(("create_commit", kw))
+        if kw["repo_id"] == self.fail_commit_for:
+            raise RuntimeError("412 Precondition Failed")
         return "commit-url"
 
     def delete_files(self, **kw):
@@ -869,3 +875,157 @@ def test_cli_stage(tmp_path, capsys):
     assert "TODO markers to fill before --yes" in capsys.readouterr().out
     assert pub.main(["--label_type", "all", "--out", root]) == 1
     assert pub.main(["--label_type", T, "--out", root, "--repo-prefix", "oops"]) == 1
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Round-2 review: partial failures, uncomparable repos, untested guards, nits
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _filled_root(tmp_path):
+    root, *_ = make_root(tmp_path)
+    with open(os.path.join(root, T, "card_overrides.json"), "w") as f:
+        json.dump(FULL_OVERRIDES, f)
+    return root
+
+
+def test_a_failed_model_commit_names_what_landed_and_how_to_retry(tmp_path, fake_ops, monkeypatch, capsys):
+    root = _filled_root(tmp_path)
+    pub.stage(root, T)
+    api = FakeApi(_official())
+    api.fail_commit_for = pub.model_repo_id(T)
+    monkeypatch.setattr(pub, "_hf_api", lambda required=True: api)
+    assert pub.main(["--label_type", T, "--out", root, "--push-staged", "--yes"]) == pub.EXIT_REMOTE
+    err = capsys.readouterr().err
+    assert f"Already committed in this run: {pub.dataset_repo_id(T)}" in err
+    assert "--push-staged --what model --yes" in err and f"--out {os.path.abspath(root)}" in err
+    # the retry the message prints commits the model, and only the model, in one commit
+    api.fail_commit_for = None
+    api.calls.clear()
+    assert pub.main(["--label_type", T, "--out", root, "--push-staged", "--what", "model", "--yes"]) == 0
+    commits = [c[1]["repo_id"] for c in api.calls if c[0] == "create_commit"]
+    assert commits == [pub.model_repo_id(T)]
+
+
+def test_a_failed_first_commit_says_nothing_landed(staged, fake_ops):
+    api = FakeApi(_official())
+    api.fail_commit_for = pub.dataset_repo_id(T)
+    with pytest.raises(pub.RemoteError, match="Already committed in this run: none.*--what both"):
+        pub.push(T, staged["model"], staged["dataset"], yes=True, allow_todo=True, api=api)
+
+
+def test_a_failed_prune_is_a_remote_error():
+    class Broken(FakeApi):
+        def delete_files(self, **kw):
+            raise RuntimeError("401")
+    with pytest.raises(pub.RemoteError, match="nothing was deleted"):
+        pub.prune_remote("projectsidewalk/sidewalk-validator-ai-curbramp", yes=True,
+                         fetch=_lister(_fake_hub()), api=Broken())
+
+
+def test_crops_without_sha256_cannot_be_compared(staged, fake_ops, capsys):
+    """F2: another repo's crops stored without LFS have no sha256; that must not read as 0% overlap."""
+    repos = _official()
+    repos[("dataset", pub.dataset_repo_id("Crosswalk"))] = list(pub.read_sha256sums(staged["dataset"]))
+    api = FakeApi(repos)                       # _File without sha256: non-LFS
+    pub.push(T, staged["model"], staged["dataset"], api=api)
+    assert "WARNING: could not compare crops with projectsidewalk/sidewalk-validator-ai-dataset-crosswalk" in \
+        capsys.readouterr().out
+    with pytest.raises(pub.PublishError, match="could not compare crops"):
+        pub.push(T, staged["model"], staged["dataset"], yes=True, allow_todo=True, api=api)
+    assert not api.calls
+
+
+def test_a_listing_error_for_another_dataset_repo_is_refused(staged, fake_ops):
+    api = FakeApi(_official())
+    real = api.repo_info
+
+    def flaky(repo_id, repo_type=None):
+        if repo_id == pub.dataset_repo_id("Obstacle"):
+            import requests
+            raise requests.Timeout("read timed out")
+        return real(repo_id, repo_type=repo_type)
+    api.repo_info = flaky
+    with pytest.raises(pub.PublishError, match="could not compare with the other dataset repos"):
+        pub.push(T, staged["model"], staged["dataset"], yes=True, allow_todo=True, api=api)
+    assert not api.calls
+
+
+def test_validation_folder_counts_as_crops_in_remote_listings():
+    files = [{"path": "validation/correct/a_1.webp", "sha256": "x"}, {"path": "val/correct/a_2.webp", "sha256": "y"}]
+    assert pub.crop_hashes(files) == {"x", "y"}
+    assert not pub._is_crop_path("validation/correct/a_1.webp")      # staged layout uses val/
+
+
+def test_push_staged_refuses_a_card_without_the_hash_line(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _, dataset_dir = pub.stage(root, T)
+    card = os.path.join(dataset_dir, "README.md")
+    text = _read(card)
+    with open(card, "w") as f:                 # the hash still appears elsewhere, but not on its own line
+        f.write(re.sub(r"- \*\*Content hash:\*\* `([0-9a-f]+)`", r"- **Content hash:** see SHA256SUMS\n\nOld: `\1`",
+                       text))
+    assert json.loads(_read(os.path.join(dataset_dir, "dataset_info.json")))["content_hash"] in _read(card)
+    with pytest.raises(pub.PublishError, match="Content hash"):
+        pub.verify_staged(root, T)
+
+
+def test_push_staged_refuses_a_crop_deleted_after_staging(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _, dataset_dir = pub.stage(root, T)
+    os.remove(os.path.join(dataset_dir, "test", "correct", "teaneck_14.webp"))
+    with pytest.raises(pub.PublishError, match="differ from SHA256SUMS"):
+        pub.verify_staged(root, T)
+
+
+def test_push_staged_refuses_another_prefix(tmp_path):
+    root, *_ = make_root(tmp_path)
+    pub.stage(root, T)
+    with pytest.raises(pub.PublishError, match="restage"):
+        pub.verify_staged(root, T, prefix="jonfroehlich/test-validator")
+
+
+def test_report_without_label_type_is_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    path = os.path.join(root, T, "calibration", "calibration_report.json")
+    report = json.loads(_read(path))
+    del report["label_type"]
+    with open(path, "w") as f:
+        json.dump(report, f)
+    with pytest.raises(pub.PublishError, match="is for None"):
+        pub.stage(root, T)
+
+
+def test_run_key_for_another_label_type_is_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    path = os.path.join(root, T, "dinov2", "run_key.json")
+    key = json.loads(_read(path))
+    key["label_type"] = "Crosswalk"
+    with open(path, "w") as f:
+        json.dump(key, f)
+    with pytest.raises(pub.PublishError, match="run_key.json is for 'Crosswalk'"):
+        pub.stage(root, T)
+
+
+def test_duplicate_prediction_rows_are_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    path = os.path.join(root, T, "predictions.csv")
+    df = pd.read_csv(path)
+    pd.concat([df, df.iloc[[0]]]).to_csv(path, index=False)
+    with pytest.raises(pub.PublishError, match="duplicate"):
+        pub.stage(root, T)
+
+
+@pytest.mark.parametrize("prefix", ["org/name\n", "../x", "a/..x", "org/a--b"])
+def test_more_bad_prefixes(prefix):
+    with pytest.raises(pub.PublishError, match="repo-prefix"):
+        pub.validate_prefix(prefix)
+
+
+def test_org_namespace_in_any_case_is_never_created(staged, fake_ops):
+    prefix = "ProjectSidewalk/sidewalk-validator-ai-test"
+    assert pub.is_org_namespace(prefix)
+    api = FakeApi({})
+    with pytest.raises(pub.PublishError, match="never created"):
+        pub.push(T, staged["model"], staged["dataset"], prefix=prefix, yes=True, allow_todo=True, create_repo=True,
+                 api=api)
+    assert not api.calls
