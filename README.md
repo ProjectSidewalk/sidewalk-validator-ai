@@ -49,7 +49,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 ## How it works
 
 ```
-/v3/api/rawLabels (19 cities)          data_generation.py
+/v3/api/rawLabels (public cities)      data_generation.py
         │                                     │
         ▼                                     ▼
  [1] select labels      human-authored only · net ≥3 human agree → correct · net ≥2 human disagree → incorrect
@@ -82,7 +82,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 
 | File | Role | Key constants |
 |---|---|---|
-| [`data_generation.py`](data_generation.py) | Steps 1–4. Pulls labels, selects classes, writes `deployment_priors.json`, reads panoramas from the pano store, renders label-centred views, sizes crops by depth, appends to a resumable `manifest.csv`. | `CITIES`, `CORRECT_PROPORTION = 0.55`, `SEED = 42`, FOV 90°, 2048² view, `6100 / depth`, `--tilt-beta 0.95`, `--depth-encoder vitb` |
+| [`data_generation.py`](data_generation.py) | Steps 1–4. Pulls labels, selects classes, writes `deployment_priors.json`, reads panoramas from the pano store, renders label-centred views, sizes crops by depth, appends to a resumable `manifest.csv`. | cities from `/v3/api/cities`, `CORRECT_PROPORTION = 0.55`, `SEED = 42`, FOV 90°, 2048² view, `6100 / depth`, `--tilt-beta 0.95`, `--depth-encoder vitb` |
 | [`split_data.py`](split_data.py) | Step 5. Assigns manifest rows to train/val/test by panorama (stratified by class), merging panoramas whose labels are within a few metres of each other (the same feature seen twice), optional held-out cities, joins the `hard` flag; prints the share of val/test labels with a train label within 2/5/10 m; writes `split.csv`, never touches images. | 70 / 15 / 15 of rows, `--merge-radius-m 3` (coordinates from `--rawlabels DIR`, default `<out>/rawlabels`), `--max-group-share 0.05`, `--seed`, `--holdout-cities`, `--hard-examples` |
 | [`fine_tune_classifier.py`](fine_tune_classifier.py) | Step 6. Hugging Face `Trainer` on `facebook/dinov2-large`, from `split.csv`; val uses the checkpoint's image processor (as eval and serving do). | lr 1e-5, batch 8 × 4 accumulation, `--epochs 25`, warm-up 10%, `--seed`, best by macro-F1 (`--best-metric loss`), resumes from its last checkpoint, `--num-workers`, `id2label = {0: correct, 1: incorrect}` |
 | [`hard_examples.py`](hard_examples.py) | Builds [`analysis/hard_examples_2026-10-17.csv`](analysis/hard_examples_2026-10-17.csv) (`label_uid,reason`) from a private production export: labels the deployed AI got wrong against a unanimous crowd (≥3 votes) or one of the project leads' accounts (configured via `EXPERTS`, not named). Feeds `split_data.py --hard-examples`. | |
@@ -119,8 +119,19 @@ A label is used only when the crowd was decisive, counting **human** votes only:
 | `correct` | agree − disagree > 2, then randomly downsampled | 55% |
 | (dropped) | unvalidated, unsure, or contested | — |
 
-Labels from non-GSV imagery providers, rows with unusable pano geometry, and legacy labels with
-unconverted coordinates (negative `pano_y`: Seattle 193, CDMX 14, Pittsburgh 8, SPGG 1) are excluded, and
+**Cities.** The default is every public deployment that `/v3/api/cities` lists with a `url` (41 on
+2026-10-19), sorted by city_id; `--cities a,b` overrides it. The city_id is what `label_uid`, crop filenames
+and the pano-store directories use. With `--rawlabels-cache DIR` the listing is read from `DIR/cities.json`,
+or fetched and saved there if the file is missing (`--refresh-cities` refetches it). `deployment_priors.json`
+and `generation_run.json` record the list and where it came from (`city_source`: API or cache, with the fetch
+date). A resume against a different list stops, like a changed selection. Deployments listed without a `url`
+are reached through `HOST_OVERRIDES` in `data_generation.py` (today the three Taiwan deployments, which are
+listed private). Before [#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8) the list was
+19 hardcoded cities.
+
+Labels from non-GSV imagery providers (Mapillary and Panoramax, so all of Richmond VA, Laurens IA and Bayonne FR;
+why, and what would change it: [docs/decisions.md](docs/decisions.md)), rows with unusable pano geometry, and
+legacy labels with unconverted coordinates (negative `pano_y`: Seattle 193, CDMX 14, Pittsburgh 8, SPGG 1) are excluded, and
 so are labels placed by the `SidewalkAI` account (RampNet curb ramps in Vancouver WA, Richmond VA and
 Laurens IA), because production never sends those to the validator; `--include-ai-labels` keeps them,
 tagged `author = ai` in the manifest. The 55:45 ratio is a training-balance choice, not the real prior:
@@ -131,7 +142,7 @@ to `deployment_priors.json`, which `calibration/calibrate.py` reweights to
 
 > [!WARNING]
 > Counting human votes only shrinks the classes, most of all CurbRamp `incorrect`, because the AI's
-> disagree votes no longer count. Across the 16 cached training cities (of the 19 in `CITIES`) the
+> disagree votes no longer count. Across the 16 cached training cities (of the 19 then hardcoded) the
 > `incorrect` sets go from (API columns) to (human votes only): CurbRamp 7,957 → 2,626, NoCurbRamp 7,842 → 5,923, Obstacle
 > 4,412 → 3,556, SurfaceProblem 4,688 → 3,623, Crosswalk 1,974 → 1,034. With the 55:45 rule the
 > `correct` class shrinks with them, so a retrain has much less CurbRamp data than the counts in the
@@ -219,7 +230,7 @@ PANO_STORE=/path/to/Panoramas sbatch data_generation.slurm
 
 `PANO_STORE` (passed as `--pano-store`) is required. It points either at the lab's pano store itself or at a
 staged copy of it on the cluster that keeps the store's layout, `<city_id>/<pano_id[:2]>/<pano_id>.jpg` with the
-city_ids of `CITIES` (the layout sidewalk-ai-api reads through `SIDEWALK_SCRAPES_DIR`). The root must hold a
+city_ids `/v3/api/cities` uses (the layout sidewalk-ai-api reads through `SIDEWALK_SCRAPES_DIR`). The root must hold a
 `.pano-store` marker file (any contents; its first line is recorded in `generation_run.json`); a staged copy
 writes its own only after a verified pull. The staging step itself is not in this repo yet. Each panorama is read
 with `cv2.imread` and resized to 8192×4096 (`INTER_LINEAR`), the same method as the API's cache path; identical
@@ -237,8 +248,8 @@ resize (`pano_native_w`/`pano_native_h`), pose, `tilt_applied`, `depth_m`, `crop
 output root. Views are rendered on the GPU with the package's torch recipe and depth runs on the same device;
 the script stops if there is no CUDA device (`--allow-cpu` is for smoke tests). The manifest is written row by
 row, so a killed job can simply be resubmitted: labels already `ok`, still selected and with the same class are
-skipped. If the selection itself changed (new votes since the first run), the job stops and says how many rows
-are stale; `--force-reselect` drops them and carries on. The job then runs `split_data.py`, which writes
+skipped. If the selection itself changed (new votes since the first run, or a different city list), the job stops
+and says how many rows are stale; `--force-reselect` drops them and carries on. The job then runs `split_data.py`, which writes
 `<label_type>/split.csv` (the `ok` manifest rows plus `hard`, joined by `label_uid` from
 `--hard-examples`, and `split` ∈ `train`/`val`/`test`/`test_heldout`), grouped by panorama so no panorama
 appears in two splits, and leaves every image where it is. A new hard-example list only needs this step re-run.
@@ -255,7 +266,11 @@ about a metre, which they are not always (a label's position is estimated from t
 after the first real run before calling this leak fixed.
 
 The job pulls `rawLabels` once into `rawlabels/` and reuses it on resubmission (`FRESH=1 sbatch
-data_generation.slurm` re-pulls), so a resumed run sees the same selection. Even after a re-pull the selection
+data_generation.slurm` re-pulls), so a resumed run sees the same selection. The pull first saves the
+`/v3/api/cities` listing as `rawlabels/cities.json` and then fetches one `<city_id>.csv` per public deployment
+in it. The five label-type processes read that file, so the city list is fixed by the pull too, and nothing calls
+the API after it. A cache made before city discovery has no `cities.json`; the job stops on one rather than mix
+the old 19-city cache with the new list. Re-pull with `FRESH=1`, or resume such a run from the commit that made it. Even after a re-pull the selection
 moves little: the kept `correct` labels are the lowest by a seeded hash of `label_uid`, so one label entering or
 leaving the pool changes at most one kept label in and one out. A run stops rather than shrink the dataset
 silently: after 50 panoramas in a row missing or unusable (usually a wrong `PANO_STORE` or city directory names that
@@ -309,7 +324,8 @@ To run a single label type outside SLURM: `python data_generation.py --label_typ
 and `evaluate.py` with the same flag (the split's group-size guard needs a group of more than 50 rows, so it never
 trips on a smoke test). For a smoke test add
 `--limit 20 --out /some/scratch/dir --allow-cpu`; `--select-only` stops after selection and the priors (no GPU
-needed), and `--rawlabels-cache DIR` reads saved `<city_id>.csv` exports instead of the API. Runs with `--limit`
+needed), and `--rawlabels-cache DIR` reads saved `<city_id>.csv` exports and the `cities.json` listing instead of the
+API (a missing listing is fetched once and saved there). Runs with `--limit`
 or `--cities` write `deployment_priors.partial.json`, never the real `deployment_priors.json`.
 
 ## Publishing to Hugging Face
