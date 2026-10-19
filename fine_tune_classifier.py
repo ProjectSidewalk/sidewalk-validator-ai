@@ -18,13 +18,20 @@ After training, ``split.csv``, ``deployment_priors.json`` (from ``<data-dir>``, 
 ``generation_run.json``) are
 written to the output dir, next to the checkpoints.
 
+Resuming: a run that is interrupted (a klone ``ckpt`` preemption requeues the job) continues from its last saved
+epoch. ``run_key.json`` in the output dir records the split's hash and the settings that shape training; checkpoints
+written under a different key are never resumed, and the run stops instead of mixing them.
+
 Usage::
 
-    python fine_tune_classifier.py --label_type CurbRamp [--data-dir .] [--seed 42] [--epochs 25]
+    python fine_tune_classifier.py --label_type CurbRamp [--data-dir .] [--seed 42] [--epochs 25] \
+        [--best-metric macro_f1|loss] [--num-workers 8]
 """
 import argparse
+import hashlib
 import json
 import os
+import re
 import shutil
 import warnings
 
@@ -68,6 +75,51 @@ def generation_settings(label_type, data_dir="."):
     return {"tilt_beta": run.get("tilt_beta"), "depth_encoder": run.get("depth_encoder")}
 
 
+def run_key(label_type, data_dir, args):
+    """What a resumed run must share with the run that wrote the checkpoints: the split file's hash and the
+    settings that shape training. ``--num-workers`` and ``--allow-cpu`` may differ between attempts."""
+    path = os.path.join(data_dir, label_type, "split.csv")
+    split_sha256 = None
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            split_sha256 = hashlib.sha256(f.read()).hexdigest()
+    return {"label_type": label_type, "split_sha256": split_sha256, "seed": args.seed, "epochs": args.epochs,
+            "best_metric": args.best_metric, "base_checkpoint": CHECKPOINT}
+
+
+def resume_checkpoint(output_dir, key):
+    """The checkpoint to resume from, or None for a fresh run (which writes ``run_key.json`` first).
+
+    Only a ``checkpoint-N`` directory holding ``trainer_state.json`` counts: the Trainer writes that file last, so a
+    directory cut off mid-save is skipped. Raises SystemExit if checkpoints exist under a different (or no) key.
+
+    Example::
+
+        key = run_key("CurbRamp", "pilot", args)
+        resume = resume_checkpoint("pilot/CurbRamp/dinov2", key)   # None on the first attempt
+        trainer.train(resume_from_checkpoint=resume)
+    """
+    key_path = os.path.join(output_dir, "run_key.json")
+    names = os.listdir(output_dir) if os.path.isdir(output_dir) else []
+    ckpts = [d for d in names if re.fullmatch(r"checkpoint-\d+", d)
+             and os.path.exists(os.path.join(output_dir, d, "trainer_state.json"))]
+    if not ckpts:
+        os.makedirs(output_dir, exist_ok=True)
+        with open(key_path, "w") as f:
+            json.dump(key, f, indent=2)
+            f.write("\n")
+        return None
+    old = None
+    if os.path.exists(key_path):
+        with open(key_path) as f:
+            old = json.load(f)
+    if old != key:
+        why = "it has no run_key.json" if old is None else f"its run_key.json differs ({old} vs {key})"
+        raise SystemExit(f"{output_dir} holds checkpoints from another run: {why}. Move or delete it, or pass "
+                         "--output-dir.")
+    return os.path.join(output_dir, max(ckpts, key=lambda d: int(d.split("-")[1])))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--label_type', required=True, help='Specify the label type')
@@ -75,6 +127,10 @@ def main(argv=None):
     parser.add_argument('--output-dir', default=None, help='default <data-dir>/<label_type>/dinov2')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--epochs', type=int, default=25)
+    parser.add_argument('--best-metric', choices=['macro_f1', 'loss'], default='macro_f1',
+                        help='validation metric that picks the kept checkpoint (loss favours calibrated scores)')
+    parser.add_argument('--num-workers', type=int, default=min(8, os.cpu_count() or 1),
+                        help='dataloader worker processes; with 0, decoding and augmentation starve the GPU')
     parser.add_argument('--allow-cpu', action='store_true',
                         help='run without CUDA (smoke tests only; a real run on the CPU would take weeks)')
     args = parser.parse_args(argv)
@@ -94,6 +150,7 @@ def main(argv=None):
     transformers.set_seed(args.seed)
     label_type = args.label_type
     output_dir = args.output_dir or os.path.join(args.data_dir, label_type, "dinov2")
+    resume = resume_checkpoint(output_dir, run_key(label_type, args.data_dir, args))  # before any slow setup
 
     frames = load_split_frames(label_type, args.data_dir)
     if frames is not None:
@@ -173,8 +230,9 @@ def main(argv=None):
         seed=args.seed,
 
         load_best_model_at_end=True,
-        metric_for_best_model="macro_f1",  # Optimize for macro F1 score
-        greater_is_better=True,  # Higher F1 is better
+        metric_for_best_model=args.best_metric,  # "loss" is the Trainer's eval_loss
+        greater_is_better=args.best_metric != "loss",
+        dataloader_num_workers=args.num_workers,
         push_to_hub=False,
         report_to="none",
         use_cpu=not torch.cuda.is_available(),
@@ -189,7 +247,9 @@ def main(argv=None):
         processing_class=image_processor,
         compute_metrics=compute_metrics,
     )
-    trainer.train()
+    if resume:
+        print(f"Resuming from {resume}")
+    trainer.train(resume_from_checkpoint=resume)
 
     # Provenance next to the checkpoints, so a published model can be traced to its exact split and prior.
     for name, src in (("split.csv", os.path.join(args.data_dir, label_type, "split.csv")),
@@ -207,7 +267,8 @@ def main(argv=None):
     best = trainer.state.best_model_checkpoint
     run = {"label_type": label_type, "seed": args.seed, "epochs": args.epochs, "base_checkpoint": CHECKPOINT,
            "best_model_checkpoint": os.path.basename(best) if best else None,
-           "best_metric_macro_f1": trainer.state.best_metric, "id2label": ID2LABEL,
+           "best_metric": args.best_metric,
+           "best_metric_value": trainer.state.best_metric, "id2label": ID2LABEL,
            **generation_settings(label_type, args.data_dir),
            "split_source": "split.csv" if frames is not None else "imagefolder", "versions": versions}
     with open(os.path.join(output_dir, "training_run.json"), "w") as f:

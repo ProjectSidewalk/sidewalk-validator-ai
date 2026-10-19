@@ -71,3 +71,14 @@ def test_report_without_heldout_or_hard():
     df = _synthetic_predictions().drop(columns="hard")
     df = df[df.split != "test_heldout"]
     assert set(report(df)) == {"test"}
+
+
+@pytest.mark.parametrize("argv, message", [
+    (["--checkpoint", "projectsidewalk/sidewalk-validator-ai-curbramp"], "needs --tag"),
+    (["--revision", "abc"], "applies only to --checkpoint"),
+])
+def test_comparison_model_flags_are_checked_before_any_work(argv, message, capsys):
+    from evaluate import main
+    with pytest.raises(SystemExit):
+        main(["--label_type", "CurbRamp", "--data-dir", "/nonexistent", *argv])
+    assert message in capsys.readouterr().err
