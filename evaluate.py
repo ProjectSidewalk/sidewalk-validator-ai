@@ -13,8 +13,9 @@ Replaces ``get_stats.py``. Two stages, kept separate so the metrics are testable
     ``<label_type>/metrics.json`` and ``<label_type>/report.txt``, with ``pvr.png`` and ``report.png``. ``--checkpoint``
     scores another model (such as the one the API serves) on the same split; ``--tag`` suffixes all its outputs.
     ``--vote-weights`` (validator_reliability.py's ``vote_weights.csv``) adds a ``gold`` slice of the two test
-    splits: labels whose every human vote came from a validator with reliability ``>= --gold-min-reliability``
-    (default 0.95; https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/12).
+    splits: labels with at least 3 human votes, every one from a validator with reliability
+    ``>= --gold-min-reliability`` (default 0.85; at 0.95 no trainable label qualifies on the 2026-10-17 data;
+    https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/12).
 
 The confidence-to-accuracy map the API serves is no longer produced here; it is fitted on the val split under the
 deployment prior by ``calibration/calibrate.py`` (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4).
@@ -215,18 +216,23 @@ def slice_metrics(df, levels=PRECISION_LEVELS):
     return out
 
 
-def gold_labels(vote_weights, min_reliability):
-    """Boolean Series by ``label_uid``: True where the label has at least one human vote and every one came from a
-    validator with reliability ``>= min_reliability`` (``vote_weights`` from validator_reliability.py).
+GOLD_MIN_RELIABILITY = 0.85
+GOLD_MIN_VOTES = 3
 
-    >>> w = pd.DataFrame({"label_uid": ["a:1", "a:2"], "n_votes": [3, 2], "min_reliability": [0.97, 0.6]})
+
+def gold_labels(vote_weights, min_reliability=GOLD_MIN_RELIABILITY, min_votes=GOLD_MIN_VOTES):
+    """Boolean Series by ``label_uid``: True where the label has at least ``min_votes`` human votes and every one came
+    from a validator with reliability ``>= min_reliability`` (``vote_weights`` from validator_reliability.py).
+
+    >>> w = pd.DataFrame({"label_uid": ["a:1", "a:2", "a:3"], "n_votes": [3, 2, 4],
+    ...                   "min_reliability": [0.97, 0.99, 0.6]})
     >>> gold_labels(w, 0.95).to_dict()
-    {'a:1': True, 'a:2': False}
+    {'a:1': True, 'a:2': False, 'a:3': False}
     """
     missing = {"label_uid", "n_votes", "min_reliability"} - set(vote_weights.columns)
     if missing:
         raise ValueError(f"vote weights have no {sorted(missing)} column(s); rebuild with validator_reliability.py")
-    gold = (vote_weights["n_votes"] >= 1) & (vote_weights["min_reliability"] >= min_reliability)
+    gold = (vote_weights["n_votes"] >= min_votes) & (vote_weights["min_reliability"] >= min_reliability)
     return pd.Series(gold.to_numpy(), index=vote_weights["label_uid"].to_numpy())
 
 
@@ -329,10 +335,11 @@ def main(argv=None):
                         help="suffix for every output (predictions_<tag>.csv, metrics_<tag>.json, ...), so scoring "
                              "another model never overwrites this run's")
     parser.add_argument("--vote-weights", default=None,
-                        help="validator_reliability.py's vote_weights.csv: adds the 'gold' slice (labels whose every "
-                             "human vote came from a validator with reliability >= --gold-min-reliability)")
+                        help="validator_reliability.py's vote_weights.csv: adds the 'gold' slice (labels with >= 3 "
+                             "human votes, every one from a validator with reliability >= --gold-min-reliability)")
     parser.add_argument("--gold-min-reliability", type=float, default=None,
-                        help="reliability threshold for the gold slice (default 0.95; needs --vote-weights)")
+                        help=f"reliability threshold for the gold slice (default {GOLD_MIN_RELIABILITY}; needs "
+                             "--vote-weights)")
     args = parser.parse_args(argv)
     if args.gold_min_reliability is not None and not args.vote_weights:
         parser.error("--gold-min-reliability needs --vote-weights")
@@ -362,14 +369,19 @@ def main(argv=None):
 
     with_hard = predictions.merge(manifest[["label_uid", "hard"]], on="label_uid", how="left", validate="one_to_one")
     if args.vote_weights:
-        gold = gold_labels(pd.read_csv(args.vote_weights, dtype={"label_uid": str}),
-                           0.95 if args.gold_min_reliability is None else args.gold_min_reliability)
+        gold_min = GOLD_MIN_RELIABILITY if args.gold_min_reliability is None else args.gold_min_reliability
+        gold = gold_labels(pd.read_csv(args.vote_weights, dtype={"label_uid": str}), gold_min)
         absent = ~with_hard.label_uid.isin(gold.index)
         if absent.any():
             raise SystemExit(f"{int(absent.sum())} predictions have no row in {args.vote_weights} (e.g. "
                              f"{with_hard.label_uid[absent].head(3).tolist()})")
         with_hard["gold"] = with_hard.label_uid.map(gold).astype(bool)
+        print(f"gold (>= {GOLD_MIN_VOTES} human votes, every voter's reliability >= {gold_min}): "
+              + ", ".join(f"{s} {int(with_hard.gold[with_hard.split == s].sum())}/{int((with_hard.split == s).sum())}"
+                          for s in EVAL_SPLITS if (with_hard.split == s).any()))
     metrics = report(with_hard)
+    if "gold" in metrics:
+        metrics["gold"].update(gold_min_reliability=gold_min, gold_min_votes=GOLD_MIN_VOTES)
     text = format_report(metrics)
     print(text)
     with open(os.path.join(base, f"metrics{suffix}.json"), "w") as f:

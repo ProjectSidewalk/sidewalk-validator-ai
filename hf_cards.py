@@ -203,7 +203,9 @@ def gate_thresholds(api_map, gate=GATE):
 # ---------------------------------------------------------------------------------------------------------------------
 
 SLICE_NAMES = {"test": "test (cities seen in training)", "test_heldout": "test_heldout (held-out cities)",
-               "hard": "hard (test + test_heldout rows the deployed model got wrong)"}
+               "hard": "hard (test + test_heldout rows the deployed model got wrong)",
+               "gold": "gold (test + test_heldout labels with >= {gold_min_votes} human votes, every voter's "
+                       "reliability >= {gold_min_reliability})"}
 
 
 def _metrics_section(metrics):
@@ -211,9 +213,15 @@ def _metrics_section(metrics):
         return f"{TODO} metrics.json not found; run evaluate.py before publishing.\n"
     lines = ["| slice | n (correct / incorrect) | accuracy | balanced accuracy | AUC | macro-F1 |",
              "|---|---|---|---|---|---|"]
+    # An empty gold slice (evaluate.py --vote-weights, no label qualified) says nothing in a card.
+    metrics = {k: m for k, m in metrics.items() if not (k == "gold" and not m.get("n"))}
     for name, m in metrics.items():
         nb = m.get("n_by_class", {})
-        lines.append(f"| {SLICE_NAMES.get(name, name)} | {fmt(m.get('n'))} ({fmt(nb.get('correct'))} / "
+        label = SLICE_NAMES.get(name, name)
+        if name == "gold":
+            label = label.format(gold_min_votes=m.get("gold_min_votes", "?"),
+                                 gold_min_reliability=m.get("gold_min_reliability", "?"))
+        lines.append(f"| {label} | {fmt(m.get('n'))} ({fmt(nb.get('correct'))} / "
                      f"{fmt(nb.get('incorrect'))}) | {fmt(m.get('accuracy'))} | {fmt(m.get('balanced_accuracy'))} | "
                      f"{fmt(m.get('auc'))} | {fmt(macro_f1(m))} |")
     lines += ["", "Per class:", "", "| slice | class | precision | recall | F1 | support |", "|---|---|---|---|---|---|"]

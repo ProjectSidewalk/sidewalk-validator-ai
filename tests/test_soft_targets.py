@@ -1,5 +1,6 @@
 """--target in fine_tune_classifier.py and the gold slice in evaluate.py (issue #12)."""
 import doctest
+import os
 from types import SimpleNamespace
 
 import pandas as pd
@@ -71,6 +72,16 @@ def test_weighted_joins_on_label_uid_and_fails_on_missing_rows(tmp_path):
         load_split_frames("CurbRamp", str(tmp_path), "weighted", w[w.label_uid != "c:2"])
 
 
+def test_weighted_requires_the_same_vote_snapshot(tmp_path):
+    _split(tmp_path)   # train rows: c:1 3+0 votes, c:2 0+2 votes
+    w = pd.DataFrame({"label_uid": ["c:1", "c:2"], "w_agree": [3.0, 0.0], "w_disagree": [0.0, 2.0],
+                      "n_votes": [3, 2]})
+    load_split_frames("CurbRamp", str(tmp_path), "weighted", w)   # counts agree: fine
+    w.loc[1, "n_votes"] = 3   # a newer export with one more vote on c:2
+    with pytest.raises(ValueError, match="1 of 2 rows .* different rawLabels snapshot"):
+        load_split_frames("CurbRamp", str(tmp_path), "weighted", w)
+
+
 def test_target_is_in_the_run_key(tmp_path):
     _split(tmp_path)
     vw = tmp_path / "vote_weights.csv"
@@ -135,7 +146,7 @@ def test_gold_slice_only_when_column_present():
                           "true": ["correct", "incorrect", "correct", "correct"],
                           "p_correct": [0.9, 0.2, 0.4, 0.9], "p_incorrect": [0.1, 0.8, 0.6, 0.1]})
     assert "gold" not in report(preds)
-    w = pd.DataFrame({"label_uid": ["a:1", "a:2", "a:3", "a:4"], "n_votes": [3, 2, 3, 3],
+    w = pd.DataFrame({"label_uid": ["a:1", "a:2", "a:3", "a:4"], "n_votes": [3, 3, 3, 3],
                       "min_reliability": [0.96, 0.95, 0.5, 0.99]})
     preds["gold"] = preds.label_uid.map(gold_labels(w, 0.95))
     out = report(preds)
@@ -159,14 +170,34 @@ def test_evaluate_cli_gold_slice_and_unchanged_default(tmp_path):
     assert "gold" not in json.loads((base / "metrics.json").read_text())
 
     vw = tmp_path / "vote_weights.csv"
-    pd.DataFrame({"label_uid": uids, "w_agree": 1.0, "w_disagree": 0.0, "n_votes": 3, "n_gold": [3, 3, 0, 3],
-                  "min_reliability": [0.99, 0.97, 0.5, 0.9]}).to_csv(vw, index=False)
+    pd.DataFrame({"label_uid": uids, "w_agree": 1.0, "w_disagree": 0.0, "n_votes": [3, 3, 3, 2],
+                  "min_reliability": [0.99, 0.9, 0.5, 0.99]}).to_csv(vw, index=False)
     evaluate.main(["--label_type", "CurbRamp", "--data-dir", str(tmp_path), "--skip-inference", "--vote-weights",
-                   str(vw), "--gold-min-reliability", "0.96"])
-    assert json.loads((base / "metrics.json").read_text())["gold"]["n"] == 2
+                   str(vw)])   # default 0.85, >= 3 votes: c:1 and c:2 (c:4 has only 2 votes)
+    gold = json.loads((base / "metrics.json").read_text())["gold"]
+    assert gold["n"] == 2 and gold["gold_min_reliability"] == 0.85 and gold["gold_min_votes"] == 3
+    evaluate.main(["--label_type", "CurbRamp", "--data-dir", str(tmp_path), "--skip-inference", "--vote-weights",
+                   str(vw), "--gold-min-reliability", "0.995"])
+    assert json.loads((base / "metrics.json").read_text())["gold"]["n"] == 0   # empty, but reported
     pd.read_csv(vw).iloc[:3].to_csv(vw, index=False)
     with pytest.raises(SystemExit, match="1 predictions have no row"):
         evaluate.main(["--label_type", "CurbRamp", "--data-dir", str(tmp_path), "--skip-inference",
                        "--vote-weights", str(vw)])
     with pytest.raises(SystemExit):
         evaluate.main(["--label_type", "CurbRamp", "--data-dir", str(tmp_path), "--gold-min-reliability", "0.9"])
+
+
+def test_hf_card_names_the_gold_slice_and_skips_an_empty_one():
+    import hf_cards
+    m = {"n": 4, "n_by_class": {"correct": 2, "incorrect": 2}, "accuracy": 0.75, "balanced_accuracy": 0.75,
+         "auc": 0.8, "per_class": {}}
+    text = hf_cards._metrics_section({"test": m, "gold": {**m, "gold_min_reliability": 0.85, "gold_min_votes": 3}})
+    assert "gold (test + test_heldout labels with >= 3 human votes, every voter's reliability >= 0.85)" in text
+    empty = {"n": 0, "n_by_class": {"correct": 0, "incorrect": 0}}
+    assert "gold" not in hf_cards._metrics_section({"test": m, "gold": empty})
+
+
+def test_non_hard_target_defaults_to_its_own_output_dir():
+    assert ft.default_output_dir("d", "CurbRamp", "hard") == os.path.join("d", "CurbRamp", "dinov2")
+    assert ft.default_output_dir("d", "CurbRamp", "soft") == os.path.join("d", "CurbRamp", "dinov2-soft")
+    assert ft.default_output_dir("d", "CurbRamp", "weighted") == os.path.join("d", "CurbRamp", "dinov2-weighted")

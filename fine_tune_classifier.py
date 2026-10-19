@@ -32,7 +32,13 @@ Training target (``--target``, https://github.com/ProjectSidewalk/sidewalk-valid
   ``(human_agree + 1) / (human_agree + human_disagree + 2)``, from split.csv's ``human_agree``/``human_disagree``
   columns (data_generation.py's manifest, carried through by split_data.py; missing columns are an error).
 - ``weighted``: the same formula on the reliability-weighted counts ``w_agree``/``w_disagree`` from ``--vote-weights``
-  (validator_reliability.py's ``vote_weights.csv``), joined on ``label_uid``; a train row without one is an error.
+  (validator_reliability.py's ``vote_weights.csv``), joined on ``label_uid``; a train row without one is an error, and
+  so is a row whose ``n_votes`` differs from split.csv's ``human_agree + human_disagree`` (the weights were built from
+  a different rawLabels snapshot than the manifest).
+
+A non-hard target writes to ``<label_type>/dinov2-<target>`` by default, never to ``<label_type>/dinov2`` where
+evaluate.py and publish_to_hf.py look for the production model; score it with
+``evaluate.py --checkpoint <dir>/checkpoint-N --tag <target>``.
 
 Soft targets train with soft-label cross-entropy against the two logits (``soft_target_loss``). Validation stays hard:
 val rows carry only ``label_class``, so ``eval_loss`` is the plain cross-entropy and ``macro_f1`` the hard-label
@@ -76,12 +82,14 @@ def soft_targets(df, target, vote_weights=None, path="split.csv"):
     """Per-row target probability of "correct" for ``target`` ``soft`` or ``weighted``, aligned with ``df``.
 
     ``soft`` reads ``df``'s ``human_agree``/``human_disagree``; ``weighted`` joins ``vote_weights`` (a DataFrame with
-    ``label_uid, w_agree, w_disagree``) on ``label_uid``. Missing columns or rows raise ValueError.
+    ``label_uid, w_agree, w_disagree`` and, checked against ``df``'s vote columns when both have them, ``n_votes``)
+    on ``label_uid``. Missing columns or rows, or a vote-count mismatch, raise ValueError.
 
     >>> d = pd.DataFrame({"label_uid": ["a:1", "a:2"], "human_agree": [3, 0], "human_disagree": [0, 2]})
     >>> soft_targets(d, "soft").tolist()
     [0.8, 0.25]
-    >>> w = pd.DataFrame({"label_uid": ["a:2", "a:1", "b:9"], "w_agree": [0.0, 2.0, 1.0], "w_disagree": [1.5, 0.0, 0.0]})
+    >>> w = pd.DataFrame({"label_uid": ["a:2", "a:1", "b:9"], "w_agree": [0.0, 2.0, 1.0],
+    ...                   "w_disagree": [1.5, 0.0, 0.0]})
     >>> soft_targets(d, "weighted", w).tolist()
     [0.75, 0.2857142857142857]
     """
@@ -97,13 +105,20 @@ def soft_targets(df, target, vote_weights=None, path="split.csv"):
         missing = {"label_uid", "w_agree", "w_disagree"} - set(vote_weights.columns)
         if missing:
             raise ValueError(f"vote weights have no {sorted(missing)} column(s)")
-        w = df[["label_uid"]].merge(vote_weights[["label_uid", "w_agree", "w_disagree"]], on="label_uid",
-                                    how="left", validate="one_to_one")
+        cols = [c for c in ("label_uid", "w_agree", "w_disagree", "n_votes") if c in vote_weights.columns]
+        w = df[["label_uid"]].merge(vote_weights[cols], on="label_uid", how="left", validate="one_to_one")
         absent = w["w_agree"].isna() | w["w_disagree"].isna()
         if absent.any():
             raise ValueError(f"{int(absent.sum())} of {len(w)} rows of {path} have no vote weights (e.g. "
                              f"{w.loc[absent, 'label_uid'].head(3).tolist()}); rebuild vote_weights.csv with "
                              "validator_reliability.py from the rawLabels the manifest was built from")
+        if "n_votes" in w.columns and {"human_agree", "human_disagree"} <= set(df.columns):
+            human = (df["human_agree"] + df["human_disagree"]).to_numpy()
+            bad = w["n_votes"].to_numpy() != human
+            if bad.any():
+                raise ValueError(f"{int(bad.sum())} of {len(w)} rows of {path} have n_votes in the vote weights != "
+                                 f"human_agree + human_disagree (e.g. {w.loc[bad, 'label_uid'].head(3).tolist()}): "
+                                 "the weights come from a different rawLabels snapshot than the manifest")
         agree, disagree = w["w_agree"], w["w_disagree"]
     else:
         raise ValueError(f"no soft target for target {target!r}")
@@ -157,7 +172,8 @@ def soft_target_trainer(trainer_cls):
 
 
 def select_trainer(target, trainer_cls):
-    """``trainer_cls`` itself for ``hard`` (the default path is untouched), else ``soft_target_trainer(trainer_cls)``."""
+    """``trainer_cls`` itself for ``hard`` (the default path is untouched), else
+    ``soft_target_trainer(trainer_cls)``."""
     return trainer_cls if target == "hard" else soft_target_trainer(trainer_cls)
 
 
@@ -241,6 +257,12 @@ def target_settings(args):
     return out
 
 
+def default_output_dir(data_dir, label_type, target="hard"):
+    """``<data_dir>/<label_type>/dinov2`` for the hard target (where evaluate.py and publish_to_hf.py look), else
+    ``dinov2-<target>``, so an experiment never lands in the production model's directory."""
+    return os.path.join(data_dir, label_type, "dinov2" if target == "hard" else f"dinov2-{target}")
+
+
 def run_key(label_type, data_dir, args):
     """What a resumed run must share with the run that wrote the checkpoints: the split file's hash and the
     settings that shape training. ``--num-workers`` and ``--allow-cpu`` may differ between attempts. A non-default
@@ -296,7 +318,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--label_type', required=True, help='Specify the label type')
     parser.add_argument('--data-dir', default='.', help='root holding <label_type>/split.csv and deployment_priors.json')
-    parser.add_argument('--output-dir', default=None, help='default <data-dir>/<label_type>/dinov2')
+    parser.add_argument('--output-dir', default=None,
+                        help='default <data-dir>/<label_type>/dinov2, or dinov2-<target> for a non-hard --target')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--epochs', type=int, default=25)
     parser.add_argument('--best-metric', choices=['macro_f1', 'loss'], default='macro_f1',
@@ -310,7 +333,8 @@ def main(argv=None):
                         help='training target: hard 0/1 label_class (default), soft = smoothed human agreement rate '
                              'from split.csv, weighted = the same on reliability-weighted votes (--vote-weights)')
     parser.add_argument('--vote-weights', default=None,
-                        help="validator_reliability.py's vote_weights.csv (required by, and only for, --target weighted)")
+                        help="validator_reliability.py's vote_weights.csv (required by, and only for, "
+                             "--target weighted)")
     args = parser.parse_args(argv)
     if (args.target == 'weighted') != (args.vote_weights is not None):
         parser.error('--vote-weights is required by, and only used with, --target weighted')
@@ -329,7 +353,7 @@ def main(argv=None):
         warnings.warn("--allow-cpu: training on the CPU (smoke tests only).")
     transformers.set_seed(args.seed)
     label_type = args.label_type
-    output_dir = args.output_dir or os.path.join(args.data_dir, label_type, "dinov2")
+    output_dir = args.output_dir or default_output_dir(args.data_dir, label_type, args.target)
     if args.num_workers is None:
         args.num_workers = default_num_workers()
     key = run_key(label_type, args.data_dir, args)
