@@ -24,7 +24,10 @@ def _votes(agree, disagree):
 
 
 def write_city(tmp_path, rows):
+    """The city's rawLabels export and a one-city /v3/api/cities listing in the cache, so main() needs no network."""
     pd.DataFrame(rows).to_csv(tmp_path / f"{CITY}.csv", index=False)
+    (tmp_path / dg.CITIES_CACHE_FILE).write_text(json.dumps({"fetched_on": "2026-10-19", "url": dg.CITIES_API,
+        "cities": [{"city_id": CITY, "visibility": "public", "url": "https://sidewalk-toy.cs.washington.edu"}]}))
 
 
 def label(i, agree, disagree, user="u", pano=None):
@@ -92,7 +95,6 @@ def stubbed(tmp_path, monkeypatch):
             label(4, 0, 4, user=AI), label(5, 5, 0)]
     write_city(tmp_path, rows)
     store = make_store(tmp_path, rows)
-    monkeypatch.setattr(dg, "CITIES", {CITY: "toy"})
     monkeypatch.setattr(dg, "PANO_SIZE", (2048, 1024))
     read = []
     real_read = dg.read_store_panorama
@@ -462,7 +464,6 @@ def test_resume_does_not_count_previously_missing_panos_as_consecutive(tmp_path,
     write_city(tmp_path, rows)
     store = make_store(tmp_path, rows)
     remove_panos(store, ["p02", "p05", "p08", "p12"])
-    monkeypatch.setattr(dg, "CITIES", {CITY: "toy"})
     monkeypatch.setattr(dg, "PANO_SIZE", (2048, 1024))
     monkeypatch.setattr(dg, "load_depth_model", lambda e, d: FakeDepth())
     monkeypatch.setattr(dg, "MAX_CONSECUTIVE_MISSING_PANOS", 3)
@@ -478,6 +479,41 @@ def test_changed_package_commit_refuses_resume(stubbed, monkeypatch):
     with pytest.raises(SystemExit, match="package_source"):
         run_main(stubbed["tmp"])
     run_main(stubbed["tmp"], "--force-reselect")
+
+
+def test_changed_city_list_refuses_resume_and_keeps_crops(stubbed, capsys):
+    """A city joining the listing stops a resume even when it adds no selected label (the selection hash is
+    unchanged); --force-reselect then keeps every crop, unlike a settings change."""
+    tmp = stubbed["tmp"]
+    run_main(tmp)
+    pd.DataFrame([{**label(1, 5, 0), "label_type": "Obstacle"}]).to_csv(tmp / "new-city.csv", index=False)
+    (stubbed["store"] / "new-city").mkdir()
+    listing = json.loads((tmp / "cities.json").read_text())
+    listing["cities"].append({"city_id": "new-city", "visibility": "public",
+                              "url": "https://sidewalk-new.cs.washington.edu"})
+    (tmp / "cities.json").write_text(json.dumps(listing))
+    with pytest.raises(SystemExit, match=r"city list changed \(added: new-city; removed: none\)"):
+        run_main(tmp)
+    run = json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["cities"] == [CITY]  # left untouched by the refusal
+    capsys.readouterr()
+    m = run_main(tmp, "--force-reselect")
+    assert (m.status == "ok").all() and "skipped (already ok)': 5" in capsys.readouterr().out
+    run = json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["cities"] == ["new-city", CITY] and run["city_source"]["from"] == "cache"
+
+
+def test_summary_counts_non_gsv_labels(tmp_path, monkeypatch, capsys):
+    """Non-GSV labels stay out of the selection (docs/decisions.md) and the end-of-run summary says how many."""
+    rows = [label(1, 4, 0), label(2, 0, 3), {**label(3, 0, 3), "pano_source": "panoramax"}]
+    write_city(tmp_path, rows)
+    make_store(tmp_path, rows)
+    monkeypatch.setattr(dg, "PANO_SIZE", (2048, 1024))
+    monkeypatch.setattr(dg, "load_depth_model", lambda e, d: FakeDepth())
+    m = run_main(tmp_path)
+    assert "toy-city:3" not in set(m.label_uid)
+    summary = capsys.readouterr().out.split("Processing complete.")[1]
+    assert "dropped for unusable pano geometry (before selection): {'non_gsv': 1}" in summary
 
 
 def test_priors_are_not_written_on_a_refused_resume(stubbed):

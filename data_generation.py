@@ -1,6 +1,7 @@
 """Build a correct/incorrect crop dataset for one Project Sidewalk label type.
 
-For every label of ``--label_type`` across the cities listed in ``CITIES``, this script:
+For every label of ``--label_type`` across the public deployments ``/v3/api/cities`` lists (or ``--cities``), this
+script:
 
 1. pulls the label and its validations from the public v3 API (``/v3/api/rawLabels``);
 2. keeps human-authored labels the crowd clearly endorsed (net >= 3 human agree votes) or clearly rejected
@@ -51,11 +52,19 @@ Known limitations are tracked in the repo's issues; the audit that found them is
 docs/audit-2026-10-14.md.
 
 **Panoramas** come only from the pano store, or a staged copy of it with the same layout:
-``<pano-store>/<city>/<pano_id[:2]>/<pano_id>.jpg``, ``<city>`` being the ``CITIES`` key (the layout sidewalk-ai-api
+``<pano-store>/<city>/<pano_id[:2]>/<pano_id>.jpg``, ``<city>`` being the city_id (the layout sidewalk-ai-api
 reads through ``SIDEWALK_SCRAPES_DIR``), with a ``.pano-store`` marker file at the root. Each is resized to 8192x4096
 with ``cv2.INTER_LINEAR``, the same method as the API's cache path (byte-identical pixels also need matching opencv
 builds). Nothing is downloaded: a pano missing from the store is ``no_pano``, an unreadable or non-2:1 file is
-``bad_pano``, and a store that stops answering (a dropped mount, a vanished marker) stops the run.
+``bad_pano``, and a store that stops answering (a dropped mount, a vanished marker) stops the run. Labels on non-GSV
+imagery (Mapillary, Panoramax) are dropped before selection and counted as ``non_gsv`` in the summary: their pose
+convention differs from GSV's and is not handled yet (docs/decisions.md).
+
+**Cities** are the public deployments ``/v3/api/cities`` lists with a ``url``, sorted by city_id
+(https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8). With ``--rawlabels-cache`` the listing is read
+from ``<cache>/cities.json`` when it exists and written there when it does not (``--refresh-cities`` refetches), so a
+run against a complete cache makes no API call. ``deployment_priors.json`` and ``generation_run.json`` record the list
+and where it came from, and resuming with a different list stops like a changed selection.
 
 Usage::
 
@@ -76,6 +85,7 @@ import time
 import traceback
 from collections import Counter
 from datetime import date, timedelta
+from urllib.parse import urlparse
 
 import numpy as np
 import pandas as pd
@@ -92,17 +102,16 @@ SEED = 42
 # never sends them to the validator. Its votes carry validator_type "AI" and are excluded from every count.
 AI_USER_ID = "51b0b927-3c8a-45b2-93de-bd878d1e5cf4"
 
-# City deployments to pull labels from: city_id (as /v3/api/cities names it, and as it appears in label_uid and in
-# crop filenames) -> the deployment's subdomain, sidewalk-<subdomain>.cs.washington.edu. Not the full list of 59
-# deployments; discovering them from /v3/api/cities is https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8.
-# keelung-tw, new-taipei-tw and taipei are reached by hostname because /v3/api/cities lists them without a ``url``.
-CITIES = {
-    "cdmx": "cdmx", "la-piedad": "la-piedad", "spgg": "spgg", "amsterdam": "amsterdam",
-    "blackhawk-hills-il": "blackhawk-hills", "chicago-il": "chicago", "cliffside-park-nj": "cliffside-park",
-    "columbus-oh": "columbus", "knox-oh": "knox", "mendota-il": "mendota", "newberg-or": "newberg",
-    "oradell-nj": "oradell", "pittsburgh-pa": "pittsburgh", "seattle-wa": "sea", "st-louis-mo": "st-louis",
-    "teaneck-nj": "teaneck", "keelung-tw": "keelung", "new-taipei-tw": "new-taipei", "taipei": "taipei",
-}
+# The deployment directory: every deployment's city_id, visibility and url. The default city list is its public
+# deployments with a url (the rule analysis/fetch_all.py uses); any deployment serves the same listing.
+CITIES_API = "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities"
+CITIES_CACHE_FILE = "cities.json"  # the listing's file name inside --rawlabels-cache
+
+# city_id -> subdomain (sidewalk-<subdomain>.cs.washington.edu) for deployments /v3/api/cities lists without a url.
+# A public one in here joins the default list; any listed here is reachable by ``--cities <city_id>``. As of 2026-10-19
+# every public deployment has a url, and these three (in the hardcoded default before issue #8) are listed private
+# without one; their hosts still answer.
+HOST_OVERRIDES = {"keelung-tw": "keelung", "new-taipei-tw": "new-taipei", "taipei": "taipei"}
 
 CORRECT_PROPORTION = 0.55
 
@@ -157,8 +166,7 @@ def load_city(city_id, subdomain=None, cache_dir=None):
         df = pd.read_csv(cached, low_memory=False)
     else:
         import requests
-        subdomain = subdomain or CITIES.get(city_id, city_id)
-        url = f'https://sidewalk-{subdomain}.cs.washington.edu/v3/api/rawLabels?filetype=csv'
+        url = f'{deployment_base_url(subdomain or HOST_OVERRIDES.get(city_id, city_id))}/v3/api/rawLabels?filetype=csv'
         for attempt in (1, 2):  # one retry
             try:
                 response = requests.get(url, timeout=CSV_TIMEOUT)
@@ -172,6 +180,99 @@ def load_city(city_id, subdomain=None, cache_dir=None):
         df = pd.read_csv(io.StringIO(response.text), low_memory=False)
     df['city'] = city_id
     return df
+
+
+def deployment_base_url(host):
+    """A deployment's base URL from its subdomain, or ``host`` itself when it is already a URL.
+
+    >>> deployment_base_url("sea"), deployment_base_url("https://example.org/")
+    ('https://sidewalk-sea.cs.washington.edu', 'https://example.org')
+    """
+    return host.rstrip("/") if "://" in host else f"https://sidewalk-{host}.cs.washington.edu"
+
+
+def subdomain_from_url(url):
+    """The ``<subdomain>`` of a ``https://sidewalk-<subdomain>.cs.washington.edu`` url, else the url itself (which
+    :func:`deployment_base_url` accepts as is).
+
+    >>> subdomain_from_url("https://sidewalk-sea.cs.washington.edu/"), subdomain_from_url("https://example.org")
+    ('sea', 'https://example.org')
+    """
+    host = urlparse(url).hostname or ""
+    prefix, suffix = "sidewalk-", ".cs.washington.edu"
+    if host.startswith(prefix) and host.endswith(suffix) and len(host) > len(prefix) + len(suffix):
+        return host[len(prefix):-len(suffix)]
+    return url.rstrip("/")
+
+
+def discover_cities(listing, public_only=True):
+    """``{city_id: subdomain}`` from a ``/v3/api/cities`` listing, sorted by city_id.
+
+    ``listing`` is the response (``{"cities": [...]}``, also the shape of the cache this script writes) or the bare
+    list ``analysis/fetch_all.py`` saves. With ``public_only`` (the default list) only ``visibility == "public"``
+    entries count; without it (host lookup for ``--cities``) every entry does. An entry needs a ``url``, or a
+    :data:`HOST_OVERRIDES` entry; a public deployment with neither is skipped with a warning.
+
+    >>> discover_cities({"cities": [
+    ...     {"city_id": "teaneck-nj", "visibility": "public", "url": "https://sidewalk-teaneck.cs.washington.edu"},
+    ...     {"city_id": "seattle-wa", "visibility": "public", "url": "https://sidewalk-sea.cs.washington.edu/"},
+    ...     {"city_id": "zurich", "visibility": "private", "url": None},
+    ...     {"city_id": "taipei", "visibility": "public", "url": None}]})
+    {'seattle-wa': 'sea', 'taipei': 'taipei', 'teaneck-nj': 'teaneck'}
+    """
+    entries = listing["cities"] if isinstance(listing, dict) else listing
+    out, skipped = {}, []
+    for c in entries:
+        if public_only and c.get("visibility") != "public":
+            continue
+        cid = c["city_id"]
+        if c.get("url"):
+            out[cid] = subdomain_from_url(c["url"])
+        elif cid in HOST_OVERRIDES:
+            out[cid] = HOST_OVERRIDES[cid]
+        elif public_only:
+            skipped.append(cid)
+    if skipped:
+        print(f"WARNING: /v3/api/cities lists public deployments without a url, skipped (add them to HOST_OVERRIDES "
+              f"to include them): {', '.join(sorted(skipped))}")
+    return dict(sorted(out.items()))
+
+
+def _get_json(url):
+    import requests
+    response = requests.get(url, timeout=(10, 60))
+    response.raise_for_status()
+    return response.json()
+
+
+def load_city_listing(cache_dir=None, refresh=False, url=CITIES_API, fetch=None):
+    """The ``/v3/api/cities`` listing and where it came from: ``(listing, source)``.
+
+    With ``cache_dir``, ``<cache_dir>/cities.json`` is read when it exists (no network) unless ``refresh``; otherwise
+    the API is fetched and, with ``cache_dir``, the response is written there atomically as ``{"fetched_on", "url",
+    "cities"}``. ``source`` is ``{"from": "cache" | "api", "url", "fetched_on"}``; for a cache file without a
+    ``fetched_on`` (a hand-saved response, or fetch_all.py's list) the date is the file's modification date and
+    ``fetched_on_is_mtime`` is True.
+    """
+    path = os.path.join(cache_dir, CITIES_CACHE_FILE) if cache_dir else None
+    if path and os.path.exists(path) and not refresh:
+        with open(path) as f:
+            listing = json.load(f)
+        meta = listing if isinstance(listing, dict) else {}
+        source = {"from": "cache", "url": meta.get("url"), "fetched_on": meta.get("fetched_on")}
+        if not source["fetched_on"]:
+            source.update(fetched_on=date.fromtimestamp(os.path.getmtime(path)).isoformat(), fetched_on_is_mtime=True)
+        return listing, source
+    response = (fetch or _get_json)(url)
+    listing = {"fetched_on": date.today().isoformat(), "url": url, "cities": response["cities"]}
+    if path:
+        os.makedirs(cache_dir, exist_ok=True)
+        tmp = f"{path}.{os.getpid()}.tmp"
+        with open(tmp, "w") as f:
+            json.dump(listing, f, indent=1)
+            f.write("\n")
+        os.replace(tmp, path)
+    return listing, {"from": "api", "url": url, "fetched_on": listing["fetched_on"]}
 
 
 def human_vote_counts(validations_json):
@@ -211,8 +312,9 @@ def label_author(user_id):
 def valid_geometry(df):
     """Boolean mask of rows whose stored pano point is usable, and the reason counts for the rest.
 
-    Drops (counted by reason): non-GSV providers (serving is GSV-only, and non-GSV training needs per-provider pose
-    handling; issue #9), non-finite or
+    Drops (counted by reason): non-GSV providers (``non_gsv``: the pano store holds Mapillary and Panoramax
+    panoramas, but their pose convention differs from GSV's and no crop path handles it yet; docs/decisions.md,
+    issue #9 item 4), non-finite or
     non-positive ``pano_width``/``pano_height``, non-finite ``pano_x``, and ``pano_y`` outside ``[0, pano_height]``
     (this covers the legacy labels whose pano coordinates were never converted and are negative: Seattle 193,
     CDMX 14, Pittsburgh 8, SPGG 1).
@@ -299,15 +401,19 @@ def label_rank(seed, label_uid):
     return hashlib.sha256(f"{seed}:{label_uid}".encode()).hexdigest()
 
 
-def deployment_prior_entry(eligible, cities, n_rows, measured_on=None):
+def deployment_prior_entry(eligible, cities, n_rows, measured_on=None, city_source=None):
     """The pre-downsampling class counts of human-authored :func:`eligible_labels`: the class mix the validator meets
     in production (which never sends it AI-authored labels), for ``calibration/calibrate.py``. ``n_rows`` is the
-    number of rawLabels rows of this label type the counts were drawn from."""
+    number of rawLabels rows of this label type the counts were drawn from; ``city_source``, when given, says where
+    the city list came from (the ``source`` of :func:`load_city_listing`, or ``{"from": "--cities"}``)."""
     counts = eligible.loc[eligible['author'] == 'human', 'label_class'].value_counts()
-    return {"correct": int(counts.get('correct', 0)), "incorrect": int(counts.get('incorrect', 0)),
-            "measured_on": measured_on or date.today().isoformat(),
-            "source": f"rawLabels of {', '.join(cities)}, human votes only",
-            "cities": list(cities), "n_rows": int(n_rows)}
+    entry = {"correct": int(counts.get('correct', 0)), "incorrect": int(counts.get('incorrect', 0)),
+             "measured_on": measured_on or date.today().isoformat(),
+             "source": f"rawLabels of {', '.join(cities)}, human votes only",
+             "cities": list(cities), "n_rows": int(n_rows)}
+    if city_source is not None:
+        entry["city_source"] = dict(city_source)
+    return entry
 
 
 def selection_hash(selection):
@@ -456,7 +562,7 @@ def manifest_row(row, label_type, crop_path, tilt_beta):
 def pano_store_path(store, city, pano_id):
     """Where the pano store keeps a panorama: ``<store>/<city>/<pano_id[:2]>/<pano_id>.jpg``.
 
-    The layout sidewalk-ai-api reads (``SIDEWALK_SCRAPES_DIR``), keyed by the city_id (the ``CITIES`` key), so one
+    The layout sidewalk-ai-api reads (``SIDEWALK_SCRAPES_DIR``), keyed by the city_id, so one
     store serves both. Nothing in it is provider-specific.
 
     >>> pano_store_path("/store", "seattle-wa", "abcDEF")
@@ -714,25 +820,32 @@ def package_source(dist="sidewalk-panorama-tools"):
     return d.version
 
 
-def check_resume(run_path, new_hash, settings):
+def check_resume(run_path, new_hash, settings, cities=None):
     """Compare a resumed run with the ``generation_run.json`` of the previous one.
 
-    Returns ``(old_hash or None, changed_settings)``: the previous selection hash if it differs from ``new_hash``,
-    and ``{name: (old, new)}`` for every :data:`RESUME_SETTINGS` entry that differs. The caller refuses to resume on
-    either unless ``--force-reselect``.
+    Returns ``(old_hash or None, changed_settings, city_change)``: the previous selection hash if it differs from
+    ``new_hash``; ``{name: (old, new)}`` for every :data:`RESUME_SETTINGS` entry that differs; and, when ``cities`` is
+    given and the recorded city list is a different set, ``{"added": [...], "removed": [...]}`` (else ``{}``). The
+    caller refuses to resume on any of them unless ``--force-reselect``. The city list is compared on its own because
+    the selection hash misses a city that contributes no selected label; like a selection change (and unlike a
+    settings change) it keeps the crops of labels still selected.
 
     >>> check_resume("/nonexistent/generation_run.json", "abc", {"tilt_beta": 0.95})
-    (None, {})
+    (None, {}, {})
     """
     if not os.path.exists(run_path):
-        return None, {}
+        return None, {}, {}
     with open(run_path) as f:
         old = json.load(f)
     old_hash = old.get("selection_sha256")
     old_settings = old.get("settings", {})
     changed = {k: (old_settings.get(k), settings.get(k)) for k in RESUME_SETTINGS
                if k in old_settings and old_settings.get(k) != settings.get(k)}
-    return (old_hash if old_hash and old_hash != new_hash else None), changed
+    city_change = {}
+    if cities is not None and "cities" in old and set(old["cities"]) != set(cities):
+        city_change = {"added": sorted(set(cities) - set(old["cities"])),
+                       "removed": sorted(set(old["cities"]) - set(cities))}
+    return (old_hash if old_hash and old_hash != new_hash else None), changed, city_change
 
 
 def count_ok_rows(manifest_path):
@@ -758,23 +871,46 @@ MISSING_STATUSES = ("no_pano", "bad_pano")
 LEGACY_MISSING_STATUSES = ("incomplete_pano",)
 
 
-def parse_cities(arg):
-    """``--cities a,b`` -> ``{city_id: subdomain}``; entries may be ``city_id`` (looked up in ``CITIES``) or
-    ``city_id=subdomain``.
+def parse_cities(arg, known=None):
+    """``--cities a,b`` -> ``{city_id: subdomain}``; entries may be ``city_id`` or ``city_id=subdomain``. A bare
+    city_id's host is looked up in ``known`` (the deployments :func:`discover_cities` found), then in
+    :data:`HOST_OVERRIDES`, else it is the city_id itself. Without ``arg``, ``known`` itself (the default list).
 
-    >>> parse_cities("seattle-wa,vancouver-wa=vancouver")
-    {'seattle-wa': 'sea', 'vancouver-wa': 'vancouver'}
+    >>> parse_cities("seattle-wa,vancouver-wa=vancouver,keelung-tw,x", {"seattle-wa": "sea"})
+    {'seattle-wa': 'sea', 'vancouver-wa': 'vancouver', 'keelung-tw': 'keelung', 'x': 'x'}
     """
+    known = known or {}
     if not arg:
-        return dict(CITIES)
+        return dict(known)
     out = {}
     for item in arg.split(","):
         item = item.strip()
         if not item:
             continue
         cid, _, sub = item.partition("=")
-        out[cid] = sub or CITIES.get(cid, cid)
+        out[cid] = sub or known.get(cid) or HOST_OVERRIDES.get(cid, cid)
     return out
+
+
+def resolve_cities(arg, cache_dir=None, refresh=False, fetch=None):
+    """The cities to pull and where the list came from: ``(cities, city_source)``.
+
+    Without ``arg`` (no ``--cities``): the public deployments of :func:`load_city_listing`. With it:
+    :func:`parse_cities`, reading the listing only to find a host, i.e. when some bare city_id has no saved
+    ``<cache_dir>/<city_id>.csv`` (so an offline smoke test stays offline); ``city_source`` is then
+    ``{"from": "--cities"}``.
+    """
+    if arg is None:
+        listing, source = load_city_listing(cache_dir, refresh, fetch=fetch)
+        cities = discover_cities(listing)
+        if not cities:
+            sys.exit(f"/v3/api/cities ({source}) lists no public deployment with a url.")
+        return cities, source
+    bare = [i.strip() for i in arg.split(",") if i.strip() and "=" not in i]
+    needs_host = [c for c in bare if not (cache_dir and os.path.exists(os.path.join(cache_dir, f"{c}.csv")))]
+    known = discover_cities(load_city_listing(cache_dir, refresh, fetch=fetch)[0], public_only=False) \
+        if needs_host else {}
+    return parse_cities(arg, known), {"from": "--cities"}
 
 
 def build_parser():
@@ -795,11 +931,16 @@ def build_parser():
     p.add_argument('--depth-encoder', choices=['vitb', 'vitl'], default='vitb', help='the API serves vitb')
     p.add_argument('--tilt-beta', type=float, default=DEFAULT_TILT_BETA)
     p.add_argument('--seed', type=int, default=SEED)
-    p.add_argument('--cities', default=None, help='comma list of city_id[=subdomain], overriding CITIES')
+    p.add_argument('--cities', default=None,
+                   help='comma list of city_id[=subdomain], overriding the public deployments /v3/api/cities lists')
     p.add_argument('--include-ai-labels', action='store_true',
                    help='keep AI-authored labels in the selection (rendered without tilt correction)')
     p.add_argument('--rawlabels-cache', default=None,
-                   help='directory of saved rawLabels exports <city_id>.csv, read instead of the API when present')
+                   help='directory of saved rawLabels exports <city_id>.csv, read instead of the API when present; '
+                        'also holds the /v3/api/cities listing as cities.json (read if present, else fetched and '
+                        'written)')
+    p.add_argument('--refresh-cities', action='store_true',
+                   help='refetch /v3/api/cities even if <rawlabels-cache>/cities.json exists, and rewrite it')
     p.add_argument('--select-only', action='store_true',
                    help='select labels and write the priors, then stop (no GPU, no panoramas)')
     p.add_argument('--allow-cpu', action='store_true', help=DEPTH_DEVICE_HELP)
@@ -822,11 +963,14 @@ def main(argv=None):
     partial = args.cities is not None or args.limit is not None
     if partial:
         priors_path = os.path.splitext(priors_path)[0] + ".partial.json"
-    cities = parse_cities(args.cities)
+    if not args.select_only and not args.pano_store:  # before the city listing, which may need the network
+        build_parser().error("--pano-store is required unless --select-only")
+    cities, city_source = resolve_cities(args.cities, args.rawlabels_cache, args.refresh_cities)
+    print(f"{len(cities)} cities (from {city_source['from']}"
+          f"{', fetched ' + city_source['fetched_on'] if city_source.get('fetched_on') else ''}): "
+          f"{', '.join(cities)}")
     store_marker, absent_cities = None, []
     if not args.select_only:  # fail fast, before the downloads
-        if not args.pano_store:
-            build_parser().error("--pano-store is required unless --select-only")
         store_marker, absent_cities = check_pano_store(args.pano_store, list(cities), args.allow_missing_cities)
     device = None if args.select_only else resolve_device(args.allow_cpu)
 
@@ -835,7 +979,7 @@ def main(argv=None):
 
     eligible, dropped = eligible_labels(all_cities, label_type)  # once, for both the prior and the selection
     print(f"{n_rows} {label_type} rows; dropped for unusable pano geometry: {dict(dropped) or 'none'}")
-    entry = deployment_prior_entry(eligible, list(cities), n_rows)
+    entry = deployment_prior_entry(eligible, list(cities), n_rows, city_source=city_source)
 
     def write_priors():
         update_deployment_priors(priors_path, label_type, entry)
@@ -857,12 +1001,15 @@ def main(argv=None):
     settings = {"tilt_beta": args.tilt_beta, "depth_encoder": args.depth_encoder, "depth_dataset": DEPTH_DATASET,
                 "renderer": "torch" if device else "numpy", "include_ai_labels": args.include_ai_labels,
                 "package_source": package_source()}
-    previous, changed = check_resume(run_path, sel_hash, settings)
-    if (previous or changed) and not args.force_reselect:
+    previous, changed, city_change = check_resume(run_path, sel_hash, settings, list(cities))
+    if (previous or changed or city_change) and not args.force_reselect:
         n_ok = count_ok_rows(manifest_path)
         why = []
         if previous:
             why.append(f"the selection changed (sha256 {previous[:12]} -> {sel_hash[:12]})")
+        if city_change:
+            why.append("the city list changed (added: " + (", ".join(city_change["added"]) or "none")
+                       + "; removed: " + (", ".join(city_change["removed"]) or "none") + ")")
         if changed:
             why.append("settings changed: " + ", ".join(f"{k} {a!r} -> {b!r}" for k, (a, b) in changed.items()))
         # generation_run.json is left untouched, so the record still describes the crops on disk.
@@ -872,8 +1019,9 @@ def main(argv=None):
     write_priors()  # only once the resume check has passed
     os.makedirs(base_dir, exist_ok=True)
     manifest = ManifestWriter(manifest_path, base_dir, selection, keep_ok=not changed)
-    if previous or changed:
-        print(f"WARNING: --force-reselect: selection changed: {bool(previous)}, settings changed: {changed or 'none'}; "
+    if previous or changed or city_change:
+        print(f"WARNING: --force-reselect: selection changed: {bool(previous)}, city list changed: "
+              f"{city_change or 'no'}, settings changed: {changed or 'none'}; "
               f"dropped ok rows {dict(manifest.stale) or 'none'}, kept {len(manifest.done)}.")
     not_from_store = manifest.stale.get('not_from_store', 0)
     if not_from_store:
@@ -885,7 +1033,7 @@ def main(argv=None):
     with open(run_path, "w") as f:  # read by fine_tune_classifier.py
         json.dump({"label_type": label_type, "settings": settings, **settings, "seed": args.seed,
                    "pano_store": args.pano_store, "pano_store_marker": store_marker,
-                   "cities": list(cities), "limit": args.limit, "selection_size": len(selection),
+                   "cities": list(cities), "city_source": city_source, "limit": args.limit, "selection_size": len(selection),
                    "selection_sha256": sel_hash, "started": date.today().isoformat()}, f, indent=2)
         f.write("\n")
 
