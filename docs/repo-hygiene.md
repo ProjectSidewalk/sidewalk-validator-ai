@@ -56,7 +56,8 @@ the path itself). **It rewrites every commit SHA.** Only run it after deciding t
   [`e5a2732`](https://github.com/DepthAnything/Depth-Anything-V2/commit/e5a2732d3ea2cddc081d7bfd708fc0bf09f812f1)
   (what the vendored copy was) cloned into `Depth-Anything-V2/` by hand;
 - the push below rewrites the open PRs' branches along with `master`, so those PRs follow automatically (merged
-  PRs keep showing the old SHAs); what needs rebasing or re-cloning is local clones with unpushed work;
+  PRs keep showing the old SHAs); unpushed local work is what needs carrying over (rebase it onto the new
+  history after re-cloning);
 - nothing should be running from a checkout (data generation, training) while this happens.
 
 [`git filter-repo`](https://github.com/newren/git-filter-repo) (`pip install git-filter-repo`, or

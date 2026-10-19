@@ -40,6 +40,8 @@ LABEL_TYPES=(Crosswalk CurbRamp NoCurbRamp Obstacle SurfaceProblem)
 #       git pull
 #       rm -rf Depth-Anything-V2             # ignored __pycache__/ leftovers block the submodule clone
 #       git submodule update --init
+# Every path below is relative, so the job must be submitted from the repo root.
+[ -f .gitmodules ] && git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "Submit this job from the repo root (no .gitmodules here)." >&2; exit 1; }
 DEPTH=Depth-Anything-V2
 DEPTH_DPT=$DEPTH/metric_depth/depth_anything_v2/dpt.py
 if [ -d "$DEPTH" ] && [ ! -e "$DEPTH/.git" ] && [ ! -f "$DEPTH_DPT" ] && [ -n "$(ls -A "$DEPTH")" ]; then
