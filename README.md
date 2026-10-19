@@ -240,9 +240,9 @@ labels had a same-type train label within 2 m
 ([#27](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/27)). So the split step also merges
 panorama groups whose labels are within `MERGE_RADIUS_M` metres (default 3; `MERGE_RADIUS_M=0 sbatch
 data_generation.slurm` turns it off), reading label coordinates from the `rawlabels/` cache, and prints the share of
-val/test labels with a train label within 2, 5 and 10 m either way. It stops if merging chains more than 5% of a
-type's rows into one group (`--max-group-share`) or more than 1% of labels have no coordinates, and warns when the
-achieved shares drift more than 3 points from 70 / 15 / 15. The 3 m radius assumes label coordinates are accurate to
+val/test labels with a train label within 2, 5 and 10 m either way. With merging on, it stops if one group holds
+more than 5% (and more than 50) of a type's train/val/test rows (`--max-group-share`) or more than 1% of labels have
+no coordinates, and it warns when the achieved shares drift more than 3 points from 70 / 15 / 15. The 3 m radius assumes label coordinates are accurate to
 about a metre, which they are not always (a label's position is estimated from the panorama), so read the 5 m column
 after the first real run before calling this leak fixed.
 
@@ -298,7 +298,8 @@ run on a CPU: `pip install -r requirements.txt` (or just the CPU subset in `.git
 
 To run a single label type outside SLURM: `python data_generation.py --label_type CurbRamp`, then
 `split_data.py` (label coordinates from `<out>/rawlabels/`, or `--rawlabels DIR`, or `--merge-radius-m 0` without them), `fine_tune_classifier.py`
-and `evaluate.py` with the same flag. For a smoke test add
+and `evaluate.py` with the same flag (the split's group-size guard needs a group of more than 50 rows, so it never
+trips on a smoke test). For a smoke test add
 `--limit 20 --out /some/scratch/dir --allow-cpu`; `--select-only` stops after selection and the priors (no GPU
 needed), and `--rawlabels-cache DIR` reads saved `<city_id>.csv` exports instead of the API. Runs with `--limit`
 or `--cities` write `deployment_priors.partial.json`, never the real `deployment_priors.json`.
