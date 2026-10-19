@@ -73,7 +73,9 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
         ▼
  [7b] calibrate         calibration/calibrate.py   val split reweighted to deployment_priors.json → accuracy map
         ▼
- [8] publish            Hugging Face  →  sidewalk-ai-api /process  →  SidewalkWebpage nightly actor (≤ 800 labels/city, gate 0.92)
+ [8] publish            publish_to_hf.py   cards + inference files + crops  →  Hugging Face
+        ▼
+        sidewalk-ai-api /process  →  SidewalkWebpage nightly actor (≤ 800 labels/city, gate 0.92)
 ```
 
 ### Components
@@ -86,6 +88,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 | [`hard_examples.py`](hard_examples.py) | Builds [`analysis/hard_examples_2026-10-17.csv`](analysis/hard_examples_2026-10-17.csv) (`label_uid,reason`) from a private production export: labels the deployed AI got wrong against a unanimous crowd (≥3 votes) or one of the project leads' accounts (configured via `EXPERTS`, not named). Feeds `split_data.py --hard-examples`. | |
 | [`evaluate.py`](evaluate.py) | Step 7. Predictions for every held-out row, then AUC, accuracy and balanced accuracy, per-class P/R/F1, recall at precision. (`get_stats.py` is a stub that says so.) | splits `val`, `test`, `test_heldout`; `hard` slice |
 | [`calibration/`](calibration) | Step 7b. Isotonic confidence→accuracy maps in the API's format: `calibrate.py` for a retrained model (deployment-prior weighting), `calibrate_from_production.py` for the deployed models from production outcomes. | gate 0.92; grid 0.5–1.0 at 0.0025, plus 1e-6 steps from 0.99998 to 1.0 |
+| [`publish_to_hf.py`](publish_to_hf.py), [`hf_cards.py`](hf_cards.py) | Step 8. Stages a label type's model repo (inference files only) and dataset repo (crops by `split.csv`, `SHA256SUMS`, Croissant) with generated cards; `--audit` checks the live repos; `--push` / `--prune-remote` upload or clean up behind `--yes`. | refuses `optimizer.pt`, `scheduler.pt`, `rng_state*.pth`, `training_args.bin`, `scaler.pt`, `checkpoint-*` |
 | [`analysis/`](analysis) | Scripts behind the production measurements in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md). | outputs live outside the repo |
 | `*.slurm` | Hyak job files for steps 1–5, 6 and 7 (five label types per job). | `gpu-l40s`, 100 GB, 1 GPU |
 | `Depth-Anything-V2/` | Vendored upstream code (unmodified); the checkpoint is downloaded separately. | `depth_anything_v2_metric_vkitti_vitb.pth` (`vitl` with `--depth-encoder vitl`) |
@@ -175,6 +178,11 @@ Hugging Face. Metrics are the best validation macro-F1 recorded in each model's 
 Each model is `Dinov2ForImageClassification` with `id2label = {0: correct, 1: incorrect}` and ships its
 `preprocessor_config.json` (resize 256, centre-crop 224, ImageNet normalisation). The per-model
 `confidence_precision_map.json` is copied into `sidewalk-ai-api/accuracy_mappings/`.
+
+These are still the manual 2025-08-16 uploads: every model repo also holds `optimizer.pt`, `scheduler.pt`,
+`rng_state.pth` and `training_args.bin`, and none of the ten repos has a real card (`python publish_to_hf.py --audit`
+lists both problems). [`publish_to_hf.py`](#publishing-to-hugging-face) now builds the repos with cards, but nothing is
+republished until the retrain on the panorama-grouped split.
 
 ## Setup
 
@@ -293,13 +301,50 @@ or `--cities` write `deployment_priors.partial.json`, never the real `deployment
 
 ## Publishing to Hugging Face
 
-Today this is manual: upload the *best* checkpoint folder's `model.safetensors`, `config.json` and
-`preprocessor_config.json` to `projectsidewalk/sidewalk-validator-ai-<labeltype>`, and the crops with
-their `split.csv` to `projectsidewalk/sidewalk-validator-ai-dataset-<labeltype>`; copy the map from `calibration/calibrate.py` to
-`sidewalk-ai-api/accuracy_mappings/<labeltype>.json` and update `model_map.py` there with the training
-date. Do not upload `optimizer.pt`, `scheduler.pt` or `rng_state.pth`. A script that does this, with a
-content hash per dataset, is [#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7);
-model and dataset cards are [#2](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/2).
+[`publish_to_hf.py`](publish_to_hf.py) replaces the old manual upload
+([#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7); cards are part of
+[#2](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/2)). It reads the same output root as every other
+step and, by default, only stages, without network or token:
+
+```bash
+python publish_to_hf.py --label_type CurbRamp --out /path/to/output   # writes CurbRamp/publish/{model,dataset}/
+```
+
+| folder | contents |
+|---|---|
+| `publish/model/` | `model.safetensors`, `config.json`, `preprocessor_config.json` from the best checkpoint (the one `evaluate.py` scores: `best_model_checkpoint` in the latest checkpoint's `trainer_state.json`); that `trainer_state.json` trimmed to its log history and best-checkpoint fields; the map from `calibration/calibrate.py` renamed `confidence_precision_map.json`, with its `calibration_report.json`; `metrics.json`; `training_run.json`; the model card |
+| `publish/dataset/` | crops as `<split>/<class>/<city>_<label_id>.webp`, placed by `split.csv` (never by listing a directory), hard-linked or copied (`--link-mode copy`); `split.csv` with `crop_path` rewritten to that layout; `manifest.csv`; this type's `deployment_priors.json` entry; `generation_run.json`; `dataset_info.json`; `SHA256SUMS`; `croissant.json`; the dataset card |
+
+Staging stops instead of publishing the wrong thing. It refuses training-only files (`optimizer.pt`, `scheduler.pt`,
+`rng_state*.pth`, `training_args.bin`, `scaler.pt`, any `checkpoint-*` directory) and checks every staged folder for them
+again before upload. It also stops if the manifest's `label_type` is not `--label_type`, if a crop listed in
+`split.csv` is missing, or if a `label_uid` is not `<city>:<label_id>`. A dataset whose content hash (the sha256 of
+`SHA256SUMS`) equals another staged label type's is refused too. So is a `train` split that does not match the
+images per epoch implied by the model's `trainer_state.json` (steps per epoch × 8 × 4;
+`--skip-train-size-check` overrides). That last check catches the CurbRamp/Crosswalk swap: 103 steps × 32 ≈ 3,300
+images against 1,108 crops. The absolute pano-store paths (`pano_path`, `pano_store`) are dropped from the published
+CSV and JSON files.
+
+The cards follow the Hugging Face model and dataset templates and are filled from the files above: the evaluation
+table from `metrics.json`; the prior, ECE, gate coverage and the confidence at which each verdict reaches 0.92
+from the map and its report; class balance, split sizes, cities, capture years and content hash from `split.csv`.
+Anything the files cannot supply (the dataset license, the split seed, a DOI, per-type failure modes) is written as
+`TODO:`. `croissant.json` is validated when `mlcroissant` is installed and written unvalidated otherwise.
+
+```bash
+python publish_to_hf.py --audit                                        # live repos: stray files, copied datasets
+python publish_to_hf.py --label_type CurbRamp --out ROOT --push        # dry run: files, sizes, remote deletions
+python publish_to_hf.py --label_type CurbRamp --out ROOT --push --yes --dataset-license <id>
+python publish_to_hf.py --label_type CurbRamp --out ROOT --push --yes --repo-prefix <user>/test-validator
+python publish_to_hf.py --prune-remote --label_type all [--yes]        # delete stray training files only
+```
+
+`--push` needs `huggingface_hub` and a token (`HF_TOKEN` or `huggingface-cli login`). It uploads each folder as one
+commit that makes the repo mirror the folder: stale remote files go, `.gitattributes` stays, and history is not
+rewritten, so the revisions sidewalk-ai-api pins keep resolving. Cards that still contain `TODO:` are refused
+unless `--allow-todo` is given. `--prune-remote` is the clean-up for the current repos before any retrain. It deletes
+only the training-only files, in one commit per repo; the old blobs stay in history. Copying the map to
+`sidewalk-ai-api/accuracy_mappings/<labeltype>.json` and updating `model_map.py` there remain manual.
 
 ## Known limitations and open issues
 
@@ -310,7 +355,7 @@ the evidence for each item. In order of how much they affect the numbers:
 - **Calibration under the wrong prior** ([#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4)). The confidence map is computed on a 55:45 test split and served against traffic that is closer to 90:10 (the decisive-crowd balance in Teaneck, a proxy). Platform-wide, when the AI votes "incorrect" the human majority agrees about 57% of the time; when it votes "correct", 96%. `calibration/calibrate.py` now reweights to the deployment prior, and production-calibrated maps for the deployed models are in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md) (not yet shipped to the API).
 - **Train/serve skew** ([#5](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5), [sidewalk-ai-api#8](https://github.com/ProjectSidewalk/sidewalk-ai-api/issues/8)). Normalisation, camera pitch and depth checkpoint differed between training and serving. Training now uses the serving preprocessing for val, label-centred views from the shared geometry package and the ViT-B depth checkpoint; the API applies the same tilt correction in [sidewalk-ai-api#17](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/17), which must be deployed before any retrained model (nothing has been retrained yet).
 - **Evaluation script bugs** ([#6](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6)). Fixed in `evaluate.py`, which replaces `get_stats.py` (PR [#22](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/22), closed unmerged, had proposed a fix first); numbers in `report.png` files made by the old script are not reliable.
-- **Publication** ([#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7)). The CurbRamp dataset on Hugging Face is a copy of the Crosswalk one; model repos carry 2.4 GB of optimizer state.
+- **Publication** ([#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7)). The CurbRamp dataset on Hugging Face is a copy of the Crosswalk one; model repos carry 2.4 GB of optimizer state. [`publish_to_hf.py`](#publishing-to-hugging-face) now stages clean repos with cards, content hashes and the checks that would have caught both, and `--prune-remote` can delete the optimizer files today; the datasets and models themselves are not republished until the retrain.
 - **Imagery path** ([#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8), [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9)). Panoramas are read only from the lab's pano store (`--pano-store`), and only GSV labels are used, since serving is GSV-only and other providers need per-provider pose handling; 19 of 59 deployments are used (41 public, 18 private); the camera-tilt error in stored coordinates ([sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54)) is now corrected in training crops (beta 0.95).
 - **Hygiene** ([#10](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10), [#11](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/11)). No tests or CI; vendored 64 MB depth tree; frozen environment file.
 
