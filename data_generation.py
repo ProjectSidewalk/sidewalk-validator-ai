@@ -692,7 +692,10 @@ def create_perspective_crop(depth_model, pano_rgb, label_x_norm, label_y_norm, c
 
 
 #: Settings that change what a crop looks like; a resume with different values would mix two datasets.
-RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "include_ai_labels", "package_source")
+#: ``include_ai_labels`` is not one: it changes which labels are selected, not how any crop is cut (a label's author
+#: already decides its tilt), so flipping it is a selection change. That still needs ``--force-reselect``, and keeps
+#: every human-authored crop. It stays in ``generation_run.json`` as provenance.
+RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "package_source")
 
 
 def package_source(dist="sidewalk-panorama-tools"):
