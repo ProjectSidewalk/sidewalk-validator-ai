@@ -2,7 +2,7 @@
 
 Reads ``<data-dir>/<label_type>/split.csv`` (written by split_data.py; rows with ``split`` train and val), fine-tunes
 ``facebook/dinov2-large`` (Oquab et al., 2023, https://arxiv.org/abs/2304.07193) with the Hugging Face Trainer, and
-keeps the checkpoint with the best validation macro-F1 under ``<label_type>/dinov2/`` (``--output-dir``). If
+keeps the checkpoint with the best validation macro-F1 (or loss, ``--best-metric loss``) under ``<label_type>/dinov2/`` (``--output-dir``). If
 ``split.csv`` is absent, the old ``<label_type>/ds/{train,val,test}/{correct,incorrect}`` image folders are
 read instead, with a warning. The published models are at
 https://huggingface.co/collections/projectsidewalk/project-sidewalk-validator-models-6797bd158d5e385e464dbe45
@@ -20,7 +20,9 @@ written to the output dir, next to the checkpoints.
 
 Resuming: a run that is interrupted (a klone ``ckpt`` preemption requeues the job) continues from its last saved
 epoch. ``run_key.json`` in the output dir records the split's hash and the settings that shape training; checkpoints
-written under a different key are never resumed, and the run stops instead of mixing them.
+written under a different key are never resumed, and the run stops instead of mixing them. The key covers all of
+``split.csv``, so even a change to its test rows or ``hard`` column blocks a resume. The old imagefolder layout has no
+``split.csv`` to hash, so resuming there is unguarded (a warning says so).
 
 Usage::
 
@@ -30,6 +32,7 @@ Usage::
 import argparse
 import hashlib
 import json
+import multiprocessing
 import os
 import re
 import shutil
@@ -75,6 +78,30 @@ def generation_settings(label_type, data_dir="."):
     return {"tilt_beta": run.get("tilt_beta"), "depth_encoder": run.get("depth_encoder")}
 
 
+def default_num_workers():
+    """Dataloader workers: the CPUs this process may use (the Slurm allocation, not the node), at most 8; 0 unless
+    the start method is ``fork``, since spawn (macOS) cannot pickle the per-run transforms built in ``main``."""
+    # The platform default is listed first; reading it this way does not fix the start method as a side effect.
+    method = multiprocessing.get_start_method(allow_none=True) or multiprocessing.get_all_start_methods()[0]
+    if method != "fork":
+        return 0
+    cpus = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
+    return min(8, max(cpus - 1, 0))  # leave one for the main process
+
+
+def is_complete_checkpoint(path):
+    """True if ``path`` is a ``checkpoint-N`` directory whose ``trainer_state.json`` parses: the Trainer writes that
+    file after the weights, optimizer, scheduler and RNG state, so a checkpoint cut off mid-save fails this."""
+    if not re.fullmatch(r"checkpoint-\d+", os.path.basename(os.path.normpath(path))):
+        return False
+    try:
+        with open(os.path.join(path, "trainer_state.json")) as f:
+            json.load(f)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def run_key(label_type, data_dir, args):
     """What a resumed run must share with the run that wrote the checkpoints: the split file's hash and the
     settings that shape training. ``--num-workers`` and ``--allow-cpu`` may differ between attempts."""
@@ -90,8 +117,8 @@ def run_key(label_type, data_dir, args):
 def resume_checkpoint(output_dir, key):
     """The checkpoint to resume from, or None for a fresh run (which writes ``run_key.json`` first).
 
-    Only a ``checkpoint-N`` directory holding ``trainer_state.json`` counts: the Trainer writes that file last, so a
-    directory cut off mid-save is skipped. Raises SystemExit if checkpoints exist under a different (or no) key.
+    Only a complete checkpoint counts (``is_complete_checkpoint``). Raises SystemExit if checkpoints exist under a
+    different (or no) key.
 
     Example::
 
@@ -101,8 +128,7 @@ def resume_checkpoint(output_dir, key):
     """
     key_path = os.path.join(output_dir, "run_key.json")
     names = os.listdir(output_dir) if os.path.isdir(output_dir) else []
-    ckpts = [d for d in names if re.fullmatch(r"checkpoint-\d+", d)
-             and os.path.exists(os.path.join(output_dir, d, "trainer_state.json"))]
+    ckpts = [d for d in names if is_complete_checkpoint(os.path.join(output_dir, d))]
     if not ckpts:
         os.makedirs(output_dir, exist_ok=True)
         with open(key_path, "w") as f:
@@ -114,7 +140,11 @@ def resume_checkpoint(output_dir, key):
         with open(key_path) as f:
             old = json.load(f)
     if old != key:
-        why = "it has no run_key.json" if old is None else f"its run_key.json differs ({old} vs {key})"
+        if old is None:
+            why = "it has no run_key.json"
+        else:
+            diff = {k: (old.get(k), key.get(k)) for k in sorted(set(old) | set(key)) if old.get(k) != key.get(k)}
+            why = f"its run_key.json differs (saved, now): {diff}"
         raise SystemExit(f"{output_dir} holds checkpoints from another run: {why}. Move or delete it, or pass "
                          "--output-dir.")
     return os.path.join(output_dir, max(ckpts, key=lambda d: int(d.split("-")[1])))
@@ -129,8 +159,9 @@ def main(argv=None):
     parser.add_argument('--epochs', type=int, default=25)
     parser.add_argument('--best-metric', choices=['macro_f1', 'loss'], default='macro_f1',
                         help='validation metric that picks the kept checkpoint (loss favours calibrated scores)')
-    parser.add_argument('--num-workers', type=int, default=min(8, os.cpu_count() or 1),
-                        help='dataloader worker processes; with 0, decoding and augmentation starve the GPU')
+    parser.add_argument('--num-workers', type=int, default=None,
+                        help='dataloader worker processes (default: allocated CPUs - 1, at most 8; 0 off Linux); '
+                             'with 0, decoding and augmentation starve the GPU')
     parser.add_argument('--allow-cpu', action='store_true',
                         help='run without CUDA (smoke tests only; a real run on the CPU would take weeks)')
     args = parser.parse_args(argv)
@@ -150,7 +181,12 @@ def main(argv=None):
     transformers.set_seed(args.seed)
     label_type = args.label_type
     output_dir = args.output_dir or os.path.join(args.data_dir, label_type, "dinov2")
-    resume = resume_checkpoint(output_dir, run_key(label_type, args.data_dir, args))  # before any slow setup
+    if args.num_workers is None:
+        args.num_workers = default_num_workers()
+    key = run_key(label_type, args.data_dir, args)
+    if key["split_sha256"] is None:
+        warnings.warn("no split.csv: resuming from an existing checkpoint cannot check that the data is the same.")
+    resume = resume_checkpoint(output_dir, key)  # before any slow setup
 
     frames = load_split_frames(label_type, args.data_dir)
     if frames is not None:

@@ -105,9 +105,10 @@ def load_imagefolder(label_type, data_dir="."):
 def find_best_checkpoint(label_type, data_dir="."):
     """Path of ``best_model_checkpoint`` from the latest checkpoint's ``trainer_state.json``."""
     base = os.path.join(data_dir, label_type, "dinov2")
-    dirs = [d for d in os.listdir(base) if d.startswith("checkpoint-") and os.path.isdir(os.path.join(base, d))]
+    from fine_tune_classifier import is_complete_checkpoint
+    dirs = [d for d in os.listdir(base) if is_complete_checkpoint(os.path.join(base, d))]  # skips one cut off mid-save
     if not dirs:
-        raise FileNotFoundError(f"no checkpoint-* directories under {base}")
+        raise FileNotFoundError(f"no complete checkpoint-* directories under {base}")
     latest = max(dirs, key=lambda d: int(d.split("-")[1]))
     with open(os.path.join(base, latest, "trainer_state.json")) as f:
         best = json.load(f).get("best_model_checkpoint")
@@ -296,7 +297,9 @@ def main(argv=None):
     parser.add_argument("--checkpoint", default=None,
                         help="score this model instead of the best checkpoint under <label_type>/dinov2/: a local "
                              "checkpoint or a Hugging Face model id (needs --tag)")
-    parser.add_argument("--revision", default=None, help="Hugging Face revision for --checkpoint")
+    parser.add_argument("--revision", default=None,
+                        help="Hugging Face revision for --checkpoint; under HF_HUB_OFFLINE=1 a full commit sha whose "
+                             "snapshot is already cached (download it on a login node first)")
     parser.add_argument("--tag", default=None,
                         help="suffix for every output (predictions_<tag>.csv, metrics_<tag>.json, ...), so scoring "
                              "another model never overwrites this run's")
@@ -305,6 +308,10 @@ def main(argv=None):
         parser.error("--checkpoint needs --tag, so its outputs do not overwrite the trained model's")
     if args.revision and not args.checkpoint:
         parser.error("--revision applies only to --checkpoint")
+    if args.checkpoint and args.skip_inference:
+        parser.error("--skip-inference reads predictions_<tag>.csv; --checkpoint would be ignored")
+    if args.tag and not args.tag.replace("-", "").replace("_", "").isalnum():
+        parser.error("--tag must be letters, digits, '-' or '_' (it becomes part of file names)")
     label_type = args.label_type
     base = os.path.join(args.data_dir, label_type)
     suffix = f"_{args.tag}" if args.tag else ""
@@ -330,8 +337,8 @@ def main(argv=None):
     with open(os.path.join(base, f"report{suffix}.txt"), "w") as f:
         f.write(text)
     save_figures(predictions, text, label_type, base, suffix)
-    if args.checkpoint:
-        return  # a comparison model: the served map is fitted for the trained checkpoint only
+    if args.tag:
+        return  # tagged outputs are a comparison model's: the served map is fitted for the trained checkpoint only
     priors = os.path.join(args.data_dir, "deployment_priors.json")
     print(f"next (fit the served map under the deployment prior data_generation.py wrote to {priors}):")
     print(f"  python -m calibration.calibrate --predictions {pred_path} --priors {priors} "

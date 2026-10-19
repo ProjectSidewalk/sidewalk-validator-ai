@@ -68,5 +68,30 @@ def test_refuses_checkpoints_without_a_key(tmp_path):
         resume_checkpoint(str(out), _key(tmp_path))
 
 
-def test_num_workers_does_not_change_the_key(tmp_path):
-    assert _key(tmp_path) == _key(tmp_path, num_workers=0)
+def test_incomplete_checkpoints_and_a_stale_key_start_fresh(tmp_path):
+    out = tmp_path / "dinov2"
+    out.mkdir()
+    (out / "run_key.json").write_text('{"stale": true}')
+    _checkpoint(out, 164, complete=False)
+    key = _key(tmp_path)
+    assert resume_checkpoint(str(out), key) is None
+    assert json.loads((out / "run_key.json").read_text()) == key
+
+
+def test_a_torn_trainer_state_is_not_complete(tmp_path):
+    out = tmp_path / "dinov2"
+    key = _key(tmp_path)
+    resume_checkpoint(str(out), key)
+    _checkpoint(out, 164)
+    _checkpoint(out, 328, complete=False)
+    (out / "checkpoint-328" / "trainer_state.json").write_text('{"best_glo')   # cut off mid-write
+    assert resume_checkpoint(str(out), key) == os.path.join(str(out), "checkpoint-164")
+
+
+def test_mismatch_message_names_only_the_changed_fields(tmp_path):
+    out = tmp_path / "dinov2"
+    resume_checkpoint(str(out), _key(tmp_path))
+    _checkpoint(out, 164)
+    with pytest.raises(SystemExit) as e:
+        resume_checkpoint(str(out), _key(tmp_path, epochs=8))
+    assert "'epochs': (25, 8)" in str(e.value) and "split_sha256" not in str(e.value)

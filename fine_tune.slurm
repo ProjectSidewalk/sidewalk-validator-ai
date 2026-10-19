@@ -15,11 +15,12 @@ set -uo pipefail
 DATA=.
 SEED=42
 EPOCHS=25
+# --num-workers 4: three label types run at once on 16 CPUs, so 3 x (4 workers + 1 main) fit.
 
 run_batch() {
     declare -A pids
     for LT in "$@"; do
-        python -u fine_tune_classifier.py --label_type="$LT" --data-dir "$DATA" --seed $SEED --epochs $EPOCHS &
+        python -u fine_tune_classifier.py --label_type="$LT" --data-dir "$DATA" --seed $SEED --epochs $EPOCHS --num-workers 4 &
         pids[$LT]=$!
     done
     local failed=0
