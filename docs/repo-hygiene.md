@@ -50,8 +50,13 @@ the path itself). **It rewrites every commit SHA.** Only run it after deciding t
   records, Hugging Face model cards) stop resolving to this history;
 - every existing clone, including klone's, must be deleted and re-cloned (pulling into an old clone re-merges
   the old history and undoes the purge);
-- every open PR must be rebased onto the rewritten `master` (or recreated), and merged PRs keep showing the
-  old SHAs;
+- every commit from before the submodule loses `Depth-Anything-V2/` entirely (the glob also removes the
+  vendored files from those commits), so the commits the published models were generated from no longer run
+  as checked out: reproducing them needs upstream
+  [`e5a2732`](https://github.com/DepthAnything/Depth-Anything-V2/commit/e5a2732d3ea2cddc081d7bfd708fc0bf09f812f1)
+  (what the vendored copy was) cloned into `Depth-Anything-V2/` by hand;
+- the push below rewrites the open PRs' branches along with `master`, so those PRs follow automatically (merged
+  PRs keep showing the old SHAs); what needs rebasing or re-cloning is local clones with unpushed work;
 - nothing should be running from a checkout (data generation, training) while this happens.
 
 [`git filter-repo`](https://github.com/newren/git-filter-repo) (`pip install git-filter-repo`, or
@@ -64,8 +69,12 @@ git filter-repo --path-glob 'Depth-Anything-V2/*' --invert-paths
 git count-objects -vH            # size-pack should now be well under 1 MB
 # filter-repo removes the origin remote as a safety measure; add it back to push
 git remote add origin https://github.com/ProjectSidewalk/sidewalk-validator-ai
-git push --force --mirror origin
+git push --force origin 'refs/heads/*:refs/heads/*' 'refs/tags/*:refs/tags/*'
 ```
+
+Push branches and tags explicitly rather than with `--mirror`: a mirror clone also holds GitHub's read-only
+`refs/pull/*`, and `git push --mirror` tries to push those too, which GitHub rejects, so the push exits
+non-zero.
 
 GitHub keeps the old objects reachable through PR refs (`refs/pull/*`) and its caches, so the server-side size
 drops only after GitHub garbage-collects, which may need a request to GitHub Support. Clones made afterwards are
