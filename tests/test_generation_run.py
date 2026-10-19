@@ -310,12 +310,19 @@ def test_missing_store_fails_fast(stubbed, monkeypatch):
     (unmarked / CITY).mkdir(parents=True)
     with pytest.raises(SystemExit, match=r"no \.pano-store marker"):
         run_main(stubbed["tmp"], store=unmarked)
+    with pytest.raises(SystemExit):  # argparse error: --pano-store is required unless --select-only
+        dg.main(["--label_type", "CurbRamp", "--rawlabels-cache", str(stubbed["tmp"]), "--allow-cpu"])
+
+
+def test_store_without_selected_city_directories_fails_before_depth(stubbed, monkeypatch):
+    """City directories are checked after selection (only cities with a selected label need one), but before the
+    depth model loads and before anything is written."""
+    monkeypatch.setattr(dg, "load_depth_model", lambda e, d: pytest.fail("depth model loaded"))
     empty = mark_store(stubbed["tmp"] / "empty-store")
     (empty / "other-city").mkdir(parents=True)
     with pytest.raises(SystemExit, match="no directory for any selected city"):
         run_main(stubbed["tmp"], store=empty)
-    with pytest.raises(SystemExit):  # argparse error: --pano-store is required unless --select-only
-        dg.main(["--label_type", "CurbRamp", "--rawlabels-cache", str(stubbed["tmp"]), "--allow-cpu"])
+    assert not (stubbed["tmp"] / "out" / "deployment_priors.json").exists()
 
 
 def test_empty_marker_is_accepted(stubbed):
@@ -487,7 +494,7 @@ def test_changed_city_list_refuses_resume_and_keeps_crops(stubbed, capsys):
     tmp = stubbed["tmp"]
     run_main(tmp)
     pd.DataFrame([{**label(1, 5, 0), "label_type": "Obstacle"}]).to_csv(tmp / "new-city.csv", index=False)
-    (stubbed["store"] / "new-city").mkdir()
+    # no store directory for new-city: it has no selected label, so none is needed
     listing = json.loads((tmp / "cities.json").read_text())
     listing["cities"].append({"city_id": "new-city", "visibility": "public",
                               "url": "https://sidewalk-new.cs.washington.edu"})
@@ -498,9 +505,35 @@ def test_changed_city_list_refuses_resume_and_keeps_crops(stubbed, capsys):
     assert run["cities"] == [CITY]  # left untouched by the refusal
     capsys.readouterr()
     m = run_main(tmp, "--force-reselect")
-    assert (m.status == "ok").all() and "skipped (already ok)': 5" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert (m.status == "ok").all() and "skipped (already ok)': 5" in out
+    assert "no pano-store directory for new-city; none of their labels is selected" in out
     run = json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
     assert run["cities"] == ["new-city", CITY] and run["city_source"]["from"] == "cache"
+
+
+def test_master_era_cache_and_run_dir(stubbed, monkeypatch, capsys):
+    """A run made before city discovery: the cache has CSVs but no cities.json. A plain resubmission stops without
+    writing a listing into it (so data_generation.slurm's guard still fires) and without a live download; --cities with
+    the old list resumes it offline, keeping every crop."""
+    tmp = stubbed["tmp"]
+    run_main(tmp)
+    (tmp / "cities.json").unlink()  # now shaped like a master-era cache
+    monkeypatch.setattr(dg, "_get_json", lambda url: pytest.fail("network"))
+    with pytest.raises(SystemExit, match="before city discovery"):
+        run_main(tmp)
+    assert not (tmp / "cities.json").exists()
+    capsys.readouterr()
+    m = run_main(tmp, "--cities", CITY)  # the escape hatch: the old list, explicitly
+    assert (m.status == "ok").all() and "skipped (already ok)': 5" in capsys.readouterr().out
+    assert not (tmp / "cities.json").exists()
+
+
+def test_store_needs_directories_only_for_cities_with_selected_labels(stubbed):
+    pd.DataFrame([{**label(1, 0, 0), "label_type": "Obstacle"}]).to_csv(stubbed["tmp"] / "quiet-city.csv",
+                                                                       index=False)
+    m = run_main(stubbed["tmp"], "--cities", f"{CITY},quiet-city")  # no quiet-city directory, nothing selected there
+    assert (m.status == "ok").all()
 
 
 def test_summary_counts_non_gsv_labels(tmp_path, monkeypatch, capsys):

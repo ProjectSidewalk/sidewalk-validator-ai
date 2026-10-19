@@ -62,9 +62,13 @@ convention differs from GSV's and is not handled yet (docs/decisions.md).
 
 **Cities** are the public deployments ``/v3/api/cities`` lists with a ``url``, sorted by city_id
 (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8). With ``--rawlabels-cache`` the listing is read
-from ``<cache>/cities.json`` when it exists and written there when it does not (``--refresh-cities`` refetches), so a
-run against a complete cache makes no API call. ``deployment_priors.json`` and ``generation_run.json`` record the list
-and where it came from, and resuming with a different list stops like a changed selection.
+from ``<cache>/cities.json``, so a run against a complete cache makes no API call; every listed city must then have its
+``<city_id>.csv`` there (no live download into a snapshot). A missing listing is fetched and saved, except into a cache
+that already holds CSVs (a snapshot from before discovery), which needs ``--refresh-cities``. ``deployment_priors.json``
+and ``generation_run.json`` record the list and where it came from; resuming with a different list stops like a changed
+selection, and ``--select-only`` against such a run writes ``deployment_priors.partial.json``. The pano store needs a
+directory only for cities with a selected label. The 19-city default from before discovery is reproduced with
+``--cities`` and those 19 ids (README).
 
 Usage::
 
@@ -107,11 +111,12 @@ AI_USER_ID = "51b0b927-3c8a-45b2-93de-bd878d1e5cf4"
 CITIES_API = "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities"
 CITIES_CACHE_FILE = "cities.json"  # the listing's file name inside --rawlabels-cache
 
-# city_id -> subdomain (sidewalk-<subdomain>.cs.washington.edu) for deployments /v3/api/cities lists without a url.
-# A public one in here joins the default list; any listed here is reachable by ``--cities <city_id>``. As of 2026-10-19
-# every public deployment has a url, and these three (in the hardcoded default before issue #8) are listed private
-# without one; their hosts still answer.
-HOST_OVERRIDES = {"keelung-tw": "keelung", "new-taipei-tw": "new-taipei", "taipei": "taipei"}
+LISTING_RETRY_S = 10  # pause before the one retry of the listing fetch
+
+# city_id -> subdomain (sidewalk-<subdomain>.cs.washington.edu) for public deployments /v3/api/cities lists without a
+# url; an entry here puts such a deployment in the default list. Empty: every public deployment has a url as of
+# 2026-10-19. Any deployment the API lists without a url is reached with ``--cities <city_id>=<subdomain>``.
+HOST_OVERRIDES = {}
 
 CORRECT_PROPORTION = 0.55
 
@@ -205,33 +210,82 @@ def subdomain_from_url(url):
     return url.rstrip("/")
 
 
-def discover_cities(listing, public_only=True):
-    """``{city_id: subdomain}`` from a ``/v3/api/cities`` listing, sorted by city_id.
+class ListingError(RuntimeError):
+    """The ``/v3/api/cities`` listing could not be fetched, or is not a listing."""
 
-    ``listing`` is the response (``{"cities": [...]}``, also the shape of the cache this script writes) or the bare
-    list ``analysis/fetch_all.py`` saves. With ``public_only`` (the default list) only ``visibility == "public"``
-    entries count; without it (host lookup for ``--cities``) every entry does. An entry needs a ``url``, or a
-    :data:`HOST_OVERRIDES` entry; a public deployment with neither is skipped with a warning.
+
+def listing_entries(listing):
+    """The entries of a ``/v3/api/cities`` listing, checked: raises :class:`ListingError` unless ``listing`` is a dict
+    (or, for an old ``analysis/fetch_all.py`` cache, a bare list) whose ``cities`` is a non-empty list of dicts, each
+    with a non-empty string ``city_id``, no id twice.
+
+    >>> [c["city_id"] for c in listing_entries({"cities": [{"city_id": "a"}, {"city_id": "b"}]})]
+    ['a', 'b']
+    >>> listing_entries({"cities": [{"city_id": "a"}, {"city_id": "a"}]})
+    Traceback (most recent call last):
+    ...
+    data_generation.ListingError: /v3/api/cities listing names city_id a twice
+    """
+    entries = listing if isinstance(listing, list) else listing.get("cities") if isinstance(listing, dict) else None
+    if not isinstance(entries, list) or not entries:
+        raise ListingError(f"/v3/api/cities listing has no non-empty 'cities' list (got {type(listing).__name__}"
+                           f"{' with keys ' + ', '.join(map(str, listing)) if isinstance(listing, dict) else ''})")
+    seen = set()
+    for c in entries:
+        cid = c.get("city_id") if isinstance(c, dict) else None
+        if not isinstance(cid, str) or not cid.strip():
+            raise ListingError(f"/v3/api/cities listing has an entry without a string city_id: {c!r:.200}")
+        if cid in seen:
+            raise ListingError(f"/v3/api/cities listing names city_id {cid} twice")
+        seen.add(cid)
+    return entries
+
+
+def _listing_url(c):
+    """An entry's ``url``, stripped, if it is an http(s) url with a host; None when absent; warns and returns None
+    when it is something else."""
+    url = c.get("url")
+    if url is None or (isinstance(url, str) and not url.strip()):
+        return None
+    parsed = urlparse(url.strip()) if isinstance(url, str) else None
+    if parsed is None or parsed.scheme not in ("http", "https") or not parsed.hostname:
+        print(f"WARNING: /v3/api/cities gives {c['city_id']} the url {url!r}, not an http(s) url; skipped.")
+        return None
+    return url.strip()
+
+
+def discover_cities(listing, public_only=True):
+    """``{city_id: subdomain}`` from a ``/v3/api/cities`` listing (checked by :func:`listing_entries`), sorted by
+    city_id.
+
+    With ``public_only`` (the default list) only ``visibility == "public"`` entries count; a visibility other than
+    ``public``/``private`` (or none) is excluded with a warning. Without it (host lookup for ``--cities``) every
+    entry counts. An entry needs an http(s) ``url``, or a :data:`HOST_OVERRIDES` entry; a public deployment with
+    neither is skipped with a warning.
 
     >>> discover_cities({"cities": [
     ...     {"city_id": "teaneck-nj", "visibility": "public", "url": "https://sidewalk-teaneck.cs.washington.edu"},
-    ...     {"city_id": "seattle-wa", "visibility": "public", "url": "https://sidewalk-sea.cs.washington.edu/"},
-    ...     {"city_id": "zurich", "visibility": "private", "url": None},
-    ...     {"city_id": "taipei", "visibility": "public", "url": None}]})
-    {'seattle-wa': 'sea', 'taipei': 'taipei', 'teaneck-nj': 'teaneck'}
+    ...     {"city_id": "seattle-wa", "visibility": "public", "url": " https://sidewalk-sea.cs.washington.edu/ "},
+    ...     {"city_id": "example-private", "visibility": "private", "url": None}]})
+    {'seattle-wa': 'sea', 'teaneck-nj': 'teaneck'}
     """
-    entries = listing["cities"] if isinstance(listing, dict) else listing
-    out, skipped = {}, []
-    for c in entries:
-        if public_only and c.get("visibility") != "public":
+    out, skipped, odd = {}, [], []
+    for c in listing_entries(listing):
+        cid, vis = c["city_id"], c.get("visibility")
+        if vis not in ("public", "private"):
+            odd.append(f"{cid} ({vis!r})")
+        if public_only and vis != "public":
             continue
-        cid = c["city_id"]
-        if c.get("url"):
-            out[cid] = subdomain_from_url(c["url"])
+        url = _listing_url(c)
+        if url:
+            out[cid] = subdomain_from_url(url)
         elif cid in HOST_OVERRIDES:
             out[cid] = HOST_OVERRIDES[cid]
         elif public_only:
             skipped.append(cid)
+    if odd:
+        print(f"WARNING: /v3/api/cities gives an unknown visibility to {', '.join(odd)}; "
+              f"{'excluded from the default list' if public_only else 'not used for the default list'}.")
     if skipped:
         print(f"WARNING: /v3/api/cities lists public deployments without a url, skipped (add them to HOST_OVERRIDES "
               f"to include them): {', '.join(sorted(skipped))}")
@@ -245,25 +299,59 @@ def _get_json(url):
     return response.json()
 
 
-def load_city_listing(cache_dir=None, refresh=False, url=CITIES_API, fetch=None):
-    """The ``/v3/api/cities`` listing and where it came from: ``(listing, source)``.
+def fetch_city_listing(url=CITIES_API, fetch=None):
+    """The ``/v3/api/cities`` response, checked, with one retry; raises :class:`ListingError`."""
+    for attempt in (1, 2):
+        try:
+            response = (fetch or _get_json)(url)
+            break
+        except Exception as e:  # requests errors, a non-JSON body, ...
+            if attempt == 2:
+                raise ListingError(f"could not fetch {url} ({type(e).__name__}: {e})") from e
+            print(f"{url} failed ({e}); retrying once")
+            time.sleep(LISTING_RETRY_S)
+    if not isinstance(response, dict):
+        raise ListingError(f"{url} did not return a JSON object (got {type(response).__name__})")
+    listing_entries(response)
+    return response
 
-    With ``cache_dir``, ``<cache_dir>/cities.json`` is read when it exists (no network) unless ``refresh``; otherwise
-    the API is fetched and, with ``cache_dir``, the response is written there atomically as ``{"fetched_on", "url",
-    "cities"}``. ``source`` is ``{"from": "cache" | "api", "url", "fetched_on"}``; for a cache file without a
-    ``fetched_on`` (a hand-saved response, or fetch_all.py's list) the date is the file's modification date and
-    ``fetched_on_is_mtime`` is True.
+
+def cache_has_csvs(cache_dir):
+    """True when ``cache_dir`` holds any ``*.csv`` (saved rawLabels exports)."""
+    return bool(cache_dir) and os.path.isdir(cache_dir) and any(n.endswith(".csv") for n in os.listdir(cache_dir))
+
+
+def load_city_listing(cache_dir=None, refresh=False, url=CITIES_API, fetch=None):
+    """The ``/v3/api/cities`` listing and where it came from: ``(listing, source)``; raises :class:`ListingError`.
+
+    With ``cache_dir``, ``<cache_dir>/cities.json`` is read when it exists (no network) unless ``refresh``. Otherwise
+    the API is fetched (:func:`fetch_city_listing`) and, with ``cache_dir``, written there atomically as
+    ``{"fetched_on", "url", "cities"}``, but only after it is checked, and never into a cache that already holds
+    rawLabels CSVs without a listing (a snapshot from before city discovery) unless ``refresh``: that would pair the
+    old snapshot with a new list. ``source`` is ``{"from": "cache" | "api", "url", "fetched_on"}``; ``url`` and
+    ``fetched_on`` are None when a cache file does not record them (an old fetch_all.py list).
     """
     path = os.path.join(cache_dir, CITIES_CACHE_FILE) if cache_dir else None
     if path and os.path.exists(path) and not refresh:
-        with open(path) as f:
-            listing = json.load(f)
+        try:
+            with open(path) as f:
+                listing = json.load(f)
+        except (OSError, ValueError) as e:
+            raise ListingError(f"{path} is not readable JSON ({e}); --refresh-cities rewrites it") from e
+        try:
+            listing_entries(listing)
+        except ListingError as e:
+            raise ListingError(f"{path}: {e}; --refresh-cities rewrites it") from e
         meta = listing if isinstance(listing, dict) else {}
-        source = {"from": "cache", "url": meta.get("url"), "fetched_on": meta.get("fetched_on")}
-        if not source["fetched_on"]:
-            source.update(fetched_on=date.fromtimestamp(os.path.getmtime(path)).isoformat(), fetched_on_is_mtime=True)
-        return listing, source
-    response = (fetch or _get_json)(url)
+        return listing, {"from": "cache", "url": meta.get("url"), "fetched_on": meta.get("fetched_on")}
+    if path and not refresh and cache_has_csvs(cache_dir):
+        raise ListingError(
+            f"--rawlabels-cache {cache_dir} holds rawLabels CSVs but no {CITIES_CACHE_FILE}: a snapshot from before "
+            f"city discovery (issue #8). Writing today's listing into it would pair that snapshot with a different "
+            f"city list. Use --cities to run on its cities, or --refresh-cities to write the current listing into it "
+            f"(every listed city then needs its <city_id>.csv: re-pull with FRESH=1 sbatch data_generation.slurm or "
+            f"analysis/fetch_all.py).")
+    response = fetch_city_listing(url, fetch)
     listing = {"fetched_on": date.today().isoformat(), "url": url, "cities": response["cities"]}
     if path:
         os.makedirs(cache_dir, exist_ok=True)
@@ -624,14 +712,10 @@ def read_store_panorama(store, city, pano_id):
     return cv2.resize(img, PANO_SIZE, interpolation=cv2.INTER_LINEAR), info
 
 
-def check_pano_store(store, cities, allow_missing_cities=False):
-    """Check the store before any download: ``(marker_first_line, absent_cities)``.
-
-    Exits unless ``store`` is a directory with a ``.pano-store`` marker file (any contents; the store or a verified
-    staged copy writes it) and a directory for every one of ``cities``. With ``allow_missing_cities``, absent cities
-    only warn (their labels are ``no_pano``), but at least one must be present. Run first, so a mistyped path, an
-    unmounted store or one laid out by other city names fails in seconds instead of after 50 ``no_pano`` rows, and so
-    a city with no directory cannot hide its ``no_pano`` rows among other cities' successes."""
+def check_pano_store_marker(store):
+    """Exit unless ``store`` is a directory with a ``.pano-store`` marker file (any contents; the store or a verified
+    staged copy writes it); return the marker's first line. Run before any download, so a mistyped path or an
+    unmounted store fails in seconds."""
     if not os.path.isdir(store):
         sys.exit(f"--pano-store {store} is not a directory.")
     marker = os.path.join(store, PANO_STORE_MARKER)
@@ -639,7 +723,18 @@ def check_pano_store(store, cities, allow_missing_cities=False):
         sys.exit(f"--pano-store {store} has no {PANO_STORE_MARKER} marker file: it is not a pano store, or not a "
                  f"verified staged copy of one (or the mount is not up).")
     with open(marker, errors="replace") as f:
-        marker_line = f.readline().strip()
+        return f.readline().strip()
+
+
+def check_pano_store(store, cities, allow_missing_cities=False):
+    """Check the store for the cities that have selected labels: ``(marker_first_line, absent_cities)``.
+
+    Exits unless the marker is there (:func:`check_pano_store_marker`) and there is a directory for every one of
+    ``cities``. With ``allow_missing_cities``, absent cities only warn (their labels are ``no_pano``), but at least
+    one must be present. Run after selection and before the depth model loads, so a store laid out by other city
+    names fails in seconds instead of after 50 ``no_pano`` rows, and so a city with no directory cannot hide its
+    ``no_pano`` rows among other cities' successes. Listed cities with no selected label need no directory."""
+    marker_line = check_pano_store_marker(store)
     present = [c for c in cities if os.path.isdir(os.path.join(store, c))]
     absent = [c for c in cities if c not in present]
     layout = "the store is laid out <store>/<city_id>/<pano_id[:2]>/<pano_id>.jpg"
@@ -848,6 +943,14 @@ def check_resume(run_path, new_hash, settings, cities=None):
     return (old_hash if old_hash and old_hash != new_hash else None), changed, city_change
 
 
+def recorded_cities(run_path):
+    """The city list ``generation_run.json`` at ``run_path`` records, or None (no file, or no list)."""
+    if not os.path.exists(run_path):
+        return None
+    with open(run_path) as f:
+        return json.load(f).get("cities")
+
+
 def count_ok_rows(manifest_path):
     """Number of ``ok`` rows in a manifest (0 if there is none)."""
     if not os.path.exists(manifest_path) or os.path.getsize(manifest_path) == 0:
@@ -876,8 +979,8 @@ def parse_cities(arg, known=None):
     city_id's host is looked up in ``known`` (the deployments :func:`discover_cities` found), then in
     :data:`HOST_OVERRIDES`, else it is the city_id itself. Without ``arg``, ``known`` itself (the default list).
 
-    >>> parse_cities("seattle-wa,vancouver-wa=vancouver,keelung-tw,x", {"seattle-wa": "sea"})
-    {'seattle-wa': 'sea', 'vancouver-wa': 'vancouver', 'keelung-tw': 'keelung', 'x': 'x'}
+    >>> parse_cities("seattle-wa,vancouver-wa=vancouver,x", {"seattle-wa": "sea"})
+    {'seattle-wa': 'sea', 'vancouver-wa': 'vancouver', 'x': 'x'}
     """
     known = known or {}
     if not arg:
@@ -895,22 +998,41 @@ def parse_cities(arg, known=None):
 def resolve_cities(arg, cache_dir=None, refresh=False, fetch=None):
     """The cities to pull and where the list came from: ``(cities, city_source)``.
 
-    Without ``arg`` (no ``--cities``): the public deployments of :func:`load_city_listing`. With it:
-    :func:`parse_cities`, reading the listing only to find a host, i.e. when some bare city_id has no saved
-    ``<cache_dir>/<city_id>.csv`` (so an offline smoke test stays offline); ``city_source`` is then
-    ``{"from": "--cities"}``.
+    Without ``arg`` (no ``--cities``, or a blank one): the public deployments of :func:`load_city_listing`; a listing
+    that cannot be had stops the run. With it: :func:`parse_cities`, ``city_source`` ``{"from": "--cities"}``. The
+    listing is consulted only for a host, i.e. when some bare city_id has neither a saved ``<cache_dir>/<city_id>.csv``
+    nor a :data:`HOST_OVERRIDES` entry (so an offline smoke test stays offline); it is read from the cache or
+    fetched, never written, and if it cannot be had the city_id is used as the subdomain, with a warning.
     """
-    if arg is None:
-        listing, source = load_city_listing(cache_dir, refresh, fetch=fetch)
-        cities = discover_cities(listing)
+    if not arg or not any(i.strip() for i in arg.split(",")):
+        try:
+            listing, source = load_city_listing(cache_dir, refresh, fetch=fetch)
+            cities = discover_cities(listing)
+        except ListingError as e:
+            sys.exit(f"City list: {e}")
         if not cities:
             sys.exit(f"/v3/api/cities ({source}) lists no public deployment with a url.")
         return cities, source
     bare = [i.strip() for i in arg.split(",") if i.strip() and "=" not in i]
-    needs_host = [c for c in bare if not (cache_dir and os.path.exists(os.path.join(cache_dir, f"{c}.csv")))]
-    known = discover_cities(load_city_listing(cache_dir, refresh, fetch=fetch)[0], public_only=False) \
-        if needs_host else {}
+    needs_host = [c for c in bare if c not in HOST_OVERRIDES
+                  and not (cache_dir and os.path.exists(os.path.join(cache_dir, f"{c}.csv")))]
+    known = {}
+    if needs_host:
+        path = os.path.join(cache_dir, CITIES_CACHE_FILE) if cache_dir else None
+        try:
+            if path and os.path.exists(path) and not refresh:
+                listing = load_city_listing(cache_dir, fetch=fetch)[0]
+            else:
+                listing = fetch_city_listing(fetch=fetch)
+            known = discover_cities(listing, public_only=False)
+        except ListingError as e:
+            print(f"WARNING: {e}; using the city_id as the subdomain for {', '.join(needs_host)}.")
     return parse_cities(arg, known), {"from": "--cities"}
+
+
+def missing_cached_csvs(cities, cache_dir):
+    """The cities with no ``<cache_dir>/<city_id>.csv``."""
+    return [c for c in cities if not os.path.exists(os.path.join(cache_dir, f"{c}.csv"))]
 
 
 def build_parser():
@@ -922,7 +1044,8 @@ def build_parser():
                         '<DIR>/<city_id>/<pano_id[:2]>/<pano_id>.jpg; must hold a .pano-store marker file; required '
                         'unless --select-only')
     p.add_argument('--allow-missing-cities', action='store_true',
-                   help='run although some selected cities have no pano-store directory (their labels are no_pano)')
+                   help='run although some cities with selected labels have no pano-store directory (their labels '
+                        'are no_pano)')
     p.add_argument('--limit', type=int, default=None, help='process only the first N selected labels (smoke tests)')
     p.add_argument('--manifest', default=None, help='default <out>/<label_type>/manifest.csv')
     p.add_argument('--priors', default=None,
@@ -938,9 +1061,11 @@ def build_parser():
     p.add_argument('--rawlabels-cache', default=None,
                    help='directory of saved rawLabels exports <city_id>.csv, read instead of the API when present; '
                         'also holds the /v3/api/cities listing as cities.json (read if present, else fetched and '
-                        'written)')
+                        'written, unless the directory already holds CSVs); without --cities every listed city needs '
+                        'its CSV here')
     p.add_argument('--refresh-cities', action='store_true',
-                   help='refetch /v3/api/cities even if <rawlabels-cache>/cities.json exists, and rewrite it')
+                   help='refetch /v3/api/cities and (re)write <rawlabels-cache>/cities.json, also into a cache made '
+                        'before city discovery')
     p.add_argument('--select-only', action='store_true',
                    help='select labels and write the priors, then stop (no GPU, no panoramas)')
     p.add_argument('--allow-cpu', action='store_true', help=DEPTH_DEVICE_HELP)
@@ -960,18 +1085,24 @@ def main(argv=None):
     manifest_path = args.manifest or os.path.join(base_dir, "manifest.csv")
     run_path = os.path.join(base_dir, "generation_run.json")
     priors_path = args.priors or os.path.join(args.out, "deployment_priors.json")
-    partial = args.cities is not None or args.limit is not None
+    partial = (args.cities is not None and args.cities.strip(", ") != "") or args.limit is not None
     if partial:
         priors_path = os.path.splitext(priors_path)[0] + ".partial.json"
     if not args.select_only and not args.pano_store:  # before the city listing, which may need the network
         build_parser().error("--pano-store is required unless --select-only")
+    if not args.select_only:  # fail fast, before the downloads; the city directories are checked after selection
+        check_pano_store_marker(args.pano_store)
+    default_cities = not args.cities or not any(i.strip() for i in args.cities.split(","))
     cities, city_source = resolve_cities(args.cities, args.rawlabels_cache, args.refresh_cities)
     print(f"{len(cities)} cities (from {city_source['from']}"
           f"{', fetched ' + city_source['fetched_on'] if city_source.get('fetched_on') else ''}): "
           f"{', '.join(cities)}")
-    store_marker, absent_cities = None, []
-    if not args.select_only:  # fail fast, before the downloads
-        store_marker, absent_cities = check_pano_store(args.pano_store, list(cities), args.allow_missing_cities)
+    if default_cities and args.rawlabels_cache:
+        missing = missing_cached_csvs(cities, args.rawlabels_cache)
+        if missing:  # never a live download into a snapshot: the five label types would see different votes
+            sys.exit(f"--rawlabels-cache {args.rawlabels_cache} has no <city_id>.csv for {len(missing)} listed "
+                     f"cities: {', '.join(missing)}. Pull them into the cache (FRESH=1 sbatch data_generation.slurm, "
+                     f"or analysis/fetch_all.py), or pass --cities to run without them.")
     device = None if args.select_only else resolve_device(args.allow_cpu)
 
     all_cities = pd.concat([load_city(c, s, args.rawlabels_cache) for c, s in cities.items()], ignore_index=True)
@@ -990,13 +1121,34 @@ def main(argv=None):
     combined_filtered['label_uid'] = combined_filtered['city'] + ":" + combined_filtered['label_id'].astype(str)
     assert combined_filtered['label_uid'].is_unique, "label_uid (city:label_id) is not unique in the selection"
     selection = dict(zip(combined_filtered['label_uid'], combined_filtered['label_class']))  # before --limit
+    selection_cities = combined_filtered['city'].tolist()
     sel_hash = selection_hash(combined_filtered)
     if args.limit is not None:
         combined_filtered = combined_filtered.head(args.limit)
     if args.select_only:
-        write_priors()
+        recorded = recorded_cities(run_path)
+        if not partial and recorded is not None and set(recorded) != set(cities):
+            # The real priors must describe the crops in this output dir: a prior over another city list next to
+            # them would be read by fine_tune/evaluate/calibrate without a comparison.
+            priors_path = os.path.splitext(priors_path)[0] + ".partial.json"
+            print(f"--select-only: {run_path} records a different city list (added: "
+                  f"{', '.join(sorted(set(cities) - set(recorded))) or 'none'}; removed: "
+                  f"{', '.join(sorted(set(recorded) - set(cities))) or 'none'}), so the prior goes to "
+                  f"{priors_path}, not the real deployment_priors.json.")
+        update_deployment_priors(priors_path, label_type, entry)
+        print(f"Deployment prior ({priors_path}{', PARTIAL run' if partial else ''}): "
+              f"{entry['correct']} correct, {entry['incorrect']} incorrect")
         print(f"--select-only: {len(combined_filtered)} labels selected; stopping before rendering.")
         return
+
+    # Directories only for cities with a selected label (before --limit, so a limit run checks the same cities).
+    selected_cities = sorted(set(selection_cities))
+    store_marker, absent_cities = check_pano_store(args.pano_store, selected_cities, args.allow_missing_cities)
+    unselected_without_dir = [c for c in cities if c not in selected_cities
+                              and not os.path.isdir(os.path.join(args.pano_store, c))]
+    if unselected_without_dir:
+        print(f"Note: no pano-store directory for {', '.join(unselected_without_dir)}; none of their labels is "
+              f"selected, so none is needed.")
 
     settings = {"tilt_beta": args.tilt_beta, "depth_encoder": args.depth_encoder, "depth_dataset": DEPTH_DATASET,
                 "renderer": "torch" if device else "numpy", "include_ai_labels": args.include_ai_labels,
