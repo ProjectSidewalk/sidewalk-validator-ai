@@ -25,6 +25,20 @@ import re
 import data_generation as dg
 
 TODO = "TODO:"
+
+TRAIN_BATCH_SIZE = 8
+"""``per_device_train_batch_size`` in fine_tune_classifier.py (a test checks it against that file)."""
+GRAD_ACCUM = 4
+"""``gradient_accumulation_steps`` in fine_tune_classifier.py (a test checks it against that file)."""
+
+OVERRIDE_KEYS = {
+    "failure_modes": "list of strings: per-label-type failure modes for the model card",
+    "split_seed": "int: the --seed split_data.py ran with (it is not recorded in split.csv)",
+    "dataset_license": "Hub license id for the dataset (same as --dataset-license)",
+    "doi": "the dataset's DOI, once minted",
+    "model_doi": "the model's DOI, once minted",
+}
+"""Keys allowed in ``<out>/<label_type>/card_overrides.json``: facts the pipeline's files do not record."""
 ENCODER_NAMES = {"vits": "ViT-S", "vitb": "ViT-B", "vitl": "ViT-L"}
 GATE = 0.92
 """SidewalkWebpage's ``ai-validation-min-accuracy`` (the same value as ``calibration._isotonic_map.GATE``)."""
@@ -73,12 +87,31 @@ def _yaml_scalar(v):
         return "null"
     if isinstance(v, bool):
         return "true" if v else "false"
-    if isinstance(v, (int, float)):
-        return "null" if isinstance(v, float) and math.isnan(v) else repr(v)
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        return _yaml_float(v)
     s = str(v)
     if _BARE.match(s) and s.lower() not in _YAML_WORDS:
         return s
     return json.dumps(s)
+
+
+def _yaml_float(v):
+    """A float YAML 1.1 readers also parse as a float: always a decimal point, signed exponent, no inf/nan.
+
+    Example::
+
+        >>> [_yaml_float(x) for x in (0.5, 1e-05, 3.0, 2e20)]
+        ['0.5', '1.0e-05', '3.0', '2.0e+20']
+    """
+    if not math.isfinite(v):
+        return "null"
+    s = format(v, ".10g")
+    mantissa, _, exp = s.partition("e")
+    if "." not in mantissa:
+        mantissa += ".0"
+    return mantissa + ("e" + exp if exp else "")
 
 
 def _yaml_lines(obj, indent):
@@ -249,6 +282,24 @@ def _calibration_section(ctx):
     return "\n".join(lines) + "\n"
 
 
+def _failure_modes(overrides):
+    """Bullets from ``card_overrides.json``'s ``failure_modes``, or one TODO bullet."""
+    modes = overrides.get("failure_modes")
+    if isinstance(modes, str):
+        modes = [modes]
+    if modes:
+        return "".join(f"- {m}\n" for m in modes)
+    return (f"- {TODO} per-label-type failure modes from a review of this model's errors (e.g. the hard-example list); "
+            "add them as `failure_modes` in card_overrides.json.\n")
+
+
+def _doi_sentence(doi, what):
+    """``DOI: ...`` when one is known, otherwise a plain statement (not a TODO: minting waits on final repo names)."""
+    if doi:
+        return f"DOI: [{doi}](https://doi.org/{doi})."
+    return f"No DOI has been minted for this {what} yet."
+
+
 def model_card(ctx):
     """The model repo's ``README.md``.
 
@@ -256,12 +307,14 @@ def model_card(ctx):
         ctx: dict with keys ``label_type``, ``model_repo``, ``dataset_repo``, ``metrics`` (``metrics.json``),
             ``api_map`` and ``calibration_report`` (or None), ``trainer`` (trimmed ``trainer_state.json``),
             ``training_run`` and ``generation_run`` (dicts, possibly empty), ``dataset`` (``dataset_summary``
-            output) and ``code_commit`` (str or None).
+            output), ``code_commit`` (str or None) and ``overrides`` (``card_overrides.json``, see
+            ``OVERRIDE_KEYS``).
 
     Returns:
         The card as a string (front matter + Markdown).
     """
     t = ctx["label_type"]
+    overrides = ctx.get("overrides") or {}
     metrics = ctx.get("metrics") or {}
     trainer = ctx.get("trainer") or {}
     run = ctx.get("training_run") or {}
@@ -337,7 +390,8 @@ def model_card(ctx):
              "Inference uses this repo's `preprocessor_config.json` (`BitImageProcessor`: resize shortest edge 256, "
              "centre-crop 224, ImageNet mean/std); load it with `use_fast=False` to match the API's PIL path. "
              "Training adds `RandomResizedCrop(224, scale=(0.7, 1.0))` and horizontal flips; validation uses the "
-             "processor itself. Hugging Face `Trainer`, learning rate 1e-5, batch 8 × 4 gradient accumulation, "
+             f"processor itself. Hugging Face `Trainer`, learning rate 1e-5, batch {TRAIN_BATCH_SIZE} × {GRAD_ACCUM} "
+             "gradient accumulation, "
              f"10% warm-up, {fmt(trainer.get('num_train_epochs') or run.get('epochs'))} epochs, seed "
              f"{fmt(run.get('seed')) if run.get('seed') is not None else TODO + ' seed (training_run.json missing)'}. "
              f"The published weights are the checkpoint with the best validation {best_metric} "
@@ -368,8 +422,7 @@ def model_card(ctx):
              "- Correct/incorrect comes from crowd votes, which are themselves noisy; only decisively voted labels "
              "are used, so borderline cases are under-represented.\n"
              "- A crop made without the tilt correction, or with a different depth model, is out of distribution.\n"
-             f"- {TODO} per-label-type failure modes from a review of this model's errors (e.g. the hard-example "
-             "list).\n",
+             + _failure_modes(overrides),
              "## Files\n",
              "| file | contents |\n|---|---|\n"
              "| `model.safetensors`, `config.json` | weights and `Dinov2ForImageClassification` config |\n"
@@ -385,6 +438,7 @@ def model_card(ctx):
              + (f" at commit `{ctx['code_commit']}`" if ctx.get("code_commit") else "")
              + " with `publish_to_hf.py`.\n",
              "## Citation\n",
+             _doi_sentence(overrides.get("model_doi"), "model") + "\n",
              "There is no paper for this model yet. Please cite Project Sidewalk and link the training repository:\n",
              "```bibtex\n" + CITATION_BIBTEX + "\n```\n"]
     return "\n".join(parts)
@@ -424,11 +478,15 @@ def dataset_card(ctx, license_id=None):
     Args:
         ctx: dict with keys ``label_type``, ``dataset_repo``, ``model_repo``, ``dataset`` (``dataset_summary``
             output, including ``content_hash``), ``prior`` (this label type's ``deployment_priors.json`` entry or
-            None), ``generation_run`` (dict) and ``code_commit``.
-        license_id: Hub license identifier for the dataset. None writes a ``TODO:`` (the dataset license has not
-            been decided; issue #2) and leaves ``license`` out of the metadata rather than guessing.
+            None), ``generation_run`` (dict), ``code_commit`` and ``overrides`` (see ``OVERRIDE_KEYS``).
+        license_id: Hub license identifier for the dataset (``--dataset-license``, or ``dataset_license`` in the
+            overrides). None writes a ``TODO:`` (the dataset license has not been decided; issue #2) and leaves
+            ``license`` out of the metadata rather than guessing.
     """
     t = ctx["label_type"]
+    overrides = ctx.get("overrides") or {}
+    license_id = license_id or overrides.get("dataset_license")
+    split_seed = overrides.get("split_seed")
     ds = ctx["dataset"]
     gen = ctx.get("generation_run") or {}
     settings = gen.get("settings") or {}
@@ -506,7 +564,10 @@ def dataset_card(ctx, license_id=None):
              "of rows per bin with a seeded shuffle"
              + (f"; every label from {', '.join(heldout)} is in `test_heldout`" if heldout else
                 "; no cities were held out")
-             + f". {TODO} split seed (split_data.py does not record it; its default is 42). The Hub config maps "
+             + (f" (split seed {split_seed})" if split_seed is not None else
+                f". {TODO} split seed (split_data.py does not record it; its default is 42; add `split_seed` to "
+                "card_overrides.json)")
+             + ". The Hub config maps "
                "`val` to the `validation` split.\n",
              "## Cities\n",
              _cities_table(ds),
@@ -522,8 +583,8 @@ def dataset_card(ctx, license_id=None):
              "| `dataset_info.json` | the counts on this card, machine-readable |\n"
              "| `SHA256SUMS` | sha256 of every crop |\n"
              "| `croissant.json` | Croissant 1.1 metadata |\n",
-             "The absolute panorama-store paths recorded at generation time (`pano_path`, `pano_store`) are removed "
-             "from the published copies.\n",
+             "The absolute panorama-store paths recorded at generation time (`pano_path`, `pano_store`, `pano_store_marker`) are "
+             "removed from the published copies.\n",
              "## Intended use\n",
              f"Training and evaluating validators for Project Sidewalk {t} labels, and research on crowd label "
              "quality. Not suitable for estimating how common a feature is in a city: labels exist where volunteers "
@@ -532,7 +593,7 @@ def dataset_card(ctx, license_id=None):
              "Each upload is a commit of this repo; the content hash above identifies the crops exactly, and "
              f"`generation_run.json` records the selection hash (`{selection or TODO + ' selection hash'}`), which "
              "changes when any label enters, leaves or changes class. A regenerated dataset is uploaded as a new "
-             f"commit with a new card. {TODO} DOI (issue #2).\n",
+             "commit with a new card. " + _doi_sentence(overrides.get("doi"), "dataset") + "\n",
              "## Citation\n",
              "There is no paper for this dataset yet. Please cite Project Sidewalk and link the repository:\n",
              "```bibtex\n" + CITATION_BIBTEX + "\n```\n",
