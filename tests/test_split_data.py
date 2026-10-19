@@ -486,3 +486,13 @@ def test_radius_zero_with_missing_coordinates_succeeds(toy, capsys):
     (toy / "rawlabels").rename(toy / "elsewhere")  # no source at all: a note, still a split
     assert split_data.main(["--label_type", "Toy", "--out", str(toy), "--merge-radius-m", "0"]) == 0
     assert "Note: no proximity report" in capsys.readouterr().err
+
+
+def test_radius_zero_never_applies_the_group_guard(tmp_path):
+    """One panorama carrying 30% of the rows was never refused before merging, so radius 0 must not refuse it."""
+    write_chain(tmp_path)
+    m = pd.read_csv(tmp_path / "Toy" / "manifest.csv", dtype=str, keep_default_na=False)
+    m.loc[:299, "pano_id"] = "p0000"
+    m.to_csv(tmp_path / "Toy" / "manifest.csv", index=False)
+    assert split_data.main(["--label_type", "Toy", "--out", str(tmp_path), "--merge-radius-m", "0"]) == 0
+    assert split_data.main(["--label_type", "Toy", "--out", str(tmp_path)]) == 2
