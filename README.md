@@ -237,7 +237,7 @@ resize (`pano_native_w`/`pano_native_h`), pose, `tilt_applied`, `depth_m`, `crop
 output root. Views are rendered on the GPU with the package's torch recipe and depth runs on the same device;
 the script stops if there is no CUDA device (`--allow-cpu` is for smoke tests). The manifest is written row by
 row, so a killed job can simply be resubmitted: labels already `ok`, still selected and with the same class are
-skipped. If the selection itself changed (new votes since the first run), the job stops and says how many rows
+skipped. If the selection itself changed (new votes since the first run, other cities, or toggling `--include-ai-labels`), the job stops and says how many rows
 are stale; `--force-reselect` drops them and carries on. The job then runs `split_data.py`, which writes
 `<label_type>/split.csv` (the `ok` manifest rows plus `hard`, joined by `label_uid` from
 `--hard-examples`, and `split` ∈ `train`/`val`/`test`/`test_heldout`), grouped by panorama so no panorama
