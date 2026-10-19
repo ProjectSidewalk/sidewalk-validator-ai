@@ -76,9 +76,7 @@ def snapshot(base):
 
 def run(tmp_path, *extra):
     """Run split_data.py on the toy dataset (with its rawlabels/ for coordinates) and return split.csv's bytes."""
-    # The toy has only 119 rows, so one merged group of 8 labels is 6.7% of them; real manifests have thousands.
-    args = ["--label_type", "Toy", "--out", str(tmp_path), "--rawlabels", str(tmp_path / "rawlabels"),
-            "--max-group-share", "0.1", *extra]
+    args = ["--label_type", "Toy", "--out", str(tmp_path), "--rawlabels", str(tmp_path / "rawlabels"), *extra]
     assert split_data.main(args) == 0
     return (tmp_path / "Toy" / "split.csv").read_bytes()
 
@@ -252,7 +250,7 @@ def test_no_coordinate_source_fails_loudly(toy, capsys, case):
 
 
 def test_rawlabels_defaults_to_out_rawlabels(toy):
-    assert split_data.main(["--label_type", "Toy", "--out", str(toy), "--max-group-share", "0.1"]) == 0
+    assert split_data.main(["--label_type", "Toy", "--out", str(toy)]) == 0
     assert (toy / "Toy" / "split.csv").read_bytes() == run(toy)
 
 
@@ -336,7 +334,8 @@ def test_merge_radius_is_pinned():
     assert merge(3.5) == 0
     # The contract is haversine_m <= radius (the proximity report relies on it, so within_<radius>m is exactly 0):
     # a pair exactly at the radius merges, and one a hair beyond it does not.
-    d = float(split_data.haversine_m(north(0), -122.0, north(3.0), -122.0))
+    one = lambda v: np.array([v], dtype=float)  # arrays, as inside the merge (scalar maths can differ by an ulp)
+    d = float(split_data.haversine_m(one(north(0)), one(-122.0), one(north(3.0)), one(-122.0))[0])
     assert abs(d - 3.0) < 1e-6
     assert merge(3.0, r=d) == 1
     assert merge(3.0, r=float(np.nextafter(d, 0))) == 0
@@ -374,7 +373,7 @@ def test_giant_chained_group_stops_the_split(tmp_path, capsys):
     (tmp_path / "Toy" / "split.csv").write_text("stale\n")
     assert split_data.main(["--label_type", "Toy", "--out", str(tmp_path)]) == 2
     err = capsys.readouterr().err
-    assert "300 of 1000 rows" in err and "--max-group-share" in err and "0 = no limit" in err
+    assert "300 of 1000 train/val/test rows" in err and "--max-group-share" in err and "0 = no limit" in err
     assert "Removed the stale" in err and not (tmp_path / "Toy" / "split.csv").exists()
 
 
@@ -382,7 +381,7 @@ def test_giant_chained_group_warns_when_allowed(tmp_path, capsys):
     write_chain(tmp_path)
     assert split_data.main(["--label_type", "Toy", "--out", str(tmp_path), "--max-group-share", "0"]) == 0
     err = capsys.readouterr().err
-    assert "Warning: the largest group holds 300 rows (30.0% of 1000)" in err
+    assert "Warning: the largest group holds 300 rows (30.0% of 1000 train/val/test rows)" in err
     df = pd.read_csv(tmp_path / "Toy" / "split.csv")
     share = df.split.value_counts(normalize=True)
     assert f"{share['train']:.3f} / {share['val']:.3f} / {share['test']:.3f}" in err
@@ -394,7 +393,9 @@ def test_holdout_pull_in_is_reported(tmp_path, capsys):
     base.mkdir()
     north = lambda m: 47.0 + m / M_PER_DEG_LAT
     rows, raw = [], {"x": [], "y": []}
-    for i, (city, pano, metres) in enumerate([("x", "p", 0), ("y", "q", 1.5), ("y", "p", 0.5), ("y", "r", 900)]):
+    # y on p shares x's panorama; y on q is 1.5 m from x and y on s 2 m beyond it (a chain): 2 by merge, 1 by panorama
+    layout = [("x", "p", 0), ("y", "q", 1.5), ("y", "s", 3.5), ("y", "p", 0.5), ("y", "r", 900)]
+    for i, (city, pano, metres) in enumerate(layout):
         rows.append({c: "" for c in dg.MANIFEST_COLUMNS} | {
             "label_uid": f"{city}:{i}", "city": city, "label_id": i, "pano_id": pano, "label_type": "Toy",
             "label_class": "correct", "crop_path": f"correct/{city}_{i}.webp", "status": "ok"})
@@ -405,7 +406,7 @@ def test_holdout_pull_in_is_reported(tmp_path, capsys):
         pd.DataFrame(r).to_csv(tmp_path / "rawlabels" / f"{city}.csv", index=False)
     assert split_data.main(["--label_type", "Toy", "--out", str(tmp_path), "--holdout-cities", "x",
                             "--max-group-share", "0"]) == 0
-    assert "Rows of other cities pulled into test_heldout: 2 (1 by a merged group, the rest by a shared panorama)" \
+    assert "Rows of other cities pulled into test_heldout: 3 (2 by a merged group, the rest by a shared panorama)" \
         in capsys.readouterr().out
 
 
@@ -419,3 +420,69 @@ def test_export_ids_are_stripped_and_unrelated_rows_ignored(tmp_path):
     (raw / "x.csv").write_text("label_id,latitude,longitude\n 7,10.0,20.0\n7,11.0,20.0\n")
     with pytest.raises(ValueError, match="x:7 with conflicting"):
         split_data.load_coordinates(m, raw)
+
+
+def test_radius_zero_never_guards_small_manifests(tmp_path, capsys):
+    """The README smoke test (--limit 20) and any tiny manifest must behave as before merging at radius 0, and the
+    absolute floor keeps the guard off small manifests at the default radius too."""
+    base = tmp_path / "Toy"
+    base.mkdir()
+    path = write_manifest(base)
+    pd.read_csv(path, dtype=str, keep_default_na=False).iloc[:30].to_csv(path, index=False)
+    write_rawlabels(tmp_path, path)
+    (base / "split.csv").write_text("old\n")
+    assert split_data.main(["--label_type", "Toy", "--out", str(tmp_path), "--merge-radius-m", "0"]) == 0
+    assert "Error" not in capsys.readouterr().err
+    assert (base / "split.csv").read_text() != "old\n"
+    assert split_data.main(["--label_type", "Toy", "--out", str(tmp_path)]) == 0
+
+
+def test_guard_counts_only_train_val_test_rows(tmp_path):
+    """A big group in a held-out city does not trip --max-group-share (it never goes through the filler)."""
+    write_chain(tmp_path)
+    m = pd.read_csv(tmp_path / "Toy" / "manifest.csv", dtype=str, keep_default_na=False)
+    m.loc[:299, "city"] = "h"
+    m.loc[:299, "label_uid"] = "h:" + m.loc[:299, "label_id"]
+    m.to_csv(tmp_path / "Toy" / "manifest.csv", index=False)
+    raw = pd.read_csv(tmp_path / "rawlabels" / "c.csv")
+    raw.iloc[:300].to_csv(tmp_path / "rawlabels" / "h.csv", index=False)
+    raw.iloc[300:].to_csv(tmp_path / "rawlabels" / "c.csv", index=False)
+    assert split_data.main(["--label_type", "Toy", "--out", str(tmp_path), "--holdout-cities", "h"]) == 0
+    assert split_data.main(["--label_type", "Toy", "--out", str(tmp_path)]) == 2
+
+
+@pytest.mark.parametrize("args", [["--merge-radius-m", "-1"], ["--hard-examples", "nowhere.csv"],
+                                  ["--manifest", "nowhere.csv"]])
+def test_errors_before_loading_leave_split_csv_alone(toy, args):
+    (toy / "Toy" / "split.csv").write_text("previous\n")
+    assert split_data.main(["--label_type", "Toy", "--out", str(toy), *args]) == 2
+    assert (toy / "Toy" / "split.csv").read_text() == "previous\n"
+
+
+def test_exception_while_splitting_removes_split_csv(toy, monkeypatch):
+    (toy / "Toy" / "split.csv").write_text("previous\n")
+    def boom(*a, **k):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(split_data, "check_no_shared_panoramas", boom)
+    with pytest.raises(RuntimeError):
+        split_data.main(["--label_type", "Toy", "--out", str(toy)])
+    assert not (toy / "Toy" / "split.csv").exists() and not (toy / "Toy" / "split.csv.tmp").exists()
+
+
+def test_radius_zero_with_missing_coordinates_succeeds(toy, capsys):
+    manifest = toy / "Toy" / "manifest.csv"
+    m = pd.read_csv(manifest, dtype=str, keep_default_na=False)
+    gone = set(m.loc[m.status == "ok", "label_uid"].iloc[:5])  # 4% of ok labels, over the 1% merge limit
+    write_rawlabels(toy, manifest, drop=gone)
+    run(toy, "--merge-radius-m", "0")
+    out = capsys.readouterr().out
+    assert "5 ok labels have no coordinates" in out
+    df = pd.read_csv(toy / "Toy" / "split.csv", dtype=str, keep_default_na=False)
+    # the printed report's labels column counts only labels with coordinates
+    report = out.split("within r metres:\n")[1].splitlines()
+    printed = {line.split()[0]: int(line.split()[1]) for line in report[1:]}
+    for s in ("val", "test"):
+        assert printed[s] == ((df.split == s) & ~df.label_uid.isin(gone)).sum()
+    (toy / "rawlabels").rename(toy / "elsewhere")  # no source at all: a note, still a split
+    assert split_data.main(["--label_type", "Toy", "--out", str(toy), "--merge-radius-m", "0"]) == 0
+    assert "Note: no proximity report" in capsys.readouterr().err
