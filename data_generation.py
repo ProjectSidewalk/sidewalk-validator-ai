@@ -92,8 +92,8 @@ SEED = 42
 # The SidewalkAI account (role "AI"). Its labels (RampNet-placed curb ramps) are in the rig frame, and production
 # never sends them to the validator. Its votes carry validator_type "AI" and are excluded from every count.
 AI_USER_ID = "51b0b927-3c8a-45b2-93de-bd878d1e5cf4"
-# Expert validators' user_ids, from the environment as EXPERTS="<any name>=<user_id>,..." (the analysis/analyze.py
-# form; a bare user_id also works). Kept out of the repo on purpose: named accounts do not belong in public code.
+# Expert validators' user_ids, from the environment as EXPERTS="<any name>=<user_id>,..." (the form analysis/analyze.py
+# reads). Kept out of the repo on purpose: named accounts do not belong in public code.
 EXPERTS_ENV = "EXPERTS"
 
 # City deployments to pull labels from: city_id (as /v3/api/cities names it, and as it appears in label_uid and in
@@ -205,14 +205,25 @@ def human_vote_counts(validations_json):
 
 
 def parse_experts(value):
-    """Expert user_ids from an ``EXPERTS`` value: ``"<name>=<user_id>,..."`` or bare ``user_id``s, as a frozenset.
+    """Expert user_ids from an ``EXPERTS`` value, ``"<name>=<user_id>,..."``, as a frozenset.
 
-    >>> sorted(parse_experts("a=u1, u2 ,,b=u3"))
-    ['u1', 'u2', 'u3']
+    Parsed as ``analysis/analyze.py`` parses it, so one value means the same experts everywhere: an entry without
+    ``=`` is an error here (analyze.py would silently skip it).
+
+    >>> sorted(parse_experts("a=u1, b=u2 ,,"))
+    ['u1', 'u2']
     >>> parse_experts(None)
     frozenset()
+    >>> parse_experts("u1")
+    Traceback (most recent call last):
+    ...
+    ValueError: EXPERTS entries must be <name>=<user_id>; got 1 without '='
     """
-    ids = (kv.strip().rpartition("=")[2].strip() for kv in (value or "").split(","))
+    entries = [kv.strip() for kv in (value or "").split(",") if kv.strip()]
+    bare = [kv for kv in entries if "=" not in kv]
+    if bare:  # the count only: the value is a user_id and does not belong in a log
+        raise ValueError(f"EXPERTS entries must be <name>=<user_id>; got {len(bare)} without '='")
+    ids = (kv.split("=", 1)[1].strip() for kv in entries)
     return frozenset(i for i in ids if i)
 
 
@@ -430,7 +441,7 @@ class ManifestWriter:
                 m.write({...})
     """
 
-    def __init__(self, path, base_dir, selection, keep_ok=True):
+    def __init__(self, path, base_dir, selection, keep_ok=True, sources=None):
         self.path = path
         self.base_dir = base_dir
         self.done = set()
@@ -455,6 +466,8 @@ class ManifestWriter:
                 elif not row.get('pano_path'):
                     self.stale['not_from_store'] += 1
                 else:
+                    if sources is not None:  # the rule that decides a label can change with new votes
+                        row['class_source'] = sources.get(uid, '')
                     kept.append(row)
                     self.done.add(uid)
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
@@ -918,7 +931,8 @@ def main(argv=None):
     assert combined_filtered['label_uid'].is_unique, "label_uid (city:label_id) is not unique in the selection"
     selection = dict(zip(combined_filtered['label_uid'], combined_filtered['label_class']))  # before --limit
     sel_hash = selection_hash(combined_filtered)
-    source_counts = combined_filtered['class_source'].value_counts().to_dict()  # before --limit
+    source_counts = combined_filtered['class_source'].value_counts().to_dict()
+    sources = dict(zip(combined_filtered['label_uid'], combined_filtered['class_source']))  # both before --limit
     if args.limit is not None:
         combined_filtered = combined_filtered.head(args.limit)
     if args.select_only:
@@ -943,7 +957,7 @@ def main(argv=None):
                  f"(all of them if a setting changed) and redone; old crop files stay on disk until overwritten.")
     write_priors()  # only once the resume check has passed
     os.makedirs(base_dir, exist_ok=True)
-    manifest = ManifestWriter(manifest_path, base_dir, selection, keep_ok=not changed)
+    manifest = ManifestWriter(manifest_path, base_dir, selection, keep_ok=not changed, sources=sources)
     if previous or changed:
         print(f"WARNING: --force-reselect: selection changed: {bool(previous)}, settings changed: {changed or 'none'}; "
               f"dropped ok rows {dict(manifest.stale) or 'none'}, kept {len(manifest.done)}.")

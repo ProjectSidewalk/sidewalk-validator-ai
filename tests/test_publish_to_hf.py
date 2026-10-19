@@ -403,6 +403,20 @@ def test_dataset_card_has_the_real_numbers(staged):
     assert "disagree − agree > 1" in card and "agree − disagree > 2" in card
 
 
+def test_dataset_card_states_the_expert_rule_only_when_used(tmp_path, staged):
+    assert "expert" not in _read(os.path.join(staged["dataset"], "README.md")).lower()
+    root, *_ = make_root(tmp_path / "with-experts")
+    path = os.path.join(root, T, "generation_run.json")
+    run = json.loads(_read(path))
+    run.update(n_experts=2, class_source_counts={"margin": 9, "expert": 3})
+    with open(path, "w") as f:
+        json.dump(run, f)
+    _, d = pub.stage(root, T)
+    card = _read(os.path.join(d, "README.md"))
+    assert "expert account voted for" in card and "2 project-team accounts" in card
+    assert "9 margin and 3 expert" in card
+
+
 def test_dataset_license_flag(tmp_path):
     root, *_ = make_root(tmp_path)
     _, d = pub.stage(root, T, dataset_license="cc-by-4.0")
