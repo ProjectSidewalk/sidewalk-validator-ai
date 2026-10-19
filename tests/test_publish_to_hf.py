@@ -1,6 +1,8 @@
 """publish_to_hf.py and hf_cards.py on a tiny fake pipeline output root (no GPU, no network, no token)."""
+import hashlib
 import json
 import os
+import re
 import shutil
 
 import numpy as np
@@ -82,17 +84,43 @@ def make_root(tmp_path, label_type=T, rows=ROWS, max_steps=2, epochs=2):
                                                          "best_model_checkpoint": "checkpoint-2",
                                                          "best_metric": "macro_f1", "best_metric_value": 0.81}))
 
+    split_sha = hashlib.sha256((base / "split.csv").read_bytes()).hexdigest()
+    (dinov2 / "run_key.json").write_text(json.dumps({"label_type": label_type, "split_sha256": split_sha}))
+
     rng = np.random.default_rng(0)
+    # predictions.csv: exactly the split's evaluation rows (what check_bindings compares)
+    ev = split[split["split"].isin(["val", "test", "test_heldout"])]
+    pd.DataFrame({"label_uid": ev.label_uid, "split": ev.split, "true": ev.label_class,
+                  "p_correct": 0.7, "p_incorrect": 0.3}).to_csv(base / "predictions.csv", index=False)
+    # metrics and map from a larger synthetic set, so the numbers are not degenerate
     preds = pd.concat([_predictions(400, "val", rng), _predictions(200, "test", rng),
                        _predictions(100, "test_heldout", rng)])
     metrics = evaluate.report(preds)
     (base / "metrics.json").write_text(json.dumps(metrics))
     api_map, rep, _ = cal.calibrate(preds, {"correct": 0.9, "incorrect": 0.1})
+    rep["label_type"] = label_type
     rep["prior_source"] = {"source": "rawLabels of teaneck, chicago, human votes only", "measured_on": "2026-10-17"}
     (base / "calibration").mkdir()
     (base / "calibration" / f"{label_type.lower()}.json").write_text(json.dumps(api_map, indent=4))
     (base / "calibration" / "calibration_report.json").write_text(json.dumps(rep, default=float))
     return str(root), metrics, api_map, rep
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """No test may reach the Hub: requests.get fails and no token is ever picked up from the machine."""
+    import requests
+
+    def blocked(*a, **k):
+        raise requests.ConnectionError("network disabled in tests")
+
+    def no_api(required=True):
+        if required:
+            raise pub.PublishError("no token in tests")
+        return None
+
+    monkeypatch.setattr(requests, "get", blocked)
+    monkeypatch.setattr(pub, "_hf_api", no_api)
 
 
 @pytest.fixture
@@ -148,7 +176,7 @@ def test_a_training_file_in_the_staged_folder_blocks_upload(staged):
     with pytest.raises(pub.PublishError, match="optimizer.pt"):
         pub.assert_publishable(staged["model"])
     with pytest.raises(pub.PublishError, match="optimizer.pt"):
-        pub.push_folder(staged["model"], "x/y", "model", "msg", allow_todo=True, fetch=lambda *a: None)
+        pub.plan_push(staged["model"], "x/y", "model", lambda *a: None)
 
 
 def test_copy_in_refuses_training_files(tmp_path):
@@ -158,12 +186,79 @@ def test_copy_in_refuses_training_files(tmp_path):
         pub._copy_in(str(src), str(tmp_path / "publish" / "model" / "optimizer.pt"), "copy")
 
 
-def test_train_size_mismatch_is_refused(tmp_path):
+def test_train_size_mismatch_only_warns(tmp_path, capsys):
     # 103 steps/epoch x 32 is about 3,300 images (the published CurbRamp model); the fake train split has 6
     root, *_ = make_root(tmp_path, max_steps=2575, epochs=25)
-    with pytest.raises(pub.PublishError, match="model and dataset disagree"):
+    pub.stage(root, T)
+    assert "WARNING: train-size cross-check failed" in capsys.readouterr().out
+
+
+def test_train_size_check_says_when_it_cannot_run():
+    ok, msg = pub.check_train_size({"max_steps": 10}, 100)
+    assert ok is None and "skipped" in msg
+
+
+def test_batch_constants_match_fine_tune_classifier():
+    """hf_cards copies the batch size and accumulation from fine_tune_classifier.py; they must stay equal."""
+    with open(os.path.join(os.path.dirname(pub.__file__), "fine_tune_classifier.py")) as f:
+        src = f.read()
+    assert int(re.search(r"per_device_train_batch_size=(\d+)", src).group(1)) == hf_cards.TRAIN_BATCH_SIZE
+    assert int(re.search(r"gradient_accumulation_steps=(\d+)", src).group(1)) == hf_cards.GRAD_ACCUM
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Binding checks: weights, split, predictions, map
+# ---------------------------------------------------------------------------------------------------------------------
+
+def test_map_for_another_label_type_is_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    path = os.path.join(root, T, "calibration", "calibration_report.json")
+    report = json.loads(open(path).read())
+    report["label_type"] = "Crosswalk"
+    with open(path, "w") as f:
+        json.dump(report, f)
+    with pytest.raises(pub.PublishError, match="Crosswalk"):
         pub.stage(root, T)
-    pub.stage(root, T, check_train=False)
+
+
+def test_map_without_report_is_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    os.remove(os.path.join(root, T, "calibration", "calibration_report.json"))
+    with pytest.raises(pub.PublishError, match="calibration_report"):
+        pub.stage(root, T)
+
+
+def test_split_changed_after_training_is_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    with open(os.path.join(root, T, "split.csv"), "a") as f:
+        f.write("\n")
+    with pytest.raises(pub.PublishError, match="changed after training"):
+        pub.stage(root, T)
+    os.remove(os.path.join(root, T, "dinov2", "run_key.json"))
+    with pytest.raises(pub.PublishError, match="run_key.json"):
+        pub.stage(root, T)
+
+
+def test_predictions_for_another_split_are_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    path = os.path.join(root, T, "predictions.csv")
+    df = pd.read_csv(path)
+    df.loc[0, "label_uid"] = "seattle:7"
+    df.to_csv(path, index=False)
+    with pytest.raises(pub.PublishError, match="1 extra, 1 missing"):
+        pub.stage(root, T)
+    os.remove(path)
+    with pytest.raises(pub.PublishError, match="predictions.csv"):
+        pub.stage(root, T)
+
+
+def test_out_of_order_file_times_warn(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    weights = os.path.join(root, T, "dinov2", "checkpoint-2", "model.safetensors")
+    later = os.path.getmtime(os.path.join(root, T, "predictions.csv")) + 100
+    os.utime(weights, (later, later))
+    pub.stage(root, T)
+    assert "is newer than" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -334,119 +429,432 @@ def test_gate_thresholds():
                                      "incorrect": {"0.5": 0.3}}) == {"correct": 0.7, "incorrect": None}
 
 
+def test_yaml_floats_stay_floats():
+    assert hf_cards._yaml_float(1e-05) == "1.0e-05" and hf_cards._yaml_float(3.0) == "3.0"
+    assert hf_cards._yaml_float(float("inf")) == "null"
+    yaml = pytest.importorskip("yaml")
+    assert yaml.safe_load(hf_cards.yaml_front_matter({"x": 1e-05}).split("---")[1])["x"] == 1e-05
+
+
+def test_one_foreign_row_in_the_manifest_fails(tmp_path):
+    root, *_ = make_root(tmp_path)
+    path = os.path.join(root, T, "manifest.csv")
+    df = pd.read_csv(path)
+    df.loc[3, "label_type"] = "Crosswalk"
+    df.to_csv(path, index=False)
+    with pytest.raises(pub.PublishError, match="Crosswalk"):
+        pub.stage(root, T)
+
+
+def test_card_configs_map_the_split_folders(staged):
+    yaml = pytest.importorskip("yaml")
+    meta = yaml.safe_load(_read(os.path.join(staged["dataset"], "README.md")).split("---")[1])
+    files = {d["split"]: d["path"] for d in meta["configs"][0]["data_files"]}
+    assert files == {"train": "train/*/*.webp", "validation": "val/*/*.webp", "test": "test/*/*.webp",
+                     "test_heldout": "test_heldout/*/*.webp"}
+
+
+def test_card_configs_text(staged):
+    card = _read(os.path.join(staged["dataset"], "README.md"))
+    assert '- split: validation\n        path: "val/*/*.webp"' in card
+    assert '- split: test_heldout\n        path: "test_heldout/*/*.webp"' in card
+
+
+def test_croissant_version_follows_the_content(staged):
+    doc = json.loads(_read(os.path.join(staged["dataset"], "croissant.json")))
+    info = json.loads(_read(os.path.join(staged["dataset"], "dataset_info.json")))
+    assert doc["version"] == "1.0.0+" + info["content_hash"][:12]
+    assert "datePublished" not in doc            # the fixture's generation_run has no start date
+
+
+def test_marker_text_is_not_published(tmp_path):
+    root, *_ = make_root(tmp_path)
+    path = os.path.join(root, T, "generation_run.json")
+    run = json.loads(_read(path))
+    run["pano_store_marker"] = "staged copy on /gscratch by jonf"
+    with open(path, "w") as f:
+        json.dump(run, f)
+    _, d = pub.stage(root, T)
+    assert "pano_store_marker" not in json.loads(_read(os.path.join(d, "generation_run.json")))
+
+
+def test_symlinked_publish_dir_is_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    (target / "keep.txt").write_text("precious")
+    os.symlink(target, os.path.join(root, T, "publish"))
+    with pytest.raises(pub.PublishError, match="symlink"):
+        pub.stage(root, T)
+    assert (target / "keep.txt").exists()
+
+
+def test_reset_dir_only_inside_publish(tmp_path):
+    victim = tmp_path / "out" / "CurbRamp" / "data"
+    victim.mkdir(parents=True)
+    with pytest.raises(pub.PublishError, match="staging folder"):
+        pub._reset_dir(str(victim), str(tmp_path / "out"))
+
+
 # ---------------------------------------------------------------------------------------------------------------------
-# Audit (mocked API)
+# Card overrides and the TODO gate
+# ---------------------------------------------------------------------------------------------------------------------
+
+FULL_OVERRIDES = {"failure_modes": ["Driveway aprons are accepted as curb ramps.", "Night panoramas."],
+                  "split_seed": 7, "dataset_license": "cc-by-4.0", "doi": "10.57967/hf/1234"}
+
+
+def test_overrides_fill_every_todo_and_the_dry_run_reports_zero(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    with open(os.path.join(root, T, "card_overrides.json"), "w") as f:
+        json.dump(FULL_OVERRIDES, f)
+    model_dir, dataset_dir = pub.stage(root, T)
+    assert pub.count_todos(model_dir) == 0 and pub.count_todos(dataset_dir) == 0
+    model_card, dataset_card = _read(os.path.join(model_dir, "README.md")), _read(os.path.join(dataset_dir, "README.md"))
+    assert "- Driveway aprons are accepted as curb ramps.\n- Night panoramas.\n" in model_card
+    assert "No DOI has been minted for this model yet." in model_card
+    assert "(split seed 7)" in dataset_card and "doi.org/10.57967/hf/1234" in dataset_card
+    assert "\nlicense: cc-by-4.0\n" in dataset_card
+    capsys.readouterr()
+    pub.push(T, model_dir, dataset_dir, public_lister=_lister(_fake_hub()), api=None)
+    out = capsys.readouterr().out
+    assert out.count("; 0 TODO markers in the card)") == 2
+
+
+def test_doi_is_not_a_todo(staged):
+    card = _read(os.path.join(staged["dataset"], "README.md"))
+    assert "No DOI has been minted for this dataset yet." in card and "TODO: DOI" not in card
+
+
+def test_unknown_override_key_is_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    with open(os.path.join(root, T, "card_overrides.json"), "w") as f:
+        json.dump({"failure_mode": ["typo"]}, f)
+    with pytest.raises(pub.PublishError, match="unknown keys"):
+        pub.stage(root, T)
+
+
+def test_push_staged_keeps_card_edits_and_detects_other_changes(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    model_dir, dataset_dir = pub.stage(root, T)
+    card = os.path.join(dataset_dir, "README.md")
+    edited = _read(card).replace("TODO:", "Filled by hand:")
+    with open(card, "w") as f:
+        f.write(edited)
+    assert pub.verify_staged(root, T) == (model_dir, dataset_dir)
+    assert pub.main(["--label_type", T, "--out", root, "--push-staged"]) == 0   # dry run; the offline listing is reported
+    assert _read(card) == edited                                                       # not restaged
+    with open(os.path.join(model_dir, "metrics.json"), "a") as f:
+        f.write(" ")
+    with pytest.raises(pub.PublishError, match="metrics.json"):
+        pub.verify_staged(root, T)
+
+
+def test_push_staged_detects_a_changed_crop_and_a_retrain(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _, dataset_dir = pub.stage(root, T)
+    crop = os.path.join(dataset_dir, "train", "correct", "teaneck_7.webp")
+    os.remove(crop)                                  # break the hard link, then change the bytes
+    with open(crop, "wb") as f:
+        f.write(b"other")
+    with pytest.raises(pub.PublishError, match="crops changed"):
+        pub.verify_staged(root, T)
+    pub.stage(root, T, link_mode="copy")       # with hard links the staged weights would change too (also refused)
+    with open(os.path.join(root, T, "dinov2", "checkpoint-2", "model.safetensors"), "ab") as f:
+        f.write(b"retrained")
+    with pytest.raises(pub.PublishError, match="best checkpoint changed"):
+        pub.verify_staged(root, T)
+
+
+def test_push_staged_needs_a_staging_record(tmp_path):
+    root, *_ = make_root(tmp_path)
+    with pytest.raises(pub.PublishError, match="stage first"):
+        pub.verify_staged(root, T)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Audit and listings (mocked API, no network)
 # ---------------------------------------------------------------------------------------------------------------------
 
 def _fake_hub():
     """Listings shaped like the live repos in October 2026: curbramp's dataset is crosswalk's."""
-    model = [{"path": p, "size": s, "blob": p} for p, s in
+    model = [{"path": p, "size": s, "blob": p, "sha256": None} for p, s in
              ((".gitattributes", 1519), ("README.md", 24), ("config.json", 1272),
               ("model.safetensors", 1_217_542_512), ("optimizer.pt", 2_435_342_411),
               ("preprocessor_config.json", 436), ("rng_state.pth", 14_645), ("scheduler.pt", 1_465),
               ("trainer_state.json", 40_000), ("training_args.bin", 5_368))]
-    crosswalk = [{"path": p, "size": 100, "blob": "b" + p} for p in
+    crosswalk = [{"path": p, "size": 100, "blob": "b" + p, "sha256": "s" + p} for p in
                  ("train/correct/chicago_1.webp", "train/incorrect/chicago_2.webp", "test/correct/chicago_10689.webp")]
     listings = {("dataset", "projectsidewalk/sidewalk-validator-ai-dataset-crosswalk"): crosswalk,
+                # a near-copy: crosswalk's crops plus one more, so the sets are not identical
                 ("dataset", "projectsidewalk/sidewalk-validator-ai-dataset-curbramp"):
-                    crosswalk + [{"path": ".gitattributes", "size": 1, "blob": "g"}]}
+                    crosswalk + [{"path": ".gitattributes", "size": 1, "blob": "g", "sha256": None},
+                                 {"path": "val/correct/teaneck_5.webp", "size": 1, "blob": "x", "sha256": "sx"}]}
     for t in pub.LABEL_TYPES:
         listings[("model", pub.model_repo_id(t))] = model if t != "Crosswalk" else [
             f for f in model if not pub.forbidden_reason(f["path"])]
         listings.setdefault(("dataset", pub.dataset_repo_id(t)),
-                            [{"path": f"train/correct/{t}_{i}.webp", "size": 1, "blob": f"{t}{i}"} for i in range(3)])
+                            [{"path": f"train/correct/{t}_{i}.webp", "size": 1, "blob": f"{t}{i}", "sha256": f"h{t}{i}"}
+                             for i in range(3)])
     del listings[("dataset", pub.dataset_repo_id("Obstacle"))]   # a missing repo
     return lambda repo_type, repo_id: listings.get((repo_type, repo_id))
 
 
-def test_audit_finds_stray_files_and_copied_datasets():
+def _lister(fetch, sha="a" * 40):
+    """A listing function (``{"sha", "files"}``) over a ``_fake_hub`` file fetcher."""
+    def lister(repo_type, repo_id):
+        files = fetch(repo_type, repo_id)
+        return None if files is None else {"sha": sha, "files": files}
+    return lister
+
+
+def test_audit_finds_stray_files_and_near_copies():
     result = pub.audit(fetch=_fake_hub())
     stray = {r["repo"]: [p for p, _ in r["stray"]] for r in result["models"]}
     assert sorted(stray["projectsidewalk/sidewalk-validator-ai-curbramp"]) == [
         "optimizer.pt", "rng_state.pth", "scheduler.pt", "training_args.bin"]
     assert stray["projectsidewalk/sidewalk-validator-ai-crosswalk"] == []
     assert result["duplicates"] == [("projectsidewalk/sidewalk-validator-ai-dataset-curbramp",
-                                     "projectsidewalk/sidewalk-validator-ai-dataset-crosswalk", True)]
+                                     "projectsidewalk/sidewalk-validator-ai-dataset-crosswalk", 1.0, 1.0)]
     text = pub.format_audit(result)
     assert "optimizer.pt (2.3 GB)" in text
     assert "missing or private" in text
-    assert "same content" in text
+    assert "100% of names, 100% of content" in text
     assert "stub (24 B)" in text                                  # the live repos' license-only README
     assert "16 stray training files" in text and "1 pair(s)" in text
 
 
-def test_fetch_repo_files_parses_the_api():
-    class Resp:
-        def __init__(self, code, body):
-            self.status_code, self._body = code, body
+class _Resp:
+    def __init__(self, code, body):
+        self.status_code, self._body = code, body
 
-        def json(self):
-            return self._body
+    def json(self):
+        return self._body
 
-        def raise_for_status(self):
-            if self.status_code >= 400:
-                raise RuntimeError(self.status_code)
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import requests
+            raise requests.HTTPError(str(self.status_code))
 
+
+def test_fetch_repo_listing_parses_the_api():
     calls = []
 
     def get(url, params=None, timeout=None):
         calls.append((url, params))
         if "missing" in url:
-            return Resp(401, {})
-        return Resp(200, {"siblings": [{"rfilename": "optimizer.pt", "size": 5, "blobId": "x"}]})
+            return _Resp(401, {})
+        return _Resp(200, {"sha": "abc", "siblings": [
+            {"rfilename": "optimizer.pt", "size": 5, "blobId": "x"},
+            {"rfilename": "train/correct/a_1.webp", "size": 9, "blobId": "y", "lfs": {"sha256": "deadbeef"}}]})
 
-    assert pub.fetch_repo_files("model", "org/a", get=get) == [{"path": "optimizer.pt", "size": 5, "blob": "x"}]
+    assert pub.fetch_repo_listing("model", "org/a", get=get) == {"sha": "abc", "files": [
+        {"path": "optimizer.pt", "size": 5, "blob": "x", "sha256": None},
+        {"path": "train/correct/a_1.webp", "size": 9, "blob": "y", "sha256": "deadbeef"}]}
     assert pub.fetch_repo_files("dataset", "org/missing", get=get) is None
     assert calls[0] == ("https://huggingface.co/api/models/org/a", {"blobs": "true"})
     assert calls[1][0] == "https://huggingface.co/api/datasets/org/missing"
+
+
+def test_network_errors_become_remote_errors(monkeypatch, capsys):
+    import requests
+
+    def down(*a, **k):
+        raise requests.ConnectionError("no route to host")
+
+    with pytest.raises(pub.RemoteError, match="no route"):
+        pub.fetch_repo_listing("model", "org/a", get=down)
+    monkeypatch.setattr(requests, "get", down)
+    assert pub.main(["--audit"]) == pub.EXIT_REMOTE
+    assert "Hub unreachable" in capsys.readouterr().err
+
+
+def test_overlap_fraction():
+    assert pub.overlap_fraction({1, 2, 3}, {1, 2, 3, 4}) == 1.0
+    assert pub.overlap_fraction({1, 2}, {3}) == 0.0
+    assert pub.overlap_fraction(set(), {1}) == 0.0
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Push and prune (fake HfApi; huggingface_hub not needed)
 # ---------------------------------------------------------------------------------------------------------------------
 
+class _Add:
+    def __init__(self, path_in_repo, path_or_fileobj):
+        self.path_in_repo, self.path_or_fileobj = path_in_repo, path_or_fileobj
+
+
+class _Delete:
+    def __init__(self, path_in_repo):
+        self.path_in_repo = path_in_repo
+
+
+class _File:
+    def __init__(self, path, size=1, sha256=None):
+        self.path, self.size, self.blob_id = path, size, "b"
+        self.lfs = {"sha256": sha256} if sha256 else None
+
+
 class FakeApi:
-    def __init__(self):
-        self.calls = []
+    """Records calls; serves listings from a dict ``{(repo_type, repo_id): [paths]}`` (absent = no such repo)."""
+
+    def __init__(self, repos=None, fail_listing=False):
+        self.calls, self.repos, self.fail_listing = [], dict(repos or {}), fail_listing
+
+    def repo_info(self, repo_id, repo_type=None):
+        if self.fail_listing:
+            raise RuntimeError("503 from the Hub")
+        if (repo_type, repo_id) not in self.repos:
+            raise LookupError(repo_id)          # authenticated_listing treats this as "no such repo" in tests
+        return type("Info", (), {"sha": "f" * 40})()
+
+    def list_repo_tree(self, repo_id, repo_type=None, revision=None, recursive=False):
+        return [_File(p) for p in self.repos[(repo_type, repo_id)]]
 
     def create_repo(self, repo_id, **kw):
         self.calls.append(("create_repo", repo_id, kw))
+        self.repos[(kw["repo_type"], repo_id)] = [".gitattributes"]
 
-    def upload_folder(self, **kw):
-        self.calls.append(("upload_folder", kw))
+    def create_commit(self, **kw):
+        self.calls.append(("create_commit", kw))
         return "commit-url"
 
     def delete_files(self, **kw):
         self.calls.append(("delete_files", kw))
 
+    def upload_folder(self, **kw):              # must never be used: it can split a push into many commits
+        raise AssertionError("upload_folder called")
 
-def test_push_refuses_todo_cards_and_is_dry_run_by_default(staged, capsys):
-    with pytest.raises(pub.PublishError, match="TODO"):
-        pub.push_folder(staged["dataset"], "x/y", "dataset", "msg", fetch=lambda *a: None)
-    api = FakeApi()
-    plan = pub.push_folder(staged["model"], "x/y", "model", "msg", allow_todo=True, api=api,
-                           fetch=lambda *a: [{"path": "optimizer.pt", "size": 1}, {"path": ".gitattributes"}])
-    assert api.calls == [] and "model.safetensors" in {p for p, _ in plan}
+
+@pytest.fixture
+def fake_ops(monkeypatch):
+    monkeypatch.setattr(pub, "_operation_classes", lambda: (_Add, _Delete))
+    try:
+        from huggingface_hub.errors import RepositoryNotFoundError  # noqa: F401
+    except ImportError:
+        return
+    # with huggingface_hub installed, authenticated_listing catches its RepositoryNotFoundError, so map ours to it
+    import huggingface_hub.errors as errors
+    monkeypatch.setattr(errors, "RepositoryNotFoundError", LookupError)
+
+
+def _official(t=T):
+    return {("model", pub.model_repo_id(t)): [".gitattributes", "README.md", "model.safetensors", "optimizer.pt"],
+            ("dataset", pub.dataset_repo_id(t)): [".gitattributes", "train/correct/chicago_1.webp"],
+            **{("dataset", pub.dataset_repo_id(o)): [".gitattributes"] for o in pub.LABEL_TYPES if o != t}}
+
+
+def test_dry_run_reports_and_never_commits(staged, capsys, fake_ops):
+    api = FakeApi(_official())
+    pub.push(T, staged["model"], staged["dataset"], api=api)
+    assert [c for c in api.calls if c[0] != "create_repo"] == [] and not api.calls
     out = capsys.readouterr().out
-    assert "DRY RUN" in out and "deletes: 1: optimizer.pt" in out
+    assert "DRY RUN" in out and "files this commit deletes: 1: optimizer.pt" in out
+    assert "TODO markers in the card" in out
 
 
-def test_push_with_yes_mirrors_the_folder(staged):
-    api = FakeApi()
-    pub.push_folder(staged["model"], "me/test-curbramp", "model", "msg", yes=True, allow_todo=True, api=api,
-                    fetch=lambda *a: None)
-    assert api.calls[0] == ("create_repo", "me/test-curbramp", {"repo_type": "model", "exist_ok": True})
-    upload = api.calls[1][1]
-    assert upload["folder_path"] == staged["model"] and upload["delete_patterns"] == "*"
+def test_push_yes_is_exactly_one_commit_per_repo(tmp_path, fake_ops):
+    root, *_ = make_root(tmp_path)
+    with open(os.path.join(root, T, "card_overrides.json"), "w") as f:
+        json.dump(FULL_OVERRIDES, f)
+    model_dir, dataset_dir = pub.stage(root, T)
+    api = FakeApi(_official())
+    pub.push(T, model_dir, dataset_dir, yes=True, api=api)
+    commits = [c[1] for c in api.calls if c[0] == "create_commit"]
+    assert [c["repo_id"] for c in commits] == [pub.dataset_repo_id(T), pub.model_repo_id(T)]
+    assert all(c["parent_commit"] == "f" * 40 for c in commits)
+    model_ops = commits[1]["operations"]
+    assert {o.path_in_repo for o in model_ops if isinstance(o, _Delete)} == {"optimizer.pt"}
+    assert {o.path_in_repo for o in model_ops if isinstance(o, _Add)} == {p for p, _ in pub.list_files(model_dir)}
+    dataset_ops = commits[0]["operations"]
+    assert {o.path_in_repo for o in dataset_ops if isinstance(o, _Delete)} == {"train/correct/chicago_1.webp"}
+    assert not any(c[0] == "create_repo" for c in api.calls)
+
+
+def test_push_yes_refuses_todo_cards(staged, fake_ops):
+    api = FakeApi(_official())
+    with pytest.raises(pub.PublishError, match="TODO"):
+        pub.push(T, staged["model"], staged["dataset"], yes=True, api=api)
+    assert not api.calls
+    pub.push(T, staged["model"], staged["dataset"], yes=True, allow_todo=True, api=api)
+    assert sum(c[0] == "create_commit" for c in api.calls) == 2
+
+
+def test_checks_for_both_repos_run_before_any_upload(staged, fake_ops):
+    """N2: a problem in the model folder stops the dataset upload too."""
+    with open(os.path.join(staged["model"], "scaler.pt"), "wb") as f:
+        f.write(b"x")
+    api = FakeApi(_official())
+    with pytest.raises(pub.PublishError, match="scaler.pt"):
+        pub.push(T, staged["model"], staged["dataset"], yes=True, allow_todo=True, api=api)
+    assert not api.calls
+
+
+def test_push_yes_refuses_when_the_remote_cannot_be_listed(staged, fake_ops, capsys):
+    api = FakeApi(_official(), fail_listing=True)
+    pub.push(T, staged["model"], staged["dataset"], api=api)          # the dry run reports it
+    assert "could not list" in capsys.readouterr().out
+    with pytest.raises(pub.PublishError, match="could not"):
+        pub.push(T, staged["model"], staged["dataset"], yes=True, allow_todo=True, api=api)
+    assert not api.calls
+
+
+def test_push_refuses_crops_found_in_another_type(staged, fake_ops, capsys):
+    """S3: the staged crops already sit in the Crosswalk dataset repo (the #7 bug, caught remotely)."""
+    sums = pub.read_sha256sums(staged["dataset"])
+    repos = _official()
+    repos[("dataset", pub.dataset_repo_id("Crosswalk"))] = list(sums)        # same paths ...
+    api = FakeApi(repos)
+    api.list_repo_tree = lambda repo_id, repo_type=None, revision=None, recursive=False: [
+        _File(p, sha256=sums.get(p)) for p in repos[(repo_type, repo_id)]]   # ... and same content
+    pub.push(T, staged["model"], staged["dataset"], api=api)
+    assert "100.0% of the staged crops" in capsys.readouterr().out
+    with pytest.raises(pub.PublishError, match="already in projectsidewalk/sidewalk-validator-ai-dataset-crosswalk"):
+        pub.push(T, staged["model"], staged["dataset"], yes=True, allow_todo=True, api=api)
+    assert not [c for c in api.calls if c[0] == "create_commit"]
+
+
+def test_missing_repo_under_the_default_prefix_is_never_created(staged, fake_ops):
+    repos = _official()
+    del repos[("model", pub.model_repo_id(T))]
+    api = FakeApi(repos)
+    with pytest.raises(pub.PublishError, match="never created"):
+        pub.push(T, staged["model"], staged["dataset"], yes=True, allow_todo=True, create_repo=True, api=api)
+    assert not api.calls
+
+
+def test_test_prefix_needs_create_repo_and_creates_private(staged, fake_ops):
+    prefix = "jonfroehlich/test-validator"
+    api = FakeApi({})
+    with pytest.raises(pub.PublishError, match="--create-repo"):
+        pub.push(T, staged["model"], staged["dataset"], prefix=prefix, yes=True, allow_todo=True, api=api)
+    pub.push(T, staged["model"], staged["dataset"], prefix=prefix, yes=True, allow_todo=True, create_repo=True,
+             api=api)
+    creates = [c for c in api.calls if c[0] == "create_repo"]
+    assert len(creates) == 2 and all(c[2]["private"] is True and c[2]["exist_ok"] is False for c in creates)
+    assert sum(c[0] == "create_commit" for c in api.calls) == 2
+
+
+@pytest.mark.parametrize("prefix", ["projectsidewalk/sidewalk-validator-ai-", "sidewalk-validator-ai", "a/b/c",
+                                    "", "org/"])
+def test_bad_prefixes_are_refused(prefix):
+    with pytest.raises(pub.PublishError, match="repo-prefix"):
+        pub.validate_prefix(prefix)
+
+
+def test_good_prefixes():
+    pub.validate_prefix(pub.DEFAULT_PREFIX)
+    pub.validate_prefix("jonfroehlich/test.validator_2")
 
 
 def test_prune_remote(capsys):
-    fetch = _fake_hub()
+    fetch = _lister(_fake_hub(), sha="c" * 40)
     api = FakeApi()
     assert pub.prune_remote("projectsidewalk/sidewalk-validator-ai-curbramp", fetch=fetch, api=api)
     assert api.calls == []                                       # dry run
     stray = pub.prune_remote("projectsidewalk/sidewalk-validator-ai-curbramp", yes=True, fetch=fetch, api=api)
-    assert api.calls[0][1]["delete_patterns"] == stray and "model.safetensors" not in stray
+    call = api.calls[0][1]
+    assert call["delete_patterns"] == stray and "model.safetensors" not in stray and call["parent_commit"] == "c" * 40
     assert pub.prune_remote("projectsidewalk/sidewalk-validator-ai-crosswalk", yes=True, fetch=fetch, api=api) == []
 
 
@@ -455,8 +863,9 @@ def test_repo_prefix():
     assert pub.dataset_repo_id("NoCurbRamp") == "projectsidewalk/sidewalk-validator-ai-dataset-nocurbramp"
 
 
-def test_cli_stage_and_dry_run(tmp_path, capsys):
+def test_cli_stage(tmp_path, capsys):
     root, *_ = make_root(tmp_path)
     assert pub.main(["--label_type", T, "--out", root]) == 0
-    assert "TODO markers" in capsys.readouterr().out
+    assert "TODO markers to fill before --yes" in capsys.readouterr().out
     assert pub.main(["--label_type", "all", "--out", root]) == 1
+    assert pub.main(["--label_type", T, "--out", root, "--repo-prefix", "oops"]) == 1
