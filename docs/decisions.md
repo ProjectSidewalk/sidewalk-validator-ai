@@ -34,8 +34,9 @@ pano-store desk check for the other two sources
   panoramas: 313 of 9,282 in Richmond and 863 of 4,579 in Laurens have one.
 
 Applying the GSV correction to these labels would put many crops off the feature, by a few degrees on Panoramax
-and by an unknown amount on Mapillary. Serving (sidewalk-ai-api and SidewalkWebpage's nightly selection) is
-GSV-only as well, so there is no production traffic from these sources to match.
+and by an unknown amount on Mapillary. Serving does not need them either: SidewalkWebpage sends the validator GSV
+labels only, on both of its paths, and sidewalk-ai-api's download fallback fetches GSV panoramas only. So there is
+no production traffic from these sources to match.
 
 **What would unblock it.**
 
