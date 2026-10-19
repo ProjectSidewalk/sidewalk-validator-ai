@@ -9,7 +9,8 @@ Replaces ``get_stats.py``. Two stages, kept separate so the metrics are testable
     ``test_heldout``. ``true`` is the class name (``correct`` / ``incorrect``).
 (b) **Metrics** (``report``, pure pandas/scikit-learn): AUC, plain and balanced accuracy, per-class
     precision/recall/F1, and recall at precision 0.90..0.99 with the matching score threshold, for the ``test``
-    split, for ``test_heldout`` if present, and for the ``hard == 1`` slice of the two. Written to
+    split, for ``test_heldout`` if present, and for the ``hard == 1`` slice of the two (``--per-city`` adds the same
+    metrics per city of ``test`` and ``test_heldout``, in ``metrics.json`` and ``per_city.md``). Written to
     ``<label_type>/metrics.json`` and ``<label_type>/report.txt``, with ``pvr.png`` and ``report.png``. ``--checkpoint``
     scores another model (such as the one the API serves) on the same split; ``--tag`` suffixes all its outputs.
 
@@ -28,6 +29,8 @@ Usage::
 
     python evaluate.py --label_type CurbRamp                 # inference + metrics
     python evaluate.py --label_type CurbRamp --skip-inference # metrics from an existing predictions.csv
+    # Per-city metrics for test and test_heldout (cities with >= 50 rows), also written to per_city.md:
+    python evaluate.py --label_type CurbRamp --skip-inference --per-city --min-city-n 50
     # Another model on the same split, e.g. the one the API serves; outputs get a _<tag> suffix:
     python evaluate.py --label_type CurbRamp --checkpoint projectsidewalk/sidewalk-validator-ai-curbramp \
         --revision 969ad5a33079db7885c9e9a4eb5cd0f39d8fe57a --tag prod
@@ -210,11 +213,29 @@ def slice_metrics(df, levels=PRECISION_LEVELS):
     return out
 
 
-def report(predictions_df, levels=PRECISION_LEVELS):
+def per_city_metrics(df, levels=PRECISION_LEVELS, min_city_n=50):
+    """``slice_metrics`` for every city of one split with at least ``min_city_n`` rows (issue #15).
+
+    Returns:
+        ``{"min_city_n": ..., "cities": {city: slice_metrics(...)}, "below_min_n": {city: n}}``, cities by
+        descending n (ties by name).
+    """
+    counts = df.groupby("city").size().reset_index(name="n").sort_values(["n", "city"], ascending=[False, True])
+    big = counts[counts.n >= min_city_n]
+    small = counts[counts.n < min_city_n]
+    return {"min_city_n": int(min_city_n),
+            "cities": {c: slice_metrics(df[df.city == c], levels) for c in big.city},
+            "below_min_n": {c: int(n) for c, n in zip(small.city, small.n)}}
+
+
+def report(predictions_df, levels=PRECISION_LEVELS, per_city=False, min_city_n=50):
     """Metrics for ``test``, ``test_heldout`` (if present) and the ``hard == 1`` slice of the two.
 
     Args:
-        predictions_df: columns ``label_uid, split, true, p_correct, p_incorrect`` and, optionally, ``hard``.
+        predictions_df: columns ``label_uid, split, true, p_correct, p_incorrect`` and, optionally, ``hard`` and
+            ``city``.
+        per_city: also add ``per_city``: ``{split: per_city_metrics(...)}`` for ``test`` and ``test_heldout``
+            (needs ``city``); render with ``format_per_city``.
 
     Returns:
         ``{slice_name: slice_metrics(...)}``; render with ``format_report``.
@@ -228,6 +249,11 @@ def report(predictions_df, levels=PRECISION_LEVELS):
         h = predictions_df[predictions_df.split.isin(["test", "test_heldout"]) & (predictions_df.hard == 1)]
         if len(h):
             out["hard"] = slice_metrics(h, levels)
+    if per_city:
+        if "city" not in predictions_df.columns:
+            raise ValueError("per_city needs a 'city' column (from split.csv)")
+        out["per_city"] = {split: per_city_metrics(predictions_df[predictions_df.split == split], levels, min_city_n)
+                           for split in ("test", "test_heldout") if (predictions_df.split == split).any()}
     return out
 
 
@@ -235,6 +261,8 @@ def format_report(metrics):
     """Plain-text rendering of ``report()``'s output."""
     lines = []
     for name, m in metrics.items():
+        if name == "per_city":
+            continue  # rendered by format_per_city
         lines.append(f"== {name}: n={m['n']} ({', '.join(f'{c} {k}' for c, k in m['n_by_class'].items())}) ==")
         if m["n"] == 0:
             continue
@@ -251,6 +279,32 @@ def format_report(metrics):
                 th = "n/a" if r["threshold"] is None else f"{r['threshold']:.4f}"
                 lines.append(f"    precision >= {p}: recall {r['recall']:.4f} at score >= {th}")
     return "\n".join(lines) + "\n"
+
+
+def format_per_city(per_city):
+    """Markdown tables of ``report(..., per_city=True)["per_city"]``: one per split, one row per city.
+
+    Precision and recall are at the argmax verdict (the model's own decision, before any served-accuracy gate);
+    AUC is shown only when the city has both classes.
+    """
+    lines = []
+    for split, pc in per_city.items():
+        lines += [f"### {split}: per city (n >= {pc['min_city_n']})", "",
+                  "| city | n (correct / incorrect) | accuracy | AUC | precision correct | recall correct "
+                  "| precision incorrect | recall incorrect |",
+                  "|---|---:|---:|---:|---:|---:|---:|---:|"]
+        for city, m in pc["cities"].items():
+            auc = "—" if m["auc"] is None else f"{m['auc']:.3f}"
+            pcs = m["per_class"]
+            lines.append(f"| {city} | {m['n']:,} ({m['n_by_class']['correct']:,} / {m['n_by_class']['incorrect']:,}) "
+                         f"| {m['accuracy']:.3f} | {auc} | {pcs['correct']['precision']:.3f} "
+                         f"| {pcs['correct']['recall']:.3f} | {pcs['incorrect']['precision']:.3f} "
+                         f"| {pcs['incorrect']['recall']:.3f} |")
+        if pc["below_min_n"]:
+            lines += ["", "Below the minimum: " + ", ".join(f"{c} (n={n})" for c, n in pc["below_min_n"].items())
+                      + "."]
+        lines.append("")
+    return "\n".join(lines)
 
 
 def save_figures(predictions_df, text, label_type, out_dir, suffix=""):
@@ -303,6 +357,11 @@ def main(argv=None):
     parser.add_argument("--tag", default=None,
                         help="suffix for every output (predictions_<tag>.csv, metrics_<tag>.json, ...), so scoring "
                              "another model never overwrites this run's")
+    parser.add_argument("--per-city", action="store_true",
+                        help="add per-city metrics for test and test_heldout to metrics.json, and write them as "
+                             "markdown to per_city.md (issue #15)")
+    parser.add_argument("--min-city-n", type=int, default=50,
+                        help="rows a city needs in a split to get its own --per-city row (default 50)")
     args = parser.parse_args(argv)
     if args.checkpoint and not args.tag:
         parser.error("--checkpoint needs --tag, so its outputs do not overwrite the trained model's")
@@ -328,10 +387,16 @@ def main(argv=None):
         predictions.to_csv(pred_path, index=False)
         print(f"wrote {pred_path} ({len(predictions)} rows)")
 
-    with_hard = predictions.merge(manifest[["label_uid", "hard"]], on="label_uid", how="left", validate="one_to_one")
-    metrics = report(with_hard)
+    joined = ["label_uid", "hard"] + (["city"] if args.per_city else [])
+    with_hard = predictions.merge(manifest[joined], on="label_uid", how="left", validate="one_to_one")
+    metrics = report(with_hard, per_city=args.per_city, min_city_n=args.min_city_n)
     text = format_report(metrics)
     print(text)
+    if args.per_city:
+        per_city_text = format_per_city(metrics.get("per_city", {}))
+        print(per_city_text)
+        with open(os.path.join(base, f"per_city{suffix}.md"), "w") as f:
+            f.write(per_city_text)
     with open(os.path.join(base, f"metrics{suffix}.json"), "w") as f:
         json.dump(metrics, f, indent=2)
     with open(os.path.join(base, f"report{suffix}.txt"), "w") as f:

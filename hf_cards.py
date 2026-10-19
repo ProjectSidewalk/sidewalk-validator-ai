@@ -209,6 +209,7 @@ SLICE_NAMES = {"test": "test (cities seen in training)", "test_heldout": "test_h
 def _metrics_section(metrics):
     if not metrics:
         return f"{TODO} metrics.json not found; run evaluate.py before publishing.\n"
+    metrics = {k: v for k, v in metrics.items() if k != "per_city"}  # evaluate.py --per-city: not a slice
     lines = ["| slice | n (correct / incorrect) | accuracy | balanced accuracy | AUC | macro-F1 |",
              "|---|---|---|---|---|---|"]
     for name, m in metrics.items():
