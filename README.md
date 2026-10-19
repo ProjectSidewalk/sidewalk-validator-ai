@@ -65,7 +65,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
  <label_type>/{correct,incorrect}/<city>_<label_id>.webp  +  <label_type>/manifest.csv (one row per label)
         │
         ▼
- [5] split              split_data.py      grouped by panorama, 70 / 15 / 15 (+ held-out cities)  →  <label_type>/split.csv
+ [5] split              split_data.py      grouped by panorama + labels ≤3 m apart, 70 / 15 / 15 (+ held-out cities)  →  <label_type>/split.csv
         ▼
  [6] fine-tune          fine_tune_classifier.py   facebook/dinov2-large on split.csv, best val macro-F1  →  <label_type>/dinov2/
         ▼
@@ -81,7 +81,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 | File | Role | Key constants |
 |---|---|---|
 | [`data_generation.py`](data_generation.py) | Steps 1–4. Pulls labels, selects classes, writes `deployment_priors.json`, reads panoramas from the pano store, renders label-centred views, sizes crops by depth, appends to a resumable `manifest.csv`. | `CITIES`, `CORRECT_PROPORTION = 0.55`, `SEED = 42`, FOV 90°, 2048² view, `6100 / depth`, `--tilt-beta 0.95`, `--depth-encoder vitb` |
-| [`split_data.py`](split_data.py) | Step 5. Assigns manifest rows to train/val/test by panorama (stratified by class), optional held-out cities, joins the `hard` flag; writes `split.csv`, never touches images. | 70 / 15 / 15 of rows, `--seed`, `--holdout-cities`, `--hard-examples` |
+| [`split_data.py`](split_data.py) | Step 5. Assigns manifest rows to train/val/test by panorama (stratified by class), merging panoramas whose labels are within a few metres of each other (the same feature seen twice), optional held-out cities, joins the `hard` flag; prints the share of val/test labels with a train label within 2/5/10 m; writes `split.csv`, never touches images. | 70 / 15 / 15 of rows, `--merge-radius-m 3` (coordinates from `--rawlabels DIR`, default `<out>/rawlabels`), `--max-group-share 0.05`, `--seed`, `--holdout-cities`, `--hard-examples` |
 | [`fine_tune_classifier.py`](fine_tune_classifier.py) | Step 6. Hugging Face `Trainer` on `facebook/dinov2-large`, from `split.csv`; val uses the checkpoint's image processor (as eval and serving do). | lr 1e-5, batch 8 × 4 accumulation, `--epochs 25`, warm-up 10%, `--seed`, best by macro-F1 (`--best-metric loss`), resumes from its last checkpoint, `--num-workers`, `id2label = {0: correct, 1: incorrect}` |
 | [`hard_examples.py`](hard_examples.py) | Builds [`analysis/hard_examples_2026-10-17.csv`](analysis/hard_examples_2026-10-17.csv) (`label_uid,reason`) from a private production export: labels the deployed AI got wrong against a unanimous crowd (≥3 votes) or one of the project leads' accounts (configured via `EXPERTS`, not named). Feeds `split_data.py --hard-examples`. | |
 | [`evaluate.py`](evaluate.py) | Step 7. Predictions for every held-out row, then AUC, accuracy and balanced accuracy, per-class P/R/F1, recall at precision. (`get_stats.py` is a stub that says so.) | splits `val`, `test`, `test_heldout`; `hard` slice |
@@ -234,6 +234,17 @@ are stale; `--force-reselect` drops them and carries on. The job then runs `spli
 `<label_type>/split.csv` (the `ok` manifest rows plus `hard`, joined by `label_uid` from
 `--hard-examples`, and `split` ∈ `train`/`val`/`test`/`test_heldout`), grouped by panorama so no panorama
 appears in two splits, and leaves every image where it is. A new hard-example list only needs this step re-run.
+Panorama grouping alone still let the same curb ramp or obstacle, labelled from an adjacent panorama or by another
+user, land on both sides: on the 19 training cities 3.4% of CurbRamp, 8.2% of NoCurbRamp and 2.3% of Obstacle test
+labels had a same-type train label within 2 m
+([#27](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/27)). So the split step also merges
+panorama groups whose labels are within `MERGE_RADIUS_M` metres (default 3; `MERGE_RADIUS_M=0 sbatch
+data_generation.slurm` turns it off), reading label coordinates from the `rawlabels/` cache, and prints the share of
+val/test labels with a train label within 2, 5 and 10 m either way. With merging on, it stops if one group holds
+more than 5% (and more than 50) of a type's train/val/test rows (`--max-group-share`) or more than 1% of labels have
+no coordinates, and it warns when the achieved shares drift more than 3 points from 70 / 15 / 15. The 3 m radius assumes label coordinates are accurate to
+about a metre, which they are not always (a label's position is estimated from the panorama), so read the 5 m column
+after the first real run before calling this leak fixed.
 
 The job pulls `rawLabels` once into `rawlabels/` and reuses it on resubmission (`FRESH=1 sbatch
 data_generation.slurm` re-pulls), so a resumed run sees the same selection. Even after a re-pull the selection
@@ -286,7 +297,9 @@ run on a CPU: `pip install -r requirements.txt` (or just the CPU subset in `.git
 `pytest -q`.
 
 To run a single label type outside SLURM: `python data_generation.py --label_type CurbRamp`, then
-`split_data.py`, `fine_tune_classifier.py` and `evaluate.py` with the same flag. For a smoke test add
+`split_data.py` (label coordinates from `<out>/rawlabels/`, or `--rawlabels DIR`, or `--merge-radius-m 0` without them), `fine_tune_classifier.py`
+and `evaluate.py` with the same flag (the split's group-size guard needs a group of more than 50 rows, so it never
+trips on a smoke test). For a smoke test add
 `--limit 20 --out /some/scratch/dir --allow-cpu`; `--select-only` stops after selection and the priors (no GPU
 needed), and `--rawlabels-cache DIR` reads saved `<city_id>.csv` exports instead of the API. Runs with `--limit`
 or `--cities` write `deployment_priors.partial.json`, never the real `deployment_priors.json`.
@@ -306,7 +319,7 @@ model and dataset cards are [#2](https://github.com/ProjectSidewalk/sidewalk-val
 The October 2026 audit is written up in [`docs/audit-2026-10-14.md`](docs/audit-2026-10-14.md) with
 the evidence for each item. In order of how much they affect the numbers:
 
-- **Split leaks across panoramas** ([#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3)). Labels average 2.8 per panorama across all types (Teaneck; 64% of panoramas carry more than one), and within one type's selected set CurbRamp averages 1.66 (62% of its labels share a panorama), SurfaceProblem 1.19 (27%), Obstacle 1.00. The file-level split behind the published models put overlapping crops on both sides, so their metrics are optimistic by an unknown amount. `split_data.py` now splits by panorama and can hold out whole cities; the published models have not been retrained on it yet.
+- **Split leaks across panoramas** ([#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3)). Labels average 2.8 per panorama across all types (Teaneck; 64% of panoramas carry more than one), and within one type's selected set CurbRamp averages 1.66 (62% of its labels share a panorama), SurfaceProblem 1.19 (27%), Obstacle 1.00. The file-level split behind the published models put overlapping crops on both sides, so their metrics are optimistic by an unknown amount. `split_data.py` now splits by panorama, merges panoramas whose labels are within 3 m of each other (the same feature seen from two panoramas, [#27](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/27)) and can hold out whole cities; the published models have not been retrained on it yet.
 - **Calibration under the wrong prior** ([#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4)). The confidence map is computed on a 55:45 test split and served against traffic that is closer to 90:10 (the decisive-crowd balance in Teaneck, a proxy). Platform-wide, when the AI votes "incorrect" the human majority agrees about 57% of the time; when it votes "correct", 96%. `calibration/calibrate.py` now reweights to the deployment prior, and production-calibrated maps for the deployed models are in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md) (not yet shipped to the API).
 - **Train/serve skew** ([#5](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5), [sidewalk-ai-api#8](https://github.com/ProjectSidewalk/sidewalk-ai-api/issues/8)). Normalisation, camera pitch and depth checkpoint differed between training and serving. Training now uses the serving preprocessing for val, label-centred views from the shared geometry package and the ViT-B depth checkpoint; the API applies the same tilt correction in [sidewalk-ai-api#17](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/17), which must be deployed before any retrained model (nothing has been retrained yet).
 - **Evaluation script bugs** ([#6](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6)). Fixed in `evaluate.py`, which replaces `get_stats.py` (PR [#22](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/22), closed unmerged, had proposed a fix first); numbers in `report.png` files made by the old script are not reliable.

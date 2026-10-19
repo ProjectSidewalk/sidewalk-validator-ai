@@ -30,6 +30,9 @@ FRESH="${FRESH:-0}"
 HARD=analysis/hard_examples_2026-10-17.csv
 # Optional held-out cities for split_data.py (whole cities to test_heldout), e.g. HOLDOUT="teaneck-nj,taipei"
 HOLDOUT=""
+# Panorama groups with labels within this many metres are merged before splitting (issue 27); 0 = panorama only.
+# MERGE_RADIUS_M=0 sbatch data_generation.slurm
+MERGE_RADIUS_M="${MERGE_RADIUS_M:-3}"
 LABEL_TYPES=(Crosswalk CurbRamp NoCurbRamp Obstacle SurfaceProblem)
 
 # 0. Check the store before spending time on the pull (data_generation.py checks it again, with the city directories).
@@ -73,8 +76,8 @@ if [ "$FAILED" -ne 0 ]; then
     exit 1
 fi
 
-# 3. Split (cheap; never touches images).
+# 3. Split (cheap; never touches images). Label coordinates for the merge come from the rawLabels cache.
 for LT in "${LABEL_TYPES[@]}"; do
     python -u split_data.py --label_type="$LT" --out "$OUT" --seed 42 --holdout-cities "$HOLDOUT" \
-        --hard-examples "$HARD" || exit 1
+        --hard-examples "$HARD" --rawlabels "$CACHE" --merge-radius-m "$MERGE_RADIUS_M" || exit 1
 done
