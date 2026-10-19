@@ -8,8 +8,9 @@ hard-example list never needs the crops regenerated. ``fine_tune_classifier.py``
 ``evaluate.py`` / ``calibration/calibrate.py`` evaluate on it. Image files are never deleted, moved or copied, so
 the step is idempotent: re-running with the same seed writes a byte-identical file
 (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10). ``split.csv`` is written to a temporary file
-and moved into place; a run that stops with an error removes any ``split.csv`` left by an earlier run, so a stale
-split is never trained on by mistake.
+and moved into place. Once the manifest has loaded and a new split is being computed, any error (a refused split or
+an exception) removes the ``split.csv`` of an earlier run and the temporary file, so a stale split is never trained on
+by mistake; errors before that point (bad arguments, a missing manifest or hard-example file) leave it alone.
 
 Method (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3):
 
@@ -35,10 +36,12 @@ Method (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3):
    distance) and is left out of the proximity report; their count is printed, and more than
    ``--max-missing-coords-frac`` (default 1%) of ok labels without coordinates is an error.
 
-   Transitive merging can chain a dense stretch into one big group, which the greedy filler cannot balance. The run
-   warns when the largest group holds more than 1% of the rows or a split misses its target share by more than 3
-   points, and stops when the largest group exceeds ``--max-group-share`` (default 5%) of the rows.
-   ``--merge-radius-m 0`` turns merging off and reproduces the panorama-only split byte for byte.
+   Transitive merging can chain a dense stretch into one big group, which the greedy filler cannot balance. With
+   merging on, and counting only the train/val/test rows (not ``test_heldout``), the run warns when the largest
+   group holds more than 1% of them, and stops when it holds more than ``--max-group-share`` (default 5%) of them
+   AND more than 50 rows (the floor keeps small and smoke-test manifests from tripping it). A split missing its
+   target share by more than 3 points is warned about at any radius. ``--merge-radius-m 0`` turns merging off and
+   reproduces the panorama-only split byte for byte, with no guard.
 4. **Approximate stratification.** Each group gets a class-ratio bin, ``round(4 * share_incorrect)`` (0 = all
    correct ... 4 = all incorrect). Bins are processed in order; within a bin the groups (sorted by key, the
    smallest original group key, normally a ``pano_id``) are shuffled with a seeded generator, then filled greedily:
@@ -74,6 +77,7 @@ EARTH_RADIUS_M = 6_371_008.8  # mean Earth radius; at a few metres the spherical
 PROXIMITY_RADII_M = (2.0, 5.0, 10.0)
 WARN_GROUP_SHARE = 0.01   # warn when the largest group holds more than this share of the rows
 WARN_SHARE_MISS = 0.03    # warn when train/val/test misses its TARGET share by more than this
+MIN_GUARD_ROWS = 50       # --max-group-share only fires when the largest group also exceeds this many rows
 
 
 def load_coordinates(manifest, rawlabels_dir=None):
@@ -107,6 +111,8 @@ def load_coordinates(manifest, rawlabels_dir=None):
             raise ValueError(f"no rawLabels export for city '{city}' at {path}")
         raw = pd.read_csv(path, usecols=["label_id", "latitude", "longitude"], dtype={"label_id": str},
                           low_memory=False)
+        # label_id is matched as a stripped string: an export spelling it "8.0" or "007" matches nothing, and those
+        # labels then count as missing coordinates, which --max-missing-coords-frac turns into a loud failure.
         raw["label_id"] = raw["label_id"].str.strip()
         needed = set(ok.loc[ok["city"].astype(str) == city, "label_id"].astype(str).str.strip())
         raw = raw[raw["label_id"].isin(needed)].drop_duplicates()
@@ -237,7 +243,8 @@ def assign_splits(manifest, seed=42, holdout_cities=(), merge_radius_m=0.0, coor
 
     With ``merge_radius_m > 0``, ``coords`` (``latitude``/``longitude`` indexed by ``label_uid``, see
     ``load_coordinates``) is required and groups within the radius are merged first. With ``return_stats``, returns
-    ``(df, stats)``: ``merge_nearby_groups``'s dict plus ``heldout_pulled_in`` (rows of non-held-out cities sent to
+    ``(df, stats)``: ``merge_nearby_groups``'s dict plus ``split_rows`` / ``max_split_group`` (rows split
+    train/val/test, and the largest group among them), ``heldout_pulled_in`` (rows of non-held-out cities sent to
     ``test_heldout`` because their group touches a held-out city) and ``heldout_pulled_in_by_merge`` (the part of
     those that a shared panorama alone would not have pulled in).
 
@@ -271,6 +278,8 @@ def assign_splits(manifest, seed=42, holdout_cities=(), merge_radius_m=0.0, coor
     g = pd.DataFrame({"group": group[rest], "incorrect": (df.loc[rest, "label_class"] == "incorrect").astype(int)})
     groups = g.groupby("group", sort=True).agg(n=("incorrect", "size"), k=("incorrect", "sum"))
     groups["bin"] = np.rint(N_BINS * groups["k"] / groups["n"]).astype(int)
+    stats["split_rows"] = int(groups["n"].sum())  # rows split train/val/test (test_heldout excluded)
+    stats["max_split_group"] = int(groups["n"].max()) if len(groups) else 0  # largest group among them
 
     rng = np.random.default_rng(seed)
     assignment = {}
@@ -352,24 +361,43 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     base = os.path.join(args.out, args.label_type)
     out_path = os.path.join(base, "split.csv")
+    tmp_path = out_path + ".tmp"
 
-    def fail(message):
-        """Print the error, remove a split.csv left by an earlier run (it no longer matches the inputs), return 2."""
+    def fail(message, computing=True):
+        """Print the error and return 2. Once a new split is being computed (``computing``), also remove the
+        split.csv of an earlier run, which no longer matches the inputs."""
         print(f"Error: {message}", file=sys.stderr)
-        if os.path.exists(out_path):
+        if computing and os.path.exists(out_path):
             os.remove(out_path)
             print(f"Removed the stale {out_path} from an earlier run.", file=sys.stderr)
         return 2
 
+    # Before the manifest has loaded, errors leave an existing split.csv alone.
     manifest_path = args.manifest or os.path.join(base, "manifest.csv")
     if not os.path.isfile(manifest_path):
         return fail(f"manifest '{manifest_path}' not found. Run data_generation.py first; split_data.py splits a "
-                    f"manifest by panorama and will not split bare image folders.")
+                    f"manifest by panorama and will not split bare image folders.", computing=False)
     if args.merge_radius_m < 0:
-        return fail("--merge-radius-m must be >= 0.")
-
+        return fail("--merge-radius-m must be >= 0.", computing=False)
+    if args.hard_examples and not os.path.isfile(args.hard_examples):
+        return fail(f"--hard-examples '{args.hard_examples}' not found.", computing=False)
     # Strings throughout, so every manifest cell is written back exactly as read.
     manifest = pd.read_csv(manifest_path, dtype=str, keep_default_na=False)
+    hard = set(pd.read_csv(args.hard_examples, dtype=str)["label_uid"]) if args.hard_examples else set()
+
+    try:
+        return _split(args, base, manifest, hard, out_path, tmp_path, fail)
+    except BaseException:
+        for path in (out_path, tmp_path):
+            if os.path.exists(path):
+                os.remove(path)
+        print(f"Error: split_data.py stopped; removed any split.csv under {base}/ so no stale split is left.",
+              file=sys.stderr)
+        raise
+
+
+def _split(args, base, manifest, hard, out_path, tmp_path, fail):
+    """The part of ``main`` that computes and writes a new split; ``main`` cleans up if it raises."""
     holdout = [c.strip() for c in args.holdout_cities.split(",") if c.strip()]
     unknown = sorted(set(holdout) - set(manifest["city"]))
     if unknown:
@@ -398,27 +426,29 @@ def main(argv=None):
 
     df, stats = assign_splits(manifest, seed=args.seed, holdout_cities=holdout, merge_radius_m=args.merge_radius_m,
                               coords=coords, return_stats=True)
-    group_share = stats["max_labels"] / max(len(df), 1)
-    if args.max_group_share > 0 and group_share > args.max_group_share:
-        return fail(f"the largest merged group holds {stats['max_labels']} of {len(df)} rows ({group_share:.1%}), "
-                    f"more than --max-group-share {args.max_group_share:g}: merging at {args.merge_radius_m:g} m "
-                    f"chained a dense area into one group, and the split cannot be balanced around it. Use a "
-                    f"smaller --merge-radius-m, or a larger --max-group-share (0 = no limit) to accept it.")
+    # Guards on the rows actually split train/val/test; only with merging on, so radius 0 behaves as before merging.
+    big, n_split = stats["max_split_group"], stats["split_rows"]
+    group_share = big / max(n_split, 1)
+    if args.merge_radius_m > 0 and args.max_group_share > 0 \
+            and big > max(args.max_group_share * n_split, MIN_GUARD_ROWS):
+        return fail(f"the largest merged group holds {big} of {n_split} train/val/test rows ({group_share:.1%}), "
+                    f"more than --max-group-share {args.max_group_share:g} (and more than {MIN_GUARD_ROWS} rows): "
+                    f"merging at {args.merge_radius_m:g} m chained a dense area into one group, and the split cannot "
+                    f"be balanced around it. Use a smaller --merge-radius-m, or a larger --max-group-share "
+                    f"(0 = no limit) to accept it.")
     shares = target_shares(df)
-    off = any(abs(shares[s] - t) > WARN_SHARE_MISS for s, t in TARGET)
-    if group_share > WARN_GROUP_SHARE or off:
-        print(f"Warning: the largest group holds {stats['max_labels']} rows ({group_share:.1%} of {len(df)}); "
+    off = n_split and any(abs(shares[s] - t) > WARN_SHARE_MISS for s, t in TARGET)
+    if (args.merge_radius_m > 0 and group_share > WARN_GROUP_SHARE) or off:
+        print(f"Warning: the largest group holds {big} rows ({group_share:.1%} of {n_split} train/val/test rows); "
               f"achieved train/val/test shares " + " / ".join(f"{shares[s]:.3f}" for s, _ in TARGET)
               + " against " + " / ".join(f"{t:.2f}" for _, t in TARGET) + ".", file=sys.stderr)
 
-    hard = set(pd.read_csv(args.hard_examples, dtype=str)["label_uid"]) if args.hard_examples else set()
     df = add_hard(df, hard)
     check_no_shared_panoramas(df)
     missing = [p for p in df["crop_path"] if not os.path.exists(os.path.join(base, p))]
     if missing:
         print(f"Warning: {len(missing)} ok rows have no crop file under {base}/, e.g. {missing[:3]}", file=sys.stderr)
 
-    tmp_path = out_path + ".tmp"
     df.to_csv(tmp_path, index=False, lineterminator="\n")
     os.replace(tmp_path, out_path)
     print(f"Wrote {out_path}: {len(df)} rows of {len(manifest)} in the manifest (seed {args.seed}, "
