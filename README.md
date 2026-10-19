@@ -137,6 +137,43 @@ to `deployment_priors.json`, which `calibration/calibrate.py` reweights to
 > `correct` class shrinks with them, so a retrain has much less CurbRamp data than the counts in the
 > API columns suggest.
 
+### Training targets (experimental, [#12](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/12))
+
+The rule above decides which labels are used and their `label_class`. What the model is trained
+*against* is chosen at training time with `fine_tune_classifier.py --target`, so no crops need
+regenerating:
+
+| `--target` | target probability of `correct` for a train row |
+|---|---|
+| `hard` (default) | 1 or 0 from `label_class`; behaviour, `run_key.json` and `training_run.json` are unchanged |
+| `soft` | `(human_agree + 1) / (human_agree + human_disagree + 2)`, from `split.csv` (a 10–0 label → 0.92, a 3–0 label → 0.8) |
+| `weighted` | the same formula on reliability-weighted counts `w_agree`/`w_disagree` from `--vote-weights` |
+
+Soft targets use soft-label cross-entropy against the two logits. Validation stays hard (`eval_loss`
+and `macro_f1` on `label_class`), so checkpoint selection means the same thing for every target. A
+non-default target, and the vote-weights file's hash, go into `run_key.json` (a resume never mixes
+targets) and `training_run.json`.
+
+Per-validator reliability comes from the `validations` column of the cached rawLabels exports, human
+votes only (`validator_type == "Human"`), Agree/Disagree only: each vote is compared with the majority of
+the *other* human votes on the same label, scored only when there are at least 3 of them and they do not
+tie, and the hit rate is smoothed towards the pooled rate with a Beta prior of 10 pseudo-votes.
+`validator_reliability.py` writes the anonymous per-user scores and the per-label weights to a data
+directory (never the repository: the files hold pseudonymous user ids):
+
+```bash
+python validator_reliability.py --rawlabels rawlabels/ --out reliability/
+python fine_tune_classifier.py --label_type CurbRamp --target soft --output-dir CurbRamp/dinov2-soft
+python fine_tune_classifier.py --label_type CurbRamp --target weighted \
+    --vote-weights reliability/vote_weights.csv --output-dir CurbRamp/dinov2-weighted
+# Adds a "gold" slice: test labels whose every human vote came from validators with reliability >= 0.95
+python evaluate.py --label_type CurbRamp --skip-inference --vote-weights reliability/vote_weights.csv
+```
+
+Give each target its own `--output-dir`: the run key refuses to resume one target's checkpoints under
+another. On the 41-city 2026-10-17 cache few validators clear 0.95 (see the PR for #12), so the
+gold slice is small; `--gold-min-reliability` lowers the bar.
+
 ## Crop geometry
 
 The panorama is resized to 8192×4096. A 2048² perspective view with a 90° horizontal field of view is
