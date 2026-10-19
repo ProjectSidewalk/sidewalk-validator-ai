@@ -11,8 +11,6 @@ Every number comes from a file the pipeline wrote (``metrics.json``, the calibra
 so it is visible in review, never guessed; ``publish_to_hf.py --push`` refuses to upload a card that still has one
 unless ``--allow-todo`` is given.
 
-Deliberately absent: any discussion of imagery-provider terms. Cards state technical facts only.
-
 Example::
 
     from hf_cards import model_card, dataset_card
