@@ -4,7 +4,8 @@ For every label of ``--label_type`` across the cities listed in ``CITIES``, this
 
 1. pulls the label and its validations from the public v3 API (``/v3/api/rawLabels``);
 2. keeps human-authored labels the crowd clearly endorsed (net >= 3 human agree votes) or clearly rejected
-   (net >= 2 human disagree votes), downsampling the ``correct`` class to ``CORRECT_PROPORTION``, and records the
+   (net >= 2 human disagree votes), or that an expert validator (env ``EXPERTS``) voted on with no other human voting
+   the other way (:func:`expert_verdict`; a different ``EXPERTS`` is a selection change), downsampling the ``correct`` class to ``CORRECT_PROPORTION``, and records the
    PRE-downsampling class counts in ``deployment_priors.json`` (the prior ``calibration/calibrate.py`` reweights to);
 3. reads the panorama from the lab's pano store (``--pano-store``), renders a 2048x2048, 90-degree perspective view
    CENTRED on the label with rig-tilt correction (``sidewalk_panorama_tools.geometry``), estimates metric depth at
@@ -91,6 +92,9 @@ SEED = 42
 # The SidewalkAI account (role "AI"). Its labels (RampNet-placed curb ramps) are in the rig frame, and production
 # never sends them to the validator. Its votes carry validator_type "AI" and are excluded from every count.
 AI_USER_ID = "51b0b927-3c8a-45b2-93de-bd878d1e5cf4"
+# Expert validators' user_ids, from the environment as EXPERTS="<any name>=<user_id>,..." (the analysis/analyze.py
+# form; a bare user_id also works). Kept out of the repo on purpose: named accounts do not belong in public code.
+EXPERTS_ENV = "EXPERTS"
 
 # City deployments to pull labels from: city_id (as /v3/api/cities names it, and as it appears in label_uid and in
 # crop filenames) -> the deployment's subdomain, sidewalk-<subdomain>.cs.washington.edu. Not the full list of 59
@@ -124,12 +128,13 @@ DEPTH_DATASET = 'vkitti'
 DEPTH_MAX_M = 80
 
 MANIFEST_COLUMNS = [
-    "label_uid", "city", "label_id", "pano_id", "label_type", "label_class", "author", "human_agree",
+    "label_uid", "city", "label_id", "pano_id", "label_type", "label_class", "class_source", "author", "human_agree",
     "human_disagree", "severity", "tags", "high_quality_user", "image_capture_date", "pano_source", "pano_path",
     "pano_native_w", "pano_native_h", "camera_pitch",
     "camera_roll", "tilt_applied", "tilt_beta", "depth_m", "crop_half_px", "clipped", "crop_path", "status",
 ]
-# ``pano_source`` is the imagery provider from rawLabels (e.g. ``gsv``); ``pano_path`` is the absolute pano-store file
+# ``class_source`` is the rule that set ``label_class``: ``margin`` (the crowd vote margin) or ``expert``
+# (:func:`expert_verdict`; empty on rows from before it existed). ``pano_source`` is the imagery provider from rawLabels (e.g. ``gsv``); ``pano_path`` is the absolute pano-store file
 # that was read (empty when it was missing, and on rows made by the removed tile fetcher, which a resume redoes), and
 # ``pano_native_w``/``pano_native_h`` its size before the resize (a 2:1 file with black bands passes the 2:1 check, so
 # the native size is what finds them later). (``hard`` is not a manifest column: split_data.py --hard-examples joins
@@ -199,6 +204,49 @@ def human_vote_counts(validations_json):
     return agree, disagree
 
 
+def parse_experts(value):
+    """Expert user_ids from an ``EXPERTS`` value: ``"<name>=<user_id>,..."`` or bare ``user_id``s, as a frozenset.
+
+    >>> sorted(parse_experts("a=u1, u2 ,,b=u3"))
+    ['u1', 'u2', 'u3']
+    >>> parse_experts(None)
+    frozenset()
+    """
+    ids = (kv.strip().rpartition("=")[2].strip() for kv in (value or "").split(","))
+    return frozenset(i for i in ids if i)
+
+
+def expert_verdict(validations_json, experts):
+    """``"correct"``/``"incorrect"`` if expert validators voted on this label, all the same way, and no other human
+    voted the other way; else ``""``.
+
+    The crowd margin rule (:func:`eligible_labels`) needs three net Agree votes, so it ignores a label one expert
+    checked and nobody else did. Checked on labels the experts also voted on (2026-10-19, all cities), a single
+    non-expert Disagree was right only 24-78% of the time depending on the type, so an expert vote is the stronger
+    signal; a contradicting human vote still sends the label back to the margin rule. Only ``validator_type ==
+    "Human"`` votes count, as in :func:`human_vote_counts`; Unsure and other values are ignored.
+
+    >>> v = lambda *vs: json.dumps([{"user_id": u, "validation": x, "validator_type": "Human"} for u, x in vs])
+    >>> expert_verdict(v(("e", "Disagree")), {"e"}), expert_verdict(v(("e", "Agree"), ("c", "Agree")), {"e"})
+    ('incorrect', 'correct')
+    >>> expert_verdict(v(("e", "Agree"), ("c", "Disagree")), {"e"}), expert_verdict(v(("c", "Agree")), {"e"})
+    ('', '')
+    >>> expert_verdict(v(("e", "Agree"), ("f", "Disagree")), {"e", "f"}), expert_verdict(v(("e", "Agree")), set())
+    ('', '')
+    """
+    if not experts or not isinstance(validations_json, str) or not validations_json:
+        return ""
+    votes = [v for v in json.loads(validations_json)
+             if v.get("validator_type") == "Human" and v.get("validation") in ("Agree", "Disagree")]
+    expert_votes = {v["validation"] for v in votes if str(v.get("user_id")) in experts}
+    if len(expert_votes) != 1:
+        return ""
+    vote = expert_votes.pop()
+    if any(v["validation"] != vote for v in votes):
+        return ""
+    return "correct" if vote == "Agree" else "incorrect"
+
+
 def label_author(user_id):
     """``"ai"`` for a label placed by the SidewalkAI account, else ``"human"``.
 
@@ -241,15 +289,18 @@ def valid_geometry(df):
     return keep, why
 
 
-def eligible_labels(all_labels, label_type):
+def eligible_labels(all_labels, label_type, experts=frozenset()):
     """Labels of one type with a usable pano point that meet the vote thresholds: ``(eligible_df, dropped)``.
 
-    Adds ``human_agree``, ``human_disagree``, ``author`` (``human``/``ai``) and ``label_class``; no downsampling.
+    Adds ``human_agree``, ``human_disagree``, ``author`` (``human``/``ai``), ``label_class`` and ``class_source``;
+    no downsampling.
     AI-authored labels are KEPT here (tagged ``author = ai``): the prior counts only human-authored ones, and the
     selection drops AI ones unless asked. ``dropped`` counts rows removed by :func:`valid_geometry`.
 
-    Rule (unchanged since the first models): ``incorrect`` if net human disagree votes > 1, ``correct`` if net
-    human agree votes > 2; everything else (unvalidated, unsure, contested) is left out.
+    Rule: ``incorrect`` if net human disagree votes > 1, ``correct`` if net human agree votes > 2 (``class_source =
+    margin``, unchanged since the first models); otherwise the :func:`expert_verdict` of ``experts``, if any
+    (``class_source = expert``); everything else (unvalidated, unsure, contested) is left out. The two rules cannot
+    disagree: an expert verdict requires that no human voted the other way, so the opposite margin is impossible.
     """
     df = all_labels[all_labels['label_type'] == label_type]
     keep, dropped = valid_geometry(df)
@@ -260,6 +311,12 @@ def eligible_labels(all_labels, label_type):
     df['human_disagree'] = [d for _, d in counts]
     net = df['human_agree'] - df['human_disagree']
     df['label_class'] = np.where(net > 2, 'correct', np.where(-net > 1, 'incorrect', ''))
+    df['class_source'] = np.where(df['label_class'] != '', 'margin', '')
+    if experts:
+        verdict = df['validations'].apply(expert_verdict, experts=experts)
+        by_expert = (df['label_class'] == '') & (verdict != '')
+        df.loc[by_expert, 'label_class'] = verdict[by_expert]
+        df.loc[by_expert, 'class_source'] = 'expert'
     return df[df['label_class'] != ''].copy(), dropped
 
 
@@ -302,8 +359,13 @@ def label_rank(seed, label_uid):
 def deployment_prior_entry(eligible, cities, n_rows, measured_on=None):
     """The pre-downsampling class counts of human-authored :func:`eligible_labels`: the class mix the validator meets
     in production (which never sends it AI-authored labels), for ``calibration/calibrate.py``. ``n_rows`` is the
-    number of rawLabels rows of this label type the counts were drawn from."""
-    counts = eligible.loc[eligible['author'] == 'human', 'label_class'].value_counts()
+    number of rawLabels rows of this label type the counts were drawn from.
+
+    Only ``class_source == "margin"`` labels count: the labels experts vote on are not a sample of production (they
+    check what looks wrong), so adding them would move the prior with who happened to validate, and an ``EXPERTS``
+    setting would change calibration as well as the training set."""
+    human = eligible[(eligible['author'] == 'human') & (eligible.get('class_source', 'margin') == 'margin')]
+    counts = human['label_class'].value_counts()
     return {"correct": int(counts.get('correct', 0)), "incorrect": int(counts.get('incorrect', 0)),
             "measured_on": measured_on or date.today().isoformat(),
             "source": f"rawLabels of {', '.join(cities)}, human votes only",
@@ -439,6 +501,7 @@ def manifest_row(row, label_type, crop_path, tilt_beta):
     return {
         "label_uid": f"{city}:{row['label_id']}", "city": city, "label_id": row['label_id'],
         "pano_id": row['pano_id'], "label_type": label_type, "label_class": row['label_class'],
+        "class_source": row.get('class_source'),
         "author": row['author'], "human_agree": row['human_agree'], "human_disagree": row['human_disagree'],
         "severity": row.get('severity'), "tags": row.get('tags'), "high_quality_user": row.get('high_quality_user'),
         "image_capture_date": row.get('image_capture_date'), "pano_source": row.get('pano_source'),
@@ -833,8 +896,16 @@ def main(argv=None):
     all_cities = pd.concat([load_city(c, s, args.rawlabels_cache) for c, s in cities.items()], ignore_index=True)
     n_rows = int((all_cities['label_type'] == label_type).sum())
 
-    eligible, dropped = eligible_labels(all_cities, label_type)  # once, for both the prior and the selection
+    experts = parse_experts(os.environ.get(EXPERTS_ENV))
+    eligible, dropped = eligible_labels(all_cities, label_type, experts)  # once, for both the prior and the selection
     print(f"{n_rows} {label_type} rows; dropped for unusable pano geometry: {dict(dropped) or 'none'}")
+    if experts:
+        by_expert = eligible.loc[eligible['class_source'] == 'expert']
+        print(f"Expert rule ({len(experts)} accounts from ${EXPERTS_ENV}) added, before downsampling: "
+              + ", ".join(f"{a} {c} {n}" for (a, c), n in by_expert.groupby(['author', 'label_class']).size().items())
+              if len(by_expert) else f"Expert rule ({len(experts)} accounts) added no labels")
+    else:
+        print(f"${EXPERTS_ENV} is not set: crowd margin rule only (no expert votes)")
     entry = deployment_prior_entry(eligible, list(cities), n_rows)
 
     def write_priors():
@@ -847,6 +918,7 @@ def main(argv=None):
     assert combined_filtered['label_uid'].is_unique, "label_uid (city:label_id) is not unique in the selection"
     selection = dict(zip(combined_filtered['label_uid'], combined_filtered['label_class']))  # before --limit
     sel_hash = selection_hash(combined_filtered)
+    source_counts = combined_filtered['class_source'].value_counts().to_dict()  # before --limit
     if args.limit is not None:
         combined_filtered = combined_filtered.head(args.limit)
     if args.select_only:
@@ -886,6 +958,8 @@ def main(argv=None):
         json.dump({"label_type": label_type, "settings": settings, **settings, "seed": args.seed,
                    "pano_store": args.pano_store, "pano_store_marker": store_marker,
                    "cities": list(cities), "limit": args.limit, "selection_size": len(selection),
+                   "n_experts": len(experts),
+                   "class_source_counts": source_counts,
                    "selection_sha256": sel_hash, "started": date.today().isoformat()}, f, indent=2)
         f.write("\n")
 

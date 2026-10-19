@@ -194,8 +194,19 @@ def test_merge_puts_near_labels_on_one_side(toy, capsys):
     assert "within_2m" in out and "within_3m" in out and "within_10m" in out
 
 
+@pytest.fixture
+def toy_old_layout(tmp_path, monkeypatch):
+    """The toy dataset in the manifest layout PANO_ONLY_SHA was recorded with (before ``class_source``)."""
+    monkeypatch.setattr(dg, "MANIFEST_COLUMNS", [c for c in dg.MANIFEST_COLUMNS if c != "class_source"])
+    base = tmp_path / "Toy"
+    base.mkdir()
+    write_rawlabels(tmp_path, write_manifest(base))
+    return tmp_path
+
+
 @pytest.mark.parametrize("extra", list(PANO_ONLY_SHA))
-def test_radius_zero_reproduces_panorama_only_split(toy, extra):
+def test_radius_zero_reproduces_panorama_only_split(toy_old_layout, extra):
+    toy = toy_old_layout
     with_coords = run(toy, "--merge-radius-m", "0", *extra)
     assert hashlib.sha256(with_coords).hexdigest() == PANO_ONLY_SHA[extra]
     # and coordinates are not needed at radius 0

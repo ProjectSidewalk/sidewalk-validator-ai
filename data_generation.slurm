@@ -34,6 +34,10 @@ HOLDOUT=""
 # MERGE_RADIUS_M=0 sbatch data_generation.slurm
 MERGE_RADIUS_M="${MERGE_RADIUS_M:-3}"
 LABEL_TYPES=(Crosswalk CurbRamp NoCurbRamp Obstacle SurfaceProblem)
+# Expert validators whose vote decides a label no other human contradicted (data_generation.py expert_verdict), as
+# EXPERTS="<name>=<user_id>,..." in the submitting shell (sbatch exports it). Never written into the repo. Unset means
+# the crowd margin rule only; setting or changing it changes the selection, so a resume needs --force-reselect.
+[ -n "${EXPERTS:-}" ] || echo "WARNING: EXPERTS is not set: expert votes will not count (crowd margin rule only)." >&2
 
 # 0a. Depth Anything V2 is a git submodule (data_generation.py imports it from Depth-Anything-V2/metric_depth),
 #     pinned to the commit sidewalk-ai-api serves with. A clone without --recurse-submodules leaves the directory
