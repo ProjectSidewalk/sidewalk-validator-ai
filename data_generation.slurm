@@ -42,13 +42,24 @@ LABEL_TYPES=(Crosswalk CurbRamp NoCurbRamp Obstacle SurfaceProblem)
 }
 
 # 1. Pull rawLabels once, only if there is no cache yet (or FRESH=1). Reusing it on resubmission keeps the
-#    selection identical, so a resumed run is not refused for new votes that arrived in between.
+#    selection identical, so a resumed run is not refused for new votes that arrived in between. The pull first
+#    saves the /v3/api/cities listing as $CACHE/cities.json and then pulls every public deployment it lists; the
+#    five processes read that file, so the city list is fixed by the pull too and step 2 makes no API call.
 # A cache without its .complete marker (an interrupted pull from before the atomic move) counts as absent.
+if [ "$FRESH" != "1" ] && [ -f "$CACHE/.complete" ] && [ ! -f "$CACHE/cities.json" ]; then
+    echo "$CACHE predates city discovery (issue 8): it has no cities.json, so its city list is the old hardcoded" \
+         "one. FRESH=1 re-pulls every public deployment (a new selection); to resume a run made from that cache," \
+         "use the commit that made it." >&2
+    exit 1
+fi
 if [ "$FRESH" = "1" ] || [ ! -f "$CACHE/.complete" ]; then
     rm -rf "$CACHE.tmp" && mkdir -p "$CACHE.tmp"
     python -u - "$CACHE.tmp" <<'PY' || { echo "rawLabels pull failed" >&2; exit 1; }
 import sys, data_generation as dg
-for city_id, sub in dg.CITIES.items():
+listing, source = dg.load_city_listing(sys.argv[1], refresh=True)  # writes cities.json into the new cache
+cities = dg.discover_cities(listing)
+print(f"{len(cities)} public deployments in /v3/api/cities ({source['fetched_on']})")
+for city_id, sub in cities.items():
     dg.load_city(city_id, sub).drop(columns="city").to_csv(f"{sys.argv[1]}/{city_id}.csv", index=False)
     print("pulled", city_id)
 PY
