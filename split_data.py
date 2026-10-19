@@ -7,33 +7,44 @@ Input is ``<out>/<label_type>/manifest.csv`` written by ``data_generation.py``. 
 hard-example list never needs the crops regenerated. ``fine_tune_classifier.py`` trains on it and
 ``evaluate.py`` / ``calibration/calibrate.py`` evaluate on it. Image files are never deleted, moved or copied, so
 the step is idempotent: re-running with the same seed writes a byte-identical file
-(https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10).
+(https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10). ``split.csv`` is written to a temporary file
+and moved into place; a run that stops with an error removes any ``split.csv`` left by an earlier run, so a stale
+split is never trained on by mistake.
 
 Method (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3):
 
 1. **Held-out cities.** Every row of a ``--holdout-cities`` city goes to ``test_heldout`` (Duan et al. ASSETS'22:
-   held-out-city numbers are the ones that predict deployment). A panorama that also carries labels of another city
-   (overlapping deployments) goes to ``test_heldout`` whole, so the no-shared-panorama guarantee holds.
+   held-out-city numbers are the ones that predict deployment). A group (step 2/3) that also carries labels of
+   another city (overlapping deployments) goes to ``test_heldout`` whole, so the no-shared-panorama guarantee holds;
+   the number of other-city rows pulled in this way is printed.
 2. **Groups.** Rows are grouped by ``pano_id``: labels cluster on panoramas (2.8 per panorama across
    all types in Teaneck; within one type's selected set CurbRamp 1.66, SurfaceProblem 1.19), and two crops
-   of one corner must not straddle the split (Weld et al. ASSETS'19 split panoramas for the same reason).
-3. **Merge nearby groups** (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/27). Panorama groups
-   whose labels lie within ``--merge-radius-m`` (default 3 m, haversine) of each other become one group (connected
-   components over "same panorama or within the radius"), so one physical curb ramp or obstacle, labelled from two
-   adjacent panoramas or by two users, is on one side of the split only. Without it, on the 19 training cities,
-   3.4% (CurbRamp), 8.2% (NoCurbRamp) and 2.3% (Obstacle) of test labels had a same-type train label within 2 m.
-   The manifest holds one label type, so "same type" is implicit. Coordinates come from the manifest's
-   ``latitude``/``longitude`` columns if it has them, otherwise from the cached rawLabels exports
-   (``--rawlabels DIR``, ``<DIR>/<city>.csv``), joined on ``label_uid`` (city + label_id; label_id alone is per-city).
-   A missing export or a label without coordinates is an error, never a silent skip. ``--merge-radius-m 0`` turns
-   merging off and reproduces the panorama-only split byte for byte. Steps 1 and 4 run on the merged groups, so a
-   merged group that touches a held-out city goes to ``test_heldout`` whole.
+   of one corner must not straddle the split (Weld et al. ASSETS'19 split panoramas for the same reason). A row
+   without a ``pano_id`` is its own group.
+3. **Merge nearby groups** (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/27). Groups whose labels
+   lie within ``--merge-radius-m`` (default 3 m; haversine distance ``<=`` the radius) of each other become one group
+   (connected components over "same panorama or within the radius", so chains merge transitively), so one physical
+   curb ramp or obstacle, labelled from two adjacent panoramas or by two users, is on one side of the split only.
+   Without it, on the 19 training cities, 3.4% (CurbRamp), 8.2% (NoCurbRamp) and 2.3% (Obstacle) of test labels had
+   a same-type train label within 2 m. The manifest holds one label type, so "same type" is implicit.
+
+   Coordinates come from the manifest's ``latitude``/``longitude`` columns if it has them, otherwise from the cached
+   rawLabels exports ``<DIR>/<city>.csv`` (``--rawlabels DIR``, default ``<out>/rawlabels`` when it exists), joined
+   on ``label_uid`` (city + label_id; label_id alone is a per-city serial). No coordinate source, or a missing
+   city export, is an error. A label without coordinates stays in its panorama group (it is never merged by
+   distance) and is left out of the proximity report; their count is printed, and more than
+   ``--max-missing-coords-frac`` (default 1%) of ok labels without coordinates is an error.
+
+   Transitive merging can chain a dense stretch into one big group, which the greedy filler cannot balance. The run
+   warns when the largest group holds more than 1% of the rows or a split misses its target share by more than 3
+   points, and stops when the largest group exceeds ``--max-group-share`` (default 5%) of the rows.
+   ``--merge-radius-m 0`` turns merging off and reproduces the panorama-only split byte for byte.
 4. **Approximate stratification.** Each group gets a class-ratio bin, ``round(4 * share_incorrect)`` (0 = all
    correct ... 4 = all incorrect). Bins are processed in order; within a bin the groups (sorted by key, the
-   smallest ``pano_id`` in the group) are
-   shuffled with a seeded generator, then filled greedily: each group goes to the split with the largest deficit
-   against ``TARGET`` (70/15/15) of that bin's ROWS. Every bin is thus split about 70/15/15, so the splits end up with
-   similar correct:incorrect shares as well as the target row shares.
+   smallest original group key, normally a ``pano_id``) are shuffled with a seeded generator, then filled greedily:
+   each group goes to the split with the largest deficit against ``TARGET`` (70/15/15) of that bin's ROWS. Every bin
+   is thus split about 70/15/15, so the splits end up with similar correct:incorrect shares as well as the target
+   row shares.
 
 The printed summary adds, whatever the radius, the share of val/test labels with a train label within 2, 5 and
 10 m (and within the merge radius, which is 0 by construction), plus how many groups were merged and how large the
@@ -42,10 +53,11 @@ skipped with a note.
 
 Usage::
 
-    python split_data.py --label_type CurbRamp --rawlabels rawlabels        # ./CurbRamp/manifest.csv
+    python split_data.py --label_type CurbRamp                              # ./CurbRamp/manifest.csv, ./rawlabels/
+    python split_data.py --label_type CurbRamp --rawlabels ~/rawlabels      # coordinates from elsewhere
     python split_data.py --label_type CurbRamp --merge-radius-m 0           # panorama grouping only
-    python split_data.py --label_type CurbRamp --rawlabels rawlabels --holdout-cities teaneck-nj,taipei --seed 7
-    python split_data.py --label_type CurbRamp --rawlabels rawlabels --hard-examples analysis/hard_examples_2026-10-17.csv
+    python split_data.py --label_type CurbRamp --holdout-cities teaneck-nj,taipei --seed 7
+    python split_data.py --label_type CurbRamp --hard-examples analysis/hard_examples_2026-10-17.csv
 """
 import argparse
 import os
@@ -60,17 +72,21 @@ SPLITS = tuple(s for s, _ in TARGET) + (HELDOUT,)
 N_BINS = 4  # class-ratio bins are round(N_BINS * share_incorrect), i.e. 0..4
 EARTH_RADIUS_M = 6_371_008.8  # mean Earth radius; at a few metres the spherical error is far below GPS noise
 PROXIMITY_RADII_M = (2.0, 5.0, 10.0)
+WARN_GROUP_SHARE = 0.01   # warn when the largest group holds more than this share of the rows
+WARN_SHARE_MISS = 0.03    # warn when train/val/test misses its TARGET share by more than this
 
 
 def load_coordinates(manifest, rawlabels_dir=None):
-    """``latitude``/``longitude`` (floats) for every ``status == ok`` row of ``manifest``, indexed by ``label_uid``.
+    """``latitude``/``longitude`` (floats, NaN where unknown) for every ``status == ok`` row, indexed by ``label_uid``.
 
     Taken from the manifest's own ``latitude``/``longitude`` columns when it has them; otherwise joined from the
     cached rawLabels exports ``<rawlabels_dir>/<city>.csv`` (columns ``label_id``, ``latitude``, ``longitude``, ...)
     on the composite ``label_uid`` = ``<city>:<label_id>``, never on ``label_id`` alone (it is a per-city serial).
+    Each export is cut to the label_ids the manifest needs (after stripping whitespace) before duplicates are
+    checked, so an unrelated bad row in an export does not matter.
 
-    Raises ``ValueError`` when no source is given, a city's export is missing, an export has a duplicated
-    ``label_id`` with different coordinates, or any ok row ends up without finite coordinates.
+    Raises ``ValueError`` when no source is given, a city's export is missing, or an export has a needed
+    ``label_id`` twice with different coordinates. Labels without coordinates come back as NaN; the caller decides.
 
     >>> m = pd.DataFrame({"label_uid": ["a:1"], "city": ["a"], "label_id": ["1"], "status": ["ok"],
     ...                   "latitude": ["47.6"], "longitude": ["-122.3"]})
@@ -79,48 +95,80 @@ def load_coordinates(manifest, rawlabels_dir=None):
     """
     ok = manifest[manifest["status"].astype(str) == "ok"]
     if {"latitude", "longitude"} <= set(ok.columns):
-        coords = pd.DataFrame({"latitude": pd.to_numeric(ok["latitude"], errors="coerce").to_numpy(),
-                               "longitude": pd.to_numeric(ok["longitude"], errors="coerce").to_numpy()},
-                              index=ok["label_uid"].to_numpy())
-        source = "the manifest's latitude/longitude columns"
-    else:
-        if not rawlabels_dir:
-            raise ValueError("the manifest has no latitude/longitude columns and no --rawlabels directory was given")
-        parts = []
-        for city in sorted(ok["city"].astype(str).unique()):
-            path = os.path.join(rawlabels_dir, f"{city}.csv")
-            if not os.path.isfile(path):
-                raise ValueError(f"no rawLabels export for city '{city}' at {path}")
-            raw = pd.read_csv(path, usecols=["label_id", "latitude", "longitude"], dtype={"label_id": str},
-                              low_memory=False).drop_duplicates()
-            if not raw["label_id"].is_unique:
-                dup = raw.loc[raw["label_id"].duplicated(), "label_id"].iloc[0]
-                raise ValueError(f"{path} has label_id {city}:{dup} with conflicting coordinates")
-            raw.index = city + ":" + raw["label_id"].str.strip()
-            parts.append(raw[["latitude", "longitude"]])
-        raw = pd.concat(parts) if parts else pd.DataFrame(columns=["latitude", "longitude"], dtype=float)
-        coords = raw.reindex(ok["label_uid"].to_numpy()).astype(float)
-        source = f"rawLabels exports in {rawlabels_dir}"
-    bad = ~np.isfinite(coords.to_numpy()).all(axis=1)
-    if bad.any():
-        raise ValueError(f"{int(bad.sum())} ok labels have no coordinates in {source}, "
-                         f"e.g. {list(coords.index[bad][:3])}")
-    return coords
+        return pd.DataFrame({"latitude": pd.to_numeric(ok["latitude"], errors="coerce").to_numpy(),
+                             "longitude": pd.to_numeric(ok["longitude"], errors="coerce").to_numpy()},
+                            index=ok["label_uid"].to_numpy())
+    if not rawlabels_dir:
+        raise ValueError("the manifest has no latitude/longitude columns and no rawLabels directory was found")
+    parts = []
+    for city in sorted(ok["city"].astype(str).unique()):
+        path = os.path.join(rawlabels_dir, f"{city}.csv")
+        if not os.path.isfile(path):
+            raise ValueError(f"no rawLabels export for city '{city}' at {path}")
+        raw = pd.read_csv(path, usecols=["label_id", "latitude", "longitude"], dtype={"label_id": str},
+                          low_memory=False)
+        raw["label_id"] = raw["label_id"].str.strip()
+        needed = set(ok.loc[ok["city"].astype(str) == city, "label_id"].astype(str).str.strip())
+        raw = raw[raw["label_id"].isin(needed)].drop_duplicates()
+        if not raw["label_id"].is_unique:
+            dup = raw.loc[raw["label_id"].duplicated(), "label_id"].iloc[0]
+            raise ValueError(f"{path} has label_id {city}:{dup} with conflicting coordinates")
+        raw.index = city + ":" + raw["label_id"]
+        parts.append(raw[["latitude", "longitude"]])
+    raw = pd.concat(parts) if parts else pd.DataFrame(columns=["latitude", "longitude"], dtype=float)
+    return raw.reindex(ok["label_uid"].to_numpy()).astype(float)
 
 
-def _radians(lat, lon):
-    return np.radians(np.column_stack([np.asarray(lat, dtype=float), np.asarray(lon, dtype=float)]))
+def haversine_m(lat1, lon1, lat2, lon2):
+    """Great-circle distance in metres between points given in degrees (NumPy-vectorised, symmetric).
+
+    This is THE distance of the split: merging keeps pairs with ``haversine_m <= radius`` and the proximity report
+    counts the same way, which is why the report's ``within_<merge radius>m`` is exactly 0.
+
+    >>> round(float(haversine_m(47.0, -122.0, 47.0 + 3 / 111195, -122.0)), 3)
+    3.0
+    """
+    p1, p2 = np.radians(lat1), np.radians(lat2)
+    a = np.sin((p2 - p1) / 2) ** 2 + np.cos(p1) * np.cos(p2) * np.sin((np.radians(lon2) - np.radians(lon1)) / 2) ** 2
+    return 2 * EARTH_RADIUS_M * np.arcsin(np.sqrt(np.minimum(a, 1.0)))
+
+
+def pairs_within(lat_q, lon_q, lat_t, lon_t, radius_m):
+    """Index pairs ``(i, j)`` with ``haversine_m(query i, target j) <= radius_m``, as two int arrays.
+
+    A BallTree (haversine) on the targets finds candidates with a slightly padded radius; the exact ``<=`` test is
+    then done with ``haversine_m``, so the boundary does not depend on the tree's internal arithmetic.
+    """
+    from sklearn.neighbors import BallTree
+    lat_q, lon_q, lat_t, lon_t = (np.asarray(v, dtype=float) for v in (lat_q, lon_q, lat_t, lon_t))
+    if not len(lat_q) or not len(lat_t):
+        return np.array([], dtype=int), np.array([], dtype=int)
+    tree = BallTree(np.radians(np.column_stack([lat_t, lon_t])), metric="haversine")
+    pad = radius_m * (1 + 1e-6) + 1e-6
+    cand = tree.query_radius(np.radians(np.column_stack([lat_q, lon_q])), r=pad / EARTH_RADIUS_M)
+    i = np.repeat(np.arange(len(lat_q)), [len(c) for c in cand])
+    j = np.concatenate(cand).astype(int)
+    keep = haversine_m(lat_q[i], lon_q[i], lat_t[j], lon_t[j]) <= radius_m
+    return i[keep], j[keep]
 
 
 def merge_nearby_groups(group, lat, lon, radius_m):
-    """Merge groups that have labels within ``radius_m`` metres of each other (haversine).
+    """Merge groups that have labels within ``radius_m`` metres of each other (``haversine_m <= radius_m``).
 
-    ``group`` is a Series of group keys (one per label), ``lat``/``lon`` the labels' coordinates in degrees. Returns
-    ``(merged, stats)``: ``merged`` is a Series like ``group`` whose value is the smallest original key in each
-    connected component of "same group, or within the radius" (transitively: a chain of labels 2 m apart is one
-    group), and ``stats`` a dict with ``groups``, ``merged_groups``, ``groups_merged`` (original groups absorbed),
-    ``max_panoramas`` and ``max_labels`` per merged group. The result does not depend on row order: components are
-    computed by ``scipy.sparse.csgraph.connected_components`` and named by their smallest key.
+    ``group`` is a Series of group keys (one per label; a ``pano_id`` or ``uid:<label_uid>``), ``lat``/``lon`` the
+    labels' coordinates in degrees. A label with non-finite coordinates keeps its group and is never merged by
+    distance. Returns ``(merged, stats)``: ``merged`` is a Series like ``group`` whose value is the smallest original
+    key in each connected component of "same group, or within the radius" (transitively: a chain of labels 2 m apart
+    is one group). ``stats`` is a dict with
+
+    - ``groups``: original groups (panoramas, plus one per row without a ``pano_id``);
+    - ``merged_groups``: groups after merging; ``groups_merged``: original groups absorbed into another;
+    - ``multi_panorama_groups``: merged groups made of more than one original group;
+    - ``max_original_groups``: original groups in the largest (by that count) merged group;
+    - ``max_labels``: labels in the largest merged group.
+
+    The result does not depend on row order: components come from ``scipy.sparse.csgraph.connected_components`` and
+    are named by their smallest key.
 
     >>> g = pd.Series(["p1", "p2", "p3"])
     >>> m, st = merge_nearby_groups(g, [47.0, 47.0 + 2 / 111195, 47.1], [-122.0] * 3, 3.0)
@@ -135,53 +183,51 @@ def merge_nearby_groups(group, lat, lon, radius_m):
     n = len(keys)
     rows, cols = [code], [code]  # every label joins its own group
     if radius_m > 0 and len(group):
-        from sklearn.neighbors import BallTree
-        pts = _radians(lat, lon)
-        neighbours = BallTree(pts, metric="haversine").query_radius(pts, r=radius_m / EARTH_RADIUS_M)
-        src = np.repeat(np.arange(len(pts)), [len(nb) for nb in neighbours])
-        dst = np.concatenate(neighbours) if len(neighbours) else np.array([], dtype=int)
-        rows.append(code[src])
-        cols.append(code[dst])
+        lat, lon = np.asarray(lat, dtype=float), np.asarray(lon, dtype=float)
+        has = np.flatnonzero(np.isfinite(lat) & np.isfinite(lon))
+        i, j = pairs_within(lat[has], lon[has], lat[has], lon[has], radius_m)
+        rows.append(code[has[i]])
+        cols.append(code[has[j]])
     r, c = np.concatenate(rows), np.concatenate(cols)
     _, comp = connected_components(coo_matrix((np.ones(len(r)), (r, c)), shape=(n, n)), directed=False)
-    # name each component by its smallest key (keys are sorted, so that is the first index seen per component)
+    # name each component by its smallest key (keys are sorted, so that is the smallest index in the component)
     first = pd.Series(np.arange(n)).groupby(comp).transform("min").to_numpy()
     merged = pd.Series(keys[first][code], index=group.index)
     sizes = pd.Series(comp).value_counts()
-    labels_per = merged.value_counts()
     stats = {"groups": n, "merged_groups": len(sizes), "groups_merged": n - len(sizes),
              "multi_panorama_groups": int((sizes > 1).sum()),
-             "max_panoramas": int(sizes.max()) if n else 0, "max_labels": int(labels_per.max()) if n else 0}
+             "max_original_groups": int(sizes.max()) if n else 0,
+             "max_labels": int(merged.value_counts().max()) if n else 0}
     return merged, stats
 
 
 def proximity_report(df, coords, radii_m=PROXIMITY_RADII_M):
     """Share of each non-train split's labels with a ``train`` label within each radius (metres), as a DataFrame.
 
-    ``df`` has ``label_uid`` and ``split``; ``coords`` is indexed by ``label_uid`` (see ``load_coordinates``). One
-    row per split present (``val``, ``test``, ``test_heldout``), columns ``labels`` and ``within_<r>m`` (a share).
+    ``df`` has ``label_uid`` and ``split``; ``coords`` is indexed by ``label_uid`` (see ``load_coordinates``). Labels
+    without finite coordinates are left out on both sides (the caller reports how many). One row per split present
+    (``val``, ``test``, ``test_heldout``), columns ``labels`` (with coordinates) and ``within_<r>m`` (a share; "within"
+    is ``haversine_m <= r``, the merge's own test).
 
     >>> d = pd.DataFrame({"label_uid": ["a", "b"], "split": ["train", "test"]})
     >>> c = pd.DataFrame({"latitude": [0.0, 4 / 111195], "longitude": [0.0, 0.0]}, index=["a", "b"])
     >>> proximity_report(d, c, (2, 5)).to_dict("records")
     [{'split': 'test', 'labels': 1, 'within_2m': 0.0, 'within_5m': 1.0}]
     """
-    from sklearn.neighbors import BallTree
     xy = coords.loc[df["label_uid"]]
-    is_train = (df["split"] == "train").to_numpy()
-    tree = BallTree(_radians(xy["latitude"][is_train], xy["longitude"][is_train]), metric="haversine") \
-        if is_train.any() else None
+    lat, lon = xy["latitude"].to_numpy(dtype=float), xy["longitude"].to_numpy(dtype=float)
+    has = np.isfinite(lat) & np.isfinite(lon)
+    split = df["split"].to_numpy()
+    train = has & (split == "train")
     rows = []
     for s in SPLITS[1:]:
-        mask = (df["split"] == s).to_numpy()
-        if not mask.any():
+        mask = has & (split == s)
+        if not (split == s).any():
             continue
-        pts = _radians(xy["latitude"][mask], xy["longitude"][mask])
         row = {"split": s, "labels": int(mask.sum())}
         for r in radii_m:
-            hit = tree.query_radius(pts, r=r / EARTH_RADIUS_M, count_only=True) > 0 if tree is not None \
-                else np.zeros(len(pts), dtype=bool)
-            row[f"within_{r:g}m"] = round(float(hit.mean()), 4)
+            i, _ = pairs_within(lat[mask], lon[mask], lat[train], lon[train], r)
+            row[f"within_{r:g}m"] = round(len(np.unique(i)) / mask.sum(), 4) if mask.any() else 0.0
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -190,8 +236,10 @@ def assign_splits(manifest, seed=42, holdout_cities=(), merge_radius_m=0.0, coor
     """Return the ``status == ok`` rows of ``manifest`` (sorted by ``label_uid``) with a ``split`` column.
 
     With ``merge_radius_m > 0``, ``coords`` (``latitude``/``longitude`` indexed by ``label_uid``, see
-    ``load_coordinates``) is required and panorama groups within the radius are merged first. With
-    ``return_stats``, returns ``(df, stats)`` where ``stats`` is ``merge_nearby_groups``'s dict.
+    ``load_coordinates``) is required and groups within the radius are merged first. With ``return_stats``, returns
+    ``(df, stats)``: ``merge_nearby_groups``'s dict plus ``heldout_pulled_in`` (rows of non-held-out cities sent to
+    ``test_heldout`` because their group touches a held-out city) and ``heldout_pulled_in_by_merge`` (the part of
+    those that a shared panorama alone would not have pulled in).
 
     Pure function of its inputs: same manifest and seed, same assignment. See the module docstring for the method.
     """
@@ -199,22 +247,25 @@ def assign_splits(manifest, seed=42, holdout_cities=(), merge_radius_m=0.0, coor
     df = df.sort_values("label_uid", kind="mergesort").reset_index(drop=True)
     if not df["label_uid"].is_unique:
         raise ValueError("label_uid is not unique in the manifest")
-    # A row without a pano_id is its own group.
-    group = df["pano_id"].astype(str).where(df["pano_id"].astype(str).str.len() > 0, "uid:" + df["label_uid"])
+    pano_group = df["pano_id"].astype(str).where(df["pano_id"].astype(str).str.len() > 0, "uid:" + df["label_uid"])
     if merge_radius_m > 0:
         if coords is None:
             raise ValueError("merge_radius_m > 0 needs coords")
         xy = coords.loc[df["label_uid"]]
-        group, stats = merge_nearby_groups(group, xy["latitude"].to_numpy(), xy["longitude"].to_numpy(),
+        group, stats = merge_nearby_groups(pano_group, xy["latitude"].to_numpy(), xy["longitude"].to_numpy(),
                                            merge_radius_m)
     else:
-        group, stats = merge_nearby_groups(group, None, None, 0)
+        group, stats = merge_nearby_groups(pano_group, None, None, 0)
     df["split"] = ""
 
     holdout = set(holdout_cities)
+    in_holdout_city = df["city"].isin(holdout)
     if holdout:
-        held_groups = set(group[df["city"].isin(holdout)])
-        df.loc[group.isin(held_groups), "split"] = HELDOUT
+        df.loc[group.isin(set(group[in_holdout_city])), "split"] = HELDOUT
+    pulled = (df["split"] == HELDOUT) & ~in_holdout_city
+    by_pano = pano_group.isin(set(pano_group[in_holdout_city])) & ~in_holdout_city
+    stats["heldout_pulled_in"] = int(pulled.sum())
+    stats["heldout_pulled_in_by_merge"] = int((pulled & ~by_pano).sum())
 
     rest = df["split"] == ""
     g = pd.DataFrame({"group": group[rest], "incorrect": (df.loc[rest, "label_class"] == "incorrect").astype(int)})
@@ -269,6 +320,12 @@ def summary(df):
     return pd.DataFrame(rows)
 
 
+def target_shares(df):
+    """Achieved share of each TARGET split among the train/val/test rows (test_heldout excluded), as a dict."""
+    split = df.loc[df["split"].isin([s for s, _ in TARGET]), "split"]
+    return {s: (float((split == s).mean()) if len(split) else 0.0) for s, _ in TARGET}
+
+
 def build_parser():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--label_type", required=True)
@@ -281,19 +338,35 @@ def build_parser():
     p.add_argument("--merge-radius-m", type=float, default=3.0,
                    help="merge panorama groups with labels within this many metres (0 = panorama grouping only)")
     p.add_argument("--rawlabels", default=None,
-                   help="directory of cached rawLabels exports <city>.csv (data_generation.slurm's rawlabels/), "
-                        "for label coordinates; needed unless the manifest has latitude/longitude")
+                   help="directory of cached rawLabels exports <city>.csv, for label coordinates; default "
+                        "<out>/rawlabels when it exists (data_generation.slurm's cache). Not needed if the manifest "
+                        "has latitude/longitude")
+    p.add_argument("--max-group-share", type=float, default=0.05,
+                   help="stop when the largest merged group holds more than this share of the rows (0 = no limit)")
+    p.add_argument("--max-missing-coords-frac", type=float, default=0.01,
+                   help="with merging on, stop when more than this share of ok labels have no coordinates")
     return p
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
     base = os.path.join(args.out, args.label_type)
+    out_path = os.path.join(base, "split.csv")
+
+    def fail(message):
+        """Print the error, remove a split.csv left by an earlier run (it no longer matches the inputs), return 2."""
+        print(f"Error: {message}", file=sys.stderr)
+        if os.path.exists(out_path):
+            os.remove(out_path)
+            print(f"Removed the stale {out_path} from an earlier run.", file=sys.stderr)
+        return 2
+
     manifest_path = args.manifest or os.path.join(base, "manifest.csv")
     if not os.path.isfile(manifest_path):
-        print(f"Error: manifest '{manifest_path}' not found. Run data_generation.py first; split_data.py splits a "
-              f"manifest by panorama and will not split bare image folders.", file=sys.stderr)
-        return 2
+        return fail(f"manifest '{manifest_path}' not found. Run data_generation.py first; split_data.py splits a "
+                    f"manifest by panorama and will not split bare image folders.")
+    if args.merge_radius_m < 0:
+        return fail("--merge-radius-m must be >= 0.")
 
     # Strings throughout, so every manifest cell is written back exactly as read.
     manifest = pd.read_csv(manifest_path, dtype=str, keep_default_na=False)
@@ -302,22 +375,42 @@ def main(argv=None):
     if unknown:
         print(f"Warning: --holdout-cities {unknown} have no rows in the manifest.", file=sys.stderr)
 
-    if args.merge_radius_m < 0:
-        print("Error: --merge-radius-m must be >= 0.", file=sys.stderr)
-        return 2
+    rawlabels = args.rawlabels
+    if rawlabels is None and os.path.isdir(os.path.join(args.out, "rawlabels")):
+        rawlabels = os.path.join(args.out, "rawlabels")
     coords = None
     try:
-        coords = load_coordinates(manifest, args.rawlabels)
+        coords = load_coordinates(manifest, rawlabels)
     except ValueError as e:
         if args.merge_radius_m > 0:
-            print(f"Error: --merge-radius-m {args.merge_radius_m:g} needs label coordinates, but {e}. Pass "
-                  f"--rawlabels DIR (the cached rawLabels exports, e.g. rawlabels/) or --merge-radius-m 0.",
-                  file=sys.stderr)
-            return 2
+            return fail(f"--merge-radius-m {args.merge_radius_m:g} needs label coordinates, but {e}. Pass "
+                        f"--rawlabels DIR (the cached rawLabels exports, e.g. rawlabels/) or --merge-radius-m 0.")
         print(f"Note: no proximity report ({e}).", file=sys.stderr)
+    n_missing = 0
+    if coords is not None:
+        no_xy = ~np.isfinite(coords.to_numpy()).all(axis=1)
+        n_missing = int(no_xy.sum())
+        frac = n_missing / max(len(coords), 1)
+        if args.merge_radius_m > 0 and frac > args.max_missing_coords_frac:
+            return fail(f"{n_missing} of {len(coords)} ok labels ({frac:.1%}) have no coordinates, more than "
+                        f"--max-missing-coords-frac {args.max_missing_coords_frac:g}; e.g. "
+                        f"{list(coords.index[no_xy][:3])}. Raise the limit or use --merge-radius-m 0.")
 
     df, stats = assign_splits(manifest, seed=args.seed, holdout_cities=holdout, merge_radius_m=args.merge_radius_m,
                               coords=coords, return_stats=True)
+    group_share = stats["max_labels"] / max(len(df), 1)
+    if args.max_group_share > 0 and group_share > args.max_group_share:
+        return fail(f"the largest merged group holds {stats['max_labels']} of {len(df)} rows ({group_share:.1%}), "
+                    f"more than --max-group-share {args.max_group_share:g}: merging at {args.merge_radius_m:g} m "
+                    f"chained a dense area into one group, and the split cannot be balanced around it. Use a "
+                    f"smaller --merge-radius-m, or a larger --max-group-share (0 = no limit) to accept it.")
+    shares = target_shares(df)
+    off = any(abs(shares[s] - t) > WARN_SHARE_MISS for s, t in TARGET)
+    if group_share > WARN_GROUP_SHARE or off:
+        print(f"Warning: the largest group holds {stats['max_labels']} rows ({group_share:.1%} of {len(df)}); "
+              f"achieved train/val/test shares " + " / ".join(f"{shares[s]:.3f}" for s, _ in TARGET)
+              + " against " + " / ".join(f"{t:.2f}" for _, t in TARGET) + ".", file=sys.stderr)
+
     hard = set(pd.read_csv(args.hard_examples, dtype=str)["label_uid"]) if args.hard_examples else set()
     df = add_hard(df, hard)
     check_no_shared_panoramas(df)
@@ -325,15 +418,23 @@ def main(argv=None):
     if missing:
         print(f"Warning: {len(missing)} ok rows have no crop file under {base}/, e.g. {missing[:3]}", file=sys.stderr)
 
-    out_path = os.path.join(base, "split.csv")
-    df.to_csv(out_path, index=False, lineterminator="\n")
+    tmp_path = out_path + ".tmp"
+    df.to_csv(tmp_path, index=False, lineterminator="\n")
+    os.replace(tmp_path, out_path)
     print(f"Wrote {out_path}: {len(df)} rows of {len(manifest)} in the manifest (seed {args.seed}, "
           f"held-out cities {holdout or 'none'}, {int((df['hard'] == '1').sum())} hard)")
     print(summary(df).to_string(index=False))
-    print(f"Merge radius {args.merge_radius_m:g} m: {stats['groups']} panorama groups -> {stats['merged_groups']} "
-          f"groups ({stats['groups_merged']} merged away; {stats['multi_panorama_groups']} groups span more than one "
-          f"panorama; largest {stats['max_panoramas']} panoramas / {stats['max_labels']} labels)")
+    print(f"Merge radius {args.merge_radius_m:g} m: {stats['groups']} original groups (panoramas) -> "
+          f"{stats['merged_groups']} groups ({stats['groups_merged']} merged away; {stats['multi_panorama_groups']} "
+          f"groups span more than one panorama; largest {stats['max_original_groups']} panoramas, "
+          f"{stats['max_labels']} labels)")
+    if holdout:
+        print(f"Rows of other cities pulled into {HELDOUT}: {stats['heldout_pulled_in']} "
+              f"({stats['heldout_pulled_in_by_merge']} by a merged group, the rest by a shared panorama)")
     if coords is not None:
+        if n_missing:
+            print(f"{n_missing} ok labels have no coordinates: kept in their panorama group, never merged by "
+                  f"distance, and left out of the proximity report.")
         radii = sorted(set(PROXIMITY_RADII_M) | ({args.merge_radius_m} if args.merge_radius_m > 0 else set()))
         print("Share of labels with a train label within r metres:")
         print(proximity_report(df, coords, radii).to_string(index=False))
