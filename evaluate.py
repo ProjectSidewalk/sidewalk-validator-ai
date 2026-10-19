@@ -10,7 +10,8 @@ Replaces ``get_stats.py``. Two stages, kept separate so the metrics are testable
 (b) **Metrics** (``report``, pure pandas/scikit-learn): AUC, plain and balanced accuracy, per-class
     precision/recall/F1, and recall at precision 0.90..0.99 with the matching score threshold, for the ``test``
     split, for ``test_heldout`` if present, and for the ``hard == 1`` slice of the two. Written to
-    ``<label_type>/metrics.json`` and ``<label_type>/report.txt``, with ``pvr.png`` and ``report.png``.
+    ``<label_type>/metrics.json`` and ``<label_type>/report.txt``, with ``pvr.png`` and ``report.png``. ``--checkpoint``
+    scores another model (such as the one the API serves) on the same split; ``--tag`` suffixes all its outputs.
 
 The confidence-to-accuracy map the API serves is no longer produced here; it is fitted on the val split under the
 deployment prior by ``calibration/calibrate.py`` (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4).
@@ -27,6 +28,9 @@ Usage::
 
     python evaluate.py --label_type CurbRamp                 # inference + metrics
     python evaluate.py --label_type CurbRamp --skip-inference # metrics from an existing predictions.csv
+    # Another model on the same split, e.g. the one the API serves; outputs get a _<tag> suffix:
+    python evaluate.py --label_type CurbRamp --checkpoint projectsidewalk/sidewalk-validator-ai-curbramp \
+        --revision 969ad5a33079db7885c9e9a4eb5cd0f39d8fe57a --tag prod
 """
 import argparse
 import glob
@@ -101,9 +105,10 @@ def load_imagefolder(label_type, data_dir="."):
 def find_best_checkpoint(label_type, data_dir="."):
     """Path of ``best_model_checkpoint`` from the latest checkpoint's ``trainer_state.json``."""
     base = os.path.join(data_dir, label_type, "dinov2")
-    dirs = [d for d in os.listdir(base) if d.startswith("checkpoint-") and os.path.isdir(os.path.join(base, d))]
+    from fine_tune_classifier import is_complete_checkpoint
+    dirs = [d for d in os.listdir(base) if is_complete_checkpoint(os.path.join(base, d))]  # skips one cut off mid-save
     if not dirs:
-        raise FileNotFoundError(f"no checkpoint-* directories under {base}")
+        raise FileNotFoundError(f"no complete checkpoint-* directories under {base}")
     latest = max(dirs, key=lambda d: int(d.split("-")[1]))
     with open(os.path.join(base, latest, "trainer_state.json")) as f:
         best = json.load(f).get("best_model_checkpoint")
@@ -116,8 +121,10 @@ def find_best_checkpoint(label_type, data_dir="."):
 # (a) Inference -- GPU; not covered by the unit tests
 # ---------------------------------------------------------------------------------------------------------------------
 
-def run_inference(manifest, checkpoint_dir):
-    """Score every row of ``manifest`` whose split is in ``EVAL_SPLITS``; return a predictions DataFrame."""
+def run_inference(manifest, checkpoint_dir, revision=None):
+    """Score every row of ``manifest`` whose split is in ``EVAL_SPLITS``; return a predictions DataFrame.
+
+    ``checkpoint_dir`` is a local checkpoint or a Hugging Face model id, with ``revision`` pinning the latter."""
     import torch
     from PIL import Image
     from tqdm import tqdm
@@ -125,8 +132,8 @@ def run_inference(manifest, checkpoint_dir):
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     # Slow (PIL) BitImageProcessor, matching fine_tune_classifier.py and sidewalk-ai-api's backend="pil".
-    image_processor = AutoImageProcessor.from_pretrained(checkpoint_dir, use_fast=False)
-    model = AutoModelForImageClassification.from_pretrained(checkpoint_dir).to(device).eval()
+    image_processor = AutoImageProcessor.from_pretrained(checkpoint_dir, revision=revision, use_fast=False)
+    model = AutoModelForImageClassification.from_pretrained(checkpoint_dir, revision=revision).to(device).eval()
     label2id = {v: int(k) for k, v in model.config.id2label.items()}
     if set(label2id) != set(CLASSES):
         raise ValueError(f"unexpected id2label {model.config.id2label}")
@@ -246,8 +253,8 @@ def format_report(metrics):
     return "\n".join(lines) + "\n"
 
 
-def save_figures(predictions_df, text, label_type, out_dir):
-    """``pvr.png`` (PR curve per class on test) and ``report.png`` (curve plus the text report)."""
+def save_figures(predictions_df, text, label_type, out_dir, suffix=""):
+    """``pvr<suffix>.png`` (PR curve per class on test) and ``report<suffix>.png`` (curve plus the text report)."""
     test = predictions_df[predictions_df.split == "test"]
     if len(test) == 0:
         return
@@ -266,7 +273,7 @@ def save_figures(predictions_df, text, label_type, out_dir):
 
     fig, ax = plt.subplots(figsize=(7, 5))
     draw(ax)
-    fig.savefig(os.path.join(out_dir, "pvr.png"), dpi=120)
+    fig.savefig(os.path.join(out_dir, f"pvr{suffix}.png"), dpi=120)
     plt.close(fig)
 
     fig = plt.figure(figsize=(10, 16))
@@ -276,7 +283,7 @@ def save_figures(predictions_df, text, label_type, out_dir):
     ax.axis("off")
     ax.text(0.01, 1.0, text, fontsize=8, va="top", ha="left", family="monospace", transform=ax.transAxes)
     fig.tight_layout()
-    fig.savefig(os.path.join(out_dir, "report.png"), dpi=120)
+    fig.savefig(os.path.join(out_dir, f"report{suffix}.png"), dpi=120)
     plt.close(fig)
 
 
@@ -287,18 +294,37 @@ def main(argv=None):
                         help="root holding <label_type>/split.csv, <label_type>/dinov2/ and deployment_priors.json "
                              "(data_generation.py's --out); outputs go to <data-dir>/<label_type>/")
     parser.add_argument("--skip-inference", action="store_true", help="reuse <label_type>/predictions.csv")
+    parser.add_argument("--checkpoint", default=None,
+                        help="score this model instead of the best checkpoint under <label_type>/dinov2/: a local "
+                             "checkpoint or a Hugging Face model id (needs --tag)")
+    parser.add_argument("--revision", default=None,
+                        help="Hugging Face revision for --checkpoint; under HF_HUB_OFFLINE=1 a full commit sha whose "
+                             "snapshot is already cached (download it on a login node first)")
+    parser.add_argument("--tag", default=None,
+                        help="suffix for every output (predictions_<tag>.csv, metrics_<tag>.json, ...), so scoring "
+                             "another model never overwrites this run's")
     args = parser.parse_args(argv)
+    if args.checkpoint and not args.tag:
+        parser.error("--checkpoint needs --tag, so its outputs do not overwrite the trained model's")
+    if args.revision and not args.checkpoint:
+        parser.error("--revision applies only to --checkpoint")
+    if args.checkpoint and args.skip_inference:
+        parser.error("--skip-inference reads predictions_<tag>.csv; --checkpoint would be ignored")
+    if args.tag and not args.tag.replace("-", "").replace("_", "").isalnum():
+        parser.error("--tag must be letters, digits, '-' or '_' (it becomes part of file names)")
     label_type = args.label_type
     base = os.path.join(args.data_dir, label_type)
-    pred_path = os.path.join(base, "predictions.csv")
+    suffix = f"_{args.tag}" if args.tag else ""
+    pred_path = os.path.join(base, f"predictions{suffix}.csv")
 
     manifest = load_split(label_type, args.data_dir)
     if args.skip_inference:
         predictions = pd.read_csv(pred_path)
     else:
-        checkpoint = find_best_checkpoint(label_type, args.data_dir)
-        print(f"best checkpoint: {checkpoint}")
-        predictions = run_inference(manifest, checkpoint)
+        checkpoint = args.checkpoint or find_best_checkpoint(label_type, args.data_dir)
+        print(f"{'checkpoint' if args.checkpoint else 'best checkpoint'}: {checkpoint}"
+              + (f" @ {args.revision}" if args.revision else ""))
+        predictions = run_inference(manifest, checkpoint, args.revision)
         predictions.to_csv(pred_path, index=False)
         print(f"wrote {pred_path} ({len(predictions)} rows)")
 
@@ -306,11 +332,13 @@ def main(argv=None):
     metrics = report(with_hard)
     text = format_report(metrics)
     print(text)
-    with open(os.path.join(base, "metrics.json"), "w") as f:
+    with open(os.path.join(base, f"metrics{suffix}.json"), "w") as f:
         json.dump(metrics, f, indent=2)
-    with open(os.path.join(base, "report.txt"), "w") as f:
+    with open(os.path.join(base, f"report{suffix}.txt"), "w") as f:
         f.write(text)
-    save_figures(predictions, text, label_type, base)
+    save_figures(predictions, text, label_type, base, suffix)
+    if args.tag:
+        return  # tagged outputs are a comparison model's: the served map is fitted for the trained checkpoint only
     priors = os.path.join(args.data_dir, "deployment_priors.json")
     print(f"next (fit the served map under the deployment prior data_generation.py wrote to {priors}):")
     print(f"  python -m calibration.calibrate --predictions {pred_path} --priors {priors} "

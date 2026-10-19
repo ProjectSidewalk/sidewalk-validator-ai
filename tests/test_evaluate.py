@@ -71,3 +71,48 @@ def test_report_without_heldout_or_hard():
     df = _synthetic_predictions().drop(columns="hard")
     df = df[df.split != "test_heldout"]
     assert set(report(df)) == {"test"}
+
+
+@pytest.mark.parametrize("argv, message", [
+    (["--checkpoint", "projectsidewalk/sidewalk-validator-ai-curbramp"], "needs --tag"),
+    (["--revision", "abc"], "applies only to --checkpoint"),
+])
+def test_comparison_model_flags_are_checked_before_any_work(argv, message, capsys):
+    from evaluate import main
+    with pytest.raises(SystemExit):
+        main(["--label_type", "CurbRamp", "--data-dir", "/nonexistent", *argv])
+    assert message in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("argv, message", [
+    (["--checkpoint", "m", "--tag", "prod", "--skip-inference"], "would be ignored"),
+    (["--tag", "../prod"], "--tag must be"),
+])
+def test_more_flag_checks(argv, message, capsys):
+    from evaluate import main
+    with pytest.raises(SystemExit):
+        main(["--label_type", "CurbRamp", "--data-dir", "/nonexistent", *argv])
+    assert message in capsys.readouterr().err
+
+
+def test_skip_inference_with_a_tag_writes_only_suffixed_outputs_and_no_hint(tmp_path, capsys):
+    from evaluate import main
+    base = tmp_path / "CurbRamp"
+    base.mkdir()
+    rows = []
+    for i in range(40):
+        cls = "correct" if i % 2 else "incorrect"
+        rows.append({"label_uid": f"seattle-wa:{i}", "city": "seattle-wa", "label_id": i, "pano_id": f"p{i}",
+                     "label_type": "CurbRamp", "label_class": cls, "crop_path": f"c{i}.webp",
+                     "split": "test" if i < 30 else "val", "hard": 0})
+    split = pd.DataFrame(rows)
+    split.to_csv(base / "split.csv", index=False)
+    rng = np.random.default_rng(0)
+    p_inc = np.clip((split.label_class == "incorrect") * 0.6 + rng.uniform(0, 0.4, len(split)), 0, 1)
+    pd.DataFrame({"label_uid": split.label_uid, "split": split.split, "true": split.label_class,
+                  "p_correct": 1 - p_inc, "p_incorrect": p_inc}).to_csv(base / "predictions_prod.csv", index=False)
+    main(["--label_type", "CurbRamp", "--data-dir", str(tmp_path), "--skip-inference", "--tag", "prod"])
+    written = sorted(f.name for f in base.iterdir())
+    assert written == ["metrics_prod.json", "predictions_prod.csv", "pvr_prod.png", "report_prod.png",
+                       "report_prod.txt", "split.csv"]
+    assert "calibration.calibrate" not in capsys.readouterr().out
