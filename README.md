@@ -321,11 +321,12 @@ again before upload. It also refuses:
 
 - a manifest with any row whose `label_type` is not `--label_type`, a missing crop, or a `label_uid` that is not
   `<city>:<label_id>`;
-- a map whose `calibration_report.json` names another label type;
+- a map whose `calibration_report.json` names another label type or none, or a `run_key.json` for another type;
 - a `split.csv` whose sha256 differs from the one `fine_tune_classifier.py` recorded in `dinov2/run_key.json`
   (the split changed after training);
-- a `predictions.csv` that does not cover exactly the split's `val`/`test`/`test_heldout` rows (metrics and map
-  from another split);
+- a `predictions.csv` with duplicate rows or that does not cover exactly the split's `val`/`test`/`test_heldout`
+  rows (metrics and map from another split); this check runs only when `metrics.json` or a map exists, since
+  without them the card has no evaluation to tie to the split;
 - a dataset whose content hash (the sha256 of `SHA256SUMS`) equals another staged label type's.
 
 Two weaker checks only warn: file times out of order (weights newer than predictions, predictions newer than
@@ -363,13 +364,21 @@ makes it fail instead of interleaving, an interrupted push leaves the repo as it
 history is not rewritten, so the revisions sidewalk-ai-api pins keep resolving. (`upload_folder` is avoided: with
 `hf_xet` installed, huggingface_hub 2.x splits a large folder into many commits.) `--yes` is refused, for both
 repos before either is touched, while a card still contains `TODO:` (unless `--allow-todo`), when a remote cannot be
-listed, or when more than 5% of the crops are found in another type's dataset repo. Repos under the default prefix
-are never created; under another `--repo-prefix`, `--create-repo` creates them private. `--push` restages, so hand
+listed, when more than 5% of the crops are found in another type's dataset repo, or when another type's crops carry
+no sha256 to compare. Repos under the `projectsidewalk` namespace (in any letter case) are never created; under
+another namespace, `--create-repo` creates them private. `--push` restages, so hand
 edits to the cards are lost; `--push-staged` uploads `publish/` as it is, after checking that nothing but the two
 `README.md` cards changed since staging (`publish/staging.json`), that the crops still match `SHA256SUMS`, and that
 the best checkpoint is unchanged. `--prune-remote` is the clean-up for the current repos before any retrain: it
-deletes only the training-only files, one commit per repo, and the old blobs stay in history. Exit code 3 means the
-Hub could not be reached. Copying the map to `sidewalk-ai-api/accuracy_mappings/<labeltype>.json` and updating
+deletes only the training-only files, one commit per repo, and the old blobs stay in history. Exit code 3 means any
+Hub failure: unreachable, a listing that failed, or a `create_repo`/`create_commit` the Hub rejected. The dataset
+and model repos are two separate commits. If the second fails, the first has landed; the error names it and prints
+the `--push-staged --what model --yes` (or `dataset`) command that uploads the rest.
+
+Two practical points for the first real upload. Make it a private test round with the full CurbRamp set
+(`--push --yes --create-repo --repo-prefix <user>/test-validator`), since a commit of ~5,000 additions and
+deletions is not exercised offline. Then push CurbRamp before Crosswalk: while the CurbRamp repo still holds the
+Crosswalk crops, an unchanged Crosswalk set is refused at 100% overlap against it, as it should be. Copying the map to `sidewalk-ai-api/accuracy_mappings/<labeltype>.json` and updating
 `model_map.py` there remain manual.
 
 ## Known limitations and open issues
