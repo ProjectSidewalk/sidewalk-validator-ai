@@ -81,7 +81,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 | File | Role | Key constants |
 |---|---|---|
 | [`data_generation.py`](data_generation.py) | Steps 1–4. Pulls labels, selects classes, writes `deployment_priors.json`, reads panoramas from the pano store, renders label-centred views, sizes crops by depth, appends to a resumable `manifest.csv`. | `CITIES`, `CORRECT_PROPORTION = 0.55`, `SEED = 42`, FOV 90°, 2048² view, `6100 / depth`, `--tilt-beta 0.95`, `--depth-encoder vitb` |
-| [`split_data.py`](split_data.py) | Step 5. Assigns manifest rows to train/val/test by panorama (stratified by class), merging panoramas whose labels are within a few metres of each other (the same feature seen twice), optional held-out cities, joins the `hard` flag; prints the share of val/test labels with a train label within 2/5/10 m; writes `split.csv`, never touches images. | 70 / 15 / 15 of rows, `--merge-radius-m 3` (coordinates from `--rawlabels DIR`), `--seed`, `--holdout-cities`, `--hard-examples` |
+| [`split_data.py`](split_data.py) | Step 5. Assigns manifest rows to train/val/test by panorama (stratified by class), merging panoramas whose labels are within a few metres of each other (the same feature seen twice), optional held-out cities, joins the `hard` flag; prints the share of val/test labels with a train label within 2/5/10 m; writes `split.csv`, never touches images. | 70 / 15 / 15 of rows, `--merge-radius-m 3` (coordinates from `--rawlabels DIR`, default `<out>/rawlabels`), `--max-group-share 0.05`, `--seed`, `--holdout-cities`, `--hard-examples` |
 | [`fine_tune_classifier.py`](fine_tune_classifier.py) | Step 6. Hugging Face `Trainer` on `facebook/dinov2-large`, from `split.csv`; val uses the checkpoint's image processor (as eval and serving do). | lr 1e-5, batch 8 × 4 accumulation, `--epochs 25`, warm-up 10%, `--seed`, best by macro-F1 (`--best-metric loss`), resumes from its last checkpoint, `--num-workers`, `id2label = {0: correct, 1: incorrect}` |
 | [`hard_examples.py`](hard_examples.py) | Builds [`analysis/hard_examples_2026-10-17.csv`](analysis/hard_examples_2026-10-17.csv) (`label_uid,reason`) from a private production export: labels the deployed AI got wrong against a unanimous crowd (≥3 votes) or one of the project leads' accounts (configured via `EXPERTS`, not named). Feeds `split_data.py --hard-examples`. | |
 | [`evaluate.py`](evaluate.py) | Step 7. Predictions for every held-out row, then AUC, accuracy and balanced accuracy, per-class P/R/F1, recall at precision. (`get_stats.py` is a stub that says so.) | splits `val`, `test`, `test_heldout`; `hard` slice |
@@ -240,7 +240,11 @@ labels had a same-type train label within 2 m
 ([#27](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/27)). So the split step also merges
 panorama groups whose labels are within `MERGE_RADIUS_M` metres (default 3; `MERGE_RADIUS_M=0 sbatch
 data_generation.slurm` turns it off), reading label coordinates from the `rawlabels/` cache, and prints the share of
-val/test labels with a train label within 2, 5 and 10 m either way.
+val/test labels with a train label within 2, 5 and 10 m either way. It stops if merging chains more than 5% of a
+type's rows into one group (`--max-group-share`) or more than 1% of labels have no coordinates, and warns when the
+achieved shares drift more than 3 points from 70 / 15 / 15. The 3 m radius assumes label coordinates are accurate to
+about a metre, which they are not always (a label's position is estimated from the panorama), so read the 5 m column
+after the first real run before calling this leak fixed.
 
 The job pulls `rawLabels` once into `rawlabels/` and reuses it on resubmission (`FRESH=1 sbatch
 data_generation.slurm` re-pulls), so a resumed run sees the same selection. Even after a re-pull the selection
@@ -293,7 +297,7 @@ run on a CPU: `pip install -r requirements.txt` (or just the CPU subset in `.git
 `pytest -q`.
 
 To run a single label type outside SLURM: `python data_generation.py --label_type CurbRamp`, then
-`split_data.py` (add `--rawlabels DIR` for the label coordinates, or `--merge-radius-m 0`), `fine_tune_classifier.py`
+`split_data.py` (label coordinates from `<out>/rawlabels/`, or `--rawlabels DIR`, or `--merge-radius-m 0` without them), `fine_tune_classifier.py`
 and `evaluate.py` with the same flag. For a smoke test add
 `--limit 20 --out /some/scratch/dir --allow-cpu`; `--select-only` stops after selection and the priors (no GPU
 needed), and `--rawlabels-cache DIR` reads saved `<city_id>.csv` exports instead of the API. Runs with `--limit`
