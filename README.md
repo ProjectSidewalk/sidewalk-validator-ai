@@ -317,34 +317,60 @@ python publish_to_hf.py --label_type CurbRamp --out /path/to/output   # writes C
 
 Staging stops instead of publishing the wrong thing. It refuses training-only files (`optimizer.pt`, `scheduler.pt`,
 `rng_state*.pth`, `training_args.bin`, `scaler.pt`, any `checkpoint-*` directory) and checks every staged folder for them
-again before upload. It also stops if the manifest's `label_type` is not `--label_type`, if a crop listed in
-`split.csv` is missing, or if a `label_uid` is not `<city>:<label_id>`. A dataset whose content hash (the sha256 of
-`SHA256SUMS`) equals another staged label type's is refused too. So is a `train` split that does not match the
-images per epoch implied by the model's `trainer_state.json` (steps per epoch × 8 × 4;
-`--skip-train-size-check` overrides). That last check catches the CurbRamp/Crosswalk swap: 103 steps × 32 ≈ 3,300
-images against 1,108 crops. The absolute pano-store paths (`pano_path`, `pano_store`) are dropped from the published
-CSV and JSON files.
+again before upload. It also refuses:
+
+- a manifest with any row whose `label_type` is not `--label_type`, a missing crop, or a `label_uid` that is not
+  `<city>:<label_id>`;
+- a map whose `calibration_report.json` names another label type;
+- a `split.csv` whose sha256 differs from the one `fine_tune_classifier.py` recorded in `dinov2/run_key.json`
+  (the split changed after training);
+- a `predictions.csv` that does not cover exactly the split's `val`/`test`/`test_heldout` rows (metrics and map
+  from another split);
+- a dataset whose content hash (the sha256 of `SHA256SUMS`) equals another staged label type's.
+
+Two weaker checks only warn: file times out of order (weights newer than predictions, predictions newer than
+metrics or map), and the `train` split against the images per epoch implied by `trainer_state.json` (steps per
+epoch × 8 × 4, which flags the CurbRamp/Crosswalk swap, 103 × 32 ≈ 3,300 images against 1,108 crops, but cannot
+tell two similar-sized sets apart). The absolute pano-store paths (`pano_path`, `pano_store`) and the store marker
+text are dropped from the published CSV and JSON files.
 
 The cards follow the Hugging Face model and dataset templates and are filled from the files above: the evaluation
 table from `metrics.json`; the prior, ECE, gate coverage and the confidence at which each verdict reaches 0.92
 from the map and its report; class balance, split sizes, cities, capture years and content hash from `split.csv`.
-Anything the files cannot supply (the dataset license, the split seed, a DOI, per-type failure modes) is written as
-`TODO:`. `croissant.json` is validated when `mlcroissant` is installed and written unvalidated otherwise.
+What the pipeline does not record goes in `<out>/<label_type>/card_overrides.json`:
+
+```json
+{"failure_modes": ["..."], "split_seed": 42, "dataset_license": "<hub license id>", "doi": "...", "model_doi": "..."}
+```
+
+Anything still unknown is written as `TODO:` (the DOI lines just say none has been minted yet).
+`croissant.json` is validated when `mlcroissant` is installed and written unvalidated otherwise.
 
 ```bash
-python publish_to_hf.py --audit                                        # live repos: stray files, copied datasets
-python publish_to_hf.py --label_type CurbRamp --out ROOT --push        # dry run: files, sizes, remote deletions
-python publish_to_hf.py --label_type CurbRamp --out ROOT --push --yes --dataset-license <id>
-python publish_to_hf.py --label_type CurbRamp --out ROOT --push --yes --repo-prefix <user>/test-validator
+python publish_to_hf.py --audit                                        # live repos: stray files, overlapping datasets
+python publish_to_hf.py --label_type CurbRamp --out ROOT --push        # restage, then dry run
+python publish_to_hf.py --label_type CurbRamp --out ROOT --push --yes
+python publish_to_hf.py --label_type CurbRamp --out ROOT --push-staged --yes   # upload as staged, after editing a card
+python publish_to_hf.py --label_type CurbRamp --out ROOT --push --yes --create-repo --repo-prefix <user>/test-validator
 python publish_to_hf.py --prune-remote --label_type all [--yes]        # delete stray training files only
 ```
 
-`--push` needs `huggingface_hub` and a token (`HF_TOKEN` or `huggingface-cli login`). It uploads each folder as one
-commit that makes the repo mirror the folder: stale remote files go, `.gitattributes` stays, and history is not
-rewritten, so the revisions sidewalk-ai-api pins keep resolving. Cards that still contain `TODO:` are refused
-unless `--allow-todo` is given. `--prune-remote` is the clean-up for the current repos before any retrain. It deletes
-only the training-only files, in one commit per repo; the old blobs stay in history. Copying the map to
-`sidewalk-ai-api/accuracy_mappings/<labeltype>.json` and updating `model_map.py` there remain manual.
+The dry run prints the files and sizes, the remote head, the remote files the commit would delete, and what share
+of the staged crops (by sha256) already sits in each other label type's dataset repo. With `--yes`, which needs
+`huggingface_hub>=0.34.4` and a token (`HF_TOKEN` or `huggingface-cli login`), each repo gets exactly one
+`create_commit` holding every addition and deletion, based on the head the preview listed. A concurrent change
+makes it fail instead of interleaving, an interrupted push leaves the repo as it was, `.gitattributes` stays, and
+history is not rewritten, so the revisions sidewalk-ai-api pins keep resolving. (`upload_folder` is avoided: with
+`hf_xet` installed, huggingface_hub 2.x splits a large folder into many commits.) `--yes` is refused, for both
+repos before either is touched, while a card still contains `TODO:` (unless `--allow-todo`), when a remote cannot be
+listed, or when more than 5% of the crops are found in another type's dataset repo. Repos under the default prefix
+are never created; under another `--repo-prefix`, `--create-repo` creates them private. `--push` restages, so hand
+edits to the cards are lost; `--push-staged` uploads `publish/` as it is, after checking that nothing but the two
+`README.md` cards changed since staging (`publish/staging.json`), that the crops still match `SHA256SUMS`, and that
+the best checkpoint is unchanged. `--prune-remote` is the clean-up for the current repos before any retrain: it
+deletes only the training-only files, one commit per repo, and the old blobs stay in history. Exit code 3 means the
+Hub could not be reached. Copying the map to `sidewalk-ai-api/accuracy_mappings/<labeltype>.json` and updating
+`model_map.py` there remain manual.
 
 ## Known limitations and open issues
 
