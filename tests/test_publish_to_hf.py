@@ -1,0 +1,462 @@
+"""publish_to_hf.py and hf_cards.py on a tiny fake pipeline output root (no GPU, no network, no token)."""
+import json
+import os
+import shutil
+
+import numpy as np
+import pandas as pd
+import pytest
+
+import evaluate
+import hf_cards
+import publish_to_hf as pub
+from calibration import calibrate as cal
+
+T = "CurbRamp"
+# (city, label_id, class, split, capture date); label_id 7 repeats across cities on purpose
+ROWS = [("teaneck", 7, "correct", "train", "2019-08"), ("teaneck", 8, "incorrect", "train", "2020-05"),
+        ("chicago", 7, "correct", "train", "2021-06"), ("chicago", 9, "incorrect", "train", "2018-07"),
+        ("teaneck", 10, "correct", "train", "2022-01"), ("teaneck", 11, "incorrect", "train", "2019-03"),
+        ("teaneck", 12, "correct", "val", "2019-08"), ("chicago", 13, "incorrect", "val", "2017-09"),
+        ("teaneck", 14, "correct", "test", "2023-04"), ("chicago", 15, "incorrect", "test", "2019-08"),
+        ("oradell", 1, "correct", "test_heldout", "2016-10"), ("oradell", 2, "incorrect", "test_heldout", "2019-08")]
+
+
+def _predictions(n, split, rng):
+    """Synthetic predictions in evaluate.py's format, roughly 80% right."""
+    true = np.where(np.arange(n) % 2 == 0, "correct", "incorrect")
+    p_inc = np.clip(np.where(true == "incorrect", 0.75, 0.25) + rng.normal(0, 0.2, n), 0.01, 0.99)
+    return pd.DataFrame({"label_uid": [f"{split}:{i}" for i in range(n)], "split": split, "true": true,
+                         "p_correct": 1 - p_inc, "p_incorrect": p_inc})
+
+
+def make_root(tmp_path, label_type=T, rows=ROWS, max_steps=2, epochs=2):
+    """A pipeline output root with crops, manifest, split, two checkpoints, metrics and a calibrated map."""
+    root = tmp_path / "out"
+    base = root / label_type
+    records = []
+    for i, (city, lid, cls, split, date) in enumerate(rows):
+        crop = f"{cls}/{city}_{lid}.webp"
+        (base / cls).mkdir(parents=True, exist_ok=True)
+        (base / crop).write_bytes(b"RIFF\x00\x00\x00\x00WEBPVP8 " + f"{label_type}:{city}:{lid}".encode())
+        records.append({"label_uid": f"{city}:{lid}", "city": city, "label_id": lid, "pano_id": f"pano{i // 2}",
+                        "label_type": label_type, "label_class": cls, "author": "human", "human_agree": 3,
+                        "human_disagree": 0, "image_capture_date": date, "pano_source": "gsv",
+                        "pano_path": f"/secret/store/{city}/pa/pano{i}.jpg", "depth_m": 5.0, "clipped": 0,
+                        "crop_path": crop, "status": "ok", "split": split})
+    manifest = pd.DataFrame(records).drop(columns="split")
+    failed = manifest.iloc[[0]].assign(label_uid="teaneck:99", label_id=99, status="no_pano",
+                                       crop_path="correct/teaneck_99.webp")
+    pd.concat([manifest, failed]).to_csv(base / "manifest.csv", index=False)
+    split = pd.DataFrame(records)
+    split.insert(split.columns.get_loc("crop_path"), "hard", 0)
+    split.to_csv(base / "split.csv", index=False)
+    (base / "correct" / "stray_not_in_split.webp").write_bytes(b"not listed")
+    (root / "deployment_priors.json").write_text(json.dumps({
+        label_type: {"correct": 900, "incorrect": 100, "measured_on": "2026-10-17",
+                     "source": "rawLabels of teaneck, chicago, human votes only"}}))
+    (base / "generation_run.json").write_text(json.dumps({
+        "label_type": label_type, "settings": {"tilt_beta": 0.95, "depth_encoder": "vitb", "depth_dataset": "vkitti",
+                                               "include_ai_labels": False},
+        "tilt_beta": 0.95, "depth_encoder": "vitb", "seed": 42, "pano_store": "/secret/store",
+        "selection_sha256": "abc123"}))
+
+    dinov2 = base / "dinov2"
+    log = [{"epoch": 1.0, "eval_macro_f1": 0.81, "step": 2}, {"epoch": 2.0, "eval_macro_f1": 0.79, "step": 4}]
+    for step in (2, 4):
+        ck = dinov2 / f"checkpoint-{step}"
+        ck.mkdir(parents=True)
+        (ck / "model.safetensors").write_bytes(f"weights-{step}".encode())
+        (ck / "config.json").write_text(json.dumps({"architectures": ["Dinov2ForImageClassification"],
+                                                    "id2label": {"0": "correct", "1": "incorrect"}}))
+        (ck / "preprocessor_config.json").write_text(json.dumps({"image_processor_type": "BitImageProcessor"}))
+        for junk in ("optimizer.pt", "scheduler.pt", "rng_state.pth", "training_args.bin", "scaler.pt"):
+            (ck / junk).write_bytes(b"training residue")
+        (ck / "trainer_state.json").write_text(json.dumps({
+            "best_metric": 0.81, "best_model_checkpoint": f"{label_type}/dinov2/checkpoint-2", "best_global_step": 2,
+            "epoch": step / 2, "global_step": step, "max_steps": max_steps, "num_train_epochs": epochs,
+            "train_batch_size": 8, "total_flos": 1e19, "stateful_callbacks": {"x": 1},
+            "log_history": log[:step // 2]}))
+    (dinov2 / "training_run.json").write_text(json.dumps({"label_type": label_type, "seed": 42, "epochs": epochs,
+                                                         "base_checkpoint": "facebook/dinov2-large",
+                                                         "best_model_checkpoint": "checkpoint-2",
+                                                         "best_metric": "macro_f1", "best_metric_value": 0.81}))
+
+    rng = np.random.default_rng(0)
+    preds = pd.concat([_predictions(400, "val", rng), _predictions(200, "test", rng),
+                       _predictions(100, "test_heldout", rng)])
+    metrics = evaluate.report(preds)
+    (base / "metrics.json").write_text(json.dumps(metrics))
+    api_map, rep, _ = cal.calibrate(preds, {"correct": 0.9, "incorrect": 0.1})
+    rep["prior_source"] = {"source": "rawLabels of teaneck, chicago, human votes only", "measured_on": "2026-10-17"}
+    (base / "calibration").mkdir()
+    (base / "calibration" / f"{label_type.lower()}.json").write_text(json.dumps(api_map, indent=4))
+    (base / "calibration" / "calibration_report.json").write_text(json.dumps(rep, default=float))
+    return str(root), metrics, api_map, rep
+
+
+@pytest.fixture
+def staged(tmp_path):
+    root, metrics, api_map, rep = make_root(tmp_path)
+    model_dir, dataset_dir = pub.stage(root, T)
+    return {"root": root, "model": model_dir, "dataset": dataset_dir, "metrics": metrics, "api_map": api_map,
+            "report": rep}
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Model staging
+# ---------------------------------------------------------------------------------------------------------------------
+
+def test_model_repo_holds_only_inference_files(staged):
+    files = {p for p, _ in pub.list_files(staged["model"])}
+    assert files == {"model.safetensors", "config.json", "preprocessor_config.json", "trainer_state.json",
+                     "confidence_precision_map.json", "calibration_report.json", "metrics.json", "training_run.json",
+                     "README.md"}
+    # the best checkpoint (2), not the latest (4)
+    with open(os.path.join(staged["model"], "model.safetensors"), "rb") as f:
+        assert f.read() == b"weights-2"
+
+
+def test_trainer_state_is_trimmed_with_full_history(staged):
+    with open(os.path.join(staged["model"], "trainer_state.json")) as f:
+        state = json.load(f)
+    assert "stateful_callbacks" not in state and "total_flos" not in state
+    assert state["best_model_checkpoint"] == "checkpoint-2"
+    assert len(state["log_history"]) == 2       # from the latest checkpoint, so epochs after the best are kept
+
+
+def test_map_is_copied_verbatim(staged):
+    with open(os.path.join(staged["model"], "confidence_precision_map.json")) as f:
+        assert json.load(f) == staged["api_map"]
+
+
+@pytest.mark.parametrize("path", ["optimizer.pt", "scheduler.pt", "rng_state.pth", "rng_state_3.pth",
+                                  "training_args.bin", "scaler.pt", "checkpoint-2060/config.json", "checkpoint-12"])
+def test_forbidden_files(path):
+    assert pub.forbidden_reason(path)
+
+
+@pytest.mark.parametrize("path", ["model.safetensors", "config.json", "trainer_state.json", "README.md",
+                                  "train/correct/teaneck_7.webp"])
+def test_allowed_files(path):
+    assert pub.forbidden_reason(path) is None
+
+
+def test_a_training_file_in_the_staged_folder_blocks_upload(staged):
+    with open(os.path.join(staged["model"], "optimizer.pt"), "wb") as f:
+        f.write(b"x")
+    with pytest.raises(pub.PublishError, match="optimizer.pt"):
+        pub.assert_publishable(staged["model"])
+    with pytest.raises(pub.PublishError, match="optimizer.pt"):
+        pub.push_folder(staged["model"], "x/y", "model", "msg", allow_todo=True, fetch=lambda *a: None)
+
+
+def test_copy_in_refuses_training_files(tmp_path):
+    src = tmp_path / "optimizer.pt"
+    src.write_bytes(b"x")
+    with pytest.raises(pub.PublishError):
+        pub._copy_in(str(src), str(tmp_path / "publish" / "model" / "optimizer.pt"), "copy")
+
+
+def test_train_size_mismatch_is_refused(tmp_path):
+    # 103 steps/epoch x 32 is about 3,300 images (the published CurbRamp model); the fake train split has 6
+    root, *_ = make_root(tmp_path, max_steps=2575, epochs=25)
+    with pytest.raises(pub.PublishError, match="model and dataset disagree"):
+        pub.stage(root, T)
+    pub.stage(root, T, check_train=False)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Dataset staging
+# ---------------------------------------------------------------------------------------------------------------------
+
+def test_dataset_layout_follows_split_csv(staged):
+    crops = {p for p, _ in pub.list_files(staged["dataset"]) if p.endswith(".webp")}
+    assert crops == {f"{s}/{c}/{city}_{lid}.webp" for city, lid, c, s, _ in ROWS}
+    assert not any("stray_not_in_split" in p for p in crops)      # on disk but not in split.csv
+    assert not any("teaneck_99" in p for p in crops)              # failed manifest row
+    split = pd.read_csv(os.path.join(staged["dataset"], "split.csv"))
+    assert "pano_path" not in split.columns
+    assert all(os.path.exists(os.path.join(staged["dataset"], p)) for p in split.crop_path)
+    manifest = pd.read_csv(os.path.join(staged["dataset"], "manifest.csv"))
+    assert "pano_path" not in manifest.columns and len(manifest) == len(ROWS) + 1
+    with open(os.path.join(staged["dataset"], "generation_run.json")) as f:
+        assert "pano_store" not in json.load(f)
+    with open(os.path.join(staged["dataset"], "deployment_priors.json")) as f:
+        assert list(json.load(f)) == [T]
+
+
+def test_crops_are_linked_or_copied_never_moved(staged):
+    assert os.path.exists(os.path.join(staged["root"], T, "correct", "teaneck_7.webp"))
+
+
+def test_copy_mode(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _, dataset_dir = pub.stage(root, T, link_mode="copy")
+    staged = os.path.join(dataset_dir, "train", "correct", "teaneck_7.webp")
+    assert os.stat(staged).st_ino != os.stat(os.path.join(root, T, "correct", "teaneck_7.webp")).st_ino
+
+
+def _content_hash(dataset_dir):
+    with open(os.path.join(dataset_dir, "dataset_info.json")) as f:
+        return json.load(f)["content_hash"]
+
+
+def test_content_hash_is_stable_and_changes_with_a_crop(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _, d = pub.stage(root, T)
+    first = _content_hash(d)
+    _, d = pub.stage(root, T)
+    assert _content_hash(d) == first
+    with open(os.path.join(d, "SHA256SUMS")) as f:
+        lines = f.read().splitlines()
+    assert len(lines) == len(ROWS) and lines == sorted(lines, key=lambda line: line.split("  ")[1])
+    # change one crop's bytes: the hash must change
+    with open(os.path.join(root, T, "incorrect", "chicago_9.webp"), "ab") as f:
+        f.write(b"edited")
+    _, d = pub.stage(root, T)
+    assert _content_hash(d) != first
+
+
+def test_label_type_mismatch_fails(tmp_path):
+    root, *_ = make_root(tmp_path)
+    path = os.path.join(root, T, "manifest.csv")
+    pd.read_csv(path).assign(label_type="Crosswalk").to_csv(path, index=False)
+    with pytest.raises(pub.PublishError, match="label_type"):
+        pub.stage(root, T)
+
+
+def test_a_copied_dataset_is_refused(tmp_path):
+    """The #7 bug: one label type's folder holding another's crops (here, relabelled to pass the column check)."""
+    root, *_ = make_root(tmp_path)
+    pub.stage(root, T)
+    shutil.copytree(os.path.join(root, T), os.path.join(root, "Crosswalk"),
+                    ignore=shutil.ignore_patterns("publish"))
+    for name in ("manifest.csv", "split.csv"):
+        path = os.path.join(root, "Crosswalk", name)
+        pd.read_csv(path).assign(label_type="Crosswalk").to_csv(path, index=False)
+    with pytest.raises(pub.PublishError, match="same content hash"):
+        pub.stage_dataset(root, "Crosswalk", os.path.join(root, "Crosswalk", "publish", "dataset"))
+
+
+def test_label_uid_must_be_city_and_id(tmp_path):
+    root, *_ = make_root(tmp_path)
+    path = os.path.join(root, T, "split.csv")
+    df = pd.read_csv(path)
+    df.loc[0, "label_uid"] = "7"
+    df.to_csv(path, index=False)
+    with pytest.raises(pub.PublishError, match="label_uid"):
+        pub.stage(root, T)
+
+
+def test_missing_crop_fails(tmp_path):
+    root, *_ = make_root(tmp_path)
+    os.remove(os.path.join(root, T, "correct", "teaneck_14.webp"))
+    with pytest.raises(pub.PublishError, match="do not exist"):
+        pub.stage(root, T)
+
+
+def test_croissant(staged):
+    with open(os.path.join(staged["dataset"], "croissant.json")) as f:
+        doc = json.load(f)
+    assert doc["conformsTo"] == "http://mlcommons.org/croissant/1.1"
+    fields = {f["name"] for f in doc["recordSet"][0]["field"]}
+    assert {"label_uid", "label_class", "split", "crop_path"} <= fields
+    pytest.importorskip("mlcroissant")
+    assert pub.validate_croissant(os.path.join(staged["dataset"], "croissant.json"))[0]
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Cards
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _read(path):
+    with open(path) as f:
+        return f.read()
+
+
+def test_model_card_has_the_real_numbers(staged):
+    card = _read(os.path.join(staged["model"], "README.md"))
+    test = staged["metrics"]["test"]
+    assert card.startswith("---\nlicense: mit\n")
+    assert "base_model: facebook/dinov2-large" in card and "pipeline_tag: image-classification" in card
+    assert "projectsidewalk/sidewalk-validator-ai-dataset-curbramp" in card
+    assert f"{test['accuracy']:.3f}" in card and f"{test['auc']:.3f}" in card
+    assert f"{test['balanced_accuracy']:.3f}" in card
+    assert f"{test['per_class']['incorrect']['recall']:.3f}" in card
+    assert "test_heldout" in card and "0.92" in card
+    th = hf_cards.gate_thresholds(staged["api_map"])
+    if th["correct"] is not None:
+        assert f"{th['correct']:g}" in card
+    assert f"{staged['report']['eval']['overall_ece']:.4f}" in card
+    assert "checkpoint-2" in card
+    assert "@inproceedings{saha2019projectsidewalk" in card
+    assert "licens" not in card.lower().replace("license: mit", "")   # no licensing discussion in the body
+
+
+def test_dataset_card_has_the_real_numbers(staged):
+    card = _read(os.path.join(staged["dataset"], "README.md"))
+    info = json.loads(_read(os.path.join(staged["dataset"], "dataset_info.json")))
+    assert info["content_hash"] in card
+    assert info["split_counts"] == {"train": 6, "val": 2, "test": 2, "test_heldout": 2}
+    assert "2016–2023" in card                                  # capture years from image_capture_date
+    assert "oradell" in card and "test_heldout" in card
+    assert 'size_categories:\n  - "n<1K"' in card
+    assert "TODO: dataset license" in card                     # not guessed
+    assert "license:" not in card.split("---")[1].replace("# TODO: dataset license", "")
+    assert "900" in card and "100" in card                      # deployment prior counts
+    assert "disagree − agree > 1" in card and "agree − disagree > 2" in card
+
+
+def test_dataset_license_flag(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _, d = pub.stage(root, T, dataset_license="cc-by-4.0")
+    assert "\nlicense: cc-by-4.0\n" in _read(os.path.join(d, "README.md"))
+
+
+def test_front_matter_is_valid_yaml(staged):
+    yaml = pytest.importorskip("yaml")
+    for folder in (staged["model"], staged["dataset"]):
+        meta = yaml.safe_load(_read(os.path.join(folder, "README.md")).split("---")[1])
+        assert "image-classification" in json.dumps(meta)
+    meta = yaml.safe_load(_read(os.path.join(staged["model"], "README.md")).split("---")[1])
+    results = meta["model-index"][0]["results"][0]["metrics"]
+    assert {r["type"] for r in results} >= {"accuracy", "roc_auc"}
+
+
+def test_yaml_quotes_ambiguous_strings():
+    out = hf_cards.yaml_front_matter({"a": "1K<n<10K", "b": "yes", "c": "mit", "d": 0.5, "e": None})
+    assert 'a: "1K<n<10K"' in out and 'b: "yes"' in out and "c: mit" in out and "d: 0.5" in out and "e: null" in out
+
+
+def test_gate_thresholds():
+    assert hf_cards.gate_thresholds({"correct": {"0.5": 0.9, "0.7": 0.92, "0.8": 0.95},
+                                     "incorrect": {"0.5": 0.3}}) == {"correct": 0.7, "incorrect": None}
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Audit (mocked API)
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _fake_hub():
+    """Listings shaped like the live repos in October 2026: curbramp's dataset is crosswalk's."""
+    model = [{"path": p, "size": s, "blob": p} for p, s in
+             ((".gitattributes", 1519), ("README.md", 24), ("config.json", 1272),
+              ("model.safetensors", 1_217_542_512), ("optimizer.pt", 2_435_342_411),
+              ("preprocessor_config.json", 436), ("rng_state.pth", 14_645), ("scheduler.pt", 1_465),
+              ("trainer_state.json", 40_000), ("training_args.bin", 5_368))]
+    crosswalk = [{"path": p, "size": 100, "blob": "b" + p} for p in
+                 ("train/correct/chicago_1.webp", "train/incorrect/chicago_2.webp", "test/correct/chicago_10689.webp")]
+    listings = {("dataset", "projectsidewalk/sidewalk-validator-ai-dataset-crosswalk"): crosswalk,
+                ("dataset", "projectsidewalk/sidewalk-validator-ai-dataset-curbramp"):
+                    crosswalk + [{"path": ".gitattributes", "size": 1, "blob": "g"}]}
+    for t in pub.LABEL_TYPES:
+        listings[("model", pub.model_repo_id(t))] = model if t != "Crosswalk" else [
+            f for f in model if not pub.forbidden_reason(f["path"])]
+        listings.setdefault(("dataset", pub.dataset_repo_id(t)),
+                            [{"path": f"train/correct/{t}_{i}.webp", "size": 1, "blob": f"{t}{i}"} for i in range(3)])
+    del listings[("dataset", pub.dataset_repo_id("Obstacle"))]   # a missing repo
+    return lambda repo_type, repo_id: listings.get((repo_type, repo_id))
+
+
+def test_audit_finds_stray_files_and_copied_datasets():
+    result = pub.audit(fetch=_fake_hub())
+    stray = {r["repo"]: [p for p, _ in r["stray"]] for r in result["models"]}
+    assert sorted(stray["projectsidewalk/sidewalk-validator-ai-curbramp"]) == [
+        "optimizer.pt", "rng_state.pth", "scheduler.pt", "training_args.bin"]
+    assert stray["projectsidewalk/sidewalk-validator-ai-crosswalk"] == []
+    assert result["duplicates"] == [("projectsidewalk/sidewalk-validator-ai-dataset-curbramp",
+                                     "projectsidewalk/sidewalk-validator-ai-dataset-crosswalk", True)]
+    text = pub.format_audit(result)
+    assert "optimizer.pt (2.3 GB)" in text
+    assert "missing or private" in text
+    assert "same content" in text
+    assert "stub (24 B)" in text                                  # the live repos' license-only README
+    assert "16 stray training files" in text and "1 pair(s)" in text
+
+
+def test_fetch_repo_files_parses_the_api():
+    class Resp:
+        def __init__(self, code, body):
+            self.status_code, self._body = code, body
+
+        def json(self):
+            return self._body
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(self.status_code)
+
+    calls = []
+
+    def get(url, params=None, timeout=None):
+        calls.append((url, params))
+        if "missing" in url:
+            return Resp(401, {})
+        return Resp(200, {"siblings": [{"rfilename": "optimizer.pt", "size": 5, "blobId": "x"}]})
+
+    assert pub.fetch_repo_files("model", "org/a", get=get) == [{"path": "optimizer.pt", "size": 5, "blob": "x"}]
+    assert pub.fetch_repo_files("dataset", "org/missing", get=get) is None
+    assert calls[0] == ("https://huggingface.co/api/models/org/a", {"blobs": "true"})
+    assert calls[1][0] == "https://huggingface.co/api/datasets/org/missing"
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Push and prune (fake HfApi; huggingface_hub not needed)
+# ---------------------------------------------------------------------------------------------------------------------
+
+class FakeApi:
+    def __init__(self):
+        self.calls = []
+
+    def create_repo(self, repo_id, **kw):
+        self.calls.append(("create_repo", repo_id, kw))
+
+    def upload_folder(self, **kw):
+        self.calls.append(("upload_folder", kw))
+        return "commit-url"
+
+    def delete_files(self, **kw):
+        self.calls.append(("delete_files", kw))
+
+
+def test_push_refuses_todo_cards_and_is_dry_run_by_default(staged, capsys):
+    with pytest.raises(pub.PublishError, match="TODO"):
+        pub.push_folder(staged["dataset"], "x/y", "dataset", "msg", fetch=lambda *a: None)
+    api = FakeApi()
+    plan = pub.push_folder(staged["model"], "x/y", "model", "msg", allow_todo=True, api=api,
+                           fetch=lambda *a: [{"path": "optimizer.pt", "size": 1}, {"path": ".gitattributes"}])
+    assert api.calls == [] and "model.safetensors" in {p for p, _ in plan}
+    out = capsys.readouterr().out
+    assert "DRY RUN" in out and "deletes: 1: optimizer.pt" in out
+
+
+def test_push_with_yes_mirrors_the_folder(staged):
+    api = FakeApi()
+    pub.push_folder(staged["model"], "me/test-curbramp", "model", "msg", yes=True, allow_todo=True, api=api,
+                    fetch=lambda *a: None)
+    assert api.calls[0] == ("create_repo", "me/test-curbramp", {"repo_type": "model", "exist_ok": True})
+    upload = api.calls[1][1]
+    assert upload["folder_path"] == staged["model"] and upload["delete_patterns"] == "*"
+
+
+def test_prune_remote(capsys):
+    fetch = _fake_hub()
+    api = FakeApi()
+    assert pub.prune_remote("projectsidewalk/sidewalk-validator-ai-curbramp", fetch=fetch, api=api)
+    assert api.calls == []                                       # dry run
+    stray = pub.prune_remote("projectsidewalk/sidewalk-validator-ai-curbramp", yes=True, fetch=fetch, api=api)
+    assert api.calls[0][1]["delete_patterns"] == stray and "model.safetensors" not in stray
+    assert pub.prune_remote("projectsidewalk/sidewalk-validator-ai-crosswalk", yes=True, fetch=fetch, api=api) == []
+
+
+def test_repo_prefix():
+    assert pub.model_repo_id("NoCurbRamp", "me/test") == "me/test-nocurbramp"
+    assert pub.dataset_repo_id("NoCurbRamp") == "projectsidewalk/sidewalk-validator-ai-dataset-nocurbramp"
+
+
+def test_cli_stage_and_dry_run(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    assert pub.main(["--label_type", T, "--out", root]) == 0
+    assert "TODO markers" in capsys.readouterr().out
+    assert pub.main(["--label_type", "all", "--out", root]) == 1
