@@ -59,7 +59,7 @@ Usage::
     python split_data.py --label_type CurbRamp                              # ./CurbRamp/manifest.csv, ./rawlabels/
     python split_data.py --label_type CurbRamp --rawlabels ~/rawlabels      # coordinates from elsewhere
     python split_data.py --label_type CurbRamp --merge-radius-m 0           # panorama grouping only
-    python split_data.py --label_type CurbRamp --holdout-cities teaneck-nj,taipei --seed 7
+    python split_data.py --label_type CurbRamp --holdout-cities teaneck-nj,chicago-il --seed 7
     python split_data.py --label_type CurbRamp --hard-examples analysis/hard_examples_2026-10-17.csv
 """
 import argparse

@@ -1,11 +1,15 @@
 """Download rawLabels CSV for every public city into cache/, verifying the last row parses.
 Falls back to bbox tiles if the whole-city export truncates."""
 import csv, io, json, os, sys, time, requests
+from datetime import date
 CACHE = sys.argv[1]
-cities = requests.get("https://sidewalk-teaneck.cs.washington.edu/v3/api/cities", timeout=60).json()["cities"]
+CITIES_API = "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities"
+cities = requests.get(CITIES_API, timeout=60).json()["cities"]
 pub = [c for c in cities if c["visibility"] == "public" and c["url"]]
 print(f"{len(pub)} public cities", flush=True)
-json.dump(pub, open(os.path.join(CACHE, "cities.json"), "w"), indent=1)
+# The shape data_generation.py reads and writes as <rawlabels-cache>/cities.json.
+json.dump({"fetched_on": date.today().isoformat(), "url": CITIES_API, "cities": pub},
+          open(os.path.join(CACHE, "cities.json"), "w"), indent=1)
 def ok(text):
     """True if the export is complete: it ends with a newline, parses strictly (no unterminated quoted field), and its
     last rows are as wide as its own header. Returns ``(complete, data_rows)``."""
