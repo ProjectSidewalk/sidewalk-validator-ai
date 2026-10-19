@@ -165,6 +165,14 @@ def test_per_city_is_absent_by_default_and_skipped_by_format_report():
     assert "c (n=1)" in md
 
 
+def test_per_city_without_any_city_at_the_minimum_prints_no_empty_table():
+    from evaluate import format_per_city
+    m = report(_per_city_predictions(), per_city=True, min_city_n=100)
+    md = format_per_city(m["per_city"])
+    assert "| city |" not in md
+    assert "No city reaches the minimum." in md and "Below the minimum: a (n=6)" in md
+
+
 def test_per_city_needs_a_city_column():
     with pytest.raises(ValueError, match="city"):
         report(_per_city_predictions().drop(columns="city"), per_city=True)

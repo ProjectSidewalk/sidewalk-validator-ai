@@ -71,7 +71,10 @@ def test_private_and_ambiguous_cities_are_pooled(tmp_path):
 
 @pytest.mark.parametrize("schema_city, cities, expected", [
     ("seattle", {"seattle-wa": "public"}, "seattle-wa"),            # region code
-    ("rancagua", {"rancagua-chile": "public"}, "rancagua-chile"),   # country suffix
+    # a long suffix counts only when it is the listed entry's own country_id
+    ("rancagua", {"rancagua-chile": {"visibility": "public", "country_id": "chile"}}, "rancagua-chile"),
+    ("rancagua", {"rancagua-chile": {"visibility": "public", "country_id": "peru"}}, None),
+    ("rancagua", {"rancagua-chile": "public"}, None),
     ("newport_ky", {"newport-ky": "public"}, "newport-ky"),         # exact
     # unlisted schema whose name merely starts a listed id: never named after it
     ("oak", {"oak-park-gardens": "public"}, None),
@@ -136,6 +139,29 @@ def test_min_n_filters_rows_and_below_gate(tmp_path):
     assert list(b.city) == ["other (2 private deployments)", "seattle-wa", "st-louis-mo"]
     assert b.shortfall.iloc[0] == pytest.approx(0.42)
     assert list(pc.below_gate(strata[strata.city != pc.ALL_CITIES], min_n=3).city) == ["seattle-wa"]
+
+
+def test_ci_below_needs_the_whole_interval_below_the_gate():
+    # 85/100: point estimate below 0.92, but the interval (0.767, 0.907) is wholly below -> ci_below
+    # 90/100: interval (0.826, 0.945) straddles the gate -> below on the point estimate only
+    strata = pd.DataFrame([
+        {"city": "x", "label_type": "T", "verdict": "Agree", "n": 100, "observed": 0.85},
+        {"city": "y", "label_type": "T", "verdict": "Agree", "n": 100, "observed": 0.90},
+    ])
+    lo, hi = pc.wilson_interval(strata.observed.to_numpy(), strata.n.to_numpy())
+    strata["ci_lo"], strata["ci_hi"] = lo, hi
+    assert hi[0] < 0.92 and lo[1] < 0.92 < hi[1]
+    b = pc.below_gate(strata, min_n=50).set_index("city")
+    assert bool(b.loc["x", "ci_below"]) is True
+    assert bool(b.loc["y", "ci_below"]) is False
+
+
+def test_load_cities_keeps_country_ids(tmp_path):
+    path = tmp_path / "cities.json"
+    path.write_text(json.dumps({"cities": [{"city_id": "rancagua-chile", "visibility": "public",
+                                            "country_id": "chile"}]}))
+    cities = pc.load_cities(path)
+    assert pc.public_name("rancagua", cities) == "rancagua-chile"
 
 
 def test_city_gate_uses_the_wilson_lower_bound():

@@ -293,10 +293,13 @@ def format_per_city(per_city):
 
     lines = []
     for split, pc in per_city.items():
-        lines += [f"### {split}: per city (n >= {pc['min_city_n']})", "",
-                  "| city | n (correct / incorrect) | accuracy | AUC | precision correct | recall correct "
-                  "| precision incorrect | recall incorrect |",
-                  "|---|---:|---:|---:|---:|---:|---:|---:|"]
+        lines += [f"### {split}: per city (n >= {pc['min_city_n']})", ""]
+        if pc["cities"]:
+            lines += ["| city | n (correct / incorrect) | accuracy | AUC | precision correct | recall correct "
+                      "| precision incorrect | recall incorrect |",
+                      "|---|---:|---:|---:|---:|---:|---:|---:|"]
+        else:
+            lines.append("No city reaches the minimum.")
         for city, m in pc["cities"].items():
             auc = "—" if m["auc"] is None else f"{m['auc']:.3f}"
             (pc_p, pc_r), (pi_p, pi_r) = pr(m["per_class"]["correct"]), pr(m["per_class"]["incorrect"])

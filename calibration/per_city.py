@@ -72,33 +72,40 @@ STRATA_COLUMNS = ["city", "label_type", "verdict", "n", "served", "observed", "c
 # ---------------------------------------------------------------------------------------------------------------------
 
 def load_cities(path):
-    """``{city_id: visibility}`` from a saved ``/v3/api/cities`` response (``{"cities": [...]}`` or a bare list)."""
+    """``{city_id: {"visibility", "country_id"}}`` from a saved ``/v3/api/cities`` response (``{"cities": [...]}`` or a
+    bare list). The naming functions also accept a plain ``{city_id: visibility}`` dict (no country ids)."""
     with open(path) as f:
         cities = json.load(f)
     cities = cities.get("cities", cities) if isinstance(cities, dict) else cities
-    return {c["city_id"]: c.get("visibility") for c in cities}
+    return {c["city_id"]: {"visibility": c.get("visibility"), "country_id": c.get("country_id")} for c in cities}
 
 
-COUNTRY_SUFFIXES = {"brazil", "canada", "chile", "ecuador", "india", "mexico", "netherlands", "switzerland",
-                    "taiwan"}
-"""Region suffixes besides two-letter codes that a ``city_id`` may add to its schema's name (``rancagua-chile``)."""
+def _entry(value):
+    """``(visibility, country_id)`` of one listed city, whichever form ``cities`` uses."""
+    if isinstance(value, dict):
+        return value.get("visibility"), value.get("country_id")
+    return value, None
 
 
-def _is_region_suffix(token):
-    return (len(token) == 2 and token.isalpha()) or token in COUNTRY_SUFFIXES
+def _is_region_suffix(token, country_id):
+    """A two-letter code (``wa``), or the listed entry's own ``country_id`` (``rancagua-chile`` listed in chile)."""
+    return (len(token) == 2 and token.isalpha()) or (country_id is not None and token == str(country_id).lower())
 
 
 def match_city_id(schema_city, cities):
     """The ``city_id`` that identifies a schema's city part (``seattle``, ``st_louis``), or ``None``.
 
     The slug (``_`` -> ``-``) is identified only if it IS a listed ``city_id``, or if exactly one listed ``city_id``
-    is the slug plus one region suffix: a two-letter code or a country in ``COUNTRY_SUFFIXES`` (``seattle`` ->
-    ``seattle-wa``, ``st_louis`` -> ``st-louis-mo``). Anything else matches nothing and is pooled as private: a
-    schema the listing does not contain never borrows the name of a listed city that merely starts with it
-    (``springfield`` is not ``springfield-gardens``), and two candidates are ambiguous.
+    is the slug plus one region suffix: a two-letter code, or that listed entry's own ``country_id`` from
+    ``cities.json`` (``seattle`` -> ``seattle-wa``, ``rancagua`` -> ``rancagua-chile`` when its country_id is
+    ``chile``). Anything else matches nothing and is pooled as private: a schema the listing does not contain never
+    borrows the name of a listed city that merely starts with it (``springfield`` is not ``springfield-gardens``),
+    and two candidates are ambiguous.
 
     >>> match_city_id("st_louis", {"st-louis-mo": "public"})
     'st-louis-mo'
+    >>> match_city_id("rancagua", {"rancagua-chile": {"visibility": "public", "country_id": "chile"}})
+    'rancagua-chile'
     >>> match_city_id("springfield", {"springfield-gardens": "public"}) is None
     True
     >>> match_city_id("springfield", {"springfield-ma": "private", "springfield-il": "public"}) is None
@@ -107,15 +114,15 @@ def match_city_id(schema_city, cities):
     slug = schema_city.replace("_", "-")
     if slug in cities:
         return slug
-    candidates = [cid for cid in cities
-                  if cid.startswith(slug + "-") and _is_region_suffix(cid[len(slug) + 1:])]
+    candidates = [cid for cid, v in cities.items()
+                  if cid.startswith(slug + "-") and _is_region_suffix(cid[len(slug) + 1:], _entry(v)[1])]
     return candidates[0] if len(candidates) == 1 else None
 
 
 def public_name(schema_city, cities):
     """The public ``city_id`` to show for a schema's city part, or ``None`` (private, unlisted or ambiguous)."""
     cid = match_city_id(schema_city, cities or {})
-    return cid if cid is not None and cities[cid] == "public" else None
+    return cid if cid is not None and _entry(cities[cid])[0] == "public" else None
 
 
 def private_label(n):
