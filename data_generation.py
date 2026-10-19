@@ -83,6 +83,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import stat
 import sys
 import time
@@ -217,7 +218,7 @@ class ListingError(RuntimeError):
 def listing_entries(listing):
     """The entries of a ``/v3/api/cities`` listing, checked: raises :class:`ListingError` unless ``listing`` is a dict
     (or, for an old ``analysis/fetch_all.py`` cache, a bare list) whose ``cities`` is a non-empty list of dicts, each
-    with a non-empty string ``city_id``, no id twice.
+    with a string ``city_id`` matching ``[a-z0-9-]+``, no id twice.
 
     >>> [c["city_id"] for c in listing_entries({"cities": [{"city_id": "a"}, {"city_id": "b"}]})]
     ['a', 'b']
@@ -235,6 +236,8 @@ def listing_entries(listing):
         cid = c.get("city_id") if isinstance(c, dict) else None
         if not isinstance(cid, str) or not cid.strip():
             raise ListingError(f"/v3/api/cities listing has an entry without a string city_id: {c!r:.200}")
+        if not re.fullmatch(r"[a-z0-9-]+", cid):  # ids become cache file names, store paths and shell arguments
+            raise ListingError(f"/v3/api/cities listing has a city_id that is not [a-z0-9-]+: {cid!r:.100}")
         if cid in seen:
             raise ListingError(f"/v3/api/cities listing names city_id {cid} twice")
         seen.add(cid)
@@ -1064,8 +1067,8 @@ def build_parser():
                         'written, unless the directory already holds CSVs); without --cities every listed city needs '
                         'its CSV here')
     p.add_argument('--refresh-cities', action='store_true',
-                   help='refetch /v3/api/cities and (re)write <rawlabels-cache>/cities.json, also into a cache made '
-                        'before city discovery')
+                   help='fetch the /v3/api/cities listing again; with --rawlabels-cache and no --cities, rewrite '
+                        '<cache>/cities.json (also into a cache made before city discovery)')
     p.add_argument('--select-only', action='store_true',
                    help='select labels and write the priors, then stop (no GPU, no panoramas)')
     p.add_argument('--allow-cpu', action='store_true', help=DEPTH_DEVICE_HELP)

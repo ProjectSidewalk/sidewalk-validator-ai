@@ -116,7 +116,10 @@ def test_discover_cities_rejects_or_warns_on_odd_entries(capsys):
                                           {"city_id": "b", "url": "https://y.org"}]}) == {}
     assert "unknown visibility to a ('Public'), b (None)" in capsys.readouterr().out
     for bad in ({}, [], {"cities": []}, {"cities": {"a": 1}}, {"cities": [{"url": "https://x.org"}]},
-                {"cities": [{"city_id": None}]}, {"cities": ["a"]}, {"cities": [e(), e()]}, "nonsense"):
+                {"cities": [{"city_id": None}]}, {"cities": ["a"]}, {"cities": [e(), e()]}, "nonsense",
+                {"cities": [{"city_id": 5}]}, {"cities": [{"city_id": "  "}]}, {"cities": [{"city_id": "../etc"}]},
+                {"cities": [{"city_id": "a b"}]}, {"cities": [{"city_id": "Seattle-WA"}]},
+                {"cities": [{"city_id": "a;rm"}]}):
         with pytest.raises(dg.ListingError):
             dg.discover_cities(bad)
 
@@ -285,7 +288,8 @@ def test_deployment_prior_is_pre_downsampling_and_human_authored(tmp_path):
                  "source": "rawLabels of toy-city, human votes only", "cities": ["toy-city"], "n_rows": 29}
 
 
-@pytest.mark.parametrize("extra, real", [([], True), (["--limit", "3"], False), (["--cities", "toy-city"], False)])
+@pytest.mark.parametrize("extra, real", [([], True), (["--limit", "3"], False), (["--cities", "toy-city"], False),
+                                         (["--cities", ""], True)])  # a blank --cities is the default list
 def test_priors_written_only_by_full_runs(tmp_path, monkeypatch, extra, real):
     fixture_labels(tmp_path)  # writes toy-city.csv
     write_listing(tmp_path, [("toy-city", "public", "https://sidewalk-toy.cs.washington.edu")])
@@ -295,8 +299,8 @@ def test_priors_written_only_by_full_runs(tmp_path, monkeypatch, extra, real):
     assert full.exists() == real and part.exists() == (not real)
     entry = json.loads((full if real else part).read_text())["CurbRamp"]
     assert (entry["correct"], entry["incorrect"], entry["cities"], entry["n_rows"]) == (12, 6, ["toy-city"], 29)
-    # the city list's origin: the cached listing (fetch date from the file's mtime here), or --cities
-    assert entry["city_source"]["from"] == ("--cities" if "--cities" in extra else "cache")
+    # the city list's origin: the cached listing, or a non-blank --cities
+    assert entry["city_source"]["from"] == ("--cities" if "toy-city" in extra else "cache")
 
 
 def test_priors_entry_records_the_api_fetch(tmp_path, monkeypatch):
