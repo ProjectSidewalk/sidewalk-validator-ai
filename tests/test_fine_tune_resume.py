@@ -95,3 +95,12 @@ def test_mismatch_message_names_only_the_changed_fields(tmp_path):
     with pytest.raises(SystemExit) as e:
         resume_checkpoint(str(out), _key(tmp_path, epochs=8))
     assert "'epochs': (25, 8)" in str(e.value) and "split_sha256" not in str(e.value)
+
+
+def test_no_workers_unless_the_start_method_is_fork(monkeypatch):
+    import multiprocessing
+    import fine_tune_classifier
+    monkeypatch.setattr(multiprocessing, "get_start_method", lambda allow_none=False: "spawn")
+    assert fine_tune_classifier.default_num_workers() == 0
+    monkeypatch.setattr(multiprocessing, "get_start_method", lambda allow_none=False: "fork")
+    assert 0 <= fine_tune_classifier.default_num_workers() <= 8

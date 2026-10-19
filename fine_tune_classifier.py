@@ -160,7 +160,7 @@ def main(argv=None):
     parser.add_argument('--best-metric', choices=['macro_f1', 'loss'], default='macro_f1',
                         help='validation metric that picks the kept checkpoint (loss favours calibrated scores)')
     parser.add_argument('--num-workers', type=int, default=None,
-                        help='dataloader worker processes (default: allocated CPUs - 1, at most 8; 0 off Linux); '
+                        help='dataloader worker processes (default: allocated CPUs - 1, at most 8; 0 unless the start method is fork); '
                              'with 0, decoding and augmentation starve the GPU')
     parser.add_argument('--allow-cpu', action='store_true',
                         help='run without CUDA (smoke tests only; a real run on the CPU would take weeks)')
