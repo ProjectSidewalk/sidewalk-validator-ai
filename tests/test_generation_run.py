@@ -108,9 +108,10 @@ def stubbed(tmp_path, monkeypatch):
     return {"tmp": tmp_path, "store": store, "read": read, "depth": depth}
 
 
-def run_main(tmp, *extra, store=None):
+def run_main(tmp, *extra, store=None, ai=True):
     dg.main(["--label_type", "CurbRamp", "--rawlabels-cache", str(tmp), "--out", str(tmp / "out"),
-             "--pano-store", str(store or tmp / "store"), "--include-ai-labels", "--allow-cpu", *extra])
+             "--pano-store", str(store or tmp / "store"), *(["--include-ai-labels"] if ai else []), "--allow-cpu",
+             *extra])
     return pd.read_csv(tmp / "out" / "CurbRamp" / "manifest.csv")
 
 
@@ -128,6 +129,33 @@ def test_main_records_tilt_depth_and_crop_size(stubbed):
                                "package_source": dg.package_source()}
     assert run["pano_store"] == str(stubbed["store"].resolve())  # provenance, outside the resume settings
     assert run["pano_store_marker"] == "toy store v1"  # the marker's first line
+
+
+def test_experts_from_the_environment_reach_manifest_and_record(stubbed, monkeypatch):
+    rows = [label(1, 4, 0, pano="shared"), label(2, 0, 3, pano="shared"), label(3, 0, 3),
+            label(4, 0, 4, user=AI), label(5, 5, 0)]
+    one_expert_no = json.dumps([{"user_id": "ex", "validation": "Disagree", "validator_type": "Human"}])
+    rows += [label(6, 0, 0), label(7, 0, 0)]
+    rows[5]["validations"] = rows[6]["validations"] = one_expert_no
+    write_city(stubbed["tmp"], rows)
+    for r in rows[5:]:
+        write_pano(stubbed["store"], CITY, r["pano_id"])
+    monkeypatch.setenv("EXPERTS", "someone=ex")
+    m = run_main(stubbed["tmp"], "--limit", "2").set_index("label_uid")
+    run = json.loads((stubbed["tmp"] / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["n_experts"] == 1
+    assert run["class_source_counts"] == {"margin": 5, "expert": 2}  # the whole selection, not the --limit 2
+    assert set(m.class_source) <= {"margin", "expert"} and m.class_source.notna().all()
+
+
+def test_resume_refreshes_class_source_of_kept_rows(stubbed, monkeypatch):
+    run_main(stubbed["tmp"])
+    path = stubbed["tmp"] / "out" / "CurbRamp" / "manifest.csv"
+    m = pd.read_csv(path, dtype=str, keep_default_na=False)
+    m["class_source"] = "stale"
+    m.to_csv(path, index=False)
+    m = run_main(stubbed["tmp"])
+    assert (m.class_source == "margin").all()
 
 
 def test_manifest_records_provider_and_store_path(stubbed):
@@ -558,3 +586,34 @@ def test_priors_are_not_written_on_a_refused_resume(stubbed):
     with pytest.raises(SystemExit, match="Refusing to resume"):
         run_main(tmp, "--tilt-beta", "0.5")
     assert not priors.exists()
+
+
+def test_including_ai_labels_keeps_the_human_crops(stubbed):
+    """Turning on --include-ai-labels is a selection change (it needs --force-reselect), not a settings change: the
+    human-authored crops still selected are kept and only the AI-authored labels are rendered. (This fixture's only
+    AI label is incorrect, so no human correct label is displaced from the downsample.)"""
+    tmp = stubbed["tmp"]
+    first = run_main(tmp, ai=False)
+    assert (first.author == "human").all()
+    with pytest.raises(SystemExit, match=r"the selection changed") as refused:
+        run_main(tmp)
+    assert "settings changed" not in str(refused.value)  # no longer a crop setting
+    calls = stubbed["depth"].calls
+    again = run_main(tmp, "--force-reselect").set_index("label_uid")
+    assert set(first.label_uid) <= set(again.index)  # every human row kept
+    added = set(again.index) - set(first.label_uid)
+    assert added and (again.loc[sorted(added), "author"] == "ai").all()
+    assert stubbed["depth"].calls == calls + len(added)  # no human crop redone
+    run = json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["settings"]["include_ai_labels"] is True  # still recorded, as provenance
+
+
+def test_excluding_ai_labels_again_drops_only_the_ai_rows(stubbed):
+    """The reverse flip: the AI rows leave the manifest and nothing is rendered."""
+    tmp = stubbed["tmp"]
+    first = run_main(tmp)
+    assert (first.author == "ai").any()
+    calls = stubbed["depth"].calls
+    again = run_main(tmp, "--force-reselect", ai=False)
+    assert stubbed["depth"].calls == calls
+    assert sorted(again.label_uid) == sorted(first.label_uid[first.author == "human"])

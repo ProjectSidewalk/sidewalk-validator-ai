@@ -271,6 +271,36 @@ def test_include_ai_labels(tmp_path):
     assert df.loc[df.author == "ai", "user_id"].eq(AI).all()
 
 
+def test_expert_votes_add_labels_the_margin_rule_skips(tmp_path):
+    labels = fixture_labels(tmp_path)
+    expert = lambda vote, other=None: json.dumps(
+        [{"user_id": "ex", "validation": vote, "validator_type": "Human"}]
+        + ([{"user_id": "c", "validation": other, "validator_type": "Human"}] if other else []))
+    extra = labels.iloc[:6].copy()
+    extra["label_id"] = [101, 102, 103, 104, 105, 106]
+    extra["validations"] = [expert("Disagree"), expert("Agree", "Agree"), expert("Disagree", "Agree"),
+                            json.dumps([{"user_id": "ex", "validation": "Disagree", "validator_type": "AI"}]),
+                            expert("Disagree", "Unsure"),  # Unsure is not a vote the other way
+                            # the margin rule decides this one; the expert vote must not relabel it
+                            json.dumps(json.loads(_votes(4, 0)) + json.loads(expert("Agree")))]
+    labels = pd.concat([labels, extra], ignore_index=True)
+
+    base, _ = dg.eligible_labels(labels, "CurbRamp")
+    assert set(base.class_source) == {"margin"} and not base.label_id.isin([101, 102, 103, 104]).any()
+
+    with_ex, _ = dg.eligible_labels(labels, "CurbRamp", experts=dg.parse_experts("someone=ex"))
+    added = with_ex[with_ex.class_source == "expert"].set_index("label_id").label_class.to_dict()
+    assert added == {101: "incorrect", 102: "correct", 105: "incorrect"}  # 103 contradicted; 104 not a Human vote
+    assert with_ex.set_index("label_id").class_source[106] == "margin"
+    # Margin-rule labels are unchanged, and the prior ignores the expert-added ones.
+    pd.testing.assert_frame_equal(with_ex[with_ex.class_source == "margin"].reset_index(drop=True),
+                                  base.reset_index(drop=True))
+    assert (dg.deployment_prior_entry(with_ex, ["toy-city"], 35, measured_on="x")
+            == dg.deployment_prior_entry(base, ["toy-city"], 35, measured_on="x"))
+    sel = dg.select_training_labels(with_ex)
+    assert (sel.label_class == "incorrect").sum() == 8 and {101, 105} <= set(sel.label_id)
+
+
 def test_geometry_bounds_are_dropped_and_counted(tmp_path):
     eligible, dropped = dg.eligible_labels(fixture_labels(tmp_path), "CurbRamp")
     assert dict(dropped) == {"non_gsv": 1, "pano_y_out_of_range": 1}

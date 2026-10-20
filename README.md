@@ -91,7 +91,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 | [`publish_to_hf.py`](publish_to_hf.py), [`hf_cards.py`](hf_cards.py) | Step 8. Stages a label type's model repo (inference files only) and dataset repo (crops by `split.csv`, `SHA256SUMS`, Croissant) with generated cards; `--audit` checks the live repos; `--push` / `--prune-remote` upload or clean up behind `--yes`. | refuses `optimizer.pt`, `scheduler.pt`, `rng_state*.pth`, `training_args.bin`, `scaler.pt`, `checkpoint-*` |
 | [`analysis/`](analysis) | Scripts behind the production measurements in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md). | outputs live outside the repo |
 | `*.slurm` | Hyak job files for steps 1–5, 6 and 7 (five label types per job). | `gpu-l40s`, 100 GB, 1 GPU |
-| `Depth-Anything-V2/` | Vendored upstream code (unmodified); the checkpoint is downloaded separately. | `depth_anything_v2_metric_vkitti_vitb.pth` (`vitl` with `--depth-encoder vitl`) |
+| `Depth-Anything-V2/` | Git submodule of upstream [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2), pinned to the same commit as `sidewalk-ai-api`; the checkpoint is downloaded separately. | `depth_anything_v2_metric_vkitti_vitb.pth` (`vitl` with `--depth-encoder vitl`) |
 
 ### Where the models run in production
 
@@ -111,12 +111,13 @@ model on its own output.
 
 ## Training signal
 
-A label is used only when the crowd was decisive, counting **human** votes only:
+A label is used only when the crowd was decisive or an expert decided it, counting **human** votes only:
 
 | class | rule | share of dataset |
 |---|---|---|
 | `incorrect` | disagree − agree > 1 | 45% |
 | `correct` | agree − disagree > 2, then randomly downsampled | 55% |
+| either | otherwise, with `EXPERTS` set: the class the expert accounts voted for, if they all agree and no other human voted the other way | (in the above) |
 | (dropped) | unvalidated, unsure, or contested | — |
 
 **Cities.** The default is every public deployment that `/v3/api/cities` lists with a `url` (41 on
@@ -140,6 +141,12 @@ cached, and writes `deployment_priors.partial.json`, so copy the prior from the 
 
 A city whose CSV is not cached is downloaded from the host the listing gives it; one listed without a `url` needs
 `<city_id>=<subdomain>` (the subdomain is the `sidewalk-<subdomain>.cs.washington.edu` host part).
+
+`EXPERTS="<name>=<user_id>,..."` (the form `analysis/analyze.py` reads) is set in the environment, never in the
+repo; unset, only the margin rule applies. A single non-expert vote is a weak signal (on labels the experts also
+voted on, a lone Disagree was right 24–78% of the time depending on the type), which is why the margin rule stays
+for the crowd. The manifest's `class_source` column records which rule decided each label, and the deployment prior
+counts margin-rule labels only, since experts do not vote on a random sample.
 
 Labels from non-GSV imagery providers (Mapillary and Panoramax, so all of Richmond VA, Laurens IA and Bayonne FR;
 why, and what would change it: [docs/decisions.md](docs/decisions.md)), rows with unusable pano geometry, and
@@ -209,6 +216,30 @@ republished until the retrain on the panorama-grouped split.
 
 ## Setup
 
+Clone with the Depth Anything V2 submodule (`Depth-Anything-V2/`, pinned to the commit `sidewalk-ai-api`
+serves with):
+
+```bash
+git clone --recurse-submodules https://github.com/ProjectSidewalk/sidewalk-validator-ai
+# or, in a clone made without --recurse-submodules:
+git submodule update --init
+```
+
+Without it `Depth-Anything-V2/` is an empty directory and `data_generation.py` cannot import the depth
+model. `data_generation.slurm` initialises the submodule itself and stops with a message if it is not
+checked out at the pinned commit.
+
+> [!IMPORTANT]
+> A checkout from before `Depth-Anything-V2/` became a submodule (it was a vendored copy) needs a one-time
+> migration. Wait until no job is running from that checkout, then:
+>
+> ```bash
+> git checkout -- Depth-Anything-V2   # discard the .pyc files every run rewrites, or the pull refuses (don't git stash)
+> git pull
+> rm -rf Depth-Anything-V2            # ignored __pycache__/ leftovers block the submodule clone
+> git submodule update --init
+> ```
+
 Create the conda environment (Linux with an NVIDIA GPU; the file is a frozen export of the Hyak
 environment used for the published models):
 
@@ -261,8 +292,8 @@ resize (`pano_native_w`/`pano_native_h`), pose, `tilt_applied`, `depth_m`, `crop
 output root. Views are rendered on the GPU with the package's torch recipe and depth runs on the same device;
 the script stops if there is no CUDA device (`--allow-cpu` is for smoke tests). The manifest is written row by
 row, so a killed job can simply be resubmitted: labels already `ok`, still selected and with the same class are
-skipped. If the selection itself changed (new votes since the first run, or a different city list), the job stops
-and says how many rows are stale; `--force-reselect` drops them and carries on. The job then runs `split_data.py`, which writes
+skipped. If the selection itself changed (new votes since the first run, a different city list, or toggling
+`--include-ai-labels`), the job stops and says how many rows are stale; `--force-reselect` drops them and carries on. The job then runs `split_data.py`, which writes
 `<label_type>/split.csv` (the `ok` manifest rows plus `hard`, joined by `label_uid` from
 `--hard-examples`, and `split` ∈ `train`/`val`/`test`/`test_heldout`), grouped by panorama so no panorama
 appears in two splits, and leaves every image where it is. A new hard-example list only needs this step re-run.
@@ -435,7 +466,7 @@ the evidence for each item. In order of how much they affect the numbers:
 - **Evaluation script bugs** ([#6](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6)). Fixed in `evaluate.py`, which replaces `get_stats.py` (PR [#22](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/22), closed unmerged, had proposed a fix first); numbers in `report.png` files made by the old script are not reliable.
 - **Publication** ([#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7)). The CurbRamp dataset on Hugging Face is a copy of the Crosswalk one; model repos carry 2.4 GB of optimizer state. [`publish_to_hf.py`](#publishing-to-hugging-face) now stages clean repos with cards, content hashes and the checks that would have caught both, and `--prune-remote` can delete the optimizer files today; the datasets and models themselves are not republished until the retrain.
 - **Imagery path** ([#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8), [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9)). Panoramas are read only from the lab's pano store (`--pano-store`), and only GSV labels are used, since serving is GSV-only and other providers need per-provider pose handling; all 41 public deployments are used by default (19 before #8); the camera-tilt error in stored coordinates ([sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54)) is now corrected in training crops (beta 0.95).
-- **Hygiene** ([#10](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10), [#11](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/11)). No tests or CI; vendored 64 MB depth tree; frozen environment file.
+- **Hygiene** ([#10](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10), [#11](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/11)). #10 done (closing recommended): the split is a manifest. #11 done except the optional history purge: CPU tests run in CI, `requirements.txt` is the portable dependency list, and `Depth-Anything-V2/` is a submodule instead of a vendored tree, but the old tree stays in git history (pack ~45 MB); [`docs/repo-hygiene.md`](docs/repo-hygiene.md) has the opt-in purge and the no-rewrite `--filter=blob:none` alternative.
 
 Experiments we think are worth running next, each with a first experiment spelled out: soft targets and
 validator reliability ([#12](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/12)),
@@ -495,7 +526,7 @@ accessibility labels. https://github.com/ProjectSidewalk/sidewalk-validator-ai
 
 ## License
 
-The code in this repository is released under the [MIT License](LICENSE). The vendored
-`Depth-Anything-V2/` code keeps its own Apache-2.0 license (see its `LICENSE`). Licenses for the
+The code in this repository is released under the [MIT License](LICENSE). The
+`Depth-Anything-V2/` submodule (upstream code) keeps its own Apache-2.0 license (see its `LICENSE`). Licenses for the
 released datasets and models are tracked separately in
 [#2](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/2).

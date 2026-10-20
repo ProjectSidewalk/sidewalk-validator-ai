@@ -1,3 +1,6 @@
+# Frozen conda export of the Hyak environment the published models were trained with; kept as a record,
+# not as a portable install list (Linux + CUDA, and it pins packages nothing here imports).
+# requirements.txt is the portable list.
 name: sidewalk-validator-ai
 channels:
   - conda-forge
@@ -149,4 +152,3 @@ dependencies:
       - xxhash==3.5.0
       - yarl==1.20.1
       - zipp==3.23.0
-prefix: /gscratch/scrubbed/jsomeara/envs/sidewalk-validator-ai

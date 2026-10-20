@@ -510,8 +510,17 @@ def dataset_card(ctx, license_id=None):
     year_text = (f"{years['min']}–{years['max']}" if years.get("min") is not None
                  else f"{TODO} no image_capture_date values in the manifest")
     include_ai = settings.get("include_ai_labels", gen.get("include_ai_labels"))
-    prior_text = (f"Before downsampling, {fmt(prior.get('correct'))} labels met the `correct` rule and "
-                  f"{fmt(prior.get('incorrect'))} the `incorrect` rule "
+    n_experts = gen.get("n_experts") or 0
+    expert_row = ("| either | otherwise, the class an expert account voted for, if every expert vote on the label agrees "
+                  "and no other human voted the other way |\n")
+    source_counts = gen.get("class_source_counts") or {}
+    expert_text = (f"\nExpert votes came from {n_experts} project-team account{'s' if n_experts != 1 else ''}; the "
+                   "manifest's `class_source` column says which rule decided each label (`margin` or `expert`)"
+                   + (f": {fmt(source_counts.get('margin', 0))} margin and {fmt(source_counts.get('expert', 0))} "
+                      "expert in the selection." if source_counts else ".") + "\n")
+    rule = " margin" if n_experts else ""  # the prior counts margin-rule labels only
+    prior_text = (f"Before downsampling, {fmt(prior.get('correct'))} labels met the `correct`{rule} rule and "
+                  f"{fmt(prior.get('incorrect'))} the `incorrect`{rule} rule "
                   f"({fmt(prior['correct'] / (prior['correct'] + prior['incorrect']))} correct; "
                   f"{prior.get('source', '')}, measured {prior.get('measured_on', 'n/a')}). That is the deployment "
                   f"prior the served calibration map is reweighted to."
@@ -538,7 +547,9 @@ def dataset_card(ctx, license_id=None):
              "| class | rule (human votes) |\n|---|---|\n"
              "| `incorrect` | disagree − agree > 1 |\n"
              "| `correct` | agree − disagree > 2, then randomly downsampled |\n"
-             "| (dropped) | unvalidated, unsure, or contested |\n",
+             + (expert_row if n_experts else "")
+             + "| (dropped) | unvalidated, unsure, or contested |\n"
+             + (expert_text if n_experts else ""),
              f"Labels placed by the `SidewalkAI` account are "
              f"{'included (tagged `author = ai` in the manifest)' if include_ai else 'excluded'}; labels from "
              "non-GSV imagery, with unusable panorama geometry, or with legacy unconverted coordinates are excluded. "

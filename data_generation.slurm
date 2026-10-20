@@ -34,6 +34,35 @@ HOLDOUT=""
 # MERGE_RADIUS_M=0 sbatch data_generation.slurm
 MERGE_RADIUS_M="${MERGE_RADIUS_M:-3}"
 LABEL_TYPES=(Crosswalk CurbRamp NoCurbRamp Obstacle SurfaceProblem)
+# Expert validators whose vote decides a label no other human contradicted (data_generation.py expert_verdict), as
+# EXPERTS="<name>=<user_id>,..." in the submitting shell (sbatch exports it). Never written into the repo. Unset means
+# the crowd margin rule only; setting or changing it changes the selection, so a resume needs --force-reselect.
+[ -n "${EXPERTS:-}" ] || echo "WARNING: EXPERTS is not set: expert votes will not count (crowd margin rule only)." >&2
+
+# 0a. Depth Anything V2 is a git submodule (data_generation.py imports it from Depth-Anything-V2/metric_depth),
+#     pinned to the commit sidewalk-ai-api serves with. A clone without --recurse-submodules leaves the directory
+#     empty; initialise it here. A checkout from before the submodule (vendored copy) needs this, once, after any
+#     running job has finished:
+#       git checkout -- Depth-Anything-V2    # discard the regenerated .pyc files, or the pull refuses (not git stash)
+#       git pull
+#       rm -rf Depth-Anything-V2             # ignored __pycache__/ leftovers block the submodule clone
+#       git submodule update --init
+# Every path below is relative, so the job must be submitted from the repo root.
+[ -f .gitmodules ] && git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "Submit this job from the repo root (no .gitmodules here)." >&2; exit 1; }
+DEPTH=Depth-Anything-V2
+DEPTH_DPT=$DEPTH/metric_depth/depth_anything_v2/dpt.py
+if [ -d "$DEPTH" ] && [ ! -e "$DEPTH/.git" ] && [ ! -f "$DEPTH_DPT" ] && [ -n "$(ls -A "$DEPTH")" ]; then
+    echo "$DEPTH/ holds leftovers from the old vendored copy (no .git, no dpt.py), which block the submodule." >&2
+    echo "Remove it first: rm -rf $DEPTH && git submodule update --init  (then resubmit)" >&2
+    exit 1
+fi
+git submodule status "$DEPTH" | grep -q '^-' && git submodule update --init "$DEPTH"
+# A leading space means checked out at exactly the pinned commit ('-' not initialised, '+' another commit).
+git submodule status "$DEPTH" | grep -q '^ ' && [ -f "$DEPTH_DPT" ] || {
+    echo "$DEPTH is not checked out at its pinned commit: $(git submodule status "$DEPTH" 2>&1)" >&2
+    echo "Run 'git submodule update --init' in the repo root (rm -rf $DEPTH first if that fails), then resubmit." >&2
+    exit 1
+}
 
 # 0. Check the store before spending time on the pull (data_generation.py checks it again, with the city directories).
 [ -d "$PANO_STORE" ] && [ -f "$PANO_STORE/.pano-store" ] || {
