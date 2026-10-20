@@ -27,9 +27,9 @@ def frame():
         # schema, id, verdict, conf, old acc, new acc, oof, h_agree, h_dis
         ("sidewalk_alpha", 1, "Agree", 0.99, 0.95, 0.97, 0.97, 3, 0),     # right
         ("sidewalk_alpha", 2, "Agree", 0.98, 0.94, 0.96, 0.95, 2, 0),     # right
-        ("sidewalk_alpha", 3, "Agree", 0.97, 0.93, 0.93, 0.93, 1, 1),     # tie -> 0.5
-        ("sidewalk_alpha", 4, "Agree", 0.80, 0.93, 0.85, 0.86, 0, 2),     # wrong
-        ("sidewalk_alpha", 5, "Agree", 0.70, 0.90, 0.80, 0.80, 2, 1),     # right
+        ("sidewalk_alpha", 3, "Agree", 0.97, 0.93, 0.92, 0.92, 1, 1),     # tie -> 0.5; new/oof exactly at the gate
+        ("sidewalk_alpha", 4, "Agree", 0.80, 0.92, 0.85, 0.86, 0, 2),     # wrong; old map exactly at the gate
+        ("sidewalk_alpha", 5, "Agree", 0.85, 0.90, 0.80, 0.80, 2, 1),     # right
         ("sidewalk_hidden", 1, "Disagree", 0.99, 0.95, 0.60, 0.60, 2, 0),  # wrong (same label_id, other city)
         ("sidewalk_hidden", 2, "Disagree", 0.95, 0.93, 0.55, 0.55, 0, 3),  # right
         ("sidewalk_hidden", 3, "Disagree", 0.90, 0.80, 0.50, 0.50, 2, 2),  # tie
@@ -66,18 +66,48 @@ def test_sweep_counts_routing_and_both_human_models():
     assert none.n_ai == 0 and none.routed == 1.0 and np.isnan(none.ai_precision) and none.acc_oracle == 1.0
 
 
-def test_sweep_routed_human_model_uses_loo_on_routed_rows_only():
-    s = np.array([0.1, 0.2, 0.9, 0.95])
-    y = np.array([0.0, 1.0, 1.0, 1.0])
-    loo = np.array([0.5, np.nan, 0.0, 0.0])                 # only the routed row with a value counts
-    r = routing.sweep(s, y, [0.5], p_h=0.9, loo=loo).iloc[0]
-    assert r.p_h_routed == pytest.approx(0.5)
-    assert r.acc_human_routed == pytest.approx((2 + 0.5 * 2) / 4)
+def test_sweep_one_human_model_is_like_for_like():
+    s = np.array([0.1, 0.2, 0.9, 0.95, 0.99])
+    y = np.array([0.0, 1.0, 1.0, 1.0, 1.0])
+    loo = np.array([0.5, np.nan, 0.25, 0.75, 1.0])         # row 2 has too few votes: out of the matched subset
+    loo_ai = np.array([0.0, np.nan, 0.5, 1.0, 0.5])
+    r = routing.sweep(s, y, [0.5], p_h=0.9, loo=loo, loo_ai=loo_ai).iloc[0]
+    assert r.n_matched == 4
+    assert r.routed_matched == pytest.approx(1 / 4)
+    # routed: human loo 0.5; decided by the AI: its own loo_ai 0.5 + 1.0 + 0.5
+    assert r.acc_one_human == pytest.approx((0.5 + 0.5 + 1.0 + 0.5) / 4)
+
+
+def test_score_exactly_at_threshold_is_decided_by_the_ai():
+    r = routing.sweep(np.array([0.92, 0.9199]), np.array([1.0, 0.0]), [0.92]).iloc[0]
+    assert r.n_ai == 1 and r.ai_precision == 1.0
 
 
 def test_quantile_thresholds_include_gate_and_never():
     th = routing.quantile_thresholds(np.array([0.1, 0.5, 0.9, np.nan]), n_quantiles=4)
     assert 0.92 in th and np.isinf(th[-1]) and 0.1 in th and 0.9 in th
+    # n_quantiles steps means n_quantiles + 1 points: the quartiles of 0..4 are 0, 1, 2, 3, 4
+    th = routing.quantile_thresholds(np.arange(5.0), n_quantiles=4)
+    assert {0.0, 1.0, 2.0, 3.0, 4.0} <= set(th.tolist())
+
+
+def test_pareto_drops_equal_accuracy_at_higher_cost():
+    assert routing.pareto_mask(np.array([0.1, 0.2]), np.array([0.8, 0.8])).tolist() == [True, False]
+
+
+def test_compare_to_curve_looks_at_no_more_routing():
+    c = pd.DataFrame({"r": [0.0, 0.2, 0.5, 0.6, 1.0], "acc": [0.80, 0.90, 0.85, 0.95, 0.70]})
+    out = routing.compare_to_curve(pd.Series({"r": 0.5, "acc": 0.86}), c, "acc", routed_col="r")
+    assert out["curve_acc_at_same_routing"] == 0.90          # not 0.95, which needs more routing
+    assert out["curve_routing_at_same_acc"] == 0.2
+
+
+def test_front_at_targets_picks_least_routing_and_lists_unreached():
+    g = pd.DataFrame({"label_type": "T", "t_agree": [0.5, 0.8, 0.9], "t_disagree": np.inf, "n_ai": [10, 6, 2],
+                      "routed": [0.0, 0.4, 0.8], "ai_precision": [0.85, 0.93, 0.97], "pareto_oracle": True})
+    f = routing.front_at_targets(g, targets=(0.90, 0.95, 0.99)).set_index("target")
+    assert f.loc[0.90, "routed"] == 0.4 and f.loc[0.95, "t_agree"] == 0.9
+    assert np.isinf(f.loc[0.99, "t_agree"]) and f.loc[0.99, "n_ai"] == 0
 
 
 def test_per_verdict_policy_and_pareto():
@@ -105,6 +135,16 @@ def test_human_accuracy_from_counts():
     t = routing.human_accuracy_table(frame(), 2).set_index("label_type")
     # labels with >= 3 votes: alpha 1 (3-0), alpha 5 (2-1), hidden 2 (0-3), hidden 3 (2-2), hidden 4 (3-0), hidden 5
     assert t.loc["CurbRamp", "n"] == 6
+    # split on the calibrated score, not raw confidence: below 0.92 are alpha 5 (1/3), hidden 2 (1), hidden 3 (0),
+    # hidden 4 (1), hidden 5 (1/3); hidden 2 has raw confidence 0.95 and would move under a confidence split
+    assert t.loc["CurbRamp", "p_h_ai_below_gate"] == pytest.approx((1 / 3 + 1 + 0 + 1 + 1 / 3) / 5)
+
+
+def test_human_accuracy_without_experts():
+    df = frame().assign(expert1=None)
+    df.loc[0, "expert1"] = "Agree"                         # alpha 1: 3-0 -> 2-0 without the expert (too few)
+    t = routing.human_accuracy_table(df, 2, ["expert1"]).set_index("label_type")
+    assert t.loc["CurbRamp", "n_no_experts"] == 5 and t.loc["CurbRamp", "n"] == 6
 
 
 def test_run_marks_the_092_operating_points(tmp_path):
@@ -113,13 +153,26 @@ def test_run_marks_the_092_operating_points(tmp_path):
     ops = res["ops"].set_index("operating_point")
     old = ops.loc["old maps @0.92"]
     # ai_accuracy >= 0.92 on labelled rows: alpha 1-4 and hidden 1-2
-    assert old.n_ai == 6
+    assert old.n_ai == 6                                   # alpha 4 sits exactly at 0.92 and counts
     assert old.ai_precision == pytest.approx((1 + 1 + 0.5 + 0 + 0 + 1) / 6)
     assert old.routed_all_assessed == pytest.approx(4 / 11)
     new = ops.loc["Phase 0 @0.92 (in-sample)"]
     assert new.n_ai == 3 and new.acc_human == pytest.approx((2.5 + 0.8 * 7) / 10)
     assert np.isnan(ops.loc["Phase 0 @0.92 (out-of-fold)", "routed_all_assessed"])
     assert {"curves.csv", "operating_points.csv", "summary.md", "auc.csv"} <= set(os.listdir(tmp_path))
+
+
+def test_auc_table_per_verdict_excludes_ties():
+    t = routing.auc_table(frame(), n_boot=20, seed=1).set_index(["label_type", "verdict"])
+    r = t.loc[("CurbRamp", "Agree")]
+    # non-tie labelled Agree: right alpha 1, 2, 5; wrong alpha 4, hidden 5 (alpha 3 is a tie)
+    assert r.n == 5 and r.errors == 2
+    assert r.auc_oof_accuracy == pytest.approx(5 / 6)       # 0.80 (right) loses to 0.86 (wrong)
+    assert r.auc_ai_confidence == pytest.approx(1.0)
+    assert r.diff_calib_minus_raw == pytest.approx(-1 / 6)
+    assert np.isnan(r.diff_lo)                              # CI only on pooled-verdict rows
+    both = t.loc[("CurbRamp", "both")]
+    assert both.n == 8 and not np.isnan(both.diff_lo)
 
 
 def test_auc_ranks_right_above_wrong():
@@ -136,12 +189,34 @@ def test_complementarity_removes_the_experts_own_vote():
         # label 1: the expert did not vote -> not counted
         # label 2: expert Disagree; crowd without the expert is 0-2 -> agrees with the AI
         "expert1": ["Agree", None, "Disagree"]})
+    df["label_uid"] = ["a:1", "a:2", "a:3"]
     c = routing.complementarity(df, ["expert1"]).set_index(["label_type", "verdict"])
     assert c.loc[("CurbRamp", "Agree"), "n_disagree"] == 1
     assert c.loc[("CurbRamp", "Agree"), "expert_sides_with_ai"] == 1.0
     assert c.loc[("CurbRamp", "Agree"), "n_disagree_above_gate"] == 1
     assert c.loc[("CurbRamp", "Disagree"), "n_agree"] == 1
     assert c.loc[("CurbRamp", "Disagree"), "expert_with_both"] == 1.0
+
+
+def test_complementarity_expert_vote_can_flip_or_tie_the_crowd():
+    df = pd.DataFrame({
+        "label_uid": ["a:1", "a:2"], "label_type": ["CurbRamp"] * 2, "ai_result": ["Disagree", "Agree"],
+        "oof_accuracy": [0.5, 0.95],
+        # a:1: 2-1 with the expert's Agree; without it 1-1, a tie -> excluded (with it, 2-1 would oppose the AI)
+        # a:2: 2-2 with the expert's Disagree; without it 2-1 Agree -> agrees with the AI (with it, a tie)
+        "h_agree": [2, 2], "h_dis": [1, 2], "expert1": ["Agree", "Disagree"]})
+    c = routing.complementarity(df, ["expert1"]).set_index(["label_type", "verdict"])
+    assert c.loc[("CurbRamp", "Disagree"), "n_disagree"] == 0 and c.loc[("CurbRamp", "Disagree"), "n_agree"] == 0
+    assert c.loc[("CurbRamp", "Agree"), "n_agree"] == 1
+    assert c.loc[("CurbRamp", "Agree"), "expert_with_both"] == 0.0
+
+
+def test_contested_gated_union_counts_distinct_labels():
+    df = pd.DataFrame({"label_uid": ["a:1"], "label_type": ["CurbRamp"], "ai_result": ["Agree"],
+                       "oof_accuracy": [0.95], "h_agree": [2], "h_dis": [3],
+                       "expert1": ["Agree"], "expert2": ["Agree"]})
+    # each expert's crowd (the other expert included) is 1-3 against the AI; the label counts once
+    assert routing.contested_gated_labels(df, ["expert1", "expert2"]) == {"a:1"}
 
 
 def test_gold_subset_is_three_plus_unanimous():
