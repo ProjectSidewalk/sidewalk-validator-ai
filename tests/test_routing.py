@@ -250,6 +250,16 @@ def test_public_only_names_and_role_keyed_experts(tmp_path):
     assert "expert1" in (out / "complementarity.csv").read_text()
 
 
+def test_prefix_matching_schema_with_a_private_sibling_is_not_named():
+    # public x-yy and private x-zz both prefix-match schema x: ambiguous, so never named
+    assert routing.city_label("x", {"x-yy": "public", "x-zz": "private"}) is None
+    # an exact match decides alone
+    assert routing.city_label("x", {"x": "private", "x-yy": "public"}) is None
+    assert routing.city_label("x", {"x": "public", "x-zz": "private"}) == "x"
+    assert routing.city_label("seattle", {"seattle-wa": "public"}) == "seattle"
+    assert routing.city_label("x", {}) is None
+
+
 def test_expert_cols_flag():
     assert routing.parse_expert_cols("b=expert1", ["a", "b"]) == {"b": "expert1"}
     with pytest.raises(ValueError):

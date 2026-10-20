@@ -83,9 +83,8 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from calibration.calibrate_from_production import add_outcomes  # noqa: E402
-from deployments import city_label, load_cities  # noqa: E402
+from calibration.per_city import load_cities, public_name  # noqa: E402
 
 GATE = 0.92
 TYPES = ["CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk"]
@@ -102,9 +101,21 @@ EXPERT_VOTES = ("Agree", "Disagree")
 # ---------------------------------------------------------------- deployments
 
 def public_names(cities_json):
-    """``{city_id: visibility}`` for every deployment in a saved ``/v3/api/cities`` response (``analysis/deployments``);
-    ``{}`` without one, in which case nothing is named."""
-    return load_cities(cities_json)
+    """Every listed deployment from a saved ``/v3/api/cities`` response (``calibration.per_city.load_cities``); ``{}``
+    without one, in which case nothing is named."""
+    return load_cities(cities_json) if cities_json else {}
+
+
+def city_label(schema_city, cities):
+    """The schema city to print if it is a public deployment, else ``None`` (private, unlisted or ambiguous: never
+    named). The rule is ``calibration.per_city.match_city_id``, shared with ``calibration_doc_numbers.py``: an exact
+    ``city_id`` match decides alone, and a prefix match counts only when exactly one listed id is the slug plus a
+    region suffix.
+
+    >>> city_label("x", {"x-yy": "public", "x-zz": "private"}) is None
+    True
+    """
+    return schema_city if public_name(schema_city, cities) else None
 
 
 def deployments_line(df, cities):

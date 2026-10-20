@@ -1,4 +1,6 @@
 """Metric functions in evaluate.py (issue #6), on inputs small enough to check by hand."""
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -116,3 +118,84 @@ def test_skip_inference_with_a_tag_writes_only_suffixed_outputs_and_no_hint(tmp_
     assert written == ["metrics_prod.json", "predictions_prod.csv", "pvr_prod.png", "report_prod.png",
                        "report_prod.txt", "split.csv"]
     assert "calibration.calibrate" not in capsys.readouterr().out
+
+
+# --- per-city breakdown (issue #15) -------------------------------------------------------------------------------
+
+def _per_city_predictions():
+    # test: city a has 6 rows (both classes), city b 4 rows (correct only), city c 1 row; heldout: city d, 3 rows.
+    df = pd.DataFrame({
+        "label_uid": [f"x:{i}" for i in range(14)],
+        "split": ["test"] * 11 + ["test_heldout"] * 3,
+        "city": ["a"] * 6 + ["b"] * 4 + ["c"] + ["d"] * 3,
+        "true": ["correct", "correct", "correct", "incorrect", "incorrect", "incorrect",
+                 "correct", "correct", "correct", "correct", "incorrect", "correct", "incorrect", "incorrect"],
+        "p_incorrect": [0.1, 0.2, 0.7, 0.8, 0.9, 0.3, 0.1, 0.2, 0.3, 0.6, 0.9, 0.2, 0.8, 0.4]})
+    df["p_correct"] = 1 - df.p_incorrect
+    return df
+
+
+def test_per_city_slices_use_slice_metrics_and_respect_min_n():
+    df = _per_city_predictions()
+    m = report(df, per_city=True, min_city_n=3)
+    assert set(m) == {"test", "test_heldout", "per_city"}
+    pc = m["per_city"]["test"]
+    assert list(pc["cities"]) == ["a", "b"]          # by descending n; c has 1 row < 3
+    assert pc["below_min_n"] == {"c": 1}
+    a = pc["cities"]["a"]
+    # a: verdicts c, c, i, i, i, c -> 4 of 6 right; correct precision 2/3, incorrect recall 2/3
+    assert a["accuracy"] == pytest.approx(4 / 6)
+    assert a["per_class"]["correct"]["precision"] == pytest.approx(2 / 3)
+    assert a["per_class"]["incorrect"]["recall"] == pytest.approx(2 / 3)
+    from evaluate import slice_metrics
+    assert a == slice_metrics(df[(df.split == "test") & (df.city == "a")])
+    assert pc["cities"]["b"]["auc"] is None          # one class only
+    assert list(m["per_city"]["test_heldout"]["cities"]) == ["d"]
+
+
+def test_per_city_is_absent_by_default_and_skipped_by_format_report():
+    from evaluate import format_per_city
+    df = _per_city_predictions()
+    assert "per_city" not in report(df)
+    m = report(df, per_city=True, min_city_n=3)
+    assert format_report(m) == format_report(report(df))
+    md = format_per_city(m["per_city"])
+    assert "### test: per city (n >= 3)" in md and "| a | 6 (3 / 3) | 0.667 |" in md
+    assert "| b | 4 (4 / 0) | 0.750 | — | 1.000 | 0.750 | — | — |" in md   # no incorrect rows: dashes, not 0.000
+    assert "c (n=1)" in md
+
+
+def test_per_city_without_any_city_at_the_minimum_prints_no_empty_table():
+    from evaluate import format_per_city
+    m = report(_per_city_predictions(), per_city=True, min_city_n=100)
+    md = format_per_city(m["per_city"])
+    assert "| city |" not in md
+    assert "No city reaches the minimum." in md and "Below the minimum: a (n=6)" in md
+
+
+def test_per_city_needs_a_city_column():
+    with pytest.raises(ValueError, match="city"):
+        report(_per_city_predictions().drop(columns="city"), per_city=True)
+
+
+def test_main_per_city_writes_markdown_and_json(tmp_path):
+    from evaluate import main
+    base = tmp_path / "CurbRamp"
+    base.mkdir()
+    preds = _per_city_predictions()
+    split = pd.DataFrame({"label_uid": preds.label_uid, "city": preds.city, "label_id": range(len(preds)),
+                          "pano_id": [f"p{i}" for i in range(len(preds))], "label_type": "CurbRamp",
+                          "label_class": preds["true"], "crop_path": "c.webp", "split": preds.split, "hard": 0})
+    split.to_csv(base / "split.csv", index=False)
+    preds.drop(columns="city").to_csv(base / "predictions.csv", index=False)
+    main(["--label_type", "CurbRamp", "--data-dir", str(tmp_path), "--skip-inference", "--per-city",
+          "--min-city-n", "3"])
+    metrics = json.loads((base / "metrics.json").read_text())
+    assert list(metrics["per_city"]["test"]["cities"]) == ["a", "b"]
+    assert (base / "per_city.md").read_text().startswith("### test: per city")
+
+
+def test_model_card_ignores_per_city():
+    from hf_cards import _metrics_section
+    m = report(_per_city_predictions(), per_city=True, min_city_n=3)
+    assert "per_city" not in _metrics_section(m)

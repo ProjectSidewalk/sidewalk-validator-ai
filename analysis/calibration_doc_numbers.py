@@ -21,17 +21,21 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from calibration import _isotonic_map as im  # noqa: E402
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from deployments import city_label, load_cities  # noqa: E402
+from calibration.per_city import load_cities, public_name  # noqa: E402
 
 GATE = im.GATE
 TYPES = ["CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk"]
 
 
 def public_names(cities_json):
-    """``{city_id: visibility}`` for every deployment (see ``analysis/deployments.py`` for the naming rule)."""
-    return load_cities(cities_json)
+    """``{city_id: visibility}`` for every listed deployment (``per_city.load_cities``); {} without a file."""
+    return load_cities(cities_json) if cities_json else {}
+
+
+def city_label(schema_city, cities):
+    """The schema city to print if it is a public deployment, else None (private, unlisted or ambiguous: never
+    named). Matching is ``calibration.per_city.match_city_id``, which refuses a prefix shared by several ids."""
+    return schema_city if public_name(schema_city, cities) else None
 
 
 def main(argv=None):
