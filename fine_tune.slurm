@@ -16,6 +16,9 @@ DATA=.
 SEED=42
 EPOCHS=25
 # --num-workers 4: three label types run at once on 16 CPUs, so 3 x (4 workers + 1 main) fit.
+# Training target (issue #12): add `--target soft`, or `--target weighted --vote-weights <dir>/vote_weights.csv`
+# (from validator_reliability.py), to the python line below; it writes to $DATA/$LT/dinov2-<target>, leaving the
+# production dinov2/ alone. Without --target the run is the hard-label default.
 
 run_batch() {
     declare -A pids
