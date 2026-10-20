@@ -437,7 +437,7 @@ or `--cities` write `deployment_priors.partial.json`, never the real `deployment
 
 ### Held-out-city benchmark
 
-The test split is drawn from the same 19 cities the model trains on, so it says nothing about a city the model has
+The test split is drawn from the same cities the model trains on (every listed public deployment; see Cities), so it says nothing about a city the model has
 never seen ([#15](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/15)). The existing steps already
 support leave-one-city-out: `split_data.py --holdout-cities` sends every row of a city (and any panorama group that
 touches it) to `test_heldout`, training never reads `test_heldout`, and `evaluate.py --per-city` reports each city of
