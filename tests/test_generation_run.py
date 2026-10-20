@@ -106,9 +106,10 @@ def stubbed(tmp_path, monkeypatch):
     return {"tmp": tmp_path, "store": store, "read": read, "depth": depth}
 
 
-def run_main(tmp, *extra, store=None):
+def run_main(tmp, *extra, store=None, ai=True):
     dg.main(["--label_type", "CurbRamp", "--rawlabels-cache", str(tmp), "--out", str(tmp / "out"),
-             "--pano-store", str(store or tmp / "store"), "--include-ai-labels", "--allow-cpu", *extra])
+             "--pano-store", str(store or tmp / "store"), *(["--include-ai-labels"] if ai else []), "--allow-cpu",
+             *extra])
     return pd.read_csv(tmp / "out" / "CurbRamp" / "manifest.csv")
 
 
@@ -489,3 +490,34 @@ def test_priors_are_not_written_on_a_refused_resume(stubbed):
     with pytest.raises(SystemExit, match="Refusing to resume"):
         run_main(tmp, "--tilt-beta", "0.5")
     assert not priors.exists()
+
+
+def test_including_ai_labels_keeps_the_human_crops(stubbed):
+    """Turning on --include-ai-labels is a selection change (it needs --force-reselect), not a settings change: the
+    human-authored crops still selected are kept and only the AI-authored labels are rendered. (This fixture's only
+    AI label is incorrect, so no human correct label is displaced from the downsample.)"""
+    tmp = stubbed["tmp"]
+    first = run_main(tmp, ai=False)
+    assert (first.author == "human").all()
+    with pytest.raises(SystemExit, match=r"the selection changed") as refused:
+        run_main(tmp)
+    assert "settings changed" not in str(refused.value)  # no longer a crop setting
+    calls = stubbed["depth"].calls
+    again = run_main(tmp, "--force-reselect").set_index("label_uid")
+    assert set(first.label_uid) <= set(again.index)  # every human row kept
+    added = set(again.index) - set(first.label_uid)
+    assert added and (again.loc[sorted(added), "author"] == "ai").all()
+    assert stubbed["depth"].calls == calls + len(added)  # no human crop redone
+    run = json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["settings"]["include_ai_labels"] is True  # still recorded, as provenance
+
+
+def test_excluding_ai_labels_again_drops_only_the_ai_rows(stubbed):
+    """The reverse flip: the AI rows leave the manifest and nothing is rendered."""
+    tmp = stubbed["tmp"]
+    first = run_main(tmp)
+    assert (first.author == "ai").any()
+    calls = stubbed["depth"].calls
+    again = run_main(tmp, "--force-reselect", ai=False)
+    assert stubbed["depth"].calls == calls
+    assert sorted(again.label_uid) == sorted(first.label_uid[first.author == "human"])

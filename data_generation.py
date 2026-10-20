@@ -15,7 +15,7 @@ For every label of ``--label_type`` across the cities listed in ``CITIES``, this
 
 The run is resumable: a label whose manifest row says ``ok``, whose crop exists, and which is still selected with
 the same class is skipped on restart. ``generation_run.json`` records a hash of the selection, so resuming against a
-changed selection (new votes, other cities) stops with counts unless ``--force-reselect`` is given.
+changed selection (new votes, other cities, toggling ``--include-ai-labels``) stops with counts unless ``--force-reselect`` is given.
 
 The view is rendered on the GPU with the package's torch recipe (``sidewalk_panorama_tools.torch_geometry``) and depth
 runs on the same device. CUDA is required unless ``--allow-cpu`` (smoke tests only), which renders with the numpy
@@ -274,7 +274,9 @@ def select_training_labels(eligible, seed=SEED, correct_proportion=CORRECT_PROPO
     **Stable under a changing pool.** The kept ``correct`` labels are the ``amount_correct`` with the lowest
     ``sha256(f"{seed}:{label_uid}")``, not a shuffle of the whole pool. Each label's rank is its own, so when one label
     enters or leaves the pool (new votes) the selected ``correct`` set changes by at most one label in and one out,
-    and a resumed run keeps nearly all of its crops. The final order is still a seeded shuffle.
+    and a resumed run keeps nearly all of its crops. A whole group entering at once (another city, or AI labels with
+    ``include_ai_labels``) can displace as many kept labels as it brings ranks below the cutoff. The final order is
+    still a seeded shuffle.
     """
     df = eligible if include_ai_labels else eligible[eligible['author'] == 'human']
     # A canonical order first, so the seeded samples below do not depend on the API's row order.
@@ -692,7 +694,11 @@ def create_perspective_crop(depth_model, pano_rgb, label_x_norm, label_y_norm, c
 
 
 #: Settings that change what a crop looks like; a resume with different values would mix two datasets.
-RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "include_ai_labels", "package_source")
+#: ``include_ai_labels`` is not one: it changes which labels are selected, not how any crop is cut (a label's author
+#: already decides its tilt), so flipping it is a selection change. That still needs ``--force-reselect``, and keeps
+#: every human-authored crop that is still selected; AI correct labels compete in the correct-class downsample, so
+#: some human correct labels near the cutoff can be swapped out. It stays in ``generation_run.json`` as provenance.
+RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "package_source")
 
 
 def package_source(dist="sidewalk-panorama-tools"):
