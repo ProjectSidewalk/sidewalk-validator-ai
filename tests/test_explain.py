@@ -278,22 +278,69 @@ def test_agreement_rejects_duplicate_rows():
         explain.agreement(pd.concat([a, a]), a)
 
 
-def test_go_no_go_needs_rate_margin_kappa_and_items():
+def rater(codes, categories=None):
+    """Long frame for one rater: ``codes`` is ``{method: [code per item]}``; items share ids across methods."""
+    return pd.concat([long_frame(c, m, categories=categories or ["TP"] * len(c)) for m, c in codes.items()],
+                     ignore_index=True)
+
+
+def two_raters(n=30, gradcam=("yes", "yes"), blob_yes=15):
+    """Both raters agree on every panel; the blob is `yes` on the first ``blob_yes`` items, gradxact is mixed."""
+    codes = {"gradcam": [gradcam[0]] * n, "centre_blob": ["yes"] * blob_yes + ["no"] * (n - blob_yes),
+             "gradxact": ["yes", "no"] * (n // 2)}
+    other = dict(codes, gradcam=[gradcam[1]] * n)
+    return rater(codes), rater(other)
+
+
+def test_go_when_raters_agree_on_a_perfect_map():
+    """B1: 30/30 yes from both raters is the best case and must be go (per-method kappa would be undefined)."""
+    out = explain.go_no_go(*two_raters()).set_index("method")
+    assert out.loc["gradcam", "decision"] == "go" and out.loc["gradcam", "rate"] == 1.0
+    assert out.loc["gradxact", "decision"] == "no-go"                       # rate 0.5
+
+
+def test_rule_1_needs_twenty_items_per_rater():
+    assert explain.go_no_go(*two_raters(n=20, blob_yes=10)).set_index("method").loc["gradcam", "decision"] == "go"
+    out = explain.go_no_go(*two_raters(n=18, blob_yes=9)).set_index("method")
+    assert out.loc["gradcam", "n_min"] == 18 and out.loc["gradcam", "decision"] == "no-go"
+
+
+def test_rule_3_needs_a_margin_over_the_centre_blob():
+    assert explain.go_no_go(*two_raters(blob_yes=25)).set_index("method").loc["gradcam", "decision"] == "no-go"
+
+
+def test_rule_4_unreliable_raters_are_no_go():
     n = 30
-    cats = ["TP"] * 20 + ["FP"] * 10
-    good = ["yes"] * 24 + ["no"] * 6                          # rate 0.8
-    good2 = ["yes"] * 23 + ["no"] * 7
-    blob = ["yes"] * 15 + ["no"] * 15                         # rate 0.5
-    def rater(gc, bl, gx):
-        return pd.concat([long_frame(gc, "gradcam", categories=cats), long_frame(bl, "centre_blob", categories=cats),
-                          long_frame(gx, "gradxact", categories=cats)], ignore_index=True)
-    weak = ["yes"] * 18 + ["no"] * 12                         # rate 0.6
-    out = explain.go_no_go(rater(good, blob, weak), rater(good2, blob, weak)).set_index("method")
-    assert out.loc["gradcam", "decision"] == "go" and out.loc["gradcam", "n_min"] == n
-    assert out.loc["gradxact", "decision"] == "no-go"
-    high_blob = ["yes"] * 22 + ["no"] * 8                      # blob rate 0.73: gradcam's margin < 0.2
-    out = explain.go_no_go(rater(good, high_blob, weak), rater(good2, high_blob, weak)).set_index("method")
-    assert out.loc["gradcam", "decision"] == "no-go"
+    r1 = rater({"gradcam": ["yes"] * 24 + ["no"] * 6, "centre_blob": ["yes"] * 10 + ["no"] * 20,
+                "gradxact": ["yes", "no"] * 15})
+    r2 = rater({"gradcam": ["no"] * 6 + ["yes"] * 24, "centre_blob": ["no"] * 20 + ["yes"] * 10,
+                "gradxact": ["no", "yes"] * 15})
+    rel = explain.pooled_reliability(r1, r2).iloc[0]
+    assert rel.test == "kappa" and not rel.reliable and rel.n == 3 * n
+    out = explain.go_no_go(r1, r2).set_index("method")
+    assert out.loc["gradcam", "rate"] == pytest.approx(0.8) and out.loc["gradcam", "decision"] == "no-go"
+
+
+def test_rule_4_falls_back_to_percent_agreement_at_high_prevalence():
+    codes = ["yes"] * 30
+    r1 = rater({"gradcam": codes, "gradxact": codes, "centre_blob": codes})
+    r2 = rater({"gradcam": codes, "gradxact": codes, "centre_blob": codes[:-1] + ["no"]})
+    rel = explain.pooled_reliability(r1, r2).iloc[0]
+    assert rel.prevalence > 0.9 and rel.test == "percent_agreement" and rel.reliable     # kappa here is ~0
+    assert rel.percent_agreement == pytest.approx(89 / 90)
+    r2 = rater({"gradcam": codes, "gradxact": ["no"] * 30, "centre_blob": codes})
+    rel = explain.pooled_reliability(r1, r2).iloc[0]
+    assert not rel.reliable                                                # 60/90 agreement
+
+
+def test_go_no_go_counts_agree_items_only_and_partly_as_covering():
+    n = 30
+    cats = ["TP"] * 20 + ["FP"] * 10 + ["FN"] * 15 + ["TN"] * 15
+    codes = {"gradcam": ["partly"] * n + ["no"] * n, "centre_blob": (["yes"] * 15 + ["no"] * 15) * 2,
+             "gradxact": ["yes", "no"] * n}
+    out = explain.go_no_go(rater(codes, cats), rater(codes, cats)).set_index("method")
+    assert out.loc["gradcam", "n_min"] == n                                # FN/TN items are not counted
+    assert out.loc["gradcam", "rate"] == 1.0 and out.loc["gradcam", "decision"] == "go"
 
 
 def test_summarise_counts_certain_rows_and_skips_nan():
@@ -358,6 +405,7 @@ def test_gradient_maps_match_an_autograd_reference(tiny_model):
     np.testing.assert_allclose(r["gradcam"][1], np.maximum(raw, 0), rtol=1e-4, atol=1e-6)
     np.testing.assert_allclose(r["gradcam"][0], np.maximum(-raw, 0), rtol=1e-4, atol=1e-6)   # 2 classes: negated
     gxa = (acts["b"][0, 1:] * gb[0, 1:]).sum(-1).detach().numpy()
+    assert (gxa < 0).any() and (gxa > 0).any()                 # so ReLU and abs give different maps
     np.testing.assert_allclose(r["gradxact"][1], np.maximum(gxa, 0), rtol=1e-4, atol=1e-6)
     assert r["target"] == 1 and np.array_equal(r["gradcam_target"], r["gradcam"][1])
 
@@ -437,3 +485,82 @@ def test_write_sheets_and_build_packet_from_saved_maps(tmp_path):
         assert im.width == 6 * (56 + 6) + 6
     sheet = pd.read_csv(tmp_path / "packet" / "coding_sheet.csv")
     assert sheet.packet_id.tolist() == key.packet_id.tolist() and list(sheet.columns) == explain.SHEET_COLUMNS
+
+
+def test_packet_panels_and_ids_are_random_not_sequential():
+    s = pd.DataFrame({"overlay_id": [f"x-TP-{i:03d}" for i in range(120)], "label_type": "X", "category": "TP",
+                      "label_uid": [f"springfield-xx:{i}" for i in range(120)], "label_point_uncertain": False})
+    key = explain.packet_key(s, seed=11)
+    orders = {tuple(r[f"panel_{p}"] for p in explain.PANEL_LETTERS) for _, r in key.iterrows()}
+    assert len(orders) > 40                                     # 120 items over 120 possible orders
+    for p in explain.PANEL_LETTERS:
+        assert key[f"panel_{p}"].nunique() == len(explain.PACKET_METHODS)
+    ids = [int(i[1:], 16) for i in key.packet_id]
+    assert sorted(ids) != ids and len(set(np.diff(sorted(ids)))) > 1
+    assert key.overlay_id.tolist() != sorted(key.overlay_id)
+    assert not explain.packet_key(s, seed=12).packet_id.equals(key.packet_id)
+
+
+def test_packet_items_and_sheet_carry_no_category_or_ids(tmp_path, monkeypatch):
+    titles = []
+    real = explain.labelled_panels
+
+    def spy(*args, **kwargs):
+        titles.append(kwargs.get("title"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(explain, "labelled_panels", spy)
+    out = tmp_path / "x"
+    (out / "maps").mkdir(parents=True)
+    s = fake_samples(4).assign(label_type="Crosswalk")
+    s.to_csv(out / "samples.csv", index=False)
+    for o in s.overlay_id:
+        np.savez_compressed(out / "maps" / f"{o}.npz", image=np.zeros((28, 28, 3), np.uint8), pred="correct",
+                            **{m: np.random.default_rng(0).random(4) for m in ("rollout", "cls_attention",
+                                                                                "gradcam_correct", "gradxact_correct")})
+    monkeypatch.setattr(explain, "centre_blob", lambda: np.ones((2, 2)))
+    key = explain.build_packet([str(out)], str(tmp_path / "p"), str(tmp_path / "key.csv"), seed=5)
+    assert len(titles) == 4
+    for t, row in zip(titles, key.itertuples()):
+        for secret in (row.overlay_id, row.category, row.label_uid, "correct", "incorrect"):
+            assert secret not in t
+    sheet = pd.read_csv(tmp_path / "p" / "coding_sheet.csv", dtype=str).fillna("")
+    text = " ".join(sheet.astype(str).values.ravel())
+    for row in key.itertuples():
+        assert row.overlay_id not in text and row.label_uid not in text
+    assert not set(sheet.columns) & {"category", "truth", "pred", "confidence", "overlay_id", "label_uid"}
+    assert (tmp_path / "key.csv.sha256").read_text().split()[0] == explain.sha256_of(str(tmp_path / "key.csv"))
+
+
+def test_unblind_takes_label_point_uncertain_from_the_key():
+    s = fake_samples(4)
+    key = explain.packet_key(s, seed=2).astype(str)
+    sheet = explain.blank_sheet(key, dict(zip(s.overlay_id, s.label_point_uncertain))).astype(str)
+    sheet["label_point_uncertain"] = "False"                    # a rater edits the flag away
+    long, _ = explain.unblind(sheet, key)
+    flagged = set(s.overlay_id[s.label_point_uncertain])
+    assert set(long[long.label_point_uncertain].overlay_id) == flagged
+
+
+def test_cli_refuses_unsafe_invocations(tmp_path):
+    with pytest.raises(SystemExit) as e:
+        explain.main(["run", "--label-type", "Crosswalk", "--crops-dir", str(tmp_path), "--out-dir", str(tmp_path)])
+    assert e.value.code == 2                                     # --cities-json missing: parser.error
+    with pytest.raises(SystemExit) as e:
+        explain.main(["packet", str(tmp_path), "--out-dir", str(tmp_path), "--key", str(tmp_path / "k.csv")])
+    assert e.value.code == 2                                     # --seed has no default
+    import os
+    inside = os.path.join(os.path.dirname(os.path.abspath(explain.__file__)), "docs", "k.csv")
+    with pytest.raises(SystemExit) as e:
+        explain.main(["packet", str(tmp_path), "--out-dir", str(tmp_path), "--key", inside, "--seed", "1"])
+    assert e.value.code == 2                                     # key inside the repo
+
+
+def test_planted_check_table():
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    t = explain.planted_check(positions=(15,), seeds=4)
+    assert set(t.method) == {"gradcam", "gradxact"} and set(t.target) == {"predicted", "other"}
+    assert (t.n == 4).all() and t.hits.between(0, 4).all()
+    gx = t[(t.method == "gradxact") & (t.target == "predicted")].hits.iloc[0]
+    assert gx >= 3

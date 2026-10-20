@@ -51,9 +51,10 @@ Usage (``$DATA/<type>/test/<class>/*.webp`` from ``projectsidewalk/sidewalk-vali
     # ... the same for NoCurbRamp, Obstacle, SurfaceProblem
     python explain.py summary $OUT/*/samples.csv
     python explain.py packet $OUT/crosswalk $OUT/nocurbramp $OUT/obstacle $OUT/surfaceproblem \\
-        --out-dir $PACKET --key docs/explanations-2026-10/packet_key.csv --seed 42
+        --out-dir $PACKET --key $PACKET_KEY_DIR/packet_key.csv --seed $SECRET_SEED
     # once two raters have each filled a copy of $PACKET/coding_sheet.csv:
-    python explain.py agreement coding_rater1.csv coding_rater2.csv --key docs/explanations-2026-10/packet_key.csv
+    python explain.py agreement coding_rater1.csv coding_rater2.csv --key $PACKET_KEY_DIR/packet_key.csv \\
+        --key-sha256 docs/explanations-2026-10/packet_key.sha256
 
 ``--cities-json`` (the v3 API's ``/v3/api/cities``) is required: overlays are sampled only from public deployments,
 and ``label_uid`` is ``<city_id>:<label_id>``. ``--include-private`` drops the filter for local debugging only; its
@@ -102,13 +103,15 @@ COVERS_ORDER = ("no", "partly", "yes")
 BEST = (*PANEL_LETTERS, "none")
 SHEET_COLUMNS = ["packet_id", "label_point_uncertain", "rater",
                  *[f"covers_{p}" for p in PANEL_LETTERS], "best_panel", "notes"]
-KEY_COLUMNS = ["packet_id", "overlay_id", "label_type", "category", "label_uid",
+KEY_COLUMNS = ["packet_id", "overlay_id", "label_type", "category", "label_uid", "label_point_uncertain",
                *[f"panel_{p}" for p in PANEL_LETTERS]]
 
 # Go/no-go rule (docs/explanations-2026-10.md, "Go/no-go"): thresholds applied by ``go_no_go``.
 GO_MIN_RATE = 0.70
 GO_MIN_MARGIN_OVER_BLOB = 0.20
 GO_MIN_KAPPA = 0.60
+GO_MAX_PREVALENCE = 0.90
+GO_MIN_PERCENT_AGREEMENT = 0.85
 GO_MIN_ITEMS = 20
 
 
@@ -637,11 +640,13 @@ def contact_sheet(strips, captions, path, ncols=4, tile_height=112, header=None,
 # Blinded packet, coding and agreement -- pure, unit-tested
 # ---------------------------------------------------------------------------------------------------------------------
 
-def packet_key(samples, seed=42):
+def packet_key(samples, seed):
     """Blinding key: a random ``packet_id`` per sampled overlay, a shuffled order, and a random panel order.
 
-    ``samples`` needs ``overlay_id, label_type, category, label_uid``. Returns ``KEY_COLUMNS`` in packet order;
-    ``panel_<letter>`` names the method shown in that panel. Deterministic in ``seed`` and the set of overlay ids.
+    ``samples`` needs ``overlay_id, label_type, category, label_uid, label_point_uncertain``. Returns
+    ``KEY_COLUMNS`` in packet order; ``panel_<letter>`` names the method shown in that panel. Deterministic in
+    ``seed`` and the set of overlay ids, so the seed must stay secret until the rating is done: with it and the
+    committed ``*_samples.csv`` anyone can rebuild the key.
     """
     rng = np.random.default_rng(seed)
     s = samples.sort_values("overlay_id").reset_index(drop=True)
@@ -679,18 +684,22 @@ def validate_codes(sheet):
 def unblind(sheet, key):
     """``(long, best)``: the filled sheet joined to its key, one row per panel with its method, and the best panel.
 
-    ``long`` has ``packet_id, overlay_id, label_type, category, method, covers``; ``best`` has ``best_method``.
+    ``long`` has ``packet_id, overlay_id, label_type, category, label_point_uncertain, method, covers``, the
+    uncertainty flag coming from the key (a rater's sheet is editable); ``best`` has ``best_method``.
     """
-    m = sheet.merge(key, on="packet_id", validate="one_to_one", how="inner")
+    m = sheet.drop(columns=["label_point_uncertain"], errors="ignore").merge(key, on="packet_id",
+                                                                              validate="one_to_one", how="inner")
     if len(m) != len(sheet):
         raise ValueError("sheet has packet ids that are not in the key")
     rows = []
     for letter in PANEL_LETTERS:
         rows.append(pd.DataFrame({"packet_id": m.packet_id, "overlay_id": m.overlay_id, "label_type": m.label_type,
-                                  "category": m.category, "method": m[f"panel_{letter}"],
+                                  "category": m.category,
+                                  "label_point_uncertain": m.label_point_uncertain.astype(str).str.lower() == "true",
+                                  "method": m[f"panel_{letter}"],
                                   "covers": m[f"covers_{letter}"].fillna("").astype(str).str.strip()}))
     best = m.best_panel.fillna("").astype(str).str.strip()
-    best_method = [m.loc[i, f"panel_{b}"] if b in PANEL_LETTERS else b for i, b in zip(m.index, best)]
+    best_method = [m.loc[i, f"panel_{b}"] if b and b in tuple(PANEL_LETTERS) else b for i, b in zip(m.index, best)]
     return (pd.concat(rows, ignore_index=True),
             pd.DataFrame({"packet_id": m.packet_id, "label_type": m.label_type, "category": m.category,
                           "best_method": best_method}))
@@ -760,36 +769,114 @@ def covers_rate(long, categories=AGREE_CATEGORIES):
                         ).reset_index()
 
 
-def go_no_go(long1, long2, methods=("gradcam", "gradxact")):
-    """Apply the doc's go/no-go rule per label type; one row per type and candidate method.
+def pooled_reliability(long1, long2):
+    """Per label type: inter-rater reliability of the covers codes on Agree-verdict items, pooled over all methods.
 
-    Rows with an uncertain label point must already be removed. A method is **go** for a type when, on that type's
-    Agree-verdict items (TP + FP): each rater coded at least ``GO_MIN_ITEMS`` of them yes/partly/no; the mean of the
-    two raters' covers rates is >= ``GO_MIN_RATE``; it exceeds the ``centre_blob`` control's mean rate by at least
-    ``GO_MIN_MARGIN_OVER_BLOB``; and the unweighted Cohen's kappa on that method's covers codes, per type, is
-    defined and >= ``GO_MIN_KAPPA``.
+    Pooling the five panels (four maps and the centre blob) gives the codes a spread of prevalences, which keeps
+    Cohen's kappa defined and away from the high-prevalence paradox that a single good map would hit (both raters
+    saying ``yes`` to nearly everything gives kappa near 0 or undefined). Only ``yes``/``partly``/``no`` codes that
+    both raters gave count. ``prevalence`` is the largest share of any one code among both raters' codes.
+
+    Returns:
+        ``label_type, n, percent_agreement, kappa, prevalence, test, reliable``: ``test`` is ``kappa`` when kappa is
+        defined and prevalence <= ``GO_MAX_PREVALENCE`` (then reliable means kappa >= ``GO_MIN_KAPPA``), else
+        ``percent_agreement`` (reliable means percent agreement >= ``GO_MIN_PERCENT_AGREEMENT``).
+    """
+    a = long1[long1.category.isin(AGREE_CATEGORIES)]
+    b = long2[long2.category.isin(AGREE_CATEGORIES)]
+    m = a.merge(b, on=["overlay_id", "method"], suffixes=("_1", "_2"), validate="one_to_one")
+    m = m[m.covers_1.isin(COVERS_ORDER) & m.covers_2.isin(COVERS_ORDER)]
+    rows = []
+    for lt, part in m.groupby("label_type_1", sort=True):
+        x, y = part.covers_1.tolist(), part.covers_2.tolist()
+        r = kappa_row(x, y)
+        codes = pd.Series(x + y)
+        prevalence = float(codes.value_counts(normalize=True).max())
+        if np.isfinite(r["kappa"]) and prevalence <= GO_MAX_PREVALENCE:
+            test, reliable = "kappa", r["kappa"] >= GO_MIN_KAPPA
+        else:
+            test, reliable = "percent_agreement", r["percent_agreement"] >= GO_MIN_PERCENT_AGREEMENT
+        rows.append({"label_type": lt, "n": r["n"], "percent_agreement": r["percent_agreement"], "kappa": r["kappa"],
+                     "prevalence": prevalence, "test": test, "reliable": bool(reliable)})
+    return pd.DataFrame(rows, columns=["label_type", "n", "percent_agreement", "kappa", "prevalence", "test",
+                                       "reliable"])
+
+
+def go_no_go(long1, long2, methods=("gradcam", "gradxact")):
+    """Apply the doc's proposed go/no-go rule per label type; one row per type and candidate method.
+
+    Rows with an uncertain label point must already be removed. On that type's Agree-verdict items (TP + FP) a
+    method is **go** when all four hold:
+
+    1. each rater coded at least ``GO_MIN_ITEMS`` of them ``yes``/``partly``/``no`` for this method;
+    2. the covers rate ((yes + partly) / (yes + partly + no)), averaged over the two raters, is >= ``GO_MIN_RATE``;
+    3. that rate exceeds the ``centre_blob`` control's averaged rate by >= ``GO_MIN_MARGIN_OVER_BLOB``;
+    4. the raters are reliable on that type (``pooled_reliability``: pooled kappa >= ``GO_MIN_KAPPA``, or, when
+       kappa is undefined or prevalence > ``GO_MAX_PREVALENCE``, percent agreement >= ``GO_MIN_PERCENT_AGREEMENT``).
     """
     r1, r2 = covers_rate(long1), covers_rate(long2)
     rates = r1.merge(r2, on=["label_type", "method"], suffixes=("_1", "_2"), how="outer", validate="one_to_one")
     rates["rate"] = rates[["rate_1", "rate_2"]].mean(axis=1)
-    kap = agreement(long1[long1.category.isin(AGREE_CATEGORIES)], long2[long2.category.isin(AGREE_CATEGORIES)],
-                    by=("label_type", "method"))
+    rel = pooled_reliability(long1, long2).set_index("label_type")
     out = []
     for lt in sorted(rates.label_type.unique()):
         blob = rates[(rates.label_type == lt) & (rates.method == "centre_blob")].rate
         blob = float(blob.iloc[0]) if len(blob) else np.nan
+        reliable = bool(rel.loc[lt, "reliable"]) if lt in rel.index else False
         for meth in methods:
             r = rates[(rates.label_type == lt) & (rates.method == meth)]
-            k = kap[(kap.label_type == lt) & (kap.method == meth)]
             rate = float(r.rate.iloc[0]) if len(r) else np.nan
-            kappa = float(k.kappa.iloc[0]) if len(k) else np.nan
             n_min = int(min(np.nan_to_num(r.n_1.iloc[0]), np.nan_to_num(r.n_2.iloc[0]))) if len(r) else 0
             go = bool(n_min >= GO_MIN_ITEMS and rate >= GO_MIN_RATE and rate - blob >= GO_MIN_MARGIN_OVER_BLOB
-                      and np.isfinite(kappa) and kappa >= GO_MIN_KAPPA)
+                      and reliable)
             out.append({"label_type": lt, "method": meth, "n_min": n_min, "rate": rate, "centre_blob_rate": blob,
-                        "kappa": kappa, "decision": "go" if go else "no-go"})
-    return pd.DataFrame(out, columns=["label_type", "method", "n_min", "rate", "centre_blob_rate", "kappa",
+                        "reliable": reliable, "decision": "go" if go else "no-go"})
+    return pd.DataFrame(out, columns=["label_type", "method", "n_min", "rate", "centre_blob_rate", "reliable",
                                       "decision"])
+
+
+def planted_check(positions=(6, 15), seeds=20, hidden=32, image=56):
+    """Do Grad-CAM and grad x act find the only patch token a classifier head reads? (needs torch + transformers)
+
+    Builds a tiny random 2-layer Dinov2 (``image / 14`` squared patches) whose head is a linear layer on one patch
+    token of the final hidden state, and counts over ``seeds`` random inputs how often each map's argmax is that
+    token, for the predicted class's map and the other class's map. Chance is ``seeds / n_patches``.
+
+    Returns:
+        ``position, method, target, hits, n``.
+    """
+    import types
+    import torch
+    import transformers
+
+    cfg = transformers.Dinov2Config(hidden_size=hidden, num_hidden_layers=2, num_attention_heads=2, mlp_ratio=2,
+                                    image_size=image, patch_size=14, num_labels=2,
+                                    id2label={0: "correct", 1: "incorrect"}, label2id={"correct": 0, "incorrect": 1})
+    rows = []
+    for k in positions:
+        torch.manual_seed(0)
+        base = transformers.Dinov2ForImageClassification._from_config(cfg, attn_implementation="eager").eval()
+        lin = torch.nn.Linear(hidden, 2)
+
+        class OneToken(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.dinov2, self.config, self.lin = base.dinov2, base.config, lin
+
+            def forward(self, pixel_values, output_attentions=False, _k=k):
+                o = self.dinov2(pixel_values=pixel_values, output_attentions=output_attentions)
+                return types.SimpleNamespace(logits=self.lin(o.last_hidden_state[:, 1 + _k]), attentions=o.attentions)
+
+        model = OneToken().eval()
+        hits = {(m, t): 0 for m in ("gradcam", "gradxact") for t in ("predicted", "other")}
+        for seed in range(seeds):
+            torch.manual_seed(seed)
+            r = explain_one(model, torch.randn(1, 3, image, image))
+            for m in ("gradcam", "gradxact"):
+                hits[(m, "predicted")] += int(np.argmax(r[m][r["target"]]) == k)
+                hits[(m, "other")] += int(np.argmax(r[m][1 - r["target"]]) == k)
+        rows += [{"position": k, "method": m, "target": t, "hits": h, "n": seeds} for (m, t), h in hits.items()]
+    return pd.DataFrame(rows, columns=["position", "method", "target", "hits", "n"])
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -932,8 +1019,20 @@ def write_sheets(out_dir, ncols=3, tile_height=96, quality=78):
                       header=header, quality=quality)
 
 
-def build_packet(out_dirs, packet_dir, key_path, seed=42):
-    """Blinded packet from ``run`` outputs: shuffled images with random ids and panels, a blank sheet, and the key."""
+def sha256_of(path):
+    """Hex sha256 of a file."""
+    import hashlib
+
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def build_packet(out_dirs, packet_dir, key_path, seed):
+    """Blinded packet from ``run`` outputs: shuffled images with random ids and panels, a blank sheet, and the key.
+
+    Writes the key and ``<key>.sha256``; commit only the hash until the rating is done. Neither the item images nor
+    the sheet carry the category, crowd class, verdict, confidence, overlay id or label id.
+    """
     per_dir = {d: pd.read_csv(os.path.join(d, "samples.csv")) for d in out_dirs}
     samples = pd.concat(per_dir.values(), ignore_index=True)
     folder = {o: d for d, s in per_dir.items() for o in s.overlay_id}
@@ -951,6 +1050,8 @@ def build_packet(out_dirs, packet_dir, key_path, seed=42):
         im.save(os.path.join(packet_dir, "items", f"{i + 1:03d}_{k.packet_id}.jpg"), quality=90)
     blank_sheet(key, uncertain).to_csv(os.path.join(packet_dir, "coding_sheet.csv"), index=False)
     key.to_csv(key_path, index=False)
+    with open(key_path + ".sha256", "w") as f:
+        f.write(f"{sha256_of(key_path)}  {os.path.basename(key_path)}\n")
     return key
 
 
@@ -1001,13 +1102,24 @@ def main(argv=None):
     k = sub.add_parser("packet", help="blinded rater packet (keep it outside the repo) and its key")
     k.add_argument("out_dirs", nargs="+", help="`run` output directories")
     k.add_argument("--out-dir", required=True, help="packet directory (outside the repo)")
-    k.add_argument("--key", required=True, help="CSV for the blinding key (raters must not open it)")
-    k.add_argument("--seed", type=int, default=42, help="shuffling seed (default 42)")
+    k.add_argument("--key", required=True,
+                   help="CSV for the blinding key, outside the repo (raters must not see it); <key>.sha256 is "
+                        "written next to it and is the only part to commit before rating")
+    k.add_argument("--seed", type=int, required=True,
+                   help="shuffling seed; no default, keep it secret until rating is done (with it and the committed "
+                        "samples anyone can rebuild the key)")
 
     a = sub.add_parser("agreement", help="unblind two raters' sheets; kappa per method and type; go/no-go")
     a.add_argument("sheet1")
     a.add_argument("sheet2")
     a.add_argument("--key", required=True, help="the packet key written by `packet`")
+    a.add_argument("--key-sha256", default=None,
+                   help="optional committed hash file (docs/explanations-2026-10/packet_key.sha256) to check --key "
+                        "against")
+
+    c = sub.add_parser("planted-check", help="Grad-CAM vs grad x act on a tiny model whose head reads one token")
+    c.add_argument("--positions", default="6,15", help="patch tokens the head reads (default 6,15 of 16)")
+    c.add_argument("--seeds", type=int, default=20, help="random inputs per position (default 20)")
     a.add_argument("--out", default=None, help="optional prefix for CSV copies of the tables")
 
     args = parser.parse_args(argv)
@@ -1022,20 +1134,30 @@ def main(argv=None):
         table = summarise(pd.concat([pd.read_csv(f) for f in args.samples], ignore_index=True),
                           args.stats.split(",") if args.stats else None)
         print(markdown_table(table))
+    elif args.command == "planted-check":
+        print(markdown_table(planted_check(tuple(int(x) for x in args.positions.split(",")), args.seeds)))
     elif args.command == "packet":
+        repo = os.path.dirname(os.path.abspath(__file__))
+        if os.path.abspath(args.key).startswith(repo + os.sep):
+            parser.error("--key must be outside the repo until the rating is done (commit only <key>.sha256)")
         key = build_packet(args.out_dirs, args.out_dir, args.key, args.seed)
         print(f"wrote {len(key)} items to {args.out_dir}/items, {args.out_dir}/coding_sheet.csv and {args.key}")
     else:
+        if args.key_sha256:
+            with open(args.key_sha256) as f:
+                expected = f.read().split()[0]
+            if sha256_of(args.key) != expected:
+                raise SystemExit(f"{args.key} does not match {args.key_sha256}")
         key = pd.read_csv(args.key, dtype=str)
         longs = []
         for path in (args.sheet1, args.sheet2):
             sheet = pd.read_csv(path, dtype=str)
             validate_codes(sheet)
             long, _ = unblind(sheet, key)
-            certain = set(sheet.packet_id[sheet.label_point_uncertain.astype(str).str.lower() != "true"])
-            longs.append(long[long.packet_id.isin(certain)])
+            longs.append(long[~long.label_point_uncertain])
         tables = {"agreement_by_method": agreement(*longs, by=("method",)),
                   "agreement_by_type_method": agreement(*longs, by=("label_type", "method")),
+                  "reliability": pooled_reliability(*longs),
                   "go_no_go": go_no_go(*longs)}
         for name, t in tables.items():
             print(f"== {name} ==")
