@@ -120,6 +120,12 @@ A label is used only when the crowd was decisive or an expert decided it, counti
 | either | otherwise, with `EXPERTS` set: the class the expert accounts voted for, if they all agree and no other human voted the other way | (in the above) |
 | (dropped) | unvalidated, unsure, or contested | — |
 
+`EXPERTS="<name>=<user_id>,..."` (the form `analysis/analyze.py` reads) is set in the environment, never in the
+repo; unset, only the margin rule applies. A single non-expert vote is a weak signal (on labels the experts also
+voted on, a lone Disagree was right 24–78% of the time depending on the type), which is why the margin rule stays
+for the crowd. The manifest's `class_source` column records which rule decided each label, and the deployment prior
+counts margin-rule labels only, since experts do not vote on a random sample.
+
 **Cities.** The default is every public deployment that `/v3/api/cities` lists with a `url` (41 on
 2026-10-19), sorted by city_id; `--cities a,b` overrides it. The city_id is what `label_uid`, crop filenames
 and the pano-store directories use. With `--rawlabels-cache DIR` the listing is read from `DIR/cities.json`,
@@ -141,12 +147,6 @@ cached, and writes `deployment_priors.partial.json`, so copy the prior from the 
 
 A city whose CSV is not cached is downloaded from the host the listing gives it; one listed without a `url` needs
 `<city_id>=<subdomain>` (the subdomain is the `sidewalk-<subdomain>.cs.washington.edu` host part).
-
-`EXPERTS="<name>=<user_id>,..."` (the form `analysis/analyze.py` reads) is set in the environment, never in the
-repo; unset, only the margin rule applies. A single non-expert vote is a weak signal (on labels the experts also
-voted on, a lone Disagree was right 24–78% of the time depending on the type), which is why the margin rule stays
-for the crowd. The manifest's `class_source` column records which rule decided each label, and the deployment prior
-counts margin-rule labels only, since experts do not vote on a random sample.
 
 Labels from non-GSV imagery providers (Mapillary and Panoramax, so all of Richmond VA, Laurens IA and Bayonne FR;
 why, and what would change it: [docs/decisions.md](docs/decisions.md)), rows with unusable pano geometry, and
@@ -292,8 +292,8 @@ resize (`pano_native_w`/`pano_native_h`), pose, `tilt_applied`, `depth_m`, `crop
 output root. Views are rendered on the GPU with the package's torch recipe and depth runs on the same device;
 the script stops if there is no CUDA device (`--allow-cpu` is for smoke tests). The manifest is written row by
 row, so a killed job can simply be resubmitted: labels already `ok`, still selected and with the same class are
-skipped. If the selection itself changed (new votes since the first run, a different city list, or toggling
-`--include-ai-labels`), the job stops and says how many rows are stale; `--force-reselect` drops them and carries on. The job then runs `split_data.py`, which writes
+skipped. If the selection itself changed (new votes since the first run, a different city list, a different `EXPERTS`,
+or toggling `--include-ai-labels`), the job stops and says how many rows are stale; `--force-reselect` drops them and carries on. The job then runs `split_data.py`, which writes
 `<label_type>/split.csv` (the `ok` manifest rows plus `hard`, joined by `label_uid` from
 `--hard-examples`, and `split` ∈ `train`/`val`/`test`/`test_heldout`), grouped by panorama so no panorama
 appears in two splits, and leaves every image where it is. A new hard-example list only needs this step re-run.
@@ -465,7 +465,7 @@ the evidence for each item. In order of how much they affect the numbers:
 - **Train/serve skew** ([#5](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5), [sidewalk-ai-api#8](https://github.com/ProjectSidewalk/sidewalk-ai-api/issues/8)). Normalisation, camera pitch and depth checkpoint differed between training and serving. Training now uses the serving preprocessing for val, label-centred views from the shared geometry package and the ViT-B depth checkpoint; the API applies the same tilt correction in [sidewalk-ai-api#17](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/17), which must be deployed before any retrained model (nothing has been retrained yet).
 - **Evaluation script bugs** ([#6](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6)). Fixed in `evaluate.py`, which replaces `get_stats.py` (PR [#22](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/22), closed unmerged, had proposed a fix first); numbers in `report.png` files made by the old script are not reliable.
 - **Publication** ([#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7)). The CurbRamp dataset on Hugging Face is a copy of the Crosswalk one; model repos carry 2.4 GB of optimizer state. [`publish_to_hf.py`](#publishing-to-hugging-face) now stages clean repos with cards, content hashes and the checks that would have caught both, and `--prune-remote` can delete the optimizer files today; the datasets and models themselves are not republished until the retrain.
-- **Imagery path** ([#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8), [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9)). Panoramas are read only from the lab's pano store (`--pano-store`), and only GSV labels are used, since serving is GSV-only and other providers need per-provider pose handling; all 41 public deployments are used by default (19 before #8); the camera-tilt error in stored coordinates ([sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54)) is now corrected in training crops (beta 0.95).
+- **Imagery path** ([#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8), [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9)). Panoramas are read only from the lab's pano store (`--pano-store`), and only GSV labels are used, since serving is GSV-only and other providers need per-provider pose handling; the 41 public deployments with a url are read by default (19 before #8; the 18 private ones are not, and Richmond, Laurens and Bayonne contribute no labels, being non-GSV); the camera-tilt error in stored coordinates ([sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54)) is now corrected in training crops (beta 0.95).
 - **Hygiene** ([#10](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10), [#11](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/11)). #10 done (closing recommended): the split is a manifest. #11 done except the optional history purge: CPU tests run in CI, `requirements.txt` is the portable dependency list, and `Depth-Anything-V2/` is a submodule instead of a vendored tree, but the old tree stays in git history (pack ~45 MB); [`docs/repo-hygiene.md`](docs/repo-hygiene.md) has the opt-in purge and the no-rewrite `--filter=blob:none` alternative.
 
 Experiments we think are worth running next, each with a first experiment spelled out: soft targets and

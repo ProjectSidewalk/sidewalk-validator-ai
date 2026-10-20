@@ -535,6 +535,7 @@ def test_changed_city_list_refuses_resume_and_keeps_crops(stubbed, capsys):
     m = run_main(tmp, "--force-reselect")
     out = capsys.readouterr().out
     assert (m.status == "ok").all() and "skipped (already ok)': 5" in out
+    assert "city list changed: {'added': ['new-city']" in out
     assert "no pano-store directory for new-city; none of their labels is selected" in out
     run = json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
     assert run["cities"] == ["new-city", CITY] and run["city_source"]["from"] == "cache"
@@ -617,3 +618,31 @@ def test_excluding_ai_labels_again_drops_only_the_ai_rows(stubbed):
     again = run_main(tmp, "--force-reselect", ai=False)
     assert stubbed["depth"].calls == calls
     assert sorted(again.label_uid) == sorted(first.label_uid[first.author == "human"])
+
+
+def _expert_only_labels(stubbed):
+    """Five margin labels plus two that only an expert (``ex``) voted on."""
+    rows = [label(1, 4, 0, pano="shared"), label(2, 0, 3, pano="shared"), label(3, 0, 3),
+            label(4, 0, 4, user=AI), label(5, 5, 0), label(6, 0, 0), label(7, 0, 0)]
+    no = json.dumps([{"user_id": "ex", "validation": "Disagree", "validator_type": "Human"}])
+    rows[5]["validations"] = rows[6]["validations"] = no
+    write_city(stubbed["tmp"], rows)
+    for r in rows[5:]:
+        write_pano(stubbed["store"], CITY, r["pano_id"])
+
+def test_setting_experts_is_a_selection_change(stubbed, monkeypatch, capsys):
+    """EXPERTS adds labels, so setting or unsetting it changes the selection, not a crop setting."""
+    monkeypatch.delenv("EXPERTS", raising=False)
+    _expert_only_labels(stubbed)
+    first = run_main(stubbed["tmp"])
+    monkeypatch.setenv("EXPERTS", "someone=ex")
+    with pytest.raises(SystemExit, match="the selection changed") as e:
+        run_main(stubbed["tmp"])
+    assert "settings changed" not in str(e.value)
+    calls = stubbed["depth"].calls
+    again = run_main(stubbed["tmp"], "--force-reselect")
+    assert set(first.label_uid) <= set(again.label_uid)
+    assert stubbed["depth"].calls == calls + 2
+    monkeypatch.delenv("EXPERTS")
+    with pytest.raises(SystemExit, match="the selection changed"):
+        run_main(stubbed["tmp"])
