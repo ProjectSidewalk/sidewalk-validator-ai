@@ -184,3 +184,137 @@ def test_quantize_rejects_unknown_method(tmp_path):
     from export_onnx import quantize_model
     with pytest.raises(ValueError):
         quantize_model(str(tmp_path / "model.onnx"), method="int4")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Boundaries and helpers the review's mutants slipped past
+# ---------------------------------------------------------------------------------------------------------------------
+
+def test_served_votes_boundaries_match_the_api():
+    # A confidence equal to a map key gets that key's value (the API keeps the last threshold <= c), and a served
+    # value of exactly 0.92 votes (SidewalkWebpage's >= ai-validation-min-accuracy).
+    m = {"correct": {"0.5": 0.0, "0.9": 0.92, "0.95": 0.99}, "incorrect": {"0.5": 0.0, "0.9": 0.9199}}
+    _, votes = served_votes([0.9, 0.8999], [0.1, 0.1001], m)
+    assert votes.tolist() == [True, False]
+    _, votes = served_votes([0.1], [0.9], m)            # incorrect at its key, value 0.9199: below the gate
+    assert votes.tolist() == [False]
+    _, votes = served_votes([0.92, 0.9199], [0.08, 0.0801])   # raw proxy: >= 0.92 votes
+    assert votes.tolist() == [True, False]
+
+
+def test_softmax_is_float32_like_the_api():
+    assert softmax(np.array([[0.0, 1.0]])).dtype == np.float32
+
+
+def test_accuracy_row_known_values():
+    from export_onnx import accuracy_row
+    p_inc = np.array([0.1, 0.2, 0.6, 0.4, 0.9])
+    logits = np.log(np.stack([1 - p_inc, p_inc], axis=1))
+    r = accuracy_row(np.array(["correct", "correct", "correct", "incorrect", "incorrect"]), logits)
+    # verdicts c,c,i,c,i: 3 of 5 right; F1 correct 2/3, incorrect 1/2; AUC of p_incorrect 5/6
+    assert r["accuracy"] == pytest.approx(0.6)
+    assert r["macro_f1"] == pytest.approx((2 / 3 + 0.5) / 2)
+    assert r["auc"] == pytest.approx(5 / 6)
+
+
+def test_median_ms_warms_up_then_takes_the_median(monkeypatch):
+    import export_onnx
+    calls = []
+    clock = iter([0.0, 0.001, 1.0, 1.005, 2.0, 2.002])   # timed calls of 1, 5 and 2 ms
+    monkeypatch.setattr(export_onnx.time, "perf_counter", lambda: next(clock))
+    assert export_onnx.median_ms(lambda: calls.append(1), warmup=2, runs=3) == pytest.approx(2.0)
+    assert len(calls) == 5
+
+
+def test_sample_takes_the_first_b_and_tiles():
+    from export_onnx import _sample
+    x = np.arange(3).reshape(3, 1)
+    assert _sample(x, 2).ravel().tolist() == [0, 1]
+    assert _sample(x, 5).ravel().tolist() == [0, 1, 2, 0, 1]
+
+
+def test_public_crops_drops_private_unlisted_and_ambiguous():
+    from export_onnx import public_crops
+    df = pd.DataFrame({"label_uid": ["seattle:1", "st_louis:2", "secret:3", "nowhere:4", "springfield:5"]})
+    cities = {"seattle-wa": "public", "st-louis-mo": "public", "secret-xx": "private",
+              "springfield-ma": "public", "springfield-il": "public"}
+    kept, n = public_crops(df, cities)
+    assert kept.label_uid.tolist() == ["seattle:1", "st_louis:2"] and n == 3
+
+
+def test_export_runs_the_checker_and_quantized_graphs_have_the_promised_types(tiny_checkpoint, monkeypatch):
+    pytest.importorskip("onnx_ir")
+    import onnx
+    from onnx import numpy_helper
+
+    import export_onnx
+
+    _, ckpt, tmp = tiny_checkpoint
+    checked = []
+    real = onnx.checker.check_model
+    monkeypatch.setattr(onnx.checker, "check_model", lambda p, *a, **k: (checked.append(p), real(p, *a, **k)))
+    fp32 = export_onnx.export_model(ckpt, str(tmp / "onnx"))
+    assert checked == [fp32]
+
+    def graph(path):
+        m = onnx.load(path)
+        return m.graph.node, {i.name: numpy_helper.to_array(i) for i in m.graph.initializer}
+
+    nodes, inits = graph(export_onnx.quantize_model(fp32))
+    assert any(n.op_type == "DynamicQuantizeLinear" for n in nodes)
+    weights = [a for k, a in inits.items() if k.endswith("_quantized")]
+    assert weights and all(a.dtype == np.int8 for a in weights)          # QInt8 weights, not QUInt8
+    matmul_scales = [a for k, a in inits.items() if k.endswith("_scale") and "MatMul" in k]
+    assert matmul_scales and all(a.size == 1 for a in matmul_scales)   # per tensor by default
+
+    _, inits = graph(export_onnx.quantize_model(fp32, str(tmp / "onnx" / "pc.onnx"), per_channel=True))
+    assert any(a.size > 1 for k, a in inits.items() if k.endswith("_scale"))
+
+    nodes, _ = graph(export_onnx.quantize_model(fp32, method="weight-only", block_size=16))
+    nbits = [n for n in nodes if n.op_type == "MatMulNBits"]
+    assert nbits and all({a.name: a.i for a in n.attribute}["bits"] == 8 for n in nbits)
+
+
+def test_score_batch_is_forced_to_1_for_dynamic_graphs(tiny_checkpoint):
+    import export_onnx
+    _, ckpt, tmp = tiny_checkpoint
+    fp32 = export_onnx.export_model(ckpt, str(tmp / "onnx"))
+    int8 = export_onnx.quantize_model(fp32)
+    assert export_onnx.effective_score_batch(fp32, 8) == 8
+    with pytest.warns(UserWarning, match="DynamicQuantizeLinear"):
+        assert export_onnx.effective_score_batch(int8, 8) == 1
+    assert export_onnx.make_session(fp32, 3).get_session_options().intra_op_num_threads == 3
+
+
+def test_bench_end_to_end_on_a_tiny_model(tiny_checkpoint):
+    from PIL import Image
+
+    import export_onnx
+
+    _, ckpt, tmp = tiny_checkpoint
+    fp32 = export_onnx.export_model(ckpt, str(tmp / "onnx"))
+    int8 = export_onnx.quantize_model(fp32)
+    rng = np.random.default_rng(0)
+    for cls, names in (("correct", ["seattle_1", "seattle_2", "hidden_3"]), ("incorrect", ["seattle_4", "seattle_5"])):
+        d = tmp / "crops" / "test" / cls
+        d.mkdir(parents=True)
+        for n in names:
+            Image.fromarray(rng.integers(0, 255, (40, 40, 3), dtype=np.uint8)).save(d / f"{n}.png")
+    (tmp / "cities.json").write_text(json.dumps({"cities": [{"city_id": "seattle-wa", "visibility": "public"},
+                                                            {"city_id": "hidden-xx", "visibility": "private"}]}))
+    with pytest.warns(UserWarning, match="DynamicQuantizeLinear"):
+        df = export_onnx.main(["bench", "--label-type", "X", "--crops", str(tmp / "crops"), "--model", ckpt,
+                               "--onnx", f"onnx-fp32={fp32}", "--onnx", f"onnx-int8={int8}", "--threads", "2",
+                               "--batch-sizes", "1,2", "--warmup", "1", "--runs", "2", "--score-batch", "4",
+                               "--cities-json", str(tmp / "cities.json"), "--out", str(tmp / "bench")])
+    assert df.variant.tolist() == ["torch-fp32-cpu", "onnx-fp32", "onnx-int8"]
+    assert (df.n_crops == 4).all() and (df.n_crops_dropped_not_public == 1).all()
+    ref, onnx_fp32, q = (df.iloc[i] for i in range(3))
+    assert ref.vs_ref_max_abs_dlogit == 0 and onnx_fp32.vs_ref_max_abs_dlogit < 1e-4   # the reference is torch
+    assert (ref.score_batch, onnx_fp32.score_batch, q.score_batch) == (4, 4, 1)
+    assert pd.isna(onnx_fp32.b16_vs_b1_max_abs_dprob) and q.b16_vs_b1_max_abs_dprob >= 0
+    assert (df.ms_per_crop_b2 == df.lat_b2_ms / 2).all()
+    saved = pd.read_csv(tmp / "bench" / "bench_X.csv")
+    assert len(saved) == 3 and not saved.label_type.isna().any()
+    scores = pd.read_csv(tmp / "bench" / "scores_X.csv")
+    assert scores.label_uid.tolist() == ["seattle:1", "seattle:2", "seattle:4", "seattle:5"]

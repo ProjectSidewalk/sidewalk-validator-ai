@@ -28,6 +28,14 @@ Three subcommands:
     the type's accuracy map (``--accuracy-map``, sidewalk-ai-api's ``accuracy_mappings/<type>.json``), vote only if
     the looked-up value is >= 0.92. Without a map, the raw confidence >= 0.92 is used as a proxy and the CSV says so.
 
+    Crops are scored one per call by default (``--score-batch 1``), as the API does. This matters for dynamically
+    quantized graphs (``DynamicQuantizeLinear``, e.g. ``quantize --method dynamic`` and the tiny repos): they pick one
+    activation scale over the whole batch, so a crop's output changes with its batch neighbours. They are always
+    scored at batch 1, and the row's ``b16_vs_b1_max_abs_dprob`` reports how far batch-16 scoring would move them.
+    ``--cities-json`` (a saved ``/v3/api/cities`` response) keeps only crops from public deployments, with
+    ``calibration.per_city``'s matching rule; the published test splits also contain crops from deployments that
+    are private today, and only their count is recorded.
+
 Latency is the median of ``--runs`` timed calls after ``--warmup`` untimed ones, on preprocessed tensors (image
 decoding and preprocessing are excluded, and are the same for every variant), with ``--threads`` intra-op threads for
 both PyTorch and onnxruntime. Numbers are comparable only within one machine and one thread setting; the CSV records
@@ -54,7 +62,8 @@ Usage::
         --model projectsidewalk/sidewalk-validator-ai-obstacle --revision 8f0fe8fc48748fac35098e74c1848d015126deef \\
         --onnx onnx-fp32=onnx/obstacle/model.onnx --onnx onnx-int8=onnx/obstacle/model_int8.onnx \\
         --onnx tiny-int8=tiny/obstacle/onnx/model_quantized.onnx \\
-        --accuracy-map ../sidewalk-ai-api/accuracy_mappings/obstacle.json --mps --threads 4 --out bench/
+        --accuracy-map ../sidewalk-ai-api/accuracy_mappings/obstacle.json --cities-json cities.json \
+        --mps --threads 4 --out bench/
 
     # all bench CSVs -> one markdown table
     python export_onnx.py table bench/bench_*.csv > table.md
@@ -68,17 +77,21 @@ import platform
 import shutil
 import statistics
 import time
+import warnings
 
 import numpy as np
 import pandas as pd
 
 from calibration._isotonic_map import GATE, api_lookup_many, predict_verdicts
+from calibration.per_city import load_cities, public_name
 from evaluate import CLASSES, slice_metrics
 
 OPSET = 17
 INPUT_NAME = "pixel_values"
 OUTPUT_NAME = "logits"
 IMAGE_EXTENSIONS = (".webp", ".png", ".jpg", ".jpeg")
+BATCH_CHECK = 16
+"""Batch size at which a dynamically quantized graph is re-scored, to report how much its output depends on the batch."""
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -95,8 +108,11 @@ def sha256_file(path, chunk=1 << 20):
 
 
 def softmax(logits):
-    """Row-wise softmax in float64 (stable)."""
-    z = np.asarray(logits, dtype=np.float64)
+    """Row-wise softmax in float32, as the API's ``F.softmax`` on float32 logits (stable).
+
+    The precision matters: the maps step every 1e-6 near confidence 1.0, about the size of float32 rounding there.
+    """
+    z = np.asarray(logits, dtype=np.float32)
     z = z - z.max(axis=1, keepdims=True)
     e = np.exp(z)
     return e / e.sum(axis=1, keepdims=True)
@@ -191,6 +207,27 @@ def list_crops(crops_dir, split="test"):
     if not df.label_uid.is_unique:
         raise ValueError(f"{crops_dir}: label_uid is not unique")
     return df
+
+
+def public_crops(crops, cities):
+    """Keep only crops whose city is a public deployment in ``cities`` (``calibration.per_city``'s rule).
+
+    The city is the part of ``label_uid`` before ``:`` (the schema's city, ``new_york``); ``public_name`` matches it
+    to a listed ``city_id`` and returns ``None`` for private, unlisted or ambiguous ones, which are dropped.
+
+    Returns:
+        ``(kept, n_dropped)``. Only the count of dropped crops is returned, never which deployments they came from.
+
+    Example::
+
+        >>> df = pd.DataFrame({"label_uid": ["seattle:1", "hidden:2"], "label_class": ["correct", "incorrect"]})
+        >>> kept, n = public_crops(df, {"seattle-wa": "public", "hidden-xx": "private"})
+        >>> kept.label_uid.tolist(), n
+        (['seattle:1'], 1)
+    """
+    city = crops.label_uid.str.rpartition(":")[0]
+    keep = city.map(lambda c: public_name(c, cities) is not None).astype(bool)
+    return crops[keep].reset_index(drop=True), int((~keep).sum())
 
 
 def markdown_table(df, columns=None, floatfmt=".4g"):
@@ -374,6 +411,37 @@ def id2label_order(config_path):
     return [inv[c] for c in CLASSES]
 
 
+def has_dynamic_quantization(path):
+    """True if the ONNX graph quantizes activations at run time (``DynamicQuantizeLinear``).
+
+    Such a graph computes one activation scale per tensor over the WHOLE input, batch included, so a crop's output
+    depends on which other crops share its batch. The API scores one crop per call, so these graphs are scored at
+    batch 1.
+    """
+    import onnx
+    m = onnx.load(path, load_external_data=False)
+    return any(n.op_type == "DynamicQuantizeLinear" for n in m.graph.node)
+
+
+def effective_score_batch(path, requested):
+    """The batch size to score ``path`` with: ``requested``, except 1 for a dynamically quantized graph (warns)."""
+    if requested != 1 and has_dynamic_quantization(path):
+        warnings.warn(f"{path} quantizes activations per call (DynamicQuantizeLinear), so its scores depend on the "
+                      f"batch; scoring at batch 1 as the API does instead of --score-batch {requested}")
+        return 1
+    return requested
+
+
+def make_session(path, threads):
+    """onnxruntime CPU session with ``threads`` intra-op threads, 1 inter-op thread and all graph optimizations."""
+    import onnxruntime as ort
+    so = ort.SessionOptions()
+    so.intra_op_num_threads = threads
+    so.inter_op_num_threads = 1
+    so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    return ort.InferenceSession(path, so, providers=["CPUExecutionProvider"])
+
+
 def _batches(x, batch):
     for i in range(0, len(x), batch):
         yield x[i:i + batch]
@@ -385,7 +453,7 @@ def _sample(pixels, b):
     return np.concatenate([pixels] * reps)[:b] if reps > 1 else pixels[:b]
 
 
-def bench_torch(model, revision, pixels, device, batch_sizes, warmup, runs, score_batch=16):
+def bench_torch(model, revision, pixels, device, batch_sizes, warmup, runs, score_batch=1):
     """Logits on every crop and median latency per batch size for the PyTorch fp32 model on ``device``."""
     import torch
     from transformers import AutoModelForImageClassification
@@ -406,22 +474,30 @@ def bench_torch(model, revision, pixels, device, batch_sizes, warmup, runs, scor
     return logits, lat, n_params
 
 
-def bench_onnx(path, pixels, threads, batch_sizes, warmup, runs, order, score_batch=16):
-    """Logits on every crop and median latency per batch size for an ONNX model on onnxruntime's CPU provider."""
-    import onnxruntime as ort
-    so = ort.SessionOptions()
-    so.intra_op_num_threads = threads
-    so.inter_op_num_threads = 1
-    so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    sess = ort.InferenceSession(path, so, providers=["CPUExecutionProvider"])
+def bench_onnx(path, pixels, threads, batch_sizes, warmup, runs, order, score_batch=1):
+    """Logits on every crop, median latency per batch size, and (dynamic graphs only) batch dependence.
+
+    Returns:
+        ``(logits, latency_by_batch, score_batch_used, batch_check)``. ``batch_check`` is the max |Δ softmax| between
+        scoring at ``score_batch_used`` (1 for a dynamically quantized graph) and at ``BATCH_CHECK``, or ``None`` for
+        a graph without run-time activation quantization.
+    """
+    sess = make_session(path, threads)
     name = sess.get_inputs()[0].name
 
     def run(x):
         return sess.run(None, {name: x})[0]
-    logits = np.concatenate([run(b) for b in _batches(pixels, score_batch)])[:, order]
+
+    def score(batch):
+        return np.concatenate([run(b) for b in _batches(pixels, batch)])[:, order]
+    used = effective_score_batch(path, score_batch)
+    logits = score(used)
+    check = None
+    if has_dynamic_quantization(path):
+        check = float(np.abs(softmax(score(BATCH_CHECK)) - softmax(logits)).max())
     lat = {b: median_ms(lambda x=_sample(pixels, b): run(x), warmup, runs) for b in batch_sizes}
     del sess
-    return logits, lat
+    return logits, lat, used, check
 
 
 def _model_file_size(model, revision):
@@ -444,13 +520,20 @@ def bench(args):
 
     torch.set_num_threads(args.threads)
     crops = list_crops(args.crops, args.split)
+    n_private = 0
+    if args.cities_json:
+        crops, n_private = public_crops(crops, load_cities(args.cities_json))
+        print(f"{len(crops)} crops from public deployments; {n_private} from other deployments dropped", flush=True)
+    else:
+        warnings.warn("no --cities-json: scoring every crop, including any from deployments that are not public")
     accuracy_map = None
     if args.accuracy_map:
         with open(args.accuracy_map) as f:
             accuracy_map = json.load(f)
     batch_sizes = [int(b) for b in args.batch_sizes.split(",")]
     os.makedirs(args.out, exist_ok=True)
-    common = {"label_type": args.label_type, "n_crops": len(crops), "threads": args.threads,
+    common = {"label_type": args.label_type, "n_crops": len(crops), "n_crops_dropped_not_public": n_private,
+              "crop_filter": "public" if args.cities_json else "none", "threads": args.threads,
               "machine": f"{platform.machine()} {_cpu_name()}", "gate_rule": "map" if accuracy_map else "raw>=0.92"}
 
     cache = {}
@@ -473,21 +556,22 @@ def bench(args):
         print(f"[{args.label_type}] {name} (load {load:.1f})", flush=True)
         if kind == "torch":
             logits, lat, n_params = bench_torch(args.model, args.revision, ref_pixels, spec, batch_sizes,
-                                                args.warmup, args.runs)
+                                                args.warmup, args.runs, args.score_batch)
             nbytes, path = size, f"{args.model}@{(args.revision or 'main')[:7]}"
+            used, check = args.score_batch, None
         else:
             pre = find_beside(spec, "preprocessor_config.json")
             cfg = find_beside(spec, "config.json")
             if not (pre and cfg):
                 raise FileNotFoundError(f"{spec}: need config.json and preprocessor_config.json beside it or one up")
             proc = AutoImageProcessor.from_pretrained(os.path.dirname(pre), use_fast=False)
-            logits, lat = bench_onnx(spec, pixels_for(proc), args.threads, batch_sizes, args.warmup, args.runs,
-                                     id2label_order(cfg))
+            logits, lat, used, check = bench_onnx(spec, pixels_for(proc), args.threads, batch_sizes, args.warmup,
+                                                  args.runs, id2label_order(cfg), args.score_batch)
             n_params, nbytes, path = onnx_param_count(spec), os.path.getsize(spec), spec
         if ref_logits is None:
             ref_logits = logits
         row = {**common, "variant": name, "path": path, "size_mb": nbytes / 1e6, "params_m": n_params / 1e6,
-               "load_avg_1m": round(load, 2)}
+               "load_avg_1m": round(load, 2), "score_batch": used, f"b{BATCH_CHECK}_vs_b1_max_abs_dprob": check}
         row.update({f"lat_b{b}_ms": v for b, v in lat.items()})
         row.update({f"ms_per_crop_b{b}": v / b for b, v in lat.items()})
         if args.no_accuracy:
@@ -580,6 +664,13 @@ def main(argv=None):
     p.add_argument("--mps", action="store_true", help="also time and score the PyTorch model on Apple MPS")
     p.add_argument("--threads", type=int, default=4, help="intra-op threads for torch and onnxruntime (default 4)")
     p.add_argument("--batch-sizes", default="1,16", help="comma list of batch sizes to time (default 1,16)")
+    p.add_argument("--score-batch", type=int, default=1,
+                   help="batch size for scoring the crops (default 1, the API's one crop per call). Graphs with "
+                        "run-time activation quantization (DynamicQuantizeLinear) are always scored at 1, with a "
+                        "warning, because their outputs depend on the other crops in the batch")
+    p.add_argument("--cities-json", default=None,
+                   help="saved /v3/api/cities response: keep only crops from public deployments (strongly "
+                        "recommended; the published test splits include crops from deployments that are private)")
     p.add_argument("--warmup", type=int, default=3, help="untimed calls before timing (default 3)")
     p.add_argument("--runs", type=int, default=10, help="timed calls; the median is reported (default 10)")
     p.add_argument("--no-accuracy", action="store_true",
@@ -597,7 +688,7 @@ def main(argv=None):
     elif args.cmd == "quantize":
         print(quantize_model(args.onnx, args.out, args.per_channel, args.method, args.block_size))
     elif args.cmd == "bench":
-        bench(args)
+        return bench(args)
     else:
         print(table(args.csvs, args.columns.split(",") if args.columns else None), end="")
 
