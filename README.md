@@ -86,7 +86,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 | [`split_data.py`](split_data.py) | Step 5. Assigns manifest rows to train/val/test by panorama (stratified by class), merging panoramas whose labels are within a few metres of each other (the same feature seen twice), optional held-out cities, joins the `hard` flag; prints the share of val/test labels with a train label within 2/5/10 m; writes `split.csv`, never touches images. | 70 / 15 / 15 of rows, `--merge-radius-m 3` (coordinates from `--rawlabels DIR`, default `<out>/rawlabels`), `--max-group-share 0.05`, `--seed`, `--holdout-cities`, `--hard-examples` |
 | [`fine_tune_classifier.py`](fine_tune_classifier.py) | Step 6. Hugging Face `Trainer` on `facebook/dinov2-large`, from `split.csv`; val uses the checkpoint's image processor (as eval and serving do). | lr 1e-5, batch 8 × 4 accumulation, `--epochs 25`, warm-up 10%, `--seed`, best by macro-F1 (`--best-metric loss`), resumes from its last checkpoint, `--num-workers`, `id2label = {0: correct, 1: incorrect}` |
 | [`hard_examples.py`](hard_examples.py) | Builds [`analysis/hard_examples_2026-10-17.csv`](analysis/hard_examples_2026-10-17.csv) (`label_uid,reason`) from a private production export: labels the deployed AI got wrong against a unanimous crowd (≥3 votes) or one of the project leads' accounts (configured via `EXPERTS`, not named). Feeds `split_data.py --hard-examples`. | |
-| [`evaluate.py`](evaluate.py) | Step 7. Predictions for every held-out row, then AUC, accuracy and balanced accuracy, per-class P/R/F1, recall at precision. (`get_stats.py` is a stub that says so.) | splits `val`, `test`, `test_heldout`; `hard` slice |
+| [`evaluate.py`](evaluate.py) | Step 7. Predictions for every held-out row, then AUC, accuracy and balanced accuracy, per-class P/R/F1, recall at precision. (`get_stats.py` is a stub that says so.) | splits `val`, `test`, `test_heldout`; `hard` slice; `--per-city` |
 | [`calibration/`](calibration) | Step 7b. Isotonic confidence→accuracy maps in the API's format: `calibrate.py` for a retrained model (deployment-prior weighting), `calibrate_from_production.py` for the deployed models from production outcomes. | gate 0.92; grid 0.5–1.0 at 0.0025, plus 1e-6 steps from 0.99998 to 1.0 |
 | [`publish_to_hf.py`](publish_to_hf.py), [`hf_cards.py`](hf_cards.py) | Step 8. Stages a label type's model repo (inference files only) and dataset repo (crops by `split.csv`, `SHA256SUMS`, Croissant) with generated cards; `--audit` checks the live repos; `--push` / `--prune-remote` upload or clean up behind `--yes`. | refuses `optimizer.pt`, `scheduler.pt`, `rng_state*.pth`, `training_args.bin`, `scaler.pt`, `checkpoint-*` |
 | [`analysis/`](analysis) | Scripts behind the production measurements in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md). | outputs live outside the repo |
@@ -411,6 +411,7 @@ Writes, per label type:
 | `predictions.csv` | `label_uid,split,true,p_correct,p_incorrect` for every `val`, `test` and `test_heldout` row |
 | `metrics.json`, `report.txt` | accuracy, balanced accuracy, AUC, per-class precision/recall/F1 and recall at 90–99% precision, for `test`, `test_heldout` and the `hard` slice (small: e.g. 15 of 132 CurbRamp test rows, so read its numbers with wide error bars) |
 | `pvr.png`, `report.png` | precision–recall curve per class on the test split, and the curve with the text report |
+| `per_city.md` | with `--per-city` only: the same metrics per city of `test` and `test_heldout` (cities with at least `--min-city-n` rows, default 50), also under `per_city` in `metrics.json` |
 
 The same job then fits the map the API serves, on the val split reweighted to the deployment class prior
 in `deployment_priors.json`; for one label type:
@@ -433,6 +434,40 @@ trips on a smoke test). For a smoke test add
 needed), and `--rawlabels-cache DIR` reads saved `<city_id>.csv` exports and the `cities.json` listing instead of the
 API (a missing listing is fetched once and saved there). Runs with `--limit`
 or `--cities` write `deployment_priors.partial.json`, never the real `deployment_priors.json`.
+
+### Held-out-city benchmark
+
+The test split is drawn from the same cities the model trains on (every listed public deployment; see Cities), so it says nothing about a city the model has
+never seen ([#15](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/15)). The existing steps already
+support leave-one-city-out: `split_data.py --holdout-cities` sends every row of a city (and any panorama group that
+touches it) to `test_heldout`, training never reads `test_heldout`, and `evaluate.py --per-city` reports each city of
+`test` and `test_heldout` separately. Give each held-out city its own run root so the main `split.csv` and checkpoints
+are untouched; the crops are linked, not copied, because `crop_path` is relative to `<label_type>/`:
+
+```bash
+DATA=/path/to/data            # data_generation.py's --out: <label_type>/{correct,incorrect}/, manifest.csv, rawlabels/
+LT=CurbRamp
+CITY=amsterdam                # a city_id from the manifest
+RUN=$DATA/loco/$CITY
+mkdir -p $RUN/$LT
+ln -s $DATA/$LT/correct $DATA/$LT/incorrect $DATA/$LT/generation_run.json $RUN/$LT/
+cp $DATA/deployment_priors.json $RUN/
+python split_data.py --label_type $LT --out $RUN --manifest $DATA/$LT/manifest.csv --rawlabels $DATA/rawlabels \
+    --hard-examples analysis/hard_examples_2026-10-17.csv --holdout-cities $CITY --seed 42
+python fine_tune_classifier.py --label_type $LT --data-dir $RUN --seed 42
+python evaluate.py --label_type $LT --data-dir $RUN --per-city
+```
+
+`$RUN/$LT/per_city.md` then has the held-out city's accuracy, AUC and per-class precision/recall in its
+`test_heldout` table, next to the seen cities in `test`. The comparison row is that city's row in the main run's
+`test` table (`evaluate.py --per-city` on `$DATA`), where the city was trained on. That row covers only the city's
+test share (about 15% of its rows), while `test_heldout` holds all of its rows, so the two differ in sample as well
+as in training. `--min-city-n` applies to both splits. For the first run, the issue suggests one small US city,
+one large US city, Amsterdam, cdmx and a Taiwanese city, each a separate training run (five label types × five
+cities). These jobs are not in the SLURM files yet; on klone, wrap
+the three commands per city in a copy of `fine_tune.slurm`. The production-side counterpart, whether the 0.92 gate
+holds per city for the deployed models, is [`docs/per-city-calibration-2026-10.md`](docs/per-city-calibration-2026-10.md)
+(`python -m calibration.per_city`).
 
 ## Publishing to Hugging Face
 
