@@ -70,7 +70,6 @@ Example of the core sweep::
 Needs only numpy, pandas and matplotlib (plus the repo's ``calibration`` package for ``add_outcomes``).
 """
 import argparse
-import json
 import os
 import sys
 
@@ -78,7 +77,9 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from calibration.calibrate_from_production import add_outcomes  # noqa: E402
+from deployments import city_label, load_cities  # noqa: E402
 
 GATE = 0.92
 TYPES = ["CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk"]
@@ -92,37 +93,21 @@ OPERATING_POINTS = {"old maps @0.92": "ai_accuracy",
 EXPERT_VOTES = ("Agree", "Disagree")
 
 
-# ---------------------------------------------------------------- deployments (copied from calibration_doc_numbers)
+# ---------------------------------------------------------------- deployments
 
 def public_names(cities_json):
-    """``{city_id: city_id}`` for public deployments in a saved ``/v3/api/cities`` response; ``{}`` without one."""
-    if not cities_json:
-        return {}
-    with open(cities_json) as f:
-        cities = json.load(f)
-    if isinstance(cities, dict):
-        cities = cities.get("cities", [])
-    return {c["city_id"]: c["city_id"] for c in cities if c.get("visibility") == "public"}
+    """``{city_id: visibility}`` for every deployment in a saved ``/v3/api/cities`` response (``analysis/deployments``);
+    ``{}`` without one, in which case nothing is named."""
+    return load_cities(cities_json)
 
 
-def city_label(schema_city, public):
-    """The schema's city name if it matches a public deployment, else ``None`` (private or unknown: never named).
-
-    >>> city_label("seattle", {"seattle-wa": "seattle-wa"}), city_label("secret", {"seattle-wa": "seattle-wa"})
-    ('seattle', None)
-    """
-    slug = schema_city.replace("_", "-")
-    for cid in public:
-        if cid == slug or cid.startswith(slug + "-"):
-            return schema_city
-    return None
-
-
-def deployments_line(df, public):
-    """One printable line naming the public deployments counted and the number of private ones (never named)."""
-    cities = sorted(df.schema.str.replace("sidewalk_", "", regex=False).unique())
-    shown = [c for c in cities if city_label(c, public)]
-    return f"{len(cities)} deployments: {', '.join(shown) or '(none named)'}; plus {len(cities) - len(shown)} private"
+def deployments_line(df, cities):
+    """One printable line naming the deployments the public-only rule allows, and how many others were counted
+    (private, ambiguous or not in the city list; never named)."""
+    schemas = sorted(df.schema.str.replace("sidewalk_", "", regex=False).unique())
+    shown = [c for c in schemas if city_label(c, cities)]
+    return (f"{len(schemas)} deployments: {', '.join(shown) or '(none named)'}; plus {len(schemas) - len(shown)} "
+            "not named (private, ambiguous or not in the city list)")
 
 
 # ---------------------------------------------------------------- loading

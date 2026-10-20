@@ -13,7 +13,6 @@ Usage::
     python analysis/calibration_doc_numbers.py ~/Data/<pull>/phase0/labels_oof.csv --cities-json ~/Data/<pull>/cities.json
 """
 import argparse
-import json
 import os
 import sys
 
@@ -23,25 +22,16 @@ import pandas as pd
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from calibration import _isotonic_map as im  # noqa: E402
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from deployments import city_label, load_cities  # noqa: E402
+
 GATE = im.GATE
 TYPES = ["CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk"]
 
 
 def public_names(cities_json):
-    """``{schema_city: display}`` for public deployments; schema cities that match nothing count as private."""
-    if not cities_json:
-        return {}
-    cities = json.load(open(cities_json))
-    cities = cities.get("cities", cities)
-    return {c["city_id"]: c["city_id"] for c in cities if c.get("visibility") == "public"}
-
-
-def city_label(schema_city, public):
-    slug = schema_city.replace("_", "-")
-    for cid in public:
-        if cid == slug or cid.startswith(slug + "-"):
-            return schema_city
-    return None   # private or unknown: never named
+    """``{city_id: visibility}`` for every deployment (see ``analysis/deployments.py`` for the naming rule)."""
+    return load_cities(cities_json)
 
 
 def main(argv=None):
