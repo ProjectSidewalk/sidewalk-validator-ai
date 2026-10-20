@@ -24,7 +24,10 @@ def _votes(agree, disagree):
 
 
 def write_city(tmp_path, rows):
+    """The city's rawLabels export and a one-city /v3/api/cities listing in the cache, so main() needs no network."""
     pd.DataFrame(rows).to_csv(tmp_path / f"{CITY}.csv", index=False)
+    (tmp_path / dg.CITIES_CACHE_FILE).write_text(json.dumps({"fetched_on": "2026-10-19", "url": dg.CITIES_API,
+        "cities": [{"city_id": CITY, "visibility": "public", "url": "https://sidewalk-toy.cs.washington.edu"}]}))
 
 
 def label(i, agree, disagree, user="u", pano=None):
@@ -92,7 +95,6 @@ def stubbed(tmp_path, monkeypatch):
             label(4, 0, 4, user=AI), label(5, 5, 0)]
     write_city(tmp_path, rows)
     store = make_store(tmp_path, rows)
-    monkeypatch.setattr(dg, "CITIES", {CITY: "toy"})
     monkeypatch.setattr(dg, "PANO_SIZE", (2048, 1024))
     read = []
     real_read = dg.read_store_panorama
@@ -106,9 +108,10 @@ def stubbed(tmp_path, monkeypatch):
     return {"tmp": tmp_path, "store": store, "read": read, "depth": depth}
 
 
-def run_main(tmp, *extra, store=None):
+def run_main(tmp, *extra, store=None, ai=True):
     dg.main(["--label_type", "CurbRamp", "--rawlabels-cache", str(tmp), "--out", str(tmp / "out"),
-             "--pano-store", str(store or tmp / "store"), "--include-ai-labels", "--allow-cpu", *extra])
+             "--pano-store", str(store or tmp / "store"), *(["--include-ai-labels"] if ai else []), "--allow-cpu",
+             *extra])
     return pd.read_csv(tmp / "out" / "CurbRamp" / "manifest.csv")
 
 
@@ -126,6 +129,33 @@ def test_main_records_tilt_depth_and_crop_size(stubbed):
                                "package_source": dg.package_source()}
     assert run["pano_store"] == str(stubbed["store"].resolve())  # provenance, outside the resume settings
     assert run["pano_store_marker"] == "toy store v1"  # the marker's first line
+
+
+def test_experts_from_the_environment_reach_manifest_and_record(stubbed, monkeypatch):
+    rows = [label(1, 4, 0, pano="shared"), label(2, 0, 3, pano="shared"), label(3, 0, 3),
+            label(4, 0, 4, user=AI), label(5, 5, 0)]
+    one_expert_no = json.dumps([{"user_id": "ex", "validation": "Disagree", "validator_type": "Human"}])
+    rows += [label(6, 0, 0), label(7, 0, 0)]
+    rows[5]["validations"] = rows[6]["validations"] = one_expert_no
+    write_city(stubbed["tmp"], rows)
+    for r in rows[5:]:
+        write_pano(stubbed["store"], CITY, r["pano_id"])
+    monkeypatch.setenv("EXPERTS", "someone=ex")
+    m = run_main(stubbed["tmp"], "--limit", "2").set_index("label_uid")
+    run = json.loads((stubbed["tmp"] / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["n_experts"] == 1
+    assert run["class_source_counts"] == {"margin": 5, "expert": 2}  # the whole selection, not the --limit 2
+    assert set(m.class_source) <= {"margin", "expert"} and m.class_source.notna().all()
+
+
+def test_resume_refreshes_class_source_of_kept_rows(stubbed, monkeypatch):
+    run_main(stubbed["tmp"])
+    path = stubbed["tmp"] / "out" / "CurbRamp" / "manifest.csv"
+    m = pd.read_csv(path, dtype=str, keep_default_na=False)
+    m["class_source"] = "stale"
+    m.to_csv(path, index=False)
+    m = run_main(stubbed["tmp"])
+    assert (m.class_source == "margin").all()
 
 
 def test_manifest_records_provider_and_store_path(stubbed):
@@ -308,12 +338,19 @@ def test_missing_store_fails_fast(stubbed, monkeypatch):
     (unmarked / CITY).mkdir(parents=True)
     with pytest.raises(SystemExit, match=r"no \.pano-store marker"):
         run_main(stubbed["tmp"], store=unmarked)
+    with pytest.raises(SystemExit):  # argparse error: --pano-store is required unless --select-only
+        dg.main(["--label_type", "CurbRamp", "--rawlabels-cache", str(stubbed["tmp"]), "--allow-cpu"])
+
+
+def test_store_without_selected_city_directories_fails_before_depth(stubbed, monkeypatch):
+    """City directories are checked after selection (only cities with a selected label need one), but before the
+    depth model loads and before anything is written."""
+    monkeypatch.setattr(dg, "load_depth_model", lambda e, d: pytest.fail("depth model loaded"))
     empty = mark_store(stubbed["tmp"] / "empty-store")
     (empty / "other-city").mkdir(parents=True)
     with pytest.raises(SystemExit, match="no directory for any selected city"):
         run_main(stubbed["tmp"], store=empty)
-    with pytest.raises(SystemExit):  # argparse error: --pano-store is required unless --select-only
-        dg.main(["--label_type", "CurbRamp", "--rawlabels-cache", str(stubbed["tmp"]), "--allow-cpu"])
+    assert not (stubbed["tmp"] / "out" / "deployment_priors.json").exists()
 
 
 def test_empty_marker_is_accepted(stubbed):
@@ -462,7 +499,6 @@ def test_resume_does_not_count_previously_missing_panos_as_consecutive(tmp_path,
     write_city(tmp_path, rows)
     store = make_store(tmp_path, rows)
     remove_panos(store, ["p02", "p05", "p08", "p12"])
-    monkeypatch.setattr(dg, "CITIES", {CITY: "toy"})
     monkeypatch.setattr(dg, "PANO_SIZE", (2048, 1024))
     monkeypatch.setattr(dg, "load_depth_model", lambda e, d: FakeDepth())
     monkeypatch.setattr(dg, "MAX_CONSECUTIVE_MISSING_PANOS", 3)
@@ -480,6 +516,68 @@ def test_changed_package_commit_refuses_resume(stubbed, monkeypatch):
     run_main(stubbed["tmp"], "--force-reselect")
 
 
+def test_changed_city_list_refuses_resume_and_keeps_crops(stubbed, capsys):
+    """A city joining the listing stops a resume even when it adds no selected label (the selection hash is
+    unchanged); --force-reselect then keeps every crop, unlike a settings change."""
+    tmp = stubbed["tmp"]
+    run_main(tmp)
+    pd.DataFrame([{**label(1, 5, 0), "label_type": "Obstacle"}]).to_csv(tmp / "new-city.csv", index=False)
+    # no store directory for new-city: it has no selected label, so none is needed
+    listing = json.loads((tmp / "cities.json").read_text())
+    listing["cities"].append({"city_id": "new-city", "visibility": "public",
+                              "url": "https://sidewalk-new.cs.washington.edu"})
+    (tmp / "cities.json").write_text(json.dumps(listing))
+    with pytest.raises(SystemExit, match=r"city list changed \(added: new-city; removed: none\)"):
+        run_main(tmp)
+    run = json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["cities"] == [CITY]  # left untouched by the refusal
+    capsys.readouterr()
+    m = run_main(tmp, "--force-reselect")
+    out = capsys.readouterr().out
+    assert (m.status == "ok").all() and "skipped (already ok)': 5" in out
+    assert "city list changed: {'added': ['new-city']" in out
+    assert "no pano-store directory for new-city; none of their labels is selected" in out
+    run = json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["cities"] == ["new-city", CITY] and run["city_source"]["from"] == "cache"
+
+
+def test_master_era_cache_and_run_dir(stubbed, monkeypatch, capsys):
+    """A run made before city discovery: the cache has CSVs but no cities.json. A plain resubmission stops without
+    writing a listing into it (so data_generation.slurm's guard still fires) and without a live download; --cities with
+    the old list resumes it offline, keeping every crop."""
+    tmp = stubbed["tmp"]
+    run_main(tmp)
+    (tmp / "cities.json").unlink()  # now shaped like a master-era cache
+    monkeypatch.setattr(dg, "_get_json", lambda url: pytest.fail("network"))
+    with pytest.raises(SystemExit, match="before city discovery"):
+        run_main(tmp)
+    assert not (tmp / "cities.json").exists()
+    capsys.readouterr()
+    m = run_main(tmp, "--cities", CITY)  # the escape hatch: the old list, explicitly
+    assert (m.status == "ok").all() and "skipped (already ok)': 5" in capsys.readouterr().out
+    assert not (tmp / "cities.json").exists()
+
+
+def test_store_needs_directories_only_for_cities_with_selected_labels(stubbed):
+    pd.DataFrame([{**label(1, 0, 0), "label_type": "Obstacle"}]).to_csv(stubbed["tmp"] / "quiet-city.csv",
+                                                                       index=False)
+    m = run_main(stubbed["tmp"], "--cities", f"{CITY},quiet-city")  # no quiet-city directory, nothing selected there
+    assert (m.status == "ok").all()
+
+
+def test_summary_counts_non_gsv_labels(tmp_path, monkeypatch, capsys):
+    """Non-GSV labels stay out of the selection (docs/decisions.md) and the end-of-run summary says how many."""
+    rows = [label(1, 4, 0), label(2, 0, 3), {**label(3, 0, 3), "pano_source": "panoramax"}]
+    write_city(tmp_path, rows)
+    make_store(tmp_path, rows)
+    monkeypatch.setattr(dg, "PANO_SIZE", (2048, 1024))
+    monkeypatch.setattr(dg, "load_depth_model", lambda e, d: FakeDepth())
+    m = run_main(tmp_path)
+    assert "toy-city:3" not in set(m.label_uid)
+    summary = capsys.readouterr().out.split("Processing complete.")[1]
+    assert "dropped for unusable pano geometry (before selection): {'non_gsv': 1}" in summary
+
+
 def test_priors_are_not_written_on_a_refused_resume(stubbed):
     tmp = stubbed["tmp"]
     run_main(tmp)
@@ -489,3 +587,62 @@ def test_priors_are_not_written_on_a_refused_resume(stubbed):
     with pytest.raises(SystemExit, match="Refusing to resume"):
         run_main(tmp, "--tilt-beta", "0.5")
     assert not priors.exists()
+
+
+def test_including_ai_labels_keeps_the_human_crops(stubbed):
+    """Turning on --include-ai-labels is a selection change (it needs --force-reselect), not a settings change: the
+    human-authored crops still selected are kept and only the AI-authored labels are rendered. (This fixture's only
+    AI label is incorrect, so no human correct label is displaced from the downsample.)"""
+    tmp = stubbed["tmp"]
+    first = run_main(tmp, ai=False)
+    assert (first.author == "human").all()
+    with pytest.raises(SystemExit, match=r"the selection changed") as refused:
+        run_main(tmp)
+    assert "settings changed" not in str(refused.value)  # no longer a crop setting
+    calls = stubbed["depth"].calls
+    again = run_main(tmp, "--force-reselect").set_index("label_uid")
+    assert set(first.label_uid) <= set(again.index)  # every human row kept
+    added = set(again.index) - set(first.label_uid)
+    assert added and (again.loc[sorted(added), "author"] == "ai").all()
+    assert stubbed["depth"].calls == calls + len(added)  # no human crop redone
+    run = json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["settings"]["include_ai_labels"] is True  # still recorded, as provenance
+
+
+def test_excluding_ai_labels_again_drops_only_the_ai_rows(stubbed):
+    """The reverse flip: the AI rows leave the manifest and nothing is rendered."""
+    tmp = stubbed["tmp"]
+    first = run_main(tmp)
+    assert (first.author == "ai").any()
+    calls = stubbed["depth"].calls
+    again = run_main(tmp, "--force-reselect", ai=False)
+    assert stubbed["depth"].calls == calls
+    assert sorted(again.label_uid) == sorted(first.label_uid[first.author == "human"])
+
+
+def _expert_only_labels(stubbed):
+    """Five margin labels plus two that only an expert (``ex``) voted on."""
+    rows = [label(1, 4, 0, pano="shared"), label(2, 0, 3, pano="shared"), label(3, 0, 3),
+            label(4, 0, 4, user=AI), label(5, 5, 0), label(6, 0, 0), label(7, 0, 0)]
+    no = json.dumps([{"user_id": "ex", "validation": "Disagree", "validator_type": "Human"}])
+    rows[5]["validations"] = rows[6]["validations"] = no
+    write_city(stubbed["tmp"], rows)
+    for r in rows[5:]:
+        write_pano(stubbed["store"], CITY, r["pano_id"])
+
+def test_setting_experts_is_a_selection_change(stubbed, monkeypatch, capsys):
+    """EXPERTS adds labels, so setting or unsetting it changes the selection, not a crop setting."""
+    monkeypatch.delenv("EXPERTS", raising=False)
+    _expert_only_labels(stubbed)
+    first = run_main(stubbed["tmp"])
+    monkeypatch.setenv("EXPERTS", "someone=ex")
+    with pytest.raises(SystemExit, match="the selection changed") as e:
+        run_main(stubbed["tmp"])
+    assert "settings changed" not in str(e.value)
+    calls = stubbed["depth"].calls
+    again = run_main(stubbed["tmp"], "--force-reselect")
+    assert set(first.label_uid) <= set(again.label_uid)
+    assert stubbed["depth"].calls == calls + 2
+    monkeypatch.delenv("EXPERTS")
+    with pytest.raises(SystemExit, match="the selection changed"):
+        run_main(stubbed["tmp"])

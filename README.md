@@ -49,7 +49,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 ## How it works
 
 ```
-/v3/api/rawLabels (19 cities)          data_generation.py
+/v3/api/rawLabels (public cities)      data_generation.py
         │                                     │
         ▼                                     ▼
  [1] select labels      human-authored only · net ≥3 human agree → correct · net ≥2 human disagree → incorrect
@@ -82,7 +82,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 
 | File | Role | Key constants |
 |---|---|---|
-| [`data_generation.py`](data_generation.py) | Steps 1–4. Pulls labels, selects classes, writes `deployment_priors.json`, reads panoramas from the pano store, renders label-centred views, sizes crops by depth, appends to a resumable `manifest.csv`. | `CITIES`, `CORRECT_PROPORTION = 0.55`, `SEED = 42`, FOV 90°, 2048² view, `6100 / depth`, `--tilt-beta 0.95`, `--depth-encoder vitb` |
+| [`data_generation.py`](data_generation.py) | Steps 1–4. Pulls labels, selects classes, writes `deployment_priors.json`, reads panoramas from the pano store, renders label-centred views, sizes crops by depth, appends to a resumable `manifest.csv`. | cities from `/v3/api/cities`, `CORRECT_PROPORTION = 0.55`, `SEED = 42`, FOV 90°, 2048² view, `6100 / depth`, `--tilt-beta 0.95`, `--depth-encoder vitb` |
 | [`split_data.py`](split_data.py) | Step 5. Assigns manifest rows to train/val/test by panorama (stratified by class), merging panoramas whose labels are within a few metres of each other (the same feature seen twice), optional held-out cities, joins the `hard` flag; prints the share of val/test labels with a train label within 2/5/10 m; writes `split.csv`, never touches images. | 70 / 15 / 15 of rows, `--merge-radius-m 3` (coordinates from `--rawlabels DIR`, default `<out>/rawlabels`), `--max-group-share 0.05`, `--seed`, `--holdout-cities`, `--hard-examples` |
 | [`fine_tune_classifier.py`](fine_tune_classifier.py) | Step 6. Hugging Face `Trainer` on `facebook/dinov2-large`, from `split.csv`; val uses the checkpoint's image processor (as eval and serving do). | lr 1e-5, batch 8 × 4 accumulation, `--epochs 25`, warm-up 10%, `--seed`, best by macro-F1 (`--best-metric loss`), resumes from its last checkpoint, `--num-workers`, `id2label = {0: correct, 1: incorrect}` |
 | [`hard_examples.py`](hard_examples.py) | Builds [`analysis/hard_examples_2026-10-17.csv`](analysis/hard_examples_2026-10-17.csv) (`label_uid,reason`) from a private production export: labels the deployed AI got wrong against a unanimous crowd (≥3 votes) or one of the project leads' accounts (configured via `EXPERTS`, not named). Feeds `split_data.py --hard-examples`. | |
@@ -91,7 +91,7 @@ labels per city; verdicts with estimated accuracy ≥ 0.92 are recorded as real 
 | [`publish_to_hf.py`](publish_to_hf.py), [`hf_cards.py`](hf_cards.py) | Step 8. Stages a label type's model repo (inference files only) and dataset repo (crops by `split.csv`, `SHA256SUMS`, Croissant) with generated cards; `--audit` checks the live repos; `--push` / `--prune-remote` upload or clean up behind `--yes`. | refuses `optimizer.pt`, `scheduler.pt`, `rng_state*.pth`, `training_args.bin`, `scaler.pt`, `checkpoint-*` |
 | [`analysis/`](analysis) | Scripts behind the production measurements in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md). | outputs live outside the repo |
 | `*.slurm` | Hyak job files for steps 1–5, 6 and 7 (five label types per job). | `gpu-l40s`, 100 GB, 1 GPU |
-| `Depth-Anything-V2/` | Vendored upstream code (unmodified); the checkpoint is downloaded separately. | `depth_anything_v2_metric_vkitti_vitb.pth` (`vitl` with `--depth-encoder vitl`) |
+| `Depth-Anything-V2/` | Git submodule of upstream [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2), pinned to the same commit as `sidewalk-ai-api`; the checkpoint is downloaded separately. | `depth_anything_v2_metric_vkitti_vitb.pth` (`vitl` with `--depth-encoder vitl`) |
 
 ### Where the models run in production
 
@@ -111,16 +111,46 @@ model on its own output.
 
 ## Training signal
 
-A label is used only when the crowd was decisive, counting **human** votes only:
+A label is used only when the crowd was decisive or an expert decided it, counting **human** votes only:
 
 | class | rule | share of dataset |
 |---|---|---|
 | `incorrect` | disagree − agree > 1 | 45% |
 | `correct` | agree − disagree > 2, then randomly downsampled | 55% |
+| either | otherwise, with `EXPERTS` set: the class the expert accounts voted for, if they all agree and no other human voted the other way | (in the above) |
 | (dropped) | unvalidated, unsure, or contested | — |
 
-Labels from non-GSV imagery providers, rows with unusable pano geometry, and legacy labels with
-unconverted coordinates (negative `pano_y`: Seattle 193, CDMX 14, Pittsburgh 8, SPGG 1) are excluded, and
+`EXPERTS="<name>=<user_id>,..."` (the form `analysis/analyze.py` reads) is set in the environment, never in the
+repo; unset, only the margin rule applies. A single non-expert vote is a weak signal (on labels the experts also
+voted on, a lone Disagree was right 24–78% of the time depending on the type), which is why the margin rule stays
+for the crowd. The manifest's `class_source` column records which rule decided each label, and the deployment prior
+counts margin-rule labels only, since experts do not vote on a random sample.
+
+**Cities.** The default is every public deployment that `/v3/api/cities` lists with a `url` (41 on
+2026-10-19), sorted by city_id; `--cities a,b` overrides it. The city_id is what `label_uid`, crop filenames
+and the pano-store directories use. With `--rawlabels-cache DIR` the listing is read from `DIR/cities.json`,
+and every listed city must have its `DIR/<city_id>.csv` (a missing one stops the run and names it; nothing is
+downloaded into a snapshot). A missing `cities.json` is fetched and saved there, except into a directory that
+already holds CSVs (a cache from before city discovery), which takes `--refresh-cities`, the flag that also
+refetches it. `deployment_priors.json` and `generation_run.json` record the list and where it came from
+(`city_source`: API or cache, with the fetch date when known). A resume against a different list stops, like a
+changed selection, and `--select-only` against such a run writes `deployment_priors.partial.json`. A deployment
+the API lists without a `url` is reached with `--cities <city_id>=<subdomain>`.
+
+Before [#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8) the list was 19 hardcoded cities.
+To reproduce or resume a dataset made with them, pass them explicitly (this needs no API call when their CSVs are
+cached, and writes `deployment_priors.partial.json`, so copy the prior from the original run):
+
+```
+--cities cdmx,la-piedad,spgg,amsterdam,blackhawk-hills-il,chicago-il,cliffside-park-nj,columbus-oh,knox-oh,mendota-il,newberg-or,oradell-nj,pittsburgh-pa,seattle-wa,st-louis-mo,teaneck-nj,keelung-tw,new-taipei-tw,taipei
+```
+
+A city whose CSV is not cached is downloaded from the host the listing gives it; one listed without a `url` needs
+`<city_id>=<subdomain>` (the subdomain is the `sidewalk-<subdomain>.cs.washington.edu` host part).
+
+Labels from non-GSV imagery providers (Mapillary and Panoramax, so all of Richmond VA, Laurens IA and Bayonne FR;
+why, and what would change it: [docs/decisions.md](docs/decisions.md)), rows with unusable pano geometry, and
+legacy labels with unconverted coordinates (negative `pano_y`: Seattle 193, CDMX 14, Pittsburgh 8, SPGG 1) are excluded, and
 so are labels placed by the `SidewalkAI` account (RampNet curb ramps in Vancouver WA, Richmond VA and
 Laurens IA), because production never sends those to the validator; `--include-ai-labels` keeps them,
 tagged `author = ai` in the manifest. The 55:45 ratio is a training-balance choice, not the real prior:
@@ -131,7 +161,7 @@ to `deployment_priors.json`, which `calibration/calibrate.py` reweights to
 
 > [!WARNING]
 > Counting human votes only shrinks the classes, most of all CurbRamp `incorrect`, because the AI's
-> disagree votes no longer count. Across the 16 cached training cities (of the 19 in `CITIES`) the
+> disagree votes no longer count. Across the 16 cached training cities (of the 19 then hardcoded) the
 > `incorrect` sets go from (API columns) to (human votes only): CurbRamp 7,957 → 2,626, NoCurbRamp 7,842 → 5,923, Obstacle
 > 4,412 → 3,556, SurfaceProblem 4,688 → 3,623, Crosswalk 1,974 → 1,034. With the 55:45 rule the
 > `correct` class shrinks with them, so a retrain has much less CurbRamp data than the counts in the
@@ -247,6 +277,30 @@ republished until the retrain on the panorama-grouped split.
 
 ## Setup
 
+Clone with the Depth Anything V2 submodule (`Depth-Anything-V2/`, pinned to the commit `sidewalk-ai-api`
+serves with):
+
+```bash
+git clone --recurse-submodules https://github.com/ProjectSidewalk/sidewalk-validator-ai
+# or, in a clone made without --recurse-submodules:
+git submodule update --init
+```
+
+Without it `Depth-Anything-V2/` is an empty directory and `data_generation.py` cannot import the depth
+model. `data_generation.slurm` initialises the submodule itself and stops with a message if it is not
+checked out at the pinned commit.
+
+> [!IMPORTANT]
+> A checkout from before `Depth-Anything-V2/` became a submodule (it was a vendored copy) needs a one-time
+> migration. Wait until no job is running from that checkout, then:
+>
+> ```bash
+> git checkout -- Depth-Anything-V2   # discard the .pyc files every run rewrites, or the pull refuses (don't git stash)
+> git pull
+> rm -rf Depth-Anything-V2            # ignored __pycache__/ leftovers block the submodule clone
+> git submodule update --init
+> ```
+
 Create the conda environment (Linux with an NVIDIA GPU; the file is a frozen export of the Hyak
 environment used for the published models):
 
@@ -280,13 +334,14 @@ PANO_STORE=/path/to/Panoramas sbatch data_generation.slurm
 
 `PANO_STORE` (passed as `--pano-store`) is required. It points either at the lab's pano store itself or at a
 staged copy of it on the cluster that keeps the store's layout, `<city_id>/<pano_id[:2]>/<pano_id>.jpg` with the
-city_ids of `CITIES` (the layout sidewalk-ai-api reads through `SIDEWALK_SCRAPES_DIR`). The root must hold a
+city_ids `/v3/api/cities` uses (the layout sidewalk-ai-api reads through `SIDEWALK_SCRAPES_DIR`). The root must hold a
 `.pano-store` marker file (any contents; its first line is recorded in `generation_run.json`); a staged copy
 writes its own only after a verified pull. The staging step itself is not in this repo yet. Each panorama is read
 with `cv2.imread` and resized to 8192×4096 (`INTER_LINEAR`), the same method as the API's cache path; identical
 pixels also need the same opencv build, and the API and this environment currently pin different ones. Nothing is
-downloaded. The job and the script check at startup that the store and its marker exist, and the script that
-every selected city has a directory (`--allow-missing-cities` to run without some). A missing file is believed
+downloaded. The job and the script check at startup that the store and its marker exist, and the script, once
+labels are selected, that every city with a selected label has a directory (`--allow-missing-cities` to run
+without some; a listed city with no selected label, such as one whose labels are all non-GSV, needs none). A missing file is believed
 only while the marker and the city directory are still there, and any other I/O error stops the run, so a
 dropped mount cannot turn into silent `no_pano` rows.
 
@@ -298,8 +353,8 @@ resize (`pano_native_w`/`pano_native_h`), pose, `tilt_applied`, `depth_m`, `crop
 output root. Views are rendered on the GPU with the package's torch recipe and depth runs on the same device;
 the script stops if there is no CUDA device (`--allow-cpu` is for smoke tests). The manifest is written row by
 row, so a killed job can simply be resubmitted: labels already `ok`, still selected and with the same class are
-skipped. If the selection itself changed (new votes since the first run), the job stops and says how many rows
-are stale; `--force-reselect` drops them and carries on. The job then runs `split_data.py`, which writes
+skipped. If the selection itself changed (new votes since the first run, a different city list, a different `EXPERTS`,
+or toggling `--include-ai-labels`), the job stops and says how many rows are stale; `--force-reselect` drops them and carries on. The job then runs `split_data.py`, which writes
 `<label_type>/split.csv` (the `ok` manifest rows plus `hard`, joined by `label_uid` from
 `--hard-examples`, and `split` ∈ `train`/`val`/`test`/`test_heldout`), grouped by panorama so no panorama
 appears in two splits, and leaves every image where it is. A new hard-example list only needs this step re-run.
@@ -316,7 +371,12 @@ about a metre, which they are not always (a label's position is estimated from t
 after the first real run before calling this leak fixed.
 
 The job pulls `rawLabels` once into `rawlabels/` and reuses it on resubmission (`FRESH=1 sbatch
-data_generation.slurm` re-pulls), so a resumed run sees the same selection. Even after a re-pull the selection
+data_generation.slurm` re-pulls), so a resumed run sees the same selection. The pull first saves the
+`/v3/api/cities` listing as `rawlabels/cities.json` and then fetches one `<city_id>.csv` per public deployment
+in it. The five label-type processes read that file, so the city list is fixed by the pull too, and nothing calls
+the API after it. A cache made before city discovery has no `cities.json`; the job stops on one rather than mix
+the old 19-city cache with the new list. Re-pull with `FRESH=1`, or resume such a run with `--cities` and its
+old list (above). Even after a re-pull the selection
 moves little: the kept `correct` labels are the lowest by a seeded hash of `label_uid`, so one label entering or
 leaving the pool changes at most one kept label in and one out. A run stops rather than shrink the dataset
 silently: after 50 panoramas in a row missing or unusable (usually a wrong `PANO_STORE` or city directory names that
@@ -370,7 +430,8 @@ To run a single label type outside SLURM: `python data_generation.py --label_typ
 and `evaluate.py` with the same flag (the split's group-size guard needs a group of more than 50 rows, so it never
 trips on a smoke test). For a smoke test add
 `--limit 20 --out /some/scratch/dir --allow-cpu`; `--select-only` stops after selection and the priors (no GPU
-needed), and `--rawlabels-cache DIR` reads saved `<city_id>.csv` exports instead of the API. Runs with `--limit`
+needed), and `--rawlabels-cache DIR` reads saved `<city_id>.csv` exports and the `cities.json` listing instead of the
+API (a missing listing is fetched once and saved there). Runs with `--limit`
 or `--cities` write `deployment_priors.partial.json`, never the real `deployment_priors.json`.
 
 ## Publishing to Hugging Face
@@ -465,8 +526,8 @@ the evidence for each item. In order of how much they affect the numbers:
 - **Train/serve skew** ([#5](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5), [sidewalk-ai-api#8](https://github.com/ProjectSidewalk/sidewalk-ai-api/issues/8)). Normalisation, camera pitch and depth checkpoint differed between training and serving. Training now uses the serving preprocessing for val, label-centred views from the shared geometry package and the ViT-B depth checkpoint; the API applies the same tilt correction in [sidewalk-ai-api#17](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/17), which must be deployed before any retrained model (nothing has been retrained yet).
 - **Evaluation script bugs** ([#6](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/6)). Fixed in `evaluate.py`, which replaces `get_stats.py` (PR [#22](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/22), closed unmerged, had proposed a fix first); numbers in `report.png` files made by the old script are not reliable.
 - **Publication** ([#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7)). The CurbRamp dataset on Hugging Face is a copy of the Crosswalk one; model repos carry 2.4 GB of optimizer state. [`publish_to_hf.py`](#publishing-to-hugging-face) now stages clean repos with cards, content hashes and the checks that would have caught both, and `--prune-remote` can delete the optimizer files today; the datasets and models themselves are not republished until the retrain.
-- **Imagery path** ([#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8), [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9)). Panoramas are read only from the lab's pano store (`--pano-store`), and only GSV labels are used, since serving is GSV-only and other providers need per-provider pose handling; 19 of 59 deployments are used (41 public, 18 private); the camera-tilt error in stored coordinates ([sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54)) is now corrected in training crops (beta 0.95).
-- **Hygiene** ([#10](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10), [#11](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/11)). No tests or CI; vendored 64 MB depth tree; frozen environment file.
+- **Imagery path** ([#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8), [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9)). Panoramas are read only from the lab's pano store (`--pano-store`), and only GSV labels are used, since serving is GSV-only and other providers need per-provider pose handling; the 41 public deployments with a url are read by default (19 before #8; the 18 private ones are not, and Richmond, Laurens and Bayonne contribute no labels, being non-GSV); the camera-tilt error in stored coordinates ([sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54)) is now corrected in training crops (beta 0.95).
+- **Hygiene** ([#10](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/10), [#11](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/11)). #10 done (closing recommended): the split is a manifest. #11 done except the optional history purge: CPU tests run in CI, `requirements.txt` is the portable dependency list, and `Depth-Anything-V2/` is a submodule instead of a vendored tree, but the old tree stays in git history (pack ~45 MB); [`docs/repo-hygiene.md`](docs/repo-hygiene.md) has the opt-in purge and the no-rewrite `--filter=blob:none` alternative.
 
 Experiments we think are worth running next, each with a first experiment spelled out: soft targets and
 validator reliability ([#12](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/12)),
@@ -526,7 +587,7 @@ accessibility labels. https://github.com/ProjectSidewalk/sidewalk-validator-ai
 
 ## License
 
-The code in this repository is released under the [MIT License](LICENSE). The vendored
-`Depth-Anything-V2/` code keeps its own Apache-2.0 license (see its `LICENSE`). Licenses for the
+The code in this repository is released under the [MIT License](LICENSE). The
+`Depth-Anything-V2/` submodule (upstream code) keeps its own Apache-2.0 license (see its `LICENSE`). Licenses for the
 released datasets and models are tracked separately in
 [#2](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/2).
