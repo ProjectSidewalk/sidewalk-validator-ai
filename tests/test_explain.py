@@ -259,3 +259,13 @@ def test_explain_one_needs_eager_attention():
     # against a future version returning None instead.
     r = explain.explain_one(model, torch.randn(1, 3, 28, 28))
     assert r["rollout"].shape == (4,)
+
+
+def test_city_ids_keeps_public_deployments_only():
+    cities = {"cities": [{"city_id": "chicago-il", "visibility": "public"},
+                         {"city_id": "seattle-wa", "visibility": "public"},
+                         {"city_id": "st-louis-mo", "visibility": "public"},
+                         {"city_id": "new-taipei-tw", "visibility": "private"},
+                         {"city_id": "taipei", "visibility": "private"}]}
+    got = explain.city_ids(["chicago", "sea", "st_louis", "new_taipei", "taipei", "atlantis"], cities)
+    assert got == {"chicago": "chicago-il", "sea": "seattle-wa", "st_louis": "st-louis-mo"}

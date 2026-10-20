@@ -34,6 +34,10 @@ contact_sheet,tile``), one full-size PNG per sampled crop under ``overlays/`` (c
 JPEG contact sheet per category (``<type>_<cat>.jpg``, downscaled tiles numbered as in ``samples.csv``). The crop is
 centred on the label point (``data_generation.py``), so every crop panel carries a small cross at the centre.
 
+**Private deployments.** The 2025 public datasets include crops from deployments that are private today. With
+``--cities-json`` (the v3 API's city list) overlays are sampled only from public deployments and their label_uids use
+the deployment's ``city_id``; only aggregate counts cover every crop. Always pass it for anything committed.
+
 **Optional dependencies** (not in CI's install): torch, transformers (pinned 4.55.0 by requirements.txt), and
 huggingface_hub for downloading the models. ``categorise``, ``sample_categories``, ``attention_rollout``, the rendering
 helpers and ``agreement`` need only numpy/pandas/scikit-learn/matplotlib/pillow.
@@ -42,7 +46,7 @@ Usage (the exact commands behind docs/explanations-2026-10.md; ``$DATA`` holds `
 downloaded from ``projectsidewalk/sidewalk-validator-ai-dataset-<type>`` at the revisions listed in the doc)::
 
     python explain.py run --label-type Crosswalk --crops-dir $DATA/crosswalk --out-dir $OUT/crosswalk \\
-        --per-category 50 --seed 42 --device mps --check-device cpu
+        --per-category 50 --seed 42 --device mps --check-device cpu --cities-json cities.json
     # ... the same for NoCurbRamp, Obstacle, SurfaceProblem
     python explain.py coding-sheet $OUT/{crosswalk,nocurbramp,obstacle,surfaceproblem}/samples.csv \\
         --out docs/explanations-2026-10/coding_sheet.csv
@@ -137,6 +141,40 @@ def load_split_csv(path, split="test"):
     base = os.path.dirname(os.path.abspath(path))
     df["crop_path"] = [p if os.path.isabs(p) else os.path.join(base, p) for p in df.crop_path]
     return df.rename(columns={"label_class": "truth"})[["label_uid", "city", "label_id", "truth", "crop_path"]]
+
+
+DATASET_CITY_ALIASES = {"sea": "seattle-wa"}
+"""Dataset file prefixes that are not a prefix of their deployment's ``city_id`` (the 2025 datasets wrote ``sea_``)."""
+
+
+def city_ids(prefixes, cities_json):
+    """``{dataset prefix: city_id}`` for the prefixes that are **public** deployments in ``cities_json``.
+
+    The published crops are named ``<prefix>_<label_id>.webp`` with a shortened, underscored city (``chicago``,
+    ``new_taipei``, ``sea``). A prefix matches the public ``city_id`` that equals it with ``_`` -> ``-``, or starts with
+    that plus ``-`` (``chicago`` -> ``chicago-il``), or ``DATASET_CITY_ALIASES``. Anything else, including every
+    private deployment, is left out: callers drop those rows, so an unrecognised city fails closed.
+
+    ``cities_json`` is the v3 API's ``/v3/api/cities`` response (``{"cities": [{"city_id", "visibility"}, ...]}``).
+
+    >>> cj = {"cities": [{"city_id": "chicago-il", "visibility": "public"}, {"city_id": "taipei", "visibility": "private"},
+    ...                  {"city_id": "seattle-wa", "visibility": "public"}]}
+    >>> city_ids(["chicago", "taipei", "sea", "nowhere"], cj)
+    {'chicago': 'chicago-il', 'sea': 'seattle-wa'}
+    """
+    if isinstance(cities_json, str):
+        with open(cities_json) as f:
+            cities_json = json.load(f)
+    cities = cities_json.get("cities", cities_json) if isinstance(cities_json, dict) else cities_json
+    public = sorted(c["city_id"] for c in cities if c.get("visibility") == "public")
+    out = {}
+    for prefix in prefixes:
+        alias = DATASET_CITY_ALIASES.get(prefix)
+        dashed = prefix.replace("_", "-")
+        hits = [c for c in public if c == alias or c == dashed or c.startswith(dashed + "-")]
+        if len(hits) == 1:
+            out[prefix] = hits[0]
+    return out
 
 
 def categorise(truth, pred, positive=POSITIVE):
@@ -572,8 +610,18 @@ def run(args):
     preds = add_verdicts(manifest.assign(p_correct=probs[:, 0], p_incorrect=probs[:, 1]))
     preds.drop(columns=["crop_path"]).to_csv(os.path.join(args.out_dir, "predictions.csv"), index=False)
     counts = {c: int((preds.category == c).sum()) for c in CATEGORIES}
+    pool = preds
+    if args.cities_json:
+        mapping = city_ids(sorted(preds.city.unique()), args.cities_json)
+        pool = preds[preds.city.isin(mapping)].copy()
+        pool["label_uid"] = [f"{mapping[c]}:{i}" for c, i in zip(pool.city, pool.label_id)]
+        print(f"sampling from public deployments only: {len(pool)} of {len(preds)} crops "
+              f"({len(set(preds.city) - set(mapping))} dataset cities left out)")
+    public_counts = {c: int((pool.category == c).sum()) for c in CATEGORIES}
     info = {"label_type": label_type, "checkpoint": checkpoint, "revision": revision, "device": args.device,
             "split": args.split, "n": int(len(preds)), "categories": counts,
+            "public_only": bool(args.cities_json), "n_sampling_pool": int(len(pool)),
+            "categories_sampling_pool": public_counts,
             "attn_implementation": model.config._attn_implementation, "torch": torch.__version__,
             "seed": args.seed, "per_category": args.per_category}
     print("categories:", counts)
@@ -589,7 +637,7 @@ def run(args):
         del ref_model
 
     categories = tuple(c.strip() for c in args.categories.split(","))
-    samples = sample_categories(preds, args.per_category, args.seed or 0, categories, label_type)
+    samples = sample_categories(pool, args.per_category, args.seed or 0, categories, label_type)
     mean, std = processor.image_mean, processor.image_std
     method_names = {"rollout": ("rollout",), "gradcam": ("Grad-CAM",), "both": ("rollout", "Grad-CAM")}[args.method]
     idx = class_index(model)
@@ -621,7 +669,7 @@ def run(args):
     info["explain_pass_max_abs_diff_p_correct"] = max_dp
     for cat in categories:
         items = strips[cat]
-        header = (f"{label_type} {cat} (n={len(items)} of {counts[cat]}): model input with label-point cross | "
+        header = (f"{label_type} {cat} (n={len(items)} of {public_counts[cat]}): model input with label-point cross | "
                   + " | ".join(method_names) + ". Caption: tile, label_uid, verdict, confidence")
         contact_sheet([s for s, _ in items], [c for _, c in items],
                       os.path.join(args.out_dir, f"{label_type.lower()}_{cat}.jpg"), ncols=args.ncols, header=header)
@@ -662,6 +710,10 @@ def main(argv=None):
     p.add_argument("--target", choices=("pred", *CLASSES), default="pred",
                    help="Grad-CAM target class: the predicted one (default) or a fixed class")
     p.add_argument("--ncols", type=int, default=4, help="tiles per row in the contact sheets (default 4)")
+    p.add_argument("--cities-json", default=None,
+                   help="v3 API /v3/api/cities response; when given, overlays are sampled only from public "
+                        "deployments and label_uids use their city_id (seattle-wa:123). Counts in counts.json still "
+                        "cover every crop. Use it for anything that is committed or shared")
     p.add_argument("--out-dir", required=True, help="output directory for this label type")
 
     c = sub.add_parser("coding-sheet", help="blank coding sheet from one or more samples.csv")
