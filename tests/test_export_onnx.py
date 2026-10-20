@@ -17,6 +17,12 @@ from export_onnx import list_crops, markdown_table, parity, served_votes, softma
 # Pure helpers
 # ---------------------------------------------------------------------------------------------------------------------
 
+def test_doctests():
+    import doctest
+
+    import export_onnx
+    assert doctest.testmod(export_onnx).failed == 0
+
 def test_softmax_rows_sum_to_one_and_are_stable():
     p = softmax(np.array([[1000.0, 1000.0], [0.0, np.log(3.0)]]))
     assert np.allclose(p.sum(axis=1), 1.0)
@@ -235,11 +241,17 @@ def test_sample_takes_the_first_b_and_tiles():
 
 def test_public_crops_drops_private_unlisted_and_ambiguous():
     from export_onnx import public_crops
-    df = pd.DataFrame({"label_uid": ["seattle:1", "st_louis:2", "secret:3", "nowhere:4", "springfield:5"]})
-    cities = {"seattle-wa": "public", "st-louis-mo": "public", "secret-xx": "private",
-              "springfield-ma": "public", "springfield-il": "public"}
-    kept, n = public_crops(df, cities)
-    assert kept.label_uid.tolist() == ["seattle:1", "st_louis:2"] and n == 3
+    df = pd.DataFrame({"label_uid": ["seattle:1", "st_louis:2", "secret:3", "nowhere:4", "springfield:5", "sea:6",
+                                     "sec:7"]})
+    url = "https://sidewalk-{}.cs.washington.edu"
+    listing = {"cities": [{"city_id": "seattle-wa", "visibility": "public", "url": url.format("sea")},
+                          {"city_id": "st-louis-mo", "visibility": "public"},
+                          {"city_id": "secret-xx", "visibility": "private", "url": url.format("sec")},
+                          {"city_id": "springfield-ma", "visibility": "public"},
+                          {"city_id": "springfield-il", "visibility": "public"}]}
+    kept, n = public_crops(df, listing)
+    # schema names and public subdomains kept; private (by name or subdomain), unlisted and ambiguous dropped
+    assert kept.label_uid.tolist() == ["seattle:1", "st_louis:2", "sea:6"] and n == 4
 
 
 def test_export_runs_the_checker_and_quantized_graphs_have_the_promised_types(tiny_checkpoint, monkeypatch):
@@ -300,8 +312,10 @@ def test_bench_end_to_end_on_a_tiny_model(tiny_checkpoint):
         d.mkdir(parents=True)
         for n in names:
             Image.fromarray(rng.integers(0, 255, (40, 40, 3), dtype=np.uint8)).save(d / f"{n}.png")
-    (tmp / "cities.json").write_text(json.dumps({"cities": [{"city_id": "seattle-wa", "visibility": "public"},
-                                                            {"city_id": "hidden-xx", "visibility": "private"}]}))
+    url = "https://sidewalk-{}.cs.washington.edu"
+    (tmp / "cities.json").write_text(json.dumps({"cities": [
+        {"city_id": "seattle-wa", "visibility": "public", "url": url.format("sea")},
+        {"city_id": "hidden-xx", "visibility": "private", "url": url.format("hid")}]}))
     with pytest.warns(UserWarning, match="DynamicQuantizeLinear"):
         df = export_onnx.main(["bench", "--label-type", "X", "--crops", str(tmp / "crops"), "--model", ckpt,
                                "--onnx", f"onnx-fp32={fp32}", "--onnx", f"onnx-int8={int8}", "--threads", "2",

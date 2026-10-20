@@ -32,8 +32,9 @@ Three subcommands:
     quantized graphs (``DynamicQuantizeLinear``, e.g. ``quantize --method dynamic`` and the tiny repos): they pick one
     activation scale over the whole batch, so a crop's output changes with its batch neighbours. They are always
     scored at batch 1, and the row's ``b16_vs_b1_max_abs_dprob`` reports how far batch-16 scoring would move them.
-    ``--cities-json`` (a saved ``/v3/api/cities`` response) keeps only crops from public deployments, with
-    ``calibration.per_city``'s matching rule; the published test splits also contain crops from deployments that
+    ``--cities-json`` (a saved ``/v3/api/cities`` response) keeps only crops from public deployments
+    (``public_city_rule``: the schema-name match of ``calibration.per_city`` or the subdomain of
+    ``data_generation.discover_cities``); the published test splits also contain crops from deployments that
     are private today, and only their count is recorded.
 
 Latency is the median of ``--runs`` timed calls after ``--warmup`` untimed ones, on preprocessed tensors (image
@@ -83,7 +84,7 @@ import numpy as np
 import pandas as pd
 
 from calibration._isotonic_map import GATE, api_lookup_many, predict_verdicts
-from calibration.per_city import load_cities, public_name
+from calibration.per_city import public_name
 from evaluate import CLASSES, slice_metrics
 
 OPSET = 17
@@ -209,11 +210,33 @@ def list_crops(crops_dir, split="test"):
     return df
 
 
-def public_crops(crops, cities):
-    """Keep only crops whose city is a public deployment in ``cities`` (``calibration.per_city``'s rule).
+def public_city_rule(listing):
+    """A predicate ``is_public(city)`` for the city part of a crop name, from a ``/v3/api/cities`` listing.
 
-    The city is the part of ``label_uid`` before ``:`` (the schema's city, ``new_york``); ``public_name`` matches it
-    to a listed ``city_id`` and returns ``None`` for private, unlisted or ambiguous ones, which are dropped.
+    Crop names use either the schema's city (``new_york``), matched to a ``city_id`` with
+    ``calibration.per_city.public_name``, or the deployment's subdomain (``sea`` for
+    ``https://sidewalk-sea.cs.washington.edu``), from ``data_generation.discover_cities``. A name is public if either
+    rule says so and it is not the subdomain of a deployment that is not public. Everything else (private, unlisted,
+    ambiguous) is not public.
+
+    Example::
+
+        >>> rule = public_city_rule({"cities": [
+        ...     {"city_id": "seattle-wa", "visibility": "public", "url": "https://sidewalk-sea.cs.washington.edu"},
+        ...     {"city_id": "hidden-xx", "visibility": "private", "url": "https://sidewalk-hid.cs.washington.edu"}]})
+        >>> [rule(c) for c in ("seattle", "sea", "hidden", "hid", "nowhere")]
+        [True, True, False, False, False]
+    """
+    from data_generation import discover_cities
+    entries = listing.get("cities", listing) if isinstance(listing, dict) else listing
+    cities = {c["city_id"]: {"visibility": c.get("visibility"), "country_id": c.get("country_id")} for c in entries}
+    public_subs = set(discover_cities(listing, public_only=True).values())
+    other_subs = set(discover_cities(listing, public_only=False).values()) - public_subs
+    return lambda city: city not in other_subs and (city in public_subs or public_name(city, cities) is not None)
+
+
+def public_crops(crops, listing):
+    """Keep only crops from public deployments (``public_city_rule``); the city is ``label_uid`` before ``:``.
 
     Returns:
         ``(kept, n_dropped)``. Only the count of dropped crops is returned, never which deployments they came from.
@@ -221,12 +244,14 @@ def public_crops(crops, cities):
     Example::
 
         >>> df = pd.DataFrame({"label_uid": ["seattle:1", "hidden:2"], "label_class": ["correct", "incorrect"]})
-        >>> kept, n = public_crops(df, {"seattle-wa": "public", "hidden-xx": "private"})
+        >>> kept, n = public_crops(df, {"cities": [
+        ...     {"city_id": "seattle-wa", "visibility": "public", "url": "https://sidewalk-sea.cs.washington.edu"},
+        ...     {"city_id": "hidden-xx", "visibility": "private", "url": None}]})
         >>> kept.label_uid.tolist(), n
         (['seattle:1'], 1)
     """
-    city = crops.label_uid.str.rpartition(":")[0]
-    keep = city.map(lambda c: public_name(c, cities) is not None).astype(bool)
+    rule = public_city_rule(listing)
+    keep = crops.label_uid.str.rpartition(":")[0].map(rule).astype(bool)
     return crops[keep].reset_index(drop=True), int((~keep).sum())
 
 
@@ -522,7 +547,8 @@ def bench(args):
     crops = list_crops(args.crops, args.split)
     n_private = 0
     if args.cities_json:
-        crops, n_private = public_crops(crops, load_cities(args.cities_json))
+        with open(args.cities_json) as f:
+            crops, n_private = public_crops(crops, json.load(f))
         print(f"{len(crops)} crops from public deployments; {n_private} from other deployments dropped", flush=True)
     else:
         warnings.warn("no --cities-json: scoring every crop, including any from deployments that are not public")
