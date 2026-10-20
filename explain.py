@@ -1,66 +1,71 @@
-"""Attention-rollout and Grad-CAM overlays explaining the validators' verdicts, plus the rater-agreement helper.
+"""Saliency overlays for the validators' verdicts, a blinded packet for two human raters, and their agreement.
 
 Issue #19: when the AI disagrees with a human label nothing says *why*. This script samples true positives, false
-positives and false negatives from a held-out split, renders what the model "looked at" with two standard methods,
-and writes contact sheets and a coding sheet for two human raters (rubric in ``docs/explanations-2026-10.md``).
+positives, false negatives and (as a control) true negatives from a held-out split, computes four saliency maps per
+crop, and builds (a) labelled contact sheets for readers and (b) a **blinded** packet for two raters, whose coding is
+unblinded and scored by ``agreement`` (rubric in ``docs/explanations-2026-10.md``).
 
 **Categories.** The positive class is ``correct`` (the label is right; the API's Agree verdict). Against the folder
-(crowd) class: TP = truth correct, predicted correct; FP = truth incorrect, predicted correct (the AI would Agree with
-a bad label); FN = truth correct, predicted incorrect (the AI would Disagree with a good label); TN = both incorrect.
-The verdict uses the API's tie rule (``calibration._isotonic_map.predict_verdicts``: ``incorrect`` only when
-``p_incorrect > p_correct``). No 0.92 gate is applied: these are raw verdicts.
+(crowd) class: TP = truth correct, predicted correct; FP = truth incorrect, predicted correct; FN = truth correct,
+predicted incorrect; TN = both incorrect. The verdict uses the API's tie rule
+(``calibration._isotonic_map.predict_verdicts``); no 0.92 gate is applied.
 
-**Methods** (both on the 224 x 224 image the model actually sees: the saved ``AutoImageProcessor`` with
-``use_fast=False`` resizes the short side to 256 and centre-crops 224, so the outer 6% of each side of the crop is
-never seen; the overlays show that centre crop, not the full crop):
+**What the model sees.** The saved ``AutoImageProcessor`` (``use_fast=False``) resizes the short side to 256 and
+centre-crops 224. A square 640 px crop is centred on the label point (``data_generation.py``), so the label point is
+the centre of the 224 view and the outer 1/16 of each side is cut. About 9% of the 2025 crops are **not square**
+(640 x h, h < 640: the crop was clipped at the view border), so their label point is off-centre by an unknown amount
+and up to ~22% per side is cut horizontally. Those rows carry ``label_point_uncertain = True``; their panels have no
+centre cross and they are left out of every centre/border statistic.
 
-* ``attention_rollout`` (Abnar & Zuidema 2020, https://arxiv.org/abs/2005.00928): per layer, fuse the heads (mean by
-  default), optionally zero the weakest ``discard_ratio`` of entries, add the identity for the residual connection,
-  re-normalise rows, and multiply through the layers; the CLS row over the patch tokens is the map. The model is
-  loaded with ``attn_implementation="eager"`` because SDPA returns no attention weights. It is class-agnostic.
-* ``last_layer_cls_attention``: the last layer's CLS-to-patch attention per head (cheaper, also class-agnostic).
-* ``grad_cam``: Grad-CAM (Selvaraju et al. 2017) adapted to a ViT the way pytorch-grad-cam does it: activations are
-  the output of the last encoder block's ``norm1`` (the tokens entering its self-attention), channel weights are the
-  mean gradient over the patch tokens, the map is the ReLU of the weighted sum, per patch. The target is the
-  **logit margin** ``z[target] - z[other]`` (the log-odds of the verdict, which is what the softmax confidence is a
-  function of), and ``target`` defaults to the predicted class. ``Dinov2ForImageClassification``'s head is a linear
-  layer on ``[CLS ‖ mean(patch tokens)]`` of the final layernormed hidden state, so the gradient reaches the hooked
-  tokens both through the last block's attention into CLS and through the mean-pool; the residual stream around
-  ``norm1`` is not part of the hooked activation.
+**Maps** (all per 14 px patch on the 16 x 16 grid, row-major, CLS dropped):
 
-**Outputs** (``--out-dir``, one label type per run): ``predictions.csv`` (every crop in the split, with category),
-``counts.json``, ``samples.csv`` (``overlay_id,label_uid,truth,pred,confidence,p_correct,category,overlay_path,
-contact_sheet,tile``), one full-size PNG per sampled crop under ``overlays/`` (crop | rollout | Grad-CAM), and one
-JPEG contact sheet per category (``<type>_<cat>.jpg``, downscaled tiles numbered as in ``samples.csv``). The crop is
-centred on the label point (``data_generation.py``), so every crop panel carries a small cross at the centre.
+* ``rollout`` (Abnar & Zuidema 2020): head-mean attention per layer, identity added for the residual, rows
+  re-normalised, multiplied through the layers; the CLS row. Class-agnostic. Needs ``attn_implementation="eager"``.
+* ``cls_attention``: the last layer's CLS-to-patch attention, mean over heads. Class-agnostic.
+* ``gradcam_<class>``: Grad-CAM as pytorch-grad-cam adapts it to a ViT. Activations are the output of the last
+  block's ``norm1``; one channel-weight vector (the gradient averaged over patches) for the whole image; ReLU of the
+  weighted sum. Target = the logit margin ``z[class] - z[other]``. Computed for **both** classes.
+* ``gradxact_<class>``: per-token gradient x activation at the last block's **output** (the residual stream the
+  final layernorm reads), summed over channels, ReLU. Same target. Unlike Grad-CAM it has per-token weights.
+* ``centre_blob``: a fixed Gaussian at the grid centre (sigma 2.5 patches). A control, not an explanation: any map
+  that "covers the feature" no more often than this blob is not shown to localise.
 
-**Private deployments.** The 2025 public datasets include crops from deployments that are private today. With
-``--cities-json`` (the v3 API's city list) overlays are sampled only from public deployments and their label_uids use
-the deployment's ``city_id``; only aggregate counts cover every crop. Always pass it for anything committed.
+``Dinov2ForImageClassification``'s head reads ``[CLS || mean(patch tokens)]`` of the final layernormed hidden state,
+so the block-output patch tokens reach the logits only through the mean-pool (grad x act attributes that path), and
+CLS reaches them through attention (which Grad-CAM at ``norm1`` sees).
 
-**Optional dependencies** (not in CI's install): torch, transformers (pinned 4.55.0 by requirements.txt), and
-huggingface_hub for downloading the models. ``categorise``, ``sample_categories``, ``attention_rollout``, the rendering
-helpers and ``agreement`` need only numpy/pandas/scikit-learn/matplotlib/pillow.
+**Outputs of ``run``** (``--out-dir``, one label type): ``predictions.csv`` (every crop, private deployments
+included when present: keep it out of the repo), ``counts.json``, ``samples.csv`` (one row per sampled crop with the
+map statistics), ``maps/<overlay_id>.npz`` (the 224 view and every map; input to ``packet``) and one JPEG contact
+sheet per category (``<type>_<cat>.jpg``: crop | rollout | CLS attention | Grad-CAM | grad x act, the last two for the
+predicted class).
 
-Usage (the exact commands behind docs/explanations-2026-10.md; ``$DATA`` holds ``<type>/test/<class>/*.webp``
-downloaded from ``projectsidewalk/sidewalk-validator-ai-dataset-<type>`` at the revisions listed in the doc)::
+**Optional dependencies** (not in CI's install): torch, transformers (4.55.0 per requirements.txt), and
+huggingface_hub to download the models. Everything except ``run`` needs only numpy/pandas/scikit-learn/matplotlib/
+pillow.
+
+Usage (``$DATA/<type>/test/<class>/*.webp`` from ``projectsidewalk/sidewalk-validator-ai-dataset-<type>``)::
 
     python explain.py run --label-type Crosswalk --crops-dir $DATA/crosswalk --out-dir $OUT/crosswalk \\
-        --per-category 50 --seed 42 --device mps --check-device cpu --cities-json cities.json
+        --cities-json cities.json --per-category 50 --seed 42 --device mps --check-device cpu
     # ... the same for NoCurbRamp, Obstacle, SurfaceProblem
-    python explain.py coding-sheet $OUT/{crosswalk,nocurbramp,obstacle,surfaceproblem}/samples.csv \\
-        --out docs/explanations-2026-10/coding_sheet.csv
-    # once two raters have each filled a copy of the coding sheet:
-    python explain.py agreement coding_rater1.csv coding_rater2.csv
+    python explain.py summary $OUT/*/samples.csv
+    python explain.py packet $OUT/crosswalk $OUT/nocurbramp $OUT/obstacle $OUT/surfaceproblem \\
+        --out-dir $PACKET --key docs/explanations-2026-10/packet_key.csv --seed 42
+    # once two raters have each filled a copy of $PACKET/coding_sheet.csv:
+    python explain.py agreement coding_rater1.csv coding_rater2.csv --key docs/explanations-2026-10/packet_key.csv
 
-``--checkpoint`` defaults to the production model ``projectsidewalk/sidewalk-validator-ai-<type>`` at the revision
-sidewalk-ai-api pins (``PROD_REVISIONS``). CurbRamp is accepted but its public dataset is a copy of the Crosswalk one
-(issue #7), so explaining it on those crops says nothing about curb ramps.
+``--cities-json`` (the v3 API's ``/v3/api/cities``) is required: overlays are sampled only from public deployments,
+and ``label_uid`` is ``<city_id>:<label_id>``. ``--include-private`` drops the filter for local debugging only; its
+rows get ``label_uid = dataset:<file stem>`` so they can never be mistaken for a deployment-qualified id.
+``--checkpoint`` defaults to the production model at the revision sidewalk-ai-api pins (``PROD_REVISIONS``).
+CurbRamp is accepted, but its public dataset is a copy of the Crosswalk one (issue #7).
 """
 import argparse
 import glob
 import json
 import os
+import time
 
 import matplotlib
 matplotlib.use("Agg")
@@ -74,7 +79,8 @@ from calibration._isotonic_map import predict_verdicts
 CLASSES = ("correct", "incorrect")
 POSITIVE = "correct"
 CATEGORIES = ("TP", "FP", "FN", "TN")
-DEFAULT_CATEGORIES = ("TP", "FP", "FN")
+DEFAULT_CATEGORIES = CATEGORIES
+AGREE_CATEGORIES = ("TP", "FP")
 LABEL_TYPES = ("CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk")
 
 PROD_REVISIONS = {
@@ -86,17 +92,24 @@ PROD_REVISIONS = {
 }
 """Model revisions sidewalk-ai-api's model_map.py pins (docs/calibration-2026-10.md, "Scope")."""
 
+PACKET_METHODS = ("rollout", "cls_attention", "gradcam", "gradxact", "centre_blob")
+"""Panels in the rater packet; ``gradcam``/``gradxact`` are the predicted class's maps; ``centre_blob`` is a control."""
+PANEL_LETTERS = "ABCDE"
+
 # Coding-sheet vocabulary (the rubric in docs/explanations-2026-10.md explains each value).
 COVERS = ("yes", "partly", "no", "unclear")
-OTHER_HIGHLIGHT = ("none", "sidewalk_surface", "road_surface", "curb_edge", "crosswalk_paint", "vehicle",
-                   "pole_or_sign", "vegetation", "building_or_wall", "person", "sky", "image_corner_or_border",
-                   "scattered_background", "other")
-INFORMATIVE = ("yes", "no")
-CODED_COLUMNS = ("rollout_covers", "gradcam_covers", "other_highlight", "informative")
-ORDINAL_COLUMNS = {"rollout_covers": ("no", "partly", "yes"), "gradcam_covers": ("no", "partly", "yes")}
-SHEET_ID_COLUMNS = ["label_type", "overlay_id", "label_uid", "category", "truth", "pred", "confidence",
-                    "contact_sheet", "tile"]
-SHEET_RATER_COLUMNS = ["rater", *CODED_COLUMNS, "notes"]
+COVERS_ORDER = ("no", "partly", "yes")
+BEST = (*PANEL_LETTERS, "none")
+SHEET_COLUMNS = ["packet_id", "label_point_uncertain", "rater",
+                 *[f"covers_{p}" for p in PANEL_LETTERS], "best_panel", "notes"]
+KEY_COLUMNS = ["packet_id", "overlay_id", "label_type", "category", "label_uid",
+               *[f"panel_{p}" for p in PANEL_LETTERS]]
+
+# Go/no-go rule (docs/explanations-2026-10.md, "Go/no-go"): thresholds applied by ``go_no_go``.
+GO_MIN_RATE = 0.70
+GO_MIN_MARGIN_OVER_BLOB = 0.20
+GO_MIN_KAPPA = 0.60
+GO_MIN_ITEMS = 20
 
 
 def default_checkpoint(label_type):
@@ -105,76 +118,94 @@ def default_checkpoint(label_type):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Input and categories -- pure, unit-tested
+# Input, deployments and categories -- pure, unit-tested
 # ---------------------------------------------------------------------------------------------------------------------
 
 def load_crops_dir(crops_dir, split="test"):
-    """Manifest of ``<crops_dir>/<split>/<class>/<city>_<label_id>.<ext>`` (the Hugging Face dataset layout).
+    """Manifest of ``<crops_dir>/<split>/<class>/<prefix>_<label_id>.<ext>`` (the Hugging Face dataset layout).
 
-    ``label_uid`` is ``<city>:<label_id>``: label ids are per-city, so the city is always part of the key.
-
-    >>> load_crops_dir("/nonexistent")  # doctest: +IGNORE_EXCEPTION_DETAIL
-    Traceback (most recent call last):
-    FileNotFoundError: no images under /nonexistent/test/{correct,incorrect}/
+    Columns ``crop_id`` (the file stem), ``prefix``, ``label_id``, ``truth``, ``crop_path``. The prefix is the
+    deployment's subdomain with ``-`` written as ``_``; ``public_deployments`` turns it into a ``city_id``.
     """
     rows = []
     for cls in CLASSES:
         for path in sorted(glob.glob(os.path.join(crops_dir, split, cls, "*"))):
             stem = os.path.splitext(os.path.basename(path))[0]
-            city, _, label_id = stem.rpartition("_")
-            rows.append({"label_uid": f"{city}:{label_id}", "city": city, "label_id": label_id,
-                         "truth": cls, "crop_path": path})
+            prefix, _, label_id = stem.rpartition("_")
+            rows.append({"crop_id": stem, "prefix": prefix, "label_id": label_id, "truth": cls, "crop_path": path})
     if not rows:
         raise FileNotFoundError(f"no images under {crops_dir}/{split}/{{correct,incorrect}}/")
     df = pd.DataFrame(rows)
-    if not df.label_uid.is_unique:
-        raise ValueError(f"{crops_dir}/{split}: label_uid is not unique")
+    if not df.crop_id.is_unique:
+        raise ValueError(f"{crops_dir}/{split}: a crop appears in both class folders")
     return df
 
 
 def load_split_csv(path, split="test"):
-    """Manifest from a ``split_data.py`` ``split.csv`` (rows of ``split``); ``crop_path`` relative to the CSV's dir."""
+    """Manifest from a ``split_data.py`` ``split.csv`` (rows of ``split``); ``crop_path`` relative to the CSV's dir.
+
+    ``prefix`` is the ``city`` column, which ``public_deployments`` accepts as a public ``city_id`` or subdomain.
+    """
     df = pd.read_csv(path)
     df = df[df.split == split].copy()
     if not df.label_uid.is_unique:
         raise ValueError(f"{path}: label_uid is not unique")
     base = os.path.dirname(os.path.abspath(path))
     df["crop_path"] = [p if os.path.isabs(p) else os.path.join(base, p) for p in df.crop_path]
-    return df.rename(columns={"label_class": "truth"})[["label_uid", "city", "label_id", "truth", "crop_path"]]
+    df["crop_id"] = df.label_uid
+    df["prefix"] = df.city
+    return df.rename(columns={"label_class": "truth"})[["crop_id", "prefix", "label_id", "truth", "crop_path"]]
 
 
 DATASET_CITY_ALIASES = {"sea": "seattle-wa"}
-"""Dataset file prefixes that are not a prefix of their deployment's ``city_id`` (the 2025 datasets wrote ``sea_``)."""
+"""Dataset prefixes known to belong to a deployment, used only when that deployment is public in the listing."""
 
 
-def city_ids(prefixes, cities_json):
-    """``{dataset prefix: city_id}`` for the prefixes that are **public** deployments in ``cities_json``.
+def public_deployments(prefixes, listing):
+    """``{prefix: city_id}`` for the prefixes that **exactly** name a public deployment in a ``/v3/api/cities`` listing.
 
-    The published crops are named ``<prefix>_<label_id>.webp`` with a shortened, underscored city (``chicago``,
-    ``new_taipei``, ``sea``). A prefix matches the public ``city_id`` that equals it with ``_`` -> ``-``, or starts with
-    that plus ``-`` (``chicago`` -> ``chicago-il``), or ``DATASET_CITY_ALIASES``. Anything else, including every
-    private deployment, is left out: callers drop those rows, so an unrecognised city fails closed.
+    A prefix matches when it equals a public deployment's subdomain (``sidewalk-<subdomain>.cs...``, from
+    ``data_generation.discover_cities``) with ``-`` written as ``_``, equals a public ``city_id``, or is in
+    ``DATASET_CITY_ALIASES``. There is no prefix-of matching. A prefix that also equals a non-public deployment's
+    subdomain or ``city_id`` is dropped, and so is anything unrecognised: callers drop unmapped rows, so the filter
+    fails closed.
 
-    ``cities_json`` is the v3 API's ``/v3/api/cities`` response (``{"cities": [{"city_id", "visibility"}, ...]}``).
-
-    >>> cj = {"cities": [{"city_id": "chicago-il", "visibility": "public"}, {"city_id": "taipei", "visibility": "private"},
-    ...                  {"city_id": "seattle-wa", "visibility": "public"}]}
-    >>> city_ids(["chicago", "taipei", "sea", "nowhere"], cj)
-    {'chicago': 'chicago-il', 'sea': 'seattle-wa'}
+    >>> listing = {"cities": [
+    ...     {"city_id": "springfield-xx", "visibility": "public", "url": "https://sidewalk-springfield.cs.washington.edu"},
+    ...     {"city_id": "shelbyville-xx", "visibility": "private", "url": "https://sidewalk-shelbyville.cs.washington.edu"}]}
+    >>> public_deployments(["springfield", "shelbyville", "spring", "springfield-xx"], listing)
+    {'springfield': 'springfield-xx', 'springfield-xx': 'springfield-xx'}
     """
-    if isinstance(cities_json, str):
-        with open(cities_json) as f:
-            cities_json = json.load(f)
-    cities = cities_json.get("cities", cities_json) if isinstance(cities_json, dict) else cities_json
-    public = sorted(c["city_id"] for c in cities if c.get("visibility") == "public")
-    out = {}
-    for prefix in prefixes:
-        alias = DATASET_CITY_ALIASES.get(prefix)
-        dashed = prefix.replace("_", "-")
-        hits = [c for c in public if c == alias or c == dashed or c.startswith(dashed + "-")]
-        if len(hits) == 1:
-            out[prefix] = hits[0]
-    return out
+    from data_generation import discover_cities, listing_entries, subdomain_from_url
+
+    if isinstance(listing, str):
+        with open(listing) as f:
+            listing = json.load(f)
+    public = discover_cities(listing, public_only=True)                    # {city_id: subdomain}
+    by_name = {sub.replace("-", "_"): cid for cid, sub in public.items()}
+    by_name.update({cid: cid for cid in public})
+    for alias, cid in DATASET_CITY_ALIASES.items():
+        if cid in public:
+            by_name.setdefault(alias, cid)
+    blocked = set()
+    for c in listing_entries(listing):
+        if c.get("visibility") == "public":
+            continue
+        blocked.add(c["city_id"])
+        blocked.add(c["city_id"].replace("-", "_"))
+        url = (c.get("url") or "").strip()
+        if url:
+            blocked.add(subdomain_from_url(url).replace("-", "_"))
+    return {p: by_name[p] for p in prefixes if p in by_name and p not in blocked}
+
+
+def label_point_uncertain(sizes):
+    """True for crops that are not square: the 2025 crops were clipped at the view border, moving the label point.
+
+    >>> label_point_uncertain([(640, 640), (640, 323)])
+    [False, True]
+    """
+    return [w != h for w, h in sizes]
 
 
 def categorise(truth, pred, positive=POSITIVE):
@@ -208,8 +239,8 @@ def sample_categories(df, per_category, seed=42, categories=DEFAULT_CATEGORIES, 
     """Up to ``per_category`` rows of each category, sampled with ``seed``; adds ``overlay_id`` and ``tile``.
 
     Rows are first sorted by ``label_uid`` so the sample depends only on the data and the seed, not on file order.
-    Within a category the sample is ordered by descending confidence (the most confident mistakes first), and
-    ``overlay_id`` is ``<type>-<cat>-<NN>`` with ``tile`` = NN, the number printed on the contact-sheet tile.
+    Within a category the sample is ordered by descending confidence, and ``overlay_id`` is ``<type>-<cat>-<NN>``
+    with ``tile`` = NN, the number printed on the contact-sheet tile.
 
     Example::
 
@@ -233,29 +264,43 @@ def sample_categories(df, per_category, seed=42, categories=DEFAULT_CATEGORIES, 
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Explanation maps -- rollout is pure numpy; Grad-CAM needs torch
+# Maps and map statistics -- rollout and the statistics are pure numpy; the gradient maps need torch
 # ---------------------------------------------------------------------------------------------------------------------
+
+def discard_lowest(fused, ratio):
+    """Zero the smallest ``ratio`` share of a fused attention matrix's entries, never the CLS->CLS entry ``[0, 0]``.
+
+    >>> discard_lowest(np.array([[0.1, 0.9], [0.6, 0.4]]), 0.5).tolist()
+    [[0.1, 0.9], [0.6, 0.0]]
+    """
+    flat = np.asarray(fused, dtype=np.float64).reshape(-1).copy()
+    k = int(flat.size * ratio)
+    order = np.argsort(flat, kind="stable")[:k]
+    order = order[order != 0]
+    flat[order] = 0
+    return flat.reshape(np.shape(fused))
+
 
 def attention_rollout(attentions, head_fusion="mean", discard_ratio=0.0, num_prefix_tokens=1):
     """Attention rollout: the CLS token's rolled-out attention to each patch token.
 
     Args:
-        attentions: one array per layer, each ``(heads, T, T)`` (or ``(1, heads, T, T)``), rows summing to 1, token
-            0 being CLS. Tensors are accepted and converted with ``np.asarray``.
+        attentions: one array per layer (first layer first), each ``(heads, T, T)`` or ``(1, heads, T, T)``, rows
+            summing to 1, token 0 being CLS.
         head_fusion: ``mean``, ``max`` or ``min`` over heads.
-        discard_ratio: share of the smallest fused entries per layer to zero before adding the identity (Abnar &
-            Zuidema use 0; pytorch-grad-cam's example 0.9). The CLS-to-CLS entry is never discarded.
+        discard_ratio: share of the smallest fused entries per layer to zero first (``discard_lowest``).
         num_prefix_tokens: CLS (+ register) tokens before the patches; DINOv2 without registers has 1.
 
     Returns:
-        ``(T - num_prefix_tokens,)`` array: rollout from CLS to each patch, in token order (reshape with
-        ``to_grid``). Not rescaled; the full CLS row of the rollout matrix sums to 1.
+        ``(T - num_prefix_tokens,)``: row 0 of ``R_L @ ... @ R_1`` over the patch columns, where
+        ``R_l = rownorm((A_l + I) / 2)``.
 
-    Example: with identity attention in every layer nothing mixes, so CLS attends only to itself::
+    Example (hand-computed; layer 2 is applied *after* layer 1, and it is the CLS *row*)::
 
-        >>> eye = np.eye(5)[None]                       # 1 head, CLS + 4 patches
-        >>> attention_rollout([eye, eye]).tolist()
-        [0.0, 0.0, 0.0, 0.0]
+        >>> a1 = np.array([[[1., 0, 0], [1, 0, 0], [0, 0, 1]]])   # R1 = [[1,0,0],[.5,.5,0],[0,0,1]]
+        >>> a2 = np.array([[[0., 1, 0], [0, 1, 0], [0, 1, 0]]])   # R2 = [[.5,.5,0],[0,1,0],[0,.5,.5]]
+        >>> attention_rollout([a1, a2]).tolist()                  # row 0 of R2 @ R1 = [.75, .25, 0]
+        [0.25, 0.0]
     """
     fuse = {"mean": np.mean, "max": np.max, "min": np.min}[head_fusion]
     result = None
@@ -266,15 +311,10 @@ def attention_rollout(attentions, head_fusion="mean", discard_ratio=0.0, num_pre
                 raise ValueError("attention_rollout takes one image at a time")
             a = a[0]
         fused = fuse(a, axis=0)
-        t = fused.shape[-1]
         if discard_ratio > 0:
-            flat = fused.reshape(-1).copy()
-            k = int(flat.size * discard_ratio)
-            order = np.argsort(flat, kind="stable")[:k]
-            order = order[order != 0]                      # keep CLS -> CLS
-            flat[order] = 0
-            fused = flat.reshape(t, t)
-        a = 0.5 * fused + 0.5 * np.eye(t)                  # residual connection
+            fused = discard_lowest(fused, discard_ratio)
+        t = fused.shape[-1]
+        a = 0.5 * fused + 0.5 * np.eye(t)
         a = a / a.sum(axis=-1, keepdims=True)
         result = a if result is None else a @ result
     if result is None:
@@ -299,12 +339,15 @@ def to_grid(values):
     return values.reshape(n, n)
 
 
-def centre_mass(grid, frac=0.5):
-    """Share of a non-negative map's total that falls in the central ``frac`` x ``frac`` box of the grid.
+def centre_blob(n=16, sigma=2.5):
+    """A Gaussian at the centre of an ``n x n`` grid: the control map in the rater packet."""
+    c = (n - 1) / 2
+    y, x = np.mgrid[0:n, 0:n]
+    return np.exp(-((x - c) ** 2 + (y - c) ** 2) / (2 * sigma ** 2))
 
-    The label point is at the centre of every crop, so this is a crude, automatic stand-in for "does the map sit on
-    the labelled feature": a map spread uniformly scores ``frac**2`` (0.25 by default), one on the centre scores 1.
-    Features are not all centred or the same size, which is why the raters' coding, not this number, answers #19.
+
+def centre_mass(grid, frac=0.5):
+    """Share of a non-negative map's total in the central ``frac`` x ``frac`` box of the grid (uniform: ``frac**2``).
 
     >>> g = np.zeros((4, 4)); g[1:3, 1:3] = 1
     >>> centre_mass(g)
@@ -320,8 +363,21 @@ def centre_mass(grid, frac=0.5):
     return float(g[lo:lo + k, lo:lo + k].sum() / total) if total > 0 else float("nan")
 
 
+def border_mass(grid):
+    """Share of a non-negative map's total on the outermost ring of patches (uniform 16 x 16: 60/256 = 0.234).
+
+    >>> border_mass(np.ones((4, 4)))
+    0.75
+    """
+    g = np.clip(np.asarray(grid, dtype=np.float64), 0, None)
+    total = g.sum()
+    if total <= 0:
+        return float("nan")
+    return float((total - g[1:-1, 1:-1].sum()) / total)
+
+
 def top_mass(values, k=3):
-    """Share of a non-negative map's total held by its ``k`` largest patches (how peaked it is).
+    """Share of a non-negative map's total held by its ``k`` largest patches (uniform 16 x 16: 3/256 = 0.012).
 
     >>> top_mass([1, 1, 1, 1], k=1)
     0.25
@@ -330,59 +386,120 @@ def top_mass(values, k=3):
     return float(v[:k].sum() / v.sum()) if v.sum() > 0 else float("nan")
 
 
+def top_overlap(values, reference, k=3):
+    """Share of ``values``' top-``k`` patches that are in ``reference`` (a set of patch indices).
+
+    >>> top_overlap([0, 5, 1, 4], {1, 2}, k=2)
+    0.5
+    """
+    top = np.argsort(np.asarray(values, dtype=np.float64).ravel(), kind="stable")[::-1][:k]
+    return float(np.mean([int(i) in set(reference) for i in top]))
+
+
+def high_norm_tokens(layer_norms, k=5):
+    """``(layer, top-k patch indices, max/median ratio)`` of the layer with the largest max/median token-norm ratio.
+
+    ``layer_norms`` is ``(layers, patches)`` (from ``explain_one``). Large DINOv2 models put a few tokens with very
+    high norm on low-information patches (Darcet et al. 2024, "Vision Transformers Need Registers").
+
+    >>> high_norm_tokens([[1, 1, 1, 1], [1, 9, 1, 2]], k=1)
+    (1, {1}, 6.0)
+    """
+    n = np.asarray(layer_norms, dtype=np.float64)
+    ratio = n.max(1) / np.median(n, 1)
+    layer = int(ratio.argmax())
+    return layer, set(int(i) for i in np.argsort(n[layer], kind="stable")[::-1][:k]), float(ratio[layer])
+
+
+def map_statistics(maps, uncertain, highnorm):
+    """Per-map ``centre``/``border``/``top3`` mass (NaN for centre/border when ``uncertain``) and the high-norm overlap.
+
+    ``maps`` is ``{name: patch vector}``; ``highnorm`` a set of patch indices. Keys are ``<map>_<stat>``.
+    """
+    out = {}
+    for name, v in maps.items():
+        g = to_grid(v)
+        out[f"{name}_centre"] = float("nan") if uncertain else centre_mass(g)
+        out[f"{name}_border"] = float("nan") if uncertain else border_mass(g)
+        out[f"{name}_top3"] = top_mass(v)
+        if name in ("rollout", "cls_attention"):
+            out[f"{name}_top3_in_highnorm"] = top_overlap(v, highnorm)
+    return out
+
+
+def gradcam_module(model):
+    """The module whose output Grad-CAM uses: the last encoder block's ``norm1``."""
+    return model.dinov2.encoder.layer[-1].norm1
+
+
+def block_module(model):
+    """The module whose output grad x act uses: the last encoder block (the residual stream after it)."""
+    return model.dinov2.encoder.layer[-1]
+
+
 def explain_one(model, pixel_values, target_class=None, num_prefix_tokens=1):
-    """One forward + backward pass: probabilities, attention rollout, last-layer CLS attention and Grad-CAM.
+    """One forward pass and one backward pass per class: probabilities, the class-agnostic maps and gradient maps.
 
     ``model`` is a ``Dinov2ForImageClassification`` loaded with ``attn_implementation="eager"``; ``pixel_values`` is
-    ``(1, 3, H, W)`` on the model's device. ``target_class`` (an index) defaults to the predicted class (argmax, the
-    first index on a tie, as the API does). The Grad-CAM score is the logit margin ``z[target] - z[other]``.
+    ``(1, 3, H, W)`` on the model's device. ``target_class`` (a logit index) names the "verdict" maps; it defaults to
+    the argmax (the first index on a tie, as the API does).
 
     Returns:
-        dict with ``probs`` (numpy, per class index), ``target``, ``rollout``, ``cls_attention`` (heads x patches),
-        ``gradcam`` (patches), each per patch in token order.
+        dict with ``probs`` (per logit index), ``target``, ``rollout``, ``cls_attention`` (heads x patches),
+        ``gradcam``/``gradxact`` (``{logit index: patch vector}``), ``gradcam_target``/``gradxact_target`` and
+        ``layer_norms`` (layers x patches: each block's output patch-token norms).
     """
     import torch
 
-    captured = {}
+    acts, norms = {}, []
 
-    def hook(_module, _inputs, output):
-        output.retain_grad()
-        captured["act"] = output
+    def keep(name):
+        def hook(_module, _inputs, output):
+            acts[name] = output[0] if isinstance(output, tuple) else output
+        return hook
 
-    block = model.dinov2.encoder.layer[-1]
-    handle = block.norm1.register_forward_hook(hook)
+    def keep_norm(_module, _inputs, output):
+        h = output[0] if isinstance(output, tuple) else output
+        norms.append(h[0, num_prefix_tokens:].detach().norm(dim=-1).float().cpu().numpy())
+
+    handles = [gradcam_module(model).register_forward_hook(keep("norm1")),
+               block_module(model).register_forward_hook(keep("block"))]
+    handles += [layer.register_forward_hook(keep_norm) for layer in model.dinov2.encoder.layer]
     try:
-        model.zero_grad(set_to_none=True)
         with torch.enable_grad():
             out = model(pixel_values=pixel_values, output_attentions=True)
             if out.attentions is None or out.attentions[0] is None:
                 raise RuntimeError('no attention weights: load the model with attn_implementation="eager"')
             logits = out.logits[0]
+            n_cls = logits.numel()
             target = int(logits.argmax()) if target_class is None else int(target_class)
-            if logits.numel() == 2:
-                score = logits[target] - logits[1 - target]
-            else:
-                score = logits[target] - torch.logsumexp(torch.cat([logits[:target], logits[target + 1:]]), 0)
-            score.backward()
-        act = captured["act"][0, num_prefix_tokens:].detach()
-        grad = captured["act"].grad[0, num_prefix_tokens:].detach()
-        weights = grad.mean(dim=0)
-        cam = torch.relu(act @ weights).float().cpu().numpy()
+            gradcam, gradxact = {}, {}
+            for c in range(n_cls):
+                others = torch.cat([logits[:c], logits[c + 1:]])
+                score = logits[c] - (others[0] if n_cls == 2 else torch.logsumexp(others, 0))
+                g_n, g_b = torch.autograd.grad(score, [acts["norm1"], acts["block"]], retain_graph=c < n_cls - 1)
+                a_n = acts["norm1"][0, num_prefix_tokens:].detach()
+                a_b = acts["block"][0, num_prefix_tokens:].detach()
+                weights = g_n[0, num_prefix_tokens:].mean(dim=0)
+                gradcam[c] = torch.relu(a_n @ weights).float().cpu().numpy()
+                gradxact[c] = torch.relu((a_b * g_b[0, num_prefix_tokens:]).sum(-1)).float().cpu().numpy()
         attentions = [a.detach().float().cpu().numpy() for a in out.attentions]
         probs = logits.detach().softmax(-1).float().cpu().numpy()
     finally:
-        handle.remove()
-        model.zero_grad(set_to_none=True)
+        for h in handles:
+            h.remove()
     return {"probs": probs, "target": target,
             "rollout": attention_rollout(attentions, num_prefix_tokens=num_prefix_tokens),
             "cls_attention": last_layer_cls_attention(attentions, num_prefix_tokens),
-            "gradcam": cam}
+            "gradcam": gradcam, "gradxact": gradxact,
+            "gradcam_target": gradcam[target], "gradxact_target": gradxact[target],
+            "layer_norms": np.stack(norms)}
 
 
 def grad_cam(model, pixel_values, target_class=None):
-    """Grad-CAM per patch (see ``explain_one``); returns ``(cam, target_index)``."""
+    """Grad-CAM per patch for ``target_class`` (see ``explain_one``); returns ``(cam, target_index)``."""
     r = explain_one(model, pixel_values, target_class)
-    return r["gradcam"], r["target"]
+    return r["gradcam_target"], r["target"]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -444,39 +561,6 @@ def heat_overlay(image, grid, alpha=0.5, cmap="inferno"):
     return (alpha * colour + (1 - alpha) * image).round().astype(np.uint8)
 
 
-def mark_centre(image, size=6, colour=(0, 255, 255)):
-    """Copy of ``image`` with a small cross at the centre (where the label point is in every crop)."""
-    im = Image.fromarray(image)
-    d = ImageDraw.Draw(im)
-    cx, cy = im.width // 2, im.height // 2
-    d.line([(cx - size, cy), (cx + size, cy)], fill=colour, width=1)
-    d.line([(cx, cy - size), (cx, cy + size)], fill=colour, width=1)
-    return np.asarray(im)
-
-
-def strip(image, maps):
-    """Side-by-side ``crop | overlay(map) ...`` as one uint8 array; ``maps`` are patch grids."""
-    panels = [mark_centre(image)] + [heat_overlay(image, m) for m in maps]
-    return np.concatenate(panels, axis=1)
-
-
-def write_overlay(path, image, maps, title, names=("rollout", "Grad-CAM")):
-    """Full-size PNG: the model's view with a centre cross, then one overlay per map, with a title line."""
-    fig, axes = plt.subplots(1, 1 + len(maps), figsize=(3.2 * (1 + len(maps)), 3.6))
-    axes = np.atleast_1d(axes)
-    axes[0].imshow(mark_centre(image))
-    axes[0].set_title("model input (224 centre crop)", fontsize=8)
-    for ax, m, name in zip(axes[1:], maps, names):
-        ax.imshow(heat_overlay(image, m))
-        ax.set_title(name, fontsize=8)
-    for ax in axes:
-        ax.axis("off")
-    fig.suptitle(title, fontsize=9)
-    fig.tight_layout()
-    fig.savefig(path, dpi=100)
-    plt.close(fig)
-
-
 def _font(size):
     try:
         return ImageFont.load_default(size=size)
@@ -484,11 +568,45 @@ def _font(size):
         return ImageFont.load_default()
 
 
-def contact_sheet(strips, captions, path, ncols=4, tile_height=112, header=None, quality=82):
-    """Grid of downscaled strips with a caption above each; JPEG (photographs compress ~10x better than PNG).
+def mark_centre(image, uncertain=False, size=6, colour=(0, 255, 255)):
+    """Copy of ``image`` with a small cross at the centre (the label point), or a yellow "?" tag when uncertain."""
+    im = Image.fromarray(image)
+    d = ImageDraw.Draw(im)
+    if uncertain:
+        d.rectangle([(0, 0), (13, 13)], fill=(255, 255, 0))
+        d.text((4, 0), "?", fill="black", font=_font(12))
+        return np.asarray(im)
+    cx, cy = im.width // 2, im.height // 2
+    d.line([(cx - size, cy), (cx + size, cy)], fill=colour, width=1)
+    d.line([(cx, cy - size), (cx, cy + size)], fill=colour, width=1)
+    return np.asarray(im)
 
-    ``strips`` are uint8 arrays of equal height (from ``strip``); each is resized to ``tile_height`` px high.
-    """
+
+def strip(image, maps, uncertain=False):
+    """Side-by-side ``crop | overlay(map) ...`` as one uint8 array; ``maps`` are patch grids."""
+    panels = [mark_centre(image, uncertain)] + [heat_overlay(image, m) for m in maps]
+    return np.concatenate(panels, axis=1)
+
+
+def labelled_panels(image, maps, labels, uncertain=False, title=None):
+    """Full-resolution packet image: the crop, then one overlay per map, each with its label above it."""
+    panels = [mark_centre(image, uncertain)] + [heat_overlay(image, m) for m in maps]
+    names = ["crop" + (" (label point uncertain)" if uncertain else " (+ = label point)")] + list(labels)
+    h, w = image.shape[:2]
+    cap, pad, head = 18, 6, (22 if title else 0)
+    out = Image.new("RGB", (len(panels) * (w + pad) + pad, head + cap + h + pad), "white")
+    d = ImageDraw.Draw(out)
+    if title:
+        d.text((pad, 3), title, fill="black", font=_font(14))
+    for i, (p, n) in enumerate(zip(panels, names)):
+        x = pad + i * (w + pad)
+        d.text((x, head + 2), n, fill="black", font=_font(12))
+        out.paste(Image.fromarray(p), (x, head + cap))
+    return out
+
+
+def contact_sheet(strips, captions, path, ncols=4, tile_height=112, header=None, quality=82):
+    """Grid of downscaled strips with a caption above each; JPEG (photographs compress ~10x better than PNG)."""
     font, head_font = _font(11), _font(14)
     cap_h, pad = 16, 6
     tiles = []
@@ -516,92 +634,188 @@ def contact_sheet(strips, captions, path, ncols=4, tile_height=112, header=None,
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Coding sheet and agreement -- pure, unit-tested
+# Blinded packet, coding and agreement -- pure, unit-tested
 # ---------------------------------------------------------------------------------------------------------------------
 
-def coding_sheet(samples):
-    """Blank coding sheet (one row per sampled overlay) from concatenated ``samples.csv`` frames.
+def packet_key(samples, seed=42):
+    """Blinding key: a random ``packet_id`` per sampled overlay, a shuffled order, and a random panel order.
 
-    Raters each fill a copy; ``rater`` is a role (``rater1``), never a name or account id.
+    ``samples`` needs ``overlay_id, label_type, category, label_uid``. Returns ``KEY_COLUMNS`` in packet order;
+    ``panel_<letter>`` names the method shown in that panel. Deterministic in ``seed`` and the set of overlay ids.
     """
-    sheet = samples[SHEET_ID_COLUMNS].copy()
-    for c in SHEET_RATER_COLUMNS:
+    rng = np.random.default_rng(seed)
+    s = samples.sort_values("overlay_id").reset_index(drop=True)
+    ids = set()
+    while len(ids) < len(s):
+        ids.add(f"p{int(rng.integers(0, 16 ** 6)):06x}")
+    s = s.assign(packet_id=rng.permutation(sorted(ids)))
+    s = s.iloc[rng.permutation(len(s))].reset_index(drop=True)
+    for letter in PANEL_LETTERS:
+        s[f"panel_{letter}"] = ""
+    for i in range(len(s)):
+        for letter, method in zip(PANEL_LETTERS, rng.permutation(PACKET_METHODS)):
+            s.loc[i, f"panel_{letter}"] = method
+    return s[KEY_COLUMNS]
+
+
+def blank_sheet(key, uncertain):
+    """Blank rater sheet in packet order: ``packet_id``, ``label_point_uncertain`` and empty coding columns."""
+    sheet = pd.DataFrame({"packet_id": key.packet_id.values,
+                          "label_point_uncertain": [bool(uncertain[o]) for o in key.overlay_id]})
+    for c in SHEET_COLUMNS[2:]:
         sheet[c] = ""
-    return sheet
+    return sheet[SHEET_COLUMNS]
 
 
 def validate_codes(sheet):
     """Raise if a filled sheet uses a value outside the rubric's vocabulary (blank cells are allowed)."""
-    allowed = {"rollout_covers": COVERS, "gradcam_covers": COVERS, "other_highlight": OTHER_HIGHLIGHT,
-               "informative": INFORMATIVE}
+    allowed = {**{f"covers_{p}": COVERS for p in PANEL_LETTERS}, "best_panel": BEST}
     for col, values in allowed.items():
-        bad = set(sheet[col].dropna().astype(str).str.strip()) - set(values) - {""}
+        bad = set(sheet[col].fillna("").astype(str).str.strip()) - set(values) - {""}
         if bad:
             raise ValueError(f"{col}: values {sorted(bad)} are not in the rubric ({', '.join(values)})")
 
 
-def agreement(sheet1, sheet2, columns=CODED_COLUMNS, by="label_type"):
-    """Cohen's kappa between two raters' sheets, per coded column, overall and per ``by`` group.
+def unblind(sheet, key):
+    """``(long, best)``: the filled sheet joined to its key, one row per panel with its method, and the best panel.
 
-    Rows are joined on ``overlay_id`` (one-to-one); a row counts for a column only when both raters coded it and
-    neither said ``unclear``. The ordinal ``*_covers`` columns also get a linear-weighted kappa over no < partly < yes.
+    ``long`` has ``packet_id, overlay_id, label_type, category, method, covers``; ``best`` has ``best_method``.
+    """
+    m = sheet.merge(key, on="packet_id", validate="one_to_one", how="inner")
+    if len(m) != len(sheet):
+        raise ValueError("sheet has packet ids that are not in the key")
+    rows = []
+    for letter in PANEL_LETTERS:
+        rows.append(pd.DataFrame({"packet_id": m.packet_id, "overlay_id": m.overlay_id, "label_type": m.label_type,
+                                  "category": m.category, "method": m[f"panel_{letter}"],
+                                  "covers": m[f"covers_{letter}"].fillna("").astype(str).str.strip()}))
+    best = m.best_panel.fillna("").astype(str).str.strip()
+    best_method = [m.loc[i, f"panel_{b}"] if b in PANEL_LETTERS else b for i, b in zip(m.index, best)]
+    return (pd.concat(rows, ignore_index=True),
+            pd.DataFrame({"packet_id": m.packet_id, "label_type": m.label_type, "category": m.category,
+                          "best_method": best_method}))
 
-    Returns:
-        DataFrame ``column, group, n, percent_agreement, kappa, weighted_kappa``.
 
-    Example (hand-computed: 3 of 4 agree, so p_o = 0.75; rater 1 says yes 2/4, rater 2 3/4, so
-    p_e = 0.5 * 0.75 + 0.5 * 0.25 = 0.5; kappa = (0.75 - 0.5) / (1 - 0.5) = 0.5)::
+def kappa_row(x, y, ordinal=None):
+    """``n, percent_agreement, kappa, weighted_kappa`` for two raters' codes (lists of equal length).
 
-        >>> a = pd.DataFrame({"overlay_id": list("abcd"), "label_type": "X", "informative": ["yes", "yes", "no", "no"]})
-        >>> b = a.assign(informative=["yes", "yes", "no", "yes"])
-        >>> float(agreement(a, b, ["informative"]).kappa.iloc[0])
-        0.5
+    Kappa is NaN when it is undefined (no codes, or both raters used one and the same value throughout); percent
+    agreement then carries the result. ``ordinal`` (low to high) adds a linear-weighted kappa.
+
+    Example (hand-computed with linear weights over no < partly < yes, disagreement weight |i - j| / 2: observed
+    weighted disagreement (0.5 + 0 + 0 + 1) / 4 = 0.375; expected from the marginals 0.4375; kappa = 1 - 0.375 / 0.4375
+    = 1/7)::
+
+        >>> r = kappa_row(["no", "partly", "yes", "yes"], ["partly", "partly", "yes", "no"], ("no", "partly", "yes"))
+        >>> round(r["weighted_kappa"], 6)
+        0.142857
     """
     from sklearn.metrics import cohen_kappa_score
 
-    merged = sheet1.merge(sheet2, on="overlay_id", suffixes=("_1", "_2"), validate="one_to_one")
-    group_col = f"{by}_1" if f"{by}_1" in merged.columns else by
-    rows = []
-    for col in columns:
-        a = merged[f"{col}_1"].fillna("").astype(str).str.strip()
-        b = merged[f"{col}_2"].fillna("").astype(str).str.strip()
-        ok = (a != "") & (b != "") & (a != "unclear") & (b != "unclear")
-        groups = [("all", ok)]
-        if group_col in merged.columns:
-            groups += [(g, ok & (merged[group_col] == g)) for g in sorted(merged[group_col].dropna().unique())]
-        for name, mask in groups:
-            x, y = a[mask].tolist(), b[mask].tolist()
-            n = len(x)
-            row = {"column": col, "group": name, "n": n,
-                   "percent_agreement": float(np.mean([i == j for i, j in zip(x, y)])) if n else np.nan,
-                   "kappa": np.nan, "weighted_kappa": np.nan}
-            if n and len(set(x) | set(y)) > 1:
-                row["kappa"] = float(cohen_kappa_score(x, y))
-                if col in ORDINAL_COLUMNS:
-                    order = {v: i for i, v in enumerate(ORDINAL_COLUMNS[col])}
-                    row["weighted_kappa"] = float(cohen_kappa_score([order[v] for v in x], [order[v] for v in y],
-                                                                    labels=list(order.values()), weights="linear"))
-            elif n:
-                row["kappa"] = 1.0 if row["percent_agreement"] == 1.0 else np.nan   # one value only: undefined
-            rows.append(row)
-    return pd.DataFrame(rows, columns=["column", "group", "n", "percent_agreement", "kappa", "weighted_kappa"])
+    n = len(x)
+    row = {"n": n, "percent_agreement": float(np.mean([i == j for i, j in zip(x, y)])) if n else np.nan,
+           "kappa": np.nan, "weighted_kappa": np.nan}
+    if n and len(set(x) | set(y)) > 1:
+        row["kappa"] = float(cohen_kappa_score(x, y))
+        if ordinal:
+            order = {v: i for i, v in enumerate(ordinal)}
+            row["weighted_kappa"] = float(cohen_kappa_score([order[v] for v in x], [order[v] for v in y],
+                                                            labels=list(range(len(ordinal))), weights="linear"))
+    return row
 
 
-def summarise(samples):
-    """Per label type and category: n, median confidence, and the median centre / top-3 mass of each map.
+def agreement(long1, long2, by=("method",), column="covers", ordinal=COVERS_ORDER):
+    """Kappa between two raters' unblinded long frames, per ``by`` group.
 
-    ``samples`` is one or more concatenated ``samples.csv``. Reported in docs/explanations-2026-10.md via
-    ``python explain.py summary <samples.csv> ...``. The centre box is a quarter of the image, so 0.25 means "no
-    more on the centre than a uniform map".
+    Rows join on ``(overlay_id, method)`` one-to-one; a row counts only when both raters coded it and neither said
+    ``unclear``. Returns ``*by, n, percent_agreement, kappa, weighted_kappa``.
+
+    Example (hand-computed: 3 of 4 agree, p_o = 0.75; rater 1 says yes 2/4, rater 2 3/4, p_e = 0.5; kappa = 0.5)::
+
+        >>> a = pd.DataFrame({"overlay_id": list("abcd"), "method": "m", "covers": ["yes", "yes", "no", "no"]})
+        >>> b = a.assign(covers=["yes", "yes", "no", "yes"])
+        >>> float(agreement(a, b).kappa.iloc[0])
+        0.5
     """
-    cols = [c for c in ("rollout_centre_mass", "gradcam_centre_mass", "rollout_top3_mass", "gradcam_top3_mass")
-            if c in samples.columns]
+    m = long1.merge(long2, on=["overlay_id", "method"], suffixes=("_1", "_2"), validate="one_to_one")
+    a, b = m[f"{column}_1"].fillna("").astype(str), m[f"{column}_2"].fillna("").astype(str)
+    m = m[(a != "") & (b != "") & (a != "unclear") & (b != "unclear")]
+    keys = [k if k in m.columns else f"{k}_1" for k in by]
+    rows = []
+    for g, part in m.groupby(keys, sort=True):
+        g = g if isinstance(g, tuple) else (g,)
+        rows.append({**dict(zip(by, g)), **kappa_row(part[f"{column}_1"].tolist(), part[f"{column}_2"].tolist(),
+                                                      ordinal)})
+    return pd.DataFrame(rows, columns=[*by, "n", "percent_agreement", "kappa", "weighted_kappa"])
+
+
+def covers_rate(long, categories=AGREE_CATEGORIES):
+    """Share of ``yes``/``partly`` among ``yes``/``partly``/``no`` codes, per label type and method.
+
+    ``unclear`` and blank are excluded from the denominator; only ``categories`` (default the Agree verdicts) count.
+    """
+    sub = long[long.category.isin(categories) & long.covers.isin(COVERS_ORDER)]
+    g = sub.groupby(["label_type", "method"])
+    return pd.DataFrame({"n": g.size(), "rate": g.covers.apply(lambda s: s.isin(("yes", "partly")).mean())}
+                        ).reset_index()
+
+
+def go_no_go(long1, long2, methods=("gradcam", "gradxact")):
+    """Apply the doc's go/no-go rule per label type; one row per type and candidate method.
+
+    Rows with an uncertain label point must already be removed. A method is **go** for a type when, on that type's
+    Agree-verdict items (TP + FP): each rater coded at least ``GO_MIN_ITEMS`` of them yes/partly/no; the mean of the
+    two raters' covers rates is >= ``GO_MIN_RATE``; it exceeds the ``centre_blob`` control's mean rate by at least
+    ``GO_MIN_MARGIN_OVER_BLOB``; and the unweighted Cohen's kappa on that method's covers codes, per type, is
+    defined and >= ``GO_MIN_KAPPA``.
+    """
+    r1, r2 = covers_rate(long1), covers_rate(long2)
+    rates = r1.merge(r2, on=["label_type", "method"], suffixes=("_1", "_2"), how="outer", validate="one_to_one")
+    rates["rate"] = rates[["rate_1", "rate_2"]].mean(axis=1)
+    kap = agreement(long1[long1.category.isin(AGREE_CATEGORIES)], long2[long2.category.isin(AGREE_CATEGORIES)],
+                    by=("label_type", "method"))
+    out = []
+    for lt in sorted(rates.label_type.unique()):
+        blob = rates[(rates.label_type == lt) & (rates.method == "centre_blob")].rate
+        blob = float(blob.iloc[0]) if len(blob) else np.nan
+        for meth in methods:
+            r = rates[(rates.label_type == lt) & (rates.method == meth)]
+            k = kap[(kap.label_type == lt) & (kap.method == meth)]
+            rate = float(r.rate.iloc[0]) if len(r) else np.nan
+            kappa = float(k.kappa.iloc[0]) if len(k) else np.nan
+            n_min = int(min(np.nan_to_num(r.n_1.iloc[0]), np.nan_to_num(r.n_2.iloc[0]))) if len(r) else 0
+            go = bool(n_min >= GO_MIN_ITEMS and rate >= GO_MIN_RATE and rate - blob >= GO_MIN_MARGIN_OVER_BLOB
+                      and np.isfinite(kappa) and kappa >= GO_MIN_KAPPA)
+            out.append({"label_type": lt, "method": meth, "n_min": n_min, "rate": rate, "centre_blob_rate": blob,
+                        "kappa": kappa, "decision": "go" if go else "no-go"})
+    return pd.DataFrame(out, columns=["label_type", "method", "n_min", "rate", "centre_blob_rate", "kappa",
+                                      "decision"])
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Summaries
+# ---------------------------------------------------------------------------------------------------------------------
+
+def summarise(samples, stats=None):
+    """Per label type and category: n, n with a certain label point, and the median of each statistic column.
+
+    Medians skip NaN, so centre/border statistics are over certain crops only.
+    """
+    stats = stats or [c for c in samples.columns if c.endswith(("_centre", "_border", "_top3", "_in_highnorm"))]
     g = samples.groupby(["label_type", "category"], sort=True)
     out = g.size().rename("n").to_frame()
-    out["median_confidence"] = g.confidence.median()
-    for c in cols:
-        out[f"median_{c}"] = g[c].median()
+    if "label_point_uncertain" in samples.columns:
+        out["n_certain"] = g.label_point_uncertain.apply(lambda s: int((~s.astype(bool)).sum()))
+    for c in stats:
+        out[c] = g[c].median()
     return out.reset_index()
+
+
+def markdown_table(df, floatfmt="{:.3f}"):
+    """A pipe table of ``df`` (no tabulate dependency)."""
+    cells = [[floatfmt.format(v) if isinstance(v, float) else str(v) for v in row] for row in df.itertuples(index=False)]
+    lines = ["| " + " | ".join(map(str, df.columns)) + " |", "|" + "---|" * len(df.columns)]
+    return "\n".join(lines + ["| " + " | ".join(r) + " |" for r in cells])
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -614,12 +828,14 @@ def run(args):
     label_type = args.label_type
     checkpoint = args.checkpoint or default_checkpoint(label_type)
     revision = args.revision or (PROD_REVISIONS[label_type] if not args.checkpoint else None)
-    os.makedirs(os.path.join(args.out_dir, "overlays"), exist_ok=True)
-    if args.seed is not None:
-        torch.manual_seed(args.seed)
+    os.makedirs(os.path.join(args.out_dir, "maps"), exist_ok=True)
+    torch.manual_seed(args.seed)
 
-    manifest = load_split_csv(args.split_csv, args.split) if args.split_csv else load_crops_dir(args.crops_dir,
-                                                                                               args.split)
+    manifest = (load_split_csv(args.split_csv, args.split) if args.split_csv
+                else load_crops_dir(args.crops_dir, args.split))
+    sizes = [Image.open(p).size for p in manifest.crop_path]
+    manifest["width"], manifest["height"] = [w for w, _ in sizes], [h for _, h in sizes]
+    manifest["label_point_uncertain"] = label_point_uncertain(sizes)
     print(f"{label_type}: {len(manifest)} crops in split {args.split}; model {checkpoint} @ {revision}; "
           f"device {args.device}")
     processor, model = load_model(checkpoint, revision, args.device)
@@ -627,18 +843,22 @@ def run(args):
     preds = add_verdicts(manifest.assign(p_correct=probs[:, 0], p_incorrect=probs[:, 1]))
     preds.drop(columns=["crop_path"]).to_csv(os.path.join(args.out_dir, "predictions.csv"), index=False)
     counts = {c: int((preds.category == c).sum()) for c in CATEGORIES}
-    pool = preds
-    if args.cities_json:
-        mapping = city_ids(sorted(preds.city.unique()), args.cities_json)
-        pool = preds[preds.city.isin(mapping)].copy()
-        pool["label_uid"] = [f"{mapping[c]}:{i}" for c, i in zip(pool.city, pool.label_id)]
-        print(f"sampling from public deployments only: {len(pool)} of {len(preds)} crops "
-              f"({len(set(preds.city) - set(mapping))} dataset cities left out)")
-    public_counts = {c: int((pool.category == c).sum()) for c in CATEGORIES}
+
+    if args.include_private:
+        pool = preds.assign(label_uid=["dataset:" + c for c in preds.crop_id])
+    else:
+        mapping = public_deployments(sorted(preds.prefix.unique()), args.cities_json)
+        pool = preds[preds.prefix.isin(mapping)].copy()
+        pool["label_uid"] = [f"{mapping[p]}:{i}" for p, i in zip(pool.prefix, pool.label_id)]
+        print(f"sampling from public deployments only: {len(pool)} of {len(preds)} crops")
+    if not pool.label_uid.is_unique:
+        raise ValueError("label_uid is not unique in the sampling pool")
+    pool_counts = {c: int((pool.category == c).sum()) for c in CATEGORIES}
     info = {"label_type": label_type, "checkpoint": checkpoint, "revision": revision, "device": args.device,
             "split": args.split, "n": int(len(preds)), "categories": counts,
-            "public_only": bool(args.cities_json), "n_sampling_pool": int(len(pool)),
-            "categories_sampling_pool": public_counts,
+            "n_label_point_uncertain": int(preds.label_point_uncertain.sum()),
+            "public_only": not args.include_private, "n_sampling_pool": int(len(pool)),
+            "categories_sampling_pool": pool_counts,
             "attn_implementation": model.config._attn_implementation, "torch": torch.__version__,
             "seed": args.seed, "per_category": args.per_category}
     print("categories:", counts)
@@ -654,56 +874,74 @@ def run(args):
         del ref_model
 
     categories = tuple(c.strip() for c in args.categories.split(","))
-    samples = sample_categories(pool, args.per_category, args.seed or 0, categories, label_type)
-    mean, std = processor.image_mean, processor.image_std
-    method_names = {"rollout": ("rollout",), "gradcam": ("Grad-CAM",), "both": ("rollout", "Grad-CAM")}[args.method]
+    samples = sample_categories(pool, args.per_category, args.seed, categories, label_type)
     idx = class_index(model)
-    strips, max_dp = {c: [] for c in categories}, 0.0
-    overlay_paths = []
-    stats = {f"{m}_{s}": [] for m in ("rollout", "gradcam") for s in ("centre_mass", "top3_mass")}
+    names = {v: k for k, v in idx.items()}
+    strips = {c: [] for c in categories}
+    stats_rows, max_dp, seconds = [], 0.0, []
     for row in samples.itertuples():
         inputs = processor(Image.open(row.crop_path).convert("RGB"), return_tensors="pt").to(args.device)
-        target = None if args.target == "pred" else idx[args.target]
-        r = explain_one(model, inputs["pixel_values"], target)
+        t0 = time.perf_counter()
+        r = explain_one(model, inputs["pixel_values"], idx[row.pred])
+        seconds.append(time.perf_counter() - t0)     # explain_one copies its outputs to the CPU, so this is synced
         max_dp = max(max_dp, abs(float(r["probs"][idx["correct"]]) - row.p_correct))
-        image = denormalise(inputs["pixel_values"][0].cpu().numpy(), mean, std)
-        maps = {"rollout": to_grid(r["rollout"]), "Grad-CAM": to_grid(r["gradcam"])}
-        for key, name in (("rollout", "rollout"), ("gradcam", "Grad-CAM")):
-            stats[f"{key}_centre_mass"].append(centre_mass(maps[name]))
-            stats[f"{key}_top3_mass"].append(top_mass(maps[name]))
-        chosen = [maps[m] for m in method_names]
-        rel = os.path.join("overlays", f"{row.overlay_id}.png")
-        title = (f"{row.overlay_id}  {row.label_uid}  truth {row.truth}  pred {row.pred} "
-                 f"({row.confidence:.4f})  {row.category}")
-        write_overlay(os.path.join(args.out_dir, rel), image, chosen, title, method_names)
-        overlay_paths.append(rel)
-        strips[row.category].append((strip(image, chosen),
-                                     f"{row.tile:02d} {row.label_uid} {row.pred[:3]} {row.confidence:.3f}"))
-    samples["overlay_path"] = overlay_paths
-    for key, values in stats.items():
-        samples[key] = values
+        image = denormalise(inputs["pixel_values"][0].cpu().numpy(), processor.image_mean, processor.image_std)
+        maps = {"rollout": r["rollout"], "cls_attention": r["cls_attention"].mean(0)}
+        for i, c in names.items():
+            maps[f"gradcam_{c}"] = r["gradcam"][i]
+            maps[f"gradxact_{c}"] = r["gradxact"][i]
+        layer, highnorm, ratio = high_norm_tokens(r["layer_norms"])
+        np.savez_compressed(os.path.join(args.out_dir, "maps", f"{row.overlay_id}.npz"), image=image,
+                            label_point_uncertain=row.label_point_uncertain, pred=row.pred,
+                            **{k: v.astype(np.float32) for k, v in maps.items()})
+        stats = map_statistics(maps, row.label_point_uncertain, highnorm)
+        stats.update({"highnorm_layer": layer, "highnorm_ratio": ratio})
+        stats_rows.append(stats)
+        shown = [maps["rollout"], maps["cls_attention"], maps[f"gradcam_{row.pred}"], maps[f"gradxact_{row.pred}"]]
+        strips[row.category].append((strip(image, [to_grid(m) for m in shown], row.label_point_uncertain),
+                                     f"{row.tile:02d} {row.label_uid} {row.pred[:3]} {row.confidence:.3f}"
+                                     + (" ?" if row.label_point_uncertain else "")))
+    samples = pd.concat([samples.reset_index(drop=True), pd.DataFrame(stats_rows)], axis=1)
     samples["contact_sheet"] = [f"{label_type.lower()}_{c}.jpg" for c in samples.category]
     info["explain_pass_max_abs_diff_p_correct"] = max_dp
+    info["explain_seconds_per_crop_median"] = float(np.median(seconds)) if seconds else None
+    info["n_sampled_label_point_uncertain"] = int(samples.label_point_uncertain.sum())
     for cat in categories:
         items = strips[cat]
-        header = (f"{label_type} {cat} (n={len(items)} of {public_counts[cat]}): model input with label-point cross | "
-                  + " | ".join(method_names) + ". Caption: tile, label_uid, verdict, confidence")
+        header = (f"{label_type} {cat} (n={len(items)} of {pool_counts[cat]}): crop (+ label point; ? = uncertain) | "
+                  "rollout | last-layer CLS attention | Grad-CAM (verdict) | grad x act (verdict)")
         contact_sheet([s for s, _ in items], [c for _, c in items],
-                      os.path.join(args.out_dir, f"{label_type.lower()}_{cat}.jpg"), ncols=args.ncols, header=header)
-    cols = ["overlay_id", "label_uid", "truth", "pred", "confidence", "p_correct", "category", "overlay_path",
-            "contact_sheet", "tile", *stats]
-    samples.assign(label_type=label_type)[["label_type", *cols]].to_csv(os.path.join(args.out_dir, "samples.csv"),
-                                                                         index=False, float_format="%.6f")
+                      os.path.join(args.out_dir, f"{label_type.lower()}_{cat}.jpg"), ncols=args.ncols,
+                      tile_height=args.tile_height, header=header, quality=args.quality)
+    cols = ["label_type", "overlay_id", "label_uid", "truth", "pred", "confidence", "p_correct", "category",
+            "label_point_uncertain", "width", "height", "contact_sheet", "tile", *(stats_rows[0] if stats_rows else [])]
+    samples.assign(label_type=label_type)[cols].to_csv(os.path.join(args.out_dir, "samples.csv"), index=False,
+                                                         float_format="%.6f")
     with open(os.path.join(args.out_dir, "counts.json"), "w") as f:
         json.dump(info, f, indent=2)
     print(json.dumps(info, indent=2))
 
 
-def markdown_table(df, floatfmt="{:.3f}"):
-    """A pipe table of ``df`` (no tabulate dependency)."""
-    cells = [[floatfmt.format(v) if isinstance(v, float) else str(v) for v in row] for row in df.itertuples(index=False)]
-    lines = ["| " + " | ".join(map(str, df.columns)) + " |", "|" + "---|" * len(df.columns)]
-    return "\n".join(lines + ["| " + " | ".join(r) + " |" for r in cells])
+def build_packet(out_dirs, packet_dir, key_path, seed=42):
+    """Blinded packet from ``run`` outputs: shuffled images with random ids and panels, a blank sheet, and the key."""
+    per_dir = {d: pd.read_csv(os.path.join(d, "samples.csv")) for d in out_dirs}
+    samples = pd.concat(per_dir.values(), ignore_index=True)
+    folder = {o: d for d, s in per_dir.items() for o in s.overlay_id}
+    uncertain = dict(zip(samples.overlay_id, samples.label_point_uncertain.astype(bool)))
+    key = packet_key(samples, seed)
+    os.makedirs(os.path.join(packet_dir, "items"), exist_ok=True)
+    for i, k in enumerate(key.itertuples()):
+        z = np.load(os.path.join(folder[k.overlay_id], "maps", f"{k.overlay_id}.npz"))
+        pred = str(z["pred"])
+        maps = {"rollout": z["rollout"], "cls_attention": z["cls_attention"], "gradcam": z[f"gradcam_{pred}"],
+                "gradxact": z[f"gradxact_{pred}"], "centre_blob": centre_blob().ravel()}
+        order = [getattr(k, f"panel_{p}") for p in PANEL_LETTERS]
+        im = labelled_panels(z["image"], [to_grid(maps[m]) for m in order], [f"panel {p}" for p in PANEL_LETTERS],
+                             uncertain[k.overlay_id], title=f"{i + 1:03d}  {k.packet_id}  ({k.label_type})")
+        im.save(os.path.join(packet_dir, "items", f"{i + 1:03d}_{k.packet_id}.jpg"), quality=90)
+    blank_sheet(key, uncertain).to_csv(os.path.join(packet_dir, "coding_sheet.csv"), index=False)
+    key.to_csv(key_path, index=False)
+    return key
 
 
 def main(argv=None):
@@ -711,65 +949,80 @@ def main(argv=None):
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("run", help="predict a split, sample TP/FP/FN, render overlays and contact sheets")
+    p = sub.add_parser("run", help="predict a split, sample TP/FP/FN/TN, compute maps, write contact sheets")
     p.add_argument("--label-type", required=True, choices=LABEL_TYPES)
     p.add_argument("--checkpoint", default=None,
                    help="local checkpoint or HF model id (default: the production repo for --label-type)")
     p.add_argument("--revision", default=None,
                    help="HF revision for --checkpoint (default with no --checkpoint: the pinned production revision)")
     src = p.add_mutually_exclusive_group(required=True)
-    src.add_argument("--crops-dir", help="directory in the HF dataset layout: <dir>/<split>/<class>/<city>_<id>.webp")
+    src.add_argument("--crops-dir", help="directory in the HF dataset layout: <dir>/<split>/<class>/<prefix>_<id>.webp")
     src.add_argument("--split-csv", help="split_data.py split.csv (crop_path relative to its directory)")
+    p.add_argument("--cities-json", default=None,
+                   help="v3 API /v3/api/cities response (required unless --include-private): overlays are sampled "
+                        "from public deployments only and label_uid is <city_id>:<label_id>")
+    p.add_argument("--include-private", action="store_true",
+                   help="do not filter by deployment (local debugging only; never commit or share the output)")
     p.add_argument("--split", default="test", help="which split to explain (default test)")
     p.add_argument("--per-category", type=int, default=50, help="maximum overlays per category (default 50)")
     p.add_argument("--categories", default=",".join(DEFAULT_CATEGORIES),
-                   help="comma-separated subset of TP,FP,FN,TN (positive class = correct; default TP,FP,FN)")
+                   help="comma-separated subset of TP,FP,FN,TN (positive class = correct; default all four, TN "
+                        "being the control)")
     p.add_argument("--seed", type=int, default=42, help="sampling seed (default 42)")
     p.add_argument("--device", default="cpu", help="torch device for all passes: cpu or mps (default cpu)")
     p.add_argument("--check-device", default=None,
                    help="also predict on this device and report max |dp| and category flips against --device")
     p.add_argument("--batch-size", type=int, default=16, help="batch size of the prediction pass (default 16)")
-    p.add_argument("--method", choices=("rollout", "gradcam", "both"), default="both",
-                   help="which maps to render next to the crop (default both)")
-    p.add_argument("--target", choices=("pred", *CLASSES), default="pred",
-                   help="Grad-CAM target class: the predicted one (default) or a fixed class")
-    p.add_argument("--ncols", type=int, default=4, help="tiles per row in the contact sheets (default 4)")
-    p.add_argument("--cities-json", default=None,
-                   help="v3 API /v3/api/cities response; when given, overlays are sampled only from public "
-                        "deployments and label_uids use their city_id (seattle-wa:123). Counts in counts.json still "
-                        "cover every crop. Use it for anything that is committed or shared")
+    p.add_argument("--ncols", type=int, default=3, help="tiles per row in the contact sheets (default 3)")
+    p.add_argument("--tile-height", type=int, default=96, help="contact-sheet tile height in px (default 96)")
+    p.add_argument("--quality", type=int, default=78, help="contact-sheet JPEG quality (default 78)")
     p.add_argument("--out-dir", required=True, help="output directory for this label type")
 
-    c = sub.add_parser("coding-sheet", help="blank coding sheet from one or more samples.csv")
-    c.add_argument("samples", nargs="+", help="samples.csv files written by `run`")
-    c.add_argument("--out", required=True, help="CSV to write")
+    s = sub.add_parser("summary", help="per type x category medians of the map statistics in samples.csv files")
+    s.add_argument("samples", nargs="+", help="samples.csv files written by `run`")
+    s.add_argument("--stats", default=None, help="comma-separated statistic columns (default: all)")
 
-    m = sub.add_parser("summary", help="per type x category medians of the map statistics in samples.csv files")
-    m.add_argument("samples", nargs="+", help="samples.csv files written by `run`")
+    k = sub.add_parser("packet", help="blinded rater packet (keep it outside the repo) and its key")
+    k.add_argument("out_dirs", nargs="+", help="`run` output directories")
+    k.add_argument("--out-dir", required=True, help="packet directory (outside the repo)")
+    k.add_argument("--key", required=True, help="CSV for the blinding key (raters must not open it)")
+    k.add_argument("--seed", type=int, default=42, help="shuffling seed (default 42)")
 
-    a = sub.add_parser("agreement", help="Cohen's kappa between two raters' filled coding sheets")
+    a = sub.add_parser("agreement", help="unblind two raters' sheets; kappa per method and type; go/no-go")
     a.add_argument("sheet1")
     a.add_argument("sheet2")
-    a.add_argument("--out", default=None, help="optional CSV for the agreement table")
+    a.add_argument("--key", required=True, help="the packet key written by `packet`")
+    a.add_argument("--out", default=None, help="optional prefix for CSV copies of the tables")
 
     args = parser.parse_args(argv)
     if args.command == "run":
+        if not args.cities_json and not args.include_private:
+            parser.error("--cities-json is required (or --include-private, for local debugging only)")
         run(args)
-    elif args.command == "coding-sheet":
-        sheet = coding_sheet(pd.concat([pd.read_csv(s) for s in args.samples], ignore_index=True))
-        sheet.to_csv(args.out, index=False)
-        print(f"wrote {args.out} ({len(sheet)} rows)")
     elif args.command == "summary":
-        table = summarise(pd.concat([pd.read_csv(s) for s in args.samples], ignore_index=True))
+        table = summarise(pd.concat([pd.read_csv(f) for f in args.samples], ignore_index=True),
+                          args.stats.split(",") if args.stats else None)
         print(markdown_table(table))
+    elif args.command == "packet":
+        key = build_packet(args.out_dirs, args.out_dir, args.key, args.seed)
+        print(f"wrote {len(key)} items to {args.out_dir}/items, {args.out_dir}/coding_sheet.csv and {args.key}")
     else:
-        s1, s2 = pd.read_csv(args.sheet1, dtype=str), pd.read_csv(args.sheet2, dtype=str)
-        validate_codes(s1)
-        validate_codes(s2)
-        table = agreement(s1, s2)
-        print(table.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
-        if args.out:
-            table.to_csv(args.out, index=False)
+        key = pd.read_csv(args.key, dtype=str)
+        longs = []
+        for path in (args.sheet1, args.sheet2):
+            sheet = pd.read_csv(path, dtype=str)
+            validate_codes(sheet)
+            long, _ = unblind(sheet, key)
+            certain = set(sheet.packet_id[sheet.label_point_uncertain.astype(str).str.lower() != "true"])
+            longs.append(long[long.packet_id.isin(certain)])
+        tables = {"agreement_by_method": agreement(*longs, by=("method",)),
+                  "agreement_by_type_method": agreement(*longs, by=("label_type", "method")),
+                  "go_no_go": go_no_go(*longs)}
+        for name, t in tables.items():
+            print(f"== {name} ==")
+            print(markdown_table(t))
+            if args.out:
+                t.to_csv(f"{args.out}_{name}.csv", index=False)
 
 
 if __name__ == "__main__":
