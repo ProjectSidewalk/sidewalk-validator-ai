@@ -203,7 +203,9 @@ def gate_thresholds(api_map, gate=GATE):
 # ---------------------------------------------------------------------------------------------------------------------
 
 SLICE_NAMES = {"test": "test (cities seen in training)", "test_heldout": "test_heldout (held-out cities)",
-               "hard": "hard (test + test_heldout rows the deployed model got wrong)"}
+               "hard": "hard (test + test_heldout rows the deployed model got wrong)",
+               "gold": "gold (test + test_heldout labels with >= {gold_min_votes} human votes, every voter's "
+                       "reliability >= {gold_min_reliability})"}
 
 
 def _metrics_section(metrics):
@@ -212,9 +214,15 @@ def _metrics_section(metrics):
     metrics = {k: v for k, v in metrics.items() if k != "per_city"}  # evaluate.py --per-city: not a slice
     lines = ["| slice | n (correct / incorrect) | accuracy | balanced accuracy | AUC | macro-F1 |",
              "|---|---|---|---|---|---|"]
+    # An empty gold slice (evaluate.py --vote-weights, no label qualified) says nothing in a card.
+    metrics = {k: m for k, m in metrics.items() if not (k == "gold" and not m.get("n"))}
     for name, m in metrics.items():
         nb = m.get("n_by_class", {})
-        lines.append(f"| {SLICE_NAMES.get(name, name)} | {fmt(m.get('n'))} ({fmt(nb.get('correct'))} / "
+        label = SLICE_NAMES.get(name, name)
+        if name == "gold":
+            label = label.format(gold_min_votes=m.get("gold_min_votes", "?"),
+                                 gold_min_reliability=m.get("gold_min_reliability", "?"))
+        lines.append(f"| {label} | {fmt(m.get('n'))} ({fmt(nb.get('correct'))} / "
                      f"{fmt(nb.get('incorrect'))}) | {fmt(m.get('accuracy'))} | {fmt(m.get('balanced_accuracy'))} | "
                      f"{fmt(m.get('auc'))} | {fmt(macro_f1(m))} |")
     lines += ["", "Per class:", "", "| slice | class | precision | recall | F1 | support |", "|---|---|---|---|---|---|"]
@@ -511,8 +519,17 @@ def dataset_card(ctx, license_id=None):
     year_text = (f"{years['min']}–{years['max']}" if years.get("min") is not None
                  else f"{TODO} no image_capture_date values in the manifest")
     include_ai = settings.get("include_ai_labels", gen.get("include_ai_labels"))
-    prior_text = (f"Before downsampling, {fmt(prior.get('correct'))} labels met the `correct` rule and "
-                  f"{fmt(prior.get('incorrect'))} the `incorrect` rule "
+    n_experts = gen.get("n_experts") or 0
+    expert_row = ("| either | otherwise, the class an expert account voted for, if every expert vote on the label agrees "
+                  "and no other human voted the other way |\n")
+    source_counts = gen.get("class_source_counts") or {}
+    expert_text = (f"\nExpert votes came from {n_experts} project-team account{'s' if n_experts != 1 else ''}; the "
+                   "manifest's `class_source` column says which rule decided each label (`margin` or `expert`)"
+                   + (f": {fmt(source_counts.get('margin', 0))} margin and {fmt(source_counts.get('expert', 0))} "
+                      "expert in the selection." if source_counts else ".") + "\n")
+    rule = " margin" if n_experts else ""  # the prior counts margin-rule labels only
+    prior_text = (f"Before downsampling, {fmt(prior.get('correct'))} labels met the `correct`{rule} rule and "
+                  f"{fmt(prior.get('incorrect'))} the `incorrect`{rule} rule "
                   f"({fmt(prior['correct'] / (prior['correct'] + prior['incorrect']))} correct; "
                   f"{prior.get('source', '')}, measured {prior.get('measured_on', 'n/a')}). That is the deployment "
                   f"prior the served calibration map is reweighted to."
@@ -539,7 +556,9 @@ def dataset_card(ctx, license_id=None):
              "| class | rule (human votes) |\n|---|---|\n"
              "| `incorrect` | disagree − agree > 1 |\n"
              "| `correct` | agree − disagree > 2, then randomly downsampled |\n"
-             "| (dropped) | unvalidated, unsure, or contested |\n",
+             + (expert_row if n_experts else "")
+             + "| (dropped) | unvalidated, unsure, or contested |\n"
+             + (expert_text if n_experts else ""),
              f"Labels placed by the `SidewalkAI` account are "
              f"{'included (tagged `author = ai` in the manifest)' if include_ai else 'excluded'}; labels from "
              "non-GSV imagery, with unusable panorama geometry, or with legacy unconverted coordinates are excluded. "
