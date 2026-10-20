@@ -193,7 +193,7 @@ def list_crops(crops_dir, split="test"):
     return df
 
 
-def markdown_table(df, columns=None, floatfmt=".4f"):
+def markdown_table(df, columns=None, floatfmt=".4g"):
     """A GitHub-markdown table of ``df`` (no tabulate dependency). ``None``/NaN print as an em dash."""
     columns = list(columns or df.columns)
 
@@ -588,6 +588,8 @@ def main(argv=None):
 
     p = sub.add_parser("table", help="bench CSVs -> one markdown table on stdout")
     p.add_argument("csvs", nargs="+")
+    p.add_argument("--columns", default=None,
+                   help="comma list of CSV columns to print (default: size, accuracy, parity and latency columns)")
 
     args = parser.parse_args(argv)
     if args.cmd == "export":
@@ -597,7 +599,7 @@ def main(argv=None):
     elif args.cmd == "bench":
         bench(args)
     else:
-        print(table(args.csvs), end="")
+        print(table(args.csvs, args.columns.split(",") if args.columns else None), end="")
 
 
 if __name__ == "__main__":
