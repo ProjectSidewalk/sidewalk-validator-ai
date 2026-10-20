@@ -15,8 +15,10 @@ Three subcommands:
     ``onnx.checker``. ``config.json`` and ``preprocessor_config.json`` are copied next to it so a consumer reproduces
     the exact preprocessing, and ``export_info.json`` records the source, revision, exporter, versions and sha256.
 ``quantize``
-    ``onnxruntime.quantization.quantize_dynamic`` (int8 weights, uint8 activations quantized at run time; no
-    calibration data needed) to ``model_int8.onnx``, recorded in the same ``export_info.json``.
+    int8 without calibration data, recorded in the same ``export_info.json``. ``--method dynamic`` (default):
+    ``onnxruntime.quantization.quantize_dynamic`` (int8 weights, uint8 activations quantized at run time) to
+    ``model_int8.onnx``. ``--method weight-only``: 8-bit block-quantized weights with fp32 activations
+    (``MatMulNBits``) to ``model_int8_wo.onnx``.
 ``bench``
     Scores every crop with the PyTorch reference (fp32, on CPU and optionally MPS) and each ``--onnx`` variant, then
     writes one row per variant: size on disk, parameter count, median latency at each ``--batch-sizes``, accuracy,
@@ -34,13 +36,15 @@ the platform, the thread count and the load average at the start of each variant
 Optional dependencies (not in requirements.txt, which the training path pins; install into your own venv)::
 
     pip install onnx onnxruntime huggingface_hub    # tested with onnx 1.23.2, onnxruntime 1.31.0, torch 2.14.1
+    pip install onnx-ir                             # only for quantize --method weight-only (tested 1.0.0)
 
 Usage::
 
     # ViT-L production Obstacle validator -> ONNX fp32 and int8
     python export_onnx.py export --model projectsidewalk/sidewalk-validator-ai-obstacle \\
         --revision 8f0fe8fc48748fac35098e74c1848d015126deef --out onnx/obstacle
-    python export_onnx.py quantize onnx/obstacle/model.onnx
+    python export_onnx.py quantize onnx/obstacle/model.onnx                        # -> model_int8.onnx
+    python export_onnx.py quantize onnx/obstacle/model.onnx --method weight-only   # -> model_int8_wo.onnx
 
     # held-out crops laid out like the HF dataset: <dir>/test/<class>/<city>_<label_id>.webp
     hf download projectsidewalk/sidewalk-validator-ai-dataset-obstacle --repo-type dataset \\
@@ -294,12 +298,34 @@ def export_model(model, out_dir, revision=None, opset=OPSET, image_size=None):
     return path
 
 
-def quantize_model(onnx_path, out_path=None, per_channel=False):
-    """Dynamic int8 quantization of ``onnx_path``; return the output path (default ``model_int8.onnx`` beside it)."""
-    from onnxruntime.quantization import QuantType, quantize_dynamic
+QUANT_METHODS = ("dynamic", "weight-only")
 
-    out_path = out_path or os.path.join(os.path.dirname(onnx_path), "model_int8.onnx")
-    quantize_dynamic(onnx_path, out_path, weight_type=QuantType.QInt8, per_channel=per_channel)
+
+def quantize_model(onnx_path, out_path=None, per_channel=False, method="dynamic", block_size=128):
+    """Quantize ``onnx_path`` to int8; return the output path (default ``model_int8.onnx`` beside it).
+
+    ``method="dynamic"``: ``quantize_dynamic``, int8 weights and uint8 activations quantized per call, integer
+    matmuls (``MatMulInteger``). ``method="weight-only"``: ``MatMulNBitsQuantizer(bits=8)``, int8 weights in blocks of
+    ``block_size`` with one scale per block, dequantized inside the ``MatMulNBits`` kernel, so activations stay fp32.
+    Weight-only needs the ``onnx-ir`` package as well (onnxruntime imports it for this quantizer).
+    """
+    if method not in QUANT_METHODS:
+        raise ValueError(f"method must be one of {QUANT_METHODS}")
+    default = "model_int8.onnx" if method == "dynamic" else "model_int8_wo.onnx"
+    out_path = out_path or os.path.join(os.path.dirname(onnx_path), default)
+    if method == "dynamic":
+        from onnxruntime.quantization import QuantType, quantize_dynamic
+        quantize_dynamic(onnx_path, out_path, weight_type=QuantType.QInt8, per_channel=per_channel)
+        details = {"method": "onnxruntime.quantization.quantize_dynamic", "weight_type": "QInt8",
+                   "activations": "QUInt8 (dynamic)", "per_channel": per_channel}
+    else:
+        import onnx
+        from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
+        q = MatMulNBitsQuantizer(onnx.load(onnx_path), bits=8, block_size=block_size, is_symmetric=True)
+        q.process()
+        onnx.save_model(q.model.model, out_path)
+        details = {"method": "onnxruntime.quantization.matmul_nbits_quantizer.MatMulNBitsQuantizer",
+                   "bits": 8, "block_size": block_size, "symmetric": True, "activations": "fp32"}
     out_dir = os.path.dirname(out_path)
     for name in ("config.json", "preprocessor_config.json"):   # keep the int8 file self-describing if moved
         src = os.path.join(os.path.dirname(onnx_path), name)
@@ -307,9 +333,7 @@ def quantize_model(onnx_path, out_path=None, per_channel=False):
             shutil.copy(src, out_dir)
     _update_info(out_dir, {"files": {os.path.basename(out_path): {
         "sha256": sha256_file(out_path), "bytes": os.path.getsize(out_path), "from": os.path.basename(onnx_path),
-        "quantization": {"method": "onnxruntime.quantization.quantize_dynamic", "weight_type": "QInt8",
-                         "activations": "QUInt8 (dynamic)", "per_channel": per_channel},
-        "versions": _versions()}}})
+        "quantization": details, "versions": _versions()}}})
     return out_path
 
 
@@ -534,8 +558,12 @@ def main(argv=None):
     p = sub.add_parser("quantize", help="model.onnx -> model_int8.onnx (dynamic int8)")
     p.add_argument("onnx", help="fp32 ONNX file written by export")
     p.add_argument("--out", default=None, help="output file (default: model_int8.onnx beside the input)")
+    p.add_argument("--method", choices=QUANT_METHODS, default="dynamic",
+                   help="dynamic: int8 weights + run-time uint8 activations, integer matmuls (model_int8.onnx); "
+                        "weight-only: int8 weights in blocks, fp32 activations (model_int8_wo.onnx; needs onnx-ir)")
     p.add_argument("--per-channel", action="store_true",
-                   help="per-output-channel weight scales (default: one scale per tensor)")
+                   help="dynamic only: per-output-channel weight scales (default: one scale per tensor)")
+    p.add_argument("--block-size", type=int, default=128, help="weight-only only: weights per scale (default 128)")
 
     p = sub.add_parser("bench", help="score + time the PyTorch reference and ONNX variants on the same crops")
     p.add_argument("--label-type", required=True, help="label type name, used in output file names and rows")
@@ -565,7 +593,7 @@ def main(argv=None):
     if args.cmd == "export":
         print(export_model(args.model, args.out, args.revision, args.opset))
     elif args.cmd == "quantize":
-        print(quantize_model(args.onnx, args.out, args.per_channel))
+        print(quantize_model(args.onnx, args.out, args.per_channel, args.method, args.block_size))
     elif args.cmd == "bench":
         bench(args)
     else:

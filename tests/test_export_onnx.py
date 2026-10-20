@@ -154,3 +154,33 @@ def test_export_quantize_round_trip(tiny_checkpoint):
         assert got.shape == (5, 2)
         assert parity(ref, got)["max_abs_dlogit"] < tol, path
     assert os.path.getsize(int8) < os.path.getsize(fp32)
+
+
+def test_weight_only_int8_keeps_activations_fp32(tiny_checkpoint):
+    pytest.importorskip("onnx_ir")   # onnxruntime's MatMulNBits quantizer imports it
+    import onnx
+    import onnxruntime as ort
+    import torch
+
+    from export_onnx import export_model, quantize_model
+
+    model, ckpt, tmp = tiny_checkpoint
+    out = str(tmp / "onnx")
+    wo = quantize_model(export_model(ckpt, out), method="weight-only", block_size=16)
+    assert os.path.basename(wo) == "model_int8_wo.onnx"
+    ops = {n.op_type for n in onnx.load(wo).graph.node}
+    assert "MatMulNBits" in ops and "MatMulInteger" not in ops and "DynamicQuantizeLinear" not in ops
+    info = json.load(open(os.path.join(out, "export_info.json")))
+    assert info["files"]["model_int8_wo.onnx"]["quantization"]["bits"] == 8
+
+    x = torch.randn(3, 3, 28, 28)
+    with torch.no_grad():
+        ref = model(pixel_values=x).logits.numpy()
+    got = ort.InferenceSession(wo, providers=["CPUExecutionProvider"]).run(None, {"pixel_values": x.numpy()})[0]
+    assert parity(ref, got)["max_abs_dlogit"] < 0.05
+
+
+def test_quantize_rejects_unknown_method(tmp_path):
+    from export_onnx import quantize_model
+    with pytest.raises(ValueError):
+        quantize_model(str(tmp_path / "model.onnx"), method="int4")
