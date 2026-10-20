@@ -307,7 +307,8 @@ labels, against 0.941–0.986 on the `tie_half` majority:
    verdicts clear it today:
    - No shipped Disagree map reaches 0.92. Their highest served values are 0.90 (NoCurbRamp), 0.85 (Crosswalk) and
      0.71–0.81 for the others.
-   - Out-of-fold, only 12 NoCurbRamp Disagree labels clear it, and the hold-back rule keeps them from voting.
+   - Out-of-fold, only 12 NoCurbRamp Disagree labels clear it. They still cannot vote, because the shipped map never
+     serves 0.92 for them (max 0.899; the calibration doc's decision is "below gate").
    - Do not replace the gate with a pooled-precision target. The per-verdict Pareto points above reach their targets
      only by admitting Disagree votes at 0.30–0.89.
 

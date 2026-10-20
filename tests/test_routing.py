@@ -160,6 +160,10 @@ def test_run_marks_the_092_operating_points(tmp_path):
     assert new.n_ai == 3 and new.acc_human == pytest.approx((2.5 + 0.8 * 7) / 10)
     assert np.isnan(ops.loc["Phase 0 @0.92 (out-of-fold)", "routed_all_assessed"])
     assert {"curves.csv", "operating_points.csv", "summary.md", "auc.csv"} <= set(os.listdir(tmp_path))
+    # the one-human model uses exactly the labelled rows with >= min_human_votes + 1 votes
+    lab = df[df.labelled]
+    assert (res["curves"].n_matched == (lab.h_n >= 3).sum()).all()
+    assert (lab.h_n >= 3).sum() != (lab.h_n >= 2).sum()
 
 
 def test_auc_table_per_verdict_excludes_ties():
@@ -212,11 +216,13 @@ def test_complementarity_expert_vote_can_flip_or_tie_the_crowd():
 
 
 def test_contested_gated_union_counts_distinct_labels():
-    df = pd.DataFrame({"label_uid": ["a:1"], "label_type": ["CurbRamp"], "ai_result": ["Agree"],
-                       "oof_accuracy": [0.95], "h_agree": [2], "h_dis": [3],
-                       "expert1": ["Agree"], "expert2": ["Agree"]})
-    # each expert's crowd (the other expert included) is 1-3 against the AI; the label counts once
-    assert routing.contested_gated_labels(df, ["expert1", "expert2"]) == {"a:1"}
+    df = pd.DataFrame({"label_uid": ["a:1", "a:2"], "label_type": ["CurbRamp"] * 2, "ai_result": ["Agree"] * 2,
+                       "oof_accuracy": [0.95, 0.95], "h_agree": [2, 1], "h_dis": [3, 2],
+                       "expert1": ["Agree", None], "expert2": ["Agree", "Agree"]})
+    # a:1: each expert's crowd (the other expert included) is 1-3 against the AI; the label counts once
+    # a:2: only expert2 voted; its crowd is 0-2 against the AI
+    assert routing.contested_gated_labels(df, ["expert1", "expert2"]) == {"a:1", "a:2"}
+    assert routing.contested_gated_labels(df, ["expert1"]) == {"a:1"}
 
 
 def test_gold_subset_is_three_plus_unanimous():

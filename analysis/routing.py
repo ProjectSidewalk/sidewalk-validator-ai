@@ -521,14 +521,14 @@ def gold_table(df, ops, min_votes=3):
 
 # ---------------------------------------------------------------- plots and summary
 
-def plot_curves(curves, ops, label_type, path):
+def plot_curves(curves, ops, label_type, path, min_human_votes=2):
     """Two panels: left, overall accuracy under the like-for-like one-human model against the share of those labels
     routed (labels with enough votes for it); right, the precision of the AI's own decisions against the share of
     labelled labels routed. One line per score, the 0.92 operating points marked, a legend on each panel."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.2), dpi=80)
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.8), dpi=80)
     # The old map is drawn last and thicker so that it is visible where it runs on top of the raw line.
     styles = {"oof_accuracy": ("#1f77b4", "-", 1.8, 3), "ai_confidence": ("#ff7f0e", "--", 1.8, 2),
               "ai_accuracy": ("#9467bd", ":", 2.4, 4)}
@@ -537,7 +537,7 @@ def plot_curves(curves, ops, label_type, path):
     c = curves[curves.label_type == label_type]
     o = ops[ops.label_type == label_type]
     panels = ((axes[0], "routed_matched", "acc_one_human",
-               "fraction routed (labels with >= 3 human votes)",
+               f"fraction routed (labels with >= {min_human_votes + 1} human votes)",
                "overall accuracy, one human per routed label\n(AI and human vs the same other votes)"),
               (axes[1], "routed", "ai_precision", "fraction of labelled labels routed to humans",
                "precision of the AI's decisions\nvs human majority (tie_half)"))
@@ -554,10 +554,12 @@ def plot_curves(curves, ops, label_type, path):
         ax.set_ylabel(ylabel)
         ax.set_xlim(0, 1)
         ax.grid(alpha=0.3)
-        ax.legend(fontsize=7, loc="lower right")
     axes[1].axhline(GATE, color="black", lw=0.8, ls="-.")
+    # One legend for both panels (same lines and markers), below the axes so it never covers a curve or a marker.
+    handles, labels = axes[1].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=3, fontsize=8, frameon=False)
     fig.suptitle(f"{label_type}: the AI decides when score >= t, humans decide the rest", fontsize=10)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.12, 1, 1))
     fig.savefig(path)
     plt.close(fig)
 
@@ -775,7 +777,7 @@ def run(df, out_dir, human_accuracy="auto", min_human_votes=2, seed=42, n_boot=1
     hum.assign(p_h_used=hum.label_type.map(p_h)).to_csv(os.path.join(out_dir, "human_accuracy.csv"), index=False)
     if plots:
         for t in curves.label_type.unique():
-            plot_curves(curves, ops, t, os.path.join(out_dir, f"routing_{t.lower()}.png"))
+            plot_curves(curves, ops, t, os.path.join(out_dir, f"routing_{t.lower()}.png"), min_human_votes)
     meta = {"inputs": inputs, "deployments": deployments_line(df, public or {}), "min_human_votes": min_human_votes,
             "n_labelled": len(lab), "n_assessed": len(df), "p_h": p_h, "grid_quantiles": grid_quantiles,
             "disagree_at_099": {t: (len(x), x.correct.mean()) for t in TYPES
