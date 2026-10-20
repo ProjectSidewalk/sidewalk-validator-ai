@@ -269,3 +269,14 @@ def test_city_ids_keeps_public_deployments_only():
                          {"city_id": "taipei", "visibility": "private"}]}
     got = explain.city_ids(["chicago", "sea", "st_louis", "new_taipei", "taipei", "atlantis"], cities)
     assert got == {"chicago": "chicago-il", "sea": "seattle-wa", "st_louis": "st-louis-mo"}
+
+
+def test_summarise_medians_per_type_and_category():
+    s = pd.DataFrame({"label_type": ["A", "A", "A", "B"], "category": ["TP", "TP", "FP", "TP"],
+                      "confidence": [0.9, 0.7, 0.6, 0.99], "rollout_centre_mass": [0.2, 0.4, 0.1, 0.5],
+                      "gradcam_centre_mass": [0.3, 0.5, 0.2, 0.6]})
+    t = explain.summarise(s).set_index(["label_type", "category"])
+    assert t.loc[("A", "TP"), "n"] == 2
+    assert t.loc[("A", "TP"), "median_confidence"] == pytest.approx(0.8)
+    assert t.loc[("A", "TP"), "median_rollout_centre_mass"] == pytest.approx(0.3)
+    assert "median_rollout_top3_mass" not in t.columns

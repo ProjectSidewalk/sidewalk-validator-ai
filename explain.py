@@ -587,6 +587,23 @@ def agreement(sheet1, sheet2, columns=CODED_COLUMNS, by="label_type"):
     return pd.DataFrame(rows, columns=["column", "group", "n", "percent_agreement", "kappa", "weighted_kappa"])
 
 
+def summarise(samples):
+    """Per label type and category: n, median confidence, and the median centre / top-3 mass of each map.
+
+    ``samples`` is one or more concatenated ``samples.csv``. Reported in docs/explanations-2026-10.md via
+    ``python explain.py summary <samples.csv> ...``. The centre box is a quarter of the image, so 0.25 means "no
+    more on the centre than a uniform map".
+    """
+    cols = [c for c in ("rollout_centre_mass", "gradcam_centre_mass", "rollout_top3_mass", "gradcam_top3_mass")
+            if c in samples.columns]
+    g = samples.groupby(["label_type", "category"], sort=True)
+    out = g.size().rename("n").to_frame()
+    out["median_confidence"] = g.confidence.median()
+    for c in cols:
+        out[f"median_{c}"] = g[c].median()
+    return out.reset_index()
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------------------------------------------------
@@ -682,6 +699,13 @@ def run(args):
     print(json.dumps(info, indent=2))
 
 
+def markdown_table(df, floatfmt="{:.3f}"):
+    """A pipe table of ``df`` (no tabulate dependency)."""
+    cells = [[floatfmt.format(v) if isinstance(v, float) else str(v) for v in row] for row in df.itertuples(index=False)]
+    lines = ["| " + " | ".join(map(str, df.columns)) + " |", "|" + "---|" * len(df.columns)]
+    return "\n".join(lines + ["| " + " | ".join(r) + " |" for r in cells])
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0],
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -720,6 +744,9 @@ def main(argv=None):
     c.add_argument("samples", nargs="+", help="samples.csv files written by `run`")
     c.add_argument("--out", required=True, help="CSV to write")
 
+    m = sub.add_parser("summary", help="per type x category medians of the map statistics in samples.csv files")
+    m.add_argument("samples", nargs="+", help="samples.csv files written by `run`")
+
     a = sub.add_parser("agreement", help="Cohen's kappa between two raters' filled coding sheets")
     a.add_argument("sheet1")
     a.add_argument("sheet2")
@@ -732,6 +759,9 @@ def main(argv=None):
         sheet = coding_sheet(pd.concat([pd.read_csv(s) for s in args.samples], ignore_index=True))
         sheet.to_csv(args.out, index=False)
         print(f"wrote {args.out} ({len(sheet)} rows)")
+    elif args.command == "summary":
+        table = summarise(pd.concat([pd.read_csv(s) for s in args.samples], ignore_index=True))
+        print(markdown_table(table))
     else:
         s1, s2 = pd.read_csv(args.sheet1, dtype=str), pd.read_csv(args.sheet2, dtype=str)
         validate_codes(s1)
