@@ -310,27 +310,55 @@ def test_rule_3_needs_a_margin_over_the_centre_blob():
 
 
 def test_rule_4_unreliable_raters_are_no_go():
-    n = 30
     r1 = rater({"gradcam": ["yes"] * 24 + ["no"] * 6, "centre_blob": ["yes"] * 10 + ["no"] * 20,
                 "gradxact": ["yes", "no"] * 15})
     r2 = rater({"gradcam": ["no"] * 6 + ["yes"] * 24, "centre_blob": ["no"] * 20 + ["yes"] * 10,
                 "gradxact": ["no", "yes"] * 15})
-    rel = explain.pooled_reliability(r1, r2).iloc[0]
-    assert rel.test == "kappa" and not rel.reliable and rel.n == 3 * n
+    rel = explain.method_reliability(r1, r2).set_index("method")
+    assert rel.loc["gradcam", "test"] == "kappa" and not rel.loc["gradcam", "reliable"]
     out = explain.go_no_go(r1, r2).set_index("method")
     assert out.loc["gradcam", "rate"] == pytest.approx(0.8) and out.loc["gradcam", "decision"] == "no-go"
 
 
-def test_rule_4_falls_back_to_percent_agreement_at_high_prevalence():
-    codes = ["yes"] * 30
-    r1 = rater({"gradcam": codes, "gradxact": codes, "centre_blob": codes})
-    r2 = rater({"gradcam": codes, "gradxact": codes, "centre_blob": codes[:-1] + ["no"]})
-    rel = explain.pooled_reliability(r1, r2).iloc[0]
-    assert rel.prevalence > 0.9 and rel.test == "percent_agreement" and rel.reliable     # kappa here is ~0
-    assert rel.percent_agreement == pytest.approx(89 / 90)
-    r2 = rater({"gradcam": codes, "gradxact": ["no"] * 30, "centre_blob": codes})
-    rel = explain.pooled_reliability(r1, r2).iloc[0]
-    assert not rel.reliable                                                # 60/90 agreement
+def test_rule_4_is_per_method_so_agreed_panels_cannot_mask_a_permuted_one():
+    """Other panels fully agreed, the candidate's codes permuted at the same yes-rate: pooled kappa is high, but the
+    candidate's own reliability fails, so it is no-go."""
+    n = 40
+    gc1 = ["yes"] * 32 + ["no"] * 8                                    # rate 0.8 for both raters
+    gc2 = list(np.random.default_rng(0).permutation(gc1))
+    agreed = {"rollout": ["yes", "no"] * 20, "cls_attention": ["no"] * 30 + ["yes"] * 10,
+              "centre_blob": ["yes"] * 10 + ["no"] * 30, "gradxact": ["yes", "no", "no", "no"] * 10}
+    r1, r2 = rater(dict(agreed, gradcam=gc1)), rater(dict(agreed, gradcam=gc2))
+    pooled = explain.pooled_reliability(r1, r2).iloc[0]
+    assert pooled.reliable                                             # what masked it before
+    rel = explain.method_reliability(r1, r2).set_index("method").loc["gradcam"]
+    assert not rel.reliable and rel.percent_agreement < 0.85 and rel.n == n
+    assert explain.go_no_go(r1, r2).set_index("method").loc["gradcam", "decision"] == "no-go"
+
+
+def test_rule_4_passes_perfect_and_near_perfect_high_prevalence_agreement():
+    blob = ["yes"] * 5 + ["no"] * 35
+    perfect = explain.go_no_go(rater({"gradcam": ["yes"] * 40, "centre_blob": blob}),
+                               rater({"gradcam": ["yes"] * 40, "centre_blob": blob})).set_index("method")
+    assert perfect.loc["gradcam", "decision"] == "go"
+    r1 = rater({"gradcam": ["yes"] * 40, "centre_blob": blob})
+    r2 = rater({"gradcam": ["yes"] * 39 + ["no"], "centre_blob": blob})
+    rel = explain.method_reliability(r1, r2).set_index("method").loc["gradcam"]
+    assert rel.prevalence == pytest.approx(79 / 80) and rel.percent_agreement == pytest.approx(0.975)
+    assert rel.test == "percent_agreement" and rel.reliable
+    assert explain.go_no_go(r1, r2).set_index("method").loc["gradcam", "decision"] == "go"
+
+
+def test_reliability_ignores_fn_tn_items_and_unclear_codes():
+    cats = ["TP"] * 20 + ["FN"] * 10 + ["TN"] * 10
+    r1 = rater({"gradcam": ["yes"] * 20 + ["yes"] * 20}, cats)
+    r2 = rater({"gradcam": ["yes"] * 20 + ["no"] * 20}, cats)            # disagree only on FN/TN
+    rel = explain.method_reliability(r1, r2).iloc[0]
+    assert rel.n == 20 and rel.percent_agreement == 1.0 and rel.reliable
+    r1 = rater({"gradcam": ["yes"] * 20 + ["unclear"] * 10})
+    r2 = rater({"gradcam": ["yes"] * 20 + ["no"] * 10})                  # disagree only where one said unclear
+    rel = explain.method_reliability(r1, r2).iloc[0]
+    assert rel.n == 20 and rel.reliable
 
 
 def test_go_no_go_counts_agree_items_only_and_partly_as_covering():
@@ -564,3 +592,53 @@ def test_planted_check_table():
     assert (t.n == 4).all() and t.hits.between(0, 4).all()
     gx = t[(t.method == "gradxact") & (t.target == "predicted")].hits.iloc[0]
     assert gx >= 3
+
+
+def write_agreement_inputs(tmp_path, flag_first=True):
+    """A key and two identical filled sheets in which every panel is coded `yes`; the first item is uncertain."""
+    s = pd.DataFrame({"overlay_id": [f"x-TP-{i:02d}" for i in range(30)], "label_type": "X", "category": "TP",
+                      "label_uid": [f"springfield-xx:{i}" for i in range(30)],
+                      "label_point_uncertain": [flag_first] + [False] * 29})
+    key = explain.packet_key(s, seed=4)
+    key.to_csv(tmp_path / "key.csv", index=False)
+    (tmp_path / "key.sha256").write_text(explain.sha256_of(str(tmp_path / "key.csv")) + "  key.csv\n")
+    sheet = explain.blank_sheet(key, dict(zip(s.overlay_id, s.label_point_uncertain)))
+    for p in explain.PANEL_LETTERS:
+        sheet[f"covers_{p}"] = "yes"
+    sheet["label_point_uncertain"] = False                       # the key's flag must win
+    for r in ("r1", "r2"):
+        sheet.to_csv(tmp_path / f"{r}.csv", index=False)
+
+
+def test_agreement_cli_refuses_a_tampered_key(tmp_path):
+    write_agreement_inputs(tmp_path)
+    args = ["agreement", str(tmp_path / "r1.csv"), str(tmp_path / "r2.csv"), "--key", str(tmp_path / "key.csv"),
+            "--key-sha256", str(tmp_path / "key.sha256"), "--out", str(tmp_path / "ag")]
+    explain.main(args)                                           # untampered: runs
+    key = pd.read_csv(tmp_path / "key.csv")
+    key.loc[0, "panel_A"], key.loc[0, "panel_B"] = key.loc[0, "panel_B"], key.loc[0, "panel_A"]
+    key.to_csv(tmp_path / "key.csv", index=False)
+    with pytest.raises(SystemExit, match="does not match"):
+        explain.main(args)
+
+
+def test_agreement_cli_drops_items_flagged_uncertain_in_the_key(tmp_path):
+    write_agreement_inputs(tmp_path)
+    explain.main(["agreement", str(tmp_path / "r1.csv"), str(tmp_path / "r2.csv"), "--key",
+                  str(tmp_path / "key.csv"), "--out", str(tmp_path / "ag")])
+    t = pd.read_csv(tmp_path / "ag_agreement_by_method.csv").set_index("method")
+    assert (t.n == 29).all()                                     # 30 items, 1 uncertain by the key
+
+
+def test_key_guard_covers_every_checkout_of_this_repo(tmp_path):
+    import os
+    import subprocess
+
+    here = os.path.dirname(os.path.abspath(explain.__file__))
+    assert explain.inside_this_repo(os.path.join(here, "docs", "new", "k.csv"))
+    assert not explain.inside_this_repo(str(tmp_path / "k.csv"))
+    common = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=here, capture_output=True, text=True)
+    if common.returncode != 0:
+        pytest.skip("not a git checkout")
+    main_checkout = os.path.dirname(os.path.realpath(os.path.join(here, common.stdout.strip())))
+    assert explain.inside_this_repo(os.path.join(main_checkout, "k.csv"))   # the main checkout from a worktree

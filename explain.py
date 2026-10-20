@@ -769,37 +769,56 @@ def covers_rate(long, categories=AGREE_CATEGORIES):
                         ).reset_index()
 
 
-def pooled_reliability(long1, long2):
-    """Per label type: inter-rater reliability of the covers codes on Agree-verdict items, pooled over all methods.
+def reliability_test(x, y):
+    """``n, percent_agreement, kappa, prevalence, test, reliable`` for two raters' covers codes on the same items.
 
-    Pooling the five panels (four maps and the centre blob) gives the codes a spread of prevalences, which keeps
-    Cohen's kappa defined and away from the high-prevalence paradox that a single good map would hit (both raters
-    saying ``yes`` to nearly everything gives kappa near 0 or undefined). Only ``yes``/``partly``/``no`` codes that
-    both raters gave count. ``prevalence`` is the largest share of any one code among both raters' codes.
+    ``test`` is ``kappa`` when Cohen's kappa is defined and the most common code's share among both raters' codes
+    (``prevalence``) is <= ``GO_MAX_PREVALENCE``; reliable then means kappa >= ``GO_MIN_KAPPA``. Otherwise kappa is
+    undefined or distorted by prevalence (both raters saying ``yes`` to nearly everything gives kappa near 0 even at
+    97% agreement), and reliable means percent agreement >= ``GO_MIN_PERCENT_AGREEMENT``.
 
-    Returns:
-        ``label_type, n, percent_agreement, kappa, prevalence, test, reliable``: ``test`` is ``kappa`` when kappa is
-        defined and prevalence <= ``GO_MAX_PREVALENCE`` (then reliable means kappa >= ``GO_MIN_KAPPA``), else
-        ``percent_agreement`` (reliable means percent agreement >= ``GO_MIN_PERCENT_AGREEMENT``).
+    >>> reliability_test(["yes"] * 40, ["yes"] * 39 + ["no"])["test"], reliability_test(["yes"] * 40, ["yes"] * 39 + ["no"])["reliable"]
+    ('percent_agreement', True)
     """
+    r = kappa_row(list(x), list(y))
+    prevalence = float(pd.Series(list(x) + list(y)).value_counts(normalize=True).max()) if r["n"] else np.nan
+    if np.isfinite(r["kappa"]) and prevalence <= GO_MAX_PREVALENCE:
+        test, reliable = "kappa", r["kappa"] >= GO_MIN_KAPPA
+    else:
+        test, reliable = "percent_agreement", bool(r["n"]) and r["percent_agreement"] >= GO_MIN_PERCENT_AGREEMENT
+    return {"n": r["n"], "percent_agreement": r["percent_agreement"], "kappa": r["kappa"], "prevalence": prevalence,
+            "test": test, "reliable": bool(reliable)}
+
+
+def _agree_pairs(long1, long2):
+    """Agree-verdict rows that both raters coded ``yes``/``partly``/``no``, joined on ``(overlay_id, method)``."""
     a = long1[long1.category.isin(AGREE_CATEGORIES)]
     b = long2[long2.category.isin(AGREE_CATEGORIES)]
     m = a.merge(b, on=["overlay_id", "method"], suffixes=("_1", "_2"), validate="one_to_one")
-    m = m[m.covers_1.isin(COVERS_ORDER) & m.covers_2.isin(COVERS_ORDER)]
-    rows = []
-    for lt, part in m.groupby("label_type_1", sort=True):
-        x, y = part.covers_1.tolist(), part.covers_2.tolist()
-        r = kappa_row(x, y)
-        codes = pd.Series(x + y)
-        prevalence = float(codes.value_counts(normalize=True).max())
-        if np.isfinite(r["kappa"]) and prevalence <= GO_MAX_PREVALENCE:
-            test, reliable = "kappa", r["kappa"] >= GO_MIN_KAPPA
-        else:
-            test, reliable = "percent_agreement", r["percent_agreement"] >= GO_MIN_PERCENT_AGREEMENT
-        rows.append({"label_type": lt, "n": r["n"], "percent_agreement": r["percent_agreement"], "kappa": r["kappa"],
-                     "prevalence": prevalence, "test": test, "reliable": bool(reliable)})
-    return pd.DataFrame(rows, columns=["label_type", "n", "percent_agreement", "kappa", "prevalence", "test",
-                                       "reliable"])
+    return m[m.covers_1.isin(COVERS_ORDER) & m.covers_2.isin(COVERS_ORDER)]
+
+
+RELIABILITY_COLUMNS = ["n", "percent_agreement", "kappa", "prevalence", "test", "reliable"]
+
+
+def method_reliability(long1, long2):
+    """``reliability_test`` per label type and method, on Agree-verdict items: the go/no-go rule's reliability gate."""
+    m = _agree_pairs(long1, long2)
+    rows = [{"label_type": lt, "method": meth, **reliability_test(part.covers_1, part.covers_2)}
+            for (lt, meth), part in m.groupby(["label_type_1", "method"], sort=True)]
+    return pd.DataFrame(rows, columns=["label_type", "method", *RELIABILITY_COLUMNS])
+
+
+def pooled_reliability(long1, long2):
+    """``reliability_test`` per label type over all panels pooled (reported for context; not part of the rule).
+
+    Pooling cannot gate a single method: agreement on uninformative panels would lend reliability to a map the
+    raters disagree on.
+    """
+    m = _agree_pairs(long1, long2)
+    rows = [{"label_type": lt, **reliability_test(part.covers_1, part.covers_2)}
+            for lt, part in m.groupby("label_type_1", sort=True)]
+    return pd.DataFrame(rows, columns=["label_type", *RELIABILITY_COLUMNS])
 
 
 def go_no_go(long1, long2, methods=("gradcam", "gradxact")):
@@ -811,22 +830,22 @@ def go_no_go(long1, long2, methods=("gradcam", "gradxact")):
     1. each rater coded at least ``GO_MIN_ITEMS`` of them ``yes``/``partly``/``no`` for this method;
     2. the covers rate ((yes + partly) / (yes + partly + no)), averaged over the two raters, is >= ``GO_MIN_RATE``;
     3. that rate exceeds the ``centre_blob`` control's averaged rate by >= ``GO_MIN_MARGIN_OVER_BLOB``;
-    4. the raters are reliable on that type (``pooled_reliability``: pooled kappa >= ``GO_MIN_KAPPA``, or, when
+    4. the raters are reliable on **this method's** codes (``reliability_test``: kappa >= ``GO_MIN_KAPPA``, or, when
        kappa is undefined or prevalence > ``GO_MAX_PREVALENCE``, percent agreement >= ``GO_MIN_PERCENT_AGREEMENT``).
     """
     r1, r2 = covers_rate(long1), covers_rate(long2)
     rates = r1.merge(r2, on=["label_type", "method"], suffixes=("_1", "_2"), how="outer", validate="one_to_one")
     rates["rate"] = rates[["rate_1", "rate_2"]].mean(axis=1)
-    rel = pooled_reliability(long1, long2).set_index("label_type")
+    rel = method_reliability(long1, long2).set_index(["label_type", "method"])
     out = []
     for lt in sorted(rates.label_type.unique()):
         blob = rates[(rates.label_type == lt) & (rates.method == "centre_blob")].rate
         blob = float(blob.iloc[0]) if len(blob) else np.nan
-        reliable = bool(rel.loc[lt, "reliable"]) if lt in rel.index else False
         for meth in methods:
             r = rates[(rates.label_type == lt) & (rates.method == meth)]
             rate = float(r.rate.iloc[0]) if len(r) else np.nan
             n_min = int(min(np.nan_to_num(r.n_1.iloc[0]), np.nan_to_num(r.n_2.iloc[0]))) if len(r) else 0
+            reliable = bool(rel.loc[(lt, meth), "reliable"]) if (lt, meth) in rel.index else False
             go = bool(n_min >= GO_MIN_ITEMS and rate >= GO_MIN_RATE and rate - blob >= GO_MIN_MARGIN_OVER_BLOB
                       and reliable)
             out.append({"label_type": lt, "method": meth, "n_min": n_min, "rate": rate, "centre_blob_rate": blob,
@@ -1027,6 +1046,34 @@ def sha256_of(path):
         return hashlib.sha256(f.read()).hexdigest()
 
 
+def _git(cwd, *args):
+    import subprocess
+
+    try:
+        out = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
+def inside_this_repo(path):
+    """True if ``path`` would land in any checkout (main or worktree) of the repo that holds this script.
+
+    Compares git's common directory of the path's nearest existing parent with this script's, so a sibling worktree
+    counts. Without git, falls back to a path-prefix check against this checkout only.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    d = os.path.dirname(os.path.abspath(path))
+    while not os.path.isdir(d):
+        d = os.path.dirname(d)
+    mine, theirs = _git(here, "rev-parse", "--git-common-dir"), _git(d, "rev-parse", "--git-common-dir")
+    if mine is None:
+        return os.path.abspath(path).startswith(here + os.sep)
+    if theirs is None:
+        return False
+    return os.path.realpath(os.path.join(here, mine)) == os.path.realpath(os.path.join(d, theirs))
+
+
 def build_packet(out_dirs, packet_dir, key_path, seed):
     """Blinded packet from ``run`` outputs: shuffled images with random ids and panels, a blank sheet, and the key.
 
@@ -1137,9 +1184,9 @@ def main(argv=None):
     elif args.command == "planted-check":
         print(markdown_table(planted_check(tuple(int(x) for x in args.positions.split(",")), args.seeds)))
     elif args.command == "packet":
-        repo = os.path.dirname(os.path.abspath(__file__))
-        if os.path.abspath(args.key).startswith(repo + os.sep):
-            parser.error("--key must be outside the repo until the rating is done (commit only <key>.sha256)")
+        if inside_this_repo(args.key):
+            parser.error("--key must be outside every checkout of this repo until the rating is done "
+                         "(commit only <key>.sha256)")
         key = build_packet(args.out_dirs, args.out_dir, args.key, args.seed)
         print(f"wrote {len(key)} items to {args.out_dir}/items, {args.out_dir}/coding_sheet.csv and {args.key}")
     else:
@@ -1157,7 +1204,8 @@ def main(argv=None):
             longs.append(long[~long.label_point_uncertain])
         tables = {"agreement_by_method": agreement(*longs, by=("method",)),
                   "agreement_by_type_method": agreement(*longs, by=("label_type", "method")),
-                  "reliability": pooled_reliability(*longs),
+                  "reliability_by_type_method": method_reliability(*longs),
+                  "reliability_pooled_context": pooled_reliability(*longs),
                   "go_no_go": go_no_go(*longs)}
         for name, t in tables.items():
             print(f"== {name} ==")

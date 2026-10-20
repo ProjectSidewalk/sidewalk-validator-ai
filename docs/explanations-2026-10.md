@@ -230,6 +230,8 @@ secret seed. The rating uses a separate packet built by `explain.py packet`, kep
   - **After both raters finish**, the key (and the seed) are committed beside the hash, and anyone can then
     reproduce the unblinding.
   - The seed has no default; with it and the committed `*_samples.csv`, `packet` rebuilds the same key.
+  - `packet` refuses a key path inside any checkout of this repo, including other git worktrees. It uses git's
+    common directory, so a copy of the repo cloned elsewhere is not detected.
 
 **How a rater gets it.** Jon shares `rater-packet-2026-10.zip` (62 MB: `items/` and `coding_sheet.csv`). It is
 built by this PR's run and is not in the repo. A rater needs nothing else.
@@ -262,7 +264,7 @@ python explain.py agreement coding_rater1.csv coding_rater2.csv --key <path>/pac
 ```
 
 **How the codes are scored.**
-- The command checks the key against the committed hash, unblinds both sheets, and drops items whose label point is
+- The command checks the key against the committed hash (`--key-sha256`), unblinds both sheets, and drops items whose label point is
   uncertain. The flag is taken from the key, not from the editable sheet.
 - It reports, per method and per type × method, n, percent agreement, unweighted Cohen's kappa, and linear-weighted
   kappa over no < partly < yes.
@@ -279,14 +281,16 @@ on that type's **Agree-verdict items** (TP + FP) with a certain label point:
 2. The covers rate, (yes + partly) / (yes + partly + no) with `unclear` and blank excluded, averaged over the two
    raters, is ≥ 0.70.
 3. That rate exceeds the **centre blob's** rate on the same items by ≥ 0.20.
-4. The raters are reliable on that type (`pooled_reliability`):
-   - Unweighted Cohen's kappa is computed on the `covers` codes of **all five panels pooled**: the type's
-     Agree-verdict items, codes that both raters gave as `yes`/`partly`/`no`.
-   - Pooling gives the codes a spread of prevalences. A per-method kappa would hit the high-prevalence paradox
-     exactly when a map is good: 30/30 `yes` from both raters gives an undefined kappa, and 29/30 against 30/30
-     gives 0.
-   - If that kappa is defined and the most common code's share (prevalence) is ≤ 0.90, reliable means kappa ≥ 0.60.
-   - Otherwise reliable means percent agreement ≥ 0.85 on the same pooled codes.
+4. The raters are reliable on **this method's** codes (`method_reliability`, per type × method). The codes used
+   are the type's Agree-verdict items that both raters coded `yes`/`partly`/`no`; `unclear`, blank, FN and TN are
+   excluded.
+   - If unweighted Cohen's kappa is defined and the most common code's share (prevalence) is ≤ 0.90, reliable means
+     kappa ≥ 0.60.
+   - Otherwise reliable means percent agreement ≥ 0.85.
+   - The fallback exists because kappa fails exactly when a map is good: 30/30 `yes` from both raters gives an
+     undefined kappa, and 29/30 against 30/30 gives 0. Both cases pass on percent agreement (1.0 and 0.97).
+   - Reliability is not pooled across panels. Agreement on the uninformative panels would otherwise lend
+     reliability to a map the raters disagree on. `agreement` prints the pooled figure for context only.
 
 Any other outcome is **no-go**.
 
