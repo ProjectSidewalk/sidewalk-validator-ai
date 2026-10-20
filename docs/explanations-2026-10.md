@@ -36,7 +36,9 @@ from the committed `docs/explanations-2026-10/<type>_counts.json`.
     `cities.json` from the 2026-10-17 pull. Overlays, `samples.csv` and the coding sheet use **public deployments
     only** (`--cities-json`), and their label ids carry the deployment's `city_id` (`seattle-wa:123`). The category
     counts cover every crop and name no city. Prefixes map to deployments by exact subdomain only (the
-    `/v3/api/cities` url), and a prefix that also names a non-public deployment is dropped.
+    `/v3/api/cities` url), and a prefix that also names a non-public deployment's subdomain or id is dropped. A
+    private deployment listed without a url cannot be checked by subdomain, only by its `city_id`; no such case
+    occurs in these datasets.
   - **About 9% of crops are not label-centred.** The 2025 crops were clipped at the view border, which left 640 × h
     crops (h < 640) whose label point is off-centre by an unknown amount. They are flagged
     `label_point_uncertain`: no centre cross, a yellow "?" tag, and no centre/border statistics.
@@ -168,8 +170,7 @@ What follows from these numbers:
   - About 12% of each map sits on 3 patches, and that barely changes across types and categories.
   - **None** of those peaks coincides with the high-norm tokens (median overlap 0 in every cell). So the earlier
     draft's attribution of the rollout peaks to DINOv2's artifact tokens was wrong. The border bias is unexplained.
-  - Discarding weak attention or fusing heads by max did not help in the round-1 review's check (centre share
-    0.03–0.16).
+  - Discarding weak attention (`discard_ratio`) or fusing heads by max were not evaluated here.
 - **The last-layer CLS attention is where the artifact tokens show up.**
   - 40–58% of it sits on 3 patches.
   - In every cell with n ≥ 50, a median of 1 of those 3 is among the 5 highest-norm tokens (2 of 3 on Crosswalk
@@ -185,11 +186,12 @@ What follows from these numbers:
   - So the earlier "FNs are diffuse" observation was the Disagree target, not the crop. An Agree map that sits on
     the centre of any crop may simply reflect the training-time centre prior (every training crop is centred on a
     label), not the feature.
-- **Grad-CAM at `norm1` is shown not to localise on a planted signal.**
-  - With a tiny Dinov2 whose head reads one patch token, Grad-CAM peaked on that token in 2 of 20 and 0 of 20
-    random inputs, for two token positions (chance ≈ 1.25 of 20).
-  - grad × act at the block output peaked there in 18/20 and 20/20 (scratch check). `tests/test_explain.py` asserts
-    the grad × act half (≥ 9 of 10).
+- **Grad-CAM at `norm1` does not localise a planted signal** (`python explain.py planted-check`: a tiny random
+  Dinov2 whose head reads one patch token, 20 random inputs each for token 6 and token 15; chance ≈ 1.25 of 20).
+  - Grad-CAM peaked on the read token in 2 and 0 of 20 for the predicted class.
+  - grad × act at the block output peaked there in 18 and 20 of 20 for the predicted class, but in only 2 and 0 of
+    20 for the other class.
+  - `tests/test_explain.py` asserts the grad × act result (≥ 9 of 10, and ≥ 3 of 4 through `planted_check`).
   - The cause: Grad-CAM uses one channel-weight vector for the whole image, and `norm1`'s output does not include
     the residual path that carries a token's own signal.
 - **grad × act is near uniform on the real models.** Its centre share is 0.18–0.31 for either target. A per-token
@@ -208,9 +210,9 @@ The raters' coding against the centre-blob control is what can still show a map 
 
 ## Rater packet (blinded)
 
-The labelled contact sheets in `docs/explanations-2026-10/` are for readers. **Raters must not open them, the
-`*_samples.csv` or `packet_key.csv` until both have finished.** The rating uses a separate packet built by
-`explain.py packet`, kept outside the repo:
+The labelled contact sheets and `*_samples.csv` in `docs/explanations-2026-10/` are for readers. **Raters must not
+open them until both have finished.** They do not reveal the packet's order or panels, because those come from a
+secret seed. The rating uses a separate packet built by `explain.py packet`, kept outside the repo:
 
 - **One JPEG per crop, 702 items.** Each shows the crop at 224 px (with the label-point cross, or a yellow "?" when
   uncertain) and five panels A–E at 224 px.
@@ -220,12 +222,17 @@ The labelled contact sheets in `docs/explanations-2026-10/` are for readers. **R
 - **Order and ids.** Items are in a shuffled order and named `<NNN>_<packet_id>.jpg`, where `packet_id` is random.
 - **Coding sheet.** `coding_sheet.csv` in the packet, in the same order: `packet_id`, `label_point_uncertain` and
   blank coding columns.
-- **Key.** `docs/explanations-2026-10/packet_key.csv` maps `packet_id` to `overlay_id`, type, category, label_uid and
-  each panel's method. It is committed so the unblinding is reproducible.
+- **Key.** `packet_key.csv` maps `packet_id` to `overlay_id`, type, category, label_uid, the
+  `label_point_uncertain` flag and each panel's method.
+  - It was built with a **secret seed** and is kept outside the repo, with Jon.
+  - The repo holds only its hash, `docs/explanations-2026-10/packet_key.sha256`, so the key used for unblinding can
+    be checked.
+  - **After both raters finish**, the key (and the seed) are committed beside the hash, and anyone can then
+    reproduce the unblinding.
+  - The seed has no default; with it and the committed `*_samples.csv`, `packet` rebuilds the same key.
 
-**How a rater gets it.** Jon shares `rater-packet-2026-10.zip` (62 MB: `items/` and `coding_sheet.csv`), which was
-built by this PR's run. It is not in the repo. To rebuild it identically, run the four `run` commands and then the
-`packet` command in [Reproduce](#reproduce); the same seed gives the same key.
+**How a rater gets it.** Jon shares `rater-packet-2026-10.zip` (62 MB: `items/` and `coding_sheet.csv`). It is
+built by this PR's run and is not in the repo. A rater needs nothing else.
 
 **Rater burden.** 702 items × 5 panels is a lot. If that is too much, code the items with
 `label_point_uncertain = False` first, in packet order: the order is random, so any prefix is a random subset.
@@ -250,18 +257,21 @@ stands out, code `unclear`.
 ## Agreement and go/no-go
 
 ```
-python explain.py agreement coding_rater1.csv coding_rater2.csv --key docs/explanations-2026-10/packet_key.csv --out agreement
+python explain.py agreement coding_rater1.csv coding_rater2.csv --key <path>/packet_key.csv \
+    --key-sha256 docs/explanations-2026-10/packet_key.sha256 --out agreement
 ```
 
 **How the codes are scored.**
-- The command unblinds both sheets and drops items with `label_point_uncertain`.
+- The command checks the key against the committed hash, unblinds both sheets, and drops items whose label point is
+  uncertain. The flag is taken from the key, not from the editable sheet.
 - It reports, per method and per type × method, n, percent agreement, unweighted Cohen's kappa, and linear-weighted
   kappa over no < partly < yes.
 - Rows where either rater wrote `unclear` or left the cell blank are excluded.
 - Kappa is **NaN** when it is undefined (both raters used one value throughout); percent agreement then carries the
   result.
 
-**Go/no-go rule** (implemented in `go_no_go`; fixed before rating). The rule is applied per label type, separately
+**Go/no-go rule.** This is a **proposal**, implemented in `go_no_go`. Jon fixes the thresholds before the rating
+starts; changing them after seeing the codes would void the test. The rule is applied per label type, separately
 for Grad-CAM and for grad × act (the verdict maps). A method is **go** for a type only if all of the following hold
 on that type's **Agree-verdict items** (TP + FP) with a certain label point:
 
@@ -269,9 +279,24 @@ on that type's **Agree-verdict items** (TP + FP) with a certain label point:
 2. The covers rate, (yes + partly) / (yes + partly + no) with `unclear` and blank excluded, averaged over the two
    raters, is ≥ 0.70.
 3. That rate exceeds the **centre blob's** rate on the same items by ≥ 0.20.
-4. The unweighted Cohen's kappa on that method's `covers` codes, for that type, is defined and ≥ 0.60.
+4. The raters are reliable on that type (`pooled_reliability`):
+   - Unweighted Cohen's kappa is computed on the `covers` codes of **all five panels pooled**: the type's
+     Agree-verdict items, codes that both raters gave as `yes`/`partly`/`no`.
+   - Pooling gives the codes a spread of prevalences. A per-method kappa would hit the high-prevalence paradox
+     exactly when a map is good: 30/30 `yes` from both raters gives an undefined kappa, and 29/30 against 30/30
+     gives 0.
+   - If that kappa is defined and the most common code's share (prevalence) is ≤ 0.90, reliable means kappa ≥ 0.60.
+   - Otherwise reliable means percent agreement ≥ 0.85 on the same pooled codes.
 
 Any other outcome is **no-go**.
+
+**Rule 3 may be close to unreachable.** The labels sit at the centre of most crops, so the centre blob will often
+"cover" the feature.
+- If the blob's covers rate is b, a map needs a rate of at least max(0.70, b + 0.20).
+- With b ≥ 0.80 that is 1.0 or more, which no map can reach.
+- This is deliberate: a map that does no better than a fixed centre blob adds nothing the cross does not already
+  show.
+- Jon may lower the margin before rating, not after.
 
 Disagree-verdict items (FN, TN) are reported but do not enter the rule. Their verdict maps show evidence for "no
 such feature", so "covers the labelled feature" is not the right test for them. TN items also serve as the control
@@ -290,6 +315,10 @@ for the observation that Agree maps centre on any crop.
 - **grad × act.**
   - It attributes only the mean-pool half of the head at the last block, not CLS's path through the earlier layers.
   - It is a first-order (gradient) attribution.
+  - The map for the class that was **not** predicted is ReLU-clipped counter-evidence, not an explanation. It failed
+    the planted-signal check (2 and 0 of 20) while the predicted class's map passed it (18 and 20 of 20). So in the
+    statistics table the "Disagree" columns for TP/FP and the "Agree" columns for FN/TN are clipped counter-evidence
+    maps. The packet shows only the predicted class's map.
 - **Faithfulness.** Neither deletion nor insertion tests were run, so no map is shown to be causally faithful.
 - **Centre prior.** The training crops are all centred on a label, so a model can learn "centre matters"
   regardless of content. The centre blob control and the TN category exist to separate that from localisation.
@@ -336,16 +365,19 @@ for t in crosswalk nocurbramp obstacle surfaceproblem; do
   cp $OUT/$t/counts.json docs/explanations-2026-10/${t}_counts.json
 done
 python explain.py summary docs/explanations-2026-10/*_samples.csv --stats <columns as above>
-# blinded packet outside the repo, key into the repo:
+python explain.py planted-check
+# blinded packet and key outside the repo (secret seed); only the key's hash goes into the repo:
 python explain.py packet $OUT/crosswalk $OUT/nocurbramp $OUT/obstacle $OUT/surfaceproblem \
-    --out-dir $PACKET --key docs/explanations-2026-10/packet_key.csv --seed 42
+    --out-dir $PACKET --key $KEYDIR/packet_key.csv --seed $SECRET_SEED
+cp $KEYDIR/packet_key.csv.sha256 docs/explanations-2026-10/packet_key.sha256
 ```
 
 **Run time.** Measured from file timestamps on the M1 Max, Obstacle took 4.8 min, SurfaceProblem 6.1 and NoCurbRamp 8.1, CPU check included. Crosswalk was not timed.
 
 **Committed.** 16 contact sheets (`<type>_{TP,FP,FN,TN}.jpg`, tiles 88 px high, JPEG q70, 5.9 MB), and per type
-`<type>_samples.csv` and `<type>_counts.json`, plus `packet_key.csv`. The folder is flat because the repo's
+`<type>_samples.csv` and `<type>_counts.json`, plus `packet_key.sha256`. The folder is flat because the repo's
 `.gitignore` ignores directories named after label types.
 
-**Not committed.** `predictions.csv` (every crop, private deployments included), `maps/*.npz` and the packet stay
-outside the repo.
+**Not committed.** `predictions.csv` (every crop, private deployments included), `maps/*.npz`, the packet, and
+(until the rating is done) the key and its seed stay outside the repo. An earlier, superseded key built with seed
+42 appears in this branch's history; it does not match the current packet.
