@@ -11,6 +11,7 @@
     "FN": 67,
     "TN": 222
   },
+  "n_label_point_uncertain": 55,
   "public_only": true,
   "n_sampling_pool": 647,
   "categories_sampling_pool": {
@@ -28,5 +29,7 @@
     "max_abs_diff_p_correct": 1.3768672943115234e-05,
     "category_flips": 0
   },
-  "explain_pass_max_abs_diff_p_correct": 1.1920928955078125e-07
+  "explain_pass_max_abs_diff_p_correct": 1.1920928955078125e-07,
+  "explain_seconds_per_crop_median": 0.19069043756462634,
+  "n_sampled_label_point_uncertain": 21
 }

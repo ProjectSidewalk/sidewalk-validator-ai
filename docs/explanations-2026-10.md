@@ -1,11 +1,13 @@
-# What the validators look at: attention rollout and Grad-CAM overlays (October 2026)
+# What the validators look at: saliency overlays and a blinded rating design (October 2026)
 
 Part of [#19](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/19). This page ships the tool, the
-sampled overlays, the rubric and the coding sheet for two human raters. The rating itself has **not** been done.
-The per-type observations near the end are one model-generated first pass. The raters' coding replaces them.
+sampled maps, automatic statistics about them, a blinded packet and rubric for two human raters, and the rule that
+turns their coding into a go/no-go. **The human rating has not been done.** The automatic statistics below already
+rule out some readings of the maps. Whether any map shows the labelled feature is for the raters to decide.
 
 **Where the numbers come from.** `explain.py` (this PR), run on 2026-10-20 on an M1 Max (macOS 15.5, torch 2.14.1,
-transformers 4.55.0). Every count and median below is printed by the commands in [Reproduce](#reproduce).
+transformers 4.55.0). Every count and median below is printed by the commands in [Reproduce](#reproduce) or read
+from the committed `docs/explanations-2026-10/<type>_counts.json`.
 
 ## Inputs
 
@@ -33,219 +35,317 @@ transformers 4.55.0). Every count and median below is printed by the commands in
   - **Private deployments.** The 2025 datasets include crops from deployments that are private today, by
     `cities.json` from the 2026-10-17 pull. Overlays, `samples.csv` and the coding sheet use **public deployments
     only** (`--cities-json`), and their label ids carry the deployment's `city_id` (`seattle-wa:123`). The category
-    counts cover every crop and name no city.
+    counts cover every crop and name no city. Prefixes map to deployments by exact subdomain only (the
+    `/v3/api/cities` url), and a prefix that also names a non-public deployment is dropped.
+  - **About 9% of crops are not label-centred.** The 2025 crops were clipped at the view border, which left 640 × h
+    crops (h < 640) whose label point is off-centre by an unknown amount. They are flagged
+    `label_point_uncertain`: no centre cross, a yellow "?" tag, and no centre/border statistics.
+
+    | type | non-square crops (all) | non-square among sampled |
+    |---|---:|---:|
+    | Crosswalk | 24 of 240 | 13 of 104 |
+    | NoCurbRamp | 125 of 1,374 | 15 of 200 |
+    | Obstacle | 55 of 769 | 21 of 198 |
+    | SurfaceProblem | 97 of 1,024 | 19 of 200 |
 
 
 ## Method
 
-- **Categories.** The positive class is `correct` (the API's Agree). TP = crowd correct, AI correct. FP = crowd
-  incorrect, AI correct, so the AI would Agree with a bad label. FN = crowd correct, AI incorrect, so the AI would
-  Disagree with a good label. These are raw verdicts, with the API's tie rule (`predict_verdicts`) and **no 0.92
-  gate**. Many of them would be recorded as Unsure in production.
-- **What the overlays show.** The processor resizes the short side to 256 and centre-crops 224. So the model never
-  sees the outer ~6% on each side of the published crop. Every panel is that 224 × 224 view, and a cyan cross marks
-  its centre, which is the label point.
-- **Attention rollout** ([Abnar & Zuidema 2020](https://arxiv.org/abs/2005.00928)):
-  - Head-mean, no discarding, identity added for the residual, rows re-normalised, multiplied through all 24 layers.
-  - The map is the CLS row over the 16 × 16 patches.
-  - It is **class-agnostic**: TP and FN overlays answer "where does the network route information", not "why this
-    verdict".
-  - The model is loaded with `attn_implementation="eager"`, because SDPA returns no weights. On 16 Crosswalk crops
-    the eager and SDPA probabilities differed by at most 6.1e-7 (CPU, smoke test).
-- **Grad-CAM**, adapted to a ViT as [pytorch-grad-cam](https://github.com/jacobgil/pytorch-grad-cam) does it:
-  - Activations are the output of the last block's `norm1`, the tokens entering its self-attention.
-  - Weights are the gradient averaged over patches, and the map is the ReLU of the weighted sum.
-  - The target is the **logit margin of the predicted class**, `z[pred] − z[other]`, i.e. the log-odds the
-    confidence is a function of. So an FN map shows evidence *for Disagree*.
-  - `Dinov2ForImageClassification` classifies `[CLS ‖ mean(patch tokens)]` of the final hidden state. The gradient
-    reaches the hooked tokens through the last block's attention into CLS and through the mean-pool. The residual
-    stream around `norm1` is not part of the hooked activation.
-- **Sampling.** Up to 50 per category, seed 42, after sorting by `label_uid`, from public deployments only. Tiles are
-  ordered by descending confidence.
-- **Device.** The committed overlays were produced on **MPS**. The prediction pass was repeated on CPU for every crop
-  (`--check-device cpu`): max |Δp(correct)| was 7.7e-6 (Crosswalk), 2.1e-5 (NoCurbRamp), 1.4e-5 (Obstacle) and 2.8e-5
-  (SurfaceProblem), with **0 category flips** in every type. Each overlay's own forward pass reproduced the prediction
-  pass within 1.2e-7. On one Crosswalk crop the rollout and Grad-CAM maps from MPS and CPU correlated at r > 0.99999.
+- **Categories.** The positive class is `correct` (the API's Agree):
+  - TP = crowd correct, AI correct.
+  - FP = crowd incorrect, AI correct, so the AI would Agree with a bad label.
+  - FN = crowd correct, AI incorrect, so the AI would Disagree with a good label.
+  - TN = both incorrect. **TN is the control category**: correct Disagree verdicts.
+  - These are raw verdicts, with the API's tie rule and no 0.92 gate.
+- **What the model sees.** The processor resizes the short side to 256 and centre-crops 224. On a square crop the
+  label point is the centre of that 224 view, and 1/16 of each side is cut. On a non-square crop up to ~22% per side
+  is also cut horizontally. Every panel shows the 224 view.
+- **Maps.** All are per 14 px patch on the 16 × 16 grid.
+  - **Attention rollout** ([Abnar & Zuidema 2020](https://arxiv.org/abs/2005.00928)): head-mean, no discarding,
+    identity added for the residual, rows re-normalised, multiplied through 24 layers. It is the CLS row and is
+    class-agnostic. The model is loaded with `attn_implementation="eager"`.
+  - **Last-layer CLS attention**: head-mean. Class-agnostic.
+  - **Grad-CAM**, as pytorch-grad-cam adapts it to a ViT:
+    - Activations are the output of the last block's `norm1`.
+    - One channel-weight vector (the gradient averaged over patches) serves the whole image; the map is the ReLU of
+      the weighted sum.
+    - The target is the logit margin `z[class] − z[other]`, computed for **both** classes. "Verdict" means the
+      predicted class, passed explicitly from the prediction.
+  - **grad × act**: per-token gradient times activation at the last block's output (the residual stream the final
+    layernorm reads), summed over channels, ReLU. Same targets.
+    - The head reads `[CLS ‖ mean(patch tokens)]`, so this attributes the mean-pool path exactly, token by token.
+  - **Centre blob**: a fixed Gaussian at the grid centre (σ = 2.5 patches). It appears only in the rater packet, as
+    a control.
+- **Sampling.**
+  - Up to 50 per category, seed 42, from public deployments only: 702 crops in all. Crosswalk has only 1 public FP
+    and 3 public FNs.
+  - Each type × category set is sorted by `label_uid` before sampling.
+- **Device.**
+  - Every overlay was computed on **MPS**. The prediction pass was repeated on CPU for every crop: max
+    |Δp(correct)| was 7.7e-6 (Crosswalk), 2.1e-5 (NoCurbRamp), 1.4e-5 (Obstacle) and 2.8e-5 (SurfaceProblem), with
+    0 category flips.
+  - The explain pass reproduced each prediction within 2e-7.
+  - It took a median of 0.17–0.20 s per crop on MPS for one forward pass and two backward passes
+    (`explain_seconds_per_crop_median` in `counts.json`; wall-clock, including copying the maps to the CPU).
 
 ## Counts per category (test split, all crops; raw verdicts)
 
-From `docs/explanations-2026-10/<type>_counts.json` (`categories`; `categories_sampling_pool` is the public-only pool the overlays are drawn from).
-These counts are on the leaky file-level split (#3), so treat the rates as optimistic.
+From `<type>_counts.json`: `categories` covers all crops, and `categories_sampling_pool` is the public-only pool
+the overlays are drawn from. These counts are on the leaky file-level split
+([#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3)), so treat the rates as optimistic.
 
-| type | n | TP | FP | FN | TN | public pool TP / FP / FN | overlays TP / FP / FN |
+| type | n | TP | FP | FN | TN | public pool TP / FP / FN / TN | sampled TP / FP / FN / TN |
 |---|---:|---:|---:|---:|---:|---|---|
-| Crosswalk | 240 | 126 | 16 | 3 | 95 | 66 / 1 / 3 | 50 / 1 / 3 |
-| NoCurbRamp | 1,374 | 732 | 103 | 65 | 474 | 700 / 97 / 62 | 50 / 50 / 50 |
-| Obstacle | 769 | 376 | 104 | 67 | 222 | 353 / 97 / 48 | 50 / 50 / 48 |
-| SurfaceProblem | 1,024 | 546 | 115 | 74 | 289 | 486 / 98 / 50 | 50 / 50 / 50 |
+| Crosswalk | 240 | 126 | 16 | 3 | 95 | 66 / 1 / 3 / 94 | 50 / 1 / 3 / 50 |
+| NoCurbRamp | 1,374 | 732 | 103 | 65 | 474 | 700 / 97 / 62 / 423 | 50 / 50 / 50 / 50 |
+| Obstacle | 769 | 376 | 104 | 67 | 222 | 353 / 97 / 48 / 149 | 50 / 50 / 48 / 50 |
+| SurfaceProblem | 1,024 | 546 | 115 | 74 | 289 | 486 / 98 / 50 / 150 | 50 / 50 / 50 / 50 |
 
-**Crosswalk has 1 FP and 3 FN in the public pool**, so the issue's 50/50/50 is not reachable for it. 15 of its 16 FPs
-come from deployments that are private today. Rating them would need Jon's sign-off and must stay out of the repo.
+15 of Crosswalk's 16 test FPs are in deployments that are private today, so the issue's 50/50/50 is not reachable
+for Crosswalk.
 
-## Automatic map statistics (not a substitute for the raters)
+## Automatic map statistics (before any rating)
 
-Printed by `python explain.py summary docs/explanations-2026-10/*_samples.csv`. **Centre mass** is the share of a
-map inside the central quarter of the image (the middle 8 × 8 patches). A uniform map scores 0.25. **Top-3 mass** is
-the share held by the 3 strongest of 256 patches; a uniform map scores 0.012. These are crude: a feature need not be
-centred or fill a quarter of the crop.
+All are medians per type × category. **Centre** is the share of a map in the middle 8 × 8 patches; a uniform map
+scores 0.25 and the centre blob 0.80. **Border** is the share on the outer ring of 60 patches; uniform scores 0.234.
+**Top-3** is the share on the 3 strongest of 256 patches; uniform scores 0.012. Centre and border use certain crops
+only (`n_certain`). Rows with n ≤ 3 are marked; do not read them as rates.
 
-| type | category | n | median confidence | rollout centre | Grad-CAM centre | rollout top-3 | Grad-CAM top-3 |
-|---|---|---:|---:|---:|---:|---:|---:|
-| Crosswalk | TP | 50 | 0.999 | 0.204 | 0.411 | 0.129 | 0.079 |
-| Crosswalk | FP | 1 | 0.999 | 0.180 | 0.480 | 0.143 | 0.078 |
-| Crosswalk | FN | 3 | 0.997 | 0.180 | 0.184 | 0.130 | 0.046 |
-| NoCurbRamp | TP | 50 | 1.000 | 0.218 | 0.325 | 0.113 | 0.087 |
-| NoCurbRamp | FP | 50 | 0.871 | 0.235 | 0.315 | 0.114 | 0.072 |
-| NoCurbRamp | FN | 50 | 0.921 | 0.227 | 0.274 | 0.115 | 0.061 |
-| Obstacle | TP | 50 | 1.000 | 0.241 | 0.279 | 0.116 | 0.063 |
-| Obstacle | FP | 50 | 0.990 | 0.235 | 0.283 | 0.115 | 0.067 |
-| Obstacle | FN | 48 | 0.923 | 0.234 | 0.209 | 0.116 | 0.056 |
-| SurfaceProblem | TP | 50 | 1.000 | 0.218 | 0.404 | 0.116 | 0.096 |
-| SurfaceProblem | FP | 50 | 0.997 | 0.215 | 0.431 | 0.118 | 0.118 |
-| SurfaceProblem | FN | 50 | 0.937 | 0.223 | 0.163 | 0.119 | 0.058 |
+**Class-agnostic maps** (`python explain.py summary docs/explanations-2026-10/*_samples.csv --stats
+rollout_centre,rollout_border,rollout_top3,rollout_top3_in_highnorm,cls_attention_centre,cls_attention_top3,cls_attention_top3_in_highnorm`):
 
-What these say, before any rating:
+| type | cat | n (certain) | rollout centre | rollout border | rollout top-3 | rollout top-3 ∩ high-norm | CLS-attn centre | CLS-attn top-3 | CLS-attn top-3 ∩ high-norm |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Crosswalk | TP | 50 (46) | 0.202 | 0.304 | 0.129 | 0 | 0.287 | 0.400 | 0.667 |
+| Crosswalk | FP | 1 (1) ⚠ | 0.180 | 0.348 | 0.143 | 0 | 0.221 | 0.445 | 0.333 |
+| Crosswalk | FN | 3 (1) ⚠ | 0.151 | 0.341 | 0.130 | 0 | 0.586 | 0.577 | 0.333 |
+| Crosswalk | TN | 50 (43) | 0.178 | 0.311 | 0.128 | 0 | 0.126 | 0.555 | 0.333 |
+| NoCurbRamp | TP | 50 (45) | 0.219 | 0.270 | 0.113 | 0 | 0.273 | 0.532 | 0.333 |
+| NoCurbRamp | FP | 50 (47) | 0.236 | 0.262 | 0.114 | 0 | 0.243 | 0.480 | 0.333 |
+| NoCurbRamp | FN | 50 (47) | 0.223 | 0.277 | 0.115 | 0 | 0.263 | 0.451 | 0.333 |
+| NoCurbRamp | TN | 50 (46) | 0.242 | 0.279 | 0.115 | 0 | 0.272 | 0.463 | 0.333 |
+| Obstacle | TP | 50 (43) | 0.240 | 0.250 | 0.116 | 0 | 0.250 | 0.466 | 0.333 |
+| Obstacle | FP | 50 (44) | 0.231 | 0.246 | 0.115 | 0 | 0.242 | 0.480 | 0.333 |
+| Obstacle | FN | 48 (46) | 0.234 | 0.259 | 0.116 | 0 | 0.201 | 0.461 | 0.333 |
+| Obstacle | TN | 50 (44) | 0.237 | 0.254 | 0.116 | 0 | 0.199 | 0.480 | 0.333 |
+| SurfaceProblem | TP | 50 (48) | 0.218 | 0.263 | 0.116 | 0 | 0.268 | 0.430 | 0.333 |
+| SurfaceProblem | FP | 50 (42) | 0.215 | 0.280 | 0.118 | 0 | 0.249 | 0.455 | 0.333 |
+| SurfaceProblem | FN | 50 (44) | 0.221 | 0.272 | 0.119 | 0 | 0.233 | 0.450 | 0.333 |
+| SurfaceProblem | TN | 50 (47) | 0.209 | 0.283 | 0.113 | 0 | 0.226 | 0.460 | 0.333 |
 
-- **Rollout does not find the label point.** Its median centre mass is 0.18–0.24 in every cell, at or below a
-  uniform map's 0.25. About 12% of its mass sits on 3 of 256 patches, ten times a uniform map, and that share barely
-  changes across types and categories. In the sheets these peaks are isolated bright dots, often on background
-  (sky, a car roof, a dark corner).
-  - This matches the high-norm "artifact" tokens that large DINOv2 models put on low-information patches
-    ([Darcet et al. 2024](https://arxiv.org/abs/2309.16588)). The production models are DINOv2-L without
-    registers.
-  - So rollout is a poor explanation for this model. That is a hypothesis for the raters to confirm, not a
-    conclusion.
-- **Grad-CAM concentrates on the centre when the verdict is Agree on Crosswalk and SurfaceProblem.** Median centre
-  mass is 0.40–0.48 for TP/FP, against 0.16–0.18 for FN, where the Disagree evidence is spread over the background.
-  - On NoCurbRamp and Obstacle the difference is small (0.21–0.33 throughout).
-  - FP and TP maps look alike on these statistics. Nothing here would let a validator tell an FP from a TP by its
-    map alone.
+"∩ high-norm" is the share of a map's top-3 patches that are among the 5 highest-norm patch tokens. Those are taken
+from the block where the max/median token norm is largest. That was block 20 of 24 for all 702 crops, with a median
+max/median ratio of 25–28 per type (`highnorm_layer`, `highnorm_ratio` in `samples.csv`).
 
-## Preliminary observations per type (model-generated first pass; to be replaced by the raters)
+**Gradient maps, both targets** (`--stats
+gradcam_correct_centre,gradcam_incorrect_centre,gradxact_correct_centre,gradxact_incorrect_centre`). "Agree" is the
+`correct` target and "Disagree" the `incorrect` one, whatever the verdict was:
 
-These come from one viewing of the contact sheets by the implementing model (Opus 5.5). They are hypotheses for the
-raters to test, not findings. Tile numbers refer to the sheets.
+| type | cat | n (certain) | Grad-CAM Agree | Grad-CAM Disagree | grad×act Agree | grad×act Disagree |
+|---|---|---|---:|---:|---:|---:|
+| Crosswalk | TP | 50 (46) | 0.414 | 0.138 | 0.247 | 0.254 |
+| Crosswalk | FP | 1 (1) ⚠ | 0.480 | 0.127 | 0.309 | 0.202 |
+| Crosswalk | FN | 3 (1) ⚠ | 0.243 | 0.299 | 0.184 | 0.309 |
+| Crosswalk | TN | 50 (43) | 0.262 | 0.202 | 0.189 | 0.269 |
+| NoCurbRamp | TP | 50 (45) | 0.321 | 0.221 | 0.225 | 0.277 |
+| NoCurbRamp | FP | 50 (47) | 0.310 | 0.222 | 0.245 | 0.260 |
+| NoCurbRamp | FN | 50 (47) | 0.262 | 0.275 | 0.231 | 0.298 |
+| NoCurbRamp | TN | 50 (46) | 0.240 | 0.282 | 0.244 | 0.313 |
+| Obstacle | TP | 50 (43) | 0.271 | 0.215 | 0.276 | 0.224 |
+| Obstacle | FP | 50 (44) | 0.283 | 0.213 | 0.250 | 0.246 |
+| Obstacle | FN | 48 (46) | 0.300 | 0.206 | 0.257 | 0.260 |
+| Obstacle | TN | 50 (44) | 0.251 | 0.240 | 0.220 | 0.256 |
+| SurfaceProblem | TP | 50 (48) | 0.404 | 0.179 | 0.279 | 0.190 |
+| SurfaceProblem | FP | 50 (42) | 0.418 | 0.192 | 0.240 | 0.231 |
+| SurfaceProblem | FN | 50 (44) | 0.407 | 0.163 | 0.244 | 0.257 |
+| SurfaceProblem | TN | 50 (47) | 0.319 | 0.181 | 0.247 | 0.265 |
 
-- **Crosswalk.**
-  - On TPs, Grad-CAM traces the painted stripes or transverse lines (TP 01–05, 19, 42) and often extends along the
-    paint well beyond the label point.
-  - The 3 FNs show little or no visible paint at the centre (worn or absent markings). Grad-CAM there is diffuse over
-    the asphalt.
-  - The one public FP (`chicago-il:64484`) and the private ones (not committed) mostly show a clearly painted
-    crosswalk. The crowd's "incorrect" is likely about placement or duplication, which a crop-level saliency map
-    cannot express.
-- **NoCurbRamp.**
-  - On TPs, Grad-CAM often follows the raised curb edge at a corner (TP 01, 05–09, 21).
-  - On FPs it lands as often on vegetation, a planting strip or a driveway edge (FP 02, 03, 09, 15) as on a curb.
-  - Several FNs appear to show a ramp-like or flush transition near the centre (FN 12, 17, 20, 30). There, a
-    Disagree may be the model judging "a ramp is present" rather than a model failure; that needs the label's
-    intent, which the crop does not carry.
-- **Obstacle.**
-  - High-confidence FPs nearly always contain a salient object near the centre: a hydrant, bin, parked car, sign or
-    pole (FP 02, 03, 09, 12, 21, 24, 25).
-  - The crowd's "incorrect" plausibly means "present but not in the path" (a hydrant on the grass, a car in the
-    road). The model, and both maps, respond to *object presence*, not to *path obstruction*.
-  - On FNs, Grad-CAM often covers sidewalk surface or edges rather than the narrow object (poles, posts; FN 01, 07,
-    12).
-- **SurfaceProblem.**
-  - On TPs and FPs, Grad-CAM tends to sit on slab joints, cracks, heaving and grass-in-joints along the walkway (TP
-    18, 25, 37; FP 04, 14, 20, 24).
-  - FPs therefore look like ordinary joints or wear that the crowd judged not to be a problem. The map localises
-    well; the decision threshold, not the attention, is what differs.
-  - FN maps are off-centre and diffuse (centre mass 0.16), often on lawn, cars or walls.
+What follows from these numbers:
 
-Common to all four: neither map shows the *context* the crowd judges, such as whether the label is a duplicate,
-whether an object blocks the path, or whether a ramp is needed here. That limits what an overlay could tell a
-validator.
+- **Rollout is border-biased and does not find the label point.**
+  - Its centre share is 0.15–0.24 in every cell, at or below uniform.
+  - Its border share is 0.25–0.35, at or above uniform (0.234). This is most marked on Crosswalk (0.30–0.35).
+  - About 12% of each map sits on 3 patches, and that barely changes across types and categories.
+  - **None** of those peaks coincides with the high-norm tokens (median overlap 0 in every cell). So the earlier
+    draft's attribution of the rollout peaks to DINOv2's artifact tokens was wrong. The border bias is unexplained.
+  - Discarding weak attention or fusing heads by max did not help in the round-1 review's check (centre share
+    0.03–0.16).
+- **The last-layer CLS attention is where the artifact tokens show up.**
+  - 40–58% of it sits on 3 patches.
+  - In every cell with n ≥ 50, a median of 1 of those 3 is among the 5 highest-norm tokens (2 of 3 on Crosswalk
+    TP).
+  - Its centre share (0.13–0.29 outside the n ≤ 3 cells) is no better than uniform. These are the low-information
+    "register-like" tokens of [Darcet et al. 2024](https://arxiv.org/abs/2309.16588); DINOv2-L without registers
+    has them.
+- **Grad-CAM's centre concentration is a property of the Agree target, not of right versus wrong.**
+  - With the Agree target, SurfaceProblem maps put 0.40–0.42 in the centre for TP, FP and FN alike, and 0.32 for
+    TN. With the Disagree target they put 0.16–0.19 there for every category.
+  - Crosswalk TP: 0.41 (Agree) against 0.14 (Disagree).
+  - NoCurbRamp and Obstacle are near uniform for both targets (0.21–0.32).
+  - So the earlier "FNs are diffuse" observation was the Disagree target, not the crop. An Agree map that sits on
+    the centre of any crop may simply reflect the training-time centre prior (every training crop is centred on a
+    label), not the feature.
+- **Grad-CAM at `norm1` is shown not to localise on a planted signal.**
+  - With a tiny Dinov2 whose head reads one patch token, Grad-CAM peaked on that token in 2 of 20 and 0 of 20
+    random inputs, for two token positions (chance ≈ 1.25 of 20).
+  - grad × act at the block output peaked there in 18/20 and 20/20 (scratch check). `tests/test_explain.py` asserts
+    the grad × act half (≥ 9 of 10).
+  - The cause: Grad-CAM uses one channel-weight vector for the whole image, and `norm1`'s output does not include
+    the residual path that carries a token's own signal.
+- **grad × act is near uniform on the real models.** Its centre share is 0.18–0.31 for either target. A per-token
+  attribution of the mean-pool path does not concentrate on the label point either.
 
-## Rubric (for two raters)
+**Conclusion before rating.**
+- None of the four maps has been shown to localise the labelled feature on these models.
+- Rollout is border-biased.
+- CLS attention is dominated by artifact tokens.
+- Grad-CAM at this hook does not localise even a planted signal, and its centre concentration follows the Agree
+  target on any crop.
+- grad × act is the one map with a demonstrated localising mechanism, but it is not concentrated on the label point
+  in real crops.
 
-Each rater codes every row of `docs/explanations-2026-10/coding_sheet.csv` (502 rows: one per tile, identified by
-`overlay_id` = `<type>-<category>-<tile>` on the contact sheet named in `contact_sheet`). The two raters work
-independently and do not discuss rows until both are done.
+The raters' coding against the centre-blob control is what can still show a map to be useful.
 
-1. Copy the template to `coding_rater1.csv` / `coding_rater2.csv`.
-2. Put the role (`rater1` / `rater2`) in `rater`, never a name.
-3. Code the columns below and commit both files under `docs/explanations-2026-10/`.
+## Rater packet (blinded)
 
-The feature to judge is **what the label claims at the cross**: a crosswalk, a missing curb ramp, an obstacle, a
-surface problem. For FPs the crowd said the claim is wrong. Code where the claimed feature (or the thing the labeller
-probably meant) is. If there is nothing there, use `no`/`unclear` as below.
+The labelled contact sheets in `docs/explanations-2026-10/` are for readers. **Raters must not open them, the
+`*_samples.csv` or `packet_key.csv` until both have finished.** The rating uses a separate packet built by
+`explain.py packet`, kept outside the repo:
+
+- **One JPEG per crop, 702 items.** Each shows the crop at 224 px (with the label-point cross, or a yellow "?" when
+  uncertain) and five panels A–E at 224 px.
+- **What the panels hide.** They hold rollout, last-layer CLS attention, Grad-CAM (verdict), grad × act (verdict)
+  and the centre blob, in a random order per item. Raters are told neither the method, nor the category, crowd
+  class, verdict or confidence. The label type is shown, because the feature to judge depends on it.
+- **Order and ids.** Items are in a shuffled order and named `<NNN>_<packet_id>.jpg`, where `packet_id` is random.
+- **Coding sheet.** `coding_sheet.csv` in the packet, in the same order: `packet_id`, `label_point_uncertain` and
+  blank coding columns.
+- **Key.** `docs/explanations-2026-10/packet_key.csv` maps `packet_id` to `overlay_id`, type, category, label_uid and
+  each panel's method. It is committed so the unblinding is reproducible.
+
+**How a rater gets it.** Jon shares `rater-packet-2026-10.zip` (62 MB: `items/` and `coding_sheet.csv`), which was
+built by this PR's run. It is not in the repo. To rebuild it identically, run the four `run` commands and then the
+`packet` command in [Reproduce](#reproduce); the same seed gives the same key.
+
+**Rater burden.** 702 items × 5 panels is a lot. If that is too much, code the items with
+`label_point_uncertain = False` first, in packet order: the order is random, so any prefix is a random subset.
+
+## Rubric
+
+Each rater fills a copy of the packet's `coding_sheet.csv` (`coding_rater1.csv`, `coding_rater2.csv`). Put the role
+in `rater`, never a name. Work independently.
+
+**The feature to judge** is what the label type claims at the cross: a crosswalk, a missing curb ramp, an obstacle,
+a surface problem. If nothing of the kind is visible near the cross, or the label point is uncertain and nothing
+stands out, code `unclear`.
 
 | column | values | rule |
 |---|---|---|
-| `rollout_covers` | `yes` / `partly` / `no` / `unclear` | `yes`: the brightest region(s) of the rollout panel lie on the labelled feature. `partly`: the feature is among several bright regions, or only its edge is lit. `no`: bright regions are elsewhere. `unclear`: no identifiable feature at the cross, or the map is uniform |
-| `gradcam_covers` | same | same, for the Grad-CAM panel |
-| `other_highlight` | `none`, `sidewalk_surface`, `road_surface`, `curb_edge`, `crosswalk_paint`, `vehicle`, `pole_or_sign`, `vegetation`, `building_or_wall`, `person`, `sky`, `image_corner_or_border`, `scattered_background`, `other` | the **most prominent** off-feature region in either panel (one value). `scattered_background`: isolated dots with no object, the pattern rollout often shows |
-| `informative` | `yes` / `no` | Would showing this Grad-CAM overlay help a validator decide Agree/Disagree on this label? `yes` only if it points at the evidence the verdict rests on |
-| `notes` | free text | anything else, e.g. "label is on the far crosswalk", "verdict depends on context outside crop" |
+| `covers_A` … `covers_E` | `yes` / `partly` / `no` / `unclear` | Code each panel by where its brightest region lies. `yes`: on the feature. `partly`: the feature is one of several bright regions, or only its edge is lit. `no`: elsewhere. `unclear`: no identifiable feature, or a uniform map |
+| `best_panel` | `A`–`E` / `none` | the one panel that would best help a validator decide Agree/Disagree on this label; `none` if no panel would |
+| `notes` | free text | e.g. "label is on the far crosswalk", "feature outside the 224 view" |
 
-The vocabulary is enforced: `explain.py agreement` rejects any other value.
+`explain.py agreement` rejects any other value.
 
-**Agreement.** `python explain.py agreement coding_rater1.csv coding_rater2.csv --out agreement.csv` joins on
-`overlay_id` (one-to-one). For each coded column, overall and per type, it reports n, percent agreement and Cohen's
-kappa. For the two `*_covers` columns it also reports a linear-weighted kappa over no < partly < yes. Rows coded
-`unclear` or left blank by either rater are excluded. **Report the per-type kappa next to every per-type
-conclusion.** If kappa < 0.6 on `gradcam_covers`, revise the rubric before drawing conclusions.
+## Agreement and go/no-go
 
-**Go/no-go for surfacing the overlay** (the second box of #19). Suggested rule, to be agreed before rating:
+```
+python explain.py agreement coding_rater1.csv coding_rater2.csv --key docs/explanations-2026-10/packet_key.csv --out agreement
+```
 
-- **Go, for one type**, if both raters code `gradcam_covers` = `yes`/`partly` on at least 70% of that type's TPs and
-  FNs, `informative` = `yes` on at least half, and kappa on `gradcam_covers` is ≥ 0.6.
-- **No-go** otherwise.
+**How the codes are scored.**
+- The command unblinds both sheets and drops items with `label_point_uncertain`.
+- It reports, per method and per type × method, n, percent agreement, unweighted Cohen's kappa, and linear-weighted
+  kappa over no < partly < yes.
+- Rows where either rater wrote `unclear` or left the cell blank are excluded.
+- Kappa is **NaN** when it is undefined (both raters used one value throughout); percent agreement then carries the
+  result.
+
+**Go/no-go rule** (implemented in `go_no_go`; fixed before rating). The rule is applied per label type, separately
+for Grad-CAM and for grad × act (the verdict maps). A method is **go** for a type only if all of the following hold
+on that type's **Agree-verdict items** (TP + FP) with a certain label point:
+
+1. Each rater coded at least 20 of them `yes`/`partly`/`no`.
+2. The covers rate, (yes + partly) / (yes + partly + no) with `unclear` and blank excluded, averaged over the two
+   raters, is ≥ 0.70.
+3. That rate exceeds the **centre blob's** rate on the same items by ≥ 0.20.
+4. The unweighted Cohen's kappa on that method's `covers` codes, for that type, is defined and ≥ 0.60.
+
+Any other outcome is **no-go**.
+
+Disagree-verdict items (FN, TN) are reported but do not enter the rule. Their verdict maps show evidence for "no
+such feature", so "covers the labelled feature" is not the right test for them. TN items also serve as the control
+for the observation that Agree maps centre on any crop.
 
 ## Limits of the method on this classifier
 
-- Both maps are coarse: 16 × 16 patches of 14 px on a 224 px view, so a thin pole or a crack is one patch wide.
-- Rollout is class-agnostic. It ignores the MLPs and the classifier head, and it is dominated by DINOv2-L's
-  artifact tokens (above). Discarding the weakest attention (`discard_ratio`) or head-max fusion are the usual
-  mitigations. They are exposed in `attention_rollout` but were **not** used for the committed overlays.
-- Grad-CAM at one layer sees only what flows through that layer's attention input. The head's mean-pool over all
-  patches spreads gradient across the whole image, which favours diffuse maps.
-- The ReLU hides evidence against the verdict.
-- The target is the margin of the predicted class, so FP maps explain the (wrong) Agree and FN maps the (wrong)
-  Disagree.
-- Neither map is faithful in a causal sense. Deletion/insertion tests would measure that; they are a follow-up, not
-  done here.
-- The crops come from the leaky 2025 split and from the models trained on it (#3). A retrained model needs its own
-  overlays.
-- The categories use the crowd's folder class, which is itself noisy: some "FPs" and "FNs" will be crowd errors.
+- **Resolution.** All maps are on 16 × 16 patches of 14 px, so a pole or a crack is one patch wide.
+- **Rollout.** It is class-agnostic and ignores the MLPs and the head. Here it is also border-biased, for reasons
+  not established.
+- **CLS attention.** It is dominated by high-norm artifact tokens.
+- **Grad-CAM at `norm1`.**
+  - It shares one channel weighting across the image and misses the residual stream. On a planted signal it does no
+    better than chance (above).
+  - The ReLU hides evidence against the target.
+- **grad × act.**
+  - It attributes only the mean-pool half of the head at the last block, not CLS's path through the earlier layers.
+  - It is a first-order (gradient) attribution.
+- **Faithfulness.** Neither deletion nor insertion tests were run, so no map is shown to be causally faithful.
+- **Centre prior.** The training crops are all centred on a label, so a model can learn "centre matters"
+  regardless of content. The centre blob control and the TN category exist to separate that from localisation.
+- **The blob is recognisable.** It is a smooth Gaussian, so raters may recognise it. It bounds what "covers"
+  means for a map that simply sits in the centre; it is not a blind placebo.
+- **Data.** The crops come from the leaky 2025 split and from models trained on it
+  ([#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3)). The crowd class is itself noisy.
+- **Uncertain crops.** About 9% of crops have an uncertain label point and are left out of the centre statistics
+  and the rule.
 
-## Draft issue text for sidewalk-ai-api (not filed; Jon decides after the rating)
+## Draft issue text for sidewalk-ai-api (not filed; only if the rating says go)
 
-> **Optional Grad-CAM overlay in the `/process` response (behind a flag)**
+> **Optional saliency overlay in the `/process` response (behind a flag)**
 >
 > For [sidewalk-validator-ai#19](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/19): add an opt-in
 > request flag (e.g. `"explain": true`, default false). When set, the validator's response gains
-> `validation_overlay_png`, a base64 PNG of the 224 × 224 model view blended with a Grad-CAM map (last block's
-> `norm1`, target = logit margin of the returned verdict). It is computed with one extra backward pass on the same
-> forward. The flag must not change `validation_result`, `validation_score` or `validation_estimated_accuracy`.
-> `sidewalk-validator-ai/explain.py` (`explain_one`, `heat_overlay`) is the reference implementation.
+> `validation_overlay_png`, a base64 PNG of the 224 × 224 model view blended with the map method that passed the
+> raters' go/no-go for that label type. `sidewalk-validator-ai/explain.py` (`explain_one`, `heat_overlay`) is the
+> reference implementation. The flag must not change `validation_result`, `validation_score` or
+> `validation_estimated_accuracy`.
 >
-> Cost to measure before enabling: one backward pass through DINOv2-L per label. On an M1 Max (MPS) the forward plus
-> backward took about 1–3 s per crop. On the API's GPU it should be a fraction of that; latency on the serving
-> hardware is not yet measured. Rollout is deliberately not proposed (see the doc: it does not localise on these
-> models). Do not enable the flag in SidewalkWebpage's nightly actor; it is for a mock-up in the Validate label card,
-> pending the raters' go/no-go.
+> Cost: one forward pass with attention weights and two backward passes through DINOv2-L. That took a median of
+> 0.17–0.20 s per crop on an M1 Max (MPS); serving hardware is not measured. Do not enable the flag in
+> SidewalkWebpage's nightly actor; it is for a mock-up in the Validate label card.
 
 ## Reproduce
 
-`$DATA/<type>/test/<class>/*.webp` must hold the dataset files at the revisions in [Inputs](#inputs) (downloaded with
-`huggingface_hub`; scratch scripts not committed). `cities.json` is the v3 API's city list from the 2026-10-17 pull
-(`curl https://sidewalk-teaneck.cs.washington.edu/v3/api/cities > cities.json`). Then:
+`$DATA/<type>/test/<class>/*.webp` must hold the dataset files at the revisions in [Inputs](#inputs), downloaded with
+`huggingface_hub`. `cities.json` is the v3 API's city list from the 2026-10-17 pull
+(`curl https://sidewalk-teaneck.cs.washington.edu/v3/api/cities > cities.json`).
 
 ```
 for T in Crosswalk Obstacle NoCurbRamp SurfaceProblem; do
   t=$(echo $T | tr A-Z a-z)
-  python explain.py run --label-type $T --crops-dir $DATA/$t --out-dir $OUT/$t \
-      --per-category 50 --seed 42 --device mps --check-device cpu --cities-json cities.json
+  python explain.py run --label-type $T --crops-dir $DATA/$t --out-dir $OUT/$t --cities-json cities.json \
+      --per-category 50 --seed 42 --device mps --check-device cpu
 done
-python explain.py coding-sheet docs/explanations-2026-10/*_samples.csv \
-    --out docs/explanations-2026-10/coding_sheet.csv
-python explain.py summary docs/explanations-2026-10/*_samples.csv
+# the committed sheets were re-rendered smaller from the saved maps (no torch needed):
+python explain.py sheets $OUT/crosswalk $OUT/nocurbramp $OUT/obstacle $OUT/surfaceproblem --tile-height 88 --quality 70
+# copy what is committed:
+for t in crosswalk nocurbramp obstacle surfaceproblem; do
+  cp $OUT/$t/*.jpg docs/explanations-2026-10/
+  cp $OUT/$t/samples.csv docs/explanations-2026-10/${t}_samples.csv
+  cp $OUT/$t/counts.json docs/explanations-2026-10/${t}_counts.json
+done
+python explain.py summary docs/explanations-2026-10/*_samples.csv --stats <columns as above>
+# blinded packet outside the repo, key into the repo:
+python explain.py packet $OUT/crosswalk $OUT/nocurbramp $OUT/obstacle $OUT/surfaceproblem \
+    --out-dir $PACKET --key docs/explanations-2026-10/packet_key.csv --seed 42
 ```
 
-Each run takes 2–10 minutes on the M1 Max. Committed from each `$OUT/<type>/`: the three category contact sheets
-(`<type>_{TP,FP,FN}.jpg`, JPEG q82, tiles 112 px high), `samples.csv` and `counts.json`, renamed `<type>_samples.csv` and `<type>_counts.json` (the repo .gitignore ignores directories named after label types, so the folder is flat). The full-size per-overlay
-PNGs (`overlay_path` in `samples.csv`) and `predictions.csv` (every crop, private deployments included) stay outside
-the repo; rerun to regenerate them.
+**Run time.** Measured from file timestamps on the M1 Max, Obstacle took 4.8 min, SurfaceProblem 6.1 and NoCurbRamp 8.1, CPU check included. Crosswalk was not timed.
+
+**Committed.** 16 contact sheets (`<type>_{TP,FP,FN,TN}.jpg`, tiles 88 px high, JPEG q70, 5.9 MB), and per type
+`<type>_samples.csv` and `<type>_counts.json`, plus `packet_key.csv`. The folder is flat because the repo's
+`.gitignore` ignores directories named after label types.
+
+**Not committed.** `predictions.csv` (every crop, private deployments included), `maps/*.npz` and the packet stay
+outside the repo.
