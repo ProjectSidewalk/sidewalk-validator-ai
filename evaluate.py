@@ -9,9 +9,14 @@ Replaces ``get_stats.py``. Two stages, kept separate so the metrics are testable
     ``test_heldout``. ``true`` is the class name (``correct`` / ``incorrect``).
 (b) **Metrics** (``report``, pure pandas/scikit-learn): AUC, plain and balanced accuracy, per-class
     precision/recall/F1, and recall at precision 0.90..0.99 with the matching score threshold, for the ``test``
-    split, for ``test_heldout`` if present, and for the ``hard == 1`` slice of the two. Written to
+    split, for ``test_heldout`` if present, and for the ``hard == 1`` slice of the two (``--per-city`` adds the same
+    metrics per city of ``test`` and ``test_heldout``, in ``metrics.json`` and ``per_city.md``). Written to
     ``<label_type>/metrics.json`` and ``<label_type>/report.txt``, with ``pvr.png`` and ``report.png``. ``--checkpoint``
     scores another model (such as the one the API serves) on the same split; ``--tag`` suffixes all its outputs.
+    ``--vote-weights`` (validator_reliability.py's ``vote_weights.csv``) adds a ``gold`` slice of the two test
+    splits: labels with at least 3 human votes, every one from a validator with reliability
+    ``>= --gold-min-reliability`` (default 0.85; at 0.95 no trainable label qualifies on the 2026-10-17 data;
+    https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/12).
 
 The confidence-to-accuracy map the API serves is no longer produced here; it is fitted on the val split under the
 deployment prior by ``calibration/calibrate.py`` (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4).
@@ -28,9 +33,13 @@ Usage::
 
     python evaluate.py --label_type CurbRamp                 # inference + metrics
     python evaluate.py --label_type CurbRamp --skip-inference # metrics from an existing predictions.csv
+    # Per-city metrics for test and test_heldout (cities with >= 50 rows), also written to per_city.md:
+    python evaluate.py --label_type CurbRamp --skip-inference --per-city --min-city-n 50
     # Another model on the same split, e.g. the one the API serves; outputs get a _<tag> suffix:
     python evaluate.py --label_type CurbRamp --checkpoint projectsidewalk/sidewalk-validator-ai-curbramp \
         --revision 969ad5a33079db7885c9e9a4eb5cd0f39d8fe57a --tag prod
+    # Add the all-reliable-validators "gold" slice:
+    python evaluate.py --label_type CurbRamp --skip-inference --vote-weights reliability/vote_weights.csv
 """
 import argparse
 import glob
@@ -210,11 +219,50 @@ def slice_metrics(df, levels=PRECISION_LEVELS):
     return out
 
 
-def report(predictions_df, levels=PRECISION_LEVELS):
-    """Metrics for ``test``, ``test_heldout`` (if present) and the ``hard == 1`` slice of the two.
+GOLD_MIN_RELIABILITY = 0.85
+GOLD_MIN_VOTES = 3
+
+
+def gold_labels(vote_weights, min_reliability=GOLD_MIN_RELIABILITY, min_votes=GOLD_MIN_VOTES):
+    """Boolean Series by ``label_uid``: True where the label has at least ``min_votes`` human votes and every one came
+    from a validator with reliability ``>= min_reliability`` (``vote_weights`` from validator_reliability.py).
+
+    >>> w = pd.DataFrame({"label_uid": ["a:1", "a:2", "a:3"], "n_votes": [3, 2, 4],
+    ...                   "min_reliability": [0.97, 0.99, 0.6]})
+    >>> gold_labels(w, 0.95).to_dict()
+    {'a:1': True, 'a:2': False, 'a:3': False}
+    """
+    missing = {"label_uid", "n_votes", "min_reliability"} - set(vote_weights.columns)
+    if missing:
+        raise ValueError(f"vote weights have no {sorted(missing)} column(s); rebuild with validator_reliability.py")
+    gold = (vote_weights["n_votes"] >= min_votes) & (vote_weights["min_reliability"] >= min_reliability)
+    return pd.Series(gold.to_numpy(), index=vote_weights["label_uid"].to_numpy())
+
+
+def per_city_metrics(df, levels=PRECISION_LEVELS, min_city_n=50):
+    """``slice_metrics`` for every city of one split with at least ``min_city_n`` rows (issue #15).
+
+    Returns:
+        ``{"min_city_n": ..., "cities": {city: slice_metrics(...)}, "below_min_n": {city: n}}``, cities by
+        descending n (ties by name).
+    """
+    counts = df.groupby("city").size().reset_index(name="n").sort_values(["n", "city"], ascending=[False, True])
+    big = counts[counts.n >= min_city_n]
+    small = counts[counts.n < min_city_n]
+    return {"min_city_n": int(min_city_n),
+            "cities": {c: slice_metrics(df[df.city == c], levels) for c in big.city},
+            "below_min_n": {c: int(n) for c, n in zip(small.city, small.n)}}
+
+
+def report(predictions_df, levels=PRECISION_LEVELS, per_city=False, min_city_n=50):
+    """Metrics for ``test``, ``test_heldout`` (if present) and the ``hard == 1`` slice of the two, plus their
+    ``gold`` slice when ``predictions_df`` has a ``gold`` column (see ``gold_labels``).
 
     Args:
-        predictions_df: columns ``label_uid, split, true, p_correct, p_incorrect`` and, optionally, ``hard``.
+        predictions_df: columns ``label_uid, split, true, p_correct, p_incorrect`` and, optionally, ``hard``,
+            ``gold`` and ``city``.
+        per_city: also add ``per_city``: ``{split: per_city_metrics(...)}`` for ``test`` and ``test_heldout``
+            (needs ``city``); render with ``format_per_city``.
 
     Returns:
         ``{slice_name: slice_metrics(...)}``; render with ``format_report``.
@@ -228,6 +276,14 @@ def report(predictions_df, levels=PRECISION_LEVELS):
         h = predictions_df[predictions_df.split.isin(["test", "test_heldout"]) & (predictions_df.hard == 1)]
         if len(h):
             out["hard"] = slice_metrics(h, levels)
+    if per_city:
+        if "city" not in predictions_df.columns:
+            raise ValueError("per_city needs a 'city' column (from split.csv)")
+        out["per_city"] = {split: per_city_metrics(predictions_df[predictions_df.split == split], levels, min_city_n)
+                           for split in ("test", "test_heldout") if (predictions_df.split == split).any()}
+    if "gold" in predictions_df.columns:
+        g = predictions_df[predictions_df.split.isin(["test", "test_heldout"]) & predictions_df.gold.astype(bool)]
+        out["gold"] = slice_metrics(g, levels)  # reported even when empty, so a missing slice is visible
     return out
 
 
@@ -235,6 +291,8 @@ def format_report(metrics):
     """Plain-text rendering of ``report()``'s output."""
     lines = []
     for name, m in metrics.items():
+        if name == "per_city":
+            continue  # rendered by format_per_city
         lines.append(f"== {name}: n={m['n']} ({', '.join(f'{c} {k}' for c, k in m['n_by_class'].items())}) ==")
         if m["n"] == 0:
             continue
@@ -251,6 +309,37 @@ def format_report(metrics):
                 th = "n/a" if r["threshold"] is None else f"{r['threshold']:.4f}"
                 lines.append(f"    precision >= {p}: recall {r['recall']:.4f} at score >= {th}")
     return "\n".join(lines) + "\n"
+
+
+def format_per_city(per_city):
+    """Markdown tables of ``report(..., per_city=True)["per_city"]``: one per split, one row per city.
+
+    Precision and recall are at the argmax verdict (the model's own decision, before any served-accuracy gate);
+    AUC is shown only when the city has both classes, and a class with no rows in that city shows "—" for its
+    precision and recall (scikit-learn's zero_division would print 0.000).
+    """
+    def pr(r):
+        return ("—", "—") if r["support"] == 0 else (f"{r['precision']:.3f}", f"{r['recall']:.3f}")
+
+    lines = []
+    for split, pc in per_city.items():
+        lines += [f"### {split}: per city (n >= {pc['min_city_n']})", ""]
+        if pc["cities"]:
+            lines += ["| city | n (correct / incorrect) | accuracy | AUC | precision correct | recall correct "
+                      "| precision incorrect | recall incorrect |",
+                      "|---|---:|---:|---:|---:|---:|---:|---:|"]
+        else:
+            lines.append("No city reaches the minimum.")
+        for city, m in pc["cities"].items():
+            auc = "—" if m["auc"] is None else f"{m['auc']:.3f}"
+            (pc_p, pc_r), (pi_p, pi_r) = pr(m["per_class"]["correct"]), pr(m["per_class"]["incorrect"])
+            lines.append(f"| {city} | {m['n']:,} ({m['n_by_class']['correct']:,} / {m['n_by_class']['incorrect']:,}) "
+                         f"| {m['accuracy']:.3f} | {auc} | {pc_p} | {pc_r} | {pi_p} | {pi_r} |")
+        if pc["below_min_n"]:
+            lines += ["", "Below the minimum: " + ", ".join(f"{c} (n={n})" for c, n in pc["below_min_n"].items())
+                      + "."]
+        lines.append("")
+    return "\n".join(lines)
 
 
 def save_figures(predictions_df, text, label_type, out_dir, suffix=""):
@@ -303,7 +392,21 @@ def main(argv=None):
     parser.add_argument("--tag", default=None,
                         help="suffix for every output (predictions_<tag>.csv, metrics_<tag>.json, ...), so scoring "
                              "another model never overwrites this run's")
+    parser.add_argument("--per-city", action="store_true",
+                        help="add per-city metrics for test and test_heldout to metrics.json, and write them as "
+                             "markdown to per_city.md (issue #15)")
+    parser.add_argument("--min-city-n", type=int, default=50,
+                        help="rows a city needs in a split to get its own --per-city row (default 50); the same "
+                             "minimum applies to test and test_heldout")
+    parser.add_argument("--vote-weights", default=None,
+                        help="validator_reliability.py's vote_weights.csv: adds the 'gold' slice (labels with >= 3 "
+                             "human votes, every one from a validator with reliability >= --gold-min-reliability)")
+    parser.add_argument("--gold-min-reliability", type=float, default=None,
+                        help=f"reliability threshold for the gold slice (default {GOLD_MIN_RELIABILITY}; needs "
+                             "--vote-weights)")
     args = parser.parse_args(argv)
+    if args.gold_min_reliability is not None and not args.vote_weights:
+        parser.error("--gold-min-reliability needs --vote-weights")
     if args.checkpoint and not args.tag:
         parser.error("--checkpoint needs --tag, so its outputs do not overwrite the trained model's")
     if args.revision and not args.checkpoint:
@@ -328,10 +431,29 @@ def main(argv=None):
         predictions.to_csv(pred_path, index=False)
         print(f"wrote {pred_path} ({len(predictions)} rows)")
 
-    with_hard = predictions.merge(manifest[["label_uid", "hard"]], on="label_uid", how="left", validate="one_to_one")
-    metrics = report(with_hard)
+    joined = ["label_uid", "hard"] + (["city"] if args.per_city else [])
+    with_hard = predictions.merge(manifest[joined], on="label_uid", how="left", validate="one_to_one")
+    if args.vote_weights:
+        gold_min = GOLD_MIN_RELIABILITY if args.gold_min_reliability is None else args.gold_min_reliability
+        gold = gold_labels(pd.read_csv(args.vote_weights, dtype={"label_uid": str}), gold_min)
+        absent = ~with_hard.label_uid.isin(gold.index)
+        if absent.any():
+            raise SystemExit(f"{int(absent.sum())} predictions have no row in {args.vote_weights} (e.g. "
+                             f"{with_hard.label_uid[absent].head(3).tolist()})")
+        with_hard["gold"] = with_hard.label_uid.map(gold).astype(bool)
+        print(f"gold (>= {GOLD_MIN_VOTES} human votes, every voter's reliability >= {gold_min}): "
+              + ", ".join(f"{s} {int(with_hard.gold[with_hard.split == s].sum())}/{int((with_hard.split == s).sum())}"
+                          for s in EVAL_SPLITS if (with_hard.split == s).any()))
+    metrics = report(with_hard, per_city=args.per_city, min_city_n=args.min_city_n)
+    if "gold" in metrics:
+        metrics["gold"].update(gold_min_reliability=gold_min, gold_min_votes=GOLD_MIN_VOTES)
     text = format_report(metrics)
     print(text)
+    if args.per_city:
+        per_city_text = format_per_city(metrics.get("per_city", {}))
+        print(per_city_text)
+        with open(os.path.join(base, f"per_city{suffix}.md"), "w") as f:
+            f.write(per_city_text)
     with open(os.path.join(base, f"metrics{suffix}.json"), "w") as f:
         json.dump(metrics, f, indent=2)
     with open(os.path.join(base, f"report{suffix}.txt"), "w") as f:
