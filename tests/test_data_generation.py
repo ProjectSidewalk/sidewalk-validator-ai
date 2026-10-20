@@ -1,6 +1,7 @@
 """data_generation.py on a CPU: label selection, AI-author handling, deployment priors, the resumable manifest."""
 import doctest
 import json
+import os
 
 import numpy as np
 import pandas as pd
@@ -47,6 +48,161 @@ def fixture_labels(tmp_path):
     path = tmp_path / "toy-city.csv"
     pd.DataFrame(rows).to_csv(path, index=False)
     return pd.read_csv(path)
+
+
+def write_listing(cache, entries, **meta):
+    """A /v3/api/cities listing as ``<cache>/cities.json``: ``entries`` are (city_id, visibility, url)."""
+    listing = {**meta, "cities": [{"city_id": c, "visibility": v, "url": u} for c, v, u in entries]}
+    (cache / dg.CITIES_CACHE_FILE).write_text(json.dumps(listing))
+    return listing
+
+
+# The shape of the live response (trimmed to the fields discovery reads, plus a few it ignores), deliberately unsorted:
+# public with url, public with a non-UW url, private with and without url (invented ids), public without url (with and
+# without a HOST_OVERRIDES entry, which the tests patch in).
+CITIES_RESPONSE = {"status": "OK", "cities": [
+    {"city_id": "teaneck-nj", "visibility": "public", "url": "https://sidewalk-teaneck.cs.washington.edu",
+     "city_name_short": "Teaneck", "bounds": {"north": 1, "south": 0, "east": 1, "west": 0}},
+    {"city_id": "private-a", "visibility": "private", "url": None},
+    {"city_id": "seattle-wa", "visibility": "public", "url": "https://sidewalk-sea.cs.washington.edu/"},
+    {"city_id": "private-b", "visibility": "private", "url": "https://sidewalk-private-b.cs.washington.edu"},
+    {"city_id": "elsewhere", "visibility": "public", "url": "https://sidewalk.example.org/"},
+    {"city_id": "overridden", "visibility": "public", "url": None},
+    {"city_id": "nowhere", "visibility": "public", "url": None},
+    {"city_id": "amsterdam", "visibility": "public", "url": "https://sidewalk-amsterdam.cs.washington.edu"},
+]}
+DEFAULT = ["amsterdam", "elsewhere", "seattle-wa", "teaneck-nj"]
+
+
+@pytest.fixture(autouse=True)
+def _no_listing_sleep(monkeypatch):
+    monkeypatch.setattr(dg, "LISTING_RETRY_S", 0)
+
+
+def counting_fetch(response=CITIES_RESPONSE):
+    calls = []
+
+    def fetch(url):
+        calls.append(url)
+        if isinstance(response, Exception):
+            raise response
+        return response
+    return fetch, calls
+
+
+def test_discover_cities_public_with_url_sorted(capsys, monkeypatch):
+    cities = dg.discover_cities(CITIES_RESPONSE)
+    assert cities == {"amsterdam": "amsterdam", "elsewhere": "https://sidewalk.example.org", "seattle-wa": "sea",
+                      "teaneck-nj": "teaneck"}
+    assert list(cities) == sorted(cities)
+    assert "nowhere" in capsys.readouterr().out  # a public deployment without a url is named, not silently dropped
+    shuffled = {"cities": CITIES_RESPONSE["cities"][::-1]}
+    assert list(dg.discover_cities(shuffled).items()) == list(cities.items())  # independent of the API's order
+    assert dg.discover_cities(CITIES_RESPONSE["cities"]) == cities  # an old fetch_all.py bare-list cities.json
+    every = dg.discover_cities(CITIES_RESPONSE, public_only=False)  # host lookup for --cities
+    assert every["private-b"] == "private-b" and "private-a" not in every and "nowhere" not in every
+    assert dg.deployment_base_url(cities["elsewhere"]) == "https://sidewalk.example.org"
+    monkeypatch.setattr(dg, "HOST_OVERRIDES", {"overridden": "ovr"})  # the mechanism, kept with an empty table
+    assert dg.discover_cities(CITIES_RESPONSE)["overridden"] == "ovr"
+
+
+def test_discover_cities_rejects_or_warns_on_odd_entries(capsys):
+    e = lambda **kw: {"city_id": "a", "visibility": "public", **kw}  # noqa: E731
+    assert dg.discover_cities({"cities": [e(url="  https://sidewalk-a.cs.washington.edu \n")]}) == {"a": "a"}
+    assert dg.discover_cities({"cities": [e(url="sidewalk-a.cs.washington.edu"), {**e(), "city_id": "b",
+                                                                                 "url": "ftp://x"}]}) == {}
+    assert "not an http(s) url" in capsys.readouterr().out
+    assert dg.discover_cities({"cities": [e(visibility="Public", url="https://x.org"),
+                                          {"city_id": "b", "url": "https://y.org"}]}) == {}
+    assert "unknown visibility to a ('Public'), b (None)" in capsys.readouterr().out
+    for bad in ({}, [], {"cities": []}, {"cities": {"a": 1}}, {"cities": [{"url": "https://x.org"}]},
+                {"cities": [{"city_id": None}]}, {"cities": ["a"]}, {"cities": [e(), e()]}, "nonsense",
+                {"cities": [{"city_id": 5}]}, {"cities": [{"city_id": "  "}]}, {"cities": [{"city_id": "../etc"}]},
+                {"cities": [{"city_id": "a b"}]}, {"cities": [{"city_id": "Seattle-WA"}]},
+                {"cities": [{"city_id": "a;rm"}]}):
+        with pytest.raises(dg.ListingError):
+            dg.discover_cities(bad)
+
+
+def test_city_listing_cache_round_trip(tmp_path):
+    fetch, calls = counting_fetch()
+    listing, source = dg.load_city_listing(str(tmp_path), fetch=fetch)
+    today = dg.date.today().isoformat()
+    assert source == {"from": "api", "url": dg.CITIES_API, "fetched_on": today} and len(calls) == 1
+    cached = json.loads((tmp_path / "cities.json").read_text())
+    assert cached == {"fetched_on": today, "url": dg.CITIES_API, "cities": CITIES_RESPONSE["cities"]}
+    again, source2 = dg.load_city_listing(str(tmp_path), fetch=fetch)
+    assert len(calls) == 1  # read from the cache, no fetch
+    assert source2 == {"from": "cache", "url": dg.CITIES_API, "fetched_on": today}
+    assert dg.discover_cities(again) == dg.discover_cities(listing) == dg.discover_cities(CITIES_RESPONSE)
+    dg.load_city_listing(str(tmp_path), refresh=True, fetch=fetch)
+    assert len(calls) == 2
+    dg.load_city_listing(None, fetch=fetch)  # no cache directory: always the API, nothing written
+    assert len(calls) == 3
+
+
+def test_city_listing_without_fetch_date_records_none(tmp_path):
+    (tmp_path / "cities.json").write_text(json.dumps(CITIES_RESPONSE["cities"]))  # an old fetch_all.py list
+    _, source = dg.load_city_listing(str(tmp_path), fetch=lambda url: pytest.fail("fetched"))
+    assert source == {"from": "cache", "url": None, "fetched_on": None}
+
+
+def test_listing_is_never_written_into_a_pre_discovery_cache(tmp_path):
+    (tmp_path / "toy-city.csv").write_text("label_id\n")  # a cache from before discovery: CSVs, no cities.json
+    fetch, calls = counting_fetch()
+    with pytest.raises(dg.ListingError, match="before city discovery.*--refresh-cities"):
+        dg.load_city_listing(str(tmp_path), fetch=fetch)
+    assert calls == [] and not (tmp_path / "cities.json").exists()
+    with pytest.raises(SystemExit, match="before city discovery"):
+        dg.resolve_cities(None, str(tmp_path), fetch=fetch)
+    assert not (tmp_path / "cities.json").exists()
+    dg.load_city_listing(str(tmp_path), refresh=True, fetch=fetch)  # deliberately
+    assert (tmp_path / "cities.json").exists()
+
+
+def test_a_broken_listing_is_not_cached(tmp_path):
+    for response in ({}, {"status": "OK", "cities": []}, [{"city_id": "a"}], ValueError("not JSON")):
+        fetch, calls = counting_fetch(response)
+        with pytest.raises(SystemExit, match="City list"):
+            dg.resolve_cities(None, str(tmp_path), fetch=fetch)
+        assert not (tmp_path / "cities.json").exists()
+    assert len(calls) == 2  # the exception was retried once
+    (tmp_path / "cities.json").write_text("{not json")
+    with pytest.raises(SystemExit, match="--refresh-cities"):
+        dg.resolve_cities(None, str(tmp_path), fetch=counting_fetch()[0])
+
+
+def test_parse_cities_behaves_as_before():
+    known = {"seattle-wa": "sea", "chicago-il": "chicago"}
+    assert dg.parse_cities(None, known) == known and dg.parse_cities("", known) == known
+    assert dg.parse_cities("seattle-wa, chicago-il=chi,,other-city,new-city", known) == \
+        {"seattle-wa": "sea", "chicago-il": "chi", "other-city": "other-city", "new-city": "new-city"}
+    assert dg.parse_cities("vancouver-wa=vancouver") == {"vancouver-wa": "vancouver"}
+
+
+def test_resolve_cities_reads_the_listing_only_when_a_host_is_needed(tmp_path, capsys):
+    fetch, calls = counting_fetch()
+    (tmp_path / "seattle-wa.csv").write_text("label_id\n")
+    assert dg.resolve_cities("seattle-wa,x=y", str(tmp_path), fetch=fetch) == \
+        ({"seattle-wa": "seattle-wa", "x": "y"}, {"from": "--cities"})  # cached CSV / explicit host: offline
+    assert calls == []
+    assert dg.resolve_cities("teaneck-nj,private-b", str(tmp_path), fetch=fetch)[0] == \
+        {"teaneck-nj": "teaneck", "private-b": "private-b"}
+    assert len(calls) == 1 and not (tmp_path / "cities.json").exists()  # the --cities path never writes the listing
+    down, down_calls = counting_fetch(OSError("unreachable"))
+    assert dg.resolve_cities("teaneck-nj", None, fetch=down)[0] == {"teaneck-nj": "teaneck-nj"}  # falls back
+    assert len(down_calls) == 2 and "using the city_id as the subdomain for teaneck-nj" in capsys.readouterr().out
+
+
+def test_resolve_cities_default_and_blank_flag(tmp_path):
+    fetch, calls = counting_fetch()
+    for arg in (None, "", " , "):  # a blank --cities is the default list, as on master
+        cities, source = dg.resolve_cities(arg, str(tmp_path), fetch=fetch)
+        assert list(cities) == DEFAULT
+    assert len(calls) == 1 and source["from"] == "cache"
+    write_listing(tmp_path, [("private-b", "private", "https://sidewalk-private-b.cs.washington.edu")])
+    with pytest.raises(SystemExit, match="no public deployment"):
+        dg.resolve_cities(None, str(tmp_path), fetch=fetch)
 
 
 def select(labels, **kw):
@@ -162,16 +318,62 @@ def test_deployment_prior_is_pre_downsampling_and_human_authored(tmp_path):
                  "source": "rawLabels of toy-city, human votes only", "cities": ["toy-city"], "n_rows": 29}
 
 
-@pytest.mark.parametrize("extra, real", [([], True), (["--limit", "3"], False), (["--cities", "toy-city"], False)])
+@pytest.mark.parametrize("extra, real", [([], True), (["--limit", "3"], False), (["--cities", "toy-city"], False),
+                                         (["--cities", ""], True)])  # a blank --cities is the default list
 def test_priors_written_only_by_full_runs(tmp_path, monkeypatch, extra, real):
     fixture_labels(tmp_path)  # writes toy-city.csv
-    monkeypatch.setattr(dg, "CITIES", {"toy-city": "toy"})
+    write_listing(tmp_path, [("toy-city", "public", "https://sidewalk-toy.cs.washington.edu")])
     dg.main(["--label_type", "CurbRamp", "--select-only", "--rawlabels-cache", str(tmp_path),
              "--out", str(tmp_path / "out"), *extra])
     full, part = tmp_path / "out" / "deployment_priors.json", tmp_path / "out" / "deployment_priors.partial.json"
     assert full.exists() == real and part.exists() == (not real)
     entry = json.loads((full if real else part).read_text())["CurbRamp"]
     assert (entry["correct"], entry["incorrect"], entry["cities"], entry["n_rows"]) == (12, 6, ["toy-city"], 29)
+    # the city list's origin: the cached listing, or a non-blank --cities
+    assert entry["city_source"]["from"] == ("--cities" if "toy-city" in extra else "cache")
+
+
+def test_priors_entry_records_the_api_fetch(tmp_path, monkeypatch):
+    fixture_labels(tmp_path)
+    monkeypatch.setattr(dg, "_get_json", lambda url: {"cities": [
+        {"city_id": "toy-city", "visibility": "public", "url": "https://sidewalk-toy.cs.washington.edu"}]})
+    dg.main(["--label_type", "CurbRamp", "--select-only", "--rawlabels-cache", str(tmp_path),
+             "--out", str(tmp_path / "out"), "--refresh-cities"])  # the cache holds a CSV: writing needs the flag
+    entry = json.loads((tmp_path / "out" / "deployment_priors.json").read_text())["CurbRamp"]
+    assert entry["cities"] == ["toy-city"]
+    assert entry["city_source"] == {"from": "api", "url": dg.CITIES_API, "fetched_on": dg.date.today().isoformat()}
+    assert (tmp_path / "cities.json").exists()  # cached for the next run
+
+
+def test_listed_city_without_a_cached_csv_is_fatal(tmp_path, monkeypatch):
+    fixture_labels(tmp_path)
+    write_listing(tmp_path, [("toy-city", "public", "https://sidewalk-toy.cs.washington.edu"),
+                             ("new-city", "public", "https://sidewalk-new.cs.washington.edu")])
+    monkeypatch.setattr(dg, "load_city", lambda *a, **k: pytest.fail("rawLabels loaded"))
+    with pytest.raises(SystemExit, match="no <city_id>.csv for 1 listed cities: new-city.*fetch_all"):
+        dg.main(["--label_type", "CurbRamp", "--select-only", "--rawlabels-cache", str(tmp_path),
+                 "--out", str(tmp_path / "out")])
+
+
+def test_select_only_against_a_run_with_another_city_list_writes_partial_priors(tmp_path, capsys):
+    """A master-era output dir (19-city run record, real priors) must keep its priors when --select-only runs with
+    the discovered list."""
+    fixture_labels(tmp_path)
+    write_listing(tmp_path, [("toy-city", "public", "https://sidewalk-toy.cs.washington.edu")])
+    out = tmp_path / "out"
+    (out / "CurbRamp").mkdir(parents=True)
+    (out / "CurbRamp" / "generation_run.json").write_text(json.dumps({"cities": ["toy-city", "old-city"]}))
+    real = out / "deployment_priors.json"
+    real.write_text(json.dumps({"CurbRamp": {"correct": 1, "incorrect": 1, "cities": ["toy-city", "old-city"]}}))
+    before = real.read_text()
+    dg.main(["--label_type", "CurbRamp", "--select-only", "--rawlabels-cache", str(tmp_path), "--out", str(out)])
+    assert real.read_text() == before
+    entry = json.loads((out / "deployment_priors.partial.json").read_text())["CurbRamp"]
+    assert entry["cities"] == ["toy-city"]
+    assert "records a different city list (added: none; removed: old-city)" in capsys.readouterr().out
+    (out / "CurbRamp" / "generation_run.json").write_text(json.dumps({"cities": ["toy-city"]}))  # same list: real
+    dg.main(["--label_type", "CurbRamp", "--select-only", "--rawlabels-cache", str(tmp_path), "--out", str(out)])
+    assert json.loads(real.read_text())["CurbRamp"]["cities"] == ["toy-city"]
 
 
 def test_no_silent_cpu_fallback(monkeypatch):
@@ -250,12 +452,23 @@ def test_check_resume_detects_selection_and_settings_changes(tmp_path):
     st = {"tilt_beta": 0.95, "depth_encoder": "vitb", "depth_dataset": "vkitti", "renderer": "torch",
           "include_ai_labels": False}
     run = tmp_path / "generation_run.json"
-    assert dg.check_resume(str(run), dg.selection_hash(a), st) == (None, {})  # no previous run
+    assert dg.check_resume(str(run), dg.selection_hash(a), st) == (None, {}, {})  # no previous run
     run.write_text(json.dumps({"selection_sha256": dg.selection_hash(a), "settings": st}))
-    assert dg.check_resume(str(run), dg.selection_hash(a), st) == (None, {})
+    assert dg.check_resume(str(run), dg.selection_hash(a), st) == (None, {}, {})
     assert dg.check_resume(str(run), dg.selection_hash(b), st)[0] == dg.selection_hash(a)
     assert dg.check_resume(str(run), dg.selection_hash(a), {**st, "tilt_beta": 0.5, "renderer": "numpy"})[1] == \
         {"tilt_beta": (0.95, 0.5), "renderer": ("torch", "numpy")}
+
+
+def test_check_resume_detects_a_changed_city_list(tmp_path):
+    a = pd.DataFrame({"label_uid": ["x:1"], "label_class": ["correct"]})
+    st = {"tilt_beta": 0.95}
+    run = tmp_path / "generation_run.json"
+    run.write_text(json.dumps({"selection_sha256": dg.selection_hash(a), "settings": st, "cities": ["x", "y"]}))
+    h = dg.selection_hash(a)  # same selection: a city with no selected label does not move the hash
+    assert dg.check_resume(str(run), h, st, ["y", "x"]) == (None, {}, {})  # order does not matter
+    assert dg.check_resume(str(run), h, st, ["x", "z", "w"]) == (None, {}, {"added": ["w", "z"], "removed": ["y"]})
+    assert dg.check_resume(str(run), h, st) == (None, {}, {})  # not compared when no list is given
 
 
 def test_manifest_row_uid_and_crop_path():
