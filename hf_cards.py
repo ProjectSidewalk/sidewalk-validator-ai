@@ -518,8 +518,9 @@ def dataset_card(ctx, license_id=None):
                    "manifest's `class_source` column says which rule decided each label (`margin` or `expert`)"
                    + (f": {fmt(source_counts.get('margin', 0))} margin and {fmt(source_counts.get('expert', 0))} "
                       "expert in the selection." if source_counts else ".") + "\n")
-    prior_text = (f"Before downsampling, {fmt(prior.get('correct'))} labels met the `correct` rule and "
-                  f"{fmt(prior.get('incorrect'))} the `incorrect` rule "
+    rule = " margin" if n_experts else ""  # the prior counts margin-rule labels only
+    prior_text = (f"Before downsampling, {fmt(prior.get('correct'))} labels met the `correct`{rule} rule and "
+                  f"{fmt(prior.get('incorrect'))} the `incorrect`{rule} rule "
                   f"({fmt(prior['correct'] / (prior['correct'] + prior['incorrect']))} correct; "
                   f"{prior.get('source', '')}, measured {prior.get('measured_on', 'n/a')}). That is the deployment "
                   f"prior the served calibration map is reweighted to."

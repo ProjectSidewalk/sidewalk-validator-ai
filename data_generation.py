@@ -899,6 +899,7 @@ def main(argv=None):
     if partial:
         priors_path = os.path.splitext(priors_path)[0] + ".partial.json"
     cities = parse_cities(args.cities)
+    experts = parse_experts(os.environ.get(EXPERTS_ENV))  # a malformed value fails before the downloads
     store_marker, absent_cities = None, []
     if not args.select_only:  # fail fast, before the downloads
         if not args.pano_store:
@@ -909,7 +910,6 @@ def main(argv=None):
     all_cities = pd.concat([load_city(c, s, args.rawlabels_cache) for c, s in cities.items()], ignore_index=True)
     n_rows = int((all_cities['label_type'] == label_type).sum())
 
-    experts = parse_experts(os.environ.get(EXPERTS_ENV))
     eligible, dropped = eligible_labels(all_cities, label_type, experts)  # once, for both the prior and the selection
     print(f"{n_rows} {label_type} rows; dropped for unusable pano geometry: {dict(dropped) or 'none'}")
     if experts:

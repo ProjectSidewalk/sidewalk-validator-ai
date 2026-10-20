@@ -415,6 +415,7 @@ def test_dataset_card_states_the_expert_rule_only_when_used(tmp_path, staged):
     card = _read(os.path.join(d, "README.md"))
     assert "expert account voted for" in card and "2 project-team accounts" in card
     assert "9 margin and 3 expert" in card
+    assert "met the `correct` margin rule" in card
 
 
 def test_dataset_license_flag(tmp_path):
