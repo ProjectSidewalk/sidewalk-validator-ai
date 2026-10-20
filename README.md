@@ -111,13 +111,20 @@ model on its own output.
 
 ## Training signal
 
-A label is used only when the crowd was decisive, counting **human** votes only:
+A label is used only when the crowd was decisive or an expert decided it, counting **human** votes only:
 
 | class | rule | share of dataset |
 |---|---|---|
 | `incorrect` | disagree − agree > 1 | 45% |
 | `correct` | agree − disagree > 2, then randomly downsampled | 55% |
+| either | otherwise, with `EXPERTS` set: the class the expert accounts voted for, if they all agree and no other human voted the other way | (in the above) |
 | (dropped) | unvalidated, unsure, or contested | — |
+
+`EXPERTS="<name>=<user_id>,..."` (the form `analysis/analyze.py` reads) is set in the environment, never in the
+repo; unset, only the margin rule applies. A single non-expert vote is a weak signal (on labels the experts also
+voted on, a lone Disagree was right 24–78% of the time depending on the type), which is why the margin rule stays
+for the crowd. The manifest's `class_source` column records which rule decided each label, and the deployment prior
+counts margin-rule labels only, since experts do not vote on a random sample.
 
 Labels from non-GSV imagery providers, rows with unusable pano geometry, and legacy labels with
 unconverted coordinates (negative `pano_y`: Seattle 193, CDMX 14, Pittsburgh 8, SPGG 1) are excluded, and

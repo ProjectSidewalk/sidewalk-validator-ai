@@ -129,6 +129,33 @@ def test_main_records_tilt_depth_and_crop_size(stubbed):
     assert run["pano_store_marker"] == "toy store v1"  # the marker's first line
 
 
+def test_experts_from_the_environment_reach_manifest_and_record(stubbed, monkeypatch):
+    rows = [label(1, 4, 0, pano="shared"), label(2, 0, 3, pano="shared"), label(3, 0, 3),
+            label(4, 0, 4, user=AI), label(5, 5, 0)]
+    one_expert_no = json.dumps([{"user_id": "ex", "validation": "Disagree", "validator_type": "Human"}])
+    rows += [label(6, 0, 0), label(7, 0, 0)]
+    rows[5]["validations"] = rows[6]["validations"] = one_expert_no
+    write_city(stubbed["tmp"], rows)
+    for r in rows[5:]:
+        write_pano(stubbed["store"], CITY, r["pano_id"])
+    monkeypatch.setenv("EXPERTS", "someone=ex")
+    m = run_main(stubbed["tmp"], "--limit", "2").set_index("label_uid")
+    run = json.loads((stubbed["tmp"] / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["n_experts"] == 1
+    assert run["class_source_counts"] == {"margin": 5, "expert": 2}  # the whole selection, not the --limit 2
+    assert set(m.class_source) <= {"margin", "expert"} and m.class_source.notna().all()
+
+
+def test_resume_refreshes_class_source_of_kept_rows(stubbed, monkeypatch):
+    run_main(stubbed["tmp"])
+    path = stubbed["tmp"] / "out" / "CurbRamp" / "manifest.csv"
+    m = pd.read_csv(path, dtype=str, keep_default_na=False)
+    m["class_source"] = "stale"
+    m.to_csv(path, index=False)
+    m = run_main(stubbed["tmp"])
+    assert (m.class_source == "margin").all()
+
+
 def test_manifest_records_provider_and_store_path(stubbed):
     m = run_main(stubbed["tmp"]).set_index("label_uid")
     assert "pano_zoom" not in m.columns
