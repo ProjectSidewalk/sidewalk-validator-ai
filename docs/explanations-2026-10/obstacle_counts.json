@@ -1,0 +1,32 @@
+{
+  "label_type": "Obstacle",
+  "checkpoint": "projectsidewalk/sidewalk-validator-ai-obstacle",
+  "revision": "8f0fe8fc48748fac35098e74c1848d015126deef",
+  "device": "mps",
+  "split": "test",
+  "n": 769,
+  "categories": {
+    "TP": 376,
+    "FP": 104,
+    "FN": 67,
+    "TN": 222
+  },
+  "public_only": true,
+  "n_sampling_pool": 647,
+  "categories_sampling_pool": {
+    "TP": 353,
+    "FP": 97,
+    "FN": 48,
+    "TN": 149
+  },
+  "attn_implementation": "eager",
+  "torch": "2.14.1",
+  "seed": 42,
+  "per_category": 50,
+  "device_check": {
+    "against": "cpu",
+    "max_abs_diff_p_correct": 1.3768672943115234e-05,
+    "category_flips": 0
+  },
+  "explain_pass_max_abs_diff_p_correct": 1.1920928955078125e-07
+}

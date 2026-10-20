@@ -69,7 +69,7 @@ transformers 4.55.0). Every count and median below is printed by the commands in
 
 ## Counts per category (test split, all crops; raw verdicts)
 
-From `counts.json` (`categories`; `categories_sampling_pool` is the public-only pool the overlays are drawn from).
+From `docs/explanations-2026-10/<type>_counts.json` (`categories`; `categories_sampling_pool` is the public-only pool the overlays are drawn from).
 These counts are on the leaky file-level split (#3), so treat the rates as optimistic.
 
 | type | n | TP | FP | FN | TN | public pool TP / FP / FN | overlays TP / FP / FN |
@@ -84,7 +84,7 @@ come from deployments that are private today. Rating them would need Jon's sign-
 
 ## Automatic map statistics (not a substitute for the raters)
 
-Printed by `python explain.py summary docs/explanations-2026-10/*/samples.csv`. **Centre mass** is the share of a
+Printed by `python explain.py summary docs/explanations-2026-10/*_samples.csv`. **Centre mass** is the share of a
 map inside the central quarter of the image (the middle 8 × 8 patches). A uniform map scores 0.25. **Top-3 mass** is
 the share held by the 3 strongest of 256 patches; a uniform map scores 0.012. These are crude: a feature need not be
 centred or fill a quarter of the crop.
@@ -240,12 +240,12 @@ for T in Crosswalk Obstacle NoCurbRamp SurfaceProblem; do
   python explain.py run --label-type $T --crops-dir $DATA/$t --out-dir $OUT/$t \
       --per-category 50 --seed 42 --device mps --check-device cpu --cities-json cities.json
 done
-python explain.py coding-sheet docs/explanations-2026-10/{crosswalk,nocurbramp,obstacle,surfaceproblem}/samples.csv \
+python explain.py coding-sheet docs/explanations-2026-10/*_samples.csv \
     --out docs/explanations-2026-10/coding_sheet.csv
-python explain.py summary docs/explanations-2026-10/*/samples.csv
+python explain.py summary docs/explanations-2026-10/*_samples.csv
 ```
 
 Each run takes 2–10 minutes on the M1 Max. Committed from each `$OUT/<type>/`: the three category contact sheets
-(`<type>_{TP,FP,FN}.jpg`, JPEG q82, tiles 112 px high), `samples.csv` and `counts.json`. The full-size per-overlay
+(`<type>_{TP,FP,FN}.jpg`, JPEG q82, tiles 112 px high), `samples.csv` and `counts.json`, renamed `<type>_samples.csv` and `<type>_counts.json` (the repo .gitignore ignores directories named after label types, so the folder is flat). The full-size per-overlay
 PNGs (`overlay_path` in `samples.csv`) and `predictions.csv` (every crop, private deployments included) stay outside
 the repo; rerun to regenerate them.
