@@ -407,3 +407,33 @@ def test_explain_one_under_sdpa_falls_back_to_eager():
     model = transformers.Dinov2ForImageClassification._from_config(tiny_config(transformers, 28),
                                                                   attn_implementation="sdpa").eval()
     assert explain.explain_one(model, torch.randn(1, 3, 28, 28))["rollout"].shape == (4,)
+
+
+def test_write_sheets_and_build_packet_from_saved_maps(tmp_path):
+    """`sheets` and `packet` need only `run`'s samples.csv, counts.json and maps/*.npz (no torch)."""
+    from PIL import Image
+
+    out = tmp_path / "x"
+    (out / "maps").mkdir(parents=True)
+    s = fake_samples(4).assign(label_type="Crosswalk", truth="correct", pred=["correct", "correct", "incorrect",
+                                                                            "incorrect"],
+                               confidence=0.9, tile=1)
+    s.to_csv(out / "samples.csv", index=False)
+    (out / "counts.json").write_text('{"label_type": "Crosswalk", "categories_sampling_pool": '
+                                     '{"TP": 1, "FP": 1, "FN": 1, "TN": 1}}')
+    rng = np.random.default_rng(5)
+    for o in s.overlay_id:
+        np.savez_compressed(out / "maps" / f"{o}.npz", image=(rng.random((56, 56, 3)) * 255).astype(np.uint8),
+                            pred="correct" if "-TP-" in o or "-FP-" in o else "incorrect",
+                            **{m: rng.random(256) for m in ("rollout", "cls_attention", "gradcam_correct",
+                                                            "gradcam_incorrect", "gradxact_correct",
+                                                            "gradxact_incorrect")})
+    explain.write_sheets(str(out), ncols=2, tile_height=40)
+    assert sorted(p.name for p in out.glob("*.jpg")) == [f"crosswalk_{c}.jpg" for c in ("FN", "FP", "TN", "TP")]
+    key = explain.build_packet([str(out)], str(tmp_path / "packet"), str(tmp_path / "key.csv"), seed=3)
+    items = sorted((tmp_path / "packet" / "items").glob("*.jpg"))
+    assert len(items) == 4 and all(k in items[i].name for i, k in enumerate(key.packet_id))
+    with Image.open(items[0]) as im:
+        assert im.width == 6 * (56 + 6) + 6
+    sheet = pd.read_csv(tmp_path / "packet" / "coding_sheet.csv")
+    assert sheet.packet_id.tolist() == key.packet_id.tolist() and list(sheet.columns) == explain.SHEET_COLUMNS

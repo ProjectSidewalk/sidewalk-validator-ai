@@ -877,7 +877,6 @@ def run(args):
     samples = sample_categories(pool, args.per_category, args.seed, categories, label_type)
     idx = class_index(model)
     names = {v: k for k, v in idx.items()}
-    strips = {c: [] for c in categories}
     stats_rows, max_dp, seconds = [], 0.0, []
     for row in samples.itertuples():
         inputs = processor(Image.open(row.crop_path).convert("RGB"), return_tensors="pt").to(args.device)
@@ -897,29 +896,40 @@ def run(args):
         stats = map_statistics(maps, row.label_point_uncertain, highnorm)
         stats.update({"highnorm_layer": layer, "highnorm_ratio": ratio})
         stats_rows.append(stats)
-        shown = [maps["rollout"], maps["cls_attention"], maps[f"gradcam_{row.pred}"], maps[f"gradxact_{row.pred}"]]
-        strips[row.category].append((strip(image, [to_grid(m) for m in shown], row.label_point_uncertain),
-                                     f"{row.tile:02d} {row.label_uid} {row.pred[:3]} {row.confidence:.3f}"
-                                     + (" ?" if row.label_point_uncertain else "")))
     samples = pd.concat([samples.reset_index(drop=True), pd.DataFrame(stats_rows)], axis=1)
     samples["contact_sheet"] = [f"{label_type.lower()}_{c}.jpg" for c in samples.category]
     info["explain_pass_max_abs_diff_p_correct"] = max_dp
     info["explain_seconds_per_crop_median"] = float(np.median(seconds)) if seconds else None
     info["n_sampled_label_point_uncertain"] = int(samples.label_point_uncertain.sum())
-    for cat in categories:
-        items = strips[cat]
-        header = (f"{label_type} {cat} (n={len(items)} of {pool_counts[cat]}): crop (+ label point; ? = uncertain) | "
-                  "rollout | last-layer CLS attention | Grad-CAM (verdict) | grad x act (verdict)")
-        contact_sheet([s for s, _ in items], [c for _, c in items],
-                      os.path.join(args.out_dir, f"{label_type.lower()}_{cat}.jpg"), ncols=args.ncols,
-                      tile_height=args.tile_height, header=header, quality=args.quality)
     cols = ["label_type", "overlay_id", "label_uid", "truth", "pred", "confidence", "p_correct", "category",
             "label_point_uncertain", "width", "height", "contact_sheet", "tile", *(stats_rows[0] if stats_rows else [])]
     samples.assign(label_type=label_type)[cols].to_csv(os.path.join(args.out_dir, "samples.csv"), index=False,
                                                          float_format="%.6f")
     with open(os.path.join(args.out_dir, "counts.json"), "w") as f:
         json.dump(info, f, indent=2)
+    write_sheets(args.out_dir, args.ncols, args.tile_height, args.quality)
     print(json.dumps(info, indent=2))
+
+
+def write_sheets(out_dir, ncols=3, tile_height=96, quality=78):
+    """Contact sheets ``<type>_<cat>.jpg`` from a ``run`` output (``samples.csv``, ``counts.json``, ``maps/``)."""
+    samples = pd.read_csv(os.path.join(out_dir, "samples.csv"))
+    with open(os.path.join(out_dir, "counts.json")) as f:
+        info = json.load(f)
+    label_type = info["label_type"]
+    for cat, rows in samples.groupby("category", sort=False):
+        items = []
+        for row in rows.itertuples():
+            z = np.load(os.path.join(out_dir, "maps", f"{row.overlay_id}.npz"))
+            shown = [z["rollout"], z["cls_attention"], z[f"gradcam_{row.pred}"], z[f"gradxact_{row.pred}"]]
+            items.append((strip(z["image"], [to_grid(m) for m in shown], bool(row.label_point_uncertain)),
+                          f"{row.tile:02d} {row.label_uid} {row.pred[:3]} {row.confidence:.3f}"
+                          + (" ?" if row.label_point_uncertain else "")))
+        header = (f"{label_type} {cat} (n={len(items)} of {info['categories_sampling_pool'][cat]}): crop (+ label "
+                  "point; ? = uncertain) | rollout | last-layer CLS attention | Grad-CAM (verdict) | grad x act (verdict)")
+        contact_sheet([s for s, _ in items], [c for _, c in items],
+                      os.path.join(out_dir, f"{label_type.lower()}_{cat}.jpg"), ncols=ncols, tile_height=tile_height,
+                      header=header, quality=quality)
 
 
 def build_packet(out_dirs, packet_dir, key_path, seed=42):
@@ -978,6 +988,12 @@ def main(argv=None):
     p.add_argument("--quality", type=int, default=78, help="contact-sheet JPEG quality (default 78)")
     p.add_argument("--out-dir", required=True, help="output directory for this label type")
 
+    w = sub.add_parser("sheets", help="re-render the contact sheets of `run` outputs (no torch needed)")
+    w.add_argument("out_dirs", nargs="+", help="`run` output directories")
+    w.add_argument("--ncols", type=int, default=3, help="tiles per row (default 3)")
+    w.add_argument("--tile-height", type=int, default=96, help="tile height in px (default 96)")
+    w.add_argument("--quality", type=int, default=78, help="JPEG quality (default 78)")
+
     s = sub.add_parser("summary", help="per type x category medians of the map statistics in samples.csv files")
     s.add_argument("samples", nargs="+", help="samples.csv files written by `run`")
     s.add_argument("--stats", default=None, help="comma-separated statistic columns (default: all)")
@@ -999,6 +1015,9 @@ def main(argv=None):
         if not args.cities_json and not args.include_private:
             parser.error("--cities-json is required (or --include-private, for local debugging only)")
         run(args)
+    elif args.command == "sheets":
+        for d in args.out_dirs:
+            write_sheets(d, args.ncols, args.tile_height, args.quality)
     elif args.command == "summary":
         table = summarise(pd.concat([pd.read_csv(f) for f in args.samples], ignore_index=True),
                           args.stats.split(",") if args.stats else None)
