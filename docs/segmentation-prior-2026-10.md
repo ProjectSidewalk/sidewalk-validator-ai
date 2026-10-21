@@ -16,24 +16,27 @@ its `report` stage. The full tables are in `segmentation-prior-2026-10/` (`repor
 **Do not add it as a model feature. Do not route on it yet. Do not spend a GPU run on the fourth-channel experiment.**
 
 - **No lift that this sample can detect.** Adding the features to a head on the frozen production features changes
-  the out-of-fold AUC by +0.003 for both types. The CIs are -0.017 to 0.022 for Obstacle and -0.017 to 0.024 for
-  SurfaceProblem. At n = 400 per type that rules out a lift above about +0.022 (Obstacle) and +0.024 (SurfaceProblem).
-  It does not rule out a smaller one. On top of the production checkpoint's own score the change is +0.006 and
-  +0.002. No pooled CI clears zero, whether rows or cities are resampled.
+  the out-of-fold AUC by +0.003 for both types. Resampling rows, the CIs are -0.017 to 0.022 (Obstacle) and -0.017
+  to 0.024 (SurfaceProblem). Resampling the 28 cities, they are -0.021 to 0.022 and -0.017 to 0.027. The city CIs
+  are the wider ones for both types, so the power bound is quoted from them. At n = 400 per type this rules out a
+  lift above about +0.022 (Obstacle) and +0.027 (SurfaceProblem). It does not rule out a smaller one. On top of the
+  production checkpoint's own score the change is +0.006 and +0.002. No pooled CI clears zero, whether rows or
+  cities are resampled.
 - **The signal does not carry to new cities.** The transfer test fits on the `test` split and predicts the three
   held-out cities. There, adding the features lowers AUC:
-  - CLS + features is 0.045 below CLS alone. The CI is -0.081 to -0.010 with rows resampled and -0.071 to 0.068 with
-    cities resampled, so the city-level CI includes zero.
-  - The features alone score AUC 0.41, worse than chance (0.50 within city).
+  - CLS + features is 0.045 below CLS alone (row CI -0.081 to -0.010; -0.042 within city). With three cities a
+    city-resampled CI is not estimable.
+  - The features alone score AUC 0.41, worse than chance. Within city it is 0.446 (pair-weighted, the reported
+    definition below), so the wrong direction is not a city-mix artefact. Row-weighted it would be 0.499.
   - Several single features flip direction between the splits. Obstacle `sidewalk_frac_crop` is 0.44 on `test` and
-    0.70 on `test_heldout` (0.41 and 0.65 within city).
+    0.70 on `test_heldout` (0.38 and 0.65 within city).
 
   This result rests on three cities and 150 rows per type.
 - **Alone, the features are weak.** Ranked by oriented AUC, max(AUC, 1 − AUC), with both splits pooled:
-  - SurfaceProblem: the best is distance to the nearest sidewalk, AUC 0.617 (0.567–0.666; 0.615 within city). On
+  - SurfaceProblem: the best is distance to the nearest sidewalk, AUC 0.617 (0.567–0.666; 0.592 within city). On
     `test` it is 0.675; on `test_heldout` it is 0.530. Being on a sidewalk is about as strong in the other direction:
     oriented 0.592, so labels on a sidewalk are more often correct.
-  - Obstacle: the best is `curb_frac_crop`, AUC 0.414, oriented 0.586 (CI 0.360–0.470; 0.435 within city). More curb
+  - Obstacle: the best is `curb_frac_crop`, AUC 0.414, oriented 0.586 (CI 0.360–0.470; 0.413 within city). More curb
     in the crop goes with a correct label. `near_sidewalk_1m` is next, at oriented 0.568. No other Obstacle feature
     reaches 0.55.
 - **"Not on any sidewalk" separates the crowd's verdict only for SurfaceProblem, and only weakly.** Among AI
@@ -104,7 +107,7 @@ points.
 |---|---|
 | `point_on_sidewalk` | Centre pixel is sidewalk. `_disc`: the sidewalk share of a 15 px (view) disc is > 0.5. `sidewalk_frac_disc`: that share |
 | `dist_px_to_sidewalk` | View pixels to the nearest sidewalk pixel (0 if on it). A view with no sidewalk is scored as the view diagonal |
-| `dist_m_to_sidewalk` | `dist_px × R / 1024`, where f = 1024 px (90° over 2048 px) and R = 2.5 m / sin(−pitch) is the ground range implied by the view pitch, for a camera 2.5 m above flat ground (pitch clamped at −2°, so R ≤ 72 m). Small-angle, same-range approximation. It assumes the label point is on the ground: true for a surface problem or an obstacle's base, too short for a point on an obstacle's body |
+| `dist_m_to_sidewalk` | `dist_px × R / 1024`, where f = 1024 px (90° over 2048 px) and R = 2.5 m / sin(−pitch) is the ground range implied by the view pitch, for a camera 2.5 m above flat ground (pitch clamped at −2°, so R ≤ 72 m). Small-angle, same-range approximation. It assumes the label point is on the ground: true for a surface problem or an obstacle's base, too long for a point on an obstacle's body: a point above the ground is seen at a shallower angle (camera 2.5 m up, obstacle 10 m away, click 1 m up: true range about 10.1 m, formula 16.9 m). For Obstacle the metres are therefore too large and `near_sidewalk_1m` is biased toward False |
 | `dist_m_depth_to_sidewalk` | The same at the manifest's `depth_m` (Depth Anything V2 vkitti, same-depth approximation): the issue's literal recipe, kept for comparison |
 | `near_sidewalk_1m` | `dist_m_to_sidewalk ≤ 1` (ground range), the issue's "near the path" reading for Obstacle |
 | `sidewalk_frac_crop`, `road_frac_crop`, `curb_frac_crop` | Shares of each class group inside the depth-sized crop square |
@@ -116,9 +119,16 @@ Side observation: the vkitti metric depth on these views is about 2.5–2.7 time
 (median 2.50 for Obstacle, 2.70 for SurfaceProblem; interquartile range 2.25–2.93 pooled). Metres computed from
 `depth_m` are therefore larger by that factor. A 1 m threshold on them means about 0.4 m of ground.
 
-**Within-city AUC.** This is the row-weighted mean of the per-city AUCs, over cities that have both classes and at
-least 10 rows. It qualifies 7 cities for Obstacle and 9 for SurfaceProblem with both splits pooled, 3 on
-`test_heldout`.
+The −2° pitch clamp leaks a small signal that is not from segmentation: the 21 labels at or above −2° (17 of them
+incorrect) all get R = 71.6 m and so large distances. SurfaceProblem `dist_m_to_sidewalk` has AUC 0.617 with its
+9 such labels and 0.604 without them.
+
+**Within-city AUC.** This is the mean of the per-city AUCs, each city weighted by its number of (incorrect, correct)
+pairs, n_pos × n_neg. That is the stratified Mann–Whitney estimator: the share of within-city pairs the score ranks
+correctly. Only cities with both classes and at least 10 rows count. That qualifies 7 cities for Obstacle and 9 for
+SurfaceProblem with both splits pooled, and 3 on `test_heldout`. The CSVs also carry a row-weighted version
+(`_rows`). It gives full weight to lopsided cities (7 incorrect of 58, say), and on the Obstacle seg-only transfer
+it reads 0.499 against 0.446 pair-weighted.
 
 It is reported next to every pooled AUC because the share of incorrect labels varies from 0 to 100% across cities
 in this sample. On the Obstacle held-out cities it is 12% in one city and 82% in another. A score that only tells a
@@ -159,60 +169,58 @@ AUC for `incorrect` as the positive class, both splits pooled (n 400 per type, 2
 Around one in twenty of the CIs is expected to miss 0.5 by chance, so a lone feature that clears 0.5 is weak
 evidence on its own.
 
-| Feature | Obstacle AUC (CI) | within city | SurfaceProblem AUC (CI) | within city |
+| Feature | Obstacle AUC (CI) | within city (pairs) | SurfaceProblem AUC (CI) | within city (pairs) |
 |---|---|---|---|---|
-| `point_on_sidewalk` | 0.528 (0.490–0.564) | 0.542 | 0.408 (0.362–0.457) | 0.410 |
-| `sidewalk_frac_disc` | 0.549 (0.500–0.599) | 0.589 | 0.408 (0.358–0.463) | 0.413 |
-| `dist_m_to_sidewalk` | 0.515 (0.458–0.571) | 0.479 | 0.617 (0.567–0.666) | 0.615 |
-| `dist_m_depth_to_sidewalk` | 0.507 (0.448–0.562) | 0.471 | 0.615 (0.565–0.664) | 0.614 |
-| `near_sidewalk_1m` | 0.432 (0.392–0.471) | 0.444 | 0.425 (0.388–0.461) | 0.431 |
-| `sidewalk_frac_crop` | 0.541 (0.484–0.600) | 0.518 | 0.458 (0.400–0.516) | 0.410 |
-| `sidewalk_frac_view` | 0.532 (0.478–0.589) | 0.491 | 0.443 (0.387–0.503) | 0.408 |
-| `road_frac_crop` | 0.487 (0.430–0.545) | 0.546 | 0.541 (0.482–0.595) | 0.512 |
-| `curb_frac_crop` | 0.414 (0.360–0.470) | 0.435 | 0.452 (0.395–0.507) | 0.462 |
-| `on_road` | 0.507 (0.486–0.529) | 0.494 | 0.568 (0.530–0.603) | 0.552 |
-| `connected_to_bottom` | 0.535 (0.505–0.566) | 0.513 | 0.495 (0.463–0.527) | 0.467 |
+| `point_on_sidewalk` | 0.528 (0.490–0.564) | 0.529 | 0.408 (0.362–0.457) | 0.433 |
+| `sidewalk_frac_disc` | 0.549 (0.500–0.599) | 0.542 | 0.408 (0.358–0.463) | 0.439 |
+| `dist_m_to_sidewalk` | 0.515 (0.458–0.571) | 0.529 | 0.617 (0.567–0.666) | 0.592 |
+| `dist_m_depth_to_sidewalk` | 0.507 (0.448–0.562) | 0.522 | 0.615 (0.565–0.664) | 0.591 |
+| `near_sidewalk_1m` | 0.432 (0.392–0.471) | 0.423 | 0.425 (0.388–0.461) | 0.439 |
+| `sidewalk_frac_crop` | 0.541 (0.484–0.600) | 0.472 | 0.458 (0.400–0.516) | 0.422 |
+| `sidewalk_frac_view` | 0.532 (0.478–0.589) | 0.465 | 0.443 (0.387–0.503) | 0.412 |
+| `road_frac_crop` | 0.487 (0.430–0.545) | 0.598 | 0.541 (0.482–0.595) | 0.520 |
+| `curb_frac_crop` | 0.414 (0.360–0.470) | 0.413 | 0.452 (0.395–0.507) | 0.480 |
+| `on_road` | 0.507 (0.486–0.529) | 0.494 | 0.568 (0.530–0.603) | 0.535 |
+| `connected_to_bottom` | 0.535 (0.505–0.566) | 0.513 | 0.495 (0.463–0.527) | 0.460 |
 
 - **SurfaceProblem** behaves as the issue hoped on the `test` split: distance AUC 0.675 (CI 0.613–0.735), on
   sidewalk 0.372. It does not on the held-out cities: 0.530 and 0.467.
 - **Obstacle** goes the "wrong" way on the held-out cities, where incorrect labels sit on more sidewalk than correct
-  ones: `sidewalk_frac_crop` 0.695 (0.603–0.780). Within city that is still 0.645, so the city mix does not explain
+  ones: `sidewalk_frac_crop` 0.695 (0.603–0.780). Within city that is still 0.651, so the city mix does not explain
   the flip.
 
 ### Lift over the frozen production features
 
 Out-of-fold AUC. Each ΔAUC is paired against the model it adds to (its base): the CLS head for "CLS + seg", the
-re-scored checkpoint for "Re-scored + seg". "Row CI" resamples labels; "city CI" resamples whole cities. With three
-held-out cities the city CI is coarse, but it is the interval that speaks to unseen cities.
+re-scored checkpoint for "Re-scored + seg". "Row CI" resamples labels; "city CI" resamples whole cities and is left
+blank below 8 cities (three cities give only 10 distinct resamples). "Within city" is the pair-weighted delta.
 
 | Type | Slice | Re-scored checkpoint | CLS head | CLS + seg | ΔAUC vs CLS: row CI; city CI; within city | Seg only | Re-scored + seg | ΔAUC vs re-scored: row CI; city CI; within city |
 |---|---|---|---|---|---|---|---|---|
-| Obstacle | both splits, 5-fold | 0.828 | 0.845 | 0.847 | +0.003: (−0.017, 0.022); (−0.021, 0.022); −0.001 | 0.634 | 0.834 | +0.006: (−0.016, 0.026); (−0.034, 0.039); +0.021 |
-| Obstacle | `test` rows | 0.821 | 0.813 | 0.823 | +0.010: (−0.016, 0.039); (−0.039, 0.032); +0.020 | 0.580 | 0.810 | −0.011: (−0.035, 0.014); (−0.065, 0.014); +0.006 |
-| Obstacle | `test_heldout` rows | 0.838 | 0.890 | 0.876 | −0.014: (−0.052, 0.018); (−0.029, −0.007); −0.026 | 0.723 | 0.864 | +0.026: (−0.009, 0.066); (0.001, 0.071); +0.039 |
-| Obstacle | fit `test` → `test_heldout` | 0.838 | 0.846 | 0.800 | **−0.045: (−0.081, −0.010)**; (−0.071, 0.068); −0.028 | 0.410 | 0.793 | **−0.044: (−0.081, −0.007)**; (−0.083, 0.006); −0.038 |
-| SurfaceProblem | both splits, 5-fold | 0.822 | 0.810 | 0.813 | +0.003: (−0.017, 0.024); (−0.017, 0.027); +0.009 | 0.656 | 0.825 | +0.002: (−0.017, 0.022); (−0.015, 0.018); +0.030 |
-| SurfaceProblem | `test` rows | 0.899 | 0.872 | 0.884 | +0.012: (−0.009, 0.032); (−0.021, 0.039); +0.024 | 0.698 | 0.892 | −0.007: (−0.026, 0.010); (−0.031, 0.008); +0.024 |
-| SurfaceProblem | `test_heldout` rows | 0.659 | 0.681 | 0.669 | −0.012: (−0.061, 0.035); (−0.034, 0.016); −0.009 | 0.586 | 0.692 | +0.033: (−0.008, 0.076); (0.011, 0.083); +0.038 |
-| SurfaceProblem | fit `test` → `test_heldout` | 0.659 | 0.560 | 0.554 | −0.006: (−0.055, 0.042); (−0.017, 0.018); +0.002 | 0.493 | 0.641 | −0.018: (−0.050, 0.015); (−0.054, 0.002); −0.027 |
+| Obstacle | both splits, 5-fold | 0.828 | 0.845 | 0.847 | +0.003: (−0.017, 0.022); (−0.021, 0.022); +0.011 | 0.634 | 0.834 | +0.006: (−0.016, 0.026); (−0.034, 0.039); +0.021 |
+| Obstacle | `test` rows | 0.821 | 0.813 | 0.823 | +0.010: (−0.016, 0.039); (−0.039, 0.032); +0.032 | 0.580 | 0.810 | −0.011: (−0.035, 0.014); (−0.065, 0.014); +0.008 |
+| Obstacle | `test_heldout` rows | 0.838 | 0.890 | 0.876 | −0.014: (−0.052, 0.018); n/a (3 cities); −0.027 | 0.723 | 0.864 | +0.026: (−0.009, 0.066); n/a (3 cities); +0.047 |
+| Obstacle | fit `test` → `test_heldout` | 0.838 | 0.846 | 0.800 | **−0.045: (−0.081, −0.010)**; n/a (3 cities); −0.042 | 0.410 | 0.793 | **−0.044: (−0.081, −0.007)**; n/a (3 cities); −0.051 |
+| SurfaceProblem | both splits, 5-fold | 0.822 | 0.810 | 0.813 | +0.003: (−0.017, 0.024); (−0.017, 0.027); +0.004 | 0.656 | 0.825 | +0.002: (−0.017, 0.022); (−0.015, 0.018); +0.027 |
+| SurfaceProblem | `test` rows | 0.899 | 0.872 | 0.884 | +0.012: (−0.009, 0.032); (−0.021, 0.039); +0.026 | 0.698 | 0.892 | −0.007: (−0.026, 0.010); (−0.031, 0.008); +0.018 |
+| SurfaceProblem | `test_heldout` rows | 0.659 | 0.681 | 0.669 | −0.012: (−0.061, 0.035); n/a (3 cities); −0.014 | 0.586 | 0.692 | +0.033: (−0.008, 0.076); n/a (3 cities); +0.034 |
+| SurfaceProblem | fit `test` → `test_heldout` | 0.659 | 0.560 | 0.554 | −0.006: (−0.055, 0.042); n/a (3 cities); +0.002 | 0.493 | 0.641 | −0.018: (−0.050, 0.015); n/a (3 cities); −0.032 |
 
-Within-city AUCs of the models themselves (`lift.csv`):
+Within-city AUCs of the models themselves (`lift.csv`), pair-weighted, row-weighted in brackets:
 
 | Type | Slice | Re-scored checkpoint | CLS head | CLS + seg | Seg only |
 |---|---|---|---|---|---|
-| Obstacle | both splits | 0.793 | 0.814 | 0.814 | 0.660 |
-| Obstacle | fit `test` → `test_heldout` | 0.757 | 0.799 | 0.771 | 0.499 |
-| SurfaceProblem | both splits | 0.744 | 0.740 | 0.749 | 0.628 |
-| SurfaceProblem | fit `test` → `test_heldout` | 0.670 | 0.527 | 0.529 | 0.479 |
+| Obstacle | both splits | 0.785 (0.793) | 0.799 (0.814) | 0.810 (0.814) | 0.644 (0.660) |
+| Obstacle | fit `test` → `test_heldout` | 0.718 (0.757) | 0.771 (0.799) | 0.729 (0.771) | 0.446 (0.499) |
+| SurfaceProblem | both splits | 0.751 (0.744) | 0.743 (0.740) | 0.747 (0.749) | 0.594 (0.628) |
+| SurfaceProblem | fit `test` → `test_heldout` | 0.675 (0.670) | 0.526 (0.527) | 0.528 (0.529) | 0.493 (0.479) |
 
 How to read the slices:
 - **`test` rows and `test_heldout` rows** are subsets of the pooled 5-fold predictions. In those rows, the held-out
   cities were also in the training folds.
-- **Fit `test` → `test_heldout`** is the only real new-city test, and it rests on three cities. Its two bold row
-  CIs clear zero downward. Neither does with cities resampled.
-- **The positive city CIs** are on in-sample `test_heldout` rows ("Re-scored + seg": Obstacle 0.001–0.071,
-  SurfaceProblem 0.011–0.083). The same models lose on the true transfer. With three cities, a city CI has only a
-  few distinct resamples, so treat it as coarse.
+- **Fit `test` → `test_heldout`** is the only real new-city test, and it rests on three cities and 150 rows per
+  type. Its two bold row CIs clear zero downward. Row CIs treat labels as independent, which they are not within a
+  city, so this is weaker evidence than it looks.
 - **The hard slice** has 1 Obstacle row and 3 SurfaceProblem rows, all incorrect, so it has no AUC.
 - **Within city** the pooled picture holds: no gain in-sample, a loss on transfer.
 
@@ -285,16 +293,19 @@ production table.
 - **The heads are fitted on the sample itself.** The CLS head is a new logistic head fitted on 320 rows per fold. It
   is not the production head. It is the comparison the issue asked for, not a deployable model.
 - **Row-level CIs are too narrow for city claims.** Labels within a city are not independent, so the single-feature
-  CIs and the "row CI" columns overstate precision for anything about new cities. The city-resampled CIs are the
-  ones to read for transfer, and with three held-out cities they are coarse.
+  CIs and the "row CI" columns overstate precision for anything about new cities. City-resampled CIs are given for
+  the pooled rows (28 cities). On the three-city held-out slices they are not estimable, so the transfer result has
+  no city-level interval.
 - **City–class confound.** The incorrect share runs from 0 to 100% across cities. The within-city columns control
-  for it, and the conclusions are the same.
+  for it, and the conclusions are the same. The within-city number depends on the weighting: pair weighting is
+  reported, and row weighting is kept in the CSVs.
 - **Class balance.** The sample is 50/50 by construction, so plain accuracy and the pool shares are not production
   numbers. A routing decision would need the same measurement on a production-proportioned sample of AI Disagrees.
 - **Small and private-heavy.** 400 labels per type. 392 of the 800 rows come from six private deployments, and two
   of the three held-out cities are private. Among public cities, only Seattle, Chicago and (for SurfaceProblem)
   Tucson reach n ≥ 30.
-- **Metres are approximate.** The ground range assumes flat ground, a 2.5 m camera and a label on the ground. It also
+- **Metres are approximate.** The ground range assumes flat ground, a 2.5 m camera and a label on the ground (for a
+  point on an obstacle's body it is too long, which biases Obstacle `near_sidewalk_1m` toward False). It also
   puts the nearest sidewalk pixel at the label's range. The 1 m threshold was fixed before any table existed and
   was not tuned. The first version of this note used the vkitti `depth_m` and so effectively thresholded at about
   0.4 m. The switch moved the "within 1 m" shares (70% → 80% overall) but left the conclusions unchanged.

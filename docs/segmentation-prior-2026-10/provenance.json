@@ -1,6 +1,6 @@
 {
  "date": "2026-10-21",
- "git_commit": "f8078fc7b2e11e45b16b224a074be760e590a32a",
+ "git_commit": "2912be1f0d44af83266934e2a3fa7610c10e671e",
  "git_dirty": false,
  "command": "python analysis/sidewalk_seg.py report --features ~/Data/sidewalk-validator-ai-seg-2026-10/features.csv --cls ~/Data/sidewalk-validator-ai-seg-2026-10/cls.npz --assessments ~/Data/sidewalk-validator-ai-prod-2026-10-17/ai_assessments_rounded4.csv --cities-json ~/Data/sidewalk-validator-ai-prod-2026-10-17/cities.json --run-dir ~/Data/sidewalk-validator-ai-seg-2026-10/klone --out-dir docs/segmentation-prior-2026-10 --private-dir ~/Data/sidewalk-validator-ai-seg-2026-10/private --extra-provenance ~/Data/sidewalk-validator-ai-seg-2026-10/klone_provenance.json --hash-extra sample_views_png=~/Data/sidewalk-validator-ai-seg-2026-10/sample_views.png",
  "inputs": {
@@ -36,11 +36,11 @@
  "n_labels_ok": 800,
  "outputs": {
   "centre_class.csv": "5c5d20d3b9156dd1a4c4da19deae9d50e1e777b4c6abded9be4ea89e16f029f0",
-  "feature_auc.csv": "5ca68b95402b2fda496325e819bbf02b0674d666c051364d68a77af4dea726c7",
-  "lift.csv": "3acf876eaa56bce8f24bda47ad386af9783342ac19c3a7178a331f5edab9827c",
+  "feature_auc.csv": "5549fe7c3c65c755e4ec3b1e8d6e97baf80eae4ccbbe1823c623a43460d75094",
+  "lift.csv": "49f46ea95d1ab33d46bba8b7b4e434ca06b8e9fd2e541315f79a755de8dc808e",
   "lift_by_city.csv": "50a71b922bcd73683059e5bf037ecf3bea81b04e7e8baf2a603f9da9f46b5c19",
   "production_on_sample.csv": "3ecc316f495be651bcca9f448a69605df18c81dd595845ace3e37ff87e6254dc",
-  "report.md": "aba923d3c9fabb91e68ee0eebf552219301d331676105e74fecf34a4e9475ec0",
+  "report.md": "d58635a4a223baa084851c5b2ba93b7c437f7065957d0472010e6761f4a437d8",
   "sanity.csv": "774a4db521055e6061589a7755052204579266b540e36120f20234268a5f46b9",
   "served_vs_rescored.csv": "eddb250c9fea0cf7028ec78101e6b77d37cae174ff27c63e93a8d467fbdbbb9c",
   "strata.csv": "d4cc4e193b42494a82a3b1c84cf2f5ec93d6849abffc5ef7f07c3d03ab7d8be5"
