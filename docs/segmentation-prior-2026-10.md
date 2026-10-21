@@ -66,7 +66,7 @@ Two things would change this:
 ```
 R=~/Data/sidewalk-validator-ai-retrain-2026-10/round3 O=~/Data/sidewalk-validator-ai-seg-2026-10 P=~/Data/sidewalk-validator-ai-prod-2026-10-17
 python analysis/sidewalk_seg.py filelist --sample $R/sample.csv --out-dir $O
-# klone, W=/gscratch/scrubbed/jfroehli/seg-prior-2026-10 holding labels.csv, stage_files.txt, crops/ and a clone:
+# klone, W=/gscratch/scrubbed/$USER/seg-prior-2026-10 holding labels.csv, stage_files.txt, crops/ and a clone:
 #   cd $W && sbatch sidewalk-validator-ai/analysis/seg_prior_stage.slurm
 #   (login node) HF_HUB_DISABLE_XET=1 HF_HOME=$W/hf python -c "...snapshot_download(...)"   # see seg_prior.slurm
 #   cd $W && sbatch sidewalk-validator-ai/analysis/seg_prior.slurm

@@ -28,13 +28,13 @@
 set -euo pipefail
 W=$(pwd)
 # Only ever write under the scrubbed scratch dir: refuse any other working directory (never /gscratch/makelab).
-case "$W/" in /gscratch/scrubbed/jfroehli/*|/mmfs1/gscratch/scrubbed/jfroehli/*) ;; *) echo "refusing to write under $W"; exit 2;; esac
+case "$W/" in /gscratch/scrubbed/*/seg-prior-2026-10/*|/mmfs1/gscratch/scrubbed/*/seg-prior-2026-10/*) ;; *) echo "refusing to write under $W"; exit 2;; esac
 SEG_REV=4772b6bf101d91f2534c106dc524d906aeb3c68a
-RAWLABELS=${RAWLABELS:-/gscratch/makelab/jfroehli/sidewalk-validator-ai/rawlabels}
-EXTRA=${EXTRA:-/gscratch/makelab/jfroehli/pano-extra}
+RAWLABELS=${RAWLABELS:-/gscratch/makelab/$USER/sidewalk-validator-ai/rawlabels}
+EXTRA=${EXTRA:-/gscratch/makelab/$USER/pano-extra}
 module load conda
 eval "$(conda shell.bash hook)"
-conda activate /gscratch/makelab/jfroehli/envs/sidewalk-validator-ai
+conda activate /gscratch/makelab/$USER/envs/sidewalk-validator-ai
 export HF_HOME=$W/hf HF_HUB_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1
 nvidia-smi --query-gpu=name,memory.total --format=csv
 cd $W/sidewalk-validator-ai

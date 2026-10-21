@@ -232,3 +232,13 @@ def test_lift_and_transfer_predictions_smoke():
     assert ((oof >= 0) & (oof <= 1)).all().all()
     tp = ss.transfer_predictions(df, cls, pca=4)
     assert len(tp) == 40 and set(tp.index) == set(df.index[df.split == "test_heldout"])
+
+
+def test_within_city_auc_pair_weighting_discounts_lopsided_cities():
+    # City a: balanced, score perfect (AUC 1). City b: 1 incorrect of 20, score inverted (AUC 0).
+    y = [0, 1] * 10 + [1] + [0] * 19
+    score = [0, 1] * 10 + [0] + [1] * 19
+    city = ["a"] * 20 + ["b"] * 20
+    pairs, _ = ss.within_city_auc(y, score, city)                 # weights 100 and 19
+    rows, _ = ss.within_city_auc(y, score, city, weight="rows")   # weights 20 and 20
+    assert pairs == pytest.approx(100 / 119) and rows == pytest.approx(0.5)

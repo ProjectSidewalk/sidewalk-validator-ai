@@ -12,7 +12,7 @@
 # Submit from the run directory ($W below), which holds stage_files.txt (from `sidewalk_seg.py filelist`: one
 # store-relative path <city>/<pano_id[:2]>/<pano_id>.jpg per line, 768 for the 2026-10-21 sample):
 #
-#   W=/gscratch/scrubbed/jfroehli/seg-prior-2026-10
+#   W=/gscratch/scrubbed/$USER/seg-prior-2026-10
 #   cd $W && sbatch $W/sidewalk-validator-ai/analysis/seg_prior_stage.slurm
 #
 # The recipe is the retrain's (full_stage.slurm): a read-only rrsync key, ONE rsync connection for the whole list
@@ -25,7 +25,7 @@
 set -uo pipefail
 W=$(pwd)
 # Only ever write under the scrubbed scratch dir: refuse any other working directory (never /gscratch/makelab).
-case "$W/" in /gscratch/scrubbed/jfroehli/*|/mmfs1/gscratch/scrubbed/jfroehli/*) ;; *) echo "refusing to write under $W"; exit 2;; esac
+case "$W/" in /gscratch/scrubbed/*/seg-prior-2026-10/*|/mmfs1/gscratch/scrubbed/*/seg-prior-2026-10/*) ;; *) echo "refusing to write under $W"; exit 2;; esac
 LIST=$W/stage_files.txt
 DEST=$W/panos
 SSH="ssh -o BatchMode=yes -o IdentitiesOnly=yes -i $HOME/.ssh/pano_store_ro -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=4"

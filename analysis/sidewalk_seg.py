@@ -42,8 +42,9 @@ sidewalk pixel is taken to be at the label's range, which overstates the distanc
 understates it for sidewalk beyond the label). ``R`` is the **ground range** implied by the view pitch for a camera
 ``CAMERA_HEIGHT_M`` (2.5 m) above flat ground, ``R = h / sin(-pitch)`` with the pitch clamped at ``MIN_GROUND_PITCH_DEG``
 (-2 degrees, so ``R <= 72`` m): :func:`ground_range_m`. It assumes the label point is on the ground, which holds for
-surface problems and for the base of an obstacle, not for a point clicked on an obstacle's body (``R`` is then too
-short). The manifest's Depth Anything (vkitti) ``depth_m`` gives a second, depth-based distance column; on these
+surface problems and for the base of an obstacle, not for a point clicked on an obstacle's body: a point above the ground is seen at a shallower
+depression angle, so ``R`` is then too LONG (camera 2.5 m up, obstacle 10 m away, click 1 m up: true range ~10.1 m,
+formula 16.9 m), the metres are too large and ``near_sidewalk_1m`` is biased toward False for Obstacle. The manifest's Depth Anything (vkitti) ``depth_m`` gives a second, depth-based distance column; on these
 views it is about 2.5-2.7 times the ground range, so the depth-based metres are that much larger. The view is
 gravity-levelled and roll-free (``sidewalk_panorama_tools.geometry.label_view``), so the horizon is the row
 ``1024 + f * tan(pitch)``, where ``pitch = (0.5 - pano_y / pano_height) * 180`` degrees.
@@ -66,7 +67,7 @@ Usage (``$R`` = ``~/Data/sidewalk-validator-ai-retrain-2026-10/round3``, ``$O`` 
     # masks_1024/, masks_512/, views_512/ into $O/klone. The 2026-10-21 run's views.csv predates the pitch column, so
     # the coordinates were also extracted there (a CPU sbatch job; rawLabels holds the private deployments too):
     #   python analysis/sidewalk_seg.py coords --labels $W/labels.csv --rawlabels-dir $RAWLABELS --out $W/coords.csv
-    python analysis/sidewalk_seg.py features --labels $O/labels.csv --run-dir $O/klone --coords $O/coords.csv \
+    python analysis/sidewalk_seg.py features --labels $O/labels.csv --run-dir $O/klone --coords $O/coords.csv \\
         --out $O/features.csv
     python analysis/sidewalk_seg.py cls --labels $O/labels.csv --crops-dir $R/crops --out $O/cls.npz
     python analysis/sidewalk_seg.py report --features $O/features.csv --cls $O/cls.npz \\
@@ -388,11 +389,15 @@ def bootstrap_auc(y, score, n_boot=2000, seed=0, other=None):
     return float(np.percentile(stats, 2.5)), float(np.percentile(stats, 97.5))
 
 
-def within_city_auc(y, score, city, min_n=10):
-    """City-stratified AUC: the per-city AUCs of ``score`` for ``y == 1``, averaged with weights = city row counts,
-    over cities with both classes and at least ``min_n`` rows. Returns ``(auc, n_cities)``; NaN if no city qualifies.
-    Unlike the pooled AUC it cannot be raised by a score that only tells cities with many incorrect labels from cities
-    with few.
+def within_city_auc(y, score, city, min_n=10, weight="pairs"):
+    """City-stratified AUC: the per-city AUCs of ``score`` for ``y == 1``, averaged over cities with both classes and
+    at least ``min_n`` rows. Returns ``(auc, n_cities)``; NaN if no city qualifies. Unlike the pooled AUC it cannot be
+    raised by a score that only tells cities with many incorrect labels from cities with few.
+
+    ``weight="pairs"`` (the reported number) weights each city by its ``n_pos * n_neg`` comparable pairs: the
+    stratified Mann-Whitney estimator, i.e. the share of within-city (incorrect, correct) pairs ranked correctly. A
+    lopsided city (7 incorrect of 58) then counts for its few pairs, not its many rows. ``weight="rows"`` weights by
+    city row count (kept as a second column).
 
     >>> y = [0, 1] * 10 + [1] * 10; s = list(range(20)) + [100] * 10; c = ["a"] * 20 + ["b"] * 10
     >>> within_city_auc(y, s, c)   # city b has one class, so only city a counts
@@ -405,7 +410,8 @@ def within_city_auc(y, score, city, min_n=10):
         if len(g) < min_n or g.y.nunique() < 2:
             continue
         aucs.append(roc_auc_score(g.y, g.s))
-        ws.append(len(g))
+        n_pos = int(g.y.sum())
+        ws.append(len(g) if weight == "rows" else n_pos * (len(g) - n_pos))
     if not aucs:
         return float("nan"), 0
     return float(np.average(aucs, weights=ws)), len(aucs)
@@ -862,26 +868,34 @@ MODEL_NAMES = {"prod": "production score (no fit)", "cls": "CLS head", "cls_feat
                "feat": "seg features only", "prod_feat": "production score + seg features"}
 
 
+#: Below this many cities a city-resampled CI is not estimable (3 cities give only 10 distinct resamples): blank.
+MIN_CITIES_FOR_CITY_CI = 8
+
+
 def _lift_rows(y, preds, city, slice_name, n_boot, seed):
     """One row per model: pooled AUC with row- and city-resampled CIs, the within-city AUC, and for the two
     "+ seg" models the paired delta against their base in all three forms."""
     rows = []
     n_cities = len(np.unique(city))
+    city_ci = n_cities >= MIN_CITIES_FOR_CITY_CI
+    nan2 = (float("nan"), float("nan"))
     for m in MODEL_NAMES:
         auc, _ = oriented_auc(y, preds[m])
         lo, hi = bootstrap_auc(y, preds[m], n_boot, seed)
-        clo, chi = city_bootstrap_auc(y, preds[m], city, n_boot, seed)
+        clo, chi = city_bootstrap_auc(y, preds[m], city, n_boot, seed) if city_ci else nan2
         wc, nwc = within_city_auc(y, preds[m], city)
+        wcr, _ = within_city_auc(y, preds[m], city, weight="rows")
         row = {"slice": slice_name, "model": m, "n": len(y), "n_incorrect": int(np.sum(y)), "n_cities": n_cities,
                "auc": auc, "auc_lo": lo, "auc_hi": hi, "auc_city_lo": clo, "auc_city_hi": chi,
-               "auc_within_city": wc, "n_cities_within": nwc}
+               "auc_within_city": wc, "auc_within_city_rows": wcr, "n_cities_within": nwc}
         base = {"cls_feat": "cls", "prod_feat": "prod"}.get(m)
         if base:
             dlo, dhi = bootstrap_auc(y, preds[m], n_boot, seed, other=preds[base])
-            dclo, dchi = city_bootstrap_auc(y, preds[m], city, n_boot, seed, other=preds[base])
+            dclo, dchi = city_bootstrap_auc(y, preds[m], city, n_boot, seed, other=preds[base]) if city_ci else nan2
             row.update(delta_vs=base, delta_auc=auc - oriented_auc(y, preds[base])[0], delta_lo=dlo, delta_hi=dhi,
                        delta_city_lo=dclo, delta_city_hi=dchi,
-                       delta_within_city=wc - within_city_auc(y, preds[base], city)[0])
+                       delta_within_city=wc - within_city_auc(y, preds[base], city)[0],
+                       delta_within_city_rows=wcr - within_city_auc(y, preds[base], city, weight="rows")[0])
         rows.append(row)
     return rows
 
@@ -950,16 +964,18 @@ def cmd_report(args):
             auc, sign = oriented_auc(s.y, F[:, j])
             lo, hi = bootstrap_auc(s.y, F[:, j], args.n_boot, 1) if math.isfinite(auc) else (np.nan, np.nan)
             wc, nwc = within_city_auc(s.y, F[:, j], s.city)
+            wcr, _ = within_city_auc(s.y, F[:, j], s.city, weight="rows")
             rows.append({"label_type": lt, "split": split, "feature": c, "n": len(s), "auc": auc, "dir": sign,
                          "auc_oriented": max(auc, 1 - auc) if math.isfinite(auc) else np.nan,
-                         "auc_lo": lo, "auc_hi": hi, "auc_within_city": wc, "n_cities_within": nwc,
+                         "auc_lo": lo, "auc_hi": hi, "auc_within_city": wc, "auc_within_city_rows": wcr,
+                         "n_cities_within": nwc,
                          "mean_correct": F[s.y.to_numpy() == 0, j].mean(),
                          "mean_incorrect": F[s.y.to_numpy() == 1, j].mean()})
     alone = pd.DataFrame(rows)
     alone.to_csv(os.path.join(args.out_dir, "feature_auc.csv"), index=False)
     md += ["## Each feature alone (AUC for incorrect; dir '-' = higher value means more likely correct; "
-           "auc_oriented = max(auc, 1 - auc); auc_within_city = row-weighted mean of per-city AUCs over cities with "
-           "both classes and >= 10 rows)", "", _md_table(alone), ""]
+           "auc_oriented = max(auc, 1 - auc); auc_within_city = per-city AUCs weighted by n_pos * n_neg (stratified Mann-Whitney), "
+           "_rows = weighted by rows; cities with both classes and >= 10 rows)", "", _md_table(alone), ""]
 
     # 3. Lift over the frozen production features.
     lift_rows, city_rows = [], []
@@ -998,7 +1014,8 @@ def cmd_report(args):
                                       values="auc").reset_index()
     by_city.to_csv(os.path.join(args.out_dir, "lift_by_city.csv"), index=False)
     md += ["## Lift (out-of-fold AUC; `_lo`/`_hi` resample rows, `_city_lo`/`_city_hi` resample whole cities; deltas "
-           "are paired; within-city = row-weighted mean of per-city AUCs, cities with both classes and >= 10 rows)",
+           "are paired; city CIs blank below 8 cities; within-city = per-city AUCs weighted by n_pos * n_neg, _rows "
+           "by rows; cities with both classes and >= 10 rows)",
            "", _md_table(lift), "",
            f"## Per city (n >= {args.min_city_n}; private pooled)", "", _md_table(by_city), ""]
 
