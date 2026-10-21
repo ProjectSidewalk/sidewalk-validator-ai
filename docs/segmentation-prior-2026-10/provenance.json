@@ -1,6 +1,6 @@
 {
  "date": "2026-10-21",
- "git_commit": "b3c99d59e70b5069a8e974805f72eb9b5fc619df",
+ "git_commit": "b7beb785459fd0697b34ce8a0b6d95feab6967ef",
  "git_dirty": false,
  "command": "python analysis/sidewalk_seg.py report --features ~/Data/sidewalk-validator-ai-seg-2026-10/features.csv --cls ~/Data/sidewalk-validator-ai-seg-2026-10/cls.npz --assessments ~/Data/sidewalk-validator-ai-prod-2026-10-17/ai_assessments_rounded4.csv --cities-json ~/Data/sidewalk-validator-ai-prod-2026-10-17/cities.json --run-dir ~/Data/sidewalk-validator-ai-seg-2026-10/klone --out-dir docs/segmentation-prior-2026-10 --private-dir ~/Data/sidewalk-validator-ai-seg-2026-10/private --extra-provenance ~/Data/sidewalk-validator-ai-seg-2026-10/klone_provenance.json",
  "inputs": {
@@ -116,17 +116,29 @@
  "klone_jobs": {
   "stage": {
    "job_id": "42112597",
-   "result": "rsync exit 0, 768 of 768 panoramas, 7.4G, one connection"
+   "script": "analysis/seg_prior_stage.slurm",
+   "result": "rsync exit 0, 768 of 768 panoramas, 7.4G, one connection, 2.6 min"
   },
   "render_segment": {
    "job_id": "42113381",
+   "script": "analysis/seg_prior.slurm",
+   "git_commit": "b1a7761b617ee64829457b04b5b25b84fca9b50b",
    "elapsed": "00:51:49",
-   "node_gpu": "NVIDIA L40"
+   "node_gpu": "NVIDIA L40 (ckpt-all)"
   },
   "coords": {
    "job_id": "42113822",
-   "elapsed": "00:03:25"
+   "git_commit": "b3c99d59e70b5069a8e974805f72eb9b5fc619df",
+   "elapsed": "00:03:25",
+   "rawlabels": "the retrain's rawLabels exports on klone (54 deployments)"
   }
  },
- "cls_hardware": "Apple M1 Max, 32 GB, macOS 15.5, MPS, torch 2.14.1, transformers 4.55.0"
+ "private_inputs_sha256": {
+  "labels.csv": "3efa5cdd4d066aa28470fae4a44f8cf068974be791faf81b58f174a21eb3324c",
+  "stage_files.txt": "d14a70387d4acf4f8a7120aad512f2288789d1c9c1359e1f94c827899241180a",
+  "coords.csv": "d8d0e53991a671bae2e21de88d0f4e415ab36278dbbc15adf91f8846be48e387",
+  "seg_run.json": "069c28efb2486cf13f19106003f97c2df8905aaafd4a62c670168454d03ad72a"
+ },
+ "cls_hardware": "Apple M1 Max, 32 GB, macOS 15.5, MPS, torch 2.14.1, transformers 4.55.0",
+ "segmenter_params_m": 216.0
 }
