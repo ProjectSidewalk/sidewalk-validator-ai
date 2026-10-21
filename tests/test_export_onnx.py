@@ -254,6 +254,17 @@ def test_public_crops_drops_private_unlisted_and_ambiguous():
     assert kept.label_uid.tolist() == ["seattle:1", "st_louis:2", "sea:6"] and n == 4
 
 
+def test_public_city_rule_rejects_a_private_subdomain_that_collides_with_a_public_name():
+    from export_onnx import public_city_rule
+    url = "https://sidewalk-{}.cs.washington.edu"
+    listing = {"cities": [{"city_id": "alpha-zz", "visibility": "public", "url": url.format("alp")},
+                          {"city_id": "beta-zz", "visibility": "private", "url": url.format("alpha")}]}
+    rule = public_city_rule(listing)
+    # "alpha" matches the public city_id alpha-zz by name, but it is also the private deployment's subdomain: a
+    # crop named alpha_<id> could come from either, so it is refused (fail closed)
+    assert rule("alp") and not rule("alpha") and not rule("beta")
+
+
 def test_export_runs_the_checker_and_quantized_graphs_have_the_promised_types(tiny_checkpoint, monkeypatch):
     pytest.importorskip("onnx_ir")
     import onnx
@@ -325,6 +336,7 @@ def test_bench_end_to_end_on_a_tiny_model(tiny_checkpoint):
     assert (df.n_crops == 4).all() and (df.n_crops_dropped_not_public == 1).all()
     ref, onnx_fp32, q = (df.iloc[i] for i in range(3))
     assert ref.vs_ref_max_abs_dlogit == 0 and onnx_fp32.vs_ref_max_abs_dlogit < 1e-4   # the reference is torch
+    assert q.vs_ref_max_abs_dlogit > 0   # int8 is compared with torch, not with itself (reference = first variant)
     assert (ref.score_batch, onnx_fp32.score_batch, q.score_batch) == (4, 4, 1)
     assert pd.isna(onnx_fp32.b16_vs_b1_max_abs_dprob) and q.b16_vs_b1_max_abs_dprob >= 0
     assert (df.ms_per_crop_b2 == df.lat_b2_ms / 2).all()
@@ -332,3 +344,39 @@ def test_bench_end_to_end_on_a_tiny_model(tiny_checkpoint):
     assert len(saved) == 3 and not saved.label_type.isna().any()
     scores = pd.read_csv(tmp / "bench" / "scores_X.csv")
     assert scores.label_uid.tolist() == ["seattle:1", "seattle:2", "seattle:4", "seattle:5"]
+
+
+def test_dynamic_graphs_are_scored_one_crop_per_call(tiny_checkpoint):
+    """bench must score a DynamicQuantizeLinear graph at batch 1 even when asked for more, and measure the gap."""
+    import onnxruntime as ort
+    from PIL import Image
+    from transformers import AutoImageProcessor
+
+    import export_onnx
+
+    _, ckpt, tmp = tiny_checkpoint
+    int8 = export_onnx.quantize_model(export_onnx.export_model(ckpt, str(tmp / "onnx")))
+    # Crops with very different intensity ranges, so a batch-wide activation scale differs from a per-crop one.
+    rng = np.random.default_rng(1)
+    for i, (cls, lo, hi) in enumerate([("correct", 0, 20), ("correct", 0, 255), ("incorrect", 120, 140),
+                                        ("incorrect", 230, 255)]):
+        d = tmp / "crops" / "test" / cls
+        d.mkdir(parents=True, exist_ok=True)
+        Image.fromarray(rng.integers(lo, hi, (40, 40, 3), dtype=np.uint8)).save(d / f"seattle_{i}.png")
+    with pytest.warns(UserWarning, match="DynamicQuantizeLinear"):
+        df = export_onnx.main(["bench", "--label-type", "X", "--crops", str(tmp / "crops"), "--model", ckpt,
+                               "--onnx", f"onnx-int8={int8}", "--threads", "1", "--batch-sizes", "1",
+                               "--warmup", "0", "--runs", "1", "--score-batch", "4", "--out", str(tmp / "bench")])
+    row = df[df.variant == "onnx-int8"].iloc[0]
+    assert row.score_batch == 1 and row.b16_vs_b1_max_abs_dprob > 0
+
+    crops = export_onnx.list_crops(str(tmp / "crops"))
+    pixels = export_onnx.preprocess(AutoImageProcessor.from_pretrained(ckpt, use_fast=False), crops.crop_path)
+    sess = ort.InferenceSession(int8, providers=["CPUExecutionProvider"])
+    one_by_one = np.concatenate([sess.run(None, {"pixel_values": pixels[i:i + 1]})[0] for i in range(len(pixels))])
+    together = sess.run(None, {"pixel_values": pixels})[0]
+    assert np.abs(export_onnx.softmax(together) - export_onnx.softmax(one_by_one)).max() > 0   # batch matters here
+    scores = pd.read_csv(tmp / "bench" / "scores_X.csv")
+    assert scores.label_uid.tolist() == crops.label_uid.tolist()
+    np.testing.assert_array_equal(scores["onnx-int8_p_incorrect"].to_numpy(np.float32),
+                                  export_onnx.softmax(one_by_one)[:, 1])
