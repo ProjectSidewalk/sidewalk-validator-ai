@@ -3,22 +3,24 @@
 Issue #45 asks whether road-network context can tell driveway aprons mislabelled as CurbRamp from real curb ramps,
 and whether it adds anything over the production confidence. This is the first measurement. It uses no GPU, no
 imagery and no retraining. The code is `analysis/road_prior.py`; every number below comes from its `evaluate`,
-`stratify` and `routing` stages, and `road-prior-2026-10/provenance.json` pins their inputs, outputs and commit.
+`stratify` and `routing` stages, and `road-prior-2026-10/provenance.json` pins their inputs, output tables and commit (not the figures).
 
 ## Recommendation
 
 **Do not add road context as a model feature. Keep it as a candidate routing signal for cast CurbRamp Disagree
 votes, and decide after the hand-coding packet is coded.**
 
-- **As a feature it adds nothing.** Distance to an intersection predicts the human verdict on its own (AUC 0.69),
+- **As a feature it adds nothing material.** Distance to an intersection predicts the human verdict on its own (AUC 0.69),
   but the production confidence already carries it. Leave-one-city-out, adding the road features to the
   recalibrated confidence changes AUC by -0.0001 (streets) and +0.0019 (streets + OSM), with CIs that include 0.
-- **On cast Disagree votes it separates, and the separation transfers modestly.** At the same confidence, a cast
+- **On cast Disagree votes it separates, but transfer to new cities is not established.** At the same confidence, a cast
   Disagree near both an intersection and a crossing is confirmed by humans 10 to 27 points less often than one far
   from both, in three of the four confidence quartiles. With city fixed effects the near-both coefficient is
   -0.69 log-odds (SE 0.14, >= 3 votes; SE 0.05 at >= 1 vote). Leave-one-city-out, adding two context flags to the
-  confidence raises AUC by +0.008 (CI 0.002–0.015) across 24 cities, with gains in Seattle, Chicago and SPGG and a
-  loss in Amsterdam. The finer binned feature model in the lift table dilutes this and shows no significant gain.
+  confidence raises AUC by +0.008, with gains in Seattle, Chicago and SPGG and a loss in Amsterdam. That clears zero
+  when labels are resampled (CI 0.002–0.015) but not when whole cities are (-0.004 to 0.014), and the claim is
+  about unseen cities: 24 cities, only four with 100 or more validated votes. The finer binned feature model in
+  the lift table dilutes the effect further.
 - **The OSM driveway layer is too sparse to use.** Only 9.6% of the CurbRamp analysis set (16.2% of all CurbRamp
   labels with a human vote) has any mapped `service=driveway` way within 50 m, and the driveway features sit at
   AUC 0.50.
@@ -39,11 +41,14 @@ far from both is a strong one (confirmed 68% of the time), is just as well suppo
 | OSM | Overpass, `highway=crossing` nodes and `highway=service` ways, pulled 2026-10-20, all 41 cities ok |
 | Production verdict | `labels_oof.csv` (recalibrated `oof_accuracy`, Phase 0). The routing stage falls back to `new_accuracy` for labels not in the calibration fit, which is out-of-sample for them |
 | Human verdict | strict majority of human votes, AI excluded, ties dropped |
+| Expert votes | each expert's vote read from the label's rawLabels `validations` by user id (role-keyed, no ids in the repo) |
 | CurbRamp analysis set | 22,197 labels with >= 3 human votes, 34 cities, human-majority Disagree rate 8.6% |
 | Crosswalk analysis set | 6,790 labels, 28 cities, Disagree rate 14.0% |
 
 Intersection nodes are street-edge endpoints shared by two or more edges, because Project Sidewalk splits edges at
-intersections. `d_junction3_m` uses three or more edges and behaves the same.
+intersections. Not every shared endpoint is an intersection: 12% of these nodes join exactly two edges, where a
+street is split at a curve or a way break. `d_junction3_m` uses three or more edges and behaves almost the same
+(AUC 0.68 against 0.69), so the mix-up costs little.
 
 ## Results
 
@@ -58,8 +63,8 @@ intersections. `d_junction3_m` uses three or more edges and behaves the same.
 | Own street is a service road | 0.500 | flat: the streets API has almost no service edges |
 | Own OSM way is a driveway | 0.500 | flat: labels sit on street ways, never on driveways |
 
-The intersection AUC is 0.78 in Chicago and 0.80 in Seattle, and lower elsewhere. Walla Walla is the one city below
-0.5. The relation is not monotone. The Disagree rate is 4–5% from 5 to 15 m, rises to 31–36% from 25 to 100 m,
+The intersection AUC is 0.78 in Chicago and 0.80 in Seattle, and varies widely elsewhere, from 0.94 in Tucson
+(153 labels) down to Walla Walla, the one city below 0.5. The relation is not monotone. The Disagree rate is 4–5% from 5 to 15 m, rises to 31–36% from 25 to 100 m,
 and falls to 19% beyond 100 m.
 
 ![Disagree rate by distance to the nearest intersection](road-prior-2026-10/disagree_vs_intersection_pooled.png)
@@ -70,7 +75,7 @@ and falls to 19% beyond 100 m.
 
 Baseline is a logistic model on the logit of the production P(Agree). The full model adds the road features, with
 distances as bins. Each city is predicted by a model fitted on the others. ΔAUC and Δlog-loss have paired bootstrap
-95% CIs.
+95% CIs, resampling labels; the per-row city-resampled CIs are in `evaluate.md`.
 
 | Subset | Features | n | ΔAUC (CI) | Δlog-loss (CI) |
 |---|---|---|---|---|
@@ -80,8 +85,14 @@ distances as bins. Each city is predicted by a model fitted on the others. ΔAUC
 | AI Disagree assessments | streets + OSM | 3,753 | +0.0093 (0.0034, 0.0154) | -0.0042 (-0.0104, 0.0012) |
 | Cast AI Disagree votes | streets + OSM | 2,359 | +0.0060 (-0.0052, 0.0161) | +0.0031 (-0.0052, 0.0111) |
 
-Two CIs clear zero: log-loss on all verdicts with OSM, about 1% of the baseline log-loss, and AUC on AI Disagree
-assessments. On AI Agrees there is no gain, so this does not help catch the contested Agrees.
+Two CIs clear zero when labels are resampled: log-loss on all verdicts with OSM, about 1% of the baseline
+log-loss, and AUC on AI Disagree assessments. Neither does when whole cities are resampled. On AI Agrees there is no
+gain, so this does not help catch the contested Agrees.
+
+The Agrees that an expert overturned do sit away from intersections more often: 27% of the 154 are 25 m or more
+from an intersection node, against 14% of the 292 that the crowd overturned and 7% of the uncontested Agrees
+(`stratify.md`). That fits the driveway story, but 154 labels from two validators is a small sample, and the
+packet is the check.
 
 ### Cast Disagree votes by road context
 
@@ -93,13 +104,13 @@ votes. The 25 m threshold was fixed in the first commit, before any of these tab
 |---|---|---|---|
 | 0.23–0.35 | 0.40 (n 136) | 0.38 (335) | 0.24 (125) |
 | 0.35–0.55 | 0.65 (177) | 0.46 (309) | 0.38 (116) |
-| 0.55–0.67 | 0.74 (309) | 0.65 (321) | 0.63 (103) |
-| 0.67–0.72 | 0.80 (233) | 0.74 (147) | 0.83 (48) |
+| 0.55–0.67 | 0.74 (309) | 0.64 (321) | 0.63 (103) |
+| 0.67–0.72 | 0.80 (233) | 0.73 (147) | 0.83 (48) |
 | All | 0.68 (855) | 0.52 (1,112) | 0.46 (392) |
 
 By city, near-both versus far-from-both is 0.33 vs 0.68 in Chicago, 0.51 vs 0.85 in Seattle, 0.51 vs 0.69 in SPGG
-and 0.56 vs 0.56 in Amsterdam. Amsterdam's flat result rests on only 16 validated near-both votes. The Wilson CIs
-are in `stratify.md`.
+and 0.56 vs 0.56 in Amsterdam. Amsterdam's flat result rests on only 16 validated near-both votes. Wilson CIs for
+the pooled quartile cells are in `stratify.md`; the per-city counts behind these rates are in `routing.md`.
 
 Of all 16,263 cast CurbRamp Disagrees in the public cities, 28% are near both, 38% far from one and 33% far from
 both. The same pattern holds for all AI Disagree assessments, including the ones cast as Unsure: near-both is 0.27
@@ -114,7 +125,7 @@ From the `routing` stage, on cast CurbRamp Disagrees:
 | City fixed effects, >= 3 votes (n 2,346, 18 cities) | near-both -0.69 (SE 0.14), far-from-one -0.36 (SE 0.10) |
 | Same, >= 1 vote (n 14,911, 31 cities) | near-both -0.69 (SE 0.05), far-from-one -0.40 (SE 0.04) |
 | Threshold 15 m / 40 m, >= 3 votes | near-both -0.90 / -0.34, both p < 0.02 |
-| Leave-one-city-out, confidence + two context flags | ΔAUC +0.008 (0.002–0.015); Δlog-loss -0.003 (-0.007, +0.001) |
+| Leave-one-city-out, confidence + two context flags | ΔAUC +0.008: CI 0.002–0.015 resampling labels, -0.004 to 0.014 resampling cities; Δlog-loss -0.003 (-0.007, +0.001) |
 | Held-out city ΔAUC | Chicago +0.020, Seattle +0.015, SPGG +0.011, Amsterdam -0.022 |
 
 The >= 1-vote quartile table shows the same ordering in every quartile but the top one. Six cities in the >= 3-vote
@@ -127,8 +138,8 @@ corner ramp can sit far from any intersection node, do not drive the result.
 Distance to an OSM crossing predicts Crosswalk Disagrees with AUC 0.71, the strongest single signal in the study,
 as it should be. Distance to an intersection node is slightly reversed for Crosswalk (AUC 0.46), plausibly because
 a crosswalk spans the roadway away from the centreline node. Leave-one-city-out on top of the confidence, the
-streets + OSM features improve Crosswalk log-loss by 0.0058 (CI 0.0016–0.0100), about 5% of the baseline, with
-no significant AUC change. Crosswalk is already at AUC 0.98, so this is not worth pursuing either.
+streets + OSM features improve Crosswalk log-loss by 0.0058 (CI 0.0016–0.0100 resampling labels, -0.013 to 0.003
+resampling cities), about 5% of the baseline, with no significant AUC change. Crosswalk is already at AUC 0.98, so this is not worth pursuing either.
 
 ## Caveats
 
@@ -139,18 +150,21 @@ no significant AUC change. Crosswalk is already at AUC 0.98, so this is not wort
   near-intersection Disagrees that humans overturn are real ramps, and whether far ones are driveways.
 - **OSM coverage varies by city.** Crossing mapping is dense in some cities and sparse in others, which may explain
   why Amsterdam is flat. Driveway mapping is sparse almost everywhere.
-- **The transfer is modest and city-dependent.** The held-out gain is small and negative in Amsterdam, and the rule
-  fires rarely where crossings are poorly mapped. A routing rule should be validated per city before it ships.
+- **Transfer is unproven and city-dependent.** The held-out gain is small, its city-resampled CI includes zero, it
+  is negative in Amsterdam, and the rule fires rarely where crossings are poorly mapped. A routing rule should be
+  validated per city before it ships.
 
 ## Hand-coding packet
 
-200 contested public CurbRamp labels from 36 cities: 115 AI Disagrees and 85 Agrees overturned by the crowd or an
-expert, stratified by distance to the nearest intersection (0–15, 15–25, 25–40 and 40+ m). The packet holds only
+200 contested public CurbRamp labels from 34 cities: 100 AI Disagrees and 100 Agrees overturned by the crowd (54)
+or an expert (46), 50 in each distance bucket to the nearest intersection (0–15, 15–25, 25–40 and 40+ m). An
+earlier build had only 85 overturned Agrees, because expert votes were read from a table that leaves out most
+lone expert Disagrees; it was superseded before coding started. The packet holds only
 an item number and a Street View link. The label id, city, share-page link and verdicts are in the key, which is
 kept with the seed outside the repo. The share page is left out of the packet because it shows earlier validations to
 admins and offers a vote, so it would unblind the item.
 - **Codes:** `driveway`, `real_ramp`, `other`, `cant_tell`.
-- Key sha256: `b281eb1d76367c65d36ea4f7803c4e485409e694b774ac50d045f0d4b34b01c1`
+- Key sha256: `c8cf0b6939c542fae29429d0ace03f3cb2b44834db44d28fac5ac7ab07e17e8f`
 
 ## Reproduce
 

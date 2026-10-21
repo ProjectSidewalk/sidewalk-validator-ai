@@ -1,25 +1,33 @@
 {
  "evaluate": {
-  "git_commit": "a5944f0ed14f22ba8cb8643598ccc2d3d3c3fcd3",
+  "git_commit": "e2fdbef4abeb302f067dd92d5564eaa899035f54",
   "git_dirty": false,
   "inputs": {
    "cities_json": "c11f21dc3853d58cc0f5264bcf969668c90cdf0b49a6f010ace0029805660df6",
-   "features": "aeff97cda9b31abb92a86f78d06d33ea584e5a9500ef6d5bc80552f1b5907c65"
+   "features": "c758833c78ef319a0304833620dd247042e87ebfc12fe0c353afdbc687b23232"
   },
   "outputs": {
-   "evaluate.md": "e3c3f11db13d9166444f7796aa73da2408dd1f1e3f8dd09ae377debf629217fc",
+   "evaluate.md": "cb4cd767db66f8b51a9cfdd0a0bdd400082a0bf36bc4ffd4b5b0fa89dcb56012",
    "feature_auc_crosswalk.csv": "3e5ed566e79556b086455cebe43eb31f575691d891f8519fa1389e5a08a92460",
    "feature_auc_curbramp.csv": "36cf81036bd8b1023a4a34645ec3f0b3d8d09f370a7827b0d6306079ccf1a715",
-   "lift_by_city_crosswalk_streets_agree.csv": "82cc1ac19cb70a68c5a7c747b59c5ced6b2b96961dd69c7282b7992508bad7c9",
-   "lift_by_city_crosswalk_streets_all.csv": "31e32d72b2686ad15a2ba2a3c2650e7269bd9f29239aa2112242c8b00e89ec89",
-   "lift_by_city_crosswalk_streets_cast_disagree.csv": "a60d2d966a5c0882d3e38b9eec56cfddf8fae2627ef7e6347c3eb68ebc2c7f31",
-   "lift_by_city_crosswalk_streets_disagree.csv": "a60d2d966a5c0882d3e38b9eec56cfddf8fae2627ef7e6347c3eb68ebc2c7f31",
-   "lift_by_city_curbramp_streets_agree.csv": "742dd5c9d00d44e66e086e0114c1312a1aadcc2332fa642fee63a2b8affe446a",
-   "lift_by_city_curbramp_streets_all.csv": "6f797d699f790b237f449a85152510188b9b752a46e9d67607c00dc918b6083f",
-   "lift_by_city_curbramp_streets_cast_disagree.csv": "c01176e03b536d51ffe1fc6e6667a09800eddbbf8d6a1173caeaa39b412575aa",
-   "lift_by_city_curbramp_streets_disagree.csv": "a457b0082b8939d6e61392cb5c116c9b1cde2c4f048491b5210ba45c07ac041e",
-   "lift_crosswalk.csv": "d0bbe6582f4a81aa0d4ab323780edd953d0775a4fa7f394b899248e2fd896e76",
-   "lift_curbramp.csv": "697b362280c166546f0e8ecedb9e297ed7b15b4095b7d445c340681a83e203e7"
+   "lift_by_city_crosswalk_streets_agree.csv": "b708636ec907b9e1ff093113fb79d591026476981287a29d72ed23778d747b58",
+   "lift_by_city_crosswalk_streets_all.csv": "f888f93de3b5498fbed5bbcab21aa1acb653e5a9e7b97ed22b2e7d0ea4f40fe9",
+   "lift_by_city_crosswalk_streets_cast_disagree.csv": "1d64f60119fe3e437733617f7a9fe7c87b3d49d7e7ba8795408fe69d57673663",
+   "lift_by_city_crosswalk_streets_disagree.csv": "1d64f60119fe3e437733617f7a9fe7c87b3d49d7e7ba8795408fe69d57673663",
+   "lift_by_city_crosswalk_streets_osm_agree.csv": "82cc1ac19cb70a68c5a7c747b59c5ced6b2b96961dd69c7282b7992508bad7c9",
+   "lift_by_city_crosswalk_streets_osm_all.csv": "31e32d72b2686ad15a2ba2a3c2650e7269bd9f29239aa2112242c8b00e89ec89",
+   "lift_by_city_crosswalk_streets_osm_cast_disagree.csv": "a60d2d966a5c0882d3e38b9eec56cfddf8fae2627ef7e6347c3eb68ebc2c7f31",
+   "lift_by_city_crosswalk_streets_osm_disagree.csv": "a60d2d966a5c0882d3e38b9eec56cfddf8fae2627ef7e6347c3eb68ebc2c7f31",
+   "lift_by_city_curbramp_streets_agree.csv": "adef11d1a6e407f96ebb6e9a7d9c5c8628d675bc969496739452fc6af58e3d8d",
+   "lift_by_city_curbramp_streets_all.csv": "8bb71f513aa4e7f6e5f85b1e3a06a9074cfd8a0561b3adb1a8230f7903949fb7",
+   "lift_by_city_curbramp_streets_cast_disagree.csv": "a25526ca2dae1a8effbbbf0c4606bdb54d2b51b7224831e48e3dad768dfc372c",
+   "lift_by_city_curbramp_streets_disagree.csv": "a7ae035b719770237bbb5082a2b7bffe33bc175646c7174b8ce1dc5d477f6384",
+   "lift_by_city_curbramp_streets_osm_agree.csv": "742dd5c9d00d44e66e086e0114c1312a1aadcc2332fa642fee63a2b8affe446a",
+   "lift_by_city_curbramp_streets_osm_all.csv": "6f797d699f790b237f449a85152510188b9b752a46e9d67607c00dc918b6083f",
+   "lift_by_city_curbramp_streets_osm_cast_disagree.csv": "c01176e03b536d51ffe1fc6e6667a09800eddbbf8d6a1173caeaa39b412575aa",
+   "lift_by_city_curbramp_streets_osm_disagree.csv": "a457b0082b8939d6e61392cb5c116c9b1cde2c4f048491b5210ba45c07ac041e",
+   "lift_crosswalk.csv": "74b57bf41c0d560394a916483c99287d84c88a96ec25d1886ba6f267c76e7541",
+   "lift_curbramp.csv": "9e84fceadec1ab756fb62d31f7069526f6804eaebb490b682b98ecd9a21c97ec"
   },
   "packages": {
    "matplotlib": "3.11.2",
@@ -32,10 +40,9 @@
   "stage": "evaluate"
  },
  "features": {
-  "git_commit": "a5944f0ed14f22ba8cb8643598ccc2d3d3c3fcd3",
+  "git_commit": "e2fdbef4abeb302f067dd92d5564eaa899035f54",
   "git_dirty": false,
   "inputs": {
-   "ai_vs_humans": "b0ae2b680b896eb025ab58094f36867429bb890c850a435853e88075a36cca1c",
    "cities_json": "c11f21dc3853d58cc0f5264bcf969668c90cdf0b49a6f010ace0029805660df6",
    "labels_oof": "4cdf63934a68d8fe1e809a965e1b6e2a56b8efdfb9ee7805bba4263ecb54b733",
    "osm_dir": "2c228fd3ebf76c6b4fbf041a151ef7f1a8af5141eda69ce282a17647d3dfee72",
@@ -43,7 +50,7 @@
    "streets_dir": "ca5bf5b3c8251f9c2a454d9a41a7f05a410fb4b4602b5c3d190e93bfa79cc9d2"
   },
   "outputs": {
-   "features.csv": "aeff97cda9b31abb92a86f78d06d33ea584e5a9500ef6d5bc80552f1b5907c65"
+   "features.csv": "c758833c78ef319a0304833620dd247042e87ebfc12fe0c353afdbc687b23232"
   },
   "packages": {
    "matplotlib": "3.11.2",
@@ -56,16 +63,16 @@
   "stage": "features"
  },
  "private-key-do-not-share": {
-  "git_commit": "a5944f0ed14f22ba8cb8643598ccc2d3d3c3fcd3",
+  "git_commit": "e2fdbef4abeb302f067dd92d5564eaa899035f54",
   "git_dirty": false,
   "inputs": {
    "cities_json": "c11f21dc3853d58cc0f5264bcf969668c90cdf0b49a6f010ace0029805660df6",
-   "features": "aeff97cda9b31abb92a86f78d06d33ea584e5a9500ef6d5bc80552f1b5907c65"
+   "features": "c758833c78ef319a0304833620dd247042e87ebfc12fe0c353afdbc687b23232"
   },
   "outputs": {
-   "key_sha256": "b281eb1d76367c65d36ea4f7803c4e485409e694b774ac50d045f0d4b34b01c1",
-   "packet_key.csv": "b281eb1d76367c65d36ea4f7803c4e485409e694b774ac50d045f0d4b34b01c1",
-   "packet_sha256": "ecc1cef808bfd3e4d6027f747f7c4e4b419eac5638e01c493ec3333a70678458"
+   "key_sha256": "c8cf0b6939c542fae29429d0ace03f3cb2b44834db44d28fac5ac7ab07e17e8f",
+   "packet_key.csv": "c8cf0b6939c542fae29429d0ace03f3cb2b44834db44d28fac5ac7ab07e17e8f",
+   "packet_sha256": "bf06f664649dbce75366ef9fdafa2d7ef6990d937a5a675d356a17bb7ee2e68a"
   },
   "packages": {
    "matplotlib": "3.11.2",
@@ -78,20 +85,20 @@
   "stage": "packet"
  },
  "routing": {
-  "git_commit": "a5944f0ed14f22ba8cb8643598ccc2d3d3c3fcd3",
+  "git_commit": "e2fdbef4abeb302f067dd92d5564eaa899035f54",
   "git_dirty": false,
   "inputs": {
    "cities_json": "c11f21dc3853d58cc0f5264bcf969668c90cdf0b49a6f010ace0029805660df6",
-   "features": "aeff97cda9b31abb92a86f78d06d33ea584e5a9500ef6d5bc80552f1b5907c65"
+   "features": "c758833c78ef319a0304833620dd247042e87ebfc12fe0c353afdbc687b23232"
   },
   "outputs": {
    "city_fe.csv": "097d37801af5edc0a4ec0790bab078a444e31e49216d5a069cb8854870a8a23e",
-   "coarse_lift.csv": "4d7c1981817d8637cd9f639fe389ff2612f93d06527db2618f232edc5622cf29",
+   "coarse_lift.csv": "cdf0b8cfddfffcb3fb6e13199b57449d34b00e58341ad0526263692c8caf4670",
    "coarse_lift_by_city.csv": "d75712ba6db7a6f11c79e74e07d241b707d8c771759e872ecb5e4d629676054c",
    "quartile_context_minvotes1.csv": "88e53a274c9c1075278ca883824dc0c79a5dca697a5410e20c2fc625b2e46b34",
    "quartile_context_minvotes2.csv": "04e1fd36bce55dd60bd2106a6c72549a6715917b6464c1bb4fdb018c5eb48e3f",
    "quartile_context_minvotes3.csv": "9966ca6dc810c1245403b1f05634de7925e20b8589012564567d1f0f1cb27fc6",
-   "routing.md": "7a4625a33a292df56953fb71403e68a0a08f932188dc7d68958597008e46635d",
+   "routing.md": "d546b4bef964d276521f0e59f10aceba00261ac33a450f88f40ee2e66cc9e803",
    "routing_by_city.csv": "e614d87cce41e8ec2b7aaf3cee8d647ce3a2aa8d91946822cba883f3e778dbd7"
   },
   "packages": {
@@ -105,11 +112,11 @@
   "stage": "routing"
  },
  "stratify": {
-  "git_commit": "a5944f0ed14f22ba8cb8643598ccc2d3d3c3fcd3",
+  "git_commit": "e2fdbef4abeb302f067dd92d5564eaa899035f54",
   "git_dirty": false,
   "inputs": {
    "cities_json": "c11f21dc3853d58cc0f5264bcf969668c90cdf0b49a6f010ace0029805660df6",
-   "features": "aeff97cda9b31abb92a86f78d06d33ea584e5a9500ef6d5bc80552f1b5907c65"
+   "features": "c758833c78ef319a0304833620dd247042e87ebfc12fe0c353afdbc687b23232"
   },
   "outputs": {
    "agree_error_all_d_crossing_m.csv": "77b755a406686bb9e565aa260e2f459250286cd01b6713ffa88c10b31a61f05a",
@@ -118,8 +125,8 @@
    "agree_error_gated_d_intersection_m.csv": "62dc919c2a6e8507e488b09f6c8fdc77f4e7171168382128ab8342d0a6177a93",
    "disagree_context_all.csv": "587ecd05faa656fc0dc27b287d3bd97f5e29922eeceb380c8006f2c8ac3b2dd9",
    "disagree_context_cast.csv": "fedd19a072defe7071ea0af1736769b1af5978575be45f2e816c4325d27f923b",
-   "stratify.csv": "f0d25fb1ad9163e975df944e49374d6bbb9426221771981d576b66de01cf80e0",
-   "stratify.md": "418913b8039667b50e833d40477769d255b1799725161cd2264be9c78c33f551"
+   "stratify.csv": "2603a5990826c688bd2d3da7b9f562cc013994795b9cf4c4d1bf41d6de670724",
+   "stratify.md": "aa2f2a23aa71309cb86ca3036df278c00f40c25729b867f7ca629a9cb9f4e465"
   },
   "packages": {
    "matplotlib": "3.11.2",
