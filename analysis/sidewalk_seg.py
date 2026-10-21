@@ -1038,13 +1038,15 @@ def cmd_report(args):
     print("\n".join(md))
 
 
-def git_state():
-    """``(commit, dirty)`` of this checkout; dirty means a TRACKED file differs from HEAD (untracked files ignored)."""
+def git_state(exclude=None):
+    """``(commit, dirty)`` of this checkout; dirty means a TRACKED file differs from HEAD (untracked files ignored),
+    outside ``exclude`` (the report's own output directory, which the run itself rewrites)."""
     import subprocess
 
     def git(*a):
         return subprocess.run(["git", *a], cwd=REPO, capture_output=True, text=True).stdout.strip()
-    return git("rev-parse", "HEAD"), bool(git("status", "--porcelain", "--untracked-files=no"))
+    spec = ["--", "."] + ([f":!{os.path.relpath(os.path.abspath(exclude), REPO)}"] if exclude else [])
+    return git("rev-parse", "HEAD"), bool(git("status", "--porcelain", "--untracked-files=no", *spec))
 
 
 def safetensors_param_count(path):
@@ -1078,7 +1080,7 @@ def write_provenance(args, run, ok, inputs):
     z = np.load(args.cls, allow_pickle=False)
     rec = {
         "date": datetime.date.today().isoformat(),
-        "git_commit": git_state()[0], "git_dirty": git_state()[1],
+        "git_commit": git_state()[0], "git_dirty": git_state(args.out_dir)[1],
         "command": "python analysis/sidewalk_seg.py " + " ".join(sys.argv[1:]).replace(os.path.expanduser("~"), "~"),
         "inputs": {k: {"sha256": sha256_file(p), "rows": (int(sum(1 for _ in open(p)) - 1) if p.endswith(".csv")
                                                          else None)} for k, p in inputs.items()},
