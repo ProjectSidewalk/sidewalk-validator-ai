@@ -253,6 +253,7 @@ def case_id(point_id, pose_id):
 
 
 def sha256_file(path, chunk=1 << 20):
+    """Hex sha256 of a file's bytes, read in ``chunk``-byte blocks."""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for block in iter(lambda: f.read(chunk), b""):
@@ -358,13 +359,15 @@ def save_png(rgb, path):
 
 
 def load_png(path):
+    """An image file as an (H, W, 3) uint8 RGB array (PIL, ``convert("RGB")``)."""
     from PIL import Image
     return np.asarray(Image.open(path).convert("RGB"))
 
 
 def webp_roundtrip(rgb, path):
     """``data_generation.save_webp`` then decode as ``evaluate.run_inference`` does (``Image.open(...).convert("RGB")``)."""
-    sys.path.insert(0, REPO_ROOT)
+    if REPO_ROOT not in sys.path:
+        sys.path.insert(0, REPO_ROOT)
     from data_generation import save_webp
     from PIL import Image
     save_webp(rgb, path)
@@ -555,7 +558,13 @@ def train_models(args, out, index):
 # ---------------------------------------------------------------------------------------------------------------------
 
 def api_worker(args):
-    """Drive sidewalk-ai-api's real ``/process`` for every point x pose and record each stage's array."""
+    """Drive sidewalk-ai-api's real ``/process`` for every point x pose and record each stage's array.
+
+    Two things are not the API's own: the ``Depth-Anything-V2`` directory is this repo's submodule (the same commit,
+    a561b84, as the API's, whose submodule is not initialised in a read-only checkout), and ``crop_half_px`` in the
+    index is re-derived from the recorded depth map with the API's expression (:func:`crop_half_api`); the API does not
+    return it. The crop itself is the PIL image ``/process`` hands the validator, recorded.
+    """
     import torch
     api_dir = os.path.abspath(args.api_dir)
     out = os.path.abspath(args.out)
@@ -612,8 +621,13 @@ def api_worker(args):
 
     real_panorama = main.Panorama
 
+    feed = np.load(args.pano_npy) if args.pano_npy else None
+    index["pano_npy"] = os.path.abspath(args.pano_npy) if args.pano_npy else None
+
     def rec_panorama(pano_id, cached_image_path=None):
         p = real_panorama(pano_id, cached_image_path=cached_image_path)
+        if feed is not None:  # cross-feed: everything after the read runs on this pano instead (stage-1 isolation)
+            p.panorama_image = feed
         Recorder.panos.append((cached_image_path, p.image_source, p.panorama_image))
         return p
 
@@ -699,6 +713,7 @@ def api_models(args, out, train_dir, train_index):
 # ---------------------------------------------------------------------------------------------------------------------
 
 def _logit_diff(a, b):
+    """Largest absolute difference between two logit vectors, in float64."""
     return float(np.abs(np.asarray(a, dtype=np.float64) - np.asarray(b, dtype=np.float64)).max())
 
 
@@ -876,6 +891,9 @@ def compare(args):
     crops.to_csv(os.path.join(args.out, "crops.csv"), index=False, float_format="%.6g")
     models.to_csv(os.path.join(args.out, "models.csv"), index=False, float_format="%.6g")
     summary = summarize(crops, models, tr, ap, pano_cmp, other_pano)
+    for path in getattr(args, "append", None) or []:  # isolate / pixel-compare outputs, verbatim
+        with open(path) as f:
+            summary += f"\n## {os.path.basename(path)}\n\n```\n{f.read().rstrip()}\n```\n"
     with open(os.path.join(args.out, "summary.md"), "w") as f:
         f.write(summary)
     _write_json({"train_versions": tr["versions"], "api_versions": ap["versions"],
@@ -883,7 +901,7 @@ def compare(args):
                  "api_head": ap.get("api_head"), "pano_sha256": tr["pano_sha256"],
                  "pano_native": tr["pano_native"], "depth_checkpoint_sha256": tr["depth_checkpoint_sha256"],
                  "probe_api_depth_with_mps_visible": ap.get("probe_depth_with_mps_visible"),
-                 "pano_train_vs_api": pano_cmp, "pano_train_vs_other": other_pano,
+                 "pano_train_vs_api": pano_cmp, "pano_train_vs_other": {os.path.basename(os.path.normpath(k)): v for k, v in other_pano.items()},
                  "api_pano_source": ap.get("pano_source")}, os.path.join(args.out, "environments.json"))
     print(summary)
 
@@ -967,9 +985,15 @@ def summarize(crops, models, tr, ap, pano_cmp, other_pano):
         lm["cases"] = np.where(lm.pose == ROLL_ONLY, ROLL_ONLY, "matched poses")
         g = lm.groupby(["comparison", "cases", "model"]).agg(
             n=("case", "size"), max_dlogit=("max_abs_dlogit", "max"), median_dprob=("max_abs_dprob", "median"),
-            max_dprob=("max_abs_dprob", "max"), verdict_flips=("verdict_flip", "sum"),
+            p90_dprob=("max_abs_dprob", lambda x: x.quantile(0.9)), max_dprob=("max_abs_dprob", "max"), verdict_flips=("verdict_flip", "sum"),
             vote_changes=("vote_change", "sum"), votes_ref=("vote_ref", "sum")).reset_index()
-        s.append("\n## Model outputs (stages 2, 4, 5-7)\n\n" + _md(g))
+        pooled = lm.groupby(["comparison", "cases"]).agg(
+            n=("case", "size"), max_dlogit=("max_abs_dlogit", "max"), median_dprob=("max_abs_dprob", "median"),
+            p90_dprob=("max_abs_dprob", lambda x: x.quantile(0.9)), max_dprob=("max_abs_dprob", "max"),
+            verdict_flips=("verdict_flip", "sum"), vote_changes=("vote_change", "sum"),
+            votes_ref=("vote_ref", "sum")).reset_index()
+        s.append("\n## Model outputs, five models pooled (stages 2, 4, 5-7)\n\n" + _md(pooled))
+        s.append("\n## Model outputs per model (stages 2, 4, 5-7)\n\n" + _md(g))
         pm = models[models.comparison.str.startswith("6_")]
         g6 = pm.groupby(["comparison", "model"]).agg(n=("case", "size"),
                                                      max_dpixel=("max_abs_dpixel", "max")).reset_index()
@@ -1056,6 +1080,126 @@ def webp_sample(args):
 # ---------------------------------------------------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------------------------------------------------
+
+def pixel_probe(args):
+    """Per-interpreter pixel facts, for comparing package builds without any model: the panorama's JPEG decode, the
+    8192 x 4096 ``INTER_LINEAR`` resize of that decode and of ``--reference-decode`` (another build's decode, so the
+    resize is compared on identical input), ``INTER_CUBIC`` on a fixed crop of it, and the q95 WebP bytes PIL writes
+    for every ``--crops`` PNG (``data_generation.save_webp``'s call, in memory). Writes ``<out>/probe.json`` + arrays."""
+    import io
+    import cv2
+    from PIL import Image
+    out = os.path.abspath(args.out)
+    os.makedirs(out, exist_ok=True)
+    dec = cv2.imread(args.pano)
+    np.save(os.path.join(out, "decode.npy"), dec)
+    ref = np.load(args.reference_decode) if args.reference_decode else dec
+    rs = cv2.resize(ref, (8192, 4096), interpolation=cv2.INTER_LINEAR)
+    np.save(os.path.join(out, "resize_linear.npy"), rs)
+    region = ref[3000:3600, 1200:1800]
+    cub = cv2.resize(region, (640, 640), interpolation=cv2.INTER_CUBIC)
+    np.save(os.path.join(out, "resize_cubic.npy"), cub)
+    webp = {}
+    for path in sorted(args.crops or []):
+        buf = io.BytesIO()
+        Image.open(path).convert("RGB").save(buf, format="WEBP", quality=WEBP_QUALITY)
+        webp[os.path.relpath(path, args.crops_root) if args.crops_root else path] = hashlib.sha256(
+            buf.getvalue()).hexdigest()
+    _write_json({"versions": versions(), "decode_sha": sha256_array(dec), "reference_decode": args.reference_decode,
+                 "resize_linear_sha": sha256_array(rs), "resize_cubic_sha": sha256_array(cub), "webp_q95_sha": webp},
+                os.path.join(out, "probe.json"))
+
+
+def pixel_compare(args):
+    """Compare two :func:`pixel_probe` outputs (``a`` should have been run with ``--reference-decode`` = ``b``'s
+    decode, or vice versa); print one line per check."""
+    pa, pb = (json.load(open(os.path.join(d, "probe.json"))) for d in (args.a, args.b))
+    lines = []
+    for name in ("decode", "resize_linear", "resize_cubic"):
+        x, y = np.load(os.path.join(args.a, f"{name}.npy")), np.load(os.path.join(args.b, f"{name}.npy"))
+        c = compare_arrays(x, y, centre=0)
+        lines.append(f"{name}: identical={c['identical']} max_abs={c['max_abs']:g} frac_values={c['frac_diff']:.4f}")
+    keys = sorted(set(pa["webp_q95_sha"]) & set(pb["webp_q95_sha"]))
+    same = sum(pa["webp_q95_sha"][k] == pb["webp_q95_sha"][k] for k in keys)
+    lines.append(f"webp q95 bytes identical: {same}/{len(keys)} crops "
+                 f"(PIL {pa['versions']['PIL']} libwebp {pa['versions']['libwebp']} vs "
+                 f"PIL {pb['versions']['PIL']} libwebp {pb['versions']['libwebp']})")
+    lines.insert(0, f"a: {json.dumps(pa['versions'])}\nb: {json.dumps(pb['versions'])}")
+    text = "\n".join(lines) + "\n"
+    if args.out:
+        with open(args.out, "w") as f:
+            f.write(text)
+    print(text, end="")
+
+
+def isolate(args):
+    """Stage-1 isolation: the train worker's arrays against an api-worker run that was cross-fed the train worker's
+    ``pano_bgr.npy`` (``api-worker --pano-npy``). If views, depth maps and crops are identical, every stage-2-4
+    difference in the normal run comes from the panorama read; what remains otherwise belongs to the rest of the
+    environment (torch, numpy). Prints a table; ``--out`` writes it."""
+    import pandas as pd
+    tr = json.load(open(os.path.join(args.train, "index.json")))
+    ap = json.load(open(os.path.join(args.api, "index.json")))
+    if not ap.get("pano_npy"):
+        sys.exit(f"{args.api} was not a cross-fed run (api-worker --pano-npy)")
+    rows = []
+    for cid, t in tr["cases"].items():
+        tview = np.load(os.path.join(args.train, cid, "view_rgb.npy"))
+        aview = np.load(os.path.join(args.api, cid, "view_bgr.npy"))[..., ::-1]
+        tdepth = np.load(os.path.join(args.train, cid, "depth.npy"))
+        adepth = np.load(os.path.join(args.api, cid, "depth.npy"))
+        vc = compare_arrays(tview, aview)
+        cc = compare_arrays(load_png(os.path.join(args.train, cid, "crop_raw.png")),
+                            load_png(os.path.join(args.api, cid, "crop_raw.png")))
+        rows.append({"case": cid, "pose": t["pose"], "view_identical": vc["identical"], "view_max": vc["max_abs"],
+                     "view_frac_px": vc["frac_px_diff"], "depth_identical": bool(np.array_equal(tdepth, adepth)),
+                     "depth_max_abs": float(np.abs(tdepth.astype(np.float64) - adepth).max()),
+                     "half_equal": t["crop_half_px"] == ap["cases"][cid]["crop_half_px"],
+                     "crop_identical": cc["identical"], "crop_mean_abs": cc["mean_abs"]})
+    df = pd.DataFrame(rows)
+    lines = [f"train env: {json.dumps(tr['versions'])}", f"api env: {json.dumps(ap['versions'])}",
+             f"api fed: {os.path.basename(ap['pano_npy'])} (the train worker's read+resize)"]
+    for name, g in (("matched poses", df[df.pose != ROLL_ONLY]), (ROLL_ONLY, df[df.pose == ROLL_ONLY])):
+        if len(g):
+            lines.append(f"{name}: view identical {int(g.view_identical.sum())}/{len(g)} (max {g.view_max.max():g}, "
+                         f"px frac max {g.view_frac_px.max():.2e}); depth identical {int(g.depth_identical.sum())}/"
+                         f"{len(g)} (max {g.depth_max_abs.max():.3g} m); crop_half equal {int(g.half_equal.sum())}/"
+                         f"{len(g)}; crop identical {int(g.crop_identical.sum())}/{len(g)} (mean abs max "
+                         f"{g.crop_mean_abs.max():.3g})")
+    text = "\n".join(lines) + "\n"
+    if args.out:
+        with open(args.out, "w") as f:
+            f.write(text)
+        df.to_csv(os.path.splitext(args.out)[0] + ".csv", index=False, float_format="%.6g")
+    print(text, end="")
+
+
+def expected_values(args):
+    """The deploy smoke test's expected outputs: for each point x matched pose x model, what ``/process`` should return
+    once it serves training's input (opencv 4.12 resize + q95 WebP round trip), i.e. the train worker's probabilities on
+    its decoded WebP crop, beside what the API returns today (``--api``, its raw crop). ``roll1_only`` is left out:
+    the two sides read that pose differently by design. Writes ``--out`` (CSV)."""
+    import pandas as pd
+    tr = json.load(open(os.path.join(args.train, "index.json")))
+    ap = json.load(open(os.path.join(args.api, "index.json")))
+    rows = []
+    for cid, t in tr["cases"].items():
+        if t["pose"] == ROLL_ONLY:
+            continue
+        for mt in LABEL_TYPES:
+            pt = tr["models"][mt]["cases"][cid]["probs_webp"]
+            pa = ap["models"][mt]["cases"][cid]["probs_api"]
+            rows.append({"point_id": t["point_id"], "x": repr(float(t["x_norm"])), "y": repr(float(t["y_norm"])),
+                         "camera_pitch": t["camera_pitch"], "camera_roll": t["camera_roll"], "tilt_beta": TILT_BETA,
+                         "label_type": mt, "expected_p_incorrect": round(pt[1], 6),
+                         "expected_validation_result": CLASSES[int(np.argmax(pt))],
+                         "api_174a169_p_incorrect": round(pa[1], 6),
+                         "api_174a169_abs_diff": round(abs(pt[1] - pa[1]), 6)})
+    df = pd.DataFrame(rows)
+    df.to_csv(args.out, index=False)
+    print(f"{len(df)} rows; today's API is off by > 0.01 in {int((df.api_174a169_abs_diff > 0.01).sum())}, "
+          f"max {df.api_174a169_abs_diff.max():.4f}")
+
 
 def crop_half_report(args):
     """Stage 4b: how often the API's float32 crop-half arithmetic disagrees with training's float64, exhaustively over
@@ -1171,12 +1315,15 @@ def build_parser():
     a.add_argument("--train-dir", required=True, help="the train worker's --out (points, store, stage-6 inputs)")
     a.add_argument("--out", required=True)
     a.add_argument("--models", action="store_true")
+    a.add_argument("--pano-npy", help="cross-feed: replace the API's own read+resize with this (H, W, 3) BGR array, "
+                                      "e.g. the train worker's pano_bgr.npy, so stages 2-4 run on identical input")
     c = sub.add_parser("compare", help="tables from the worker outputs")
     c.add_argument("--train", required=True)
     c.add_argument("--train-other", nargs="*", help="further train-worker outputs (other package pins)")
     c.add_argument("--api", required=True)
     c.add_argument("--api-dir", required=True)
     c.add_argument("--out", required=True)
+    c.add_argument("--append", nargs="*", help="text files (isolate, pixel-compare output) to append to summary.md")
     r = sub.add_parser("run", help="train worker, API worker and compare")
     r.add_argument("--train-python", default=sys.executable)
     r.add_argument("--other-train-python", nargs="*", help="interpreters with other training pins (stages 1-4 only)")
@@ -1198,6 +1345,24 @@ def build_parser():
     f = sub.add_parser("figures", help="the doc's figures")
     f.add_argument("--out", required=True)
     f.add_argument("--webp-csv", help="webp-sample's per-label CSV")
+    x = sub.add_parser("isolate", help="stage-1 isolation from a cross-fed api-worker run")
+    x.add_argument("--train", required=True)
+    x.add_argument("--api", required=True, help="an api-worker --out made with --pano-npy <train>/pano_bgr.npy")
+    x.add_argument("--out")
+    pp = sub.add_parser("pixel-probe", help="decode/resize/WebP facts for this interpreter's builds")
+    pp.add_argument("--pano", required=True)
+    pp.add_argument("--reference-decode", help="another build's decode.npy, to resize identical input")
+    pp.add_argument("--crops", nargs="*", help="PNG crops to WebP-encode")
+    pp.add_argument("--crops-root", help="key the WebP hashes by path relative to this")
+    pp.add_argument("--out", required=True)
+    pc = sub.add_parser("pixel-compare", help="compare two pixel-probe outputs")
+    pc.add_argument("a")
+    pc.add_argument("b")
+    pc.add_argument("--out")
+    e = sub.add_parser("expected", help="expected /process outputs for a deploy smoke test")
+    e.add_argument("--train", required=True)
+    e.add_argument("--api", required=True)
+    e.add_argument("--out", required=True)
     h = sub.add_parser("crop-half", help="exhaustive float32 vs float64 crop-half disagreement")
     h.add_argument("--lo", type=float, default=1.0)
     h.add_argument("--hi", type=float, default=80.0)
@@ -1209,7 +1374,8 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     {"train-worker": train_worker, "api-worker": api_worker, "compare": compare, "run": run,
      "webp-sample": webp_sample, "crop-half": crop_half_report,
-     "figures": figures}[args.cmd](args)
+     "figures": figures, "isolate": isolate, "pixel-probe": pixel_probe, "pixel-compare": pixel_compare,
+     "expected": expected_values}[args.cmd](args)
 
 
 if __name__ == "__main__":

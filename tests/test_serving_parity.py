@@ -55,7 +55,9 @@ class StubDepth:
 
 def api_crop_recipe(view_bgr, depth):
     """sidewalk-ai-api ``main.py`` ``/process``, from the depth map to the PIL image the validator gets, copied verbatim
-    (head 174a169; only the names of the inputs changed). Returns the RGB array of that PIL image."""
+    (head 174a169; only the names of the inputs changed; :func:`test_api_recipe_is_still_verbatim` checks the copy
+    against a live checkout). Returns ``(rgb, crop_size_half)``: the RGB array of that PIL image and the half-size
+    the API computed."""
     import cv2
     from PIL import Image
     perspective_image = view_bgr
@@ -80,7 +82,7 @@ def api_crop_recipe(view_bgr, depth):
 
     perspective_image = cv2.cvtColor(perspective_image, cv2.COLOR_BGR2RGB)
     perspective_image = Image.fromarray(perspective_image)
-    return np.asarray(perspective_image)
+    return np.asarray(perspective_image), crop_size_half
 
 
 POSES = [(None, None), (3.0, None), (-5.0, 1.0)]  # the poses both sides read the same way
@@ -115,10 +117,11 @@ def test_crop_half_rules_disagree_only_by_rounding():
     assert bad.any(), "the sweep should find the float32 rounding cases near 6100 / 1.0013"
     d = depths[bad][0]
     assert sp.crop_half_api(d) - sp.crop_half_train(d) == 1
-    # and the API's rule in this helper is the API's code: same answer as the verbatim recipe's crop size
+    # and the helper's API rule is the API's code: the verbatim recipe computes the same half-size at that depth
     view = np.zeros((2048, 2048, 3), np.uint8)
     depth = np.full((2048, 2048), d, np.float32)
-    assert api_crop_recipe(view, depth).shape == (640, 640, 3)
+    _, half = api_crop_recipe(view, depth)
+    assert half == sp.crop_half_api(d) != sp.crop_half_train(d)
     n, idx = sp.crop_half_disagreements(depths)
     assert n == int(bad.sum()) and idx == list(np.flatnonzero(bad))
 
@@ -190,8 +193,8 @@ def test_training_crop_is_the_api_crop(pano_rgb, x, y, pitch, roll):
     depth = StubDepth(20.0)
     crop, info = dg.create_perspective_crop(depth, pano_rgb, x, y, camera_pitch=pitch, camera_roll=roll, beta=0.95)
     assert np.array_equal(depth.inputs[0], view_rgb[..., ::-1]), "depth must see the BGR view, as the API passes it"
-    served = api_crop_recipe(view_rgb[..., ::-1], depth.infer_image(view_rgb[..., ::-1]))
-    assert sp.compare_arrays(crop, served)["identical"]
+    served, half = api_crop_recipe(view_rgb[..., ::-1], depth.infer_image(view_rgb[..., ::-1]))
+    assert sp.compare_arrays(crop, served)["identical"] and half == info["crop_half_px"]
     assert info["crop_half_px"] == int(6100 / 20.0)
     # a channel-order slip on either side would not pass silently
     assert not sp.compare_arrays(crop, served[..., ::-1])["identical"]
@@ -204,7 +207,7 @@ def test_near_and_far_crops_match_including_clipping(pano_rgb, d0):
     depth = StubDepth(d0)
     crop, info = dg.create_perspective_crop(depth, pano_rgb, 0.4, 0.7)
     assert info["clipped"] == int(6100 / d0 > 1024)
-    assert np.array_equal(crop, api_crop_recipe(view_rgb[..., ::-1], depth.infer_image(view_rgb[..., ::-1])))
+    assert np.array_equal(crop, api_crop_recipe(view_rgb[..., ::-1], depth.infer_image(view_rgb[..., ::-1]))[0])
 
 
 def test_round_depth_is_the_crop_half_skew(pano_rgb):
@@ -218,7 +221,8 @@ def test_round_depth_is_the_crop_half_skew(pano_rgb):
     d = depth.infer_image(view_rgb[..., ::-1])
     assert info["crop_half_px"] == sp.crop_half_train(d[1024, 1024]) == 100
     assert sp.crop_half_api(d[1024, 1024]) == 99
-    assert not np.array_equal(crop, api_crop_recipe(view_rgb[..., ::-1], d))
+    served, half = api_crop_recipe(view_rgb[..., ::-1], d)
+    assert half == 99 and not np.array_equal(crop, served)
 
 
 def test_webp_is_the_one_lossy_step(tmp_path, pano_rgb):
@@ -257,6 +261,48 @@ def api(tmp_path_factory):
 @pytest.fixture(scope="module")
 def pano_8192():
     return structured_pano(8192)
+
+
+@needs_api
+def _logical_lines(lines):
+    """Non-blank lines, whitespace-normalised, with a call wrapped over several lines joined into one."""
+    out, buf = [], ""
+    for line in lines:
+        line = " ".join(line.split())
+        if not line:
+            continue
+        buf = f"{buf} {line}" if buf else line
+        if buf.count("(") == buf.count(")"):
+            out.append(buf.replace("( ", "("))
+            buf = ""
+    return out
+
+
+def _contains_run(haystack, needle):
+    return any(haystack[i:i + len(needle)] == needle for i in range(len(haystack) - len(needle) + 1))
+
+
+def test_contains_run_catches_drift():
+    """The drift check below fails on a changed line and on reordering, not only on a missing one."""
+    base = _logical_lines(["a = f(x,", "      y)", "b = 2", "c = 3"])
+    assert base == ["a = f(x, y)", "b = 2", "c = 3"]
+    assert _contains_run(["z"] + base, base[:2])
+    assert not _contains_run(["a = f(x, y)", "b = 3", "c = 3"], base)
+    assert not _contains_run(["b = 2", "a = f(x, y)", "c = 3"], base[:2])
+
+
+@needs_api
+def test_api_recipe_is_still_verbatim():
+    """:func:`api_crop_recipe`'s body is still a contiguous run of the live ``main.py`` (whitespace and line wrapping
+    aside), so the always-on tests above test the API's current code."""
+    import inspect
+    src = inspect.getsource(api_crop_recipe).splitlines()
+    start = next(i for i, line in enumerate(src) if "center_x, center_y =" in line)
+    end = next(i for i, line in enumerate(src) if "Image.fromarray(perspective_image)" in line)
+    with open(os.path.join(API_DIR, "main.py")) as f:
+        theirs = _logical_lines(f.read().splitlines())
+    ours = _logical_lines(src[start:end + 1])
+    assert _contains_run(theirs, ours), "main.py's crop code changed; update api_crop_recipe and re-run the parity"
 
 
 @needs_api
