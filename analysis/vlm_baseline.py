@@ -247,6 +247,31 @@ def load_sample(sample_dir):
     return df
 
 
+SUBSET_SHARES = {("test", "correct"): 0.3, ("test", "incorrect"): 0.3, ("test_heldout", "correct"): 0.2,
+                 ("test_heldout", "incorrect"): 0.2}
+"""Per-type composition of ``balanced_subset``: both classes balanced, both splits kept (60/40 test/held-out)."""
+
+
+def balanced_subset(sample, per_type=200, seed=20261021):
+    """A class-balanced subset with both splits, ``per_type`` rows per label type (``SUBSET_SHARES``), sampled
+    with ``seed`` after sorting by ``label_uid`` so it depends only on the data. Used when scoring every crop with a
+    large model would not fit the time budget.
+
+    >>> s = pd.DataFrame({"label_uid": [f"c:{i}" for i in range(40)], "label_type": "CurbRamp",
+    ...                   "split": ["test"] * 20 + ["test_heldout"] * 20, "label_class": ["correct", "incorrect"] * 20})
+    >>> balanced_subset(s, per_type=10).groupby(["split", "label_class"]).size().tolist()
+    [3, 3, 2, 2]
+    """
+    rng = np.random.default_rng(seed)
+    out = []
+    for (t, split, cls), g in sample.sort_values("label_uid").groupby(["label_type", "split", "label_class"]):
+        k = int(round(per_type * SUBSET_SHARES[(split, cls)]))
+        if len(g) < k:
+            raise ValueError(f"{t} {split} {cls}: only {len(g)} rows for {k}")
+        out.append(g.iloc[np.sort(rng.permutation(len(g))[:k])])
+    return pd.concat(out).sort_values(["label_type", "label_uid"])
+
+
 def score_path(out_dir, model, variant="definition"):
     suffix = "" if variant == "definition" else f"__{variant}"
     return os.path.join(out_dir, "scores", f"{model}{suffix}.csv")
@@ -313,6 +338,8 @@ def run_score(args):
     sample = load_sample(args.sample_dir)
     if args.label_types:
         sample = sample[sample.label_type.isin(args.label_types.split(","))]
+    if args.subset:
+        sample = balanced_subset(sample, args.subset)
     if args.limit:
         # balanced pilot: the first --limit rows per type (sample.csv order), both splits and classes represented
         sample = (sample.sort_values(["label_type", "label_class", "label_uid"])
@@ -596,9 +623,11 @@ def run_report(args):
     files = sorted(f for f in os.listdir(score_dir) if f.endswith(".csv") and ".greedy_check" not in f)
     scores = pd.concat([pd.read_csv(os.path.join(score_dir, f)) for f in files], ignore_index=True)
     pred = predictions(sample, scores)
-    main = pred[pred.variant == "definition"]
-    complete = [m for m, g in main.groupby("model") if g.label_uid.nunique() == len(sample)]
-    main = main[main.model.isin(complete)]
+    main_all = pred[pred.variant == "definition"]
+    subset = set(balanced_subset(sample, args.subset).label_uid) if args.subset else set(sample.label_uid)
+    complete = [m for m, g in main_all.groupby("model") if subset <= set(g.label_uid)]
+    main = main_all[main_all.model.isin(complete) & main_all.label_uid.isin(subset)]
+    full = [m for m, g in main_all.groupby("model") if g.label_uid.nunique() == len(sample)]
     os.makedirs(args.doc_dir, exist_ok=True)
     w = lambda df, name: df.to_csv(os.path.join(args.doc_dir, name), index=False, float_format="%.4f")  # noqa: E731
 
@@ -608,7 +637,16 @@ def run_report(args):
     by_split = metrics_table(main, ["model", "label_type", "split"])
     by_split_pooled = metrics_table(main, ["model", "split"]).assign(label_type="all (pooled)")
     w(pd.concat([by_split, by_split_pooled], ignore_index=True), "by_split.csv")
-    hard = metrics_table(main[main.hard == 1], ["model"]).assign(slice="hard == 1, all types")
+    hard = metrics_table(main[main.hard == 1], ["model"]).assign(slice="hard == 1, all types, subset")
+    full_all = main_all[main_all.model.isin(full)]
+    if len(full_all):
+        full_tab = pd.concat([metrics_table(full_all, ["model", "label_type"]),
+                              metrics_table(full_all, ["model"]).assign(label_type="all (pooled)")])
+        hard = pd.concat([hard, metrics_table(full_all[full_all.hard == 1], ["model"])
+                          .assign(slice="hard == 1, all types, full sample")], ignore_index=True)
+    else:
+        full_tab = pd.DataFrame()
+    w(full_tab, "full_sample.csv")
     w(hard, "hard.csv")
     city = per_city_table(main, cities, min_n=args.min_city_n)
     w(city, "per_city.csv")
@@ -659,9 +697,12 @@ def run_report(args):
             "r_correct_p95", "r_correct_p92"]
     with open(os.path.join(args.doc_dir, "report.md"), "w") as f:
         f.write(f"# VLM baseline report (generated {datetime.date.today()})\n\nbest VLM by mean per-type AUC: "
-                f"{best}\n\n## headline\n\n{markdown(pd.concat([headline, pooled])[cols])}\n\n"
+                f"{best}\n\nheadline set: {len(subset)} crops (balanced_subset per_type={args.subset}); "
+                f"models on it: {', '.join(complete)}\n\n## headline\n\n{markdown(pd.concat([headline, pooled])[cols])}\n\n"
                 f"## by split\n\n{markdown(pd.concat([by_split, by_split_pooled])[cols[:2] + ['split'] + cols[2:]])}"
-                f"\n\n## hard\n\n{markdown(hard[['model', 'n', 'n_incorrect', 'auc', 'balanced_accuracy']])}\n\n"
+                f"\n\n## hard\n\n{markdown(hard[['slice', 'model', 'n', 'n_incorrect', 'auc', 'balanced_accuracy']])}\n\n"
+                f"## full sample (models that scored all {len(sample)} crops)\n\n"
+                f"{markdown(full_tab[cols]) if len(full_tab) else '(none)'}\n\n"
                 f"## per city\n\n{markdown(city[['model', 'city', 'n', 'auc', 'balanced_accuracy']])}\n\n"
                 f"## bootstrap\n\n{markdown(boot)}\n\n## latency\n\n{markdown(lat)}\n\n"
                 f"## ablation\n\n{markdown(ablation) if len(ablation) else '(none)'}\n\n"
@@ -709,6 +750,7 @@ def write_provenance(args, sample, files, score_dir, complete):
                     if f.endswith(".csv")},
         "bootstrap": {"n_boot": args.n_boot, "seed": args.seed, "stratified_by_class": True},
         "min_city_n": args.min_city_n,
+        "headline_subset_per_type": args.subset,
     }
     old = {}
     pp = os.path.join(args.doc_dir, "provenance.json")
@@ -990,6 +1032,8 @@ def main(argv=None):
     s.add_argument("--model", required=True, choices=sorted(MODELS))
     s.add_argument("--variant", default="definition", choices=VARIANTS)
     s.add_argument("--label-types", default=None, help="comma-separated subset (default all five)")
+    s.add_argument("--subset", type=int, default=0,
+                   help="score only balanced_subset(per_type=N): class-balanced, both splits (0 = all crops)")
     s.add_argument("--limit", type=int, default=0, help="pilot: about this many crops per type, both classes")
     s.add_argument("--check-greedy", type=int, default=0,
                    help="also generate greedily on the first N crops and compare with the score's argmax")
@@ -1003,6 +1047,8 @@ def main(argv=None):
     r.add_argument("--doc-dir", default="docs/vlm-baseline-2026-10")
     r.add_argument("--cities-json", required=True, help="saved /v3/api/cities response (decides public naming)")
     r.add_argument("--min-city-n", type=int, default=30)
+    r.add_argument("--subset", type=int, default=200,
+                   help="headline tables on balanced_subset(per_type=N), the crops every VLM scored (0 = all)")
     r.add_argument("--n-boot", type=int, default=1000)
     r.add_argument("--seed", type=int, default=20261021, help="bootstrap seed")
 
