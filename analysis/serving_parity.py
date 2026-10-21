@@ -1174,11 +1174,26 @@ def isolate(args):
     print(text, end="")
 
 
+def depth_margin_mm(depth_m):
+    """How far, in millimetres, the centre depth may move before training's crop half-size ``int(6100 / d)`` changes:
+    the distance from ``6100 / d`` to the nearest integer, times ``d**2 / 6100`` (the first-order depth change per unit
+    of ``6100 / d``). A case with a small margin can cut a crop one pixel larger or smaller on another device.
+
+    >>> round(depth_margin_mm(6100 / 100.5), 1)   # 6100 / d = 100.5: half a unit from either boundary
+    302.0
+    """
+    q = CROP_DEPTH_CONSTANT / float(depth_m)
+    frac = q - np.floor(q)
+    return float(min(frac, 1 - frac) * float(depth_m) ** 2 / CROP_DEPTH_CONSTANT * 1000)
+
+
 def expected_values(args):
     """The deploy smoke test's expected outputs: for each point x matched pose x model, what ``/process`` should return
     once it serves training's input (opencv 4.12 resize + q95 WebP round trip), i.e. the train worker's probabilities on
     its decoded WebP crop, beside what the API returns today (``--api``, its raw crop). ``roll1_only`` is left out:
-    the two sides read that pose differently by design. Writes ``--out`` (CSV)."""
+    the two sides read that pose differently by design. ``in_smoke_set`` is False for cases whose centre depth is within
+    ``--min-margin-mm`` of a crop-half boundary (:func:`depth_margin_mm`): a device-level depth change there flips the
+    crop by a pixel, which moves p by up to 0.19, so those rows cannot be held to a 0.01 tolerance. Writes ``--out``."""
     import pandas as pd
     tr = json.load(open(os.path.join(args.train, "index.json")))
     ap = json.load(open(os.path.join(args.api, "index.json")))
@@ -1189,16 +1204,24 @@ def expected_values(args):
         for mt in LABEL_TYPES:
             pt = tr["models"][mt]["cases"][cid]["probs_webp"]
             pa = ap["models"][mt]["cases"][cid]["probs_api"]
-            rows.append({"point_id": t["point_id"], "x": repr(float(t["x_norm"])), "y": repr(float(t["y_norm"])),
+            margin = depth_margin_mm(t["depth_centre"])
+            rows.append({"point_id": t["point_id"], "pose": t["pose"], "x": repr(float(t["x_norm"])),
+                         "y": repr(float(t["y_norm"])),
                          "camera_pitch": t["camera_pitch"], "camera_roll": t["camera_roll"], "tilt_beta": TILT_BETA,
-                         "label_type": mt, "expected_p_incorrect": round(pt[1], 6),
+                         "label_type": mt, "expected_crop_half_px": t["crop_half_px"],
+                         "depth_margin_mm": round(margin, 3), "in_smoke_set": bool(margin >= args.min_margin_mm),
+                         "expected_p_incorrect": round(pt[1], 6),
                          "expected_validation_result": CLASSES[int(np.argmax(pt))],
                          "api_174a169_p_incorrect": round(pa[1], 6),
                          "api_174a169_abs_diff": round(abs(pt[1] - pa[1]), 6)})
     df = pd.DataFrame(rows)
     df.to_csv(args.out, index=False)
+    smoke, out = df[df.in_smoke_set], df[~df.in_smoke_set]
     print(f"{len(df)} rows; today's API is off by > 0.01 in {int((df.api_174a169_abs_diff > 0.01).sum())}, "
-          f"max {df.api_174a169_abs_diff.max():.4f}")
+          f"max {df.api_174a169_abs_diff.max():.4f}. Smoke set (depth margin >= {args.min_margin_mm:g} mm): "
+          f"{len(smoke)} rows, {smoke.groupby(['point_id', 'pose']).ngroups} cases; today's API misses "
+          f"{int((smoke.api_174a169_abs_diff > 0.01).sum())}, max {smoke.api_174a169_abs_diff.max():.4f}. "
+          f"Excluded cases: {sorted(set(out.point_id + '__' + out.pose))}")
 
 
 def crop_half_report(args):
@@ -1363,6 +1386,8 @@ def build_parser():
     e.add_argument("--train", required=True)
     e.add_argument("--api", required=True)
     e.add_argument("--out", required=True)
+    e.add_argument("--min-margin-mm", type=float, default=5.0,
+                   help="cases whose centre depth is closer than this to a crop-half boundary leave the smoke set")
     h = sub.add_parser("crop-half", help="exhaustive float32 vs float64 crop-half disagreement")
     h.add_argument("--lo", type=float, default=1.0)
     h.add_argument("--hi", type=float, default=80.0)

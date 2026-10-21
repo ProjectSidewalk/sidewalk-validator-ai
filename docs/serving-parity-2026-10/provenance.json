@@ -213,7 +213,10 @@
    "sha256": "4934902dca3a56863e3e0bda04e4ae4e5e507a0c349b3df7e6ddd6567b38e380"
   },
   "expected_process.csv": {
-   "sha256": "9c3d618aa8265b04bb071354ef0d4b122f1f8968ac7a819ca4f25584cfa748bf"
+   "sha256": "889f8d08f8472aa6c59ac6c457b3b811fff810c80f32ce1a02ddfb336f6b3c52",
+   "rows": 150,
+   "smoke_set_rows": 105,
+   "min_margin_mm": 5.0
   }
  },
  "probes": {
@@ -251,7 +254,7 @@
   "venv-requirements.txt": "2775a796a0d94455471633ff32ee7f7f2c4c9ed99ccb3e8f10455e1ac14ab1e2"
  },
  "round3_environment": {
-  "path": "/gscratch/makelab/jfroehli/envs/sidewalk-validator-ai (klone)",
+  "path": "the klone conda env that ran round 3",
   "read": "2026-10-21, by hand",
   "opencv-python": "4.12.0.88 (installed 2026-10-18 07:42)",
   "pillow": "11.3.0",

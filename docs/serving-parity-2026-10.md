@@ -32,7 +32,9 @@ a roll sent without a pitch, and no real label has one (below).
 With both fixes the served input is **expected** to be byte-identical to what training saw on the CPU: each fix
 removes the only difference measured at its stage, and the q95 WebP bytes were identical across the two Pillow builds
 here (40/40 crops). No API build with both fixes was run, the Pillow check was on arm64 only, and GPU-to-GPU
-differences (klone's CUDA vs the server's) were not measured; the CPU-vs-mps probe puts those near \|Δp\| 0.002.
+differences (klone's CUDA vs the server's) were not measured. The only device probe is the mps *render* (\|Δp\| ≤
+0.0016); GPU depth and GPU classifier outputs were not measured, and a depth change of under 1 mm can flip a crop by
+a pixel (below).
 The deploy smoke test proposed below checks the real thing on the server.
 
 ## How the numbers were made
@@ -62,8 +64,7 @@ The deploy smoke test proposed below checks the real thing on the server.
   records) and Depth-Anything-V2 a561b84. `pip freeze` for each venv is in `serving-parity-2026-10/pip-freeze/`; the
   requirements.txt venv is unpinned (it resolved opencv 5.0 and Pillow 13.0), and flask was added to it after the run
   for the live-API tests.
-- **The env that cut round 3** (checked on klone, 2026-10-21): `/gscratch/makelab/jfroehli/envs/sidewalk-validator-ai`
-  has opencv-python 4.12.0.88 (installed 2026-10-18 07:42), pillow 11.3.0, torch 2.7.1, torchvision 0.22.1,
+- **The env that cut round 3** (checked on klone, 2026-10-21): the klone conda env that ran round 3 has opencv-python 4.12.0.88 (installed 2026-10-18 07:42), pillow 11.3.0, torch 2.7.1, torchvision 0.22.1,
   transformers 4.55.0, numpy 2.2.6, python 3.10, the same versions as the `train` venv above and as `environment.yml`.
   All five round-3 `generation_run.json` files have `started` 2026-10-20, after that install.
 - **Inputs**: sidewalk-panorama-tools' `samples/sample_pano.jpg` (13312 × 6656 GSV). Its `labeldata.csv` rows belong
@@ -204,7 +205,7 @@ retrained round-3 checkpoints were not available.
 | WebP (not in issue #5) | **Open → sidewalk-ai-api** | p90 \|Δp\| 0.026, max 0.11; 2/150 vote changes on real-panorama crops; 6/1,988 on the sample for a second generation | API: an in-memory q95 encode + decode (Pillow, as `save_webp`) on a separate `validator_image`. q95 bytes were identical for 40/40 crops across Pillow 11.3.0 (libwebp 1.5.0) and 12.3.0 (1.6.0) on arm64 |
 | transformers / torch version (not in issue #5) | **Closed** | max \|Δp\| 1.7e-5, no flip | Nothing |
 | opencv version (found here) | **Open → sidewalk-ai-api** | 1 level on 10% of the panorama → max \|Δp\| 0.064 (cross-feed: all of the crop difference) | API pins opencv-python 4.12.0.88, the version round 3 was cut with (not regenerating round 3) |
-| GPU (not measured) | **Unknown, probably small** | cpu vs mps: \|Δp\| ≤ 0.0016 | No klone CUDA run; the deploy smoke test (tolerance 0.01) covers it |
+| GPU (not measured) | **Unknown** | mps render only: \|Δp\| ≤ 0.0016; GPU depth and classifier not measured | No klone CUDA run; the deploy smoke test (tolerance 0.01, on the cases far from a crop-size boundary) covers it |
 
 ## Caveats
 
@@ -250,7 +251,8 @@ retrained round-3 checkpoints were not available.
 > from the 4.12 that cut round 3 (max |Δp| 0.064; a cross-feed run shows this is the whole crop difference), and it
 > feeds the validator the raw crop where training models saw q95 WebP (max |Δp| 0.11, 2 of 150 served votes
 > changed). Decided: the API pins opencv-python 4.12.0.88 and round-trips the validator's crop through q95 WebP, and
-> a deploy smoke test checks `/process` against `docs/serving-parity-2026-10/expected_process.csv` within 0.01.
+> a deploy smoke test checks `/process` against the 105 smoke-set rows of
+> `docs/serving-parity-2026-10/expected_process.csv` within 0.01.
 > `tests/test_serving_parity.py` checks the live API code when `SIDEWALK_AI_API_DIR` is set.
 
 ## Proposed sidewalk-ai-api issue
@@ -282,9 +284,15 @@ retrained round-3 checkpoints were not available.
 >    `<store>/parity/pa/parityPano01.jpg`, call `/process` with `city=parity`, `panorama_id=parityPano01` and each row
 >    of sidewalk-validator-ai's `docs/serving-parity-2026-10/expected_process.csv` (`x`, `y` as written,
 >    `camera_pitch`/`camera_roll` when present, `tilt_beta`, `label_type`), and require |p(incorrect) −
->    `expected_p_incorrect`| ≤ 0.01 for all 150 rows. p(incorrect) is `validation_score` when
->    `validation_result` is `incorrect`, else 1 − `validation_score`. Today's API (174a169) misses 33 of the 150 rows
->    (max 0.081), so the test separates the fixed pipeline from the current one; GPU-vs-CPU noise is about 0.002.
+>    `expected_p_incorrect`| ≤ 0.01 for every row with `in_smoke_set` true: 105 of the 150 rows (21 of 30 cases).
+>    p(incorrect) is `validation_score` when `validation_result` is `incorrect`, else 1 − `validation_score`. The 45
+>    rows left out (9 cases) have a centre depth within 5 mm of a crop-size boundary (`depth_margin_mm`, the depth
+>    change that would move `expected_crop_half_px` by one pixel): the five cases whose crop size changed between the opencv
+>    4.12 and 5.0 runs (by 1–6 px) are exactly the five with margins under 2.1 mm, and a one-pixel change moves p by
+>    up to 0.19, so a correct server could fail them. Today's API (174a169) misses 24 of the 105 smoke-set rows (max 0.057), so the test separates
+>    the fixed pipeline from the current one. The tolerance has not been checked against GPU depth or GPU classifier
+>    noise (only the mps render was probed, \|Δp\| ≤ 0.0016); if correct-looking deploys fail by a little, measure
+>    that before loosening it.
 >    The expected values hold for the current production validators (the `model_map.py` revisions in the doc's
 >    provenance); regenerate the file with `serving_parity.py expected` when the retrained models are mapped in.
 > 4. **To do:** re-measure on the x86 server image that the q95 WebP bytes match training's (Pillow 11.3.0 on klone)

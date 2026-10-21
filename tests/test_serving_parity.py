@@ -263,7 +263,6 @@ def pano_8192():
     return structured_pano(8192)
 
 
-@needs_api
 def _logical_lines(lines):
     """Non-blank lines, whitespace-normalised, with a call wrapped over several lines joined into one."""
     out, buf = [], ""
