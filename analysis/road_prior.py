@@ -554,14 +554,17 @@ def osm_features(labels, crossings, service):
 
 
 def production_assessments(labels_oof, cities):
-    """``label_uid, ai_result, ai_accuracy, oof_accuracy`` from ``labels_oof.csv``, keyed ``city_id:label_id``.
+    """``label_uid, ai_result, ai_accuracy, oof_accuracy, new_accuracy`` from ``labels_oof.csv``, keyed
+    ``city_id:label_id``. ``oof_accuracy`` exists only for labels the calibration was fit on (enough human votes);
+    ``new_accuracy`` exists for every assessment and is out-of-sample for the rest, since they were not in the fit.
 
     The schema's city part is matched to a ``city_id`` with ``calibration.per_city.match_city_id``; unmatched schemas
     are dropped (they have no rawLabels file here anyway).
 
     >>> oof = pd.DataFrame({"schema": ["sidewalk_seattle", "sidewalk_zzz"], "label_id": [5, 5],
     ...                     "label_type": ["CurbRamp"] * 2, "ai_result": ["Agree"] * 2,
-    ...                     "ai_accuracy": [0.9, 0.9], "oof_accuracy": [0.95, 0.95]})
+    ...                     "ai_accuracy": [0.9, 0.9], "oof_accuracy": [0.95, 0.95],
+    ...                     "new_accuracy": [0.95, 0.95]})
     >>> production_assessments(oof, {"seattle-wa": "public"}).label_uid.tolist()
     ['seattle-wa:5']
     """
@@ -572,7 +575,7 @@ def production_assessments(labels_oof, cities):
     keep = cid.notna()
     out = pd.DataFrame({"label_uid": cid[keep] + ":" + df.loc[keep, "label_id"].astype(str),
                         "ai_result": df.loc[keep, "ai_result"], "ai_accuracy": df.loc[keep, "ai_accuracy"],
-                        "oof_accuracy": df.loc[keep, "oof_accuracy"]})
+                        "oof_accuracy": df.loc[keep, "oof_accuracy"], "new_accuracy": df.loc[keep, "new_accuracy"]})
     assert out.label_uid.is_unique, "labels_oof has duplicate (city, label_id) rows"
     return out
 
@@ -1219,10 +1222,16 @@ def logit_fit(X, y, names, max_iter=100, tol=1e-10):
 def cast_disagrees(df, min_votes=3):
     """Public CurbRamp labels the AI cast a Disagree vote on, with ``conf_logit`` (logit of the production
     P(Agree)), ``y`` = 1 when the human majority confirms the Disagree, and ``validated`` (>= ``min_votes`` human
-    votes and a strict majority). Rows without both distances are dropped."""
-    c = df[(df.label_type == "CurbRamp") & (df.ai_vote == "Disagree") & df.oof_accuracy.notna()]
-    c = c.dropna(subset=["d_intersection_m", "d_crossing_m"]).copy()
-    pa = np.clip(p_agree(c.ai_result, c.oof_accuracy), 1e-4, 1 - 1e-4)
+    votes and a strict majority). Rows without both distances are dropped.
+
+    The confidence is ``conf_accuracy``: ``oof_accuracy`` where the label was in the calibration fit, else
+    ``new_accuracy`` (out-of-sample, because the label was not in the fit). Requiring ``oof_accuracy`` would drop
+    almost every cast Disagree with fewer than two human votes and bias every coverage share toward
+    well-validated cities."""
+    c = df[(df.label_type == "CurbRamp") & (df.ai_vote == "Disagree")].copy()
+    c["conf_accuracy"] = c.oof_accuracy.fillna(c.new_accuracy) if "new_accuracy" in c else c.oof_accuracy
+    c = c.dropna(subset=["conf_accuracy", "d_intersection_m", "d_crossing_m"])
+    pa = np.clip(p_agree(c.ai_result, c.conf_accuracy), 1e-4, 1 - 1e-4)
     c["conf_logit"] = np.log(pa / (1 - pa))
     c["validated"] = (c.h_n >= min_votes) & c.h_maj.isin(["Agree", "Disagree"])
     c["y"] = (c.h_maj == "Disagree").astype(int)
@@ -1248,9 +1257,14 @@ def city_fe_models(v, thresholds=ROUTING_THRESHOLDS_M):
 
     Two specifications: context (``near_both``, ``far_one``; reference far from both) and axes (``near_int``,
     ``near_cross``). The city dummies absorb each city's base rate and OSM coverage, so the coefficients compare
-    labels within a city at equal confidence.
+    labels within a city at equal confidence. Cities whose validated labels all share one outcome carry no
+    within-city information and make the fit singular (perfect separation), so they are dropped and counted in
+    ``cities_dropped``.
     """
     rows = []
+    both = v.groupby("city").y.transform("nunique") == 2
+    dropped = v.loc[~both, "city"].nunique()
+    v = v[both]
     cities = pd.get_dummies(v.city, drop_first=True, dtype=float)
     for t in thresholds:
         dm = context_dummies(v, t)
@@ -1260,7 +1274,8 @@ def city_fe_models(v, thresholds=ROUTING_THRESHOLDS_M):
             for term in cols:
                 r = fit.loc[term]
                 rows.append({"threshold_m": t, "spec": spec, "term": term, "coef": r.coef, "se": r.se, "p": r.p,
-                             "share": float(dm[term].mean()), "n": len(v), "cities": v.city.nunique()})
+                             "share": float(dm[term].mean()), "n": len(v), "cities": v.city.nunique(),
+                             "cities_dropped": dropped})
     return pd.DataFrame(rows)
 
 
@@ -1274,15 +1289,15 @@ def coarse_context_lift(v, far_m=FAR_CROSSING_M, min_city_n=100, n_boot=500):
 
 
 def quartile_context(v):
-    """Confirm rate and n by ``oof_accuracy`` quartile and road context (25 m), one row per quartile."""
-    q = pd.qcut(v.oof_accuracy, 4, duplicates="drop").astype(str)
+    """Confirm rate and n by ``conf_accuracy`` quartile and road context (25 m), one row per quartile."""
+    q = pd.qcut(v.conf_accuracy, 4, duplicates="drop").astype(str)
     ctx = road_context(v)
     g = v.groupby([q, ctx]).y.agg(["mean", "size"]).unstack()
     out = pd.DataFrame(index=g.index)
     for c in ("far_both", "far_one", "near_both"):
         if ("mean", c) in g:
             out[c] = [f"{m:.2f} ({int(n)})" if n == n else "" for m, n in zip(g[("mean", c)], g[("size", c)])]
-    return out.reset_index().rename(columns={"oof_accuracy": "oof_accuracy_quartile"})
+    return out.reset_index().rename(columns={"conf_accuracy": "conf_accuracy_quartile"})
 
 
 def city_routing_table(df, cast, min_n=100, far_m=FAR_CROSSING_M):
@@ -1346,7 +1361,8 @@ def routing_report(df, cities, n_boot=500, min_city_n=100):
         q = quartile_context(v)
         tables[f"quartile_context_minvotes{mv}"] = q
         md += [f"## Confirm rate by confidence quartile and context, >= {mv} human votes (n = {len(v):,})", "",
-               "Cells are confirm rate (n). Quartiles are of `oof_accuracy` within this set.", "", _md(q), ""]
+               "Cells are confirm rate (n). Quartiles are of `conf_accuracy` (`oof_accuracy` where "
+               "the label was in the calibration fit, else `new_accuracy`) within this set.", "", _md(q), ""]
     v3 = cast[cast.validated]
     fe = pd.concat([city_fe_models(v3).assign(min_votes=3), city_fe_models(cast_disagrees(df, 1)
                     .query("validated")).assign(min_votes=1)])
@@ -1354,7 +1370,8 @@ def routing_report(df, cities, n_boot=500, min_city_n=100):
     md += ["## City-fixed-effects logistic, y on conf_logit + context + city dummies", "",
            "Coefficients are log-odds of a confirmed Disagree. `context`: near_both and far_one against far from "
            "both. `axes`: near an intersection node, near an OSM crossing.", "",
-           _md(fe[["min_votes", "threshold_m", "spec", "term", "coef", "se", "p", "share", "n", "cities"]], 4), ""]
+           _md(fe[["min_votes", "threshold_m", "spec", "term", "coef", "se", "p", "share", "n", "cities",
+                   "cities_dropped"]], 4), ""]
     pooled, per_city, _ = coarse_context_lift(v3, min_city_n=min_city_n, n_boot=n_boot)
     tables["coarse_lift_by_city"] = per_city
     tables["coarse_lift"] = pd.DataFrame([pooled])

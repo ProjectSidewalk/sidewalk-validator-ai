@@ -102,7 +102,8 @@ def test_public_name_filter(tmp_path):
 def test_production_assessments_key_on_city_and_label_id():
     oof = pd.DataFrame({"schema": ["sidewalk_seattle", "sidewalk_amsterdam"], "label_id": [7, 7],
                         "label_type": ["CurbRamp", "CurbRamp"], "ai_result": ["Agree", "Disagree"],
-                        "ai_accuracy": [0.9, 0.6], "oof_accuracy": [0.95, 0.5]})
+                        "ai_accuracy": [0.9, 0.6], "oof_accuracy": [0.95, 0.5],
+                        "new_accuracy": [0.95, 0.5]})
     cities = {"seattle-wa": "public", "amsterdam": "public"}
     out = rp.production_assessments(oof, cities)
     assert sorted(out.label_uid) == ["amsterdam:7", "seattle-wa:7"]
@@ -244,6 +245,13 @@ def test_city_fe_recovers_negative_near_both_effect():
     assert fe.loc[("context", "near_both"), "coef"] < -1.0 and fe.loc[("context", "near_both"), "p"] < 1e-6
 
 
+def test_cast_disagrees_falls_back_to_new_accuracy():
+    d = _cast(20).assign(new_accuracy=0.5)
+    d.loc[:4, "oof_accuracy"] = np.nan
+    c = rp.cast_disagrees(d)
+    assert len(c) == 20 and (c.conf_accuracy.iloc[:5] == 0.5).all()
+
+
 def test_cast_disagrees_keeps_only_cast_votes():
     d = _cast(50)
     d.loc[:9, "ai_vote"] = "Unsure"
@@ -259,3 +267,11 @@ def test_routing_report_runs_and_names_only_public_cities():
     assert "secret-city" not in md
     assert set(tables["routing_by_city"].city) == {"a-wa", "b-wa"}
     assert {"quartile_context_minvotes1", "quartile_context_minvotes3", "city_fe", "coarse_lift"} <= set(tables)
+
+
+def test_city_fe_drops_single_outcome_cities():
+    v = rp.cast_disagrees(_cast(3000))
+    v = v[v.validated].copy()
+    extra = v.head(5).assign(city="tiny-wa", y=1)
+    fe = rp.city_fe_models(pd.concat([v, extra]), thresholds=(25,))
+    assert (fe.cities_dropped == 1).all() and (fe.cities == 3).all()
