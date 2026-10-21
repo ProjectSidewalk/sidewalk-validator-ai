@@ -15,18 +15,25 @@ difference and its effect on the five production validators. The code is `analys
 
 | Skew | Size on the input | Effect on the five production models (150 model × case pairs) | Fix |
 |---|---|---|---|
-| **opencv version**: `environment.yml` pins opencv-python 4.12.0.88, the API image 5.0.0.93. Their `cv2.resize(INTER_LINEAR)` differs (JPEG decode and `INTER_CUBIC` do not) | 1 level on 10.1% of panorama values; then 0/30 crops identical, crop half-size off by 1–6 px in 5/30 | max \|Δp\| 0.064, p90 0.011; 0 verdict flips, 0 vote changes | Same opencv in both. Check the klone env's actual version first |
-| **WebP q95**: training models see a decoded q95 WebP, the API the raw crop | mean 1.16 levels per value, max 25 | max \|Δp\| 0.109, p90 0.026; 1 verdict flip, **2 vote changes** | The API encodes and decodes q95 WebP before the validator, or training stores lossless crops |
+| **opencv version**: the env that cut round 3 has opencv-python 4.12.0.88, the API image 5.0.0.93. Their `cv2.resize(INTER_LINEAR)` of the panorama differs (JPEG decode and `INTER_CUBIC` do not) | 1 level on 10.1% of panorama values; then 0/30 crops identical, crop half-size off by 1–6 px in 5/30 | max \|Δp\| 0.064, p90 0.011; 0 verdict flips, 0 vote changes | The API pins opencv-python 4.12.0.88 |
+| **WebP q95**: training models see a decoded q95 WebP, the API the raw crop | mean 1.16 levels per value, max 25 | max \|Δp\| 0.109, p90 0.026; 1 verdict flip, **2 vote changes** | The API encodes and decodes q95 WebP in memory (Pillow) for the validator only |
+
+The opencv attribution is measured, not inferred: fed the training side's resized panorama
+(`api-worker --pano-npy`), the API's own code in its own venv (torch 2.14.1, numpy 2.5.4) renders 30/30 identical views
+and cuts 30/30 identical crops. Its depth maps then differ from training's by at most 1.8 mm (torch 2.7.1 vs 2.14.1 in
+the Depth Anything forward), which changed no crop size here.
 
 Everything else is exact or negligible: preprocessing (transformers 4.55 `use_fast=False` vs 5.20 `backend="pil"`:
 identical tensors), the transformers/torch version on the model itself (max \|Δp\| 1.7e-5), the camera tilt (same
-package, same frame rule for every pose a GSV label has), the depth model (same checkpoint, BGR on both sides,
-identical maps given identical views) and the crop rule (identical except a float32 rounding that hits about 1 label
-in 90,000). One frame-rule difference exists, a roll sent without a pitch, but no label in the round-3 data has a
-roll, so it never fires today.
+package, same frame rule for every pose a GSV label has), the depth model (same checkpoint, BGR on both sides) and the
+crop rule (identical except a float32 rounding that hits about 1 label in 90,000). One frame-rule difference exists,
+a roll sent without a pitch, and no real label has one (below).
 
-Applying both fixes makes the served input byte-identical to what training saw, on the CPU. GPU-to-GPU differences
-(klone's CUDA vs the server's) were not measured; the CPU-vs-mps probe puts them near \|Δp\| 0.002.
+With both fixes the served input is **expected** to be byte-identical to what training saw on the CPU: each fix
+removes the only difference measured at its stage, and the q95 WebP bytes were identical across the two Pillow builds
+here (40/40 crops). No API build with both fixes was run, the Pillow check was on arm64 only, and GPU-to-GPU
+differences (klone's CUDA vs the server's) were not measured; the CPU-vs-mps probe puts those near \|Δp\| 0.002.
+The deploy smoke test proposed below checks the real thing on the server.
 
 ## How the numbers were made
 
@@ -38,18 +45,27 @@ Applying both fixes makes the served input byte-identical to what training saw, 
   Flask's test client with the real `Panorama` cache path (`SIDEWALK_SCRAPES_DIR` = the same shim store), the real
   `DepthAnythingPredictor` and the real `ImageValidator` for each type. Recorders capture the image handed to depth
   and the PIL crop handed to the validator, so nothing is re-derived. The recorder's logits reproduce `validate()`'s
-  verdict and confidence in 200/200 calls.
+  verdict and confidence in 200/200 calls. Two inputs are not the API checkout's own: its `Depth-Anything-V2` submodule
+  is not initialised in the read-only worktree, so the API worker uses this repo's (the same commit, a561b84), and the
+  API-side `crop_half_px` in the tables is re-derived from the recorded depth map with the API's expression (the API
+  does not return it); the crop itself is recorded.
 - **Environments** (each a separate venv; arrays cross between them as `.npy` / lossless `.png`):
 
 | | python | numpy | opencv | pillow (libwebp) | torch | transformers |
 |---|---|---|---|---|---|---|
-| train (`environment.yml` pins, as on klone) | 3.10.19 | 2.2.6 | 4.12.0 | 11.3.0 (1.5.0) | 2.7.1 | 4.55.0 |
+| train (the klone env's versions) | 3.10.19 | 2.2.6 | 4.12.0 | 11.3.0 (1.5.0) | 2.7.1 | 4.55.0 |
 | train_other1 (`requirements.txt` venv) | 3.12.14 | 2.5.4 | 5.0.0 | 13.0.0 (1.6.0) | 2.14.1 | 4.55.0 |
 | api (sidewalk-ai-api `requirements.txt`) | 3.12.14 | 2.5.4 | 5.0.0 | 12.3.0 (1.6.0) | 2.14.1 | 5.20.0 |
 
   The API pins the CUDA build of torch 2.14.1; the Mac gets the CPU/MPS wheel of the same version, and `triton` is
   left out. Both repos pin sidewalk-panorama-tools v1.0.0 (= 7ce25ff, the commit round-3's `generation_run.json`
-  records) and Depth-Anything-V2 a561b84. The brief said transformers 5.19; the API's requirements.txt pins 5.20.0.
+  records) and Depth-Anything-V2 a561b84. `pip freeze` for each venv is in `serving-parity-2026-10/pip-freeze/`; the
+  requirements.txt venv is unpinned (it resolved opencv 5.0 and Pillow 13.0), and flask was added to it after the run
+  for the live-API tests.
+- **The env that cut round 3** (checked on klone, 2026-10-21): `/gscratch/makelab/jfroehli/envs/sidewalk-validator-ai`
+  has opencv-python 4.12.0.88 (installed 2026-10-18 07:42), pillow 11.3.0, torch 2.7.1, torchvision 0.22.1,
+  transformers 4.55.0, numpy 2.2.6, python 3.10, the same versions as the `train` venv above and as `environment.yml`.
+  All five round-3 `generation_run.json` files have `started` 2026-10-20, after that install.
 - **Inputs**: sidewalk-panorama-tools' `samples/sample_pano.jpg` (13312 × 6656 GSV). Its `labeldata.csv` rows belong
   to other panoramas (pano_id mismatch), so P01 is the curb ramp hand-picked in that repo's `assets/make_banner.py`
   and P02–P10 are synthetic: sidewalk-level points round the view, the horizon, both sides of the seam, near nadir and
@@ -68,11 +84,27 @@ python analysis/serving_parity.py run --train-python venv-klone/bin/python --oth
 python analysis/serving_parity.py webp-sample --sample-csv round3/sample.csv --crops round3/crops \
     --api-dir ~/Git/sidewalk-ai-api-wt/tilt-fields --device mps --out-csv ~/Data/serving-parity-2026-10/webp_gen2.csv
 python analysis/serving_parity.py crop-half --sample-csv round3/sample.csv
+# stage-1 isolation: the API worker on the training side's resized pano, then the comparison
+venv-api/bin/python analysis/serving_parity.py api-worker --api-dir ~/Git/sidewalk-ai-api-wt/tilt-fields \
+    --depth-checkpoint depth_anything_v2_metric_vkitti_vitb.pth --train-dir WORK/train \
+    --pano-npy WORK/train/pano_bgr.npy --out WORK/api_xfeed
+python analysis/serving_parity.py isolate --train WORK/train --api WORK/api_xfeed --out isolation.txt
+# opencv decode/resize and WebP bytes, per build
+venv-klone/bin/python analysis/serving_parity.py pixel-probe --pano sample_pano.jpg \
+    --crops WORK/train/*/crop_raw.png --crops-root WORK/train --out P_klone
+venv-api/bin/python analysis/serving_parity.py pixel-probe --pano sample_pano.jpg --reference-decode P_klone/decode.npy \
+    --crops WORK/train/*/crop_raw.png --crops-root WORK/train --out P_api
+python analysis/serving_parity.py pixel-compare P_klone P_api --out pixel_probe.txt
 SIDEWALK_AI_API_DIR=~/Git/sidewalk-ai-api-wt/tilt-fields pytest -q tests/test_serving_parity.py   # live API checks
 ```
 
-Full per-case tables: `serving-parity-2026-10/crops.csv` (stages 1–4), `models.csv` (stages 2, 4–7 per model) and
-`summary.md`; `webp_gen2_summary.csv` and `crop_half.txt` for stages 5b and 4b.
+`compare` writes `crops.csv`, `models.csv`, `summary.md` and `environments.json` to `WORK/out`. The committed
+`serving-parity-2026-10/` holds `crops.csv` (stages 1–4 per case), `summary.md` (every comparison per model and
+pooled, with median, p90 and max \|Δp\|), `environments.json`, `isolation.txt`/`.csv`, `pixel_probe.txt`,
+`expected_process.csv` (the smoke test's values), `webp_gen2_summary.csv` and `crop_half.txt`. The per-case model
+table `models.csv` (359 KB) stays outside the repo, at `~/Data/serving-parity-2026-10/models.csv`, sha256 in
+`provenance.json`. Served votes use the tilt-fields `accuracy_mappings/` (sha256 in `provenance.json`), which may not
+be the maps production serves today.
 
 ## Results by stage
 
@@ -88,8 +120,12 @@ Full per-case tables: `serving-parity-2026-10/crops.csv` (stages 1–4), `models
 | 4. `crop_half_px` | 25/30 equal (P08–P10: off by 1, 1, 3, 6, 1 px) | 30/30 |
 | 4. Crop array | 0/30 identical, mean abs ≤ 3.95 levels | 30/30 identical |
 
-Isolated on the same file: JPEG decode is identical across opencv 4.12 and 5.0, `INTER_CUBIC` on an identical view is
-identical, and only `INTER_LINEAR` (the panorama resize) differs.
+**Isolation.** `pixel_probe.txt`: on the same file, JPEG decode is identical across opencv 4.12 and 5.0, `INTER_CUBIC`
+on identical input is identical, and `INTER_LINEAR` on identical input differs (1 level, 10.1% of values).
+`isolation.txt`: the API worker fed training's resized pano gives, on the matched poses, 30/30 identical views,
+30/30 equal crop half-sizes and 30/30 identical crops; depth maps differ by at most 0.0018 m (0/30 bit-identical:
+torch 2.7.1 vs 2.14.1). So every crop difference in the left column comes from the panorama resize, and the depth
+differences up to 2.25 m there come from the different views, not from torch.
 
 | Check (all 40 cases) | Result |
 |---|---|
@@ -123,7 +159,8 @@ to 0.19 (median 0.0013) with no vote change here, so the rare case is not free, 
 | 2. Probe: mps vs cpu render | 0.111 | 1.4e-5 | 4.5e-4 | 0.0016 | 0 | 0 |
 | 4. Probe: crop half-size + 1 px | 0.630 | 0.0013 | 0.049 | 0.190 | 0 | 0 |
 
-The verdict flips are at p(incorrect) ≈ 0.50 (SurfaceProblem P10, a zenith point). The two vote changes are the
+The verdict flips are at p(incorrect) ≈ 0.50: SurfaceProblem P10 (a zenith point, p 0.500 and 0.472) for WebP vs raw
+and end to end, CurbRamp `P04__pitch-5_roll1` (p 0.515) for the second WebP generation. The two vote changes are the
 same CurbRamp crops (P07, the left seam edge, level and pitch 3°), whose served accuracy sits on the 0.92 gate. The
 points are mostly not curb ramps or obstacles, so the votes column is small (19 of 150 pairs vote); read the \|Δp\|
 columns, not the counts.
@@ -136,9 +173,9 @@ columns, not the counts.
 ### 5b. WebP on the 1,988 sampled training crops
 
 These crops are already WebP and their panoramas are gone, so the first-generation loss cannot be recomputed; a
-second q95 generation stands in. On the real-panorama cases the second generation changes pixels 5× less than the
-first (mean abs 0.22 vs 1.16) and p90 \|Δp\| 2.6× less (0.0098 vs 0.026), so **this table is a lower bound** on the
-WebP skew. Plain accuracy on this 50/50 sample is not a production number; AUC and balanced accuracy are reported.
+second q95 generation stands in. On the 40 real-panorama crops (one panorama) the second generation changed pixels
+5× less than the first (mean abs 0.22 vs 1.16) and p90 \|Δp\| 2.6× less (0.0098 vs 0.026), so this table **likely
+underestimates** the first-generation skew; nothing here bounds one by the other. Plain accuracy on this 50/50 sample is not a production number; AUC and balanced accuracy are reported.
 
 | Type | n | median \|Δp\| | p99 \|Δp\| | max \|Δp\| | verdict flips | vote changes | votes | AUC gen1 → gen2 | balanced acc gen1 → gen2 |
 |---|---|---|---|---|---|---|---|---|---|
@@ -161,24 +198,25 @@ retrained round-3 checkpoints were not available.
 | Skew | Verdict | Measured | What to change, where |
 |---|---|---|---|
 | Preprocessing (issue #5) | **Closed** | identical `pixel_values`, 4.55 slow vs 5.20 pil | Nothing. Keep `use_fast=False` (training) and `backend="pil"` + the assert (API) |
-| Camera pitch / tilt (issue #5) | **Closed** for every pose real labels have | 30/30 identical views with the same opencv | Nothing for GSV. Optional: the API ignores `camera_roll` without `camera_pitch`; training tilts by it. 0 of 64,465 round-3 rows carry a roll, so make the rule the same before Panoramax/Mapillary pose lands (`docs/decisions.md`) |
-| Depth model (issue #5) | **Closed** | same ViT-B checkpoint (sha256 4dad67a7…) and submodule; BGR on both sides; identical maps given identical views | Nothing |
+| Camera pitch / tilt (issue #5) | **Closed** for every pose real labels have | 30/30 identical views with the same opencv | Nothing. The API ignores `camera_roll` without `camera_pitch`, training tilts by it; no label has that pose: 0 of 64,465 round-3 `ok` rows have a roll at all, and the review counted 0 of 1,071,562 cached 2026-10-17 rawLabels rows with a roll and no pitch (2,968 rolls, all with a pitch) |
+| Depth model (issue #5) | **Closed** | same ViT-B checkpoint (sha256 4dad67a7…) and submodule; BGR on both sides; identical maps with the same torch, ≤ 1.8 mm apart across torch 2.7.1 / 2.14.1 | Nothing |
 | Crop rule | **Closed, with a 1e-5 residual** | float32 vs float64 crop half-size, 1.1e-5 of labels | API: `crop_size_half = int(6100 / float(depth[center_y, center_x]))` |
-| WebP (not in issue #5) | **Open** | p90 \|Δp\| 0.026, max 0.11; 2/150 vote changes on real-panorama crops; ≥ 6/1,988 on the sample | API: encode and decode q95 WebP in memory before the validator (`Image.save(buf, "WEBP", quality=95)`; the encoded bytes were identical with libwebp 1.5.0 and 1.6.0 here). Or, for the next dataset, lossless crops in training |
+| WebP (not in issue #5) | **Open → sidewalk-ai-api** | p90 \|Δp\| 0.026, max 0.11; 2/150 vote changes on real-panorama crops; 6/1,988 on the sample for a second generation | API: an in-memory q95 encode + decode (Pillow, as `save_webp`) on a separate `validator_image`. q95 bytes were identical for 40/40 crops across Pillow 11.3.0 (libwebp 1.5.0) and 12.3.0 (1.6.0) on arm64 |
 | transformers / torch version (not in issue #5) | **Closed** | max \|Δp\| 1.7e-5, no flip | Nothing |
-| opencv version (found here) | **Open** | 1 level on 10% of the panorama → max \|Δp\| 0.064 | One opencv-python in both. `environment.yml` (4.12.0.88) vs the API image (5.0.0.93). Serving the retrained models should use the version the round-3 crops were cut with; check it on klone |
-| GPU (not measured) | **Unknown, probably small** | cpu vs mps: \|Δp\| ≤ 0.0016 | One CUDA run of the train and API workers on the same GPU class, if wanted |
+| opencv version (found here) | **Open → sidewalk-ai-api** | 1 level on 10% of the panorama → max \|Δp\| 0.064 (cross-feed: all of the crop difference) | API pins opencv-python 4.12.0.88, the version round 3 was cut with (not regenerating round 3) |
+| GPU (not measured) | **Unknown, probably small** | cpu vs mps: \|Δp\| ≤ 0.0016 | No klone CUDA run; the deploy smoke test (tolerance 0.01) covers it |
 
 ## Caveats
 
 - One panorama, ten points, four poses. The byte-identity results are structural (same code, same pins), but the
   \|Δp\| sizes are from 150 model × case pairs on mostly non-feature points, and one sampled distribution for WebP.
-- Training's environment is assumed to be `environment.yml`'s pins. `generation_run.json` records no package
-  versions, so which opencv cut the round-3 crops is not recorded anywhere; the requirements.txt venv (opencv 5.0)
-  matches the API exactly.
+- `generation_run.json` records no package versions; the round-3 environment was read on klone by hand (above).
 - Everything ran on an arm64 Mac. The opencv 4.12 vs 5.0 `INTER_LINEAR` difference was measured with the arm64 wheels;
-  x86 wheels may differ differently. Training renders on klone's CUDA and the API on the server's; neither was run.
-- The sample's WebP study is a second generation standing in for the first (a lower bound, above).
+  x86 wheels may differ differently, and so may the WebP bytes. Training renders on klone's CUDA and the API on the
+  server's; neither was run.
+- The sample's WebP study is a second generation standing in for the first (likely an underestimate, above).
+- The fixed API (opencv 4.12 + WebP round trip) was not built or run; "byte-identical after both fixes" is expected
+  from the stage-by-stage results, not measured.
 - The production validators were not trained on these crops (their 2025-08 data is undocumented and may overlap the
   sample), so model sensitivity may differ for the retrained ones; rerun `run` with the round-3 checkpoints when
   they exist (`model_map.py` is read from `--api-dir`).
@@ -188,13 +226,19 @@ retrained round-3 checkpoints were not available.
 
 ## What to do next
 
-1. Read `python -c "import cv2; print(cv2.__version__)"` in the klone conda env that generated round 3. If it is
-   4.12.0, pin `opencv-python==4.12.0.88` in sidewalk-ai-api for the retrained models (or regenerate with 5.0.0.93).
-2. Add a q95 WebP round trip before the validator in sidewalk-ai-api (text below), in the same PR as the retrained
-   model map.
-3. Record package versions in `generation_run.json` (diff in the PR description), so (1) never has to be guessed.
-4. Rerun `analysis/serving_parity.py run` against the API branch that will serve the retrained models; expect 30/30
-   identical crops and 0 \|Δp\| end to end on the CPU.
+1. sidewalk-ai-api: the issue below (opencv pin, WebP round trip for the validator, smoke test), in the PR that ships
+   the retrained model map.
+2. Record package versions in `generation_run.json`, so the round-3 lookup above never has to be done by hand. A
+   training-path change, so proposed here, not made (`data_generation.py`, `main()`, the `json.dump` of the run record):
+
+   ```diff
+   -                   "selection_sha256": sel_hash, "started": date.today().isoformat()}, f, indent=2)
+   +                   "selection_sha256": sel_hash, "started": date.today().isoformat(),
+   +                   "versions": {m: getattr(__import__(m), "__version__", None)
+   +                                for m in ("numpy", "cv2", "PIL", "torch")}}, f, indent=2)
+   ```
+3. Rerun `analysis/serving_parity.py run` against the API branch that will serve the retrained models (its
+   `model_map.py` is read from `--api-dir`); with the fixes, expect 30/30 identical crops and 0 \|Δp\| on the CPU.
 
 ## Proposed closing text for #5
 
@@ -202,28 +246,51 @@ retrained round-3 checkpoints were not available.
 > package versions, training's code and the API's `/process` produce byte-identical views, depth maps, crops and
 > logits (30/30 cases, five models), and the preprocessing tensors are identical across transformers 4.55 slow and
 > 5.20 pil. The three skews listed here (preprocessing, camera pitch, depth checkpoint) are closed. Two residuals
-> remain, both in settings rather than code, and move to sidewalk-ai-api: the API image's opencv 5.0 resizes the
-> panorama differently from training's 4.12 (max |Δp| 0.064), and training models see q95 WebP while the API feeds the
-> raw crop (max |Δp| 0.11, 2 of 150 served votes changed). `tests/test_serving_parity.py` checks the live API code
-> when `SIDEWALK_AI_API_DIR` is set.
+> remain, both settings in sidewalk-ai-api, and move there: its image's opencv 5.0 resizes the panorama differently
+> from the 4.12 that cut round 3 (max |Δp| 0.064; a cross-feed run shows this is the whole crop difference), and it
+> feeds the validator the raw crop where training models saw q95 WebP (max |Δp| 0.11, 2 of 150 served votes
+> changed). Decided: the API pins opencv-python 4.12.0.88 and round-trips the validator's crop through q95 WebP, and
+> a deploy smoke test checks `/process` against `docs/serving-parity-2026-10/expected_process.csv` within 0.01.
+> `tests/test_serving_parity.py` checks the live API code when `SIDEWALK_AI_API_DIR` is set.
 
 ## Proposed sidewalk-ai-api issue
 
-> **Serve the validator the same input training uses: WebP q95 round trip and training's opencv**
+> **Serve the validator the input training used: opencv 4.12, a q95 WebP round trip, and a deploy smoke test**
 >
-> sidewalk-validator-ai's parity check (docs/serving-parity-2026-10.md there) found the API's crop is byte-identical
-> to training's when both run the same opencv, with two differences in what reaches the model:
+> sidewalk-validator-ai's parity check (`docs/serving-parity-2026-10.md` there) found that `/process` cuts the same
+> crop as training, byte for byte, when both run the same opencv, and that two settings change what reaches the
+> retrained validators:
 >
-> 1. Training models see each crop after `save_webp` (PIL, `quality=95`) and decode; `/process` passes the raw array.
->    Measured: max |Δp| 0.11, p90 0.026, 2 of 150 served votes changed. Fix in `main.py`, after `cvtColor`:
->    `buf = io.BytesIO(); Image.fromarray(perspective_image).save(buf, format="WEBP", quality=95);
->    perspective_image = Image.open(buf).convert("RGB")` (the tagger should keep the raw crop unless its training
->    data was WebP too).
-> 2. `requirements.txt` pins opencv-python 5.0.0.93; training's environment pins 4.12.0.88, and their
->    `cv2.resize(INTER_LINEAR)` of the panorama differs by one level on 10% of values (max |Δp| 0.064 downstream).
->    Pin the version the retrained models' crops were cut with.
+> 1. **opencv.** `requirements.txt` pins opencv-python 5.0.0.93; the env that cut the round-3 training crops has
+>    4.12.0.88, and the two `cv2.resize(INTER_LINEAR)` the panorama differently (1 level on 10% of values; max |Δp|
+>    0.064 downstream). Pin `opencv-python==4.12.0.88`.
+> 2. **WebP.** Training models saw every crop after a q95 WebP encode and decode; `/process` passes the raw array
+>    (max |Δp| 0.11, p90 0.026, 2 of 150 served votes changed). After `cvtColor`, keep `perspective_image` for the
+>    tagger and give the validator its own copy, encoded the way training's `save_webp` does (Pillow, quality 95;
+>    training used Pillow 11.3.0):
+>
+>    ```python
+>    buf = io.BytesIO()
+>    perspective_image.save(buf, format="WEBP", quality=95)   # sidewalk-validator-ai data_generation.save_webp
+>    validator_image = Image.open(io.BytesIO(buf.getvalue())).convert("RGB")
+>    ...
+>    validation_result, validation_confidence = validator.validate(validator_image)
+>    ```
+>
+>    The tagger keeps the raw `perspective_image` (its training data was not this pipeline's WebP).
+> 3. **Deploy smoke test.** Put `sample_pano.jpg` (sidewalk-panorama-tools `samples/`) in the server's pano store as
+>    `<store>/parity/pa/parityPano01.jpg`, call `/process` with `city=parity`, `panorama_id=parityPano01` and each row
+>    of sidewalk-validator-ai's `docs/serving-parity-2026-10/expected_process.csv` (`x`, `y` as written,
+>    `camera_pitch`/`camera_roll` when present, `tilt_beta`, `label_type`), and require |p(incorrect) −
+>    `expected_p_incorrect`| ≤ 0.01 for all 150 rows. p(incorrect) is `validation_score` when
+>    `validation_result` is `incorrect`, else 1 − `validation_score`. Today's API (174a169) misses 33 of the 150 rows
+>    (max 0.081), so the test separates the fixed pipeline from the current one; GPU-vs-CPU noise is about 0.002.
+>    The expected values hold for the current production validators (the `model_map.py` revisions in the doc's
+>    provenance); regenerate the file with `serving_parity.py expected` when the retrained models are mapped in.
+> 4. **To do:** re-measure on the x86 server image that the q95 WebP bytes match training's (Pillow 11.3.0 on klone)
+>    and that opencv 4.12.0.88's resize matches klone's; both were checked on arm64 only.
 >
 > Smaller: `crop_size_half = int(inv_depth * 6100)` is float32 arithmetic; `int(6100 / float(depth[cy, cx]))`
-> matches training exactly (differs for ~1e-5 of labels today). `camera_roll` without `camera_pitch` is ignored
-> while training applies it (no GSV label has a roll). `DepthAnythingPredictor` fails on Apple silicon with
-> `SIDEWALK_ALLOW_CPU=1` because the vendored `infer_image` moves its input to mps.
+> matches training exactly (they differ for about 1e-5 of labels). `camera_roll` without `camera_pitch` is ignored
+> while training applies it (no label has that pose today). `DepthAnythingPredictor` fails on Apple silicon with
+> `SIDEWALK_ALLOW_CPU=1`, because the vendored `infer_image` moves its input to mps while the model stays on the cpu.

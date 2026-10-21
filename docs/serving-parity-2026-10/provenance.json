@@ -1,6 +1,6 @@
 {
  "issue": "https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5",
- "date": "2026-10-21",
+ "date": "2026-10-21 (review round 1 additions the same day)",
  "hardware": "Apple M1 Max, 32 GB, macOS 15.5; all reference stages on the CPU (mps hidden), mps only as a probe",
  "serving_code": {
   "repo": "ProjectSidewalk/sidewalk-ai-api",
@@ -9,7 +9,7 @@
   "note": "read-only checkout; run through main.create_app(...).test_client() with recorders"
  },
  "environments": {
-  "train (environment.yml pins: the klone conda env)": {
+  "train (the klone env's versions)": {
    "python": "3.10.19",
    "machine": "Darwin arm64",
    "numpy": "2.2.6",
@@ -187,17 +187,33 @@
   "crops.csv": {
    "sha256": "db443ac525877bf9947aef839dd9476bb10874165a5292aadc42e42525076fce"
   },
-  "models.csv": {
-   "sha256": "f5fc4a3195bffb888e43da1df21a6670dc8a8572f358aec781611356df88cdad"
-  },
   "summary.md": {
-   "sha256": "3ae5d21e3921c21cc3288cfea043800c96c137d73292998b917527fdcd337f9e"
+   "sha256": "f7e56d743bcf323b82de591d61bc78f5f2fc647d3fcd6ea8fb4cbb9c6d4e9e9b"
   },
   "webp_gen2_summary.csv": {
    "sha256": "aa33536531fa70c397a4f634ea89dd8ef6cc6a728a1b3066876a121abcc23975"
   },
   "crop_half.txt": {
    "sha256": "35eb0849e444ba01adc523a93ac429ca7e03aec36b6fa030429ce7b59d25e0d7"
+  },
+  "models_csv": {
+   "path": "~/Data/serving-parity-2026-10/models.csv (not committed; 359 KB per-case table)",
+   "sha256": "f5fc4a3195bffb888e43da1df21a6670dc8a8572f358aec781611356df88cdad"
+  },
+  "environments.json": {
+   "sha256": "7d41d51ec3150adcea0828f30738a6d6d223737c53e30b8e77d9718e32bfab6b"
+  },
+  "isolation.txt": {
+   "sha256": "d99741d11154c19e1fd4d73ea4f9de775300757a3b7a7277bfd581fadf219435"
+  },
+  "isolation.csv": {
+   "sha256": "049ce37416118cc6d389d768fb960af63ea9bda3285b73bcc541ea69eee1fd1e"
+  },
+  "pixel_probe.txt": {
+   "sha256": "4934902dca3a56863e3e0bda04e4ae4e5e507a0c349b3df7e6ddd6567b38e380"
+  },
+  "expected_process.csv": {
+   "sha256": "9c3d618aa8265b04bb071354ef0d4b122f1f8968ac7a819ca4f25584cfa748bf"
   }
  },
  "probes": {
@@ -212,12 +228,43 @@
   }
  },
  "commands": [
-  "uv venv --python 3.10 venv-klone && uv pip install --python venv-klone/bin/python numpy==2.2.6 opencv-python==4.12.0.88 pillow==11.3.0 torch==2.7.1 torchvision==0.22.1 transformers==4.55.0 pandas scikit-learn matplotlib requests 'sidewalk-panorama-tools @ git+https://github.com/ProjectSidewalk/sidewalk-panorama-tools@v1.0.0'",
+  "uv venv --python 3.10 venv-klone && uv pip install --python venv-klone/bin/python numpy==2.2.6 opencv-python==4.12.0.88 pillow==11.3.0 torch==2.7.1 torchvision==0.22.1 transformers==4.55.0 pandas scikit-learn matplotlib requests 'sidewalk-panorama-tools @ git+https://github.com/ProjectSidewalk/sidewalk-panorama-tools@v1.0.0'   # = the klone round-3 env's versions",
   "uv venv --python 3.12 venv-api && uv pip install --python venv-api/bin/python -r <(grep -v ^triton <api>/requirements.txt)",
-  "uv venv --python 3.12 .venv && uv pip install -r requirements.txt flask",
+  "uv venv --python 3.12 .venv && uv pip install -r requirements.txt   # unpinned; flask added after the run for the live-API tests",
   "HF_HUB_OFFLINE=1 .venv/bin/python analysis/serving_parity.py run --train-python venv-klone/bin/python --other-train-python .venv/bin/python --api-python venv-api/bin/python --api-dir <api> --pano sample_pano.jpg --depth-checkpoint depth_anything_v2_metric_vkitti_vitb.pth --work WORK --out WORK/out",
   "HF_HUB_OFFLINE=1 venv-klone/bin/python analysis/serving_parity.py webp-sample --sample-csv round3/sample.csv --crops round3/crops --api-dir <api> --device mps --out-csv ~/Data/serving-parity-2026-10/webp_gen2.csv --summary-csv docs/serving-parity-2026-10/webp_gen2_summary.csv",
   ".venv/bin/python analysis/serving_parity.py crop-half --sample-csv round3/sample.csv > docs/serving-parity-2026-10/crop_half.txt",
-  ".venv/bin/python analysis/serving_parity.py figures --out docs/serving-parity-2026-10 --webp-csv ~/Data/serving-parity-2026-10/webp_gen2.csv"
+  ".venv/bin/python analysis/serving_parity.py figures --out docs/serving-parity-2026-10 --webp-csv ~/Data/serving-parity-2026-10/webp_gen2.csv",
+  "venv-api/bin/python analysis/serving_parity.py api-worker --api-dir <api> --depth-checkpoint depth_anything_v2_metric_vkitti_vitb.pth --train-dir WORK/train --pano-npy WORK/train/pano_bgr.npy --out WORK/api_xfeed",
+  ".venv/bin/python analysis/serving_parity.py isolate --train WORK/train --api WORK/api_xfeed --out docs/serving-parity-2026-10/isolation.txt",
+  "venv-klone/bin/python analysis/serving_parity.py pixel-probe --pano sample_pano.jpg --crops WORK/train/*/crop_raw.png --crops-root WORK/train --out P_klone",
+  "venv-api/bin/python analysis/serving_parity.py pixel-probe --pano sample_pano.jpg --reference-decode P_klone/decode.npy --crops WORK/train/*/crop_raw.png --crops-root WORK/train --out P_api",
+  ".venv/bin/python analysis/serving_parity.py pixel-compare P_klone P_api --out docs/serving-parity-2026-10/pixel_probe.txt",
+  ".venv/bin/python analysis/serving_parity.py compare --train WORK/train --train-other WORK/train_other1 --api WORK/api --api-dir <api> --out WORK/out --append docs/serving-parity-2026-10/isolation.txt docs/serving-parity-2026-10/pixel_probe.txt",
+  "cp WORK/out/{crops.csv,summary.md,environments.json} docs/serving-parity-2026-10/ && cp WORK/out/models.csv ~/Data/serving-parity-2026-10/models.csv",
+  ".venv/bin/python analysis/serving_parity.py expected --train WORK/train --api WORK/api --out docs/serving-parity-2026-10/expected_process.csv",
+  "uv pip freeze --python <venv>/bin/python > docs/serving-parity-2026-10/pip-freeze/<venv>.txt   # for venv-klone, venv-api, .venv (as venv-requirements.txt)"
+ ],
+ "environments_pip_freeze": {
+  "venv-api.txt": "7d6d4ed0a51c50f2d713a2f264cf384182b7c56928a15c6530da592ad565d47d",
+  "venv-klone.txt": "34a7759fa101c70a3785956f0edd89ccfe758044fa3d83a58ce068532fc3157c",
+  "venv-requirements.txt": "2775a796a0d94455471633ff32ee7f7f2c4c9ed99ccb3e8f10455e1ac14ab1e2"
+ },
+ "round3_environment": {
+  "path": "/gscratch/makelab/jfroehli/envs/sidewalk-validator-ai (klone)",
+  "read": "2026-10-21, by hand",
+  "opencv-python": "4.12.0.88 (installed 2026-10-18 07:42)",
+  "pillow": "11.3.0",
+  "torch": "2.7.1",
+  "torchvision": "0.22.1",
+  "transformers": "4.55.0",
+  "numpy": "2.2.6",
+  "python": "3.10",
+  "round3_generation_run_started": "2026-10-20 (all five label types)"
+ },
+ "notes": [
+  "The API worker uses this repo's Depth-Anything-V2 submodule (same commit a561b84 as the API's, which is not initialised in the read-only checkout).",
+  "API-side crop_half_px is re-derived from the recorded depth map with the API's expression; the crop is recorded.",
+  "Served votes use the tilt-fields accuracy_mappings (sha256 above), which may not be what production serves today."
  ]
 }
