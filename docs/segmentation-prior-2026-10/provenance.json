@@ -1,11 +1,11 @@
 {
  "date": "2026-10-21",
- "git_commit": "b7beb785459fd0697b34ce8a0b6d95feab6967ef",
+ "git_commit": "f8078fc7b2e11e45b16b224a074be760e590a32a",
  "git_dirty": false,
- "command": "python analysis/sidewalk_seg.py report --features ~/Data/sidewalk-validator-ai-seg-2026-10/features.csv --cls ~/Data/sidewalk-validator-ai-seg-2026-10/cls.npz --assessments ~/Data/sidewalk-validator-ai-prod-2026-10-17/ai_assessments_rounded4.csv --cities-json ~/Data/sidewalk-validator-ai-prod-2026-10-17/cities.json --run-dir ~/Data/sidewalk-validator-ai-seg-2026-10/klone --out-dir docs/segmentation-prior-2026-10 --private-dir ~/Data/sidewalk-validator-ai-seg-2026-10/private --extra-provenance ~/Data/sidewalk-validator-ai-seg-2026-10/klone_provenance.json",
+ "command": "python analysis/sidewalk_seg.py report --features ~/Data/sidewalk-validator-ai-seg-2026-10/features.csv --cls ~/Data/sidewalk-validator-ai-seg-2026-10/cls.npz --assessments ~/Data/sidewalk-validator-ai-prod-2026-10-17/ai_assessments_rounded4.csv --cities-json ~/Data/sidewalk-validator-ai-prod-2026-10-17/cities.json --run-dir ~/Data/sidewalk-validator-ai-seg-2026-10/klone --out-dir docs/segmentation-prior-2026-10 --private-dir ~/Data/sidewalk-validator-ai-seg-2026-10/private --extra-provenance ~/Data/sidewalk-validator-ai-seg-2026-10/klone_provenance.json --hash-extra sample_views_png=~/Data/sidewalk-validator-ai-seg-2026-10/sample_views.png",
  "inputs": {
   "features_csv": {
-   "sha256": "0e8988e9323a1e81dfa64ef75ccb81fd3d998dc8db1fdcb7638258e7345f3e54",
+   "sha256": "15786039f6dfcf278ceeda57bdd41ed4773a12c5b36f5240192cfcc882b867b2",
    "rows": 800
   },
   "cls_npz": {
@@ -25,20 +25,25 @@
    "rows": 800
   },
   "oof_predictions_csv": {
-   "sha256": "fd389430463f33343617dea5206e5625707b5ef4d8e2f11b913434c32d617247",
+   "sha256": "9bf37973c63248a6bbeb30c944b5e76a34be6273afb091f1b6ae215a76ea01fd",
    "rows": 800
+  },
+  "sample_views_png": {
+   "sha256": "1b1157a9b823e1376f0fda3b202a0aaa8c233adc0b0ccf331d4b4ec3d1537200",
+   "rows": null
   }
  },
  "n_labels_ok": 800,
  "outputs": {
   "centre_class.csv": "5c5d20d3b9156dd1a4c4da19deae9d50e1e777b4c6abded9be4ea89e16f029f0",
-  "feature_auc.csv": "90fd9ce181de6eb8b3f6802332f90d3167c18f6c7e88c2b80330ceb7f53de590",
-  "lift.csv": "807bd7fcd2bf918acab1ff7c0fea6221b1f832056941cd05d1c4e3bbcb5130dd",
-  "lift_by_city.csv": "1620c5fb8362b8aa60ed10b87e7b76b1de6333490241273306fb3369d46ab356",
+  "feature_auc.csv": "5ca68b95402b2fda496325e819bbf02b0674d666c051364d68a77af4dea726c7",
+  "lift.csv": "3acf876eaa56bce8f24bda47ad386af9783342ac19c3a7178a331f5edab9827c",
+  "lift_by_city.csv": "50a71b922bcd73683059e5bf037ecf3bea81b04e7e8baf2a603f9da9f46b5c19",
   "production_on_sample.csv": "3ecc316f495be651bcca9f448a69605df18c81dd595845ace3e37ff87e6254dc",
-  "report.md": "b237bfd56ff5206a8b7f23c8877f5a372b526c8267c098d5faaa222dfe1d8f6a",
-  "sanity.csv": "df0c40c3ad5ae4892467109421605d4df6e725d823518b5e65473ebb12628c9e",
-  "strata.csv": "0755b342f272476c8f027dc474da8d05462e98115167f96bac5e82e825ddb427"
+  "report.md": "aba923d3c9fabb91e68ee0eebf552219301d331676105e74fecf34a4e9475ec0",
+  "sanity.csv": "774a4db521055e6061589a7755052204579266b540e36120f20234268a5f46b9",
+  "served_vs_rescored.csv": "eddb250c9fea0cf7028ec78101e6b77d37cae174ff27c63e93a8d467fbdbbb9c",
+  "strata.csv": "d4cc4e193b42494a82a3b1c84cf2f5ec93d6849abffc5ef7f07c3d03ab7d8be5"
  },
  "segmenter_run": {
   "date": "2026-10-21",
@@ -95,6 +100,23 @@
   "Obstacle=projectsidewalk/sidewalk-validator-ai-obstacle@8f0fe8fc48748fac35098e74c1848d015126deef",
   "SurfaceProblem=projectsidewalk/sidewalk-validator-ai-surfaceproblem@0e1439daa5667c8a81f63e75f835bd51221df4c2"
  ],
+ "stage_records": {
+  "features": {
+   "stage": "features",
+   "date": "2026-10-21",
+   "git_commit": "a204488a424f92df008425e115646ee86e6b6987",
+   "git_dirty": false,
+   "inputs": {
+    "labels": "3efa5cdd4d066aa28470fae4a44f8cf068974be791faf81b58f174a21eb3324c",
+    "views": "087eb07317d6ac71ca9d2a2ccebeca4382cd6da674f4451fdbf108dbfef6ebf4",
+    "seg_run": "069c28efb2486cf13f19106003f97c2df8905aaafd4a62c670168454d03ad72a",
+    "coords": "d8d0e53991a671bae2e21de88d0f4e415ab36278dbbc15adf91f8846be48e387"
+   },
+   "output_sha256": "15786039f6dfcf278ceeda57bdd41ed4773a12c5b36f5240192cfcc882b867b2"
+  },
+  "cls": null
+ },
+ "segmenter_params_m": 216.0,
  "settings": {
   "n_boot": 2000,
   "pca": 64,
@@ -113,32 +135,38 @@
   "scikit-learn": "1.9.1"
  },
  "hardware": "arm64 Darwin 15.5",
- "klone_jobs": {
-  "stage": {
-   "job_id": "42112597",
-   "script": "analysis/seg_prior_stage.slurm",
-   "result": "rsync exit 0, 768 of 768 panoramas, 7.4G, one connection, 2.6 min"
+ "hand_entered": {
+  "klone_jobs": {
+   "stage": {
+    "job_id": "42112597",
+    "script": "analysis/seg_prior_stage.slurm",
+    "result": "rsync exit 0, 768 of 768 panoramas, 7.4G, one connection, 2.6 min"
+   },
+   "render_segment": {
+    "job_id": "42113381",
+    "script": "analysis/seg_prior.slurm",
+    "git_commit": "b1a7761b617ee64829457b04b5b25b84fca9b50b",
+    "elapsed": "00:51:49",
+    "node_gpu": "NVIDIA L40 (ckpt-all)"
+   },
+   "coords": {
+    "job_id": "42113822",
+    "git_commit": "b3c99d59e70b5069a8e974805f72eb9b5fc619df",
+    "elapsed": "00:03:25",
+    "rawlabels": "the retrain's rawLabels exports on klone (54 deployments)"
+   }
   },
-  "render_segment": {
-   "job_id": "42113381",
-   "script": "analysis/seg_prior.slurm",
+  "private_inputs_sha256": {
+   "labels.csv": "3efa5cdd4d066aa28470fae4a44f8cf068974be791faf81b58f174a21eb3324c",
+   "stage_files.txt": "d14a70387d4acf4f8a7120aad512f2288789d1c9c1359e1f94c827899241180a",
+   "coords.csv": "d8d0e53991a671bae2e21de88d0f4e415ab36278dbbc15adf91f8846be48e387",
+   "seg_run.json": "069c28efb2486cf13f19106003f97c2df8905aaafd4a62c670168454d03ad72a"
+  },
+  "cls_hardware": "Apple M1 Max, 32 GB, macOS 15.5, MPS, torch 2.14.1, transformers 4.55.0",
+  "note": "Hand-entered from sacct and the job logs on 2026-10-21; not machine-generated.",
+  "cls_stage": {
    "git_commit": "b1a7761b617ee64829457b04b5b25b84fca9b50b",
-   "elapsed": "00:51:49",
-   "node_gpu": "NVIDIA L40 (ckpt-all)"
-  },
-  "coords": {
-   "job_id": "42113822",
-   "git_commit": "b3c99d59e70b5069a8e974805f72eb9b5fc619df",
-   "elapsed": "00:03:25",
-   "rawlabels": "the retrain's rawLabels exports on klone (54 deployments)"
+   "note": "cls.npz predates the stage sidecar; commit recorded by hand"
   }
- },
- "private_inputs_sha256": {
-  "labels.csv": "3efa5cdd4d066aa28470fae4a44f8cf068974be791faf81b58f174a21eb3324c",
-  "stage_files.txt": "d14a70387d4acf4f8a7120aad512f2288789d1c9c1359e1f94c827899241180a",
-  "coords.csv": "d8d0e53991a671bae2e21de88d0f4e415ab36278dbbc15adf91f8846be48e387",
-  "seg_run.json": "069c28efb2486cf13f19106003f97c2df8905aaafd4a62c670168454d03ad72a"
- },
- "cls_hardware": "Apple M1 Max, 32 GB, macOS 15.5, MPS, torch 2.14.1, transformers 4.55.0",
- "segmenter_params_m": 216.0
+ }
 }
