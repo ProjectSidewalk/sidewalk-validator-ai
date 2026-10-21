@@ -983,6 +983,22 @@ def run_packet(args, parser):
     digest = sha256_of(args.key)
     with open(args.key + ".sha256", "w") as f:
         f.write(f"{digest}  {os.path.basename(args.key)}\n")
+    if args.doc_dir:
+        os.makedirs(args.doc_dir, exist_ok=True)
+        with open(os.path.join(args.doc_dir, "packet_key.sha256"), "w") as f:
+            f.write(f"{digest}  {os.path.basename(args.key)}\n")
+        pp = os.path.join(args.doc_dir, "provenance.json")
+        prov = json.load(open(pp)) if os.path.exists(pp) else {}
+        ex_path = os.path.join(args.out_dir, "explanations.csv")
+        prov["packet"] = {"n_items": int(len(key)), "key_sha256": digest,
+                          "explanations_csv": {"sha256": sha256_of(ex_path), "rows": int(len(ex))},
+                          "items_by_type_category": {f"{t}/{c}": int(n) for (t, c), n in
+                                                     ex.groupby(["label_type", "category"]).size().items()},
+                          "vlm_model": sorted(ex.vlm_model.unique()), "why_prompt": WHY_PROMPT,
+                          "median_reason_words": float(ex.n_words.median()),
+                          "median_reason_latency_s": float(ex.latency_s.median())}
+        with open(pp, "w") as f:
+            json.dump(prov, f, indent=1, sort_keys=True)
     print(f"wrote {len(key)} items to {args.packet_dir}/items, coding_sheet.csv and RUBRIC.md; key {args.key} "
           f"(sha256 {digest})")
 
@@ -1069,6 +1085,8 @@ def main(argv=None):
     common(k)
     k.add_argument("--packet-dir", required=True, help="packet directory, outside the repo")
     k.add_argument("--key", required=True, help="key CSV, outside every checkout; <key>.sha256 is written beside it")
+    k.add_argument("--doc-dir", default="docs/vlm-baseline-2026-10",
+                   help="where packet_key.sha256 and the packet's provenance entry go ('' to skip)")
     k.add_argument("--seed", type=int, required=True,
                    help="blinding seed; no default, keep it secret until rating is done")
 
