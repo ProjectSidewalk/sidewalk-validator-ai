@@ -271,33 +271,41 @@ def _explain_inputs():
     return best, prod
 
 
-def test_select_items_public_only_and_half_vlm_right_per_type():
+def test_select_items_answer_and_correctness_say_nothing_about_the_crowd():
     best, prod = _explain_inputs()
-    items = vb.select_explanation_items(best, prod, CITIES, per_type=10, seed=0)
-    assert len(items) == 50
+    items = vb.select_explanation_items(best, prod, CITIES, per_type=8, seed=0)
     assert set(items.city) <= {"seattle-wa", "chicago-il"}
     assert not items.label_uid.duplicated().any()
-    assert items.groupby("label_type").vlm_correct.mean().eq(0.5).all()
+    assert items.groupby("label_type").size().le(8).all() and len(items) > 20
     v = vb.verdict_from_score(items.p_incorrect)
     pv = vb.verdict_from_score(items.p_incorrect_prod)
     assert ((v == items.true) == items.vlm_correct).all()
+    assert (items.vlm_answer == np.where(v == "incorrect", "No", "Yes")).all()
     assert (items.category == vb.item_category(v != items.true, pv != items.true)).all()
-    # production-wrong rows come first among the VLM-right ones
-    for t, g in items[items.vlm_correct].groupby("label_type"):
-        pool = best.merge(prod[["label_uid", "p_incorrect"]], on="label_uid", suffixes=("", "_p"))
-        pool = pool[(pool.label_type == t) & pool.city.isin(["seattle-wa", "chicago-il"])]
-        n_avail = ((vb.verdict_from_score(pool.p_incorrect) == pool.true)
-                   & (vb.verdict_from_score(pool.p_incorrect_p) != pool.true)).sum()
-        assert (g.category == "vlm_right_production_wrong").sum() == min(5, n_avail)
-    again = vb.select_explanation_items(best, prod, CITIES, per_type=10, seed=0)
+    assert items.groupby("label_type").vlm_correct.mean().eq(0.5).all()
+    crowd_correct = (items.true == "correct")
+    assert crowd_correct.groupby([items.label_type, items.vlm_answer]).mean().eq(0.5).all()
+    # within each cell, production-wrong rows are taken before production-right ones
+    pool = best.merge(prod[["label_uid", "p_incorrect"]], on="label_uid", suffixes=("", "_p"))
+    pool = pool[pool.city.isin(["seattle-wa", "chicago-il"])]
+    pv_all = vb.verdict_from_score(pool.p_incorrect_p) != pool.true
+    pool = pool.assign(prod_wrong=pv_all, answer=np.where(vb.verdict_from_score(pool.p_incorrect) == "incorrect",
+                                                          "No", "Yes"),
+                       right=vb.verdict_from_score(pool.p_incorrect) == pool.true)
+    chosen = set(items.label_uid)
+    for _, g in pool.groupby(["label_type", "answer", "right"]):
+        sel, rest = g[g.label_uid.isin(chosen)], g[~g.label_uid.isin(chosen)]
+        if len(sel) and rest.prod_wrong.any():
+            assert sel.prod_wrong.all()
+    again = vb.select_explanation_items(best, prod, CITIES, per_type=8, seed=0)
     assert again.label_uid.tolist() == items.label_uid.tolist()
 
 
 def test_select_items_prefers_kept_rows():
     best, prod = _explain_inputs()
-    first = vb.select_explanation_items(best, prod, CITIES, per_type=10, seed=0)
+    first = vb.select_explanation_items(best, prod, CITIES, per_type=8, seed=0)
     keep = first.label_uid.iloc[::3].tolist()
-    second = vb.select_explanation_items(best, prod, CITIES, per_type=10, seed=99, keep=keep)
+    second = vb.select_explanation_items(best, prod, CITIES, per_type=8, seed=99, keep=keep)
     assert set(keep) <= set(second.label_uid)
 
 

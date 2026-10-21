@@ -1,6 +1,7 @@
-model,n,n_incorrect,auc,balanced_accuracy,accuracy,r_correct_p92,r_correct_p95,r_incorrect_p92,r_incorrect_p95,slice
-gemma4-12b,6,6,,0.6667,0.6667,,,1.0000,1.0000,"hard == 1, all types, subset"
-production,6,6,,0.3333,0.3333,,,1.0000,1.0000,"hard == 1, all types, subset"
-qwen3vl-2b,6,6,,0.5000,0.5000,,,1.0000,1.0000,"hard == 1, all types, subset"
-qwen3vl-8b,6,6,,0.6667,0.6667,,,1.0000,1.0000,"hard == 1, all types, subset"
-production,20,10,0.22,0.2000,0.2000,0.0,0.0,0.0000,0.0000,"hard == 1, all types, full sample"
+model,n,n_incorrect,auc,balanced_accuracy,accuracy,recall_correct,recall_incorrect,r_correct_p92,r_correct_p95,r_incorrect_p92,r_incorrect_p95,set
+gemma4-12b,6,6,,0.6667,0.6667,,0.6667,,,1.0000,1.0000,subset
+production,6,6,,0.3333,0.3333,,0.3333,,,1.0000,1.0000,subset
+qwen3vl-2b,6,6,,0.5000,0.5000,,0.5000,,,1.0000,1.0000,subset
+qwen3vl-8b,6,6,,0.6667,0.6667,,0.6667,,,1.0000,1.0000,subset
+gemma4-12b,20,10,0.46,0.4000,0.4000,0.0,0.8000,0.0,0.0,0.0000,0.0000,full
+production,20,10,0.22,0.2000,0.2000,0.1,0.3000,0.0,0.0,0.0000,0.0000,full

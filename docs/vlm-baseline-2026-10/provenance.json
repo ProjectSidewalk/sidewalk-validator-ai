@@ -5,8 +5,22 @@
   "stratified_by_class": true
  },
  "date": "2026-10-21",
- "git_commit": "5b450d3feadae2be6183e91857672bee187634f9",
- "git_dirty": false,
+ "git_commit": "83f2b0a41d70b219d24ceeefe22fcda77b492f0b",
+ "git_dirty": true,
+ "greedy": {
+  "gemma4-12b.csv": {
+   "rows": 10,
+   "sha256": "03b999c079d64fc42fd8b7a4a2f432356c3838a63929eefc769e3120673af869"
+  },
+  "qwen3vl-2b.csv": {
+   "rows": 10,
+   "sha256": "8312c92978eae61b58229529c9d879140852bed54de47041486f6905f463033e"
+  },
+  "qwen3vl-8b.csv": {
+   "rows": 10,
+   "sha256": "275cec6733c5b636985c8edd7ebe2154eb6dc69fd8db8837a65bb3c68f4ba06b"
+  }
+ },
  "hardware": "arm64 Apple M1 Max, 32 GB, macOS 15.5",
  "headline_subset_per_type": 100,
  "inputs": {
@@ -67,15 +81,19 @@
   }
  },
  "outputs": {
-  "ablation.csv": "9f6c20c21cabc6829459f0a79617ff53d5fe56b40e5e8552db4bbf8164b7363f",
-  "bootstrap_auc.csv": "85a17cdb6b915dcd3f6c5b6de7762504eff63724a08b4709a3ebe2dcea72e8cb",
-  "by_split.csv": "d8962e88aaafc9cab5dd0c3cd2830d61a99ccee179b50b96d89778bbceed5756",
-  "full_sample.csv": "cf370d8ea6055fe2dd6ce1bca13a75467d28b61fb2270808ab0493b27b921cbe",
-  "greedy_check.csv": "4cab0197be033277c0e70d3b7ceda0a2be2ae585e4766560c50fec5df09aa2de",
-  "hard.csv": "167059b286f105a6789665c8a060ad9481b8dd54001070438b8cc7f844de79ee",
-  "headline.csv": "459f1262870cc8cea5f798e24e63e2d61c2f4b92a1e45dccbed0f099ff146c9f",
-  "latency.csv": "19d23deebb5d43d33b69a588e59f56764f46472542d8f7bf44ed89fe6b2ce56f",
-  "per_city.csv": "f0f3e580d07636d831bb7247503912a5555fb1a59ddc5a0ff3ac492e7200c9ba"
+  "ablation.csv": "3ce595686c92c6d085e56fc03a2f3aea03367e56d46349793bfe319b50eaf607",
+  "answer_mass.csv": "9a8f27a556518370f277e5ebf6d2b504656b87c86641ccf74d9ef13c8e523928",
+  "bootstrap_auc.csv": "dccbc851652fe8825779026973446d53b0b49b2d14f25bef4c93b2c7994b0e29",
+  "by_split.csv": "12fe80ee14625a4d9216cb0e393743cfc14ea8004617850d41c3ccfc438d8e59",
+  "full_sample.csv": "4d0e074aef47159ddcf3422a114ef7e9b273ca6ef7f838184d92fb29ab5f4453",
+  "greedy_check.csv": "9c19f76f4027ccedd6e60f1d1031683e041e5bbbe6382893f4baf8b984d8aa08",
+  "hard.csv": "785d9a77495c953f595e5e4f2a5f3911bd3d577b8f2b73d81be01a852ed4d83c",
+  "headline.csv": "8a3b8631d7f86f6c86a0559643448cbf623d591380392828402e3f204dac2e5d",
+  "latency.csv": "580e2eed5eb768d37e9611ca06fe2f54a0ef929d16e14e8fd10735bb4b7de472",
+  "per_city.csv": "284e9b292f64418c02301f9e3436363a192f08978b7e2e1941a654db4ecd3dd9",
+  "per_city_type.csv": "112cf19007296e261f1918f2d622a1e4556706b9cc2c791c3f10a4cad0bbdc67",
+  "split_diff.csv": "06a0b1c444e9ed6720ff04ac52bc8e3b5758aa190c1697e9dc7bb93f0a8a09eb",
+  "within_city.csv": "008fa38181a7f3b89c6f9d362fea0c24f5c39298781bf2cfff743405c8713045"
  },
  "packages": {
   "matplotlib": "3.11.2",
@@ -89,28 +107,46 @@
  },
  "packet": {
   "explanations_csv": {
-   "rows": 86,
-   "sha256": "d00daac365ba1e8537728ef0929175e361ac1b2ea3c1de58c1886d78b138706d"
+   "rows": 100,
+   "sha256": "e7603326bcc47ef789dc4d871e27dd641af9dcdc1c786aec3004879675e82dc0"
   },
   "items_by_type_category": {
-   "Crosswalk/vlm_agrees_production_disagrees": 3,
-   "Crosswalk/vlm_disagrees_with_crowd": 6,
-   "CurbRamp/fallback_any_disagreement": 6,
-   "CurbRamp/vlm_agrees_production_disagrees": 1,
-   "CurbRamp/vlm_disagrees_with_crowd": 10,
-   "NoCurbRamp/fallback_any_disagreement": 7,
-   "NoCurbRamp/vlm_agrees_production_disagrees": 3,
-   "NoCurbRamp/vlm_disagrees_with_crowd": 10,
-   "Obstacle/fallback_any_disagreement": 6,
-   "Obstacle/vlm_agrees_production_disagrees": 4,
-   "Obstacle/vlm_disagrees_with_crowd": 10,
-   "SurfaceProblem/vlm_agrees_production_disagrees": 10,
-   "SurfaceProblem/vlm_disagrees_with_crowd": 10
+   "Crosswalk/vlm_right_production_right": 5,
+   "Crosswalk/vlm_right_production_wrong": 5,
+   "Crosswalk/vlm_wrong_production_right": 7,
+   "Crosswalk/vlm_wrong_production_wrong": 3,
+   "CurbRamp/vlm_right_production_right": 1,
+   "CurbRamp/vlm_right_production_wrong": 9,
+   "CurbRamp/vlm_wrong_production_right": 7,
+   "CurbRamp/vlm_wrong_production_wrong": 3,
+   "NoCurbRamp/vlm_right_production_right": 5,
+   "NoCurbRamp/vlm_right_production_wrong": 5,
+   "NoCurbRamp/vlm_wrong_production_right": 6,
+   "NoCurbRamp/vlm_wrong_production_wrong": 4,
+   "Obstacle/vlm_right_production_right": 3,
+   "Obstacle/vlm_right_production_wrong": 7,
+   "Obstacle/vlm_wrong_production_right": 2,
+   "Obstacle/vlm_wrong_production_wrong": 8,
+   "SurfaceProblem/vlm_right_production_right": 3,
+   "SurfaceProblem/vlm_right_production_wrong": 7,
+   "SurfaceProblem/vlm_wrong_production_right": 4,
+   "SurfaceProblem/vlm_wrong_production_wrong": 6
   },
-  "key_sha256": "5f5f5f37b7bb0a79bbc84b4891d2dc71a33d95a009bea41d738ce0f75d7bfa3b",
-  "median_reason_latency_s": 4.549993291613646,
+  "key_sha256": "12fe5dad393b82cb46dc80d58962d2783d0b3e82de902b36f63504fbdb47831e",
   "median_reason_words": 27.0,
-  "n_items": 86,
+  "n_items": 100,
+  "passes": 2,
+  "reason_source": {
+   "generated": 23,
+   "reused": 77
+  },
+  "vlm_correct_share_by_type": {
+   "Crosswalk": 0.5,
+   "CurbRamp": 0.5,
+   "NoCurbRamp": 0.5,
+   "Obstacle": 0.5,
+   "SurfaceProblem": 0.5
+  },
   "vlm_model": [
    "gemma4-12b"
   ],
@@ -144,7 +180,7 @@
      " No",
      " NO"
     ],
-    "peak_memory_gb": 11.584706394,
+    "peak_memory_gb": 11.584706586,
     "repo": "mlx-community/gemma-4-12B-it-qat-4bit",
     "variant": "definition",
     "yes_ids": [
@@ -164,8 +200,8 @@
      " YES"
     ]
    },
-   "rows": 500,
-   "sha256": "6548cd1e1ba2b00f0d36a0bfa5079107bb19c968482883c3c068ded266b99581"
+   "rows": 1988,
+   "sha256": "91938733e68c28d845a88ac66ad74ef98c98a781dd5b0dbdace3c8a3cc9e8efd"
   },
   "production.csv": {
    "meta": {
@@ -324,6 +360,38 @@
    },
    "rows": 100,
    "sha256": "949d32e67b208c604bb7811f051d5f361d339a8b88d54707b49fe79b37de0f37"
+  }
+ },
+ "timing": {
+  "gemma4-12b.csv": {
+   "rows": 50,
+   "sha256": "b25ff0aeac54933c1bd09f4f118b1b5b2205221e5e439b5fdd26c0e05045ff58"
+  },
+  "production.csv": {
+   "rows": 50,
+   "sha256": "b06ee7645bccb53fa2e4eb86d575ce122d577f88dfb8c186a0207438432ebc41"
+  },
+  "qwen3vl-2b.csv": {
+   "rows": 50,
+   "sha256": "8d6a58d436c75f1894fb974e69873f7281780d532a6de7a14ee4b08db826fd1a"
+  },
+  "qwen3vl-8b.csv": {
+   "rows": 50,
+   "sha256": "c7b8f7666a88648b1796e619d5454c77c13b1f79b8e5df7bb4ea27b889853374"
+  }
+ },
+ "venvs": {
+  "production (.venv-prod, requirements.txt)": {
+   "device": "mps",
+   "torch": "2.14.1",
+   "transformers": "4.55.0"
+  },
+  "vlm (.venv)": {
+   "mlx": "0.32.4",
+   "mlx-vlm": "0.7.10",
+   "python": "3.12.14",
+   "torch": "2.14.1",
+   "transformers": "5.20.2"
   }
  }
 }

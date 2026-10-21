@@ -1118,33 +1118,46 @@ def item_category(vlm_wrong, prod_wrong):
 
 
 def select_explanation_items(best_pred, prod_pred, cities, per_type=20, seed=0, keep=()):
-    """Rows to explain: public deployments only, ``per_type`` per label type, half where the VLM's verdict matches
-    the crowd and half where it does not, so the shown answer says nothing about the crowd verdict on average.
+    """Rows to explain: public deployments only, ``per_type`` per label type, chosen so that neither the VLM's answer
+    nor its correctness says anything about the crowd verdict: for each type and each answer (yes / no), equal
+    numbers of rows where the VLM is right and where it is wrong. So P(VLM right) = 0.5 per type, and P(crowd says
+    correct | answer) = 0.5 per type and answer.
 
-    Within the VLM-right half, rows where production is wrong come first (the comparison the issue asks for), then
-    random VLM-right rows. Within each half, rows in ``keep`` (``label_uid`` values from an earlier selection, whose
-    reasons can be reused) are taken first. A short pool is reported, not filled from the other half. Deterministic
-    in ``seed``. Adds ``category`` (``CATEGORIES``) and ``vlm_correct``.
+    Each type's quota is split evenly between the two answers; an answer with too few right/wrong pairs gives its
+    remainder to the other one, and a type that still falls short is reported, not padded. Within each cell, rows in
+    ``keep`` (``label_uid`` values whose reasons can be reused) come first, then rows where production is wrong (the
+    comparison the issue asks for), then a seeded random draw. Adds ``category`` (``CATEGORIES``), ``vlm_correct``
+    and ``vlm_answer``.
     """
     m = best_pred.merge(prod_pred[["label_uid", "p_incorrect"]], on="label_uid", suffixes=("", "_prod"),
                         validate="one_to_one")
     m = m[is_public(m.city, cities).values].sort_values("label_uid").reset_index(drop=True)
-    vlm_wrong = verdict_from_score(m.p_incorrect) != m.true.to_numpy()
+    verdict = verdict_from_score(m.p_incorrect)
+    vlm_wrong = verdict != m.true.to_numpy()
     prod_wrong = verdict_from_score(m.p_incorrect_prod) != m.true.to_numpy()
     m["category"] = item_category(vlm_wrong, prod_wrong)
     m["vlm_correct"] = ~vlm_wrong
-    m["kept"] = m.label_uid.isin(set(keep))
-    rng = np.random.default_rng(seed)
-    m["draw"] = rng.permutation(len(m))
+    m["vlm_answer"] = np.where(verdict == "incorrect", "No", "Yes")
+    m["prio"] = (m.label_uid.isin(set(keep)).astype(int) * 2 + prod_wrong.astype(int))
+    m["draw"] = np.random.default_rng(seed).permutation(len(m))
     picks = []
     for t in LABEL_TYPES:
-        mt = m[m.label_type == t]
-        n_wrong = per_type // 2
-        wrong = mt[~mt.vlm_correct].sort_values(["kept", "draw"], ascending=[False, True]).head(n_wrong)
-        right = mt[mt.vlm_correct].assign(prio=lambda d: d.category == "vlm_right_production_wrong")
-        right = right.sort_values(["kept", "prio", "draw"], ascending=[False, False, True]).head(per_type - n_wrong)
-        picks += [wrong, right.drop(columns="prio")]
-    return pd.concat(picks, ignore_index=True).drop(columns=["kept", "draw"])
+        cells = {(a, c): g.sort_values(["prio", "draw"], ascending=[False, True])
+                 for (a, c), g in m[m.label_type == t].groupby(["vlm_answer", "vlm_correct"])}
+        avail = {a: min(len(cells.get((a, True), [])), len(cells.get((a, False), []))) for a in ("No", "Yes")}
+        pairs = per_type // 2
+        base = {"No": pairs - pairs // 2, "Yes": pairs // 2}
+        take = {a: min(avail[a], base[a]) for a in base}
+        left = pairs - sum(take.values())
+        for a in ("No", "Yes"):                       # an answer short of pairs hands its quota to the other
+            extra = min(avail[a] - take[a], left)
+            take[a] += extra
+            left -= extra
+        for a in ("No", "Yes"):
+            for c in (True, False):
+                if take[a]:
+                    picks.append(cells[(a, c)].head(take[a]))
+    return pd.concat(picks, ignore_index=True).drop(columns=["prio", "draw"])
 
 
 KEY_COLUMNS = ["packet_id", "label_uid", "label_type", "category", "vlm_correct", "label_class", "vlm_model",
