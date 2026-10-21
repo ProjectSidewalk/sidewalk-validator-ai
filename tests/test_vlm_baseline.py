@@ -175,14 +175,86 @@ def test_paired_bootstrap_auc_orders_models_and_brackets_point_estimate():
                                                                                                n_boot=50, seed=3)
 
 
-def test_best_model_excludes_production_and_latency_table():
+def test_best_model_excludes_production():
     h = pd.DataFrame({"model": ["production", "a", "a", "b", "b"], "auc": [0.99, 0.7, 0.8, 0.6, 0.85],
                       "label_type": ["x"] * 5})
     assert vb.best_model(h) == "a"
-    sc = pd.DataFrame({"model": ["a"] * 4, "variant": "definition", "latency_s": [1.0, 2.0, np.nan, 3.0],
-                       "answer_mass": [0.9] * 4})
-    lat = vb.latency_table(sc).iloc[0]
-    assert lat.latency_median_s == 2.0 and lat.n == 4
+
+
+def test_timing_table_reads_runs_and_load(tmp_path):
+    pd.DataFrame({"label_uid": list("abcde"), "label_type": "CurbRamp", "latency_s": [1.0, 2.0, 3.0, 4.0, 5.0],
+                  "reason_latency_s": 2.0}).to_csv(tmp_path / "m.csv", index=False)
+    (tmp_path / "m.meta.json").write_text('{"load_before": [1.5, 2, 3], "load_after": [1.7, 2, 3], "date": "d"}')
+    t = vb.timing_table(str(tmp_path)).iloc[0]
+    assert t.model == "m" and t.n == 5 and t.median_s == 3.0 and t.p10_s == pytest.approx(1.4)
+    assert t.reason_median_s == 2.0 and t.load_1min_before == 1.5
+    assert vb.timing_table(str(tmp_path / "missing")).empty
+
+
+def test_stratified_crops_cover_every_type_and_class():
+    s, _ = _sample(n_per=80)
+    s["split"] = np.where(np.arange(len(s)) % 2, "test", "test_heldout")
+    s["label_class"] = np.where((np.arange(len(s)) // 2) % 2, "incorrect", "correct")
+    c = vb.stratified_crops(s, 2, subset=20)
+    assert c.groupby(["label_type", "label_class"]).size().eq(1).all() and len(c) == 10
+
+
+def test_within_city_auc_pair_weighted_and_ignores_between_city_shift():
+    # city a: balanced, perfect (AUC 1); city b: 1 incorrect of 20, inverted (AUC 0) -> weights 100 vs 19
+    y = [0, 1] * 10 + [1] + [0] * 19
+    score = [0, 1] * 10 + [0] + [1] * 19
+    city = ["a"] * 20 + ["b"] * 20
+    auc, n = vb.within_city_auc(y, score, city)
+    assert n == 2 and auc == pytest.approx(100 / 119)
+    # a score that only separates a high-incorrect city from a low-incorrect one has no within-city skill
+    y2 = [1] * 15 + [0] * 5 + [1] * 5 + [0] * 15
+    s2 = [1.0] * 20 + [0.0] * 20
+    assert vb.within_city_auc(y2, s2, city)[0] == pytest.approx(0.5)
+
+
+def test_cluster_bootstrap_is_wider_than_label_bootstrap_when_cities_differ():
+    rng = np.random.default_rng(0)
+    rows = []
+    for c in range(8):
+        skill = 0.9 if c % 2 else 0.1        # the model's advantage flips between cities
+        for i in range(60):
+            y = i % 2
+            rows.append((f"c{c}", y, y * skill + rng.normal(0, 0.3), rng.normal(0, 0.3) + 0.3 * y))
+    d = pd.DataFrame(rows, columns=["city", "y", "a", "b"])
+    lab = vb.paired_bootstrap_auc(d.y, d.a, d.b, n_boot=200, seed=1)
+    clu = vb.cluster_bootstrap_auc(d.y, d.a, d.b, d.city, n_boot=200, seed=1)
+    assert clu["n_groups"] == 8
+    assert clu["diff_hi"] - clu["diff_lo"] > lab["diff_hi"] - lab["diff_lo"]
+
+
+def test_split_diff_bootstrap_brackets_the_difference():
+    s, rng = _sample(n_per=100)
+    p = vb.predictions(s, _scores(s, rng, "m", 0.6))
+    r = vb.split_diff_bootstrap(p, n_boot=200, seed=0)
+    assert r["diff"] == pytest.approx(r["auc_test"] - r["auc_heldout"])
+    assert r["diff_lo"] <= r["diff"] <= r["diff_hi"] and r["n_test"] + r["n_heldout"] == len(p)
+
+
+def test_per_city_type_and_mean_within_type():
+    s, rng = _sample(n_per=80)
+    p = vb.predictions(s, _scores(s, rng, "m", 0.6))
+    t = vb.per_city_type_table(p, CITIES, min_n=20)
+    assert set(t.city) == {"seattle-wa", "chicago-il", "other (2 private deployments)"}
+    assert t.groupby("label_type").size().eq(3).all()
+    assert vb.per_city_type_table(p, CITIES, min_n=10_000).city.str.startswith("other").all()
+    c = vb.per_city_table(p, CITIES, min_n=30)
+    # the fixture gives each public city a single class, so only the pooled private row has within-type AUCs
+    assert {"mean_within_type_auc", "n_types"} <= set(c.columns)
+    assert c.set_index("city").n_types.to_dict() == {"seattle-wa": 0, "chicago-il": 0,
+                                                     "other (2 private deployments)": 5}
+
+
+def test_check_coverage_rejects_partial_runs():
+    s, rng = _sample()
+    p = vb.predictions(s, pd.concat([_scores(s, rng, "full", 0.5), _scores(s.iloc[:30], rng, "part", 0.5)]))
+    vb.check_coverage(p, set(s.label_uid[:20]))                    # both cover these 20
+    with pytest.raises(ValueError, match="part"):
+        vb.check_coverage(p, set(s.label_uid[:50]))
 
 
 def test_markdown_table():
@@ -199,35 +271,41 @@ def _explain_inputs():
     return best, prod
 
 
-def test_select_items_public_only_balanced_and_categorised():
+def test_select_items_public_only_and_half_vlm_right_per_type():
     best, prod = _explain_inputs()
-    items = vb.select_explanation_items(best, prod, CITIES, n_total=20, seed=0)
-    assert len(items) == 20
+    items = vb.select_explanation_items(best, prod, CITIES, per_type=10, seed=0)
+    assert len(items) == 50
     assert set(items.city) <= {"seattle-wa", "chicago-il"}
-    assert items.groupby("label_type").size().eq(4).all()
     assert not items.label_uid.duplicated().any()
+    assert items.groupby("label_type").vlm_correct.mean().eq(0.5).all()
     v = vb.verdict_from_score(items.p_incorrect)
     pv = vb.verdict_from_score(items.p_incorrect_prod)
-    wrong = items.category == vb.EXPLAIN_CATEGORIES[0]
-    assert (v[wrong] != items.true[wrong]).all()
-    agree = items.category == vb.EXPLAIN_CATEGORIES[1]
-    assert (v[agree] == items.true[agree]).all() and (pv[agree] != items.true[agree]).all()
-    again = vb.select_explanation_items(best, prod, CITIES, n_total=20, seed=0)
+    assert ((v == items.true) == items.vlm_correct).all()
+    assert (items.category == vb.item_category(v != items.true, pv != items.true)).all()
+    # production-wrong rows come first among the VLM-right ones
+    for t, g in items[items.vlm_correct].groupby("label_type"):
+        pool = best.merge(prod[["label_uid", "p_incorrect"]], on="label_uid", suffixes=("", "_p"))
+        pool = pool[(pool.label_type == t) & pool.city.isin(["seattle-wa", "chicago-il"])]
+        n_avail = ((vb.verdict_from_score(pool.p_incorrect) == pool.true)
+                   & (vb.verdict_from_score(pool.p_incorrect_p) != pool.true)).sum()
+        assert (g.category == "vlm_right_production_wrong").sum() == min(5, n_avail)
+    again = vb.select_explanation_items(best, prod, CITIES, per_type=10, seed=0)
     assert again.label_uid.tolist() == items.label_uid.tolist()
 
 
-def test_select_items_falls_back_when_a_pool_is_short():
+def test_select_items_prefers_kept_rows():
     best, prod = _explain_inputs()
-    prod = prod.assign(p_incorrect=np.where(prod.true == "incorrect", 0.99, 0.01))   # production never wrong
-    items = vb.select_explanation_items(best, prod, CITIES, n_total=20, seed=0)
-    assert (items.category != vb.EXPLAIN_CATEGORIES[1]).all()
-    assert len(items) <= 20 and (items.category == vb.EXPLAIN_CATEGORIES[0]).any()
+    first = vb.select_explanation_items(best, prod, CITIES, per_type=10, seed=0)
+    keep = first.label_uid.iloc[::3].tolist()
+    second = vb.select_explanation_items(best, prod, CITIES, per_type=10, seed=99, keep=keep)
+    assert set(keep) <= set(second.label_uid)
 
 
 def _explanations(n=12):
     return pd.DataFrame({"label_uid": [f"seattle-wa:{i}" for i in range(n)],
                          "label_type": [vb.LABEL_TYPES[i % 5] for i in range(n)],
-                         "category": [vb.EXPLAIN_CATEGORIES[i % 2] for i in range(n)],
+                         "category": [vb.CATEGORIES[i % 4] for i in range(n)],
+                         "vlm_correct": [i % 4 >= 2 for i in range(n)],
                          "label_class": ["correct", "incorrect"] * (n // 2), "vlm_model": "best",
                          "vlm_answer": ["Yes", "No", "No", "Yes"] * (n // 4),
                          "vlm_reason": [f"reason {i}" for i in range(n)],
@@ -243,40 +321,54 @@ def test_packet_key_ids_are_random_hex_and_deterministic_in_seed():
     assert sorted(k1.label_uid) == sorted(ex.label_uid)
 
 
-def test_blank_sheet_leaks_no_truth_category_score_or_uid():
+def test_sheets_leak_no_truth_category_score_or_uid_and_pass1_hides_the_answer():
     ex = _explanations()
-    sheet = vb.blank_sheet(vb.packet_key(ex, 7))
-    assert list(sheet.columns) == vb.SHEET_COLUMNS
-    for forbidden in ("label_uid", "category", "label_class", "p_incorrect", "p_incorrect_prod", "city",
-                      "label_id", "vlm_model"):
-        assert forbidden not in sheet.columns
-    text = sheet.to_csv(index=False)
-    assert "seattle-wa" not in text and "vlm_disagrees" not in text and "0.1" not in text
-    assert (sheet[["reason_correct", "would_change_my_vote", "my_verdict"]] == "").all().all()
+    pass1, pass2 = vb.blank_sheets(vb.packet_key(ex, 7))
+    assert list(pass1.columns) == vb.PASS1_COLUMNS and list(pass2.columns) == vb.PASS2_COLUMNS
+    for sheet in (pass1, pass2):
+        for forbidden in ("label_uid", "category", "vlm_correct", "label_class", "p_incorrect", "p_incorrect_prod",
+                          "city", "label_id", "vlm_model"):
+            assert forbidden not in sheet.columns
+        text = sheet.to_csv(index=False)
+        assert "seattle-wa" not in text and "vlm_wrong" not in text and "0.1" not in text
+    assert "vlm_answer" not in pass1 and "vlm_reason" not in pass1 and "reason" not in pass1.to_csv(index=False)
+    assert (pass1.my_verdict == "").all() and (pass2[["reason_correct", "would_change_my_vote"]] == "").all().all()
+
+
+def test_rubric_says_nothing_about_composition():
+    text = vb.RUBRIC_TEXT.lower()
+    for word in ("disagree", "crowd", "production", "category", "half", "balanced", "wrong"):
+        assert word not in text, word
+    assert "pass 1" in text and "pass 2" in text
 
 
 def test_unblind_and_agreement_round_trip():
     ex = _explanations(8)
     key = vb.packet_key(ex, 3)
-    sheet = vb.blank_sheet(key)
-    # the rater agrees with the crowd everywhere
-    truth = dict(zip(key.packet_id, key.label_class))
-    sheet["my_verdict"] = sheet.packet_id.map(truth)
-    sheet["reason_correct"] = "yes"
-    sheet["would_change_my_vote"] = "No "
-    vb.validate_codes(sheet)
-    t = vb.agreement_tables(vb.unblind(sheet, key))
-    overall = t[t.category == "all"].iloc[0]
+    pass1, pass2 = vb.blank_sheets(key)
+    truth = dict(zip(key.packet_id, key.label_class))      # the rater agrees with the crowd everywhere
+    pass1["my_verdict"] = pass1.packet_id.map(truth)
+    pass2["reason_correct"] = "yes"
+    pass2["would_change_my_vote"] = "No "
+    vb.validate_codes(pass1)
+    vb.validate_codes(pass2)
+    t = vb.agreement_tables(vb.unblind(pass1, pass2, key))
+    overall = t[t.by == "all"].iloc[0]
     assert overall.n == 8 and overall.rater_agrees_crowd == 1.0 and overall.reason_correct_yes == 1.0
-    vlm_correct = np.where(key.vlm_answer.str.lower() == "no", "incorrect", "correct")
-    assert overall.rater_agrees_vlm == pytest.approx((vlm_correct == key.label_class).mean())
-    bad = sheet.copy()
+    vlm_verdict = np.where(key.vlm_answer.str.lower() == "no", "incorrect", "correct")
+    assert overall.rater_agrees_vlm == pytest.approx((vlm_verdict == key.label_class).mean())
+    assert set(t[t.by == "category"].group) == set(key.category)
+    assert set(t[t.by == "vlm"].group) <= {"vlm right", "vlm wrong"}
+    bad = pass1.copy()
     bad.loc[0, "my_verdict"] = "probably"
     with pytest.raises(ValueError):
         vb.validate_codes(bad)
-    extra = pd.concat([sheet, sheet.iloc[:1].assign(packet_id="p000000")])
     with pytest.raises(ValueError):
-        vb.unblind(extra, key)
+        vb.unblind(pass1.iloc[1:], pass2, key)
+    extra = pd.concat([pass1, pass1.iloc[:1].assign(packet_id="p000000")])
+    extra2 = pd.concat([pass2, pass2.iloc[:1].assign(packet_id="p000000")])
+    with pytest.raises(ValueError):
+        vb.unblind(extra, extra2, key)
 
 
 def test_key_must_be_outside_the_repo(tmp_path):
@@ -292,8 +384,10 @@ def test_render_item(tmp_path):
     Image.new("RGB", (640, 640), (90, 90, 90)).save(src)
     out = tmp_path / "item.jpg"
     vb.render_item(str(src), "001  p123abc  label type: curb ramp", "No", "The ramp is a driveway " * 4, str(out))
-    im = Image.open(out)
-    assert im.width == 640 and im.height > 640
+    bare = tmp_path / "bare.jpg"
+    vb.render_item(str(src), "001  p123abc  label type: curb ramp", None, None, str(bare))
+    im, b = Image.open(out), Image.open(bare)
+    assert im.width == 640 and im.height > b.height > 640
 
 
 def test_mlx_scorer_imports():

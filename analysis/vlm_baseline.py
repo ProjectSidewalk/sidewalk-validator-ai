@@ -1,61 +1,82 @@
 """Open-weight vision-language models as zero-shot label validators, against production (issue #16).
 
 Asks current open-weight VLMs, run locally with MLX on Apple silicon, whether a crowdsourced Project Sidewalk label
-is correct, on exactly the crops the production and retrained validators see (label-centred, tilt-corrected,
-depth-sized, 640 px WebP), and compares them with the five production DINOv2 validators on the same crops. Also
-builds the blinded explanation-rating packet the issue asks for.
+is correct, on the round-3 crops (label-centred, tilt-corrected at beta 0.95, depth-sized, 640 px WebP: the inputs
+the retrained validators are trained on), and compares them with the five production DINOv2-L validators on the same
+crops. The production models were trained without tilt correction, so these crops are not exactly what production
+sees. Also builds the blinded, two-pass explanation-rating packet the issue asks for.
 
-**Score, not sample.** Each VLM gets one prompt per crop (``build_prompt``: a ~3-sentence definition of the label
-type, "The labelled point is at the centre of the image.", "Is this a correct <type> label? Answer yes or no.").
-The score is read from the next-token distribution after the prompt, never from sampled text:
+**Score, not sample.** Each VLM gets one prompt per crop (``build_prompt``: a short definition of the label type,
+"The labelled point is at the centre of the image.", "Is this a correct <type> label? Answer yes or no."). The
+score is read from the next-token distribution after the prompt, never from sampled text:
 ``p_incorrect = P(no) / (P(yes) + P(no))``, where P(yes) sums the probability of every single-token spelling of yes
 in ``YES_VARIANTS`` that the tokenizer has (likewise no), computed in log space (``yes_no_score``). ``answer_mass``
-(P(yes) + P(no)) records how much of the distribution the two answers hold. ``score --check-greedy N`` also runs
-greedy generation on the first N crops and records whether its first word agrees with the argmax of the score.
+(P(yes) + P(no)) records how much of the distribution the two answers hold. ``greedy`` checks, on crops stratified
+by type, whether greedy generation's first word agrees with the argmax of the score.
 
 Subcommands (all outputs with label-level rows go OUTSIDE the repo, under ``~/Data/...``):
 
 ``score``
-    One MLX model over the sample; writes ``<out-dir>/scores/<model>[__<variant>].csv`` (one row per crop:
-    ``label_uid, model, variant, p_yes, p_no, answer_mass, log_odds_incorrect, p_incorrect, p_correct, top_token,
-    prompt_tokens, latency_s``). Resumable: rows already in the CSV are skipped.
+    One MLX model over the sample (or ``--subset N``: ``balanced_subset(per_type=N)``); writes
+    ``<out-dir>/scores/<model>[__<variant>].csv`` (one row per crop: ``label_uid, model, variant, p_yes, p_no,
+    answer_mass, log_odds_incorrect, p_incorrect, p_correct, top_token, prompt_tokens, latency_s``). Resumable: rows
+    already in the CSV are skipped. ``latency_s`` here is not used for the latency table (see ``timing``).
 ``baseline``
     The five production validators (the revisions sidewalk-ai-api's ``model_map.py`` pins, ``PRODUCTION``) on the
     same crops, preprocessed as ``evaluate.py`` does; writes ``<out-dir>/scores/production.csv``.
+``timing``
+    Times 10 crops per type (``stratified_crops``) at batch 1 after one warm-up call, for one model (``--with-reason``
+    also times the explanation turn); writes ``<out-dir>/timing/<model>.csv`` with the load average around the run.
+    Run each model alone on an otherwise idle machine.
+``greedy``
+    Greedy text vs the score's argmax on 2 crops per type; writes ``<out-dir>/greedy/<model>.csv``.
 ``report``
-    Metrics per model x type, per split, per public city (n >= 30, private deployments pooled), on the ``hard``
-    slice; a paired bootstrap of AUC (best VLM vs production, per type); latency and size; the prompt ablation; one
-    ROC figure. Writes aggregate CSVs, ``report.md``, ``roc.png`` and ``provenance.json`` to ``--doc-dir``.
+    On the headline subset (every model) and on the full sample (models that scored all crops): metrics per model x
+    type, per split with a bootstrap CI for the test - held-out difference, within-city AUC per split, per public city
+    (n >= 30) and per city x type (n >= 20), private deployments pooled, the ``hard`` slice; best VLM vs production
+    with label-resampled and deployment-resampled bootstrap CIs; latency from ``timing``; the prompt ablation; the
+    greedy check; one ROC figure. Writes aggregate CSVs, ``report.md``, ``roc.png`` and ``provenance.json`` to
+    ``--doc-dir``. Fails if a model covers only part of the headline subset.
 ``explain``
-    Picks the explanation items (``select_explanation_items``: public deployments only, balanced across types, half
-    where the best VLM disagrees with the crowd, half where it agrees but production disagrees) and asks the best VLM
-    "In at most 30 words, why?" as a second turn after its own answer; writes ``<out-dir>/explanations.csv``.
+    Picks the explanation items (``select_explanation_items``: public deployments only, ``--per-type`` per type,
+    half where the VLM's verdict matches the crowd) and asks the VLM "In at most 30 words, why?" as a second turn
+    after its own answer; ``--reuse`` copies reasons for items an earlier run already explained. Writes
+    ``<out-dir>/explanations.csv``.
 ``packet``
-    The blinded rater packet from ``explanations.csv``: shuffled items with random 6-hex ids, a blank coding sheet,
-    and the key (written outside every checkout; its sha256 is the only part to commit). ``--seed`` has no default.
+    The blinded two-pass rater packet from ``explanations.csv``: ``items_bare/`` (crop only) with
+    ``pass1_sheet.csv`` for the rater's own verdict, then ``items_annotated/`` (crop, answer, reason) with
+    ``pass2_sheet.csv``; random 6-hex ids, shuffled with a secret ``--seed`` (no default); the key is written outside
+    the checkout and only its sha256 is committed.
 ``agreement``
-    Unblinds a filled sheet against the key and prints VLM-vs-rater and rater-vs-crowd agreement.
+    Unblinds the two filled sheets against the key; prints rater-vs-VLM and rater-vs-crowd agreement and the reason
+    codes, overall, by whether the VLM was right, and per category.
 
 Install (on top of ``requirements.txt``; the production baseline needs the pinned transformers 4.55, and mlx-vlm
-upgrades transformers, so run ``baseline`` from a second venv with ``requirements.txt`` only)::
+upgrades transformers, so run ``baseline`` and production ``timing`` from a second venv with ``requirements.txt``
+only)::
 
     uv venv --python 3.12 .venv && source .venv/bin/activate && uv pip install -r requirements.txt mlx-vlm==0.7.10
-    uv venv --python 3.12 .venv-prod && .venv-prod/bin/pip install -r requirements.txt   # (uv pip also fine)
+    uv venv --python 3.12 .venv-prod && VIRTUAL_ENV=.venv-prod uv pip install -r requirements.txt
 
 Usage (``$S`` is the sample directory, ``$O`` the private output directory)::
 
     S=~/Data/sidewalk-validator-ai-retrain-2026-10/round3; O=~/Data/sidewalk-validator-ai-vlm-2026-10
-    python analysis/vlm_baseline.py score --model qwen3vl-8b --sample-dir $S --out-dir $O --check-greedy 10
-    python analysis/vlm_baseline.py score --model qwen3vl-8b --sample-dir $S --out-dir $O \\
-        --label-types CurbRamp --variant no-definition                 # the prompt ablation
+    C=~/Data/sidewalk-validator-ai-prod-2026-10-17/cities.json
+    python analysis/vlm_baseline.py score --model qwen3vl-8b --subset 100 --sample-dir $S --out-dir $O
+    python analysis/vlm_baseline.py score --model qwen3vl-8b --subset 100 --label-types CurbRamp \
+        --variant no-definition --sample-dir $S --out-dir $O          # the prompt ablation
+    python analysis/vlm_baseline.py score --model gemma4-12b --sample-dir $S --out-dir $O   # all crops
     .venv-prod/bin/python analysis/vlm_baseline.py baseline --sample-dir $S --out-dir $O --device mps
-    python analysis/vlm_baseline.py report --sample-dir $S --out-dir $O --doc-dir docs/vlm-baseline-2026-10 \\
-        --cities-json ~/Data/sidewalk-validator-ai-prod-2026-10-17/cities.json
-    python analysis/vlm_baseline.py explain --model qwen3vl-8b --sample-dir $S --out-dir $O \\
-        --cities-json ~/Data/sidewalk-validator-ai-prod-2026-10-17/cities.json --seed 20261021
-    python analysis/vlm_baseline.py packet --out-dir $O --packet-dir $O/packet \\
+    .venv-prod/bin/python analysis/vlm_baseline.py timing --model production --out-dir $O
+    python analysis/vlm_baseline.py timing --model gemma4-12b --with-reason --out-dir $O
+    python analysis/vlm_baseline.py greedy --model gemma4-12b --out-dir $O
+    python analysis/vlm_baseline.py report --cities-json $C --sample-dir $S --out-dir $O \
+        --doc-dir docs/vlm-baseline-2026-10
+    python analysis/vlm_baseline.py explain --model gemma4-12b --cities-json $C --seed 20261021 \
+        --reuse $O/superseded/explanations_v1.csv --sample-dir $S --out-dir $O
+    python analysis/vlm_baseline.py packet --out-dir $O --packet-dir $O/packet \
         --key $O/private-key-do-not-share/packet_key.csv --seed $SECRET_SEED
-    python analysis/vlm_baseline.py agreement $O/packet/coding_sheet_filled.csv \\
+    python analysis/vlm_baseline.py agreement $O/packet/pass1_filled.csv $O/packet/pass2_filled.csv \
         --key $O/private-key-do-not-share/packet_key.csv --key-sha256 docs/vlm-baseline-2026-10/packet_key.sha256
 
 Example (the score)::
@@ -115,7 +136,9 @@ TYPE_NAMES = {"CurbRamp": "curb ramp", "NoCurbRamp": "missing curb ramp", "Obsta
               "SurfaceProblem": "surface problem", "Crosswalk": "crosswalk"}
 
 DEFINITIONS = {
-    # Condensed from the Project Sidewalk labeling guide's definitions (projectsidewalk.org, "Labeling Guide").
+    # Written for this baseline from the label types' meaning in Project Sidewalk; not copied from a source in this
+    # repo. They are not parallel: NoCurbRamp and Crosswalk end with a "the label is wrong if..." clause, CurbRamp
+    # lists exclusions, SurfaceProblem and Obstacle neither, which may favour some types (see the doc's caveats).
     "CurbRamp": ("A curb ramp is a short ramp cut into or built up to a curb so that people using wheelchairs, "
                  "walkers or strollers can move between the sidewalk and the street, often with yellow tactile "
                  "paving at the bottom. Driveways, alleys and flush building entrances are not curb ramps."),
@@ -356,27 +379,126 @@ def run_score(args):
     with open(path.replace(".csv", ".meta.json"), "w") as f:
         json.dump(meta, f, indent=1)
     rows, t_start = [], time.time()
-    checks = []
     for i, r in enumerate(todo.itertuples()):
         s = vlm.score(r.image, build_prompt(r.label_type, args.variant))
         rows.append({"label_uid": r.label_uid, "model": args.model, "variant": args.variant, **s})
-        if len(checks) < args.check_greedy and not done:
-            text, _ = vlm.generate(r.image, [("user", build_prompt(r.label_type, args.variant))], max_tokens=4)
-            checks.append({"label_uid": r.label_uid, "greedy_text": text, "p_incorrect": s["p_incorrect"],
-                           "top_token": s["top_token"], "agrees": greedy_agrees(text, s["p_incorrect"])})
         if len(rows) >= 25 or i == len(todo) - 1:
             pd.DataFrame(rows).to_csv(path, mode="a", header=not os.path.exists(path), index=False)
             rows = []
             el = time.time() - t_start
             print(f"  {i + 1}/{len(todo)}  {el:.0f}s  peak {mx.get_peak_memory() / 1e9:.1f} GB", flush=True)
-    if checks:
-        c = pd.DataFrame(checks)
-        c.to_csv(path.replace(".csv", ".greedy_check.csv"), index=False)
-        print(f"greedy check: {int((c.agrees == True).sum())}/{len(c)} agree "  # noqa: E712
-              f"({int(c.agrees.isna().sum())} unparsable)")
     meta["peak_memory_gb"] = mx.get_peak_memory() / 1e9
     with open(path.replace(".csv", ".meta.json"), "w") as f:
         json.dump(meta, f, indent=1)
+
+
+def stratified_crops(sample, per_type, seed=20261021, subset=100):
+    """``per_type`` crops per label type from ``balanced_subset(per_type=subset)``, half per class, seeded.
+
+    Used for the timing runs (10 per type) and the greedy check (2 per type), so both cover every type and class
+    rather than the first rows of one type.
+
+    >>> s = pd.DataFrame({"label_uid": [f"c:{i}" for i in range(40)], "label_type": "CurbRamp",
+    ...                   "split": ["test"] * 20 + ["test_heldout"] * 20, "label_class": ["correct", "incorrect"] * 20})
+    >>> stratified_crops(s, 4, subset=10).label_class.value_counts().tolist()
+    [2, 2]
+    """
+    rng = np.random.default_rng(seed)
+    pool = balanced_subset(sample, subset).sort_values("label_uid")
+    out = []
+    for (_t, _c), g in pool.groupby(["label_type", "label_class"]):
+        k = per_type // 2 + (per_type % 2 if _c == "correct" else 0)
+        out.append(g.iloc[np.sort(rng.permutation(len(g))[:k])])
+    return pd.concat(out).sort_values(["label_type", "label_uid"]).reset_index(drop=True)
+
+
+def _load_note():
+    """1/5/15-minute load averages, recorded beside every timing run."""
+    try:
+        return [round(x, 2) for x in os.getloadavg()]
+    except OSError:
+        return None
+
+
+def run_timing(args):
+    """Time ``--n-per-type`` crops per type at batch 1, one warm-up call first (excluded). Writes
+    ``<out>/timing/<model>.csv`` (``label_uid, label_type, latency_s[, reason_latency_s]``) and a meta JSON with the
+    load average before and after. Run it on an otherwise idle machine."""
+    sample = load_sample(args.sample_dir)
+    crops = stratified_crops(sample, args.n_per_type)
+    out_dir = os.path.join(args.out_dir, "timing")
+    os.makedirs(out_dir, exist_ok=True)
+    meta = {"model": args.model, "n": int(len(crops)), "date": datetime.datetime.now().isoformat(timespec="seconds"),
+            "load_before": _load_note(), "batch_size": 1}
+    rows = []
+    if args.model == PRODUCTION_NAME:
+        import torch
+        import transformers
+        from PIL import Image
+        from transformers import AutoImageProcessor, AutoModelForImageClassification
+
+        meta.update(device=args.device, torch=torch.__version__, transformers=transformers.__version__)
+        for label_type, g in crops.groupby("label_type"):
+            repo, rev = PRODUCTION[label_type]
+            proc = AutoImageProcessor.from_pretrained(repo, revision=rev, use_fast=False)
+            model = AutoModelForImageClassification.from_pretrained(repo, revision=rev).to(args.device).eval()
+
+            def once(path):
+                t0 = time.perf_counter()
+                inputs = proc(Image.open(path).convert("RGB"), return_tensors="pt").to(args.device)
+                with torch.no_grad():
+                    model(**inputs).logits.softmax(-1).float().cpu().numpy()
+                return time.perf_counter() - t0
+            once(g.image.iloc[0])   # warm-up
+            rows += [{"label_uid": r.label_uid, "label_type": r.label_type, "latency_s": once(r.image)}
+                     for r in g.itertuples()]
+            del model
+    else:
+        vlm = MlxVlm(MODELS[args.model])
+        first = crops.iloc[0]
+        vlm.score(first.image, build_prompt(first.label_type))   # warm-up
+        for r in crops.itertuples():
+            q = build_prompt(r.label_type)
+            sc = vlm.score(r.image, q)
+            row = {"label_uid": r.label_uid, "label_type": r.label_type, "latency_s": sc["latency_s"],
+                   "prompt_tokens": sc["prompt_tokens"]}
+            if args.with_reason:
+                answer = "No." if sc["p_incorrect"] > 0.5 else "Yes."
+                text, lat = vlm.generate(r.image, [("user", q), ("assistant", answer), ("user", WHY_PROMPT)],
+                                         max_tokens=60)
+                row.update(reason_latency_s=lat, reason_words=len(text.split()))
+            rows.append(row)
+    meta["load_after"] = _load_note()
+    t = pd.DataFrame(rows)
+    t.to_csv(os.path.join(out_dir, f"{args.model}.csv"), index=False)
+    with open(os.path.join(out_dir, f"{args.model}.meta.json"), "w") as f:
+        json.dump(meta, f, indent=1)
+    print(f"{args.model}: n {len(t)}, median {t.latency_s.median():.3f}s, p10 {t.latency_s.quantile(.1):.3f}, "
+          f"p90 {t.latency_s.quantile(.9):.3f}; load {meta['load_before']} -> {meta['load_after']}")
+    if "reason_latency_s" in t:
+        print(f"  reason: median {t.reason_latency_s.median():.3f}s")
+
+
+def run_greedy(args):
+    """Greedy-vs-score check on ``--n-per-type`` crops per type (``stratified_crops``, seed differs from timing).
+    Writes ``<out>/greedy/<model>.csv``: the greedy text, the score, the top token and whether they agree."""
+    sample = load_sample(args.sample_dir)
+    crops = stratified_crops(sample, args.n_per_type, seed=args.seed)
+    vlm = MlxVlm(MODELS[args.model])
+    rows = []
+    for r in crops.itertuples():
+        q = build_prompt(r.label_type)
+        sc = vlm.score(r.image, q)
+        text, _ = vlm.generate(r.image, [("user", q)], max_tokens=4)
+        rows.append({"label_uid": r.label_uid, "label_type": r.label_type, "greedy_text": text,
+                     "p_incorrect": sc["p_incorrect"], "top_token": sc["top_token"],
+                     "agrees": greedy_agrees(text, sc["p_incorrect"])})
+    out_dir = os.path.join(args.out_dir, "greedy")
+    os.makedirs(out_dir, exist_ok=True)
+    c = pd.DataFrame(rows)
+    c.to_csv(os.path.join(out_dir, f"{args.model}.csv"), index=False)
+    print(f"{args.model}: greedy agrees {int((c.agrees == True).sum())}/{len(c)} "  # noqa: E712
+          f"({int(c.agrees.isna().sum())} unparsable)")
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -447,6 +569,9 @@ def metrics_row(df, levels=REPORT_LEVELS):
     row = {"n": m["n"], "n_incorrect": m["n_by_class"]["incorrect"], "auc": m.get("auc"),
            "balanced_accuracy": m.get("balanced_accuracy"), "accuracy": m.get("accuracy")}
     for c in evaluate.CLASSES:
+        pc = m.get("per_class", {}).get(c)
+        row[f"recall_{c}"] = pc["recall"] if pc and pc["support"] > 0 else None
+    for c in evaluate.CLASSES:
         for p in levels:
             rp = m.get("recall_at_precision", {}).get(c, {}).get(f"{p:.2f}")
             row[f"r_{c}_p{int(round(p * 100))}"] = rp["recall"] if rp else None
@@ -496,10 +621,141 @@ def per_city_table(pred, cities, min_n=30, levels=REPORT_LEVELS):
             pub = bool(g[g.display_city == city].public.iloc[0])
             if pub and n < min_n:
                 continue
-            out.append({"model": model, "city": city, "public": pub,
-                        **metrics_row(g[g.display_city == city], levels)})
+            gc = g[g.display_city == city]
+            mwt, ntypes = mean_within_type_auc(gc)
+            out.append({"model": model, "city": city, "public": pub, **metrics_row(gc, levels),
+                        "mean_within_type_auc": mwt, "n_types": ntypes})
     t = pd.DataFrame(out)
     return t.sort_values(["model", "public", "n"], ascending=[True, False, False]).reset_index(drop=True)
+
+
+def mean_within_type_auc(df, min_n=10):
+    """Unweighted mean of the per-type AUCs in ``df`` over types with both classes and >= ``min_n`` rows, and the
+    number of such types. Unlike the pooled AUC, it is not moved by a model's per-type verdict offsets combined with
+    a deployment's type mix.
+
+    >>> d = pd.DataFrame({"label_type": ["A"] * 10 + ["B"] * 10, "true": ["correct", "incorrect"] * 10,
+    ...                   "p_incorrect": [0.1, 0.2] * 5 + [0.9, 0.8] * 5})
+    >>> mean_within_type_auc(d)
+    (0.5, 2)
+    """
+    from sklearn.metrics import roc_auc_score
+    aucs = [roc_auc_score(g.true == "incorrect", g.p_incorrect) for _, g in df.groupby("label_type")
+            if len(g) >= min_n and g.true.nunique() == 2]
+    return (float(np.mean(aucs)), len(aucs)) if aucs else (None, 0)
+
+
+def per_city_type_table(pred, cities, min_n=20, levels=REPORT_LEVELS):
+    """Per model x displayed city x label type: public cities with >= ``min_n`` rows of that type, plus one pooled
+    private row per type at any size."""
+    p = pred.assign(display_city=display_city(pred.city, cities).values,
+                    public=is_public(pred.city, cities).values)
+    out = []
+    for (model, t, city), g in p.groupby(["model", "label_type", "display_city"]):
+        pub = bool(g.public.iloc[0])
+        if pub and len(g) < min_n:
+            continue
+        out.append({"model": model, "label_type": t, "city": city, "public": pub, **metrics_row(g, levels)})
+    t = pd.DataFrame(out)
+    if t.empty:
+        return t
+    return t.sort_values(["label_type", "model", "public", "n"], ascending=[True, True, False, False]
+                         ).reset_index(drop=True)
+
+
+def within_city_auc(y, score, city, min_n=10):
+    """City-stratified AUC: per-city AUCs averaged with weights n_pos x n_neg (the number of incorrect/correct pairs
+    each city contributes), over cities with both classes and >= ``min_n`` rows. ``(auc, n_cities)``; NaN if none.
+    It cannot be raised by a score that only separates cities with many incorrect labels from cities with few.
+
+    >>> y = [0, 1] * 10 + [1] * 10; s = list(range(20)) + [100] * 10; c = ["a"] * 20 + ["b"] * 10
+    >>> within_city_auc(y, s, c)   # city b has one class, so only city a counts
+    (0.55, 1)
+    """
+    from sklearn.metrics import roc_auc_score
+    d = pd.DataFrame({"y": np.asarray(y).astype(int), "s": np.asarray(score, float), "c": np.asarray(city)})
+    aucs, ws = [], []
+    for _, g in d.groupby("c"):
+        if len(g) < min_n or g.y.nunique() < 2:
+            continue
+        aucs.append(roc_auc_score(g.y, g.s))
+        ws.append(int(g.y.sum()) * int((1 - g.y).sum()))
+    if not aucs:
+        return float("nan"), 0
+    return float(np.average(aucs, weights=ws)), len(aucs)
+
+
+def cluster_bootstrap_auc(y, score_a, score_b, groups, n_boot=1000, seed=0, max_tries=20):
+    """Paired bootstrap that resamples whole deployments (``groups``) with replacement, for intervals that hold for
+    other deployments rather than other labels from these ones. Draws without both classes are redrawn.
+
+    Returns ``{"a_lo", "a_hi", "b_lo", "b_hi", "diff_lo", "diff_hi", "n_groups"}`` (95% percentile intervals).
+    """
+    from sklearn.metrics import roc_auc_score
+
+    y = np.asarray(y).astype(int)
+    a, b = np.asarray(score_a, dtype=float), np.asarray(score_b, dtype=float)
+    groups = np.asarray(groups)
+    names = np.unique(groups)
+    index = {g: np.flatnonzero(groups == g) for g in names}
+    rng = np.random.default_rng(seed)
+    boots = []
+    for _ in range(n_boot):
+        for _try in range(max_tries):
+            idx = np.concatenate([index[g] for g in rng.choice(names, len(names))])
+            if 0 < y[idx].sum() < len(idx):
+                boots.append((roc_auc_score(y[idx], a[idx]), roc_auc_score(y[idx], b[idx])))
+                break
+    boots = np.array(boots)
+    q = lambda x: np.percentile(x, [2.5, 97.5])  # noqa: E731
+    (alo, ahi), (blo, bhi), (dlo, dhi) = q(boots[:, 0]), q(boots[:, 1]), q(boots[:, 0] - boots[:, 1])
+    return {"a_lo": alo, "a_hi": ahi, "b_lo": blo, "b_hi": bhi, "diff_lo": dlo, "diff_hi": dhi,
+            "n_groups": int(len(names))}
+
+
+def split_diff_bootstrap(df, n_boot=1000, seed=0):
+    """AUC on ``test`` minus AUC on ``test_heldout`` for one model, with a 95% interval from resampling labels
+    within split and class. ``{"auc_test", "auc_heldout", "diff", "diff_lo", "diff_hi", "n_test", "n_heldout"}``."""
+    from sklearn.metrics import roc_auc_score
+
+    rng = np.random.default_rng(seed)
+    parts = {}
+    for split in ("test", "test_heldout"):
+        g = df[df.split == split]
+        parts[split] = ((g.true == "incorrect").to_numpy().astype(int), g.p_incorrect.to_numpy(float))
+    point = {k: roc_auc_score(*v) for k, v in parts.items()}
+
+    def draw(y, s):
+        pos, neg = np.flatnonzero(y == 1), np.flatnonzero(y == 0)
+        idx = np.concatenate([rng.choice(pos, len(pos)), rng.choice(neg, len(neg))])
+        return roc_auc_score(y[idx], s[idx])
+    d = np.array([draw(*parts["test"]) - draw(*parts["test_heldout"]) for _ in range(n_boot)])
+    lo, hi = np.percentile(d, [2.5, 97.5])
+    return {"auc_test": point["test"], "auc_heldout": point["test_heldout"],
+            "diff": point["test"] - point["test_heldout"], "diff_lo": lo, "diff_hi": hi,
+            "n_test": int(len(parts["test"][0])), "n_heldout": int(len(parts["test_heldout"][0]))}
+
+
+def timing_table(timing_dir):
+    """Per model: n, p10/median/p90 seconds per crop (and per reason), and the load average around the run."""
+    rows = []
+    if not os.path.isdir(timing_dir):
+        return pd.DataFrame()
+    for f in sorted(os.listdir(timing_dir)):
+        if not f.endswith(".csv"):
+            continue
+        t = pd.read_csv(os.path.join(timing_dir, f))
+        meta = json.load(open(os.path.join(timing_dir, f.replace(".csv", ".meta.json"))))
+        row = {"model": f[:-4], "n": len(t), "p10_s": t.latency_s.quantile(0.1), "median_s": t.latency_s.median(),
+               "p90_s": t.latency_s.quantile(0.9), "load_1min_before": (meta.get("load_before") or [None])[0],
+               "load_1min_after": (meta.get("load_after") or [None])[0], "date": meta.get("date")}
+        if "reason_latency_s" in t:
+            row.update(reason_p10_s=t.reason_latency_s.quantile(0.1), reason_median_s=t.reason_latency_s.median(),
+                       reason_p90_s=t.reason_latency_s.quantile(0.9))
+        if "prompt_tokens" in t:
+            row["prompt_tokens_median"] = t.prompt_tokens.median()
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def paired_bootstrap_auc(y, score_a, score_b, n_boot=1000, seed=0):
@@ -525,17 +781,6 @@ def paired_bootstrap_auc(y, score_a, score_b, n_boot=1000, seed=0):
     (alo, ahi), (blo, bhi), (dlo, dhi) = q(boots[:, 0]), q(boots[:, 1]), q(d)
     return {"auc_a": auc_a, "auc_b": auc_b, "diff": auc_a - auc_b, "a_lo": alo, "a_hi": ahi, "b_lo": blo,
             "b_hi": bhi, "diff_lo": dlo, "diff_hi": dhi}
-
-
-def latency_table(scores):
-    """Median and p90 seconds per crop by model (NaN latencies, such as a warm-up call, are ignored)."""
-    rows = []
-    for (model, variant), g in scores.groupby(["model", "variant"]):
-        lat = g.latency_s.dropna()
-        rows.append({"model": model, "variant": variant, "n": len(g), "latency_median_s": float(lat.median()),
-                     "latency_p90_s": float(lat.quantile(0.9)),
-                     "answer_mass_median": float(g.answer_mass.median()) if "answer_mass" in g else None})
-    return pd.DataFrame(rows)
 
 
 def best_model(headline, exclude=(PRODUCTION_NAME,)):
@@ -620,62 +865,102 @@ def roc_figure(pred, models, path):
     plt.close(fig)
 
 
+def check_coverage(main_all, subset):
+    """Raise if a VLM has scored some but not all of the headline subset: a partial run would otherwise drop out of
+    the tables silently. Production is checked the same way."""
+    partial = [m for m, g in main_all.groupby("model")
+               if len(subset & set(g.label_uid)) and not subset <= set(g.label_uid)]
+    if partial:
+        raise ValueError(f"partial coverage of the headline subset for {partial}: finish their `score` runs, or pass "
+                         "the --subset they were scored with")
+
+
 def run_report(args):
     sample = load_sample(args.sample_dir)
     cities = load_cities(args.cities_json)
     score_dir = os.path.join(args.out_dir, "scores")
-    files = sorted(f for f in os.listdir(score_dir) if f.endswith(".csv") and ".greedy_check" not in f)
+    files = sorted(f for f in os.listdir(score_dir) if f.endswith(".csv"))
     scores = pd.concat([pd.read_csv(os.path.join(score_dir, f)) for f in files], ignore_index=True)
     pred = predictions(sample, scores)
     main_all = pred[pred.variant == "definition"]
     subset = set(balanced_subset(sample, args.subset).label_uid) if args.subset else set(sample.label_uid)
+    check_coverage(main_all, subset)
     complete = [m for m, g in main_all.groupby("model") if subset <= set(g.label_uid)]
     main = main_all[main_all.model.isin(complete) & main_all.label_uid.isin(subset)]
     full = [m for m, g in main_all.groupby("model") if g.label_uid.nunique() == len(sample)]
+    full_all = main_all[main_all.model.isin(full)]
+    sets = {"subset": main, "full": full_all}
     os.makedirs(args.doc_dir, exist_ok=True)
     w = lambda df, name: df.to_csv(os.path.join(args.doc_dir, name), index=False, float_format="%.4f")  # noqa: E731
+
+    def per_set(fn):
+        return pd.concat([fn(d).assign(set=k) for k, d in sets.items() if len(d)], ignore_index=True)
 
     headline = metrics_table(main, ["model", "label_type"])
     pooled = metrics_table(main, ["model"]).assign(label_type="all (pooled)")
     w(pd.concat([headline, pooled], ignore_index=True), "headline.csv")
-    by_split = metrics_table(main, ["model", "label_type", "split"])
-    by_split_pooled = metrics_table(main, ["model", "split"]).assign(label_type="all (pooled)")
-    w(pd.concat([by_split, by_split_pooled], ignore_index=True), "by_split.csv")
-    hard = metrics_table(main[main.hard == 1], ["model"]).assign(slice="hard == 1, all types, subset")
-    full_all = main_all[main_all.model.isin(full)]
-    if len(full_all):
-        full_tab = pd.concat([metrics_table(full_all, ["model", "label_type"]),
-                              metrics_table(full_all, ["model"]).assign(label_type="all (pooled)")])
-        hard = pd.concat([hard, metrics_table(full_all[full_all.hard == 1], ["model"])
-                          .assign(slice="hard == 1, all types, full sample")], ignore_index=True)
-    else:
-        full_tab = pd.DataFrame()
+    full_tab = pd.concat([metrics_table(full_all, ["model", "label_type"]),
+                          metrics_table(full_all, ["model"]).assign(label_type="all (pooled)")], ignore_index=True)
     w(full_tab, "full_sample.csv")
+    by_split = per_set(lambda d: pd.concat([metrics_table(d, ["model", "label_type", "split"]),
+                                            metrics_table(d, ["model", "split"]).assign(label_type="all (pooled)")],
+                                           ignore_index=True))
+    w(by_split, "by_split.csv")
+
+    def split_rows(d):
+        out = []
+        for m, g in d.groupby("model"):
+            for t in list(LABEL_TYPES) + ["all (pooled)"]:
+                gt = g if t == "all (pooled)" else g[g.label_type == t]
+                out.append({"model": m, "label_type": t, **split_diff_bootstrap(gt, args.n_boot, args.seed)})
+        return pd.DataFrame(out)
+    w(per_set(split_rows), "split_diff.csv")
+
+    def within_rows(d):
+        out = []
+        for (m, split), g in d.groupby(["model", "split"]):
+            for t in ["all (pooled)"] + list(LABEL_TYPES):
+                gt = g if t == "all (pooled)" else g[g.label_type == t]
+                wc, nc = within_city_auc(gt.true == "incorrect", gt.p_incorrect, gt.city, args.within_min_n)
+                out.append({"model": m, "split": split, "label_type": t, "auc_within_city": wc, "n_cities": nc,
+                            "n": len(gt)})
+        return pd.DataFrame(out)
+    w(per_set(within_rows), "within_city.csv")
+
+    hard = per_set(lambda d: metrics_table(d[d.hard == 1], ["model"]))
     w(hard, "hard.csv")
-    city = per_city_table(main, cities, min_n=args.min_city_n)
-    w(city, "per_city.csv")
-    on_subset = (scores.variant == "definition") & scores.model.isin(complete) & scores.label_uid.isin(subset)
-    lat = latency_table(scores[on_subset | (scores.variant != "definition")])
-    sizes = {}
-    for m in lat.model.unique():
-        if m == PRODUCTION_NAME:
-            sz = [hf_snapshot(PRODUCTION[t][0])[1] for t in LABEL_TYPES]
-            sizes[m] = sum(s for s in sz if s) / len(LABEL_TYPES) if all(sz) else None
-        else:
-            sizes[m] = hf_snapshot(MODELS[m])[1]
-    lat["size_gb"] = lat.model.map(lambda m: sizes.get(m) / 1e9 if sizes.get(m) else None)
+    w(per_set(lambda d: per_city_table(d, cities, min_n=args.min_city_n)), "per_city.csv")
+    w(per_set(lambda d: per_city_type_table(d, cities, min_n=args.min_city_type_n)), "per_city_type.csv")
+
+    lat = timing_table(os.path.join(args.out_dir, "timing"))
+    if len(lat):
+        sizes = {}
+        for m in lat.model:
+            if m == PRODUCTION_NAME:
+                sz = [hf_snapshot(PRODUCTION[t][0])[1] for t in LABEL_TYPES]
+                sizes[m] = sum(sz) / len(sz) if all(sz) else None
+            else:
+                sizes[m] = hf_snapshot(MODELS[m])[1]
+        lat["size_gb"] = lat.model.map(lambda m: sizes.get(m) / 1e9 if sizes.get(m) else None)
     w(lat, "latency.csv")
+    mass = scores[scores.label_uid.isin(subset) & (scores.variant == "definition")
+                  & (scores.model != PRODUCTION_NAME)].groupby("model").answer_mass.median()
+    w(mass.rename("answer_mass_median").reset_index(), "answer_mass.csv")
 
     best = best_model(headline)
     boot = []
-    for t in LABEL_TYPES:
-        a = main[(main.model == best) & (main.label_type == t)].set_index("label_uid")
-        b = main[(main.model == PRODUCTION_NAME) & (main.label_type == t)].set_index("label_uid")
-        if a.empty or b.empty:
+    for set_name, d in sets.items():
+        if best not in set(d.model) or PRODUCTION_NAME not in set(d.model):
             continue
-        b = b.loc[a.index]
-        r = paired_bootstrap_auc(a.true == "incorrect", a.p_incorrect, b.p_incorrect, args.n_boot, args.seed)
-        boot.append({"label_type": t, "model_a": best, "model_b": PRODUCTION_NAME, "n": len(a), **r})
+        for t in list(LABEL_TYPES) + ["all (pooled)"]:
+            dt = d if t == "all (pooled)" else d[d.label_type == t]
+            a = dt[dt.model == best].set_index("label_uid").sort_index()
+            b = dt[dt.model == PRODUCTION_NAME].set_index("label_uid").loc[a.index]
+            y = a.true == "incorrect"
+            r = paired_bootstrap_auc(y, a.p_incorrect, b.p_incorrect, args.n_boot, args.seed)
+            c = cluster_bootstrap_auc(y, a.p_incorrect, b.p_incorrect, a.city, args.n_boot, args.seed)
+            boot.append({"set": set_name, "label_type": t, "model_a": best, "model_b": PRODUCTION_NAME, "n": len(a),
+                         **r, **{f"city_{k}": v for k, v in c.items()}})
     boot = pd.DataFrame(boot)
     w(boot, "bootstrap_auc.csv")
 
@@ -685,13 +970,15 @@ def run_report(args):
     ablation = metrics_table(abl, ["model", "label_type", "variant"]) if len(abl) else pd.DataFrame()
     w(ablation, "ablation.csv")
 
+    greedy_dir = os.path.join(args.out_dir, "greedy")
     greedy = []
-    for f in sorted(os.listdir(score_dir)):
-        if f.endswith(".greedy_check.csv"):
-            c = pd.read_csv(f"{score_dir}/{f}")
-            greedy.append({"file": f.replace(".greedy_check.csv", ""), "n": len(c),
-                           "agree": int((c.agrees == True).sum()),  # noqa: E712
-                           "unparsable": int(c.agrees.isna().sum())})
+    if os.path.isdir(greedy_dir):
+        for f in sorted(os.listdir(greedy_dir)):
+            c = pd.read_csv(os.path.join(greedy_dir, f))
+            for t, g in [("all", c)] + list(c.groupby("label_type")):
+                greedy.append({"model": f[:-4], "label_type": t, "n": len(g),
+                               "agree": int((g.agrees == True).sum()),  # noqa: E712
+                               "unparsable": int(g.agrees.isna().sum())})
     greedy = pd.DataFrame(greedy)
     w(greedy, "greedy_check.csv")
 
@@ -700,19 +987,21 @@ def run_report(args):
 
     cols = ["model", "label_type", "n", "auc", "balanced_accuracy", "r_incorrect_p95", "r_incorrect_p92",
             "r_correct_p95", "r_correct_p92"]
+    tables = {"by split": by_split, "split difference (test - heldout)": pd.read_csv(f"{args.doc_dir}/split_diff.csv"),
+              "within-city AUC": pd.read_csv(f"{args.doc_dir}/within_city.csv"),
+              "hard (every subset row is incorrect: balanced accuracy there is recall of incorrect)": hard,
+              "per city": pd.read_csv(f"{args.doc_dir}/per_city.csv"),
+              "per city x type": pd.read_csv(f"{args.doc_dir}/per_city_type.csv"), "bootstrap": boot,
+              "latency (timing runs)": lat, "ablation": ablation, "greedy check": greedy}
     with open(os.path.join(args.doc_dir, "report.md"), "w") as f:
-        f.write(f"# VLM baseline report (generated {datetime.date.today()})\n\nbest VLM by mean per-type AUC: "
-                f"{best}\n\nheadline set: {len(subset)} crops (balanced_subset per_type={args.subset}); "
-                f"models on it: {', '.join(complete)}\n\n## headline\n\n{markdown(pd.concat([headline, pooled])[cols])}\n\n"
-                f"## by split\n\n{markdown(pd.concat([by_split, by_split_pooled])[cols[:2] + ['split'] + cols[2:]])}"
-                f"\n\n## hard\n\n{markdown(hard[['slice', 'model', 'n', 'n_incorrect', 'auc', 'balanced_accuracy']])}\n\n"
-                f"## full sample (models that scored all {len(sample)} crops)\n\n"
-                f"{markdown(full_tab[cols]) if len(full_tab) else '(none)'}\n\n"
-                f"## per city\n\n{markdown(city[['model', 'city', 'n', 'auc', 'balanced_accuracy']])}\n\n"
-                f"## bootstrap\n\n{markdown(boot)}\n\n## latency\n\n{markdown(lat)}\n\n"
-                f"## ablation\n\n{markdown(ablation) if len(ablation) else '(none)'}\n\n"
-                f"## greedy check\n\n{markdown(greedy) if len(greedy) else '(none)'}\n")
-    write_provenance(args, sample, files, score_dir, complete)
+        f.write(f"# VLM baseline report (generated {datetime.date.today()})\n\nbest VLM by mean per-type AUC on the "
+                f"subset: {best}\n\nheadline set: {len(subset)} crops (balanced_subset per_type={args.subset}); "
+                f"models on it: {', '.join(complete)}; on the full sample: {', '.join(full)}\n\n"
+                f"## headline (subset)\n\n{markdown(pd.concat([headline, pooled])[cols])}\n\n"
+                f"## full sample\n\n{markdown(full_tab[cols])}\n\n")
+        for name, t in tables.items():
+            f.write(f"## {name}\n\n{markdown(t) if len(t) else '(none)'}\n\n")
+    write_provenance(args, sample, files, score_dir, sorted(set(complete) | set(full)))
     print(open(os.path.join(args.doc_dir, "report.md")).read())
 
 
@@ -743,6 +1032,9 @@ def write_provenance(args, sample, files, score_dir, complete):
         "python": platform.python_version(),
         "packages": {"numpy": np.__version__, "pandas": pd.__version__, "scikit-learn": sklearn.__version__,
                      "matplotlib": matplotlib.__version__, **_mlx_versions()},
+        "venvs": _venvs(args.out_dir),
+        "timing": _hash_dir(os.path.join(args.out_dir, "timing")),
+        "greedy": _hash_dir(os.path.join(args.out_dir, "greedy")),
         "inputs": {"sample.csv": {"sha256": sha256_of(os.path.join(args.sample_dir, "sample.csv")),
                                   "rows": int(len(sample))},
                    "cities.json": {"sha256": sha256_of(args.cities_json)}},
@@ -764,6 +1056,27 @@ def write_provenance(args, sample, files, score_dir, complete):
     prov = {**{k: v for k, v in old.items() if k in ("packet", "explain")}, **prov}
     with open(pp, "w") as f:
         json.dump(prov, f, indent=1, sort_keys=True)
+
+
+def _hash_dir(d):
+    """``{file: {"sha256", "rows"}}`` for the CSVs in ``d`` (empty if absent)."""
+    if not os.path.isdir(d):
+        return {}
+    return {f: {"sha256": sha256_of(os.path.join(d, f)), "rows": int(len(pd.read_csv(os.path.join(d, f))))}
+            for f in sorted(os.listdir(d)) if f.endswith(".csv")}
+
+
+def _venvs(out_dir):
+    """The two environments: this one (VLM: mlx-vlm, transformers 5.x) and the production one (transformers 4.55,
+    read from the production run's meta files, which that venv wrote)."""
+    prod = {}
+    for path in (os.path.join(out_dir, "scores", f"{PRODUCTION_NAME}.meta.json"),
+                 os.path.join(out_dir, "timing", f"{PRODUCTION_NAME}.meta.json")):
+        if os.path.exists(path):
+            m = json.load(open(path))
+            prod.update({k: m[k] for k in ("torch", "transformers", "device") if k in m})
+    return {"vlm (.venv)": {"python": platform.python_version(), **_mlx_versions()},
+            "production (.venv-prod, requirements.txt)": prod}
 
 
 def _sysctl(key):
@@ -788,51 +1101,59 @@ def _mlx_versions():
 # Explanations and the blinded packet -- selection, blinding and unblinding are pure and unit-tested
 # --------------------------------------------------------------------------------------------------------------------
 
-EXPLAIN_CATEGORIES = ("vlm_disagrees_with_crowd", "vlm_agrees_production_disagrees")
-FALLBACK_CATEGORY = "fallback_any_disagreement"
+CATEGORIES = ("vlm_wrong_production_right", "vlm_wrong_production_wrong", "vlm_right_production_wrong",
+              "vlm_right_production_right")
+"""Item categories: whether the VLM's argmax verdict matches the crowd, crossed with production's."""
 
 
-def select_explanation_items(best_pred, prod_pred, cities, n_total=100, seed=0):
-    """Rows to explain: public deployments only, ``n_total / 5`` per type, half per category.
+def item_category(vlm_wrong, prod_wrong):
+    """``vlm_<right|wrong>_production_<right|wrong>`` per row.
 
-    ``best_pred`` and ``prod_pred`` are prediction frames (``label_uid, label_type, city, true, p_incorrect``) for
-    the best VLM and production. Categories: ``vlm_disagrees_with_crowd`` (the VLM's argmax verdict differs from
-    ``label_class``) and ``vlm_agrees_production_disagrees``. A short pool is filled from any other row where either
-    model disagrees with the crowd (``fallback_any_disagreement``). Deterministic in ``seed``.
+    >>> item_category(np.array([True, False]), np.array([False, True])).tolist()
+    ['vlm_wrong_production_right', 'vlm_right_production_wrong']
+    """
+    v = np.where(np.asarray(vlm_wrong), "vlm_wrong", "vlm_right")
+    q = np.where(np.asarray(prod_wrong), "production_wrong", "production_right")
+    return np.char.add(np.char.add(v.astype(str), "_"), q.astype(str))
+
+
+def select_explanation_items(best_pred, prod_pred, cities, per_type=20, seed=0, keep=()):
+    """Rows to explain: public deployments only, ``per_type`` per label type, half where the VLM's verdict matches
+    the crowd and half where it does not, so the shown answer says nothing about the crowd verdict on average.
+
+    Within the VLM-right half, rows where production is wrong come first (the comparison the issue asks for), then
+    random VLM-right rows. Within each half, rows in ``keep`` (``label_uid`` values from an earlier selection, whose
+    reasons can be reused) are taken first. A short pool is reported, not filled from the other half. Deterministic
+    in ``seed``. Adds ``category`` (``CATEGORIES``) and ``vlm_correct``.
     """
     m = best_pred.merge(prod_pred[["label_uid", "p_incorrect"]], on="label_uid", suffixes=("", "_prod"),
                         validate="one_to_one")
     m = m[is_public(m.city, cities).values].sort_values("label_uid").reset_index(drop=True)
-    m["vlm_verdict"] = verdict_from_score(m.p_incorrect)
-    m["prod_verdict"] = verdict_from_score(m.p_incorrect_prod)
-    vlm_wrong = m.vlm_verdict != m.true
-    prod_wrong = m.prod_verdict != m.true
-    per_type = n_total // len(LABEL_TYPES)
+    vlm_wrong = verdict_from_score(m.p_incorrect) != m.true.to_numpy()
+    prod_wrong = verdict_from_score(m.p_incorrect_prod) != m.true.to_numpy()
+    m["category"] = item_category(vlm_wrong, prod_wrong)
+    m["vlm_correct"] = ~vlm_wrong
+    m["kept"] = m.label_uid.isin(set(keep))
     rng = np.random.default_rng(seed)
+    m["draw"] = rng.permutation(len(m))
     picks = []
     for t in LABEL_TYPES:
-        pools = {EXPLAIN_CATEGORIES[0]: m[(m.label_type == t) & vlm_wrong],
-                 EXPLAIN_CATEGORIES[1]: m[(m.label_type == t) & ~vlm_wrong & prod_wrong]}
-        chosen = []
-        for i, (cat, pool) in enumerate(pools.items()):
-            want = per_type // 2 + (per_type % 2 if i == 0 else 0)
-            take = pool.iloc[rng.permutation(len(pool))[:want]].assign(category=cat)
-            chosen.append(take)
-        got = pd.concat(chosen)
-        short = per_type - len(got)
-        if short > 0:
-            rest = m[(m.label_type == t) & (vlm_wrong | prod_wrong) & ~m.label_uid.isin(got.label_uid)]
-            chosen.append(rest.iloc[rng.permutation(len(rest))[:short]].assign(category=FALLBACK_CATEGORY))
-        picks.append(pd.concat(chosen))
-    return pd.concat(picks, ignore_index=True)
+        mt = m[m.label_type == t]
+        n_wrong = per_type // 2
+        wrong = mt[~mt.vlm_correct].sort_values(["kept", "draw"], ascending=[False, True]).head(n_wrong)
+        right = mt[mt.vlm_correct].assign(prio=lambda d: d.category == "vlm_right_production_wrong")
+        right = right.sort_values(["kept", "prio", "draw"], ascending=[False, False, True]).head(per_type - n_wrong)
+        picks += [wrong, right.drop(columns="prio")]
+    return pd.concat(picks, ignore_index=True).drop(columns=["kept", "draw"])
 
 
-KEY_COLUMNS = ["packet_id", "label_uid", "label_type", "category", "label_class", "vlm_model", "vlm_answer",
-               "p_incorrect", "p_incorrect_prod"]
-SHEET_COLUMNS = ["packet_id", "label_type", "vlm_answer", "vlm_reason", "reason_correct", "would_change_my_vote",
-                 "my_verdict", "notes"]
-RUBRIC = {"reason_correct": ("yes", "partly", "no"), "would_change_my_vote": ("yes", "no"),
-          "my_verdict": ("correct", "incorrect", "cant_tell")}
+KEY_COLUMNS = ["packet_id", "label_uid", "label_type", "category", "vlm_correct", "label_class", "vlm_model",
+               "vlm_answer", "vlm_reason", "p_incorrect", "p_incorrect_prod"]
+PASS1_COLUMNS = ["packet_id", "label_type", "my_verdict", "notes_pass1"]
+PASS2_COLUMNS = ["packet_id", "label_type", "vlm_answer", "vlm_reason", "reason_correct", "would_change_my_vote",
+                 "notes_pass2"]
+RUBRIC = {"my_verdict": ("correct", "incorrect", "cant_tell"), "reason_correct": ("yes", "partly", "no"),
+          "would_change_my_vote": ("yes", "no")}
 
 
 def packet_key(items, seed):
@@ -847,47 +1168,61 @@ def packet_key(items, seed):
     return s.iloc[rng.permutation(len(s))].reset_index(drop=True)
 
 
-def blank_sheet(key):
-    """The rater's sheet in packet order: what the rater sees (type, the VLM's answer and reason) + blank codes."""
-    sheet = pd.DataFrame({"packet_id": key.packet_id, "label_type": key.label_type, "vlm_answer": key.vlm_answer,
-                          "vlm_reason": key.vlm_reason})
-    for c in SHEET_COLUMNS[4:]:
-        sheet[c] = ""
-    return sheet[SHEET_COLUMNS]
+def blank_sheets(key):
+    """``(pass1, pass2)`` in packet order. Pass 1 (bare crops) asks only for the rater's own verdict; pass 2
+    (annotated crops) shows the VLM's answer and reason and asks about them."""
+    pass1 = pd.DataFrame({"packet_id": key.packet_id, "label_type": key.label_type})
+    pass2 = pass1.assign(vlm_answer=key.vlm_answer.values, vlm_reason=key.vlm_reason.values)
+    for c in PASS1_COLUMNS[2:]:
+        pass1[c] = ""
+    for c in PASS2_COLUMNS[4:]:
+        pass2[c] = ""
+    return pass1[PASS1_COLUMNS], pass2[PASS2_COLUMNS]
 
 
 def validate_codes(sheet):
-    """Raise if a filled sheet uses a value outside the rubric (blank cells are allowed)."""
+    """Raise if a filled sheet uses a value outside the rubric (blank cells are allowed); checks the columns present."""
     for col, values in RUBRIC.items():
+        if col not in sheet:
+            continue
         bad = set(sheet[col].fillna("").astype(str).str.strip().str.lower()) - set(values) - {""}
         if bad:
             raise ValueError(f"{col}: values {sorted(bad)} are not in the rubric ({', '.join(values)})")
 
 
-def unblind(sheet, key):
-    """Join a filled sheet to its key; codes lower-cased and stripped. Raises on ids missing from the key."""
-    s = sheet[["packet_id"] + list(RUBRIC)].copy()
+def unblind(pass1, pass2, key):
+    """Join the two filled sheets to the key; codes lower-cased and stripped. Raises on ids missing from the key or
+    from either sheet."""
+    a = pass1[["packet_id", "my_verdict"]].copy()
+    b = pass2[["packet_id", "reason_correct", "would_change_my_vote"]].copy()
+    m = a.merge(b, on="packet_id", how="outer", validate="one_to_one", indicator=True)
+    if (m._merge != "both").any():
+        raise ValueError("the two sheets do not hold the same packet ids")
+    m = m.drop(columns="_merge")
     for c in RUBRIC:
-        s[c] = s[c].fillna("").astype(str).str.strip().str.lower()
-    m = s.merge(key, on="packet_id", how="inner", validate="one_to_one")
-    if len(m) != len(sheet):
+        m[c] = m[c].fillna("").astype(str).str.strip().str.lower()
+    out = m.merge(key, on="packet_id", how="inner", validate="one_to_one")
+    if len(out) != len(m):
         raise ValueError("sheet has packet ids that are not in the key")
-    return m
+    return out
 
 
 def agreement_tables(m):
-    """From an unblinded sheet: agreement of the rater's verdict with the VLM and with the crowd, per category, and
-    the distribution of the reason codes. Rows without a rater verdict (blank or ``cant_tell``) are excluded from
-    the agreement rates and counted."""
-    vlm_verdict = np.where(m.vlm_answer.str.lower() == "no", "incorrect", "correct")
-    r = m.assign(vlm_verdict=vlm_verdict, rated=m.my_verdict.isin(["correct", "incorrect"]))
+    """From unblinded sheets: the rater's pass-1 verdict against the VLM and the crowd, and the pass-2 reason codes,
+    overall, by whether the VLM was right, and per category. Verdicts left blank or ``cant_tell`` are excluded from
+    the agreement rates and counted (``n_rated``)."""
+    vlm_verdict = np.where(m.vlm_answer.astype(str).str.lower() == "no", "incorrect", "correct")
+    r = m.assign(vlm_verdict=vlm_verdict, rated=m.my_verdict.isin(["correct", "incorrect"]),
+                 vlm_right=np.where(vlm_verdict == m.label_class, "vlm right", "vlm wrong"))
+    groups = ([("all", "all", r)] + [("vlm", k, g) for k, g in r.groupby("vlm_right")]
+              + [("category", k, g) for k, g in r.groupby("category")])
     rows = []
-    for cat, g in [("all", r)] + list(r.groupby("category")):
+    for by, name, g in groups:
         rated = g[g.rated]
-        rows.append({"category": cat, "n": len(g), "n_rated": len(rated),
-                     "rater_agrees_vlm": float((rated.my_verdict == rated.vlm_verdict).mean()) if len(rated) else None,
-                     "rater_agrees_crowd": float((rated.my_verdict == rated.label_class).mean()) if len(rated)
-                     else None,
+        rate = lambda x: float(x.mean()) if len(x) else None  # noqa: E731
+        rows.append({"by": by, "group": name, "n": len(g), "n_rated": len(rated),
+                     "rater_agrees_vlm": rate(rated.my_verdict == rated.vlm_verdict),
+                     "rater_agrees_crowd": rate(rated.my_verdict == rated.label_class),
                      "reason_correct_yes": float((g.reason_correct == "yes").mean()),
                      "reason_correct_partly": float((g.reason_correct == "partly").mean()),
                      "reason_correct_no": float((g.reason_correct == "no").mean()),
@@ -896,7 +1231,8 @@ def agreement_tables(m):
 
 
 def inside_this_repo(path):
-    """True if ``path`` would land in any checkout (main or worktree) of the repo that holds this script."""
+    """True if ``path`` would land in this checkout or any of its git worktrees (they share one git directory).
+    A separate clone of the repo elsewhere is not detected."""
     here = os.path.dirname(os.path.abspath(__file__))
     d = os.path.dirname(os.path.abspath(path))
     while not os.path.isdir(d):
@@ -915,29 +1251,40 @@ def run_explain(args):
     scores = pd.concat([pd.read_csv(score_path(args.out_dir, m)) for m in (args.model, PRODUCTION_NAME)])
     pred = predictions(sample, scores)
     pred = pred[pred.variant == "definition"]
+    reuse = pd.read_csv(args.reuse) if args.reuse else pd.DataFrame(columns=["label_uid", "vlm_model", "vlm_reason"])
+    reuse = reuse[reuse.vlm_model == args.model].set_index("label_uid")
     items = select_explanation_items(pred[pred.model == args.model], pred[pred.model == PRODUCTION_NAME], cities,
-                                     args.n_items, args.seed)
+                                     args.per_type, args.seed, keep=reuse.index)
     print(items.groupby(["label_type", "category"]).size().to_string())
-    vlm = MlxVlm(MODELS[args.model])
+    print(f"{len(items)} items, {int(items.label_uid.isin(reuse.index).sum())} reasons reused from {args.reuse}")
+    vlm = None
     img = dict(zip(sample.label_uid, sample.image))
     out = []
     for r in items.itertuples():
-        q = build_prompt(r.label_type)
         answer = "No." if r.p_incorrect > 0.5 else "Yes."
-        reason, latency = vlm.generate(img[r.label_uid], [("user", q), ("assistant", answer), ("user", WHY_PROMPT)],
-                                       max_tokens=args.max_tokens)
+        if r.label_uid in reuse.index:
+            prev = reuse.loc[r.label_uid]
+            reason, latency, source = prev.vlm_reason, prev.latency_s, "reused"
+        else:
+            if vlm is None:
+                vlm = MlxVlm(MODELS[args.model])
+            q = build_prompt(r.label_type)
+            reason, latency = vlm.generate(img[r.label_uid], [("user", q), ("assistant", answer),
+                                                                ("user", WHY_PROMPT)], max_tokens=args.max_tokens)
+            source = "generated"
         out.append({"label_uid": r.label_uid, "label_type": r.label_type, "category": r.category,
-                    "label_class": r.true, "vlm_model": args.model, "vlm_answer": answer.rstrip("."),
-                    "vlm_reason": reason, "p_incorrect": r.p_incorrect, "p_incorrect_prod": r.p_incorrect_prod,
-                    "latency_s": latency, "n_words": len(reason.split())})
+                    "vlm_correct": bool(r.vlm_correct), "label_class": r.true, "vlm_model": args.model,
+                    "vlm_answer": answer.rstrip("."), "vlm_reason": reason, "p_incorrect": r.p_incorrect,
+                    "p_incorrect_prod": r.p_incorrect_prod, "latency_s": latency, "n_words": len(str(reason).split()),
+                    "reason_source": source})
     path = os.path.join(args.out_dir, "explanations.csv")
     pd.DataFrame(out).to_csv(path, index=False)
-    print(f"wrote {len(out)} explanations to {path}; median latency "
-          f"{np.median([o['latency_s'] for o in out]):.2f}s")
+    print(f"wrote {len(out)} explanations to {path}")
 
 
 def render_item(image_path, title, answer, reason, out_path, width=640):
-    """The rater's image: the crop with a small cyan ring at the centre (the label point) and a caption panel."""
+    """One rater image: the crop with a small cyan ring at the centre (the label point) and a caption panel. With
+    ``answer`` and ``reason`` None the caption holds only ``title`` (the pass-1 bare item)."""
     import textwrap
 
     from PIL import Image, ImageDraw, ImageFont
@@ -951,7 +1298,9 @@ def render_item(image_path, title, answer, reason, out_path, width=640):
         font = ImageFont.truetype("Arial.ttf", 18)
     except OSError:
         font = ImageFont.load_default()
-    lines = [title, f"VLM answer: {answer}"] + textwrap.wrap(f"VLM reason: {reason}", 62)
+    lines = [title]
+    if answer is not None:
+        lines += [f"VLM answer: {answer}"] + textwrap.wrap(f"VLM reason: {reason}", 62)
     panel = Image.new("RGB", (width, 28 * len(lines) + 16), (255, 255, 255))
     pd_ = ImageDraw.Draw(panel)
     for i, line in enumerate(lines):
@@ -970,16 +1319,21 @@ def run_packet(args, parser):
     sample = load_sample(args.sample_dir)
     img = dict(zip(sample.label_uid, sample.image))
     key = packet_key(ex, args.seed)
-    os.makedirs(os.path.join(args.packet_dir, "items"), exist_ok=True)
+    for sub_dir in ("items_bare", "items_annotated"):
+        os.makedirs(os.path.join(args.packet_dir, sub_dir), exist_ok=True)
     os.makedirs(os.path.dirname(os.path.abspath(args.key)), exist_ok=True)
     for i, k in enumerate(key.itertuples()):
-        name = TYPE_NAMES[k.label_type]
-        render_item(img[k.label_uid], f"{i + 1:03d}  {k.packet_id}  label type: {name}", k.vlm_answer,
-                    k.vlm_reason, os.path.join(args.packet_dir, "items", f"{i + 1:03d}_{k.packet_id}.jpg"))
-    blank_sheet(key).to_csv(os.path.join(args.packet_dir, "coding_sheet.csv"), index=False)
+        title = f"{i + 1:03d}  {k.packet_id}  label type: {TYPE_NAMES[k.label_type]}"
+        name = f"{i + 1:03d}_{k.packet_id}.jpg"
+        render_item(img[k.label_uid], title, None, None, os.path.join(args.packet_dir, "items_bare", name))
+        render_item(img[k.label_uid], title, k.vlm_answer, k.vlm_reason,
+                    os.path.join(args.packet_dir, "items_annotated", name))
+    pass1, pass2 = blank_sheets(key)
+    pass1.to_csv(os.path.join(args.packet_dir, "pass1_sheet.csv"), index=False)
+    pass2.to_csv(os.path.join(args.packet_dir, "pass2_sheet.csv"), index=False)
     with open(os.path.join(args.packet_dir, "RUBRIC.md"), "w") as f:
         f.write(RUBRIC_TEXT)
-    key[KEY_COLUMNS + ["vlm_reason"]].to_csv(args.key, index=False)
+    key[KEY_COLUMNS].to_csv(args.key, index=False)
     digest = sha256_of(args.key)
     with open(args.key + ".sha256", "w") as f:
         f.write(f"{digest}  {os.path.basename(args.key)}\n")
@@ -994,29 +1348,43 @@ def run_packet(args, parser):
                           "explanations_csv": {"sha256": sha256_of(ex_path), "rows": int(len(ex))},
                           "items_by_type_category": {f"{t}/{c}": int(n) for (t, c), n in
                                                      ex.groupby(["label_type", "category"]).size().items()},
+                          "vlm_correct_share_by_type": {t: float(g.vlm_correct.mean())
+                                                        for t, g in ex.groupby("label_type")},
+                          "reason_source": {k: int(v) for k, v in ex.reason_source.value_counts().items()},
                           "vlm_model": sorted(ex.vlm_model.unique()), "why_prompt": WHY_PROMPT,
-                          "median_reason_words": float(ex.n_words.median()),
-                          "median_reason_latency_s": float(ex.latency_s.median())}
+                          "median_reason_words": float(ex.n_words.median()), "passes": 2}
         with open(pp, "w") as f:
             json.dump(prov, f, indent=1, sort_keys=True)
-    print(f"wrote {len(key)} items to {args.packet_dir}/items, coding_sheet.csv and RUBRIC.md; key {args.key} "
-          f"(sha256 {digest})")
+    print(f"wrote {len(key)} items (items_bare/, items_annotated/), pass1_sheet.csv, pass2_sheet.csv and RUBRIC.md "
+          f"to {args.packet_dir}; key {args.key} (sha256 {digest})")
 
 
 RUBRIC_TEXT = """# Rating the VLM explanations (issue #16)
 
-Each item shows a label crop (the labelled point is the centre, marked with a cyan ring), the label type, the
-model's yes/no answer to "Is this a correct <type> label?", and its reason ("In at most 30 words, why?").
-Fill one row of `coding_sheet.csv` per item, in any order. Do not look anything up; judge from the crop.
+Two passes over the same items. Finish pass 1 completely before opening anything for pass 2.
+
+## Pass 1: your own verdict (`items_bare/`, `pass1_sheet.csv`)
+
+Each image is a label crop. The labelled point is the centre, marked with a cyan ring, and the caption gives the
+label type. Do not look anything up; judge from the crop alone.
+
+| column | values | meaning |
+|---|---|---|
+| `my_verdict` | `correct` / `incorrect` / `cant_tell` | Is this a correct label of the stated type at the ringed point? |
+| `notes_pass1` | free text | Optional. |
+
+## Pass 2: the model's answer and reason (`items_annotated/`, `pass2_sheet.csv`)
+
+The same crops, now with a vision-language model's yes/no answer to "Is this a correct <type> label?" and its
+reason ("In at most 30 words, why?"). Do not go back and change pass 1.
 
 | column | values | meaning |
 |---|---|---|
 | `reason_correct` | `yes` / `partly` / `no` | Is the reason a true description of what the crop shows, and does it bear on the question? `partly`: some of it is right, or it is right but misses the deciding feature. |
 | `would_change_my_vote` | `yes` / `no` | Had you been validating this label, would reading this answer and reason have changed your vote? |
-| `my_verdict` | `correct` / `incorrect` / `cant_tell` | Your own verdict on the label, from the crop alone. |
-| `notes` | free text | Optional. |
+| `notes_pass2` | free text | Optional. |
 
-Rate the reason, not the answer: a wrong answer can have a correct description, and a right answer a wrong one.
+Rate the reason on its own: judge whether it describes the crop accurately, whatever you think of the answer.
 """
 
 
@@ -1026,9 +1394,10 @@ def run_agreement(args):
         if sha256_of(args.key) != expected:
             raise SystemExit(f"{args.key} does not match {args.key_sha256}")
     key = pd.read_csv(args.key, dtype={"packet_id": str})
-    sheet = pd.read_csv(args.sheet, dtype=str)
-    validate_codes(sheet)
-    table = agreement_tables(unblind(sheet, key))
+    pass1, pass2 = pd.read_csv(args.pass1, dtype=str), pd.read_csv(args.pass2, dtype=str)
+    validate_codes(pass1)
+    validate_codes(pass2)
+    table = agreement_tables(unblind(pass1, pass2, key))
     print(markdown(table))
     if args.out:
         table.to_csv(args.out, index=False, float_format="%.4f")
@@ -1056,8 +1425,19 @@ def main(argv=None):
     s.add_argument("--subset", type=int, default=0,
                    help="score only balanced_subset(per_type=N): class-balanced, both splits (0 = all crops)")
     s.add_argument("--limit", type=int, default=0, help="pilot: about this many crops per type, both classes")
-    s.add_argument("--check-greedy", type=int, default=0,
-                   help="also generate greedily on the first N crops and compare with the score's argmax")
+
+    tm = sub.add_parser("timing", help="time N crops per type at batch 1 on an idle machine")
+    common(tm)
+    tm.add_argument("--model", required=True, choices=sorted(MODELS) + [PRODUCTION_NAME])
+    tm.add_argument("--n-per-type", type=int, default=10)
+    tm.add_argument("--with-reason", action="store_true", help="also time the second-turn explanation")
+    tm.add_argument("--device", default="mps", help="production only: cpu or mps")
+
+    g = sub.add_parser("greedy", help="greedy text vs the score's argmax, stratified by type")
+    common(g)
+    g.add_argument("--model", required=True, choices=sorted(MODELS))
+    g.add_argument("--n-per-type", type=int, default=2)
+    g.add_argument("--seed", type=int, default=16)
 
     b = sub.add_parser("baseline", help="score the sample with the five production validators")
     common(b)
@@ -1068,7 +1448,9 @@ def main(argv=None):
     r.add_argument("--doc-dir", default="docs/vlm-baseline-2026-10")
     r.add_argument("--cities-json", required=True, help="saved /v3/api/cities response (decides public naming)")
     r.add_argument("--min-city-n", type=int, default=30)
-    r.add_argument("--subset", type=int, default=200,
+    r.add_argument("--min-city-type-n", type=int, default=20, help="per city x type rows need this many rows")
+    r.add_argument("--within-min-n", type=int, default=10, help="within-city AUC: minimum rows per city")
+    r.add_argument("--subset", type=int, default=100,
                    help="headline tables on balanced_subset(per_type=N), the crops every VLM scored (0 = all)")
     r.add_argument("--n-boot", type=int, default=1000)
     r.add_argument("--seed", type=int, default=20261021, help="bootstrap seed")
@@ -1077,7 +1459,9 @@ def main(argv=None):
     common(e)
     e.add_argument("--model", required=True, choices=sorted(MODELS))
     e.add_argument("--cities-json", required=True)
-    e.add_argument("--n-items", type=int, default=100)
+    e.add_argument("--per-type", type=int, default=20, help="items per label type, half VLM-right (default 20)")
+    e.add_argument("--reuse", default=None,
+                   help="an earlier explanations.csv: its reasons are reused for items selected again (same model)")
     e.add_argument("--seed", type=int, default=20261021, help="selection seed (not the blinding seed)")
     e.add_argument("--max-tokens", type=int, default=60)
 
@@ -1091,7 +1475,8 @@ def main(argv=None):
                    help="blinding seed; no default, keep it secret until rating is done")
 
     a = sub.add_parser("agreement", help="unblind a filled sheet; VLM-vs-rater and rater-vs-crowd agreement")
-    a.add_argument("sheet")
+    a.add_argument("pass1", help="filled pass1_sheet.csv")
+    a.add_argument("pass2", help="filled pass2_sheet.csv")
     a.add_argument("--key", required=True)
     a.add_argument("--key-sha256", default=None, help="committed hash file to check --key against")
     a.add_argument("--out", default=None, help="optional CSV copy of the table")
@@ -1099,6 +1484,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.command == "score":
         run_score(args)
+    elif args.command == "timing":
+        run_timing(args)
+    elif args.command == "greedy":
+        run_greedy(args)
     elif args.command == "baseline":
         run_baseline(args)
     elif args.command == "report":
