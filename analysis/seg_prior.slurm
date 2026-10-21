@@ -27,6 +27,8 @@
 # Reads (never writes) the retrain's rawLabels exports for pano_x/pano_y and the pano-extra fallback store.
 set -euo pipefail
 W=$(pwd)
+# Only ever write under the scrubbed scratch dir: refuse any other working directory (never /gscratch/makelab).
+case "$W/" in /gscratch/scrubbed/jfroehli/*|/mmfs1/gscratch/scrubbed/jfroehli/*) ;; *) echo "refusing to write under $W"; exit 2;; esac
 SEG_REV=4772b6bf101d91f2534c106dc524d906aeb3c68a
 RAWLABELS=${RAWLABELS:-/gscratch/makelab/jfroehli/sidewalk-validator-ai/rawlabels}
 EXTRA=${EXTRA:-/gscratch/makelab/jfroehli/pano-extra}

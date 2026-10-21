@@ -42,12 +42,22 @@ def test_point_on_sidewalk_band_reaching_bottom():
 def test_distance_in_view_pixels_and_metres():
     m = blank(256)
     m[:, 128 + 10:] = SW  # 10 mask px right of the centre column = 80 view px at 256/2048
-    f = feats(m, depth_m=12.8)
+    # Ground range 12.8 m: 2.5 / sin(-pitch) = 12.8 -> pitch = -asin(2.5 / 12.8)
+    pitch = -math.degrees(math.asin(2.5 / 12.8))
+    f = feats(m, depth_m=30.0, pitch_deg=pitch)
     assert f["dist_px_to_sidewalk"] == pytest.approx(80.0)
-    assert f["dist_m_to_sidewalk"] == pytest.approx(80.0 * 12.8 / 1024)  # 1.0 m
-    assert f["near_sidewalk_1m"]
-    f = feats(m, depth_m=13.0)
+    assert f["ground_range_m"] == pytest.approx(12.8)
+    assert f["dist_m_to_sidewalk"] == pytest.approx(80.0 * 12.8 / 1024)  # 1.0 m, from the ground range
+    assert f["dist_m_depth_to_sidewalk"] == pytest.approx(80.0 * 30.0 / 1024)  # the depth-based column
+    assert f["near_sidewalk_1m"]  # thresholded on the ground range, not on depth_m
+    f = feats(m, depth_m=1.0, pitch_deg=pitch + 0.5)  # farther ground point
     assert not f["near_sidewalk_1m"]
+
+
+def test_ground_range():
+    assert ss.ground_range_m(-90.0) == pytest.approx(2.5)
+    assert ss.ground_range_m(-30.0) == pytest.approx(5.0)
+    assert ss.ground_range_m(-1.0) == ss.ground_range_m(10.0) == pytest.approx(2.5 / math.sin(math.radians(2)))
 
 
 def test_connectedness_uses_component_of_nearest_pixel():
@@ -172,3 +182,53 @@ def test_auc_helpers():
     assert lo == hi == pytest.approx(0.5)
     lo, hi = ss.wilson(0, 10)
     assert lo == pytest.approx(0, abs=1e-12) and 0.2 < hi < 0.35
+
+
+def test_within_city_auc_ignores_between_city_differences():
+    # Within each city the score is useless (constant), but city b has more incorrect labels and higher scores.
+    y = [0, 1] * 10 + [0, 1, 1, 1, 1] * 4
+    city = ["a"] * 20 + ["b"] * 20
+    score = [0.1] * 20 + [0.9] * 20
+    pooled, _ = ss.oriented_auc(y, score)
+    within, n = ss.within_city_auc(y, score, city)
+    assert pooled > 0.6 and within == pytest.approx(0.5) and n == 2
+    assert ss.within_city_auc([0, 1], [0.1, 0.9], ["a", "a"])[1] == 0  # below min_n
+
+
+def test_city_bootstrap_auc_is_wider_than_row_bootstrap_with_few_cities():
+    rng = np.random.default_rng(0)
+    city = np.repeat(list("abc"), 60)
+    y = rng.integers(0, 2, 180)
+    # A score that helps a lot in city a, a little in b, not at all in c.
+    score = y * np.repeat([2.0, 0.5, 0.0], 60) + rng.normal(size=180)
+    rlo, rhi = ss.bootstrap_auc(y, score, n_boot=300)
+    clo, chi = ss.city_bootstrap_auc(y, score, city, n_boot=300)
+    assert chi - clo > rhi - rlo
+
+
+def test_grouped_folds_keep_panoramas_disjoint():
+    y = np.tile([0, 1], 50)
+    groups = np.repeat(np.arange(25), 4)
+    folds = ss.grouped_folds(y, groups, n_splits=5)
+    assert len(folds) == 5
+    seen = np.zeros(len(y), int)
+    for tr, te in folds:
+        assert not set(groups[tr]) & set(groups[te])
+        seen[te] += 1
+    assert (seen == 1).all()
+
+
+def test_lift_and_transfer_predictions_smoke():
+    rng = np.random.default_rng(1)
+    n = 120
+    df = pd.DataFrame({c: rng.random(n) for c, _ in ss.FEATURES})
+    df["label_class"] = np.where(np.arange(n) % 2, "incorrect", "correct")
+    df["pano_id"] = [f"p{i // 2}" for i in range(n)]
+    df["p_incorrect"] = np.clip(0.5 + 0.3 * (np.arange(n) % 2) - 0.15 + rng.normal(0, 0.1, n), 0.01, 0.99)
+    df["split"] = np.where(np.arange(n) < 80, "test", "test_heldout")
+    cls = rng.normal(size=(n, 16))
+    oof = ss.lift_predictions(df, cls, pca=4)
+    assert list(oof.columns) == list(ss.MODEL_NAMES) and not oof.isna().any().any()
+    assert ((oof >= 0) & (oof <= 1)).all().all()
+    tp = ss.transfer_predictions(df, cls, pca=4)
+    assert len(tp) == 40 and set(tp.index) == set(df.index[df.split == "test_heldout"])

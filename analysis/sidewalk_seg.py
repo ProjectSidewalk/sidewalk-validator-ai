@@ -37,11 +37,16 @@ Stages (each one writes to disk and can be re-run on its own):
     small sample sheet for the doc.
 
 **Mask geometry.** The label point is the view centre. ``f = 1024`` px (90 degree horizontal FOV over 2048 px),
-so a lateral offset of ``d`` view pixels at the label's depth is about ``d * depth_m / f`` metres. That is a
-small-angle, same-depth approximation: it treats the nearest sidewalk pixel as being at the label's depth, which
-overstates the distance for sidewalk nearer the camera and understates it for sidewalk beyond the label. The
-view is gravity-levelled and roll-free (``sidewalk_panorama_tools.geometry.label_view``), so the horizon is the
-row ``1024 + f * tan(pitch)``, where ``pitch = (0.5 - pano_y / pano_height) * 180`` degrees.
+so a lateral offset of ``d`` view pixels at range ``R`` is about ``d * R / f`` metres (small angle, and the nearest
+sidewalk pixel is taken to be at the label's range, which overstates the distance for sidewalk nearer the camera and
+understates it for sidewalk beyond the label). ``R`` is the **ground range** implied by the view pitch for a camera
+``CAMERA_HEIGHT_M`` (2.5 m) above flat ground, ``R = h / sin(-pitch)`` with the pitch clamped at ``MIN_GROUND_PITCH_DEG``
+(-2 degrees, so ``R <= 72`` m): :func:`ground_range_m`. It assumes the label point is on the ground, which holds for
+surface problems and for the base of an obstacle, not for a point clicked on an obstacle's body (``R`` is then too
+short). The manifest's Depth Anything (vkitti) ``depth_m`` gives a second, depth-based distance column; on these
+views it is about 2.5-2.7 times the ground range, so the depth-based metres are that much larger. The view is
+gravity-levelled and roll-free (``sidewalk_panorama_tools.geometry.label_view``), so the horizon is the row
+``1024 + f * tan(pitch)``, where ``pitch = (0.5 - pano_y / pano_height) * 180`` degrees.
 
 **Classes** (Mapillary Vistas v1.2, 65 classes, as the segmenter's ``id2label`` names them): ``SIDEWALK_CLASSES``,
 ``ROAD_CLASSES`` and ``CURB_CLASSES`` below.
@@ -96,7 +101,14 @@ BOTTOM_FRAC = 0.10        # connected_to_bottom: the sidewalk component reaches 
 NEAR_M = 1.0              # near_sidewalk_1m
 SEG_MODEL = "facebook/mask2former-swin-large-mapillary-vistas-semantic"
 
+CAMERA_HEIGHT_M = 2.5     # GSV camera height above the ground, for the pitch-implied ground range
+MIN_GROUND_PITCH_DEG = -2.0  # pitch clamp for the ground range (labels at or above the horizon get 72 m)
+
+#: Sidewalk = the walkable-surface classes. Ground objects (Manhole, Catch Basin, Pothole) are NOT counted as
+#: sidewalk even when they sit in one, so a label on a manhole cover in the sidewalk reads as "not on sidewalk";
+#: :func:`mask_features` returns the centre class so those can be counted.
 SIDEWALK_CLASSES = ("Sidewalk", "Curb Cut", "Pedestrian Area")
+GROUND_OBJECT_CLASSES = ("Manhole", "Catch Basin", "Pothole")
 ROAD_CLASSES = ("Road", "Service Lane", "Bike Lane", "Parking", "Crosswalk - Plain", "Lane Marking - Crosswalk",
                 "Lane Marking - General")
 CURB_CLASSES = ("Curb",)
@@ -108,6 +120,7 @@ FEATURES = (
     ("sidewalk_frac_disc", "frac"),
     ("dist_px_to_sidewalk", "dist"),
     ("dist_m_to_sidewalk", "dist"),
+    ("dist_m_depth_to_sidewalk", "dist"),
     ("near_sidewalk_1m", "bool"),
     ("sidewalk_frac_crop", "frac"),
     ("sidewalk_frac_view", "frac"),
@@ -116,9 +129,11 @@ FEATURES = (
     ("on_road", "bool"),
     ("connected_to_bottom", "bool"),
 )
-#: A missing distance (no sidewalk in the view) is scored as this far: the view diagonal, and its metres at 80 m depth.
+#: A missing distance (no sidewalk in the view) is scored as this far: the view diagonal, and its metres at the
+#: largest range each column can take (72 m ground range; 80 m, Depth Anything's max_depth).
 NO_SIDEWALK_DIST = {"dist_px_to_sidewalk": VIEW_SIZE * math.sqrt(2),
-                    "dist_m_to_sidewalk": VIEW_SIZE * math.sqrt(2) * 80.0 / F_PX}
+                    "dist_m_to_sidewalk": VIEW_SIZE * math.sqrt(2) * 72.0 / F_PX,
+                    "dist_m_depth_to_sidewalk": VIEW_SIZE * math.sqrt(2) * 80.0 / F_PX}
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -155,6 +170,18 @@ def horizon_row(pitch_deg, size=VIEW_SIZE, f_px=F_PX):
     return size / 2 + f_px * math.tan(math.radians(pitch_deg))
 
 
+def ground_range_m(pitch_deg, camera_h_m=CAMERA_HEIGHT_M, min_pitch_deg=MIN_GROUND_PITCH_DEG):
+    """Slant range in metres to a ground point seen ``pitch_deg`` below the horizon from ``camera_h_m`` above flat
+    ground: ``h / sin(-pitch)``, with the pitch clamped at ``min_pitch_deg`` (points at or above the horizon cannot be
+    on the ground; they get the clamp's ~72 m).
+
+    >>> round(ground_range_m(-30.0), 3), round(ground_range_m(5.0), 1)
+    (5.0, 71.6)
+    """
+    p = min(float(pitch_deg), min_pitch_deg)
+    return camera_h_m / math.sin(math.radians(-p))
+
+
 def px_to_m(dist_px, depth_m, f_px=F_PX):
     """Lateral metres for ``dist_px`` view pixels at ``depth_m`` (small angle, same depth): ``dist_px * depth / f``.
 
@@ -178,7 +205,8 @@ def class_ids(id2label, names):
 
 
 def mask_features(mask, sidewalk_ids, road_ids, curb_ids, crop_half_px, depth_m, pitch_deg, view_size=VIEW_SIZE,
-                  f_px=F_PX, disc_radius_px=DISC_RADIUS_PX, bottom_frac=BOTTOM_FRAC, near_m=NEAR_M):
+                  f_px=F_PX, disc_radius_px=DISC_RADIUS_PX, bottom_frac=BOTTOM_FRAC, near_m=NEAR_M,
+                  camera_h_m=CAMERA_HEIGHT_M):
     """Point-vs-sidewalk features of one label from a square class-id ``mask`` of its label-centred view.
 
     The mask may be any size ``m``; distances and the crop square are given in view pixels (``view_size``) and
@@ -190,7 +218,9 @@ def mask_features(mask, sidewalk_ids, road_ids, curb_ids, crop_half_px, depth_m,
     * ``point_on_sidewalk``: the centre pixel is sidewalk. ``sidewalk_frac_disc`` is the sidewalk share of the
       ``disc_radius_px`` disc around it and ``point_on_sidewalk_disc`` is that share > 0.5.
     * ``dist_px_to_sidewalk``: view pixels from the centre to the nearest sidewalk pixel (0 if on it, NaN if there is
-      none); ``dist_m_to_sidewalk`` the same in metres via :func:`px_to_m`; ``near_sidewalk_1m`` is ``dist_m <= near_m``
+      none); ``dist_m_to_sidewalk`` the same in metres at the pitch-implied ground range ``ground_range_m``
+      (:func:`ground_range_m`, :func:`px_to_m`); ``dist_m_depth_to_sidewalk`` the same at the manifest's ``depth_m``
+      (Depth Anything vkitti, same-depth approximation); ``near_sidewalk_1m`` is ``dist_m_to_sidewalk <= near_m``
       (False without sidewalk).
     * ``sidewalk_frac_crop``, ``road_frac_crop``, ``curb_frac_crop``: shares inside the crop square (half-width
       ``crop_half_px`` view px, clipped to the view); ``sidewalk_frac_view`` over the whole view.
@@ -205,9 +235,9 @@ def mask_features(mask, sidewalk_ids, road_ids, curb_ids, crop_half_px, depth_m,
     Example: a sidewalk band across the bottom quarter of a 64 px mask, label in the middle::
 
         >>> m = np.zeros((64, 64), np.uint8); m[48:, :] = 1
-        >>> f = mask_features(m, [1], [2], [3], crop_half_px=256, depth_m=10.0, pitch_deg=-20.0)
-        >>> f["point_on_sidewalk"], f["dist_px_to_sidewalk"], round(f["dist_m_to_sidewalk"], 3), f["connected_to_bottom"]
-        (False, 512.0, 5.0, True)
+        >>> f = mask_features(m, [1], [2], [3], crop_half_px=256, depth_m=10.0, pitch_deg=-30.0)
+        >>> f["point_on_sidewalk"], f["dist_px_to_sidewalk"], round(f["dist_m_to_sidewalk"], 3), f["dist_m_depth_to_sidewalk"]
+        (False, 512.0, 2.5, 5.0)
     """
     import cv2
     mask = np.asarray(mask)
@@ -219,7 +249,8 @@ def mask_features(mask, sidewalk_ids, road_ids, curb_ids, crop_half_px, depth_m,
     sw = np.isin(mask, sidewalk_ids)
     road = np.isin(mask, road_ids)
     curb = np.isin(mask, curb_ids)
-    out = {"centre_class": int(mask[c, c]), "sidewalk_any": bool(sw.any()),
+    rng_m = ground_range_m(pitch_deg, camera_h_m)
+    out = {"centre_class": int(mask[c, c]), "sidewalk_any": bool(sw.any()), "ground_range_m": rng_m,
            "point_on_sidewalk": bool(sw[c, c]), "on_road": bool(road[c, c])}
 
     yy, xx = np.ogrid[:m, :m]
@@ -236,11 +267,13 @@ def mask_features(mask, sidewalk_ids, road_ids, curb_ids, crop_half_px, depth_m,
         nearest = tuple(pts[i])
         dist_px = math.sqrt(float(d2[i])) / s
         out["dist_px_to_sidewalk"] = dist_px
-        out["dist_m_to_sidewalk"] = px_to_m(dist_px, depth_m, f_px)
+        out["dist_m_to_sidewalk"] = px_to_m(dist_px, rng_m, f_px)
+        out["dist_m_depth_to_sidewalk"] = px_to_m(dist_px, depth_m, f_px)
         out["near_sidewalk_1m"] = out["dist_m_to_sidewalk"] <= near_m
     else:
         out["dist_px_to_sidewalk"] = float("nan")
         out["dist_m_to_sidewalk"] = float("nan")
+        out["dist_m_depth_to_sidewalk"] = float("nan")
         out["near_sidewalk_1m"] = False
 
     half = crop_half_px * s
@@ -355,6 +388,59 @@ def bootstrap_auc(y, score, n_boot=2000, seed=0, other=None):
     return float(np.percentile(stats, 2.5)), float(np.percentile(stats, 97.5))
 
 
+def within_city_auc(y, score, city, min_n=10):
+    """City-stratified AUC: the per-city AUCs of ``score`` for ``y == 1``, averaged with weights = city row counts,
+    over cities with both classes and at least ``min_n`` rows. Returns ``(auc, n_cities)``; NaN if no city qualifies.
+    Unlike the pooled AUC it cannot be raised by a score that only tells cities with many incorrect labels from cities
+    with few.
+
+    >>> y = [0, 1] * 10 + [1] * 10; s = list(range(20)) + [100] * 10; c = ["a"] * 20 + ["b"] * 10
+    >>> within_city_auc(y, s, c)   # city b has one class, so only city a counts
+    (0.55, 1)
+    """
+    from sklearn.metrics import roc_auc_score
+    d = pd.DataFrame({"y": np.asarray(y).astype(int), "s": np.asarray(score, float), "c": np.asarray(city)})
+    aucs, ws = [], []
+    for _, g in d.groupby("c"):
+        if len(g) < min_n or g.y.nunique() < 2:
+            continue
+        aucs.append(roc_auc_score(g.y, g.s))
+        ws.append(len(g))
+    if not aucs:
+        return float("nan"), 0
+    return float(np.average(aucs, weights=ws)), len(aucs)
+
+
+def city_bootstrap_auc(y, score, city, n_boot=2000, seed=0, other=None):
+    """Percentile 95% CI of the pooled AUC (or, with ``other``, of ``AUC(score) - AUC(other)``) resampling whole
+    cities with replacement, as PR #46's ``road_prior.city_delta_ci`` does: the interval for a claim about unseen
+    cities, where labels within a city are not independent. With few cities it is wide and coarse. ``(lo, hi)``.
+
+    >>> y = np.array([0, 1] * 20); c = np.repeat(list("abcd"), 10)
+    >>> lo, hi = city_bootstrap_auc(y, np.where(y == 1, 0.6, 0.4), c, n_boot=50, other=np.full(40, 0.5))
+    >>> bool(lo > 0)
+    True
+    """
+    from sklearn.metrics import roc_auc_score
+    y, city = np.asarray(y).astype(int), np.asarray(city)
+    a = np.asarray(score, float)
+    b = None if other is None else np.asarray(other, float)
+    members = [np.flatnonzero(city == g) for g in np.unique(city)]
+    rng = np.random.default_rng(seed)
+    stats = []
+    for _ in range(n_boot):
+        i = np.concatenate([members[k] for k in rng.integers(0, len(members), len(members))])
+        if y[i].min() == y[i].max():
+            continue
+        v = roc_auc_score(y[i], a[i])
+        if b is not None:
+            v -= roc_auc_score(y[i], b[i])
+        stats.append(v)
+    if not stats:
+        return float("nan"), float("nan")
+    return float(np.percentile(stats, 2.5)), float(np.percentile(stats, 97.5))
+
+
 def wilson(k, n, z=1.96):
     """Wilson 95% interval for ``k`` of ``n``: ``(lo, hi)``; NaNs for ``n == 0``.
 
@@ -375,7 +461,7 @@ def feature_matrix(df):
     distances (no sidewalk) as :data:`NO_SIDEWALK_DIST`.
 
     >>> feature_matrix(pd.DataFrame({c: [np.nan] for c, _ in FEATURES})).shape
-    (1, 12)
+    (1, 13)
     """
     cols = []
     for c, kind in FEATURES:
@@ -630,6 +716,11 @@ def cmd_features(args):
     out = df.merge(feats, on="label_uid", how="left", validate="one_to_one")
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     out.to_csv(args.out, index=False)
+    inputs = {"labels": args.labels, "views": os.path.join(args.run_dir, "views.csv"),
+              "seg_run": os.path.join(args.run_dir, "seg_run.json")}
+    if args.coords:
+        inputs["coords"] = args.coords
+    write_sidecar(args.out, "features", inputs)
     print(f"{len(out)} rows ({int((out.status == 'ok').sum())} ok) -> {args.out}; sha256 {sha256_file(args.out)}")
 
 
@@ -677,6 +768,7 @@ def cmd_cls(args):
     np.savez_compressed(args.out, label_uid=np.array(uids), cls=np.concatenate(feats),
                         p_incorrect=np.concatenate(p_inc),
                         models=np.array([f"{lt}={repo}@{rev}" for lt, (repo, rev) in PROD_MODELS.items()]))
+    write_sidecar(args.out, "cls", {"labels": args.labels})
     print(f"-> {args.out}; sha256 {sha256_file(args.out)}")
 
 
@@ -770,17 +862,26 @@ MODEL_NAMES = {"prod": "production score (no fit)", "cls": "CLS head", "cls_feat
                "feat": "seg features only", "prod_feat": "production score + seg features"}
 
 
-def _lift_rows(y, preds, slice_name, n_boot, seed):
+def _lift_rows(y, preds, city, slice_name, n_boot, seed):
+    """One row per model: pooled AUC with row- and city-resampled CIs, the within-city AUC, and for the two
+    "+ seg" models the paired delta against their base in all three forms."""
     rows = []
+    n_cities = len(np.unique(city))
     for m in MODEL_NAMES:
         auc, _ = oriented_auc(y, preds[m])
         lo, hi = bootstrap_auc(y, preds[m], n_boot, seed)
-        row = {"slice": slice_name, "model": m, "n": len(y), "n_incorrect": int(np.sum(y)), "auc": auc,
-               "auc_lo": lo, "auc_hi": hi}
+        clo, chi = city_bootstrap_auc(y, preds[m], city, n_boot, seed)
+        wc, nwc = within_city_auc(y, preds[m], city)
+        row = {"slice": slice_name, "model": m, "n": len(y), "n_incorrect": int(np.sum(y)), "n_cities": n_cities,
+               "auc": auc, "auc_lo": lo, "auc_hi": hi, "auc_city_lo": clo, "auc_city_hi": chi,
+               "auc_within_city": wc, "n_cities_within": nwc}
         base = {"cls_feat": "cls", "prod_feat": "prod"}.get(m)
         if base:
             dlo, dhi = bootstrap_auc(y, preds[m], n_boot, seed, other=preds[base])
-            row.update(delta_vs=base, delta_auc=auc - oriented_auc(y, preds[base])[0], delta_lo=dlo, delta_hi=dhi)
+            dclo, dchi = city_bootstrap_auc(y, preds[m], city, n_boot, seed, other=preds[base])
+            row.update(delta_vs=base, delta_auc=auc - oriented_auc(y, preds[base])[0], delta_lo=dlo, delta_hi=dhi,
+                       delta_city_lo=dclo, delta_city_hi=dchi,
+                       delta_within_city=wc - within_city_auc(y, preds[base], city)[0])
         rows.append(row)
     return rows
 
@@ -814,6 +915,9 @@ def cmd_report(args):
     ok = df[df.status == "ok"].copy()
 
     # 1. Segmenter sanity.
+    with open(os.path.join(args.run_dir, "seg_run.json")) as f:
+        run = json.load(f)
+    ground_ids = class_ids(run["id2label"], GROUND_OBJECT_CLASSES)
     sanity = []
     for lt, g in [("all", ok)] + list(ok.groupby("label_type")):
         sanity.append({"label_type": lt, "n_views": len(g), "any_sidewalk": g.sidewalk_any.mean(),
@@ -822,12 +926,14 @@ def cmd_report(args):
                        "sidewalk_px_above_horizon_share": float(
                            (g.sidewalk_above_horizon_frac * g.sidewalk_frac_view).sum() / g.sidewalk_frac_view.sum()),
                        "point_on_sidewalk": g.point_on_sidewalk.mean(), "on_road": g.on_road.mean(),
-                       "near_sidewalk_1m": g.near_sidewalk_1m.mean()})
+                       "point_on_ground_object": g.centre_class.isin(ground_ids).mean(),
+                       "near_sidewalk_1m": g.near_sidewalk_1m.mean(),
+                       "depth_over_ground_range_median": float((g.depth_m / g.ground_range_m).median()),
+                       "depth_over_ground_range_q25": float((g.depth_m / g.ground_range_m).quantile(0.25)),
+                       "depth_over_ground_range_q75": float((g.depth_m / g.ground_range_m).quantile(0.75))})
     sanity = pd.DataFrame(sanity)
     sanity.to_csv(os.path.join(args.out_dir, "sanity.csv"), index=False)
     md += ["## Segmenter sanity", "", _md_table(sanity), ""]
-    with open(os.path.join(args.run_dir, "seg_run.json")) as f:
-        run = json.load(f)
     id2label = run["id2label"]
     cc = (ok.groupby("label_type").centre_class.value_counts(normalize=True).rename("share").reset_index())
     cc["class"] = cc.centre_class.astype(int).astype(str).map(id2label)
@@ -843,14 +949,17 @@ def cmd_report(args):
         for j, (c, _) in enumerate(FEATURES):
             auc, sign = oriented_auc(s.y, F[:, j])
             lo, hi = bootstrap_auc(s.y, F[:, j], args.n_boot, 1) if math.isfinite(auc) else (np.nan, np.nan)
+            wc, nwc = within_city_auc(s.y, F[:, j], s.city)
             rows.append({"label_type": lt, "split": split, "feature": c, "n": len(s), "auc": auc, "dir": sign,
-                         "auc_lo": lo, "auc_hi": hi,
+                         "auc_oriented": max(auc, 1 - auc) if math.isfinite(auc) else np.nan,
+                         "auc_lo": lo, "auc_hi": hi, "auc_within_city": wc, "n_cities_within": nwc,
                          "mean_correct": F[s.y.to_numpy() == 0, j].mean(),
                          "mean_incorrect": F[s.y.to_numpy() == 1, j].mean()})
     alone = pd.DataFrame(rows)
     alone.to_csv(os.path.join(args.out_dir, "feature_auc.csv"), index=False)
-    md += ["## Each feature alone (AUC for incorrect; dir '-' = higher value means more likely correct)", "",
-           _md_table(alone), ""]
+    md += ["## Each feature alone (AUC for incorrect; dir '-' = higher value means more likely correct; "
+           "auc_oriented = max(auc, 1 - auc); auc_within_city = row-weighted mean of per-city AUCs over cities with "
+           "both classes and >= 10 rows)", "", _md_table(alone), ""]
 
     # 3. Lift over the frozen production features.
     lift_rows, city_rows = [], []
@@ -859,16 +968,18 @@ def cmd_report(args):
         g = g[g.status == "ok"]
         cls = z["cls"][g.cls_row.to_numpy()]
         preds = lift_predictions(g, cls, pca=args.pca)
-        oof_all.append(pd.concat([g[["label_uid", "label_type", "split", "display_city", "y", "hard"]], preds], axis=1))
-        lift_rows += [{"label_type": lt, **r} for r in _lift_rows(g.y.to_numpy(), preds, "all (5-fold CV)",
-                                                                  args.n_boot, 2)]
+        oof_all.append(pd.concat([g[["label_uid", "label_type", "split", "city", "display_city", "y", "hard"]],
+                                  preds], axis=1))
+        lift_rows += [{"label_type": lt, **r} for r in _lift_rows(g.y.to_numpy(), preds, g.city.to_numpy(),
+                                                                  "all (5-fold CV)", args.n_boot, 2)]
         for split, s in g.groupby("split"):
             lift_rows += [{"label_type": lt, **r} for r in _lift_rows(s.y.to_numpy(), preds.loc[s.index],
-                                                                      f"{split} (5-fold CV)", args.n_boot, 3)]
+                                                                      s.city.to_numpy(), f"{split} (5-fold CV)",
+                                                                      args.n_boot, 3)]
         tp = transfer_predictions(g, cls, pca=args.pca)
         s = g.loc[tp.index]
-        lift_rows += [{"label_type": lt, **r} for r in _lift_rows(s.y.to_numpy(), tp, "test_heldout (fit on test)",
-                                                                  args.n_boot, 4)]
+        lift_rows += [{"label_type": lt, **r} for r in _lift_rows(s.y.to_numpy(), tp, s.city.to_numpy(),
+                                                                  "test_heldout (fit on test)", args.n_boot, 4)]
         for city, s in g.groupby("display_city"):
             if len(s) < args.min_city_n or s.y.nunique() < 2:
                 continue
@@ -886,7 +997,9 @@ def cmd_report(args):
         by_city = by_city.pivot_table(index=["label_type", "city", "n", "n_incorrect"], columns="model",
                                       values="auc").reset_index()
     by_city.to_csv(os.path.join(args.out_dir, "lift_by_city.csv"), index=False)
-    md += ["## Lift (out-of-fold AUC, 95% bootstrap CI; delta is paired)", "", _md_table(lift), "",
+    md += ["## Lift (out-of-fold AUC; `_lo`/`_hi` resample rows, `_city_lo`/`_city_hi` resample whole cities; deltas "
+           "are paired; within-city = row-weighted mean of per-city AUCs, cities with both classes and >= 10 rows)",
+           "", _md_table(lift), "",
            f"## Per city (n >= {args.min_city_n}; private pooled)", "", _md_table(by_city), ""]
 
     # Production model's own slice metrics on this sample (evaluate.slice_metrics; plain accuracy is NOT a
@@ -901,13 +1014,16 @@ def cmd_report(args):
                    "recall_correct_at_p95": sm["recall_at_precision"]["correct"]["0.95"]["recall"]})
     pm = pd.DataFrame(pm)
     pm.to_csv(os.path.join(args.out_dir, "production_on_sample.csv"), index=False)
-    md += ["## Production model on this sample", "", _md_table(pm), ""]
+    md += ["## Production checkpoints re-scored on the round-3 crops", "", _md_table(pm), ""]
 
     # 4. Production-verdict strata.
-    strata, n_join = production_strata(ok, args.assessments, cities)
+    strata, n_join, agree = production_strata(ok, args.assessments, cities)
     strata.to_csv(os.path.join(args.out_dir, "strata.csv"), index=False)
+    agree.to_csv(os.path.join(args.out_dir, "served_vs_rescored.csv"), index=False)
     md += [f"## Production-verdict strata ({n_join} of {len(ok)} sample labels have an assessment)", "",
-           _md_table(strata), ""]
+           _md_table(strata), "",
+           "## Served verdict vs the re-scored checkpoint (p_incorrect > 0.5 means Disagree)", "",
+           _md_table(agree), ""]
 
     with open(os.path.join(args.out_dir, "report.md"), "w") as f:
         f.write("\n".join(md))
@@ -922,22 +1038,47 @@ def cmd_report(args):
     print("\n".join(md))
 
 
-def write_provenance(args, run, ok, inputs):
-    """``provenance.json`` in the output dir: input sha256s and row counts, output sha256s, the segmenter run record
-    (model, revision, job, device, throughput, versions), the CLS models, packages, commit and hardware."""
-    import platform
+def git_state():
+    """``(commit, dirty)`` of this checkout; dirty means a TRACKED file differs from HEAD (untracked files ignored)."""
     import subprocess
-    import sklearn
 
     def git(*a):
         return subprocess.run(["git", *a], cwd=REPO, capture_output=True, text=True).stdout.strip()
+    return git("rev-parse", "HEAD"), bool(git("status", "--porcelain", "--untracked-files=no"))
+
+
+def safetensors_param_count(path):
+    """Number of parameters in a ``.safetensors`` file, read from its JSON header (no torch needed)."""
+    with open(path, "rb") as f:
+        n = int.from_bytes(f.read(8), "little")
+        header = json.loads(f.read(n))
+    return sum(math.prod(v["shape"]) for k, v in header.items() if k != "__metadata__")
+
+
+def segmenter_params_m(run):
+    """Segmenter size in millions of parameters from the local HF cache (None if the weights are not cached)."""
+    try:
+        from huggingface_hub import try_to_load_from_cache
+        p = try_to_load_from_cache(run["seg_model"], "model.safetensors", revision=run["seg_revision"])
+    except Exception:
+        return None
+    return round(safetensors_param_count(p) / 1e6, 1) if isinstance(p, str) else None
+
+
+def write_provenance(args, run, ok, inputs):
+    """``provenance.json`` in the output dir: input sha256s and row counts, output sha256s, the segmenter run record
+    (model, revision, job, device, throughput, versions), the CLS models, the commits the ``features`` and ``cls``
+    stages ran at (from their sidecar JSONs), packages, commit and hardware. ``--extra-provenance`` merges a
+    hand-entered record (klone job ids and timings, copied from ``sacct``) under ``hand_entered``."""
+    import platform
+    import sklearn
 
     outs = {f: sha256_file(os.path.join(args.out_dir, f)) for f in sorted(os.listdir(args.out_dir))
             if f.endswith((".csv", ".md")) and f != "provenance.json"}
     z = np.load(args.cls, allow_pickle=False)
     rec = {
         "date": datetime.date.today().isoformat(),
-        "git_commit": git("rev-parse", "HEAD"), "git_dirty": bool(git("status", "--porcelain", "--", "analysis")),
+        "git_commit": git_state()[0], "git_dirty": git_state()[1],
         "command": "python analysis/sidewalk_seg.py " + " ".join(sys.argv[1:]).replace(os.path.expanduser("~"), "~"),
         "inputs": {k: {"sha256": sha256_file(p), "rows": (int(sum(1 for _ in open(p)) - 1) if p.endswith(".csv")
                                                          else None)} for k, p in inputs.items()},
@@ -949,6 +1090,8 @@ def write_provenance(args, run, ok, inputs):
                                                   "seconds", "seg_views_per_s", "device", "versions",
                                                   "slurm_job_id")},
         "cls_models": [str(m) for m in z["models"]],
+        "stage_records": {k: _sidecar(p) for k, p in (("features", args.features), ("cls", args.cls))},
+        "segmenter_params_m": segmenter_params_m(run),
         "settings": {"n_boot": args.n_boot, "pca": args.pca, "min_city_n": args.min_city_n, "folds": 5,
                      "fold_seed": 20261021, "f_px": F_PX, "disc_radius_px": DISC_RADIUS_PX, "near_m": NEAR_M,
                      "bottom_frac": BOTTOM_FRAC},
@@ -956,18 +1099,40 @@ def write_provenance(args, run, ok, inputs):
                      "scikit-learn": sklearn.__version__},
         "hardware": f"{platform.machine()} {platform.system()} {platform.mac_ver()[0] or platform.release()}",
     }
+    for item in getattr(args, "hash_extra", None) or []:
+        name, path = item.split("=", 1)
+        rec["inputs"][name] = {"sha256": sha256_file(os.path.expanduser(path)), "rows": None}
     if getattr(args, "extra_provenance", None):
         with open(args.extra_provenance) as f:
-            rec.update(json.load(f))
+            rec["hand_entered"] = json.load(f)
     with open(os.path.join(args.out_dir, "provenance.json"), "w") as f:
         json.dump(rec, f, indent=1)
         f.write("\n")
 
 
+def _sidecar(path):
+    """The ``<path>.json`` stage record written next to a stage output, or None (older outputs have none)."""
+    try:
+        with open(path + ".json") as f:
+            return json.load(f)
+    except OSError:
+        return None
+
+
+def write_sidecar(path, stage, inputs):
+    """Write ``<path>.json``: stage, date, commit, dirty flag, input and output sha256 (the stage record)."""
+    commit, dirty = git_state()
+    rec = {"stage": stage, "date": datetime.date.today().isoformat(), "git_commit": commit, "git_dirty": dirty,
+           "inputs": {k: sha256_file(p) for k, p in inputs.items()}, "output_sha256": sha256_file(path)}
+    with open(path + ".json", "w") as f:
+        json.dump(rec, f, indent=1)
+
+
 def production_strata(ok, assessments_path, cities):
     """Join the sample to the production assessments (one row per ``label_uid``, ``validate="one_to_one"``) and
     tabulate, per type and pool, the share of labels not on a sidewalk / not within 1 m of one, overall and by the
-    sample's human class. Returns ``(table, n_joined)``."""
+    sample's human class; and how often the re-scored checkpoint's verdict (``p_incorrect > 0.5``) matches the served
+    one. Returns ``(table, n_joined, agreement)``."""
     a = pd.read_csv(assessments_path, usecols=["schema", "label_id", "label_type", "ai_result", "ai_accuracy",
                                                "h_agree", "h_dis"])
     a = a[a.label_type.isin(LABEL_TYPES)]
@@ -978,6 +1143,10 @@ def production_strata(ok, assessments_path, cities):
     j = ok.merge(a[["label_uid", "ai_result", "ai_accuracy", "h_agree", "h_dis"]], on="label_uid", how="left",
                  validate="one_to_one")
     j["pool"] = [production_pool(r, d) for r, d in zip(j.ai_result, j.h_dis)]
+    served = j[j.ai_result.isin(["Agree", "Disagree"])]
+    agree = pd.DataFrame([{"label_type": lt, "n": len(g),
+                           "same_verdict": float(((g.p_incorrect > 0.5) == (g.ai_result == "Disagree")).mean())}
+                          for lt, g in [("all", served)] + list(served.groupby("label_type"))])
     rows = []
     for (lt, pool), g in j.groupby(["label_type", "pool"]):
         for cls_name, s in [("all", g)] + list(g.groupby("label_class")):
@@ -989,7 +1158,7 @@ def production_strata(ok, assessments_path, cities):
             rows.append({"label_type": lt, "pool": pool, "human_class": cls_name, "n": n,
                          "not_on_sidewalk": k1 / n if n else np.nan, "not_on_lo": lo1, "not_on_hi": hi1,
                          "not_near_1m": k2 / n if n else np.nan, "not_near_lo": lo2, "not_near_hi": hi2})
-    return pd.DataFrame(rows), int(j.ai_result.notna().sum())
+    return pd.DataFrame(rows), int(j.ai_result.notna().sum()), agree
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1134,7 +1303,9 @@ def build_parser():
     s.add_argument("--pca", type=int, default=64)
     s.add_argument("--min-city-n", type=int, default=30)
     s.add_argument("--extra-provenance", default=None,
-                   help="JSON merged into provenance.json (e.g. the staging job id and the klone hardware)")
+                   help="hand-entered JSON stored under provenance.json's hand_entered (klone job ids, timings)")
+    s.add_argument("--hash-extra", action="append", default=[], metavar="NAME=PATH",
+                   help="another private file whose sha256 provenance.json should pin (e.g. the sample figure)")
     s.set_defaults(func=cmd_report)
 
     s = sub.add_parser("sheets", help="contact sheets for the hand-check (public cities only)")

@@ -6,6 +6,7 @@
 #SBATCH --mem=4G
 #SBATCH --time=2:00:00
 #SBATCH --output=%x-%j.out
+#SBATCH --no-requeue
 # Issue #44, step 1 of 2 on klone: stage the sample's panoramas from the makelab2 pano store.
 #
 # Submit from the run directory ($W below), which holds stage_files.txt (from `sidewalk_seg.py filelist`: one
@@ -18,10 +19,13 @@
 # (the makelab hosts ban an IP that reconnects quickly, and that ban hits every session on the network). Exit 23
 # (some listed files missing on the store) is expected for a few panos; the render job falls back to the read-only
 # pano-extra copy for those. Any other failure or a timeout stops the job: do NOT resubmit without checking why.
+# --no-requeue: ckpt-all requeues preempted jobs, and a requeue would open a second rsync connection.
 # No second connection is made for the store's marker: the job writes its own .pano-store marker after the pull,
 # saying it is a staged copy (data_generation.read_store_panorama only needs the marker to exist).
 set -uo pipefail
 W=$(pwd)
+# Only ever write under the scrubbed scratch dir: refuse any other working directory (never /gscratch/makelab).
+case "$W/" in /gscratch/scrubbed/jfroehli/*|/mmfs1/gscratch/scrubbed/jfroehli/*) ;; *) echo "refusing to write under $W"; exit 2;; esac
 LIST=$W/stage_files.txt
 DEST=$W/panos
 SSH="ssh -o BatchMode=yes -o IdentitiesOnly=yes -i $HOME/.ssh/pano_store_ro -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=4"
