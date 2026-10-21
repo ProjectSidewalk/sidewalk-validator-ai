@@ -11,9 +11,10 @@ Stages (each one writes to disk and can be re-run on its own):
     ``GET <city url>/v3/api/streets?filetype=csv`` for every public city in ``cities.json`` into a dated cache
     directory, plus ``manifest.json`` (status, bytes, error text per city). Project Sidewalk splits street edges at
     intersections, so the edge endpoints shared by two or more edges are the intersection set, with no OSM pull.
-``fetch-osm`` (optional; needs ``osmnx``)
-    ``highway=crossing`` nodes and ``highway=service`` ways (with their ``service`` tag) over each city's label bbox
-    (padded ``--pad-m``), one city at a time, with retries and an Overpass mirror fallback. A city whose pull fails
+``fetch-osm``
+    ``highway=crossing`` nodes and ``highway=service`` ways (with their ``service`` tag) straight from the Overpass
+    API, in 0.1-degree tiles that contain labels (padded ``--pad-m``), one request at a time, with exponential
+    backoff and mirror fallback; each tile is cached so an interrupted pull resumes. A city whose pull fails
     is recorded as missing in ``manifest.json``; nothing downstream requires OSM.
 ``features``
     One row per CurbRamp / Crosswalk label with at least one human Agree/Disagree vote: straight-line distance to
@@ -41,9 +42,10 @@ repo. ``evaluate`` and ``stratify`` write aggregates only and name a city only i
 ``visibility == "public"`` (the same filter as ``calibration/per_city.py``). Expert vote columns are role-keyed
 (``expert1``, ``expert2``, ... in ``--experts`` order), as in ``hard_examples.py``; no name or user id is written.
 
-**Optional dependencies** (not in ``requirements.txt``): ``osmnx`` for ``fetch-osm`` only
-(``uv pip install --python .venv/bin/python osmnx``). Everything else uses numpy, pandas, scipy (via
-scikit-learn), scikit-learn, matplotlib and requests.
+**Dependencies**: numpy, pandas, scipy (via scikit-learn), scikit-learn, matplotlib and requests, all in
+``requirements.txt``. ``osmnx`` was the first plan for ``fetch-osm`` and was dropped on 2026-10-20: it pins one
+resolved IP per host, and one of overpass-api.de's two addresses refused connections that night, so every osmnx
+request stalled while plain ``requests`` (which falls through to the next address) succeeded.
 
 Usage (``$D`` is the pull directory, e.g. ``~/Data/sidewalk-validator-ai-prod-2026-10-17``)::
 
@@ -85,6 +87,7 @@ OSM_FEATURES = ["d_crossing_m", "own_way_is_driveway", "n_driveways_20m", "n_dri
 DISTANCE_BINS = [0, 5, 10, 15, 25, 40, 60, 100, np.inf]
 FAR_INTERSECTION_M = (15, 25, 40)
 FAR_CROSSING_M = 25
+OVERPASS_URLS = ["https://overpass-api.de/api", "https://overpass.private.coffee/api", "https://overpass.kumi.systems/api"]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -314,66 +317,103 @@ def human_votes(validations):
 # OSM (optional)
 # ---------------------------------------------------------------------------------------------------------------------
 
-def label_bbox(lat, lng, pad_m=200.0):
-    """``(west, south, east, north)`` of the points, padded by ``pad_m`` metres.
+USER_AGENT = "sidewalk-validator-ai/road_prior.py (https://github.com/ProjectSidewalk/sidewalk-validator-ai)"
+TILE_DEG = 0.1  # Overpass query tile side; tiles without labels are skipped
 
-    >>> [round(v, 4) for v in label_bbox(np.array([0.0, 0.01]), np.array([0.0, 0.01]), 111.19)]
-    [-0.001, -0.001, 0.011, 0.011]
+
+def label_tiles(lat, lng, tile_deg=TILE_DEG):
+    """Sorted ``(i, j)`` grid indices (``floor(lat / tile_deg)``, ``floor(lng / tile_deg)``) that contain a label.
+
+    >>> label_tiles(np.array([0.05, 0.06, 0.25]), np.array([0.05, 0.05, -0.05]))
+    [(0, 0), (2, -1)]
     """
+    i = np.floor(np.asarray(lat) / tile_deg).astype(int)
+    j = np.floor(np.asarray(lng) / tile_deg).astype(int)
+    return sorted(set(zip(i.tolist(), j.tolist())))
+
+
+def tile_bbox(i, j, tile_deg=TILE_DEG, pad_m=200.0):
+    """``(south, west, north, east)`` of tile ``(i, j)``, padded by ``pad_m`` so labels near its edge see across."""
+    s, w = i * tile_deg, j * tile_deg
     dlat = pad_m / (np.pi / 180 * EARTH_RADIUS_M)
-    lat_mid = (np.nanmin(lat) + np.nanmax(lat)) / 2
-    dlng = dlat / np.cos(np.radians(lat_mid))
-    return (float(np.nanmin(lng) - dlng), float(np.nanmin(lat) - dlat),
-            float(np.nanmax(lng) + dlng), float(np.nanmax(lat) + dlat))
+    dlng = dlat / np.cos(np.radians(s + tile_deg / 2))
+    return (round(s - dlat, 6), round(w - dlng, 6), round(s + tile_deg + dlat, 6), round(w + tile_deg + dlng, 6))
 
 
-def _osm_pull(bbox, overpass_urls, retries=4):
-    """Crossing nodes and service ways in ``bbox`` via osmnx, trying each Overpass URL with exponential backoff."""
-    import osmnx as ox
-    ox.settings.use_cache = True
-    ox.settings.requests_timeout = 900
+def overpass_query(bbox):
+    """Overpass QL for ``highway=crossing`` nodes and ``highway=service`` ways (with geometry) in a
+    ``(south, west, north, east)`` box.
+
+    >>> overpass_query((1, 2, 3, 4)).count('(1,2,3,4)')
+    2
+    """
+    b = ",".join(f"{v:g}" for v in bbox)
+    return (f'[out:json][timeout:600];(node["highway"="crossing"]({b});way["highway"="service"]({b}););'
+            "out tags geom;")
+
+
+def parse_overpass(elements):
+    """``(crossings, service)`` tables from Overpass JSON ``elements`` (``crossings``: ``osmid, lat, lng``; ``service``:
+    ``osmid, service, coords`` with ``coords`` a JSON ``[[lng, lat], ...]``).
+
+    >>> c, s = parse_overpass([
+    ...     {"type": "node", "id": 1, "lat": 1.0, "lon": 2.0, "tags": {"highway": "crossing"}},
+    ...     {"type": "way", "id": 5, "tags": {"highway": "service", "service": "driveway"},
+    ...      "geometry": [{"lat": 1.0, "lon": 2.0}, {"lat": 1.001, "lon": 2.0}]},
+    ...     {"type": "way", "id": 6, "tags": {"highway": "service"}, "geometry": [{"lat": 1.0, "lon": 2.0}]}])
+    >>> c.osmid.tolist(), s.osmid.tolist(), s.service.fillna("-").tolist(), s.coords[0]
+    ([1], [5, 6], ['driveway', '-'], '[[2.0, 1.0], [2.0, 1.001]]')
+    """
+    cr, sv = [], []
+    for e in elements:
+        tags = e.get("tags", {})
+        if e.get("type") == "node" and tags.get("highway") == "crossing":
+            cr.append({"osmid": e["id"], "lat": e["lat"], "lng": e["lon"]})
+        elif e.get("type") == "way" and tags.get("highway") == "service" and e.get("geometry"):
+            sv.append({"osmid": e["id"], "service": tags.get("service"),
+                       "coords": json.dumps([[g["lon"], g["lat"]] for g in e["geometry"] if g])})
+    crossings = pd.DataFrame(cr, columns=["osmid", "lat", "lng"]).drop_duplicates("osmid")
+    service = pd.DataFrame(sv, columns=["osmid", "service", "coords"]).drop_duplicates("osmid")
+    return crossings.reset_index(drop=True), service.reset_index(drop=True)
+
+
+def overpass_post(query, urls, retries=3, session=None, base_sleep=30):
+    """POST ``query`` to each URL in turn with exponential backoff; returns ``(elements, url)`` or raises with the
+    last error text. Sequential by design: the public instances ban parallel clients."""
+    import requests
+    session = session or requests.Session()
     last = None
-    for url in overpass_urls:
-        ox.settings.overpass_url = url
+    for url in urls:
+        url = url.rstrip("/")
+        url = url if url.endswith("/interpreter") else url + "/interpreter"
         for attempt in range(retries):
             try:
-                gdf = ox.features_from_bbox(bbox, tags={"highway": ["crossing", "service"]})
-                return gdf, url
+                r = session.post(url, data={"data": query}, headers={"User-Agent": USER_AGENT}, timeout=900)
+                if r.status_code == 200:
+                    j = r.json()
+                    if "remark" in j and "error" in j["remark"].lower():
+                        last = f"{url}: remark {j['remark'][:200]}"
+                    else:
+                        return j.get("elements", []), url
+                else:
+                    last = f"{url}: HTTP {r.status_code} {r.text[:200]!r}"
             except Exception as e:
-                last = f"{type(e).__name__}: {str(e)[:300]}"
-                if "No matching features" in str(e) or "InsufficientResponseError" in type(e).__name__:
-                    return None, url  # a valid empty answer
-                print(f"  {url} attempt {attempt + 1}: {last}", flush=True)
-                time.sleep(30 * 2 ** attempt)
+                last = f"{url}: {type(e).__name__}: {str(e)[:200]}"
+            print(f"    attempt {attempt + 1} failed: {last}", flush=True)
+            time.sleep(base_sleep * 2 ** attempt)
     raise RuntimeError(last)
 
 
-def osm_tables(gdf):
-    """Split an osmnx features GeoDataFrame into ``crossings`` (node rows) and ``service`` (way rows).
+def fetch_osm(rawlabels_dir, cities, out_dir, pad_m=200.0, overpass_urls=None, only=None, tile_deg=TILE_DEG):
+    """Per-city OSM pull into ``out_dir`` (``<city>_crossings.csv``, ``<city>_service.csv``, ``manifest.json``).
 
-    ``crossings``: ``osmid, lat, lng``. ``service``: ``osmid, service, coords`` (JSON ``[[lng, lat], ...]``).
+    Each city is queried in ``tile_deg`` tiles that contain at least one CurbRamp/Crosswalk label (padded by
+    ``pad_m``); every tile response is cached under ``_tiles/<city>/`` so an interrupted pull resumes.
     """
-    if gdf is None or len(gdf) == 0:
-        return (pd.DataFrame(columns=["osmid", "lat", "lng"]), pd.DataFrame(columns=["osmid", "service", "coords"]))
-    g = gdf.reset_index()
-    hw = g.get("highway")
-    nodes = g[(g["element"] == "node") & (hw == "crossing")]
-    crossings = pd.DataFrame({"osmid": nodes["id"].values, "lat": nodes.geometry.y.values,
-                              "lng": nodes.geometry.x.values})
-    ways = g[(g["element"] == "way") & (hw == "service")]
-    service = pd.DataFrame({
-        "osmid": ways["id"].values,
-        "service": ways["service"].values if "service" in ways else None,
-        "coords": [json.dumps([[round(x, 7), round(y, 7)] for x, y in
-                               (geom.exterior.coords if geom.geom_type == "Polygon" else geom.coords)])
-                   for geom in ways.geometry]})
-    return crossings, service
-
-
-def fetch_osm(rawlabels_dir, cities, out_dir, pad_m=200.0, overpass_urls=None, only=None):
-    """Per-city OSM pull into ``out_dir`` (``<city>_crossings.csv``, ``<city>_service.csv``, ``manifest.json``)."""
-    overpass_urls = overpass_urls or ["https://overpass-api.de/api/interpreter",
-                                      "https://overpass.kumi.systems/api/interpreter"]
+    import gzip
+    import requests
+    overpass_urls = overpass_urls or OVERPASS_URLS
+    session = requests.Session()
     os.makedirs(out_dir, exist_ok=True)
     manifest_path = os.path.join(out_dir, "manifest.json")
     manifest = json.load(open(manifest_path)) if os.path.exists(manifest_path) else {}
@@ -391,18 +431,38 @@ def fetch_osm(rawlabels_dir, cities, out_dir, pad_m=200.0, overpass_urls=None, o
         if lab.empty:
             manifest[cid] = {"status": "skipped", "error": "no CurbRamp/Crosswalk labels"}
             continue
-        bbox = label_bbox(lab.latitude.values, lab.longitude.values, pad_m)
-        print(f"{cid}: bbox {tuple(round(v, 4) for v in bbox)}", flush=True)
-        try:
-            gdf, url = _osm_pull(bbox, overpass_urls)
-            crossings, service = osm_tables(gdf)
+        tiles = label_tiles(lab.latitude.values, lab.longitude.values, tile_deg)
+        tdir = os.path.join(out_dir, "_tiles", cid)
+        os.makedirs(tdir, exist_ok=True)
+        print(f"{cid}: {len(tiles)} tiles", flush=True)
+        elements, used, err = [], set(), None
+        for i, j in tiles:
+            tpath = os.path.join(tdir, f"{i}_{j}.json.gz")
+            if os.path.exists(tpath):
+                with gzip.open(tpath, "rt") as f:
+                    elements += json.load(f)
+                continue
+            try:
+                el, url = overpass_post(overpass_query(tile_bbox(i, j, tile_deg, pad_m)), overpass_urls,
+                                        session=session)
+            except Exception as e:
+                err = f"tile {i}_{j}: {e}"
+                break
+            used.add(url)
+            with gzip.open(tpath + ".tmp", "wt") as f:
+                json.dump(el, f)
+            os.replace(tpath + ".tmp", tpath)
+            elements += el
+            time.sleep(2)
+        if err is None:
+            crossings, service = parse_overpass(elements)
             crossings.to_csv(os.path.join(out_dir, f"{cid}_crossings.csv"), index=False)
             service.to_csv(os.path.join(out_dir, f"{cid}_service.csv"), index=False)
-            manifest[cid] = {"status": "ok", "fetched_on": datetime.date.today().isoformat(), "overpass": url,
-                             "bbox": bbox, "crossings": len(crossings), "service_ways": len(service),
-                             "driveways": int((service["service"] == "driveway").sum())}
-        except Exception as e:
-            manifest[cid] = {"status": "failed", "error": f"{type(e).__name__}: {str(e)[:300]}", "bbox": bbox}
+            manifest[cid] = {"status": "ok", "fetched_on": datetime.date.today().isoformat(),
+                             "overpass": sorted(used), "tiles": len(tiles), "crossings": len(crossings),
+                             "service_ways": len(service), "driveways": int((service["service"] == "driveway").sum())}
+        else:
+            manifest[cid] = {"status": "failed", "error": err[:400], "tiles": len(tiles)}
         print(f"{cid}: {manifest[cid]}", flush=True)
         with open(manifest_path, "w") as f:
             json.dump(manifest, f, indent=1, sort_keys=True)
@@ -1218,14 +1278,14 @@ def main(argv=None):
     s.add_argument("--timeout", type=int, default=600, help="per-request timeout in seconds")
     s.set_defaults(func=cmd_fetch_streets)
 
-    s = sub.add_parser("fetch-osm", help="pull OSM crossings and service ways per city (needs osmnx)")
+    s = sub.add_parser("fetch-osm", help="pull OSM crossings and service ways per city (Overpass API)")
     s.add_argument("--cities-json", required=True, help=cj)
     s.add_argument("--rawlabels", required=True, help="rawLabels cache dir (<city_id>.csv); sets each city's bbox")
     s.add_argument("--out-dir", required=True, help="cache directory, e.g. $D/osm_cache/2026-10-20")
-    s.add_argument("--pad-m", type=float, default=200.0, help="padding of the label bbox in metres")
+    s.add_argument("--pad-m", type=float, default=200.0, help="padding of each query tile in metres")
     s.add_argument("--overpass-url", action="append", default=None,
-                   help="Overpass endpoint(s) tried in order; repeat the flag (default: overpass-api.de, then "
-                        "overpass.kumi.systems)")
+                   help="Overpass endpoint(s) tried in order; repeat the flag (default: overpass-api.de, "
+                        "overpass.private.coffee, overpass.kumi.systems)")
     s.add_argument("--only", default=None, help="comma list of city_ids to pull (default: all public)")
     s.set_defaults(func=cmd_fetch_osm)
 

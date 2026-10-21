@@ -165,12 +165,35 @@ def test_inside_git_checkout(tmp_path):
     assert not rp.inside_git_checkout(tmp_path / "nowhere" / "x.csv")
 
 
-def test_osm_tables_needs_geopandas_only_when_present():
-    gpd = pytest.importorskip("geopandas")
-    from shapely.geometry import LineString, Point
-    g = gpd.GeoDataFrame({"element": ["node", "way", "way"], "id": [1, 2, 3],
-                          "highway": ["crossing", "service", "residential"], "service": [None, "driveway", None]},
-                         geometry=[Point(0, 0), LineString([(0, 0), (1, 1)]), LineString([(0, 0), (1, 0)])])
-    g = g.set_index(["element", "id"])
-    cr, sv = rp.osm_tables(g)
-    assert cr.osmid.tolist() == [1] and sv.osmid.tolist() == [2] and sv.service.tolist() == ["driveway"]
+def test_overpass_tiles_cover_every_label():
+    lat = np.array([47.60, 47.61, 47.95])
+    lng = np.array([-122.33, -122.32, -122.05])
+    tiles = rp.label_tiles(lat, lng)
+    assert len(tiles) == 2
+    for la, ln in zip(lat, lng):
+        assert any(s <= la <= n and w <= ln <= e for s, w, n, e in (rp.tile_bbox(i, j) for i, j in tiles))
+
+
+def test_overpass_post_falls_back_to_the_next_mirror():
+    class R:
+        def __init__(self, code, body):
+            self.status_code, self._body, self.text = code, body, json.dumps(body)
+
+        def json(self):
+            return self._body
+
+    class S:
+        def __init__(self):
+            self.calls = []
+
+        def post(self, url, **kw):
+            self.calls.append(url)
+            return R(502, {}) if "bad" in url else R(200, {"elements": [{"type": "node", "id": 1}]})
+
+    s = S()
+    el, url = rp.overpass_post("q", ["https://bad/api", "https://good/api/interpreter"], retries=2, session=s,
+                               base_sleep=0)
+    assert url == "https://good/api/interpreter" and el == [{"type": "node", "id": 1}]
+    assert s.calls == ["https://bad/api/interpreter"] * 2 + ["https://good/api/interpreter"]
+    with pytest.raises(RuntimeError, match="HTTP 502"):
+        rp.overpass_post("q", ["https://bad/api"], retries=1, session=S(), base_sleep=0)
