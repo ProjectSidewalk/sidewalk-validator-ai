@@ -1,0 +1,132 @@
+{
+ "date": "2026-10-21",
+ "git_commit": "b3c99d59e70b5069a8e974805f72eb9b5fc619df",
+ "git_dirty": false,
+ "command": "python analysis/sidewalk_seg.py report --features ~/Data/sidewalk-validator-ai-seg-2026-10/features.csv --cls ~/Data/sidewalk-validator-ai-seg-2026-10/cls.npz --assessments ~/Data/sidewalk-validator-ai-prod-2026-10-17/ai_assessments_rounded4.csv --cities-json ~/Data/sidewalk-validator-ai-prod-2026-10-17/cities.json --run-dir ~/Data/sidewalk-validator-ai-seg-2026-10/klone --out-dir docs/segmentation-prior-2026-10 --private-dir ~/Data/sidewalk-validator-ai-seg-2026-10/private --extra-provenance ~/Data/sidewalk-validator-ai-seg-2026-10/klone_provenance.json",
+ "inputs": {
+  "features_csv": {
+   "sha256": "0e8988e9323a1e81dfa64ef75ccb81fd3d998dc8db1fdcb7638258e7345f3e54",
+   "rows": 800
+  },
+  "cls_npz": {
+   "sha256": "77c431a258345beffcea7c338ac6fefc46bcf0175f2d229aa10973f487587a7b",
+   "rows": null
+  },
+  "assessments": {
+   "sha256": "40a9a1f52f6d182b0075c4737c13614b5dfafc568b7dbd53ee1f0122afaa7c17",
+   "rows": 1005940
+  },
+  "cities_json": {
+   "sha256": "c11f21dc3853d58cc0f5264bcf969668c90cdf0b49a6f010ace0029805660df6",
+   "rows": null
+  },
+  "views_csv": {
+   "sha256": "087eb07317d6ac71ca9d2a2ccebeca4382cd6da674f4451fdbf108dbfef6ebf4",
+   "rows": 800
+  },
+  "oof_predictions_csv": {
+   "sha256": "fd389430463f33343617dea5206e5625707b5ef4d8e2f11b913434c32d617247",
+   "rows": 800
+  }
+ },
+ "n_labels_ok": 800,
+ "outputs": {
+  "centre_class.csv": "5c5d20d3b9156dd1a4c4da19deae9d50e1e777b4c6abded9be4ea89e16f029f0",
+  "feature_auc.csv": "90fd9ce181de6eb8b3f6802332f90d3167c18f6c7e88c2b80330ceb7f53de590",
+  "lift.csv": "807bd7fcd2bf918acab1ff7c0fea6221b1f832056941cd05d1c4e3bbcb5130dd",
+  "lift_by_city.csv": "1620c5fb8362b8aa60ed10b87e7b76b1de6333490241273306fb3369d46ab356",
+  "production_on_sample.csv": "3ecc316f495be651bcca9f448a69605df18c81dd595845ace3e37ff87e6254dc",
+  "report.md": "b237bfd56ff5206a8b7f23c8877f5a372b526c8267c098d5faaa222dfe1d8f6a",
+  "sanity.csv": "df0c40c3ad5ae4892467109421605d4df6e725d823518b5e65473ebb12628c9e",
+  "strata.csv": "0755b342f272476c8f027dc474da8d05462e98115167f96bac5e82e825ddb427"
+ },
+ "segmenter_run": {
+  "date": "2026-10-21",
+  "seg_model": "facebook/mask2former-swin-large-mapillary-vistas-semantic",
+  "seg_revision": "4772b6bf101d91f2534c106dc524d906aeb3c68a",
+  "seg_input_size": 1024,
+  "mask_sizes": [
+   1024,
+   512
+  ],
+  "sidewalk_classes": [
+   "Sidewalk",
+   "Curb Cut",
+   "Pedestrian Area"
+  ],
+  "road_classes": [
+   "Road",
+   "Service Lane",
+   "Bike Lane",
+   "Parking",
+   "Crosswalk - Plain",
+   "Lane Marking - Crosswalk",
+   "Lane Marking - General"
+  ],
+  "curb_classes": [
+   "Curb"
+  ],
+  "n_labels": 800,
+  "n_ok": 800,
+  "status_counts": {
+   "ok": 800
+  },
+  "pano_store_counts": {
+   "stage": 800
+  },
+  "seconds": {
+   "read": 1027.8,
+   "render_and_crop_check": 724.6,
+   "segment": 243.5
+  },
+  "seg_views_per_s": 3.285,
+  "device": "NVIDIA L40",
+  "versions": {
+   "python": "3.10.18",
+   "torch": "2.7.1+cu126",
+   "transformers": "4.55.0",
+   "opencv": "4.12.0",
+   "sidewalk_panorama_tools": "1.0.0",
+   "panorama_tools_source": "https://github.com/ProjectSidewalk/sidewalk-panorama-tools@7ce25ffbddae23d85f9976ec0a925707a0d64a89"
+  },
+  "slurm_job_id": "42113381"
+ },
+ "cls_models": [
+  "Obstacle=projectsidewalk/sidewalk-validator-ai-obstacle@8f0fe8fc48748fac35098e74c1848d015126deef",
+  "SurfaceProblem=projectsidewalk/sidewalk-validator-ai-surfaceproblem@0e1439daa5667c8a81f63e75f835bd51221df4c2"
+ ],
+ "settings": {
+  "n_boot": 2000,
+  "pca": 64,
+  "min_city_n": 30,
+  "folds": 5,
+  "fold_seed": 20261021,
+  "f_px": 1024.0,
+  "disc_radius_px": 15,
+  "near_m": 1.0,
+  "bottom_frac": 0.1
+ },
+ "packages": {
+  "python": "3.12.14",
+  "numpy": "2.5.4",
+  "pandas": "3.0.6",
+  "scikit-learn": "1.9.1"
+ },
+ "hardware": "arm64 Darwin 15.5",
+ "klone_jobs": {
+  "stage": {
+   "job_id": "42112597",
+   "result": "rsync exit 0, 768 of 768 panoramas, 7.4G, one connection"
+  },
+  "render_segment": {
+   "job_id": "42113381",
+   "elapsed": "00:51:49",
+   "node_gpu": "NVIDIA L40"
+  },
+  "coords": {
+   "job_id": "42113822",
+   "elapsed": "00:03:25"
+  }
+ },
+ "cls_hardware": "Apple M1 Max, 32 GB, macOS 15.5, MPS, torch 2.14.1, transformers 4.55.0"
+}

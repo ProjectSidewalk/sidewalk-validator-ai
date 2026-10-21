@@ -1,0 +1,17 @@
+label_type,centre_class,share,class
+Obstacle,15,0.1575,Sidewalk
+Obstacle,30,0.1325,Vegetation
+Obstacle,51,0.1175,Trash Can
+Obstacle,45,0.1025,Pole
+Obstacle,55,0.1,Car
+Obstacle,29,0.0525,Terrain
+Obstacle,17,0.0425,Building
+Obstacle,13,0.0375,Road
+SurfaceProblem,15,0.515,Sidewalk
+SurfaceProblem,13,0.1575,Road
+SurfaceProblem,29,0.08,Terrain
+SurfaceProblem,17,0.0525,Building
+SurfaceProblem,11,0.035,Pedestrian Area
+SurfaceProblem,30,0.0275,Vegetation
+SurfaceProblem,36,0.0225,Catch Basin
+SurfaceProblem,2,0.0175,Curb

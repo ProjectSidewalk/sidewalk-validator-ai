@@ -1,0 +1,4 @@
+label_type,n_views,any_sidewalk,sidewalk_frac_view_median,views_sidewalk_above_horizon_gt_5pct,sidewalk_px_above_horizon_share,point_on_sidewalk,on_road,near_sidewalk_1m
+all,800,0.98125,0.039232730865478446,0.005,0.0014820757708597539,0.365,0.1125,0.70375
+Obstacle,400,0.975,0.038183212280273396,0.0025,0.0003302754121573234,0.1725,0.0475,0.6575
+SurfaceProblem,400,0.9875,0.0417566299438476,0.0075,0.002501233000180613,0.5575,0.1775,0.75
