@@ -40,6 +40,7 @@ def test_street_features_distances_and_way_type():
     assert out.d_junction3_m.round(0).tolist() == [100.0, 22.0]
     assert out.own_way_type.tolist() == ["residential", "service"]
     assert out.own_way_is_service.tolist() == [0.0, 1.0]
+    assert out.d_deadend_m.notna().all() and (out.d_deadend_m >= 0).all()
 
 
 def test_nearest_distance_synthetic_points():
@@ -144,11 +145,13 @@ def test_packet_stratified_and_blinded():
     assert key.distance_bucket.value_counts().tolist() == [10, 10, 10, 10]
     assert key.pool.value_counts().tolist() == [20, 20]  # AI Disagree and overturned Agree sampled as halves
     assert set(key.reason) <= {"ai_disagree", "agree_overturned_crowd", "agree_overturned_expert"}
-    assert packet.ps_label_page.iloc[0].startswith(urls[packet.label.iloc[0].split(":")[0]] + "/label/")
+    assert not {"label", "label_uid", "ps_label_page", "city"} & set(packet.columns)  # no city, no share page
+    first = key.set_index("item").loc[1]
+    assert first.ps_label_page.startswith(urls[first.label_uid.split(":")[0]] + "/label/")
     again, _ = rp.build_packet(df, urls, seed=123, n_total=40)
     assert again.equals(packet)
-    other, _ = rp.build_packet(df, urls, seed=124, n_total=40)
-    assert not other.label.tolist() == packet.label.tolist()
+    _, other_key = rp.build_packet(df, urls, seed=124, n_total=40)
+    assert not other_key.label_uid.tolist() == key.label_uid.tolist()
 
 
 def test_loco_predict_never_sees_the_held_out_city():
@@ -210,3 +213,49 @@ def test_disagree_context_table_separates_context_within_confidence():
     assert (per_bin[per_bin.context == "far_both"].confirm_rate == 1.0).all()
     assert (per_bin[per_bin.context == "near_both"].confirm_rate == 0.0).all()
     assert t[t.oof_accuracy_bin == "all"].n.sum() == len(d)
+
+
+def _cast(n=600, seed=0):
+    """Synthetic cast CurbRamp Disagrees in three cities where near-both labels are confirmed less often."""
+    rng = np.random.default_rng(seed)
+    d = pd.DataFrame({"label_type": "CurbRamp", "ai_vote": "Disagree", "ai_result": "Disagree",
+                      "city": rng.choice(["a-wa", "b-wa", "c-wa"], n), "oof_accuracy": rng.uniform(0.2, 0.7, n),
+                      "d_intersection_m": rng.choice([5.0, 50.0], n), "d_crossing_m": rng.choice([5.0, 50.0], n),
+                      "h_n": 3, "d_deadend_m": 100.0, "n_driveways_50m": 0})
+    near = (d.d_intersection_m < 25) & (d.d_crossing_m < 25)
+    p = np.where(near, 0.2, 0.7)
+    d["h_maj"] = np.where(rng.random(n) < p, "Disagree", "Agree")
+    return d
+
+
+def test_logit_fit_matches_sklearn_unpenalised():
+    from sklearn.linear_model import LogisticRegression
+    rng = np.random.default_rng(1)
+    X = rng.normal(size=(2000, 2))
+    y = (rng.random(2000) < 1 / (1 + np.exp(-(X @ [1.0, -0.5])))).astype(float)
+    ours = rp.logit_fit(np.column_stack([np.ones(2000), X]), y, ["c", "a", "b"])
+    sk = LogisticRegression(C=1e9, max_iter=5000).fit(X, y)
+    assert np.allclose(ours.coef[["a", "b"]].values, sk.coef_[0], atol=1e-3)
+
+
+def test_city_fe_recovers_negative_near_both_effect():
+    v = rp.cast_disagrees(_cast(3000))
+    fe = rp.city_fe_models(v[v.validated], thresholds=(25,)).set_index(["spec", "term"])
+    assert fe.loc[("context", "near_both"), "coef"] < -1.0 and fe.loc[("context", "near_both"), "p"] < 1e-6
+
+
+def test_cast_disagrees_keeps_only_cast_votes():
+    d = _cast(50)
+    d.loc[:9, "ai_vote"] = "Unsure"
+    assert len(rp.cast_disagrees(d)) == 40
+
+
+def test_routing_report_runs_and_names_only_public_cities():
+    d = _cast(1200)
+    d.loc[d.city == "c-wa", "city"] = "secret-city"
+    cities = {"a-wa": {"visibility": "public"}, "b-wa": {"visibility": "public"},
+              "secret-city": {"visibility": "private"}}
+    md, tables = rp.routing_report(d, cities, n_boot=20, min_city_n=10)
+    assert "secret-city" not in md
+    assert set(tables["routing_by_city"].city) == {"a-wa", "b-wa"}
+    assert {"quartile_context_minvotes1", "quartile_context_minvotes3", "city_fe", "coarse_lift"} <= set(tables)

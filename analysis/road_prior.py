@@ -493,11 +493,14 @@ def load_labels(path, city):
 
 
 def street_features(labels, streets):
-    """Add ``d_intersection_m``, ``d_junction3_m``, ``own_way_type``, ``own_way_is_service`` to one city's labels.
+    """Add ``d_intersection_m``, ``d_junction3_m``, ``d_deadend_m``, ``own_way_type``, ``own_way_is_service`` to one
+    city's labels.
 
     Distances are straight-line from the label's lat/lng to the nearest street-edge endpoint of degree >= 2 / >= 3
-    (the streets API has only edge endpoints, not geometry, so this is not along-street distance). The label's own
-    ``way_type`` comes from its ``street_edge_id``.
+    (the streets API has only edge endpoints, not geometry, so this is not along-street distance). ``d_deadend_m``
+    is the distance to the nearest degree-1 endpoint: a dead end, or the edge of the audited area, where a real
+    corner ramp can look far from any intersection node. The label's own ``way_type`` comes from its
+    ``street_edge_id``.
 
     >>> s = pd.DataFrame({"street_edge_id": [1, 2, 3], "way_type": ["residential", "service", "residential"],
     ...                   "start_point": ["0,0", "0,0", "0,0"], "end_point": ["0,0.001", "0.001,0", "0,-0.001"]})
@@ -510,8 +513,9 @@ def street_features(labels, streets):
     nodes = street_nodes(streets)
     lat0, lng0 = float(out.latitude.mean()), float(out.longitude.mean())
     pxy = np.column_stack(to_xy(out.latitude.values, out.longitude.values, lat0, lng0))
-    for col, deg in (("d_intersection_m", 2), ("d_junction3_m", 3)):
-        n = nodes[nodes.degree >= deg]
+    for col, keep in (("d_intersection_m", nodes.degree >= 2), ("d_junction3_m", nodes.degree >= 3),
+                      ("d_deadend_m", nodes.degree == 1)):
+        n = nodes[keep]
         out[col] = nearest_distance(pxy, np.column_stack(to_xy(n.lat.values, n.lng.values, lat0, lng0)))
     wt = streets.drop_duplicates("street_edge_id").set_index("street_edge_id")["way_type"]
     out["own_way_type"] = out["street_edge_id"].map(wt)
@@ -1080,7 +1084,8 @@ def production_pools(df, min_votes=3, experts=()):
 
 
 def far_shares(df, pools, far_int=FAR_INTERSECTION_M, far_cross=FAR_CROSSING_M):
-    """Per pool: n, and the share of labels farther than each threshold from any intersection / crossing.
+    """Per pool: n, and the share of labels at least each threshold from any intersection / crossing (``>=``, the
+    same convention as ``road_context``).
 
     Intersection shares are over rows with ``d_intersection_m``; crossing shares over rows with ``d_crossing_m``
     (``n_osm``). ``far_both`` = beyond ``far_cross`` from both.
@@ -1097,12 +1102,12 @@ def far_shares(df, pools, far_int=FAR_INTERSECTION_M, far_cross=FAR_CROSSING_M):
         o = g.dropna(subset=["d_crossing_m"]) if "d_crossing_m" in g else g.iloc[0:0]
         r = {"pool": name, "n": len(g), "n_streets": len(s)}
         for t in far_int:
-            r[f"far_int_{t}m"] = float((s.d_intersection_m > t).mean()) if len(s) else np.nan
+            r[f"far_int_{t}m"] = float((s.d_intersection_m >= t).mean()) if len(s) else np.nan
         r["n_osm"] = len(o)
-        r[f"far_cross_{far_cross}m"] = float((o.d_crossing_m > far_cross).mean()) if len(o) else np.nan
+        r[f"far_cross_{far_cross}m"] = float((o.d_crossing_m >= far_cross).mean()) if len(o) else np.nan
         both = o.dropna(subset=["d_intersection_m"])
         r["n_both"] = len(both)
-        r[f"far_both_{far_cross}m"] = (float(((both.d_intersection_m > far_cross) & (both.d_crossing_m > far_cross))
+        r[f"far_both_{far_cross}m"] = (float(((both.d_intersection_m >= far_cross) & (both.d_crossing_m >= far_cross))
                                              .mean()) if len(both) else np.nan)
         rows.append(r)
     return pd.DataFrame(rows)
@@ -1171,12 +1176,272 @@ def disagree_context_table(df, min_votes=3, n_conf_bins=4, cast_only=False):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# Routing: cast CurbRamp Disagree votes by road context
+# ---------------------------------------------------------------------------------------------------------------------
+
+ROUTING_THRESHOLDS_M = (15, 25, 40)  # 25 m is the headline; 15 and 40 m are the sensitivity check
+ROUTING_MIN_VOTES = (1, 2, 3)  # 3 is the headline; 1 and 2 test the selection of heavily validated labels
+DEADEND_NEAR_M = 15
+
+
+def logit_fit(X, y, names, max_iter=100, tol=1e-10):
+    """Unpenalised logistic regression by Newton-Raphson, with Wald standard errors and two-sided p-values.
+
+    ``X`` must already hold an intercept column if one is wanted. Used for the city-fixed-effects models, where
+    the coefficient and its p-value are the result (scikit-learn's ``LogisticRegression`` penalises and gives no
+    standard errors).
+
+    >>> rng = np.random.default_rng(0)
+    >>> x = rng.normal(size=4000)
+    >>> y = (rng.random(4000) < 1 / (1 + np.exp(-(0.5 + 1.5 * x)))).astype(float)
+    >>> t = logit_fit(np.column_stack([np.ones(4000), x]), y, ["const", "x"])
+    >>> bool(abs(t.loc["x", "coef"] - 1.5) < 0.15), bool(t.loc["x", "p"] < 1e-6)
+    (True, True)
+    """
+    from scipy.stats import norm
+    X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=float)
+    b = np.zeros(X.shape[1])
+    for _ in range(max_iter):
+        mu = 1 / (1 + np.exp(-(X @ b)))
+        w = mu * (1 - mu)
+        H = X.T @ (X * w[:, None])
+        step = np.linalg.solve(H, X.T @ (y - mu))
+        b += step
+        if np.max(np.abs(step)) < tol:
+            break
+    mu = 1 / (1 + np.exp(-(X @ b)))
+    cov = np.linalg.inv(X.T @ (X * (mu * (1 - mu))[:, None]))
+    se = np.sqrt(np.diag(cov))
+    z = b / se
+    return pd.DataFrame({"coef": b, "se": se, "z": z, "p": 2 * norm.sf(np.abs(z))}, index=names)
+
+
+def cast_disagrees(df, min_votes=3):
+    """Public CurbRamp labels the AI cast a Disagree vote on, with ``conf_logit`` (logit of the production
+    P(Agree)), ``y`` = 1 when the human majority confirms the Disagree, and ``validated`` (>= ``min_votes`` human
+    votes and a strict majority). Rows without both distances are dropped."""
+    c = df[(df.label_type == "CurbRamp") & (df.ai_vote == "Disagree") & df.oof_accuracy.notna()]
+    c = c.dropna(subset=["d_intersection_m", "d_crossing_m"]).copy()
+    pa = np.clip(p_agree(c.ai_result, c.oof_accuracy), 1e-4, 1 - 1e-4)
+    c["conf_logit"] = np.log(pa / (1 - pa))
+    c["validated"] = (c.h_n >= min_votes) & c.h_maj.isin(["Agree", "Disagree"])
+    c["y"] = (c.h_maj == "Disagree").astype(int)
+    return c
+
+
+def context_dummies(d, far_m):
+    """``near_both`` and ``far_one`` indicators (reference: far from both), plus the two single axes
+    ``near_int`` / ``near_cross``, at threshold ``far_m``.
+
+    >>> context_dummies(pd.DataFrame({"d_intersection_m": [5.0, 30.0, 30.0], "d_crossing_m": [5.0, 5.0, 30.0]}),
+    ...                 25).values.tolist()
+    [[1.0, 0.0, 1.0, 1.0], [0.0, 1.0, 0.0, 1.0], [0.0, 0.0, 0.0, 0.0]]
+    """
+    ctx = road_context(d, far_m)
+    return pd.DataFrame({"near_both": (ctx == "near_both").astype(float), "far_one": (ctx == "far_one").astype(float),
+                         "near_int": (d.d_intersection_m < far_m).astype(float),
+                         "near_cross": (d.d_crossing_m < far_m).astype(float)}, index=d.index)
+
+
+def city_fe_models(v, thresholds=ROUTING_THRESHOLDS_M):
+    """City-fixed-effects logistic models of ``y`` on ``conf_logit`` plus road context, per threshold.
+
+    Two specifications: context (``near_both``, ``far_one``; reference far from both) and axes (``near_int``,
+    ``near_cross``). The city dummies absorb each city's base rate and OSM coverage, so the coefficients compare
+    labels within a city at equal confidence.
+    """
+    rows = []
+    cities = pd.get_dummies(v.city, drop_first=True, dtype=float)
+    for t in thresholds:
+        dm = context_dummies(v, t)
+        for spec, cols in (("context", ["near_both", "far_one"]), ("axes", ["near_int", "near_cross"])):
+            X = pd.concat([pd.Series(1.0, index=v.index, name="const"), v.conf_logit, dm[cols], cities], axis=1)
+            fit = logit_fit(X.values, v.y.values, list(X.columns))
+            for term in cols:
+                r = fit.loc[term]
+                rows.append({"threshold_m": t, "spec": spec, "term": term, "coef": r.coef, "se": r.se, "p": r.p,
+                             "share": float(dm[term].mean()), "n": len(v), "cities": v.city.nunique()})
+    return pd.DataFrame(rows)
+
+
+def coarse_context_lift(v, far_m=FAR_CROSSING_M, min_city_n=100, n_boot=500):
+    """Leave-one-city-out lift of ``conf_logit`` + the two context dummies over ``conf_logit`` alone.
+
+    This is the coarse counterpart of ``lift``'s binned model: two indicators instead of 17 bin columns.
+    """
+    d = pd.concat([v, context_dummies(v, far_m)[["near_both", "far_one"]]], axis=1)
+    return lift(d, ["conf_logit"], ["near_both", "far_one"], min_city_n, n_boot)
+
+
+def quartile_context(v):
+    """Confirm rate and n by ``oof_accuracy`` quartile and road context (25 m), one row per quartile."""
+    q = pd.qcut(v.oof_accuracy, 4, duplicates="drop").astype(str)
+    ctx = road_context(v)
+    g = v.groupby([q, ctx]).y.agg(["mean", "size"]).unstack()
+    out = pd.DataFrame(index=g.index)
+    for c in ("far_both", "far_one", "near_both"):
+        if ("mean", c) in g:
+            out[c] = [f"{m:.2f} ({int(n)})" if n == n else "" for m, n in zip(g[("mean", c)], g[("size", c)])]
+    return out.reset_index().rename(columns={"oof_accuracy": "oof_accuracy_quartile"})
+
+
+def city_routing_table(df, cast, min_n=100, far_m=FAR_CROSSING_M):
+    """Per public city: cast Disagrees, their road-context shares, OSM crossing coverage, the validated share and
+    the confirm rates near both / far from both. Coverage = share of the city's CurbRamp labels (any vote count)
+    within ``far_m`` of a mapped OSM crossing."""
+    cr = df[df.label_type == "CurbRamp"].dropna(subset=["d_crossing_m"])
+    cover = cr.groupby("city").d_crossing_m.apply(lambda x: float((x < far_m).mean()))
+    rows = []
+    total = len(cast)
+    for city, g in cast.groupby("city"):
+        ctx = road_context(g, far_m)
+        val = g[g.validated]
+        vctx = road_context(val, far_m)
+        r = {"city": city, "cast_disagrees": len(g), "share_of_all_cast": len(g) / total,
+             "near_both": float((ctx == "near_both").mean()), "far_one": float((ctx == "far_one").mean()),
+             "far_both": float((ctx == "far_both").mean()), "crossing_coverage": cover.get(city, np.nan),
+             "validated_share": float(g.validated.mean())}
+        for c in ("near_both", "far_both"):
+            sub = val[vctx == c]
+            r[f"confirm_{c}"] = float(sub.y.mean()) if len(sub) else np.nan
+            r[f"n_validated_{c}"] = len(sub)
+        rows.append(r)
+    t = pd.DataFrame(rows).sort_values("cast_disagrees", ascending=False)
+    return t[t.cast_disagrees >= min_n]
+
+
+def osm_coverage_lines(df):
+    """Markdown lines: how much of the CurbRamp data has a mapped driveway within 50 m / a crossing within 25 m."""
+    cr = df[(df.label_type == "CurbRamp") & (df.h_n >= 1)].dropna(subset=["n_driveways_50m"])
+    cr3 = analysis_set(df, "CurbRamp", 3).dropna(subset=["n_driveways_50m"])
+    return ["## OSM coverage", "",
+            f"CurbRamp labels with any mapped `service=driveway` way within 50 m: {(cr3.n_driveways_50m > 0).mean():.1%}"
+            f" of the >= 3-vote analysis set (n = {len(cr3):,}), {(cr.n_driveways_50m > 0).mean():.1%} of all "
+            f"CurbRamp labels with a human vote (n = {len(cr):,}). Within 25 m of a mapped crossing: "
+            f"{(cr3.d_crossing_m < FAR_CROSSING_M).mean():.1%} and {(cr.d_crossing_m < FAR_CROSSING_M).mean():.1%}.",
+            ""]
+
+
+def routing_report(df, cities, n_boot=500, min_city_n=100):
+    """Every number behind the routing conclusion of ``docs/road-prior-2026-10.md``, as ``(markdown, tables)``."""
+    df = public_only(df, cities)
+    tables, md = {}, ["# Road prior: routing (cast CurbRamp Disagree votes, public cities)", ""]
+    if "n_driveways_50m" in df:
+        md += osm_coverage_lines(df)
+    cast = cast_disagrees(df, 3)
+    md += [f"Cast CurbRamp Disagree votes with both distances: {len(cast):,} in {cast.city.nunique()} cities. "
+           f"Validated (>= 3 human votes, strict majority): {int(cast.validated.sum()):,} "
+           f"({cast.validated.mean():.1%}). `y` = the human majority confirms the Disagree.", ""]
+    t = city_routing_table(df, cast, min_n=min_city_n)
+    tables["routing_by_city"] = t
+    md += [f"## Per city (>= {min_city_n} cast Disagrees; context at {FAR_CROSSING_M} m)", "",
+           "`crossing_coverage` is the share of the city's CurbRamp labels within 25 m of a mapped OSM crossing. "
+           "Where it is low, \"far from a crossing\" mostly means the crossing is not mapped.", "", _md(t), ""]
+    ctx_all = road_context(cast)
+    md += ["Share of all cast Disagrees by context: " + ", ".join(
+        f"{k} {v:.1%}" for k, v in ctx_all.value_counts(normalize=True).sort_index().items()), ""]
+    for mv in ROUTING_MIN_VOTES:
+        v = cast_disagrees(df, mv)
+        v = v[v.validated]
+        q = quartile_context(v)
+        tables[f"quartile_context_minvotes{mv}"] = q
+        md += [f"## Confirm rate by confidence quartile and context, >= {mv} human votes (n = {len(v):,})", "",
+               "Cells are confirm rate (n). Quartiles are of `oof_accuracy` within this set.", "", _md(q), ""]
+    v3 = cast[cast.validated]
+    fe = pd.concat([city_fe_models(v3).assign(min_votes=3), city_fe_models(cast_disagrees(df, 1)
+                    .query("validated")).assign(min_votes=1)])
+    tables["city_fe"] = fe
+    md += ["## City-fixed-effects logistic, y on conf_logit + context + city dummies", "",
+           "Coefficients are log-odds of a confirmed Disagree. `context`: near_both and far_one against far from "
+           "both. `axes`: near an intersection node, near an OSM crossing.", "",
+           _md(fe[["min_votes", "threshold_m", "spec", "term", "coef", "se", "p", "share", "n", "cities"]], 4), ""]
+    pooled, per_city, _ = coarse_context_lift(v3, min_city_n=min_city_n, n_boot=n_boot)
+    tables["coarse_lift_by_city"] = per_city
+    tables["coarse_lift"] = pd.DataFrame([pooled])
+    md += ["## Coarse context model, leave-one-city-out (validated, >= 3 votes)", "",
+           "Baseline = logistic on conf_logit; full = baseline + near_both + far_one. Same LOCO and paired "
+           "bootstrap as `evaluate`.", "",
+           _md(pd.DataFrame([pooled])[["n", "cities", "auc_base", "auc_full", "d_auc", "d_auc_lo", "d_auc_hi",
+                                        "log_loss_base", "log_loss_full", "d_log_loss", "d_log_loss_lo",
+                                        "d_log_loss_hi"]], 4), "",
+           f"Per held-out city (n >= {min_city_n}):", "", _md(per_city.sort_values("n", ascending=False)), ""]
+    if "d_deadend_m" in v3 and v3.d_deadend_m.notna().any():
+        fb = v3[road_context(v3) == "far_both"]
+        far_int = df[(df.label_type == "CurbRamp") & (df.d_intersection_m >= FAR_CROSSING_M)].dropna(
+            subset=["d_deadend_m"])
+        dd = far_int.groupby("city").d_deadend_m.apply(lambda x: float((x < DEADEND_NEAR_M).mean()))
+        md += [f"## Audit-area edges: dead ends within {DEADEND_NEAR_M} m", "",
+               f"Validated cast Disagrees far from both with a degree-1 node within {DEADEND_NEAR_M} m: "
+               f"{float((fb.d_deadend_m < DEADEND_NEAR_M).mean()):.1%} of {len(fb):,}.", "",
+               f"Share of CurbRamp labels >= {FAR_CROSSING_M} m from an intersection node that have a dead end "
+               f"within {DEADEND_NEAR_M} m, largest cities:", "",
+               _md(dd.reindex(far_int.city.value_counts().index[:8]).rename("share").reset_index()), ""]
+    return "\n".join(md), tables
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Provenance: pin a run's inputs and outputs so a later rerun can be checked against it
+# ---------------------------------------------------------------------------------------------------------------------
+
+VERIFIED_EXTS = (".csv", ".md")  # figures are left out: PNG bytes carry matplotlib metadata
+
+
+def collect_provenance(run_dirs):
+    """``{run_dir_name: {"stage", "git_commit", "packages", "inputs": {name: sha256}, "outputs": {file: sha256}}}``.
+
+    Paths are reduced to names, so the record holds no home-directory path or label-level data, only digests.
+    Label-level outputs (the features CSV) appear by digest only.
+    """
+    prov = {}
+    for d in run_dirs:
+        with open(os.path.join(d, "run_manifest.json")) as f:
+            m = json.load(f)
+        outs = {}
+        for name in sorted(os.listdir(d)):
+            full = os.path.join(d, name)
+            if os.path.isfile(full) and name.endswith(VERIFIED_EXTS):
+                outs[name] = sha256_file(full)
+        for k in ("key_sha256", "packet_sha256"):
+            if k in m:
+                outs[k] = m[k]
+        if "output" in m:
+            outs[os.path.basename(m["output"]["path"])] = m["output"]["sha256"]
+        prov[os.path.basename(os.path.normpath(d))] = {
+            "stage": m["stage"], "git_commit": m["git_commit"], "git_dirty": m["git_dirty"],
+            "python": m["python"], "packages": m["packages"],
+            "inputs": {k: v["sha256"] for k, v in m["inputs"].items()}, "outputs": outs}
+    return prov
+
+
+def diff_provenance(expected, actual):
+    """Human-readable mismatches between two ``collect_provenance`` records (empty list = identical).
+
+    >>> diff_provenance({"r": {"inputs": {"a": "1"}, "outputs": {"x.csv": "2"}}},
+    ...                 {"r": {"inputs": {"a": "1"}, "outputs": {"x.csv": "3"}}})
+    ['r: output x.csv differs']
+    """
+    out = []
+    for run, e in expected.items():
+        a = actual.get(run)
+        if a is None:
+            out.append(f"{run}: not rerun")
+            continue
+        for kind in ("inputs", "outputs"):
+            for k, v in e.get(kind, {}).items():
+                if a.get(kind, {}).get(k) != v:
+                    out.append(f"{run}: {kind[:-1]} {k} {'missing' if k not in a.get(kind, {}) else 'differs'}")
+    return out
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # Hand-coding packet
 # ---------------------------------------------------------------------------------------------------------------------
 
 PACKET_BUCKETS = [0, 15, 25, 40, np.inf]
-PACKET_COLUMNS = ["item", "label", "ps_label_page", "gsv_link", "code", "notes"]
-KEY_COLUMNS = ["item", "label_uid", "pool", "reason", "distance_bucket", "d_intersection_m", "d_crossing_m", "ai_result",
+# The rater's sheet carries only the item number and the Street View link. The Project Sidewalk share page shows
+# earlier validations to admins and offers a vote, and the label id carries the city, so both live in the key.
+PACKET_COLUMNS = ["item", "gsv_link", "code", "notes"]
+KEY_COLUMNS = ["item", "label_uid", "ps_label_page", "pool", "reason", "distance_bucket", "d_intersection_m", "d_crossing_m", "ai_result",
                "oof_accuracy", "h_agree", "h_dis"]
 RUBRIC = ("driveway", "real_ramp", "other", "cant_tell")
 
@@ -1242,12 +1507,69 @@ def build_packet(df, urls, seed, n_total=200, min_votes=3, experts=()):
     cand["pool"] = np.where(cand.reason == "ai_disagree", "ai_disagree", "agree_overturned")
     s = stratified_sample(cand, n_total, seed, group_col="pool")
     s["item"] = np.arange(1, len(s) + 1)
-    s["label"] = s.label_uid
     s["ps_label_page"] = [f"{urls[c]}/label/{i}" for c, i in zip(s.city, s.label_id)]
     s["gsv_link"] = s.get("pano_url", pd.Series("", index=s.index)).fillna("")
     s["code"] = ""
     s["notes"] = ""
     return s[PACKET_COLUMNS], s[[c for c in KEY_COLUMNS if c in s.columns]]
+
+
+def sha256_dir(path, pattern_ext=(".csv", ".json", ".gz")):
+    """One digest over every data file under ``path`` (relative path + file sha256, sorted), and the file count.
+
+    Used to pin a cache directory (rawLabels, streets, OSM) in a run manifest without listing every file.
+    """
+    entries = []
+    for root, _, files in os.walk(path):
+        for f in files:
+            if f.endswith(pattern_ext):
+                full = os.path.join(root, f)
+                entries.append(f"{os.path.relpath(full, path)}  {sha256_file(full)}")
+    entries.sort()
+    return hashlib.sha256("\n".join(entries).encode()).hexdigest(), len(entries)
+
+
+def run_manifest(args, inputs):
+    """Provenance of one stage run: code commit, argv, library versions, and a digest of every input.
+
+    ``inputs`` maps a name to a file or directory path (``None`` entries are skipped). A rerun that reproduces the
+    digests and the commit must reproduce the outputs: every random step here has a fixed seed, except the packet,
+    whose seed is kept with its key.
+    """
+    import platform
+    import subprocess
+    import matplotlib
+    import scipy
+    import sklearn
+    here = os.path.dirname(os.path.abspath(__file__))
+    git = lambda *a: subprocess.run(["git", "-C", here, *a], capture_output=True, text=True).stdout.strip()
+    m = {"stage": args.cmd, "argv": sys.argv[1:], "run_at": datetime.datetime.now().isoformat(timespec="seconds"),
+         "git_commit": git("rev-parse", "HEAD"), "git_dirty": bool(git("status", "--porcelain", "--", here)),
+         "python": platform.python_version(),
+         "packages": {"numpy": np.__version__, "pandas": pd.__version__, "scipy": scipy.__version__,
+                      "scikit-learn": sklearn.__version__, "matplotlib": matplotlib.__version__},
+         "inputs": {}}
+    for name, path in inputs.items():
+        if not path:
+            continue
+        if os.path.isdir(path):
+            digest, n = sha256_dir(path)
+            m["inputs"][name] = {"path": path, "kind": "dir", "files": n, "sha256": digest}
+        else:
+            m["inputs"][name] = {"path": path, "kind": "file", "bytes": os.path.getsize(path),
+                                 "sha256": sha256_file(path)}
+    return m
+
+
+def write_run_manifest(out_dir, args, inputs, extra=None):
+    """Write ``run_manifest.json`` (see ``run_manifest``) into ``out_dir``."""
+    m = run_manifest(args, inputs)
+    if extra:
+        m.update(extra)
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "run_manifest.json"), "w") as f:
+        json.dump(m, f, indent=1)
+    return m
 
 
 def sha256_file(path):
@@ -1306,6 +1628,10 @@ def cmd_features(args):
         sys.exit(f"refusing to write label-level rows inside a git checkout: {args.out}")
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     df.to_csv(args.out, index=False)
+    write_run_manifest(os.path.dirname(os.path.abspath(args.out)), args,
+                       {"cities_json": args.cities_json, "rawlabels": args.rawlabels, "streets_dir": args.streets_dir,
+                        "osm_dir": args.osm_dir, "labels_oof": args.labels_oof, "ai_vs_humans": args.ai_vs_humans},
+                       extra={"output": {"path": args.out, "rows": len(df), "sha256": sha256_file(args.out)}})
     for cid, r in report.items():
         print(f"  {cid}: {r}")
     print(f"{len(df):,} labels -> {args.out}; by type: {df.label_type.value_counts().to_dict()}")
@@ -1319,6 +1645,7 @@ def cmd_evaluate(args):
     df = _read_features(args.features)
     print(evaluate(df, load_cities(args.cities_json), args.out_dir, args.fig_dir, args.min_votes, args.min_city_n,
                    args.n_boot))
+    write_run_manifest(args.out_dir, args, {"features": args.features, "cities_json": args.cities_json})
 
 
 def cmd_stratify(args):
@@ -1344,7 +1671,43 @@ def cmd_stratify(args):
                      + _md(c.round(3), 3) + "\n")
     with open(os.path.join(args.out_dir, "stratify.md"), "w") as f:
         f.write(text)
+    write_run_manifest(args.out_dir, args, {"features": args.features, "cities_json": args.cities_json})
     print(text)
+
+
+def cmd_routing(args):
+    md, tables = routing_report(_read_features(args.features), load_cities(args.cities_json), n_boot=args.n_boot)
+    os.makedirs(args.out_dir, exist_ok=True)
+    for name, t in tables.items():
+        t.to_csv(os.path.join(args.out_dir, f"{name}.csv"), index=False)
+    with open(os.path.join(args.out_dir, "routing.md"), "w") as f:
+        f.write(md)
+    write_run_manifest(args.out_dir, args, {"features": args.features, "cities_json": args.cities_json})
+    print(md)
+
+
+def cmd_provenance(args):
+    prov = collect_provenance(args.run_dir)
+    with open(args.out, "w") as f:
+        json.dump(prov, f, indent=1, sort_keys=True)
+        f.write("\n")
+    print(f"{len(prov)} runs -> {args.out}")
+
+
+def cmd_verify(args):
+    with open(args.provenance) as f:
+        expected = json.load(f)
+    actual = collect_provenance(args.run_dir)
+    problems = diff_provenance({k: v for k, v in expected.items() if k in actual or not args.partial}, actual)
+    for k, a in actual.items():
+        e = expected.get(k, {})
+        if e and (e.get("packages") != a["packages"] or e.get("python") != a["python"]):
+            print(f"note: {k} ran with python {a['python']} {a['packages']}; recorded {e.get('python')} "
+                  f"{e.get('packages')}. Small float differences can come from library versions.")
+    if problems:
+        print("MISMATCH:\n  " + "\n  ".join(problems))
+        sys.exit(1)
+    print(f"all {len(actual)} runs match {args.provenance}")
 
 
 def cmd_packet(args):
@@ -1363,6 +1726,10 @@ def cmd_packet(args):
     digest = sha256_file(kpath)
     with open(kpath + ".sha256", "w") as f:
         f.write(f"{digest}  packet_key.csv\n")
+    # the manifest goes with the key: it records the seed's location, never the seed
+    write_run_manifest(args.key_dir, args, {"features": args.features, "cities_json": args.cities_json},
+                       extra={"argv": [a if a != str(args.seed) else "<seed>" for a in sys.argv[1:]],
+                              "key_sha256": digest, "packet_sha256": sha256_file(ppath)})
     print(f"{len(packet)} items -> {ppath}\nkey -> {kpath}\nsha256 {digest}")
     print("by reason:", key.reason.value_counts().to_dict())
     print("by bucket:", key.distance_bucket.value_counts().sort_index().to_dict())
@@ -1421,6 +1788,24 @@ def main(argv=None):
     s.add_argument("--out-dir", required=True, help="stratify.md / stratify.csv")
     s.add_argument("--min-votes", type=int, default=3, help="human votes for the human-majority pools")
     s.set_defaults(func=cmd_stratify)
+
+    s = sub.add_parser("routing", help="cast CurbRamp Disagrees by road context: per city, quartiles, city-FE, LOCO")
+    s.add_argument("--features", required=True, help="features CSV")
+    s.add_argument("--cities-json", required=True, help=cj)
+    s.add_argument("--out-dir", required=True, help="routing.md, CSVs and run_manifest.json")
+    s.add_argument("--n-boot", type=int, default=500, help="bootstrap resamples for the LOCO CIs")
+    s.set_defaults(func=cmd_routing)
+
+    s = sub.add_parser("provenance", help="record input and output digests of finished runs (no paths, no rows)")
+    s.add_argument("--run-dir", action="append", required=True, help="a stage output dir with run_manifest.json")
+    s.add_argument("--out", required=True, help="e.g. docs/road-prior-2026-10/provenance.json")
+    s.set_defaults(func=cmd_provenance)
+
+    s = sub.add_parser("verify", help="check rerun outputs against a recorded provenance file")
+    s.add_argument("--provenance", required=True, help="the recorded provenance.json")
+    s.add_argument("--run-dir", action="append", required=True, help="a rerun's stage output dir")
+    s.add_argument("--partial", action="store_true", help="only check the runs given, not every recorded run")
+    s.set_defaults(func=cmd_verify)
 
     s = sub.add_parser("packet", help="blinded hand-coding packet of contested CurbRamp labels")
     s.add_argument("--features", required=True, help="features CSV")
