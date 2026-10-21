@@ -590,11 +590,12 @@ def roc_figure(pred, models, path):
     import matplotlib.pyplot as plt
     from sklearn.metrics import roc_curve
 
-    colors = {PRODUCTION_NAME: "#1f1f1f"}
-    palette = ["#2a78d6", "#d6862a", "#3fa66a", "#b44fb4"]
+    # Reference categorical order (blue, orange, aqua, yellow); production in primary ink, solid.
+    colors = {PRODUCTION_NAME: "#0b0b0b"}
+    palette = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]
     for i, m in enumerate([m for m in models if m != PRODUCTION_NAME]):
         colors[m] = palette[i % len(palette)]
-    fig, axes = plt.subplots(1, len(LABEL_TYPES), figsize=(15, 3.4), sharey=True)
+    fig, axes = plt.subplots(1, len(LABEL_TYPES), figsize=(15, 3.4), sharey=True, facecolor="#fcfcfb")
     for ax, t in zip(axes, LABEL_TYPES):
         for m in models:
             g = pred[(pred.label_type == t) & (pred.model == m)]
@@ -602,9 +603,12 @@ def roc_figure(pred, models, path):
                 continue
             fpr, tpr, _ = roc_curve(g.true == "incorrect", g.p_incorrect)
             auc = evaluate.slice_metrics(g)["auc"]
-            ax.plot(fpr, tpr, color=colors[m], lw=1.6 if m == PRODUCTION_NAME else 1.2,
-                    ls="-" if m == PRODUCTION_NAME else "--", label=f"{m} {auc:.2f}")
-        ax.plot([0, 1], [0, 1], color="#bbbbbb", lw=0.8)
+            ax.plot(fpr, tpr, color=colors[m], lw=2, ls="-" if m == PRODUCTION_NAME else "--",
+                    label=f"{m} (AUC {auc:.2f})")
+        ax.plot([0, 1], [0, 1], color="#c3c2b7", lw=0.8)
+        ax.set_facecolor("#fcfcfb")
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
         ax.set_title(t, fontsize=10)
         ax.set_xlabel("false positive rate", fontsize=8)
         ax.legend(fontsize=7, loc="lower right", frameon=False)
@@ -650,7 +654,8 @@ def run_report(args):
     w(hard, "hard.csv")
     city = per_city_table(main, cities, min_n=args.min_city_n)
     w(city, "per_city.csv")
-    lat = latency_table(scores[scores.model.isin(complete) | (scores.variant != "definition")])
+    on_subset = (scores.variant == "definition") & scores.model.isin(complete) & scores.label_uid.isin(subset)
+    lat = latency_table(scores[on_subset | (scores.variant != "definition")])
     sizes = {}
     for m in lat.model.unique():
         if m == PRODUCTION_NAME:
