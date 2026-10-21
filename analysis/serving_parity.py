@@ -450,9 +450,13 @@ def train_worker(args):
             view_cpu, tilt_cpu = dg.render_label_view(pano_rgb, x, y, pitch, roll, beta=TILT_BETA, device="cpu")
             rec["tilt_applied"] = bool(tilt_cpu)
             rec["render_numpy_vs_torch_cpu"] = compare_arrays(view_np, view_cpu)
+            view_mps = None
             if mps:
-                view_mps, _ = dg.render_label_view(pano_rgb, x, y, pitch, roll, beta=TILT_BETA, device="mps")
-                rec["render_torch_cpu_vs_mps"] = compare_arrays(view_cpu, view_mps)
+                try:  # torch 2.7's mps grid_sample has no padding_mode="border"; 2.14's has
+                    view_mps, _ = dg.render_label_view(pano_rgb, x, y, pitch, roll, beta=TILT_BETA, device="mps")
+                    rec["render_torch_cpu_vs_mps"] = compare_arrays(view_cpu, view_mps)
+                except RuntimeError as e:
+                    rec["render_mps_error"] = str(e)[:200]
             np.save(os.path.join(cdir, "view_rgb.npy"), view_cpu)
             np.save(os.path.join(cdir, "view_numpy.npy"), view_np)
 
@@ -473,7 +477,7 @@ def train_worker(args):
             # the mps-rendered view (device rounding), and a crop one pixel larger (the crop-half rounding rule).
             depth_m = float(depth[c, c])
             save_png(dg.depth_sized_crop(view_np, depth_m)[0], os.path.join(cdir, "crop_numpy_render.png"))
-            if mps:
+            if view_mps is not None:
                 save_png(dg.depth_sized_crop(view_mps, depth_m)[0], os.path.join(cdir, "crop_mps_render.png"))
             plus1, half1, _ = dg.depth_sized_crop(view_cpu, CROP_DEPTH_CONSTANT / (rec["crop_half_px"] + 1.5))
             assert half1 == rec["crop_half_px"] + 1, (half1, rec["crop_half_px"])
@@ -484,10 +488,13 @@ def train_worker(args):
             rec["probe_swapped_depth_centre"] = float(swapped[c, c])
             rec["probe_swapped_crop_half_px"] = crop_half_train(swapped[c, c])
             if mps:
-                dm = depth_mps.infer_image(np.ascontiguousarray(view_cpu[..., ::-1]))
-                rec["probe_mps_depth_centre"] = float(dm[c, c])
-                rec["probe_mps_crop_half_px"] = crop_half_train(dm[c, c])
-                rec["probe_mps_depth_map_max_abs"] = float(np.abs(dm - depth).max())
+                try:
+                    dm = depth_mps.infer_image(np.ascontiguousarray(view_cpu[..., ::-1]))
+                    rec["probe_mps_depth_centre"] = float(dm[c, c])
+                    rec["probe_mps_crop_half_px"] = crop_half_train(dm[c, c])
+                    rec["probe_mps_depth_map_max_abs"] = float(np.abs(dm - depth).max())
+                except RuntimeError as e:
+                    rec["depth_mps_error"] = str(e)[:200]
 
             # Stage 5: WebP q95 (what training sees) and a second generation.
             webp1 = webp_roundtrip(crop, os.path.join(cdir, "crop.webp"))
@@ -716,8 +723,18 @@ def compare(args):
     for path, oi in others:
         other_pano[path] = compare_arrays(t_pano, np.load(os.path.join(path, "pano_bgr.npy"), mmap_mode="r"), centre=0)
 
+    def probe_env(key):
+        """The first environment (primary, then others) whose cases carry ``key``: ``(tag, index, path)``."""
+        for tag, idx, path in [("primary", tr, args.train)] + [(os.path.basename(os.path.normpath(p)), oi, p)
+                                                              for p, oi in others]:
+            if any(key in c for c in idx["cases"].values()):
+                return tag, idx, path
+        return None, None, None
+    mps_tag, mps_idx, _ = probe_env("render_torch_cpu_vs_mps")
+
     rows = []
     for cid, t in tr["cases"].items():
+        tm_ = mps_idx["cases"][cid] if mps_idx else {}
         a = ap["cases"][cid]
         tview = np.load(os.path.join(args.train, cid, "view_rgb.npy"))
         aview = np.load(os.path.join(args.api, cid, "view_bgr.npy"))[..., ::-1]
@@ -736,9 +753,10 @@ def compare(args):
                "view_np_vs_torch_max": t["render_numpy_vs_torch_cpu"]["max_abs"],
                "view_np_vs_torch_frac_px": t["render_numpy_vs_torch_cpu"]["frac_px_diff"],
                "view_np_vs_torch_centre_max": t["render_numpy_vs_torch_cpu"]["centre_max_abs"],
-               "view_cpu_vs_mps_max": t.get("render_torch_cpu_vs_mps", {}).get("max_abs"),
-               "view_cpu_vs_mps_frac_px": t.get("render_torch_cpu_vs_mps", {}).get("frac_px_diff"),
-               "view_cpu_vs_mps_centre_max": t.get("render_torch_cpu_vs_mps", {}).get("centre_max_abs"),
+               "mps_env": mps_tag,
+               "view_cpu_vs_mps_max": tm_.get("render_torch_cpu_vs_mps", {}).get("max_abs"),
+               "view_cpu_vs_mps_frac_px": tm_.get("render_torch_cpu_vs_mps", {}).get("frac_px_diff"),
+               "view_cpu_vs_mps_centre_max": tm_.get("render_torch_cpu_vs_mps", {}).get("centre_max_abs"),
                "view_train_vs_api_identical": v_ta["identical"], "view_train_vs_api_max": v_ta["max_abs"],
                "view_train_vs_api_frac_px": v_ta["frac_px_diff"],
                "view_train_vs_api_centre_max": v_ta["centre_max_abs"],
@@ -747,7 +765,10 @@ def compare(args):
                "depth_identical": bool(np.array_equal(tdepth, adepth)),
                "depth_map_max_abs": float(np.abs(tdepth.astype(np.float64) - adepth).max()),
                "depth_swapped": t["probe_swapped_depth_centre"], "half_swapped": t["probe_swapped_crop_half_px"],
-               "depth_mps": t.get("probe_mps_depth_centre"), "half_mps": t.get("probe_mps_crop_half_px"),
+               "depth_mps_minus_cpu": (tm_["probe_mps_depth_centre"] - tm_["depth_centre"]
+                                       if "probe_mps_depth_centre" in tm_ else None),
+               "half_mps_changed": (tm_["probe_mps_crop_half_px"] != tm_["crop_half_px"]
+                                    if "probe_mps_crop_half_px" in tm_ else None),
                "half_train": t["crop_half_px"], "half_api": a["crop_half_px"],
                "half_api_rule_on_train_depth": t["crop_half_api_rule"],
                "clipped_train": t["clipped"],
@@ -824,6 +845,16 @@ def compare(args):
                               "max_abs_dlogit": _logit_diff(tm["logits_webp"], om["logits_webp"]),
                               "max_abs_dprob": vp["max_abs_dprob"], "verdict_flip": vp["verdict_flips"],
                               "vote_change": vp["vote_changes"], "vote_ref": vp["votes_ref"], "vote": vp["votes"]})
+                for probe, label in (("numpy_render", "2_numpy_vs_torch_render"), ("mps_render", "2_mps_vs_cpu_render"),
+                                     ("half_plus1", "4_crop_half_plus1")):
+                    if f"logits_{probe}" in om:
+                        vq = vote_parity([om["probs_raw"]], [om[f"probs_{probe}"]], amaps[mt])
+                        mrows.append({"model": mt, "case": cid, "pose": tr["cases"][cid]["pose"],
+                                      "comparison": f"{label} (raw crop, {tag} env)",
+                                      "max_abs_dlogit": _logit_diff(om["logits_raw"], om[f"logits_{probe}"]),
+                                      "max_abs_dprob": vq["max_abs_dprob"], "verdict_flip": vq["verdict_flips"],
+                                      "vote_change": vq["vote_changes"], "vote_ref": vq["votes_ref"],
+                                      "vote": vq["votes"]})
                 mrows.append({"model": mt, "case": cid, "comparison": f"6_env_{tag} pixel_values (own raw crop)",
                               "max_abs_dpixel": float(np.abs(pv_a - pv_b).max()),
                               "identical": bool(np.array_equal(pv_a, pv_b))})
@@ -893,15 +924,16 @@ def summarize(crops, models, tr, ap, pano_cmp, other_pano):
         ("all", "2 view numpy vs torch cpu (train)", f"max {crops.view_np_vs_torch_max.max():g}, frac px median "
          f"{crops.view_np_vs_torch_frac_px.median():.2e} max {crops.view_np_vs_torch_frac_px.max():.2e}, centre max "
          f"{crops.view_np_vs_torch_centre_max.max():g}"),
-        ("all", "2 view torch cpu vs mps (train)", f"max {crops.view_cpu_vs_mps_max.max():g}, frac px max "
+        ("all", f"2 view torch cpu vs mps ({crops.mps_env.iloc[0]} env)", f"max {crops.view_cpu_vs_mps_max.max():g}, frac px max "
          f"{crops.view_cpu_vs_mps_frac_px.max():.2e}, centre max {crops.view_cpu_vs_mps_centre_max.max():g}"),
         ("all", "3 depth input is the BGR view (train)", f"{int(crops.depth_input_bgr_train.sum())}/{len(crops)}"),
         ("all", "3 probe: channels swapped", f"centre depth change median "
          f"{(crops.depth_swapped - crops.depth_train).abs().median():.3g} m, max "
          f"{(crops.depth_swapped - crops.depth_train).abs().max():.3g} m; crop_half changed "
          f"{int((crops.half_swapped != crops.half_train).sum())}/{len(crops)}"),
-        ("all", "3 probe: depth on mps vs cpu", f"centre max {(crops.depth_mps - crops.depth_train).abs().max():.3g} "
-         f"m; crop_half changed {int((crops.half_mps != crops.half_train).sum())}/{len(crops)}"),
+        ("all", "3 probe: depth on mps vs cpu", f"centre max {crops.depth_mps_minus_cpu.abs().max():.3g} m; "
+         f"crop_half changed {int(crops.half_mps_changed.fillna(False).astype(bool).sum())}/{len(crops)} "
+         f"({crops.mps_env.iloc[0]} env)"),
         ("all", "4 API crop-half rule on the training depth", f"equal "
          f"{int((crops.half_api_rule_on_train_depth == crops.half_train).sum())}/{len(crops)}"),
         ("matched poses", "probe: a channel-order bug would show as", f"view mean abs >= "
@@ -1038,8 +1070,8 @@ def run(args):
     subprocess.run([args.train_python, me, "train-worker", *common, "--out", os.path.join(work, "train"),
                     "--models", "--mps"], check=True)
     for i, py in enumerate(args.other_train_python or []):
-        subprocess.run([py, me, "train-worker", *common, "--out", os.path.join(work, f"train_other{i + 1}")],
-                       check=True)
+        subprocess.run([py, me, "train-worker", *common, "--out", os.path.join(work, f"train_other{i + 1}"),
+                        "--models", "--mps"], check=True)
     subprocess.run([args.api_python, me, "api-worker", "--api-dir", args.api_dir, "--depth-checkpoint",
                     args.depth_checkpoint, "--train-dir", os.path.join(work, "train"), "--out",
                     os.path.join(work, "api"), "--models"], check=True)
