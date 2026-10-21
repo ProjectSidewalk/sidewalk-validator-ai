@@ -1,0 +1,223 @@
+{
+ "issue": "https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5",
+ "date": "2026-10-21",
+ "hardware": "Apple M1 Max, 32 GB, macOS 15.5; all reference stages on the CPU (mps hidden), mps only as a probe",
+ "serving_code": {
+  "repo": "ProjectSidewalk/sidewalk-ai-api",
+  "branch": "tilt-fields",
+  "head": "174a1698d8c52bae1749c230162440b4da279da9",
+  "note": "read-only checkout; run through main.create_app(...).test_client() with recorders"
+ },
+ "environments": {
+  "train (environment.yml pins: the klone conda env)": {
+   "python": "3.10.19",
+   "machine": "Darwin arm64",
+   "numpy": "2.2.6",
+   "cv2": "4.12.0",
+   "PIL": "11.3.0",
+   "torch": "2.7.1",
+   "torchvision": "0.22.1",
+   "transformers": "4.55.0",
+   "sidewalk_panorama_tools": "1.0.0",
+   "libwebp": "1.5.0"
+  },
+  "train_other1 (requirements.txt venv)": {
+   "python": "3.12.14",
+   "machine": "Darwin arm64",
+   "numpy": "2.5.4",
+   "cv2": "5.0.0",
+   "PIL": "13.0.0",
+   "torch": "2.14.1",
+   "torchvision": "0.29.1",
+   "transformers": "4.55.0",
+   "sidewalk_panorama_tools": "1.0.0",
+   "libwebp": "1.6.0"
+  },
+  "api (sidewalk-ai-api requirements.txt, CPU torch wheel of the pinned version, triton omitted)": {
+   "python": "3.12.14",
+   "machine": "Darwin arm64",
+   "numpy": "2.5.4",
+   "cv2": "5.0.0",
+   "PIL": "12.3.0",
+   "torch": "2.14.1",
+   "torchvision": "0.29.1",
+   "transformers": "5.20.0",
+   "sidewalk_panorama_tools": "1.0.0",
+   "libwebp": "1.6.0"
+  }
+ },
+ "inputs": {
+  "panorama": {
+   "path": "sidewalk-panorama-tools samples/sample_pano.jpg",
+   "sha256": "3a85e22b22b994986560f45e923c6ad42ec3e62e95a0131da278dc0b69b69706",
+   "native_size": [
+    13312,
+    6656
+   ]
+  },
+  "depth_checkpoint": {
+   "file": "depth_anything_v2_metric_vkitti_vitb.pth",
+   "sha256": "4dad67a7cc10b462bca48e6b8569c762b8eb3c1adada170a3851a6d3ba37bb3e",
+   "hf_repo": "depth-anything/Depth-Anything-V2-Metric-VKITTI-Base",
+   "hf_revision": "e96fd0c8cedf1825a55b9c61309f754982948df0"
+  },
+  "depth_anything_v2_submodule": "a561b849ebae10a6f5ef49e26c83cbbcd36c71bf (same commit in both repos)",
+  "validators": {
+   "crosswalk": {
+    "repo": "projectsidewalk/sidewalk-validator-ai-crosswalk",
+    "revision": "b7936e5bd17a4b96db301f954e5d3a5fe9eaf361"
+   },
+   "curbramp": {
+    "repo": "projectsidewalk/sidewalk-validator-ai-curbramp",
+    "revision": "969ad5a33079db7885c9e9a4eb5cd0f39d8fe57a"
+   },
+   "obstacle": {
+    "repo": "projectsidewalk/sidewalk-validator-ai-obstacle",
+    "revision": "8f0fe8fc48748fac35098e74c1848d015126deef"
+   },
+   "surfaceproblem": {
+    "repo": "projectsidewalk/sidewalk-validator-ai-surfaceproblem",
+    "revision": "0e1439daa5667c8a81f63e75f835bd51221df4c2"
+   },
+   "nocurbramp": {
+    "repo": "projectsidewalk/sidewalk-validator-ai-nocurbramp",
+    "revision": "9f3f3bb2f40864a468fb65e43644ee5ba54e3e19"
+   }
+  },
+  "accuracy_mappings_sha256": {
+   "curbramp": "3a95411373532de96ee7169b9a1706d7e7ee1add61961bfff6ad9163f1c9d43d",
+   "nocurbramp": "0047d0790000bc86aee008d9af223d4c1d010cfe48db2050f091305d70c030b1",
+   "obstacle": "5aecb0cc3b9949a9efba2359226047390329ac457631b246634cfeaa02218369",
+   "surfaceproblem": "568f15cd8676b048fef3b207559cbc4008ddfb9b70b04ce26086192092b3f033",
+   "crosswalk": "139fbc9837c804545f4311aa2a4582f75ae9117d518c740fe36848ed9f637aa8"
+  },
+  "points": [
+   [
+    "P01",
+    0.12049278846153846,
+    0.5638521634615384,
+    "curb ramp (real feature)"
+   ],
+   [
+    "P02",
+    0.25,
+    0.6,
+    "sidewalk level"
+   ],
+   [
+    "P03",
+    0.5,
+    0.6,
+    "sidewalk level"
+   ],
+   [
+    "P04",
+    0.75,
+    0.62,
+    "sidewalk level"
+   ],
+   [
+    "P05",
+    0.4,
+    0.7,
+    "steep, near the rig"
+   ],
+   [
+    "P06",
+    0.1,
+    0.5,
+    "horizon"
+   ],
+   [
+    "P07",
+    0.001,
+    0.6,
+    "seam, left edge"
+   ],
+   [
+    "P08",
+    0.999,
+    0.58,
+    "seam, right edge"
+   ],
+   [
+    "P09",
+    0.6,
+    0.92,
+    "near nadir"
+   ],
+   [
+    "P10",
+    0.85,
+    0.08,
+    "near zenith"
+   ]
+  ],
+  "poses": {
+   "level": [
+    null,
+    null
+   ],
+   "pitch3": [
+    3.0,
+    null
+   ],
+   "pitch-5_roll1": [
+    -5.0,
+    1.0
+   ],
+   "roll1_only": [
+    null,
+    1.0
+   ]
+  },
+  "tilt_beta": 0.95,
+  "sample_csv": {
+   "path": "~/Data/sidewalk-validator-ai-retrain-2026-10/round3/sample.csv",
+   "sha256": "51ef52aceee63f5c07cb24939ca2a5939d8e21edc99805aa21320c3dd8f7f2e3",
+   "rows": 1988
+  }
+ },
+ "outputs": {
+  "webp_gen2_per_label_csv": {
+   "path": "~/Data/serving-parity-2026-10/webp_gen2.csv (not committed: label_uids)",
+   "sha256": "473ebf5d94514296bdf2fbb05d9c09948f9e1b4019bbcf4cd8a7b0c5ca6a9f24",
+   "rows": 1988
+  },
+  "crops.csv": {
+   "sha256": "db443ac525877bf9947aef839dd9476bb10874165a5292aadc42e42525076fce"
+  },
+  "models.csv": {
+   "sha256": "f5fc4a3195bffb888e43da1df21a6670dc8a8572f358aec781611356df88cdad"
+  },
+  "summary.md": {
+   "sha256": "3ae5d21e3921c21cc3288cfea043800c96c137d73292998b917527fdcd337f9e"
+  },
+  "webp_gen2_summary.csv": {
+   "sha256": "aa33536531fa70c397a4f634ea89dd8ef6cc6a728a1b3066876a121abcc23975"
+  },
+  "crop_half.txt": {
+   "sha256": "35eb0849e444ba01adc523a93ac429ca7e03aec36b6fa030429ce7b59d25e0d7"
+  }
+ },
+ "probes": {
+  "api_depth_with_mps_visible": "RuntimeError: Input type (MPSFloatType) and weight type (torch.FloatTensor) should be the same",
+  "pano_train_vs_api": {
+   "identical": false,
+   "max_abs": 1.0,
+   "mean_abs": 0.10134406884511311,
+   "frac_diff": 0.10134406884511311,
+   "frac_px_diff": 0.1754705011844635,
+   "centre_max_abs": 0.0
+  }
+ },
+ "commands": [
+  "uv venv --python 3.10 venv-klone && uv pip install --python venv-klone/bin/python numpy==2.2.6 opencv-python==4.12.0.88 pillow==11.3.0 torch==2.7.1 torchvision==0.22.1 transformers==4.55.0 pandas scikit-learn matplotlib requests 'sidewalk-panorama-tools @ git+https://github.com/ProjectSidewalk/sidewalk-panorama-tools@v1.0.0'",
+  "uv venv --python 3.12 venv-api && uv pip install --python venv-api/bin/python -r <(grep -v ^triton <api>/requirements.txt)",
+  "uv venv --python 3.12 .venv && uv pip install -r requirements.txt flask",
+  "HF_HUB_OFFLINE=1 .venv/bin/python analysis/serving_parity.py run --train-python venv-klone/bin/python --other-train-python .venv/bin/python --api-python venv-api/bin/python --api-dir <api> --pano sample_pano.jpg --depth-checkpoint depth_anything_v2_metric_vkitti_vitb.pth --work WORK --out WORK/out",
+  "HF_HUB_OFFLINE=1 venv-klone/bin/python analysis/serving_parity.py webp-sample --sample-csv round3/sample.csv --crops round3/crops --api-dir <api> --device mps --out-csv ~/Data/serving-parity-2026-10/webp_gen2.csv --summary-csv docs/serving-parity-2026-10/webp_gen2_summary.csv",
+  ".venv/bin/python analysis/serving_parity.py crop-half --sample-csv round3/sample.csv > docs/serving-parity-2026-10/crop_half.txt",
+  ".venv/bin/python analysis/serving_parity.py figures --out docs/serving-parity-2026-10 --webp-csv ~/Data/serving-parity-2026-10/webp_gen2.csv"
+ ]
+}

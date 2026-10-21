@@ -787,7 +787,12 @@ def compare(args):
                         f"{tag}_view_frac_px": ov["frac_px_diff"], f"{tag}_depth": o["depth_centre"],
                         f"{tag}_half": o["crop_half_px"],
                         f"{tag}_crop_identical": compare_arrays(tcrop, load_png(os.path.join(path, cid, "crop_raw.png")))
-                        ["identical"]})
+                        ["identical"],
+                        f"{tag}_vs_api_view_identical": bool(np.array_equal(oview, aview)),
+                        f"{tag}_vs_api_depth_identical": bool(np.array_equal(
+                            np.load(os.path.join(path, cid, "depth.npy")), adepth)),
+                        f"{tag}_vs_api_crop_identical": bool(np.array_equal(
+                            load_png(os.path.join(path, cid, "crop_raw.png")), acrop))})
         rows.append(row)
     crops = pd.DataFrame(rows)
 
@@ -855,6 +860,13 @@ def compare(args):
                                       "max_abs_dprob": vq["max_abs_dprob"], "verdict_flip": vq["verdict_flips"],
                                       "vote_change": vq["vote_changes"], "vote_ref": vq["votes_ref"],
                                       "vote": vq["votes"]})
+                am = ap["models"][mt]["cases"][cid]
+                va = vote_parity([om["probs_raw"]], [am["probs_api"]], amaps[mt])
+                mrows.append({"model": mt, "case": cid, "pose": tr["cases"][cid]["pose"],
+                              "comparison": f"7_raw_end_to_end ({tag} env vs API)",
+                              "max_abs_dlogit": _logit_diff(om["logits_raw"], am["logits_api"]),
+                              "max_abs_dprob": va["max_abs_dprob"], "verdict_flip": va["verdict_flips"],
+                              "vote_change": va["vote_changes"], "vote_ref": va["votes_ref"], "vote": va["votes"]})
                 mrows.append({"model": mt, "case": cid, "comparison": f"6_env_{tag} pixel_values (own raw crop)",
                               "max_abs_dpixel": float(np.abs(pv_a - pv_b).max()),
                               "identical": bool(np.array_equal(pv_a, pv_b))})
@@ -920,6 +932,13 @@ def summarize(crops, models, tr, ap, pano_cmp, other_pano):
         st.append(("all", f"1 pano, train vs {os.path.basename(os.path.normpath(p))}",
                    f"identical={c['identical']}, max {c['max_abs']:g}, frac {c['frac_diff']:.2e}"))
     st += stage_rows(matched, "matched poses") + stage_rows(roll, ROLL_ONLY)
+    for col in [c for c in crops.columns if c.endswith("_vs_api_view_identical")]:
+        tag = col[:-len("_vs_api_view_identical")]
+        for name, c in (("matched poses", matched), (ROLL_ONLY, roll)):
+            if len(c):
+                st.append((name, f"2-4 {tag} env vs API: view / depth map / crop identical",
+                           f"{int(c[col].sum())} / {int(c[tag + '_vs_api_depth_identical'].sum())} / "
+                           f"{int(c[tag + '_vs_api_crop_identical'].sum())} of {len(c)}"))
     st += [
         ("all", "2 view numpy vs torch cpu (train)", f"max {crops.view_np_vs_torch_max.max():g}, frac px median "
          f"{crops.view_np_vs_torch_frac_px.median():.2e} max {crops.view_np_vs_torch_frac_px.max():.2e}, centre max "
@@ -1060,6 +1079,60 @@ def crop_half_report(args):
               f"crop-half difference: {rate[sidx].mean():.3e}")
 
 
+def figures(args):
+    """The doc's two figures: crop-half disagreement by depth (from the exhaustive sweep), and the per-model change in
+    p(incorrect) from a q95 WebP re-encode on the sampled crops (``webp-sample``'s per-label CSV)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import pandas as pd
+    blue, ink, muted = "#2a78d6", "#0b0b0b", "#52514e"
+    os.makedirs(args.out, exist_ok=True)
+
+    depths, bad = crop_half_sweep(1.0, 80.0)
+    edges = np.arange(1.0, 80.5, 1.0)
+    idx = np.clip(np.digitize(depths, edges) - 1, 0, len(edges) - 2)
+    rate = np.bincount(idx, weights=bad, minlength=len(edges) - 1) / np.bincount(idx, minlength=len(edges) - 1)
+    fig, ax = plt.subplots(figsize=(6.4, 2.8), dpi=110)
+    ax.bar(edges[:-1] + 0.5, rate * 1e6, width=0.8, color=blue)
+    ax.set_xlabel("depth at the view centre (m), 1 m bins", color=ink)
+    ax.set_ylabel("per million depths", color=ink)
+    ax.set_title("Crop half-size differs by one pixel (API float32 vs training float64)", color=ink, fontsize=10)
+    for sp_ in ("top", "right"):
+        ax.spines[sp_].set_visible(False)
+    ax.tick_params(colors=muted)
+    ax.grid(axis="y", color="#e5e4e0", linewidth=0.6)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(os.path.join(args.out, "crop_half_rounding.png"))
+    plt.close(fig)
+
+    if args.webp_csv:
+        df = pd.read_csv(args.webp_csv)
+        df["dp"] = (df.p_incorrect_gen2 - df.p_incorrect_gen1).abs()
+        order = [t for t in LABEL_TYPES.values() if t in set(df.label_type)]
+        fig, ax = plt.subplots(figsize=(6.4, 3.0), dpi=110)
+        data = [np.log10(np.maximum(df[df.label_type == t].dp.values, 1e-8)) for t in order]
+        parts = ax.boxplot(data, orientation="horizontal", widths=0.5, patch_artist=True, showfliers=True,
+                           flierprops={"marker": "o", "markersize": 3, "markerfacecolor": blue,
+                                       "markeredgecolor": "none", "alpha": 0.5})
+        for b in parts["boxes"]:
+            b.set(facecolor="#d6e6f8", edgecolor=blue)
+        for k in ("medians", "whiskers", "caps"):
+            for line in parts[k]:
+                line.set(color=blue)
+        ax.set_yticks(range(1, len(order) + 1), order)
+        ax.set_xticks(range(-8, 1), [f"1e{e}" for e in range(-8, 1)])
+        ax.set_xlabel("|change in p(incorrect)| from one more q95 WebP generation (log scale)", color=ink)
+        ax.set_title(f"Production validators on the {len(df):,} sampled crops", color=ink, fontsize=10)
+        for sp_ in ("top", "right"):
+            ax.spines[sp_].set_visible(False)
+        ax.tick_params(colors=muted)
+        fig.tight_layout()
+        fig.savefig(os.path.join(args.out, "webp_gen2_dprob.png"))
+        plt.close(fig)
+
+
 def run(args):
     """All three stages: train worker(s), API worker, compare."""
     work = os.path.abspath(args.work)
@@ -1122,6 +1195,9 @@ def build_parser():
     w.add_argument("--limit", type=int, help="rows per (type, split, class), for a quick run")
     w.add_argument("--out-csv", required=True, help="per-label output; keep it outside the repo")
     w.add_argument("--summary-csv")
+    f = sub.add_parser("figures", help="the doc's figures")
+    f.add_argument("--out", required=True)
+    f.add_argument("--webp-csv", help="webp-sample's per-label CSV")
     h = sub.add_parser("crop-half", help="exhaustive float32 vs float64 crop-half disagreement")
     h.add_argument("--lo", type=float, default=1.0)
     h.add_argument("--hi", type=float, default=80.0)
@@ -1132,7 +1208,8 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     {"train-worker": train_worker, "api-worker": api_worker, "compare": compare, "run": run,
-     "webp-sample": webp_sample, "crop-half": crop_half_report}[args.cmd](args)
+     "webp-sample": webp_sample, "crop-half": crop_half_report,
+     "figures": figures}[args.cmd](args)
 
 
 if __name__ == "__main__":
