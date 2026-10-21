@@ -307,3 +307,12 @@ def test_city_bootstrap_is_wider_than_label_bootstrap_when_gain_varies_by_city()
     (alo, ahi), _ = rp.paired_delta_ci(y, np.full(len(g), 0.5), p1, n_boot=200)
     (clo, chi), _ = rp.city_delta_ci(y, np.full(len(g), 0.5), p1, g, n_boot=200)
     assert chi - clo > ahi - alo
+
+
+def test_paired_bootstrap_resamples_both_models_together():
+    # identical predictions: a paired bootstrap gives exactly zero difference, an unpaired one would not
+    rng = np.random.default_rng(1)
+    y, p = rng.integers(0, 2, 300), rng.random(300)
+    (alo, ahi), (llo, lhi) = rp.paired_delta_ci(y, p, p, n_boot=50)
+    (clo, chi), _ = rp.city_delta_ci(y, p, p, np.repeat(list("abc"), 100), n_boot=50)
+    assert alo == ahi == llo == lhi == clo == chi == 0

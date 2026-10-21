@@ -2,8 +2,8 @@
 
 Issue #45 asks whether road-network context can tell driveway aprons mislabelled as CurbRamp from real curb ramps,
 and whether it adds anything over the production confidence. This is the first measurement. It uses no GPU, no
-imagery and no retraining. The code is `analysis/road_prior.py`; every number below comes from its `evaluate`,
-`stratify` and `routing` stages, and `road-prior-2026-10/provenance.json` pins their inputs, output tables and commit (not the figures).
+imagery and no retraining. The code is `analysis/road_prior.py`; every number below comes from its stage outputs
+(`evaluate`, `stratify` and `routing`; the packet counts from `packet`, the node degrees from `fetch-streets`), and `road-prior-2026-10/provenance.json` pins their inputs, output tables and commit (not the figures).
 
 ## Recommendation
 
@@ -138,7 +138,7 @@ corner ramp can sit far from any intersection node, do not drive the result.
 Distance to an OSM crossing predicts Crosswalk Disagrees with AUC 0.71, the strongest single signal in the study,
 as it should be. Distance to an intersection node is slightly reversed for Crosswalk (AUC 0.46), plausibly because
 a crosswalk spans the roadway away from the centreline node. Leave-one-city-out on top of the confidence, the
-streets + OSM features improve Crosswalk log-loss by 0.0058 (CI 0.0016–0.0100 resampling labels, -0.013 to 0.003
+streets + OSM features improve Crosswalk log-loss by 0.0058 (CI 0.0016–0.0100 resampling labels, -0.003 to 0.013
 resampling cities), about 5% of the baseline, with no significant AUC change. Crosswalk is already at AUC 0.98, so this is not worth pursuing either.
 
 ## Caveats
@@ -168,6 +168,7 @@ admins and offers a vote, so it would unblind the item.
 
 ## Reproduce
 
-`analysis/road_prior_reproduce.sh <pull dir> <output root>` reruns every stage and checks each output against
+`EXPERTS=<name=user_id,...> PACKET_SEED_FILE=<seed file> analysis/road_prior_reproduce.sh <pull dir> <output root>`
+reruns every stage (EXPERTS is required; without PACKET_SEED_FILE the packet is skipped and the check is partial) and checks each output against
 the digests in `road-prior-2026-10/provenance.json`; the commands for single stages are in the module docstring of
 `analysis/road_prior.py`. Inputs and the label-level features CSV are private and stay outside the repo. The figures in `docs/road-prior-2026-10/` show public cities only.
