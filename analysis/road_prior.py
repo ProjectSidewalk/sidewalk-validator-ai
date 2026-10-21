@@ -21,8 +21,9 @@ Stages (each one writes to disk and can be re-run on its own):
     the nearest intersection node (``d_intersection_m``: degree >= 2; ``d_junction3_m``: degree >= 3), the label's
     own street ``way_type``, OSM distance to the nearest crossing, whether the label's own OSM way is a driveway,
     driveway ways within 20 / 50 m, the human vote counts and majority (AI excluded, ties dropped), the AI's cast
-    vote, and the production assessment from ``labels_oof.csv`` (``ai_result``, ``oof_accuracy``). Writes one
-    PRIVATE CSV (label-level rows); keep it under ``~/Data``.
+    vote, the production assessment from ``labels_oof.csv`` (``ai_result``, ``oof_accuracy``, ``new_accuracy``),
+    and, when ``EXPERTS="<name>=<user_id>,..."`` is set, each expert's vote read from the label's own
+    ``validations`` (as in ``analyze.py``). Writes one PRIVATE CSV (label-level rows); keep it under ``~/Data``.
 ``evaluate``
     Per feature alone: AUC for predicting a human-majority Disagree (bootstrap 95% CI), pooled and per public city.
     Lift over the production confidence: logistic model, baseline = logit of ``oof_accuracy`` turned into
@@ -30,9 +31,17 @@ Stages (each one writes to disk and can be re-run on its own):
     CV. Disagree rate vs distance plots (Wilson CIs). Crosswalk the same way as a sanity check.
 ``stratify``
     Among CurbRamp labels with a production verdict, the share of AI Disagrees, contested Agrees (AI Agree, human
-    majority Disagree) and expert-overturned Agrees that are far (> 15 / 25 / 40 m) from any intersection and
-    > 25 m from any crossing, next to the uncontested pools; then, for AI Disagrees, how often the human majority
+    majority Disagree) and expert-overturned Agrees that are far (>= 15 / 25 / 40 m) from any intersection and
+    >= 25 m from any crossing, next to the uncontested pools; then, for AI Disagrees, how often the human majority
     confirms them by road context within ``oof_accuracy`` quartiles (the routing question).
+``routing``
+    Cast CurbRamp Disagree votes by road context (the routing question in full): per-city coverage and OSM crossing
+    coverage, confirm rate by confidence quartile at >= 1 / 2 / 3 human votes, city-fixed-effects logistic models
+    at 15 / 25 / 40 m, a coarse leave-one-city-out model with label- and city-level bootstrap CIs, and the dead-end
+    (audit-area edge) check.
+``provenance`` / ``verify``
+    Pin each run directory's inputs, tables, commit and library versions in a JSON record, or check a rerun
+    against it. ``analysis/road_prior_reproduce.sh`` runs every stage and then one of these.
 ``packet``
     A blinded hand-coding packet of contested CurbRamp labels (driveway / real ramp / other / can't tell), stratified
     by distance bucket and city, shuffled with a secret seed; the key goes to a separate private directory and only
@@ -41,7 +50,7 @@ Stages (each one writes to disk and can be re-run on its own):
 **Privacy.** Every input and the ``features`` CSV hold label-level rows from the private pull; keep them outside the
 repo. ``evaluate`` and ``stratify`` write aggregates only and name a city only if ``cities.json`` lists it as
 ``visibility == "public"`` (the same filter as ``calibration/per_city.py``). Expert vote columns are role-keyed
-(``expert1``, ``expert2``, ... in ``--experts`` order), as in ``hard_examples.py``; no name or user id is written.
+(``expert1``, ``expert2``, ... in ``EXPERTS`` order), as in ``hard_examples.py``; no name or user id is written.
 
 **Dependencies**: numpy, pandas, scipy (via scikit-learn), scikit-learn, matplotlib and requests, all in
 ``requirements.txt``. ``osmnx`` was the first plan for ``fetch-osm`` and was dropped on 2026-10-20: it pins one
@@ -55,14 +64,15 @@ Usage (``$D`` is the pull directory, e.g. ``~/Data/sidewalk-validator-ai-prod-20
         --out-dir $D/osm_cache/2026-10-20
     python analysis/road_prior.py features --cities-json $D/cities.json --rawlabels $D/rawlabels_cache \\
         --streets-dir $D/streets_cache/2026-10-20 --osm-dir $D/osm_cache/2026-10-20 \\
-        --labels-oof $D/phase0/labels_oof.csv --ai-vs-humans $D/ai_vs_humans.csv --experts "$EXPERT_COLUMNS" \\
-        --out $D/road_prior/features.csv
+        --labels-oof $D/phase0/labels_oof.csv --out $D/road_prior/features.csv   # with EXPERTS=... in the env
     python analysis/road_prior.py evaluate --features $D/road_prior/features.csv --cities-json $D/cities.json \\
         --out-dir $D/road_prior/evaluate --fig-dir docs/road-prior-2026-10
     python analysis/road_prior.py stratify --features $D/road_prior/features.csv --cities-json $D/cities.json \\
         --out-dir $D/road_prior/stratify
     python analysis/road_prior.py packet --features $D/road_prior/features.csv --cities-json $D/cities.json \\
-        --out-dir $D/road-prior-packet --key-dir $D/road-prior-packet/private-key-do-not-share --seed $SECRET_SEED
+        --out-dir $D/road-prior-packet --key-dir $D/road-prior-packet/private-key-do-not-share --seed-file $SEED_FILE
+    python analysis/road_prior.py routing --features $D/road_prior/features.csv --cities-json $D/cities.json \\
+        --out-dir $D/road_prior/routing
 """
 import argparse
 import datetime
@@ -479,13 +489,44 @@ RAW_COLUMNS = ["label_id", "label_type", "latitude", "longitude", "street_edge_i
                "centerline_offset_m", "pano_id", "pano_url", "image_capture_date", "validations"]
 
 
-def load_labels(path, city):
-    """CurbRamp / Crosswalk rows of one rawLabels CSV with human vote counts, majority and the AI's cast vote."""
+def parse_experts(spec):
+    """Expert user ids, in order, from ``EXPERTS="<any name>=<user_id>,..."`` (the ``analysis/analyze.py`` scheme).
+
+    Names are dropped; the votes become ``expert1``, ``expert2``, ... by position, so no name or id is written.
+
+    >>> parse_experts("a=u1, b=u2,junk")
+    ['u1', 'u2']
+    """
+    return [kv.split("=", 1)[1].strip() for kv in (spec or "").split(",") if "=" in kv]
+
+
+def expert_votes(validations, expert_ids):
+    """Each expert's vote (``"Agree"``, ``"Disagree"``, ``"Unsure"`` or ``None``) from a rawLabels ``validations``
+    JSON string, matched by ``user_id`` as in ``analysis/analyze.py``.
+
+    >>> expert_votes(json.dumps([{"user_id": "u2", "validation": "Disagree", "validator_type": "Human"}]),
+    ...              ["u1", "u2"])
+    [None, 'Disagree']
+    """
+    if not isinstance(validations, str) or not validations:
+        return [None] * len(expert_ids)
+    by_user = {}
+    for v in json.loads(validations):
+        by_user.setdefault(v.get("user_id"), v.get("validation"))
+    return [by_user.get(u) for u in expert_ids]
+
+
+def load_labels(path, city, expert_ids=()):
+    """CurbRamp / Crosswalk rows of one rawLabels CSV with human vote counts, majority and the AI's cast vote, plus
+    ``expert1``, ``expert2``, ... (one per id in ``expert_ids``) read from the same ``validations``."""
     head = pd.read_csv(path, nrows=0).columns
     df = pd.read_csv(path, usecols=[c for c in RAW_COLUMNS if c in head], low_memory=False)
     df = df[df.label_type.isin(LABEL_TYPES)].dropna(subset=["latitude", "longitude"]).copy()
     votes = df["validations"].map(human_votes)
     df[["h_agree", "h_dis", "h_unsure", "h_maj", "ai_vote"]] = pd.DataFrame(votes.tolist(), index=df.index)
+    if expert_ids:
+        ev = df["validations"].map(lambda s: expert_votes(s, expert_ids))
+        df[[f"expert{i + 1}" for i in range(len(expert_ids))]] = pd.DataFrame(ev.tolist(), index=df.index)
     df["h_n"] = df.h_agree + df.h_dis
     df.insert(0, "city", city)
     df.insert(1, "label_uid", city + ":" + df.label_id.astype(str))
@@ -580,22 +621,13 @@ def production_assessments(labels_oof, cities):
     return out
 
 
-def expert_frame(ai_vs_humans, experts):
-    """``label_uid`` plus role-keyed ``expert1``, ``expert2``, ... from the private export's expert vote columns.
+def build_features(rawlabels_dir, streets_dir, cities_json, osm_dir=None, labels_oof=None, expert_ids=(),
+                   min_votes=1):
+    """The label-level features table for every public city with a rawLabels file (see the module docstring).
 
-    ``experts`` lists the export's own column names in order; they are renamed by position, so no name is carried.
-
-    >>> e = pd.DataFrame({"label_uid": ["a:1"], "x": ["Agree"], "y": [None]})
-    >>> expert_frame(e, ["x", "y"]).columns.tolist()
-    ['label_uid', 'expert1', 'expert2']
+    Expert votes come from every label's rawLabels ``validations``, not from ``ai_vs_humans.csv``, which holds only
+    labels with >= 2 human votes, a strict majority and a cast AI vote, and so misses most lone expert Disagrees.
     """
-    cols = {c: f"expert{i + 1}" for i, c in enumerate(experts)}
-    return ai_vs_humans[["label_uid", *cols]].rename(columns=cols)
-
-
-def build_features(rawlabels_dir, streets_dir, cities_json, osm_dir=None, labels_oof=None, ai_vs_humans=None,
-                   experts=(), min_votes=1):
-    """The label-level features table for every public city with a rawLabels file (see the module docstring)."""
     urls = public_cities(cities_json)
     frames, report = [], {}
     for cid in sorted(urls):
@@ -603,7 +635,7 @@ def build_features(rawlabels_dir, streets_dir, cities_json, osm_dir=None, labels
         if not os.path.exists(path):
             report[cid] = "no rawLabels file"
             continue
-        lab = load_labels(path, cid)
+        lab = load_labels(path, cid, expert_ids)
         lab = lab[lab.h_n >= min_votes]
         if lab.empty:
             report[cid] = "no CurbRamp/Crosswalk labels with human votes"
@@ -633,8 +665,6 @@ def build_features(rawlabels_dir, streets_dir, cities_json, osm_dir=None, labels
     if labels_oof is not None:
         prod = production_assessments(labels_oof, cities)
         df = df.merge(prod, on="label_uid", how="left", validate="one_to_one")
-    if ai_vs_humans is not None and experts:
-        df = df.merge(expert_frame(ai_vs_humans, experts), on="label_uid", how="left", validate="one_to_one")
     return df, report
 
 
@@ -802,6 +832,31 @@ def paired_delta_ci(y, p0, p1, n_boot=500, seed=0):
     return tuple(np.percentile(da, [2.5, 97.5])), tuple(np.percentile(dl, [2.5, 97.5]))
 
 
+def city_delta_ci(y, p0, p1, groups, n_boot=1000, seed=0):
+    """Like ``paired_delta_ci`` but resampling whole cities (``groups``) with replacement: the CI for the claim that
+    a gain transfers to an unseen city, where labels within a city are not independent. Wider than the label-level
+    CI when the gain varies by city.
+
+    >>> y = np.array([0, 1] * 20); g = np.repeat(list("abcd"), 10)
+    >>> (lo, hi), _ = city_delta_ci(y, np.full(40, 0.5), np.where(y == 1, 0.6, 0.4), g, n_boot=50)
+    >>> bool(lo > 0)
+    True
+    """
+    from sklearn.metrics import log_loss, roc_auc_score
+    rng = np.random.default_rng(seed)
+    y, groups = np.asarray(y), np.asarray(groups)
+    p0, p1 = (np.clip(np.asarray(p, dtype=float), 1e-6, 1 - 1e-6) for p in (p0, p1))
+    members = [np.flatnonzero(groups == g) for g in np.unique(groups)]
+    da, dl = [], []
+    for _ in range(n_boot):
+        i = np.concatenate([members[k] for k in rng.integers(0, len(members), len(members))])
+        if len(np.unique(y[i])) < 2:
+            continue
+        da.append(roc_auc_score(y[i], p1[i]) - roc_auc_score(y[i], p0[i]))
+        dl.append(log_loss(y[i], p1[i], labels=[0, 1]) - log_loss(y[i], p0[i], labels=[0, 1]))
+    return tuple(np.percentile(da, [2.5, 97.5])), tuple(np.percentile(dl, [2.5, 97.5]))
+
+
 def lift(df, base_cols, extra_cols, min_city_n=100, n_boot=500):
     """LOCO baseline vs baseline + extra on the rows where every column is present.
 
@@ -814,10 +869,14 @@ def lift(df, base_cols, extra_cols, min_city_n=100, n_boot=500):
     d = d.dropna(subset=["p_base", "p_full"])
     s0, s1 = scores(d.y.values, d.p_base.values), scores(d.y.values, d.p_full.values)
     (alo, ahi), (llo, lhi) = paired_delta_ci(d.y.values, d.p_base.values, d.p_full.values, n_boot=n_boot)
+    (calo, cahi), (cllo, clhi) = city_delta_ci(d.y.values, d.p_base.values, d.p_full.values, d.city.values,
+                                               n_boot=n_boot)
     pooled = {"n": len(d), "cities": d.city.nunique(), "disagree_rate": float(d.y.mean()),
               **{f"{k}_base": v for k, v in s0.items()}, **{f"{k}_full": v for k, v in s1.items()},
               "d_auc": s1["auc"] - s0["auc"], "d_auc_lo": alo, "d_auc_hi": ahi,
-              "d_log_loss": s1["log_loss"] - s0["log_loss"], "d_log_loss_lo": llo, "d_log_loss_hi": lhi}
+              "d_auc_city_lo": calo, "d_auc_city_hi": cahi,
+              "d_log_loss": s1["log_loss"] - s0["log_loss"], "d_log_loss_lo": llo, "d_log_loss_hi": lhi,
+              "d_log_loss_city_lo": cllo, "d_log_loss_city_hi": clhi}
     rows = []
     for c, g in d.groupby("city"):
         if len(g) < min_city_n:
@@ -846,7 +905,12 @@ def binned_rate(d, col, bins=DISTANCE_BINS):
     return pd.DataFrame(rows)
 
 
-def _plot_rates(ax, tab, color, label, marker="o"):
+def _plot_rates(ax, tab, color, label, marker="o", all_bins=None):
+    """Rates with Wilson error bars. With ``all_bins`` (every bin label, in order), each point sits at its bin's
+    position, so panels with an empty bin still line up."""
+    if all_bins is not None:
+        tab = tab.set_index("bin").reindex(all_bins).reset_index()
+        tab["n"] = tab.n.fillna(0).astype(int)
     x = np.arange(len(tab))
     ax.errorbar(x, tab.rate, yerr=[tab.rate - tab.ci_lo, tab.ci_hi - tab.rate], color=color, marker=marker,
                 linewidth=2, markersize=6, capsize=3, label=label)
@@ -890,10 +954,11 @@ def plot_by_city(d, col, path, xlabel, min_city_n=100, title=""):
     ncol = 4
     nrow = int(np.ceil(len(cities) / ncol))
     bins = [0, 15, 25, 40, 100, np.inf]
+    labels = [f"{a:g}" + ("+" if np.isinf(b) else f"-{b:g}") for a, b in zip(bins[:-1], bins[1:])]  # binned_rate's
     fig, axes = plt.subplots(nrow, ncol, figsize=(3.4 * ncol, 2.6 * nrow), squeeze=False, sharey=True)
     for ax, c in zip(axes.flat, cities):
         tab = binned_rate(d[d.city == c], col, bins)
-        _plot_rates(ax, tab, COLORS["observed"], c)
+        _plot_rates(ax, tab, COLORS["observed"], c, all_bins=labels)
         ax.set_title(f"{c} (n={counts[c]:,})", fontsize=9)
         ax.grid(axis="y", color="#e4e3df", linewidth=0.8)
         ax.spines[["top", "right"]].set_visible(False)
@@ -1009,7 +1074,7 @@ def evaluate(df, cities, out_dir, fig_dir=None, min_votes=3, min_city_n=100, n_b
                     continue
                 pooled_l, per_city, frame = lift(sub, ["conf_logit"], cols, min_city_n, n_boot)
                 prow.append({"subset": sub_name, "features": name, **pooled_l})
-                tag = f"{lt.lower()}_{name.split()[0]}_{SUBSET_TAGS[sub_name]}"
+                tag = f"{lt.lower()}_{'streets_osm' if 'OSM' in name else 'streets'}_{SUBSET_TAGS[sub_name]}"
                 per_city.to_csv(os.path.join(out_dir, f"lift_by_city_{tag}.csv"), index=False)
                 md += [f"Per held-out city, {sub_name}, {name} (n >= {min_city_n}):", "",
                        _md(per_city.sort_values("n", ascending=False)), ""]
@@ -1018,9 +1083,12 @@ def evaluate(df, cities, out_dir, fig_dir=None, min_votes=3, min_city_n=100, n_b
         if prow:
             p = pd.DataFrame(prow)
             p.to_csv(os.path.join(out_dir, f"lift_{lt.lower()}.csv"), index=False)
-            md += ["Pooled:", "", _md(p[["subset", "features", "n", "cities", "disagree_rate", "auc_base", "auc_full", "d_auc",
-                                         "d_auc_lo", "d_auc_hi", "log_loss_base", "log_loss_full", "d_log_loss",
-                                         "d_log_loss_lo", "d_log_loss_hi", "ece_base", "ece_full"]], 4), ""]
+            md += ["Pooled. `_lo`/`_hi`: label-level paired bootstrap; `_city_lo`/`_city_hi`: whole cities resampled "
+                   "(the CI for transfer to an unseen city).", "",
+                   _md(p[["subset", "features", "n", "cities", "disagree_rate", "auc_base", "auc_full", "d_auc",
+                          "d_auc_lo", "d_auc_hi", "d_auc_city_lo", "d_auc_city_hi", "log_loss_base", "log_loss_full",
+                          "d_log_loss", "d_log_loss_lo", "d_log_loss_hi", "d_log_loss_city_lo", "d_log_loss_city_hi",
+                          "ece_base", "ece_full"]], 4), ""]
         # features alone, LOCO, on the whole analysis set (no AI): does the prior transfer by itself?
         alone = []
         for name, cols in variants:
@@ -1148,7 +1216,9 @@ def road_context(df, far_m=FAR_CROSSING_M):
 
 def disagree_context_table(df, min_votes=3, n_conf_bins=4, cast_only=False):
     """Among CurbRamp AI Disagrees with a human majority, the rate at which the majority confirms the Disagree, by
-    road context (``road_context``) within ``oof_accuracy`` quantile bins.
+    road context (``road_context``) within quantile bins of ``oof_accuracy`` (else ``new_accuracy``, as in
+    ``cast_disagrees``; the same thing at the default ``min_votes``, since every label with >= 2 votes has
+    ``oof_accuracy``).
 
     This is the routing question: does road context say anything about an AI Disagree that its own confidence has
     not already said? Rows with no OSM crossing distance are dropped. ``cast_only`` keeps the assessments the AI
@@ -1161,11 +1231,13 @@ def disagree_context_table(df, min_votes=3, n_conf_bins=4, cast_only=False):
     [['far_both', 2, 1.0], ['near_both', 2, 0.0]]
     """
     v = df[(df.label_type == "CurbRamp") & (df.ai_result == "Disagree") & (df.h_n >= min_votes)
-           & df.h_maj.isin(["Agree", "Disagree"])].dropna(subset=["oof_accuracy", "d_intersection_m", "d_crossing_m"])
+           & df.h_maj.isin(["Agree", "Disagree"])].copy()
+    v["conf"] = v.oof_accuracy.fillna(v.new_accuracy) if "new_accuracy" in v else v.oof_accuracy
+    v = v.dropna(subset=["conf", "d_intersection_m", "d_crossing_m"])
     if cast_only:
         v = v[v.ai_vote == "Disagree"]
     v = v.assign(context=road_context(v), ok=(v.h_maj == "Disagree"),
-                 conf_bin=pd.qcut(v.oof_accuracy, n_conf_bins, duplicates="drop").astype(str))
+                 conf_bin=pd.qcut(v.conf, n_conf_bins, duplicates="drop").astype(str))
     rows = []
     for (cb, ctx), g in v.groupby(["conf_bin", "context"]):
         lo, hi = wilson_interval(g.ok.mean(), len(g))
@@ -1212,6 +1284,9 @@ def logit_fit(X, y, names, max_iter=100, tol=1e-10):
         b += step
         if np.max(np.abs(step)) < tol:
             break
+    else:
+        import warnings
+        warnings.warn(f"logit_fit did not converge in {max_iter} iterations (last step {np.max(np.abs(step)):.2g})")
     mu = 1 / (1 + np.exp(-(X @ b)))
     cov = np.linalg.inv(X.T @ (X * (mu * (1 - mu))[:, None]))
     se = np.sqrt(np.diag(cov))
@@ -1376,11 +1451,12 @@ def routing_report(df, cities, n_boot=500, min_city_n=100):
     tables["coarse_lift_by_city"] = per_city
     tables["coarse_lift"] = pd.DataFrame([pooled])
     md += ["## Coarse context model, leave-one-city-out (validated, >= 3 votes)", "",
-           "Baseline = logistic on conf_logit; full = baseline + near_both + far_one. Same LOCO and paired "
-           "bootstrap as `evaluate`.", "",
+           "Baseline = logistic on conf_logit; full = baseline + near_both + far_one. Same LOCO and bootstraps as "
+           "`evaluate`: `_lo`/`_hi` resample labels, `_city_lo`/`_city_hi` resample whole cities.", "",
            _md(pd.DataFrame([pooled])[["n", "cities", "auc_base", "auc_full", "d_auc", "d_auc_lo", "d_auc_hi",
-                                        "log_loss_base", "log_loss_full", "d_log_loss", "d_log_loss_lo",
-                                        "d_log_loss_hi"]], 4), "",
+                                        "d_auc_city_lo", "d_auc_city_hi", "log_loss_base", "log_loss_full",
+                                        "d_log_loss", "d_log_loss_lo", "d_log_loss_hi", "d_log_loss_city_lo",
+                                        "d_log_loss_city_hi"]], 4), "",
            f"Per held-out city (n >= {min_city_n}):", "", _md(per_city.sort_values("n", ascending=False)), ""]
     if "d_deadend_m" in v3 and v3.d_deadend_m.notna().any():
         fb = v3[road_context(v3) == "far_both"]
@@ -1436,6 +1512,8 @@ def diff_provenance(expected, actual):
     >>> diff_provenance({"r": {"inputs": {"a": "1"}, "outputs": {"x.csv": "2"}}},
     ...                 {"r": {"inputs": {"a": "1"}, "outputs": {"x.csv": "3"}}})
     ['r: output x.csv differs']
+    >>> diff_provenance({"r": {"outputs": {}}}, {"r": {"outputs": {"y.csv": "1"}}})
+    ['r: output y.csv not recorded']
     """
     out = []
     for run, e in expected.items():
@@ -1447,6 +1525,8 @@ def diff_provenance(expected, actual):
             for k, v in e.get(kind, {}).items():
                 if a.get(kind, {}).get(k) != v:
                     out.append(f"{run}: {kind[:-1]} {k} {'missing' if k not in a.get(kind, {}) else 'differs'}")
+            for k in sorted(set(a.get(kind, {})) - set(e.get(kind, {}))):
+                out.append(f"{run}: {kind[:-1]} {k} not recorded")
     return out
 
 
@@ -1561,7 +1641,8 @@ def run_manifest(args, inputs):
     here = os.path.dirname(os.path.abspath(__file__))
     git = lambda *a: subprocess.run(["git", "-C", here, *a], capture_output=True, text=True).stdout.strip()
     m = {"stage": args.cmd, "argv": sys.argv[1:], "run_at": datetime.datetime.now().isoformat(timespec="seconds"),
-         "git_commit": git("rev-parse", "HEAD"), "git_dirty": bool(git("status", "--porcelain", "--", here)),
+         "git_commit": git("rev-parse", "HEAD"),
+         "git_dirty": bool(git("status", "--porcelain", "--", here, os.path.join(here, "..", "calibration"))),
          "python": platform.python_version(),
          "packages": {"numpy": np.__version__, "pandas": pd.__version__, "scipy": scipy.__version__,
                       "scikit-learn": sklearn.__version__, "matplotlib": matplotlib.__version__},
@@ -1627,28 +1708,20 @@ def cmd_fetch_osm(args):
     print(f"{len(m) - len(bad)} of {len(m)} cities ok; not ok: {json.dumps(bad, indent=1) if bad else 'none'}")
 
 
-def _experts(arg):
-    return [c.strip() for c in arg.split(",") if c.strip()] if arg else []
-
-
 def cmd_features(args):
     oof = pd.read_csv(args.labels_oof) if args.labels_oof else None
-    avh = pd.read_csv(args.ai_vs_humans, low_memory=False) if args.ai_vs_humans else None
-    experts = _experts(args.experts)
-    if experts and avh is None:
-        sys.exit("--experts needs --ai-vs-humans")
-    if avh is not None and sorted(set(experts) - set(avh.columns)):
-        sys.exit("some --experts columns are not in --ai-vs-humans")
-    df, report = build_features(args.rawlabels, args.streets_dir, args.cities_json, args.osm_dir, oof, avh,
-                                experts, min_votes=args.min_votes)
+    expert_ids = parse_experts(os.environ.get("EXPERTS", ""))
+    df, report = build_features(args.rawlabels, args.streets_dir, args.cities_json, args.osm_dir, oof,
+                                expert_ids, min_votes=args.min_votes)
     if inside_git_checkout(args.out):
         sys.exit(f"refusing to write label-level rows inside a git checkout: {args.out}")
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     df.to_csv(args.out, index=False)
     write_run_manifest(os.path.dirname(os.path.abspath(args.out)), args,
                        {"cities_json": args.cities_json, "rawlabels": args.rawlabels, "streets_dir": args.streets_dir,
-                        "osm_dir": args.osm_dir, "labels_oof": args.labels_oof, "ai_vs_humans": args.ai_vs_humans},
-                       extra={"output": {"path": args.out, "rows": len(df), "sha256": sha256_file(args.out)}})
+                        "osm_dir": args.osm_dir, "labels_oof": args.labels_oof},
+                       extra={"output": {"path": args.out, "rows": len(df), "sha256": sha256_file(args.out)},
+                              "experts": len(expert_ids)})
     for cid, r in report.items():
         print(f"  {cid}: {r}")
     print(f"{len(df):,} labels -> {args.out}; by type: {df.label_type.value_counts().to_dict()}")
@@ -1727,12 +1800,26 @@ def cmd_verify(args):
     print(f"all {len(actual)} runs match {args.provenance}")
 
 
+def redact_seed(arg, seed):
+    """``arg`` with the seed replaced by ``<seed>``, in both ``--seed N`` and ``--seed=N`` forms.
+
+    >>> [redact_seed(a, 42) for a in ["--seed", "42", "--seed=42", "--n", "200"]]
+    ['--seed', '<seed>', '--seed=<seed>', '--n', '200']
+    """
+    if arg == str(seed):
+        return "<seed>"
+    return "--seed=<seed>" if arg == f"--seed={seed}" else arg
+
+
 def cmd_packet(args):
     if inside_git_checkout(args.out_dir) or inside_git_checkout(args.key_dir):
         sys.exit("refusing to write the packet or its key inside a git checkout")
     cities = load_cities(args.cities_json)
     df = public_only(_read_features(args.features), cities)
     experts = sorted(c for c in df.columns if c.startswith("expert") and c[6:].isdigit())
+    if args.seed_file:
+        with open(args.seed_file) as f:
+            args.seed = int(f.read().strip())
     packet, key = build_packet(df, public_cities(args.cities_json), args.seed, args.n, args.min_votes, experts)
     os.makedirs(args.out_dir, exist_ok=True)
     os.makedirs(args.key_dir, exist_ok=True)
@@ -1745,7 +1832,7 @@ def cmd_packet(args):
         f.write(f"{digest}  packet_key.csv\n")
     # the manifest goes with the key: it records the seed's location, never the seed
     write_run_manifest(args.key_dir, args, {"features": args.features, "cities_json": args.cities_json},
-                       extra={"argv": [a if a != str(args.seed) else "<seed>" for a in sys.argv[1:]],
+                       extra={"argv": [redact_seed(a, args.seed) for a in sys.argv[1:]],
                               "key_sha256": digest, "packet_sha256": sha256_file(ppath)})
     print(f"{len(packet)} items -> {ppath}\nkey -> {kpath}\nsha256 {digest}")
     print("by reason:", key.reason.value_counts().to_dict())
@@ -1782,9 +1869,6 @@ def main(argv=None):
     s.add_argument("--streets-dir", required=True, help="fetch-streets output directory")
     s.add_argument("--osm-dir", default=None, help="fetch-osm output directory (optional)")
     s.add_argument("--labels-oof", default=None, help="calibrate_from_production's labels_oof.csv (AI verdicts)")
-    s.add_argument("--ai-vs-humans", default=None, help="analysis/analyze.py's ai_vs_humans.csv (expert votes)")
-    s.add_argument("--experts", default=None,
-                   help="comma list of the export's expert vote columns; renamed expert1, expert2, ... by position")
     s.add_argument("--min-votes", type=int, default=1, help="keep labels with at least this many human votes")
     s.add_argument("--out", required=True, help="output CSV (outside any git checkout)")
     s.set_defaults(func=cmd_features)
@@ -1829,7 +1913,9 @@ def main(argv=None):
     s.add_argument("--cities-json", required=True, help=cj)
     s.add_argument("--out-dir", required=True, help="where packet.csv goes (outside any git checkout)")
     s.add_argument("--key-dir", required=True, help="where packet_key.csv goes (private; outside any git checkout)")
-    s.add_argument("--seed", type=int, required=True, help="secret seed; no default on purpose")
+    g = s.add_mutually_exclusive_group(required=True)
+    g.add_argument("--seed-file", default=None, help="file holding the secret seed (keeps it out of `ps`)")
+    g.add_argument("--seed", type=int, default=None, help="secret seed; no default on purpose")
     s.add_argument("--n", type=int, default=200, help="packet size")
     s.add_argument("--min-votes", type=int, default=3, help="human votes for a crowd overturn")
     s.set_defaults(func=cmd_packet)

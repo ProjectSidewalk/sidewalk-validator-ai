@@ -147,6 +147,8 @@ def test_packet_stratified_and_blinded():
     assert key.pool.value_counts().tolist() == [20, 20]  # AI Disagree and overturned Agree sampled as halves
     assert set(key.reason) <= {"ai_disagree", "agree_overturned_crowd", "agree_overturned_expert"}
     assert not {"label", "label_uid", "ps_label_page", "city"} & set(packet.columns)  # no city, no share page
+    assert packet.gsv_link.eq("https://gsv").all()  # the link is the label's own pano, never a share page
+    assert not packet.gsv_link.str.contains("/label/").any()
     first = key.set_index("item").loc[1]
     assert first.ps_label_page.startswith(urls[first.label_uid.split(":")[0]] + "/label/")
     again, _ = rp.build_packet(df, urls, seed=123, n_total=40)
@@ -156,10 +158,11 @@ def test_packet_stratified_and_blinded():
 
 
 def test_loco_predict_never_sees_the_held_out_city():
-    # city c has the opposite relation; a model that saw c would score it well
-    d = pd.DataFrame({"city": ["a"] * 40 + ["b"] * 40 + ["c"] * 40,
-                      "d_x": np.tile(np.r_[np.full(20, 2.0), np.full(20, 50.0)], 3)})
-    d["y"] = np.r_[np.repeat([0, 1], 20), np.repeat([0, 1], 20), np.repeat([1, 0], 20)]
+    # city c has the opposite relation and outnumbers a + b 5:1, so a fit that saw c would learn c's direction
+    d = pd.DataFrame({"city": ["a"] * 20 + ["b"] * 20 + ["c"] * 200,
+                      "d_x": np.r_[np.tile(np.r_[np.full(10, 2.0), np.full(10, 50.0)], 2),
+                                   np.full(100, 2.0), np.full(100, 50.0)]})
+    d["y"] = np.r_[np.tile(np.repeat([0, 1], 10), 2), np.repeat([1, 0], 100)]
     p = rp.loco_predict(d, ["d_x"])
     c = d.city == "c"
     assert p[c & (d.d_x == 50)].min() > p[c & (d.d_x == 2)].max()  # learned from a and b, wrong for c
@@ -275,3 +278,32 @@ def test_city_fe_drops_single_outcome_cities():
     extra = v.head(5).assign(city="tiny-wa", y=1)
     fe = rp.city_fe_models(pd.concat([v, extra]), thresholds=(25,))
     assert (fe.cities_dropped == 1).all() and (fe.cities == 3).all()
+
+
+def test_road_context_and_dummies_agree_at_the_threshold():
+    d = pd.DataFrame({"d_intersection_m": [24.999, 25.0, 25.0], "d_crossing_m": [24.999, 24.999, 25.0]})
+    assert rp.road_context(d, 25).tolist() == ["near_both", "far_one", "far_both"]
+    dm = rp.context_dummies(d, 25)
+    assert dm.near_both.tolist() == [1.0, 0.0, 0.0] and dm.far_one.tolist() == [0.0, 1.0, 0.0]
+
+
+def test_expert_votes_come_from_every_label_not_only_majority_ones(tmp_path):
+    v = [{"user_id": "u-exp", "validation": "Disagree", "validator_type": "Human"},
+         {"user_id": "ai", "validation": "Agree", "validator_type": "AI"}]
+    pd.DataFrame({"label_id": [1, 2], "label_type": "CurbRamp", "latitude": 47.6, "longitude": -122.3,
+                  "validations": [json.dumps(v), json.dumps(v[1:])]}).to_csv(tmp_path / "x-wa.csv", index=False)
+    lab = rp.load_labels(tmp_path / "x-wa.csv", "x-wa", ["u-exp", "u-other"])
+    # a lone expert Disagree, which ai_vs_humans.csv (>= 2 human votes, strict majority) never holds
+    assert lab.expert1.iloc[0] == "Disagree" and lab.expert1.iloc[1:].isna().all() and lab.expert2.isna().all()
+    assert lab.h_n.tolist() == [1, 0] and lab.ai_vote.tolist() == ["Agree", "Agree"]
+
+
+def test_city_bootstrap_is_wider_than_label_bootstrap_when_gain_varies_by_city():
+    rng = np.random.default_rng(0)
+    g = np.repeat(list("abcdef"), 200)
+    y = rng.integers(0, 2, len(g))
+    gain = np.where(np.isin(g, ["a", "b", "c"]), 0.3, -0.25)  # helps half the cities, hurts the rest
+    p1 = np.clip(0.5 + gain * (y - 0.5), 0.01, 0.99)
+    (alo, ahi), _ = rp.paired_delta_ci(y, np.full(len(g), 0.5), p1, n_boot=200)
+    (clo, chi), _ = rp.city_delta_ci(y, np.full(len(g), 0.5), p1, g, n_boot=200)
+    assert chi - clo > ahi - alo
