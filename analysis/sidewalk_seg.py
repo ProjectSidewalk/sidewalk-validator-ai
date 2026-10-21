@@ -827,18 +827,16 @@ def cmd_report(args):
 
     # 2. Each feature alone, per type x split, with incorrect as the positive class.
     rows = []
-    for (lt, split), g in ok.groupby(["label_type", "split"]):
-        for slice_name, s in (("all", g), ("correct-class mean", None)):
-            if s is None:
-                continue
-            F = feature_matrix(s)
-            for j, (c, _) in enumerate(FEATURES):
-                auc, sign = oriented_auc(s.y, F[:, j])
-                lo, hi = bootstrap_auc(s.y, F[:, j], args.n_boot, 1) if math.isfinite(auc) else (np.nan, np.nan)
-                rows.append({"label_type": lt, "split": split, "feature": c, "n": len(s), "auc": auc, "dir": sign,
-                             "auc_lo": lo, "auc_hi": hi,
-                             "mean_correct": F[s.y.to_numpy() == 0, j].mean(),
-                             "mean_incorrect": F[s.y.to_numpy() == 1, j].mean()})
+    slices = [((lt, "both"), g) for lt, g in ok.groupby("label_type")] + list(ok.groupby(["label_type", "split"]))
+    for (lt, split), s in slices:
+        F = feature_matrix(s)
+        for j, (c, _) in enumerate(FEATURES):
+            auc, sign = oriented_auc(s.y, F[:, j])
+            lo, hi = bootstrap_auc(s.y, F[:, j], args.n_boot, 1) if math.isfinite(auc) else (np.nan, np.nan)
+            rows.append({"label_type": lt, "split": split, "feature": c, "n": len(s), "auc": auc, "dir": sign,
+                         "auc_lo": lo, "auc_hi": hi,
+                         "mean_correct": F[s.y.to_numpy() == 0, j].mean(),
+                         "mean_incorrect": F[s.y.to_numpy() == 1, j].mean()})
     alone = pd.DataFrame(rows)
     alone.to_csv(os.path.join(args.out_dir, "feature_auc.csv"), index=False)
     md += ["## Each feature alone (AUC for incorrect; dir '-' = higher value means more likely correct)", "",
@@ -904,10 +902,56 @@ def cmd_report(args):
     with open(os.path.join(args.out_dir, "report.md"), "w") as f:
         f.write("\n".join(md))
     oof = pd.concat(oof_all)
+    inputs = {"features_csv": args.features, "cls_npz": args.cls, "assessments": args.assessments,
+              "cities_json": args.cities_json, "views_csv": os.path.join(args.run_dir, "views.csv")}
     if args.private_dir:
         os.makedirs(args.private_dir, exist_ok=True)
-        oof.to_csv(os.path.join(args.private_dir, "oof_predictions.csv"), index=False)
+        inputs["oof_predictions_csv"] = os.path.join(args.private_dir, "oof_predictions.csv")
+        oof.to_csv(inputs["oof_predictions_csv"], index=False)
+    write_provenance(args, run, ok, inputs)
     print("\n".join(md))
+
+
+def write_provenance(args, run, ok, inputs):
+    """``provenance.json`` in the output dir: input sha256s and row counts, output sha256s, the segmenter run record
+    (model, revision, job, device, throughput, versions), the CLS models, packages, commit and hardware."""
+    import platform
+    import subprocess
+    import sklearn
+
+    def git(*a):
+        return subprocess.run(["git", *a], cwd=REPO, capture_output=True, text=True).stdout.strip()
+
+    outs = {f: sha256_file(os.path.join(args.out_dir, f)) for f in sorted(os.listdir(args.out_dir))
+            if f.endswith((".csv", ".md")) and f != "provenance.json"}
+    z = np.load(args.cls, allow_pickle=False)
+    rec = {
+        "date": datetime.date.today().isoformat(),
+        "git_commit": git("rev-parse", "HEAD"), "git_dirty": bool(git("status", "--porcelain", "--", "analysis")),
+        "command": "python analysis/sidewalk_seg.py " + " ".join(sys.argv[1:]).replace(os.path.expanduser("~"), "~"),
+        "inputs": {k: {"sha256": sha256_file(p), "rows": (int(sum(1 for _ in open(p)) - 1) if p.endswith(".csv")
+                                                         else None)} for k, p in inputs.items()},
+        "n_labels_ok": int(len(ok)),
+        "outputs": outs,
+        "segmenter_run": {k: run.get(k) for k in ("date", "seg_model", "seg_revision", "seg_input_size",
+                                                  "mask_sizes", "sidewalk_classes", "road_classes", "curb_classes",
+                                                  "n_labels", "n_ok", "status_counts", "pano_store_counts",
+                                                  "seconds", "seg_views_per_s", "device", "versions",
+                                                  "slurm_job_id")},
+        "cls_models": [str(m) for m in z["models"]],
+        "settings": {"n_boot": args.n_boot, "pca": args.pca, "min_city_n": args.min_city_n, "folds": 5,
+                     "fold_seed": 20261021, "f_px": F_PX, "disc_radius_px": DISC_RADIUS_PX, "near_m": NEAR_M,
+                     "bottom_frac": BOTTOM_FRAC},
+        "packages": {"python": platform.python_version(), "numpy": np.__version__, "pandas": pd.__version__,
+                     "scikit-learn": sklearn.__version__},
+        "hardware": f"{platform.machine()} {platform.system()} {platform.mac_ver()[0] or platform.release()}",
+    }
+    if getattr(args, "extra_provenance", None):
+        with open(args.extra_provenance) as f:
+            rec.update(json.load(f))
+    with open(os.path.join(args.out_dir, "provenance.json"), "w") as f:
+        json.dump(rec, f, indent=1)
+        f.write("\n")
 
 
 def production_strata(ok, assessments_path, cities):
@@ -1071,6 +1115,8 @@ def build_parser():
     s.add_argument("--n-boot", type=int, default=2000)
     s.add_argument("--pca", type=int, default=64)
     s.add_argument("--min-city-n", type=int, default=30)
+    s.add_argument("--extra-provenance", default=None,
+                   help="JSON merged into provenance.json (e.g. the staging job id and the klone hardware)")
     s.set_defaults(func=cmd_report)
 
     s = sub.add_parser("sheets", help="contact sheets for the hand-check (public cities only)")
