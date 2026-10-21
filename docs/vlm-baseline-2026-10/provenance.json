@@ -5,8 +5,8 @@
   "stratified_by_class": true
  },
  "date": "2026-10-21",
- "git_commit": "33788b8015a142504ca8d0f7ca26e8b66d0b71be",
- "git_dirty": true,
+ "git_commit": "5b450d3feadae2be6183e91857672bee187634f9",
+ "git_dirty": false,
  "hardware": "arm64 Apple M1 Max, 32 GB, macOS 15.5",
  "headline_subset_per_type": 100,
  "inputs": {
