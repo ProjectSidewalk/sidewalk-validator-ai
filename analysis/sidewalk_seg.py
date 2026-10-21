@@ -58,8 +58,11 @@ Usage (``$R`` = ``~/Data/sidewalk-validator-ai-retrain-2026-10/round3``, ``$O`` 
 
     python analysis/sidewalk_seg.py filelist --sample $R/sample.csv --out-dir $O
     # klone: see analysis/seg_prior_stage.slurm and analysis/seg_prior.slurm, then pull views.csv, seg_run.json,
-    # masks_1024/, masks_512/, views_512/ into $O/klone
-    python analysis/sidewalk_seg.py features --labels $O/labels.csv --run-dir $O/klone --out $O/features.csv
+    # masks_1024/, masks_512/, views_512/ into $O/klone. The 2026-10-21 run's views.csv predates the pitch column, so
+    # the coordinates were also extracted there (a CPU sbatch job; rawLabels holds the private deployments too):
+    #   python analysis/sidewalk_seg.py coords --labels $W/labels.csv --rawlabels-dir $RAWLABELS --out $W/coords.csv
+    python analysis/sidewalk_seg.py features --labels $O/labels.csv --run-dir $O/klone --coords $O/coords.csv \
+        --out $O/features.csv
     python analysis/sidewalk_seg.py cls --labels $O/labels.csv --crops-dir $R/crops --out $O/cls.npz
     python analysis/sidewalk_seg.py report --features $O/features.csv --cls $O/cls.npz \\
         --assessments $P/ai_assessments_rounded4.csv --cities-json $P/cities.json --run-dir $O/klone \\
@@ -455,6 +458,12 @@ def join_pano_coords(labels, rawlabels_dir):
     return out.drop(columns="raw_pano_id")
 
 
+def cmd_coords(args):
+    out = join_pano_coords(pd.read_csv(args.labels), args.rawlabels_dir)
+    out[["label_uid", "pano_x", "pano_y", "pano_width", "pano_height"]].to_csv(args.out, index=False)
+    print(f"{len(out)} rows -> {args.out}")
+
+
 def _nan_to_none(v):
     return None if v is None or (isinstance(v, float) and not math.isfinite(v)) else v
 
@@ -486,7 +495,8 @@ def cmd_render_segment(args):
     labels = labels.sort_values(["city", "pano_id", "label_uid"], kind="mergesort")
     for k, r in enumerate(labels.itertuples(index=False), start=1):
         rec = {"label_uid": r.label_uid, "status": "", "pano_store": "", "half_check": None, "crop_mad": None,
-               "crop_p99": None}
+               "crop_p99": None, "pano_y_norm": r.pano_y / r.pano_height,
+               "view_pitch_deg": view_pitch_deg(r.pano_y / r.pano_height)}
         key = (r.city, r.pano_id)
         try:
             if last[0] != key:
@@ -598,26 +608,26 @@ def cmd_features(args):
     views = pd.read_csv(os.path.join(args.run_dir, "views.csv"))
     ids = {g: class_ids(run["id2label"], names) for g, names in
            (("sidewalk", SIDEWALK_CLASSES), ("road", ROAD_CLASSES), ("curb", CURB_CLASSES))}
-    coords = None
-    if args.rawlabels_dir:
-        coords = join_pano_coords(labels, args.rawlabels_dir)[["label_uid", "pano_y", "pano_height"]]
+    if "view_pitch_deg" not in views:
+        # views.csv from the first klone run (job 42113381) predates the pitch column: take pano_y from a coords CSV
+        # (label_uid, pano_y, pano_height; see the `coords` stage) instead.
+        if not args.coords:
+            raise SystemExit("views.csv has no view_pitch_deg: pass --coords")
+        coords = pd.read_csv(args.coords)
+        coords["view_pitch_deg"] = [view_pitch_deg(y / h) for y, h in zip(coords.pano_y, coords.pano_height)]
+        views = views.merge(coords[["label_uid", "view_pitch_deg"]], on="label_uid", how="left",
+                            validate="one_to_one")
     df = labels.merge(views, on="label_uid", how="left", validate="one_to_one")
-    if coords is not None:
-        df = df.merge(coords, on="label_uid", how="left", validate="one_to_one")
-    elif "view_pitch_deg" not in df:
-        raise SystemExit("need --rawlabels-dir (pano_y) for the horizon check")
     rows = []
     for r in df.itertuples(index=False):
         rec = {"label_uid": r.label_uid}
         if r.status == "ok":
             mask = np.asarray(Image.open(os.path.join(args.run_dir, "masks_1024", r.label_uid.replace(":", "_") + ".png")))
-            pitch = view_pitch_deg(r.pano_y / r.pano_height)
-            rec.update(mask_features(mask, ids["sidewalk"], ids["road"], ids["curb"], r.crop_half_px, r.depth_m, pitch))
-            rec["view_pitch_deg"] = pitch
+            rec.update(mask_features(mask, ids["sidewalk"], ids["road"], ids["curb"], r.crop_half_px, r.depth_m,
+                                     r.view_pitch_deg))
         rows.append(rec)
     feats = pd.DataFrame(rows)
-    out = df.drop(columns=[c for c in ("pano_y", "pano_height") if c in df]).merge(
-        feats, on="label_uid", how="left", validate="one_to_one")
+    out = df.merge(feats, on="label_uid", how="left", validate="one_to_one")
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     out.to_csv(args.out, index=False)
     print(f"{len(out)} rows ({int((out.status == 'ok').sum())} ok) -> {args.out}; sha256 {sha256_file(args.out)}")
@@ -1093,9 +1103,15 @@ def build_parser():
     s = sub.add_parser("features", help="per-label mask features (private CSV)")
     s.add_argument("--labels", required=True)
     s.add_argument("--run-dir", required=True, help="the pulled render-segment output directory")
-    s.add_argument("--rawlabels-dir", required=True, help="for pano_y (the horizon check)")
+    s.add_argument("--coords", default=None, help="label_uid,pano_y,pano_height CSV, if views.csv lacks the pitch")
     s.add_argument("--out", required=True)
     s.set_defaults(func=cmd_features)
+
+    s = sub.add_parser("coords", help="label_uid + pano coordinates from rawLabels exports (klone; private CSV)")
+    s.add_argument("--labels", required=True)
+    s.add_argument("--rawlabels-dir", required=True)
+    s.add_argument("--out", required=True)
+    s.set_defaults(func=cmd_coords)
 
     s = sub.add_parser("cls", help="frozen production pooled features + p_incorrect for every sample crop")
     s.add_argument("--labels", required=True)
