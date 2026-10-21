@@ -646,3 +646,26 @@ def test_setting_experts_is_a_selection_change(stubbed, monkeypatch, capsys):
     monkeypatch.delenv("EXPERTS")
     with pytest.raises(SystemExit, match="the selection changed"):
         run_main(stubbed["tmp"])
+
+
+def test_fixed_crop_size_skips_depth_and_is_recorded(stubbed):
+    m = run_main(stubbed["tmp"], "--fixed-crop-half-px", "300")
+    assert (m.status == "ok").all() and (m.crop_half_px == 300).all() and m.depth_m.isna().all()
+    assert stubbed["depth"].calls == 0
+    run = json.loads((stubbed["tmp"] / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["settings"]["fixed_crop_half_px"] == 300
+
+
+def test_resume_refuses_switching_between_depth_and_fixed_sizing(stubbed):
+    tmp = stubbed["tmp"]
+    run_main(tmp)
+    with pytest.raises(SystemExit, match=r"fixed_crop_half_px None -> 300"):
+        run_main(tmp, "--fixed-crop-half-px", "300")
+    run_main(tmp, "--fixed-crop-half-px", "300", "--force-reselect")
+    with pytest.raises(SystemExit, match=r"fixed_crop_half_px 300 -> None"):
+        run_main(tmp)
+
+
+def test_fixed_crop_size_must_be_positive(stubbed):
+    with pytest.raises(SystemExit, match="must be positive"):
+        run_main(stubbed["tmp"], "--fixed-crop-half-px", "0")

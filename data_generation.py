@@ -887,12 +887,22 @@ def depth_sized_crop(view_img, depth_m):
     >>> crop.shape, half, clipped
     ((640, 640, 3), 610, False)
     """
-    import cv2
     if not np.isfinite(depth_m) or depth_m <= 0:
         raise ValueError(f"bad depth {depth_m}")
+    return centre_crop(view_img, int(CROP_DEPTH_CONSTANT / depth_m))
+
+
+def centre_crop(view_img, crop_half):
+    """Cut a square of half-width ``crop_half`` px around the view centre, clipped to the frame, and resize its long
+    side to ``CROP_LONG_SIDE``: ``(crop, crop_half, clipped)``, as :func:`depth_sized_crop` returns.
+
+    >>> crop, half, clipped = centre_crop(np.zeros((2048, 2048, 3), np.uint8), 300)
+    >>> crop.shape, half, clipped
+    ((640, 640, 3), 300, False)
+    """
+    import cv2
     img_h, img_w = view_img.shape[:2]
     center_x, center_y = img_w // 2, img_h // 2
-    crop_half = int(CROP_DEPTH_CONSTANT / depth_m)
     start_x = max(0, center_x - crop_half)
     start_y = max(0, center_y - crop_half)
     end_x = min(img_w, center_x + crop_half)
@@ -956,15 +966,21 @@ def load_depth_model(encoder, device):
 
 
 def create_perspective_crop(depth_model, pano_rgb, label_x_norm, label_y_norm, camera_pitch=None, camera_roll=None,
-                            apply_tilt=True, beta=DEFAULT_TILT_BETA, device=None):
+                            apply_tilt=True, beta=DEFAULT_TILT_BETA, device=None, fixed_crop_half_px=None):
     """Render the label-centred view and cut a depth-sized crop around the centre.
 
     Returns ``(crop_rgb, info)`` with ``info`` = ``tilt_applied``, ``depth_m``, ``crop_half_px``, ``clipped``.
     Depth is inferred on the BGR view (``infer_image`` takes an OpenCV BGR image, as sidewalk-ai-api passes it); the
-    Depth Anything code picks its own device (CUDA when present).
+    Depth Anything code picks its own device (CUDA when present). With ``fixed_crop_half_px`` every crop has that
+    half-width and no depth is inferred (``depth_m`` is None): the fixed-size control of issue #21, which serving
+    does not implement.
     """
     view_rgb, tilt_applied = render_label_view(pano_rgb, label_x_norm, label_y_norm, camera_pitch, camera_roll,
                                                apply_tilt=apply_tilt, beta=beta, device=device)
+    if fixed_crop_half_px is not None:
+        crop, crop_half, clipped = centre_crop(view_rgb, fixed_crop_half_px)
+        return crop, {"tilt_applied": int(tilt_applied), "depth_m": None, "crop_half_px": crop_half,
+                      "clipped": int(clipped)}
     depth = depth_model.infer_image(np.ascontiguousarray(view_rgb[..., ::-1]))
     c = VIEW_SIZE // 2
     depth_m = float(depth[c, c])
@@ -979,6 +995,9 @@ def create_perspective_crop(depth_model, pano_rgb, label_x_norm, label_y_norm, c
 #: every human-authored crop that is still selected; AI correct labels compete in the correct-class downsample, so
 #: some human correct labels near the cutoff can be swapped out. It stays in ``generation_run.json`` as provenance.
 RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "package_source")
+#: Settings recorded only when they are not the default, so earlier runs' records stay as they were. Unlike
+#: :data:`RESUME_SETTINGS` they are compared when present on EITHER side, so switching to or from one is caught.
+OPTIONAL_SETTINGS = ("fixed_crop_half_px",)
 
 
 def package_source(dist="sidewalk-panorama-tools"):
@@ -1021,6 +1040,8 @@ def check_resume(run_path, new_hash, settings, cities=None):
     old_settings = old.get("settings", {})
     changed = {k: (old_settings.get(k), settings.get(k)) for k in RESUME_SETTINGS
                if k in old_settings and old_settings.get(k) != settings.get(k)}
+    changed.update({k: (old_settings.get(k), settings.get(k)) for k in OPTIONAL_SETTINGS
+                    if old_settings.get(k) != settings.get(k)})
     city_change = {}
     if cities is not None and "cities" in old and set(old["cities"]) != set(cities):
         city_change = {"added": sorted(set(cities) - set(old["cities"])),
@@ -1138,6 +1159,10 @@ def build_parser():
                         'or --limit) write deployment_priors.partial.json beside it instead')
     p.add_argument('--depth-encoder', choices=['vitb', 'vitl'], default='vitb', help='the API serves vitb')
     p.add_argument('--tilt-beta', type=float, default=DEFAULT_TILT_BETA)
+    p.add_argument('--fixed-crop-half-px', type=int, default=None,
+                   help='ablation only (issue #21): give every crop this half-width in view pixels instead of sizing it '
+                        'by depth, and skip depth inference. Serving sizes by depth, so models trained this way are '
+                        'not deployable as is')
     p.add_argument('--seed', type=int, default=SEED)
     p.add_argument('--cities', default=None,
                    help='comma list of city_id[=subdomain], overriding the public deployments /v3/api/cities lists')
@@ -1173,6 +1198,8 @@ def main(argv=None):
     partial = (args.cities is not None and args.cities.strip(", ") != "") or args.limit is not None
     if partial:
         priors_path = os.path.splitext(priors_path)[0] + ".partial.json"
+    if args.fixed_crop_half_px is not None and args.fixed_crop_half_px <= 0:
+        sys.exit(f"--fixed-crop-half-px must be positive, got {args.fixed_crop_half_px}")
     experts = parse_experts(os.environ.get(EXPERTS_ENV))  # a malformed value fails before the downloads
     if not args.select_only and not args.pano_store:  # before the city listing, which may need the network
         build_parser().error("--pano-store is required unless --select-only")
@@ -1248,6 +1275,8 @@ def main(argv=None):
     settings = {"tilt_beta": args.tilt_beta, "depth_encoder": args.depth_encoder, "depth_dataset": DEPTH_DATASET,
                 "renderer": "torch" if device else "numpy", "include_ai_labels": args.include_ai_labels,
                 "package_source": package_source()}
+    if args.fixed_crop_half_px is not None:
+        settings["fixed_crop_half_px"] = args.fixed_crop_half_px
     previous, changed, city_change = check_resume(run_path, sel_hash, settings, list(cities))
     if (previous or changed or city_change) and not args.force_reselect:
         n_ok = count_ok_rows(manifest_path)
@@ -1286,7 +1315,7 @@ def main(argv=None):
                    "selection_sha256": sel_hash, "started": date.today().isoformat()}, f, indent=2)
         f.write("\n")
 
-    depth_model = load_depth_model(args.depth_encoder, device)
+    depth_model = load_depth_model(args.depth_encoder, device) if args.fixed_crop_half_px is None else None
     for cls in ("correct", "incorrect"):
         os.makedirs(os.path.join(base_dir, cls), exist_ok=True)
 
@@ -1335,7 +1364,8 @@ def main(argv=None):
                     crop, info = create_perspective_crop(
                         depth_model, pano_rgb, row['pano_x'] / row['pano_width'], row['pano_y'] / row['pano_height'],
                         camera_pitch=row.get('camera_pitch'), camera_roll=row.get('camera_roll'),
-                        apply_tilt=row['author'] == 'human', beta=args.tilt_beta, device=device)
+                        apply_tilt=row['author'] == 'human', beta=args.tilt_beta, device=device,
+                        fixed_crop_half_px=args.fixed_crop_half_px)
                     save_webp(crop, os.path.join(base_dir, crop_path))
                     rec.update(info)
                     rec['status'] = 'ok'
