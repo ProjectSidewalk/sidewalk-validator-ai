@@ -1,0 +1,6 @@
+label_type,model_a,model_b,n,auc_a,auc_b,diff,a_lo,a_hi,b_lo,b_hi,diff_lo,diff_hi
+CurbRamp,gemma4-12b,production,100,0.8256,0.9288,-0.1032,0.7391,0.8997,0.8696,0.9772,-0.1912,-0.0240
+NoCurbRamp,gemma4-12b,production,100,0.6200,0.9588,-0.3388,0.5104,0.7276,0.9224,0.9880,-0.4492,-0.2324
+Obstacle,gemma4-12b,production,100,0.5004,0.8692,-0.3688,0.3788,0.6184,0.7912,0.9332,-0.4821,-0.2607
+SurfaceProblem,gemma4-12b,production,100,0.6996,0.7212,-0.0216,0.5856,0.7932,0.6188,0.8236,-0.1516,0.0908
+Crosswalk,gemma4-12b,production,100,0.9388,0.9644,-0.0256,0.8920,0.9796,0.9292,0.9896,-0.0664,0.0128

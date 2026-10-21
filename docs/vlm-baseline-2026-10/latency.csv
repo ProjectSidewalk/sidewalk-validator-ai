@@ -1,0 +1,6 @@
+model,variant,n,latency_median_s,latency_p90_s,answer_mass_median,size_gb
+gemma4-12b,definition,500,3.9448,5.6183,0.9838,11.0201
+production,definition,500,0.1562,0.2270,,1.2175
+qwen3vl-2b,definition,500,1.3552,1.4866,0.9789,1.7980
+qwen3vl-8b,definition,500,4.7508,5.4037,0.9861,5.7766
+qwen3vl-8b,no-definition,100,2.4456,2.5859,0.9857,5.7766

@@ -336,10 +336,10 @@ def run_score(args):
     import mlx.core as mx
 
     sample = load_sample(args.sample_dir)
+    if args.subset:   # before the type filter, so a one-type run scores the same crops as the full run
+        sample = balanced_subset(sample, args.subset)
     if args.label_types:
         sample = sample[sample.label_type.isin(args.label_types.split(","))]
-    if args.subset:
-        sample = balanced_subset(sample, args.subset)
     if args.limit:
         # balanced pilot: the first --limit rows per type (sample.csv order), both splits and classes represented
         sample = (sample.sort_values(["label_type", "label_class", "label_uid"])
