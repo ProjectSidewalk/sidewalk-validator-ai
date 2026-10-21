@@ -142,6 +142,7 @@ def test_packet_stratified_and_blinded():
     assert len(packet) == 40 and packet.item.tolist() == list(range(1, 41))
     assert set(packet.columns) == set(rp.PACKET_COLUMNS)  # no verdicts or distances on the rater's sheet
     assert key.distance_bucket.value_counts().tolist() == [10, 10, 10, 10]
+    assert key.pool.value_counts().tolist() == [20, 20]  # AI Disagree and overturned Agree sampled as halves
     assert set(key.reason) <= {"ai_disagree", "agree_overturned_crowd", "agree_overturned_expert"}
     assert packet.ps_label_page.iloc[0].startswith(urls[packet.label.iloc[0].split(":")[0]] + "/label/")
     again, _ = rp.build_packet(df, urls, seed=123, n_total=40)

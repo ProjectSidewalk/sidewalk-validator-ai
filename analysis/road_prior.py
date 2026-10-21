@@ -1091,13 +1091,32 @@ def far_shares(df, pools, far_int=FAR_INTERSECTION_M, far_cross=FAR_CROSSING_M):
     return pd.DataFrame(rows)
 
 
+ROUTING_BINS = [0, 15, 25, 40, 100, np.inf]
+
+
+def agree_error_tables(df, min_votes=3):
+    """``(name, rows, distance column)`` for the routing question: among CurbRamp AI Agrees with a human majority
+    (all, and those whose ``oof_accuracy`` clears the 0.92 gate, i.e. would be cast under the Phase 0 maps), how
+    often the majority says Disagree, by distance. Rows carry ``y``."""
+    from calibration._isotonic_map import GATE
+    a = df[(df.label_type == "CurbRamp") & (df.ai_result == "Agree") & (df.h_n >= min_votes)
+           & df.h_maj.isin(["Agree", "Disagree"])].copy()
+    a["y"] = (a.h_maj == "Disagree").astype(int)
+    g = a[a.oof_accuracy >= GATE]
+    out = []
+    for col in ("d_intersection_m", "d_crossing_m"):
+        if col in a and a[col].notna().any():
+            out += [("AI Agree (all)", a, col), (f"AI Agree, oof_accuracy >= {GATE}", g, col)]
+    return out
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Hand-coding packet
 # ---------------------------------------------------------------------------------------------------------------------
 
 PACKET_BUCKETS = [0, 15, 25, 40, np.inf]
 PACKET_COLUMNS = ["item", "label", "ps_label_page", "gsv_link", "code", "notes"]
-KEY_COLUMNS = ["item", "label_uid", "reason", "distance_bucket", "d_intersection_m", "d_crossing_m", "ai_result",
+KEY_COLUMNS = ["item", "label_uid", "pool", "reason", "distance_bucket", "d_intersection_m", "d_crossing_m", "ai_result",
                "oof_accuracy", "h_agree", "h_dis"]
 RUBRIC = ("driveway", "real_ramp", "other", "cant_tell")
 
@@ -1115,10 +1134,13 @@ def contested_curbramps(df, min_votes=3, experts=()):
     return cr[cr.reason != ""]
 
 
-def stratified_sample(cand, n_total, seed, buckets=PACKET_BUCKETS):
-    """About ``n_total`` rows, equal per distance bucket, spread across cities (round-robin), then shuffled.
+def stratified_sample(cand, n_total, seed, buckets=PACKET_BUCKETS, group_col=None):
+    """About ``n_total`` rows, equal per stratum (distance bucket, times ``group_col`` if given), spread across
+    cities, then shuffled.
 
-    Within a bucket, cities take turns (each city's rows in seeded random order), so no one city fills a bucket.
+    Within a stratum, cities take turns (each city's rows in seeded random order), so no one city fills it. A
+    stratum with too few rows gives what it has and the shortfall is filled from the remaining rows in the same
+    city-turn order, so the packet still has ``n_total`` items when the pool allows.
 
     >>> c = pd.DataFrame({"label_uid": [f"a:{i}" for i in range(40)], "city": ["a", "b"] * 20,
     ...                   "d_intersection_m": np.repeat([5.0, 20.0, 30.0, 50.0], 10)})
@@ -1128,12 +1150,17 @@ def stratified_sample(cand, n_total, seed, buckets=PACKET_BUCKETS):
     """
     c = cand.dropna(subset=["d_intersection_m"]).sort_values("label_uid").copy()
     c["distance_bucket"] = pd.cut(c.d_intersection_m, buckets, right=False).astype(str)
-    per = int(np.ceil(n_total / (len(buckets) - 1)))
+    strata = ["distance_bucket"] + ([group_col] if group_col else [])
+    n_strata = (len(buckets) - 1) * (c[group_col].nunique() if group_col else 1)
+    per = int(np.ceil(n_total / max(n_strata, 1)))
     rng = np.random.default_rng(seed)
     c["_r"] = rng.random(len(c))
     c = c.sort_values("_r")
-    c["_turn"] = c.groupby(["distance_bucket", "city"]).cumcount()
-    picked = (c.sort_values(["_turn", "_r"]).groupby("distance_bucket", group_keys=False).head(per))
+    c["_turn"] = c.groupby(strata + ["city"]).cumcount()
+    c = c.sort_values(["_turn", "_r"])
+    picked = c.groupby(strata, group_keys=False).head(per)
+    if len(picked) < n_total:
+        picked = pd.concat([picked, c.drop(picked.index).head(n_total - len(picked))])
     picked = picked.sample(frac=1.0, random_state=int(rng.integers(0, 2 ** 31 - 1))).head(n_total)
     return picked.drop(columns=["_r", "_turn"]).reset_index(drop=True)
 
@@ -1150,7 +1177,10 @@ def inside_git_checkout(path):
 
 def build_packet(df, urls, seed, n_total=200, min_votes=3, experts=()):
     """``(packet, key)`` DataFrames: the rater's sheet (no verdicts, no distances) and the unblinding key."""
-    s = stratified_sample(contested_curbramps(df, min_votes, experts), n_total, seed)
+    cand = contested_curbramps(df, min_votes, experts)
+    # the AI-Disagree pool is ~100x the overturned-Agree pool, so the two are sampled as separate halves
+    cand["pool"] = np.where(cand.reason == "ai_disagree", "ai_disagree", "agree_overturned")
+    s = stratified_sample(cand, n_total, seed, group_col="pool")
     s["item"] = np.arange(1, len(s) + 1)
     s["label"] = s.label_uid
     s["ps_label_page"] = [f"{urls[c]}/label/{i}" for c, i in zip(s.city, s.label_id)]
@@ -1239,6 +1269,11 @@ def cmd_stratify(args):
     t.to_csv(os.path.join(args.out_dir, "stratify.csv"), index=False)
     text = (f"# Road prior: stratify (CurbRamp with a production verdict, min human votes {args.min_votes})\n\n"
             + _md(t) + "\n")
+    for name, sub, col in agree_error_tables(df, args.min_votes):
+        b = binned_rate(sub, col, ROUTING_BINS)
+        b.to_csv(os.path.join(args.out_dir, f"agree_error_{name.split()[0].lower()}_{col}.csv"), index=False)
+        text += (f"\n## {name}: human-majority Disagree rate by {col} (n = {len(sub.dropna(subset=[col])):,})\n\n"
+                 + _md(b, 4) + "\n")
     with open(os.path.join(args.out_dir, "stratify.md"), "w") as f:
         f.write(text)
     print(text)
