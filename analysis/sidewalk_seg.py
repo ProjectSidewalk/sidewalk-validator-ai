@@ -1043,6 +1043,8 @@ def cmd_sheets(args):
         order = rng.permutation(len(pool))
         for k in range(2):
             pick = pool.iloc[order[k * 40:(k + 1) * 40]]
+            if pick.empty:
+                continue
             size, cols = 256, 8
             rows_n = int(math.ceil(len(pick) / cols))
             sheet = Image.new("RGB", (cols * size, rows_n * (size + 16)), "white")
@@ -1071,7 +1073,7 @@ def cmd_sheets(args):
             x, y = (i % 3) * size, (i // 3) * (size + 14)
             sheet.paste(Image.fromarray(tile_for(r, size)), (x, y + 14))
             draw.text((x + 3, y + 1), f"{r.label_type} {r.label_class}", fill="black")
-        sheet.save(args.doc_fig, optimize=True)
+        sheet.quantize(colors=64, method=Image.Quantize.MEDIANCUT).save(args.doc_fig, optimize=True)  # <= 120 KB
         made.append((args.doc_fig, os.path.getsize(args.doc_fig)))
     for p, n in made:
         print(f"{p}: {n / 1024:.0f} KB")
