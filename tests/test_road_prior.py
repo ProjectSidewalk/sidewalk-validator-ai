@@ -198,3 +198,15 @@ def test_overpass_post_falls_back_to_the_next_mirror():
     assert s.calls == ["https://bad/api/interpreter"] * 2 + ["https://good/api/interpreter"]
     with pytest.raises(RuntimeError, match="HTTP 502"):
         rp.overpass_post("q", ["https://bad/api"], retries=1, session=S(), base_sleep=0)
+
+
+def test_disagree_context_table_separates_context_within_confidence():
+    d = pd.DataFrame({"label_type": "CurbRamp", "ai_result": "Disagree", "h_n": 3,
+                      "h_maj": ["Disagree", "Agree"] * 6, "oof_accuracy": [0.1] * 4 + [0.4] * 4 + [0.7] * 4,
+                      "d_intersection_m": [50.0, 5.0] * 6, "d_crossing_m": [50.0, 5.0] * 6})
+    t = rp.disagree_context_table(d, n_conf_bins=3)
+    per_bin = t[t.oof_accuracy_bin != "all"]
+    assert set(per_bin.context) == {"far_both", "near_both"}
+    assert (per_bin[per_bin.context == "far_both"].confirm_rate == 1.0).all()
+    assert (per_bin[per_bin.context == "near_both"].confirm_rate == 0.0).all()
+    assert t[t.oof_accuracy_bin == "all"].n.sum() == len(d)

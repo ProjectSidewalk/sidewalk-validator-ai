@@ -31,7 +31,8 @@ Stages (each one writes to disk and can be re-run on its own):
 ``stratify``
     Among CurbRamp labels with a production verdict, the share of AI Disagrees, contested Agrees (AI Agree, human
     majority Disagree) and expert-overturned Agrees that are far (> 15 / 25 / 40 m) from any intersection and
-    > 25 m from any crossing, next to the uncontested pools.
+    > 25 m from any crossing, next to the uncontested pools; then, for AI Disagrees, how often the human majority
+    confirms them by road context within ``oof_accuracy`` quartiles (the routing question).
 ``packet``
     A blinded hand-coding packet of contested CurbRamp labels (driveway / real ramp / other / can't tell), stratified
     by distance bucket and city, shuffled with a secret seed; the key goes to a separate private directory and only
@@ -58,7 +59,8 @@ Usage (``$D`` is the pull directory, e.g. ``~/Data/sidewalk-validator-ai-prod-20
         --out $D/road_prior/features.csv
     python analysis/road_prior.py evaluate --features $D/road_prior/features.csv --cities-json $D/cities.json \\
         --out-dir $D/road_prior/evaluate --fig-dir docs/road-prior-2026-10
-    python analysis/road_prior.py stratify --features $D/road_prior/features.csv --out-dir $D/road_prior/stratify
+    python analysis/road_prior.py stratify --features $D/road_prior/features.csv --cities-json $D/cities.json \\
+        --out-dir $D/road_prior/stratify
     python analysis/road_prior.py packet --features $D/road_prior/features.csv --cities-json $D/cities.json \\
         --out-dir $D/road-prior-packet --key-dir $D/road-prior-packet/private-key-do-not-share --seed $SECRET_SEED
 """
@@ -695,6 +697,8 @@ def p_agree(ai_result, accuracy):
     return pd.Series(np.where(ai_result == "Agree", accuracy, 1.0 - accuracy), index=ai_result.index)
 
 
+SUBSET_TAGS = {"all verdicts": "all", "AI Agree only": "agree", "AI Disagree only": "disagree",
+               "cast AI Disagree votes": "cast_disagree"}  # lift file names
 MODEL_BINS = [0, 5, 15, 25, 40, 100, np.inf]  # the Disagree rate is not monotone in distance (see the binned tables)
 MODEL_REFERENCE_BIN = 1  # [5, 15) m, the bulk of real corner ramps, is the reference level
 
@@ -961,6 +965,17 @@ def evaluate(df, cities, out_dir, fig_dir=None, min_votes=3, min_city_n=100, n_b
         wide.insert(0, "n", n)
         md += [f"### Feature alone, per city (AUC; cities with n >= {min_city_n})", "",
                _md(wide.reset_index().sort_values("n", ascending=False)), ""]
+        cond = []
+        for verdict in ("Agree", "Disagree"):
+            v = d[d.ai_result == verdict]
+            if len(v) and v.y.nunique() == 2:
+                t2 = feature_auc_table(v, [f for f in feats if f != "own_way_is_service"], min_city_n, n_boot)
+                t2 = t2[t2.city == "all public cities"].drop(columns="city")
+                t2.insert(0, "ai_result", verdict)
+                cond.append(t2)
+        if cond:
+            md += ["### Feature alone within each production verdict (pooled AUC; what the AI has not already used)",
+                   "", _md(pd.concat(cond)), ""]
         binned = binned_rate(d, "d_intersection_m")
         md += ["### Disagree rate by distance to the nearest intersection node (pooled)", "", _md(binned), ""]
         if has_osm:
@@ -978,14 +993,16 @@ def evaluate(df, cities, out_dir, fig_dir=None, min_votes=3, min_city_n=100, n_b
         if has_osm:
             variants.append(("streets + OSM (OSM-covered cities)", STREET_MODEL + OSM_MODEL))
         prow = []
-        subsets = [("all verdicts", a), ("AI Agree only", a[a.ai_result == "Agree"])]
+        subsets = [("all verdicts", a), ("AI Agree only", a[a.ai_result == "Agree"]),
+                   ("AI Disagree only", a[a.ai_result == "Disagree"]),
+                   ("cast AI Disagree votes", a[a.ai_vote == "Disagree"])]
         for sub_name, sub in subsets:
             for name, cols in variants:
                 if len(sub.dropna(subset=cols)) < 50:
                     continue
                 pooled_l, per_city, frame = lift(sub, ["conf_logit"], cols, min_city_n, n_boot)
                 prow.append({"subset": sub_name, "features": name, **pooled_l})
-                tag = f"{lt.lower()}_{name.split()[0]}_{sub_name.split()[0].lower()}"
+                tag = f"{lt.lower()}_{name.split()[0]}_{SUBSET_TAGS[sub_name]}"
                 per_city.to_csv(os.path.join(out_dir, f"lift_by_city_{tag}.csv"), index=False)
                 md += [f"Per held-out city, {sub_name}, {name} (n >= {min_city_n}):", "",
                        _md(per_city.sort_values("n", ascending=False)), ""]
@@ -1108,6 +1125,49 @@ def agree_error_tables(df, min_votes=3):
         if col in a and a[col].notna().any():
             out += [("AI Agree (all)", a, col), (f"AI Agree, oof_accuracy >= {GATE}", g, col)]
     return out
+
+
+def road_context(df, far_m=FAR_CROSSING_M):
+    """``far_both`` / ``far_one`` / ``near_both``: whether a label is ``>= far_m`` from both the nearest
+    intersection node and the nearest OSM crossing, from exactly one, or from neither.
+
+    >>> road_context(pd.DataFrame({"d_intersection_m": [30.0, 30.0, 5.0], "d_crossing_m": [40.0, 5.0, 5.0]})).tolist()
+    ['far_both', 'far_one', 'near_both']
+    """
+    fi, fc = df.d_intersection_m >= far_m, df.d_crossing_m >= far_m
+    return pd.Series(np.select([fi & fc, fi ^ fc], ["far_both", "far_one"], "near_both"), index=df.index)
+
+
+def disagree_context_table(df, min_votes=3, n_conf_bins=4, cast_only=False):
+    """Among CurbRamp AI Disagrees with a human majority, the rate at which the majority confirms the Disagree, by
+    road context (``road_context``) within ``oof_accuracy`` quantile bins.
+
+    This is the routing question: does road context say anything about an AI Disagree that its own confidence has
+    not already said? Rows with no OSM crossing distance are dropped. ``cast_only`` keeps the assessments the AI
+    actually cast as a Disagree vote (``ai_vote == "Disagree"``), the ones that can hide a label.
+
+    >>> d = pd.DataFrame({"label_type": "CurbRamp", "ai_result": "Disagree", "h_n": 3,
+    ...                   "h_maj": ["Disagree", "Agree"] * 4, "oof_accuracy": [0.2] * 4 + [0.7] * 4,
+    ...                   "d_intersection_m": [30.0, 5.0] * 4, "d_crossing_m": [30.0, 5.0] * 4})
+    >>> disagree_context_table(d, n_conf_bins=2)[["context", "n", "confirm_rate"]].values.tolist()[:2]
+    [['far_both', 2, 1.0], ['near_both', 2, 0.0]]
+    """
+    v = df[(df.label_type == "CurbRamp") & (df.ai_result == "Disagree") & (df.h_n >= min_votes)
+           & df.h_maj.isin(["Agree", "Disagree"])].dropna(subset=["oof_accuracy", "d_intersection_m", "d_crossing_m"])
+    if cast_only:
+        v = v[v.ai_vote == "Disagree"]
+    v = v.assign(context=road_context(v), ok=(v.h_maj == "Disagree"),
+                 conf_bin=pd.qcut(v.oof_accuracy, n_conf_bins, duplicates="drop").astype(str))
+    rows = []
+    for (cb, ctx), g in v.groupby(["conf_bin", "context"]):
+        lo, hi = wilson_interval(g.ok.mean(), len(g))
+        rows.append({"oof_accuracy_bin": cb, "context": ctx, "n": len(g), "confirm_rate": float(g.ok.mean()),
+                     "ci_lo": lo, "ci_hi": hi})
+    for ctx, g in v.groupby("context"):
+        lo, hi = wilson_interval(g.ok.mean(), len(g))
+        rows.append({"oof_accuracy_bin": "all", "context": ctx, "n": len(g), "confirm_rate": float(g.ok.mean()),
+                     "ci_lo": lo, "ci_hi": hi})
+    return pd.DataFrame(rows)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1271,9 +1331,17 @@ def cmd_stratify(args):
             + _md(t) + "\n")
     for name, sub, col in agree_error_tables(df, args.min_votes):
         b = binned_rate(sub, col, ROUTING_BINS)
-        b.to_csv(os.path.join(args.out_dir, f"agree_error_{name.split()[0].lower()}_{col}.csv"), index=False)
+        tag = "gated" if "oof_accuracy" in name else "all"
+        b.to_csv(os.path.join(args.out_dir, f"agree_error_{tag}_{col}.csv"), index=False)
         text += (f"\n## {name}: human-majority Disagree rate by {col} (n = {len(sub.dropna(subset=[col])):,})\n\n"
                  + _md(b, 4) + "\n")
+    if "d_crossing_m" in df and df.d_crossing_m.notna().any():
+        for cast, tag, title in ((False, "all", "AI Disagree assessments"), (True, "cast", "cast AI Disagree votes")):
+            c = disagree_context_table(df, args.min_votes, cast_only=cast)
+            c.to_csv(os.path.join(args.out_dir, f"disagree_context_{tag}.csv"), index=False)
+            text += (f"\n## {title}: human-majority confirm rate by road context within oof_accuracy quartiles "
+                     f"(far = >= {FAR_CROSSING_M} m from the nearest intersection node and OSM crossing)\n\n"
+                     + _md(c.round(3), 3) + "\n")
     with open(os.path.join(args.out_dir, "stratify.md"), "w") as f:
         f.write(text)
     print(text)
