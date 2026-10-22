@@ -26,7 +26,7 @@ report.
 | F4 | Medium | Nothing binds `accuracy_mappings/<type>.json` to the pinned model revision; #19's `regression/parity_expected.csv` has no accuracy column, so a stale map passes the smoke test. | Add `validation_estimated_accuracy` to the expected file; record the map's sha256 (or load the map from the HF snapshot at the pinned revision) in the API. |
 | F5 | Medium | Training only ever saw panoramas from the lab's store; `/process` falls back to stitching Google tiles (zoom 4, or zoom 3 upsampled) on a cache miss. That path's pixels were never compared with training's, and the share of production assessments that take it is unmeasured here. | Measure the `ai_image_source` share; run `serving_parity.py` on one panorama through both paths before the deploy. |
 | F6 | Medium | The new model never re-assesses a label the old one assessed (`aiAssessmentIsCurrent` is a label-type match only). Old Disagree-hidden labels stay hidden ([#5793](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5793)), and the first days of new-revision data come from the nightly actor's backlog order (up to 800 labels per city per day), not a random sample. | Measure by revision and by city; do not read the first 48 h as a platform-wide precision. |
-| F7 | Medium | Shadow mode exists today, but only in the 46 cities with tag suggestions on: there `ai-validation-enabled = false` still calls the API and writes `label_ai_assessment` with no vote. Elsewhere the only no-code lever is `ai-validation-min-accuracy.<city>` above 1.0, which casts an AI *Unsure* vote per label. | Use the right lever per city; an assess-without-voting mode for every city is the SidewalkWebpage side of #52. |
+| F7 | Medium | Shadow mode exists today without code: `ai-validation-enabled = false` keeps calling the API (tag suggestions are on in every one of the 57 cities where the validator runs) and writes `label_ai_assessment` with no vote. But a shadow-period assessment then suppresses the vote: `getLabelsToValidateWithAi` skips any label already assessed as its current type, so those labels never get a vote when validation is switched back on unless the shadow assessments are deleted first. | Shadow with `ai-validation-enabled = false`; plan the deletion (or a re-assess path) before switching on; both belong in #52. |
 | F8 | Low–Medium | Train/serve parity was measured on arm64/mps only; GPU depth and GPU classifier noise are unmeasured, so a correct deploy can miss the smoke test's 0.01 tolerance (sidewalk-ai-api#18 says so). | Run the smoke test on a `dev` container on makelab2 built from the PR branch, before merging; measure before loosening. |
 | F9 | Low | `coord_frame` is hard-coded `"level"`. Training rendered AI-authored labels *without* tilt (all 220 AI-authored CurbRamp rows have `tilt_applied = 0`), so when [#5790](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5790) starts sending AI labels they must go as `"rig"`. | Precondition for #5790, not for this deploy. |
 
@@ -35,7 +35,7 @@ round-3 training row has one (0 of 64,465 ok rows; `camera_pitch` is null in 0 r
 depth checkpoint is the same file (`depth_anything_v2_metric_vkitti_vitb.pth`, pinned to HF commit `e96fd0c8` in the
 API) and the same encoder (`vitb`) on both sides; `generation_run.json` records the package at `7ce25ff`, which is the
 `v1.0.0` tag the API pins; transformers 4.55 (`use_fast=False`) and 5.20 (`backend="pil"`) produce identical tensors
-(parity doc); every configured city's `ai-validation-min-accuracy` is `0.92` (48 explicit entries, `staging` inherits
+(parity doc); every configured city's `ai-validation-min-accuracy` is `0.92` (60 explicit entries, `staging` inherits
 one of them); the map lookup walks the dict in insertion order and the maps are written ascending with values rounded
 down; the on-submit path filters `panoSource == Gsv` in `ExploreController` before calling the AI, so Mapillary labels
 do not reach it; Obstacle Agree, which the Phase-0 map (sidewalk-ai-api#16) clears only at confidence 0.999996 (map
@@ -53,27 +53,29 @@ again: the served Disagree accuracy was 0.93 and the observed one 0.46 (`docs/ca
 
 **Evidence.** `calibration/calibrate.py` on the round-3 `predictions.csv` (fit on `val`, the default) under three
 priors: the `deployment_priors.json` the generation run wrote (measured 2026-10-20), a production estimate (the
-≥2-vote majority share, below), and the 90:10 of [#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4).
+≥2-vote majority share with ties counted as correct, 0.041/0.065/0.204/0.224/0.152; the ties-out variant in the
+attribution table below moves the Agree numbers by at most 0.01 and the held-out Crosswalk Disagree to 0.293 at
+0.548), and the 90:10 of [#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4).
 Coverage and precision are at the 0.92 gate, reweighted to the prior:
 
 | Type | Prior (incorrect share) | Eval split | Agree cov / prec | Disagree cov / prec (gated n) |
 |---|---|---|---|---|
 | CurbRamp | file 0.118 | test | 0.883 / 0.994 | 0 / – |
 | CurbRamp | file 0.118 | test_heldout | 0.751 / 0.991 | 0 / – |
-| CurbRamp | production 0.065 | test · test_heldout | 0.886 / 0.997 · 0.755 / 0.995 | 0 / – |
+| CurbRamp | production (ties→correct) 0.065 | test · test_heldout | 0.886 / 0.997 · 0.755 / 0.995 | 0 / – |
 | NoCurbRamp | file 0.374 | test | 0.440 / 0.973 | **0.206 / 0.978** |
 | NoCurbRamp | file 0.374 | test_heldout | 0.372 / 0.933 | 0.056 / 1.000 |
-| NoCurbRamp | production 0.204 | test · test_heldout | 0.710 / 0.985 · 0.634 / 0.956 | 0 / – |
+| NoCurbRamp | production (ties→correct) 0.204 | test · test_heldout | 0.710 / 0.985 · 0.634 / 0.956 | 0 / – |
 | NoCurbRamp | 90:10 | test | 0.857 / 0.991 | 0 / – |
 | Obstacle | file 0.358 | test · test_heldout | 0.475 / 0.959 · 0.489 / 0.970 | 0 / – |
-| Obstacle | production 0.224 | test · test_heldout | 0.499 / 0.978 · 0.528 / 0.984 | 0 / – |
+| Obstacle | production (ties→correct) 0.224 | test · test_heldout | 0.499 / 0.978 · 0.528 / 0.984 | 0 / – |
 | SurfaceProblem | file 0.320 | test | 0.676 / 0.957 | 0 / – |
 | SurfaceProblem | file 0.320 | test_heldout | 0.528 / **0.890** | 0 / – |
-| SurfaceProblem | production 0.152 | test · test_heldout | 0.698 / 0.983 · 0.558 / 0.955 | 0 / – |
+| SurfaceProblem | production (ties→correct) 0.152 | test · test_heldout | 0.698 / 0.983 · 0.558 / 0.955 | 0 / – |
 | Crosswalk | file 0.061 | test | 0.991 / 0.995 | **0.422 / 1.000** |
 | Crosswalk | file 0.061 | test_heldout (n=138) | 0.864 / 0.996 | **0.319 / 0.643** (32 gated, **1 wrong**) |
-| Crosswalk | production 0.041 | test | 0.992 / 0.997 | **0.380 / 1.000** (98) |
-| Crosswalk | production 0.041 | test_heldout | 0.865 / 0.997 | **0.292 / 0.541** (32, 1 wrong) |
+| Crosswalk | production (ties→correct) 0.041 | test | 0.992 / 0.997 | **0.380 / 1.000** (98) |
+| Crosswalk | production (ties→correct) 0.041 | test_heldout | 0.865 / 0.997 | **0.292 / 0.541** (32, 1 wrong) |
 | Crosswalk | 90:10 | test_heldout | 0.862 / 0.992 | 0.356 / 0.754 |
 
 Three things in that table. Disagree never clears the gate for CurbRamp, Obstacle or SurfaceProblem under any prior,
@@ -186,16 +188,20 @@ hidden until #5793 is decided.
 
 **What would prove this wrong.** Nothing; it is by design. The consequence is only in how the first 48 h are read.
 
-### F7. What shadow mode exists today
+### F7. Shadow mode exists today, and it has a trap
 
 `AiService` calls the API whenever `ai-validation-enabled` **or** `ai-tag-suggestions-enabled` is on for the city and
-always writes `label_ai_assessment`; it submits a vote only when `ai-validation-enabled` is on. So in the 46 cities
-with tag suggestions on, `ai-validation-enabled = false` is a true shadow mode: the new revision's verdict, accuracy
-and confidence are recorded for every label and no vote is cast. In a city without tag suggestions that setting
-records nothing, and the only no-code shadow is `ai-validation-min-accuracy.<city>` above 1.0, which keeps the
-assessments and turns every verdict into an Unsure vote: a real `label_validation` row by the AI user, counted in
-`unsure_count` and in `ValidationQueuePolicy.totalVotes`. An assess-without-voting mode that does not depend on the
-tagger flag is the SidewalkWebpage half of #52.
+always writes `label_ai_assessment`; it submits a vote only when `ai-validation-enabled` is on. On `develop` the two
+sets are identical (57 cities each), so `ai-validation-enabled = false` is a true shadow mode in every city where the
+validator runs: the new revision's verdict, accuracy and confidence are recorded for every label and no vote is cast.
+(`ai-validation-min-accuracy.<city>` above 1.0 would also keep the assessments while casting Unsure votes; it is not
+needed anywhere today.)
+
+The trap: `getLabelsToValidateWithAi` skips any label that already has an assessment of its current type
+(`aiAssessmentIsCurrent`, F6), and `AiService` writes that assessment during the shadow. So every label assessed while
+a city is shadowed is permanently skipped once validation is switched back on, and never gets the vote the shadow was
+meant to earn it, unless the shadow-period rows (by `validator_training_date` or `validator_revision`, and
+`label_validation_id IS NULL`) are deleted first, or a re-assess path is added. Either belongs in #52's design.
 
 ## 2. Checklist, in order
 
@@ -234,9 +240,12 @@ half-size, `API_VERSION` 1.2.0, the smoke test and the placeholder guard)
 5. [ ] Replace every `PLACEHOLDER_REVISION` with the step-2 shas; confirm `training_date` (`10-21-2026`) is the date
        the cards say. Add the format test for both dates and the `image_source` enum (F3), and the map-to-revision
        check (F4).
-6. [ ] Regenerate `regression/parity_expected.csv` with the new revisions (`analysis/serving_parity.py expected
-       --api-dir <checkout>` here, then copy it over), with `validation_estimated_accuracy` added (F4); the file in
-       #19 holds the 2025-08 values and every row fails until then.
+6. [ ] Regenerate `regression/parity_expected.csv` for the new revisions. The real workflow, in this repo:
+       `analysis/serving_parity.py train-worker --models` (training venv) and `api-worker --models` (API venv) against
+       the #19 checkout with the step-5 revisions pinned, then `expected --train <train out> --api <api out> --out
+       <csv>`, and copy the result over. `expected` writes `expected_p_incorrect` and `expected_validation_result` only;
+       the `validation_estimated_accuracy` column (F4) is new code in `expected_values` and in `parity_smoke.py`, not
+       a flag. The file in #19 holds the 2025-08 values and every row fails until then.
 7. [ ] On makelab2, from the PR branch, **before merging**: `./docker_build.sh dev && ./docker_start.sh dev`; confirm
        VRAM fits beside prod (`nvidia-smi`; the dev container needs ~9–10 GB); `python3 regression/parity_smoke.py`
        against `127.0.0.1:60655` (F8): all `in_smoke_set` rows within 0.01, accuracy column equal, and the whole
@@ -263,9 +272,9 @@ half-size, `API_VERSION` 1.2.0, the smoke test and the placeholder guard)
 **SidewalkWebpage**
 
 12. [ ] No gate to flip: every configured city is at `0.92`. For deployments to shadow (the held-out-like ones,
-        SurfaceProblem's weak countries; #52): in a city with tag suggestions on, `ai-validation-enabled = false`
-        records without voting; elsewhere `ai-validation-min-accuracy.<city>` above 1.0 with F7's Unsure side effect,
-        or wait for #52's mechanism. Write the choice into #52.
+        SurfaceProblem's weak countries; #52): `ai-validation-enabled = false` records without voting in every city
+        where the validator runs today. Before switching a shadowed city back on, delete its shadow-period
+        assessments (F7) or the labels assessed meanwhile never get a vote. Write both into #52.
 13. [ ] Watch the website logs for `Failed to parse AI API response` and `returned error status` in the first nightly
         run after the deploy (F3, F8).
 
@@ -291,7 +300,9 @@ on makelab1, port 5434):
 ## 3. Rollback
 
 - **API**: `docker images sidewalk-ai-api`, `docker tag sidewalk-ai-api:<previous-tag> sidewalk-ai-api`,
-  `./docker_start.sh`. Each image carries its own models and maps, so this restores the 2025 models and whatever maps
+  `./docker_start.sh`. If production predates version tagging (builds before 2026-10-14 carry only `latest`), the
+  rebuild moves `latest` and the old image is left untagged, so there is no `<previous-tag>`: use the image ID
+  recorded in step 9, `docker tag <image id> sidewalk-ai-api`, then `./docker_start.sh`. Each image carries its own models and maps, so this restores the 2025 models and whatever maps
   that image was built with. Those are the Phase-0 maps (every Disagree held back) **only if production was built
   from sidewalk-ai-api#16 or later**; an older image serves the original 2025 maps, whose Obstacle `incorrect` map
   reaches 1.0. Step 9's record says which: an `API_VERSION` of 1.0.5 or later, or a `sha256sum` of
@@ -314,7 +325,7 @@ on makelab1, port 5434):
 - Calibration table: `calibration.calibrate.calibrate(df, prior, "val", eval_split)` on each type's
   `retrain-2026-10/<T>/predictions.csv` (val/test/test_heldout rows, e.g. CurbRamp 1,487/1,479/546), priors from
   `retrain-2026-10/deployment_priors.json` (`measured_on` 2026-10-20), the ≥2-vote majority shares of the production
-  pull (ties out), and `{correct: 0.9, incorrect: 0.1}`. Coverage and precision are the report's `gate_coverage` /
+  pull with ties counted as correct (`h_dis > h_agree`), and `{correct: 0.9, incorrect: 0.1}`. Coverage and precision are the report's `gate_coverage` /
   `gate_precision` per verdict; the gated n and the wrong count come from `verdicts()` and `api_lookup_many` on the
   same rows.
 - Prior attribution: `ai_assessments_rounded4.csv` from the 2026-10-17 pull (`analysis/pull_ai_assessments.sh`,
