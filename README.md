@@ -493,11 +493,13 @@ python publish_to_hf.py --label_type CurbRamp --out /path/to/output   # writes C
 | `publish/dataset/` | crops as `<split>/<class>/<city>_<label_id>.webp`, placed by `split.csv` (never by listing a directory), hard-linked or copied (`--link-mode copy`); `split.csv` with `crop_path` rewritten to that layout; `manifest.csv`; this type's `deployment_priors.json` entry; `generation_run.json`; `dataset_info.json`; `SHA256SUMS`; `croissant.json`; the dataset card |
 
 Two options matter for a retrain whose crops live elsewhere (klone) and whose training cities include private
-deployments: `--what model` stages and pushes the model repo alone (the card's dataset content hash becomes a `TODO`
-until the dataset is published from the crop machine), and the public city list, read from `/v3/api/cities` or
-`--public-cities <file>`, drives a redaction: a model staging renames every private deployment to `private-<n>` in
-`metrics.json`, `calibration_report.json`, the prior and the card, and a dataset staging is refused when `split.csv`
-holds one (crop names and the manifest would carry it).
+deployments. `--what model` stages and pushes the model repo alone (the card's dataset content hash becomes a `TODO`
+until the dataset is published from the crop machine; `--what dataset` stages both and uploads the dataset). And the
+city lists, read from `/v3/api/cities` or `--public-cities <file>`, drive two independent checks: private deployments
+are *removed* from every list and source string ("and N non-public deployments"), their per-city metrics are pooled
+into one `non_public` row, manifest rows from them are dropped and a dataset staging is refused when `split.csv` holds
+one; then a survivor gate reads every staged text file and refuses on any case-insensitive hit for any non-public id,
+display name or hostname the API lists. `staging.json` records the lists used and `--push-staged` runs the gate again.
 
 Staging stops instead of publishing the wrong thing. It refuses training-only files (`optimizer.pt`, `scheduler.pt`,
 `rng_state*.pth`, `training_args.bin`, `scaler.pt`, any `checkpoint-*` directory) and checks every staged folder for them
@@ -532,8 +534,8 @@ Anything still unknown is written as `TODO:` (the DOI lines just say none has be
 `croissant.json` is validated when `mlcroissant` is installed and written unvalidated otherwise.
 
 ```bash
-python publish_to_hf.py --label_type CurbRamp --out ROOT --what model  # model only, no crops needed; private cities aliased
-python publish_to_hf.py --label_type CurbRamp --out ROOT --push-staged --what model --yes
+python publish_to_hf.py --label_type CurbRamp --out ROOT --what model  # model only, no crops needed; private cities removed
+python publish_to_hf.py --label_type CurbRamp --out ROOT --push-staged --what model --allow-todo --yes   # cards keep 2–3 TODOs
 python publish_to_hf.py --audit                                        # live repos: stray files, overlapping datasets
 python publish_to_hf.py --label_type CurbRamp --out ROOT --push        # restage, then dry run
 python publish_to_hf.py --label_type CurbRamp --out ROOT --push --yes
