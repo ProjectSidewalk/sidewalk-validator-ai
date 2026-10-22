@@ -1,0 +1,35 @@
+{
+  "label_type": "NoCurbRamp",
+  "checkpoint": "projectsidewalk/sidewalk-validator-ai-nocurbramp",
+  "revision": "9f3f3bb2f40864a468fb65e43644ee5ba54e3e19",
+  "device": "mps",
+  "split": "test",
+  "n": 1374,
+  "categories": {
+    "TP": 732,
+    "FP": 103,
+    "FN": 65,
+    "TN": 474
+  },
+  "n_label_point_uncertain": 125,
+  "public_only": true,
+  "n_sampling_pool": 1282,
+  "categories_sampling_pool": {
+    "TP": 700,
+    "FP": 97,
+    "FN": 62,
+    "TN": 423
+  },
+  "attn_implementation": "eager",
+  "torch": "2.14.1",
+  "seed": 42,
+  "per_category": 50,
+  "device_check": {
+    "against": "cpu",
+    "max_abs_diff_p_correct": 2.1442770957946777e-05,
+    "category_flips": 0
+  },
+  "explain_pass_max_abs_diff_p_correct": 1.1920928955078125e-07,
+  "explain_seconds_per_crop_median": 0.19915643753483891,
+  "n_sampled_label_point_uncertain": 15
+}

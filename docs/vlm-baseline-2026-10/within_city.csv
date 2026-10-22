@@ -1,0 +1,73 @@
+model,split,label_type,auc_within_city,n_cities,n,set
+gemma4-12b,test,all (pooled),0.7254,7,300,subset
+gemma4-12b,test,CurbRamp,0.7460,1,60,subset
+gemma4-12b,test,NoCurbRamp,0.5000,1,60,subset
+gemma4-12b,test,Obstacle,0.5610,3,60,subset
+gemma4-12b,test,SurfaceProblem,0.7571,2,60,subset
+gemma4-12b,test,Crosswalk,1.0000,2,60,subset
+gemma4-12b,test_heldout,all (pooled),0.7021,3,200,subset
+gemma4-12b,test_heldout,CurbRamp,0.8750,2,40,subset
+gemma4-12b,test_heldout,NoCurbRamp,0.5951,1,40,subset
+gemma4-12b,test_heldout,Obstacle,0.3333,2,40,subset
+gemma4-12b,test_heldout,SurfaceProblem,0.6410,2,40,subset
+gemma4-12b,test_heldout,Crosswalk,0.9241,2,40,subset
+production,test,all (pooled),0.9217,7,300,subset
+production,test,CurbRamp,0.9365,1,60,subset
+production,test,NoCurbRamp,1.0000,1,60,subset
+production,test,Obstacle,0.8720,3,60,subset
+production,test,SurfaceProblem,0.7571,2,60,subset
+production,test,Crosswalk,0.9630,2,60,subset
+production,test_heldout,all (pooled),0.8633,3,200,subset
+production,test_heldout,CurbRamp,0.9028,2,40,subset
+production,test_heldout,NoCurbRamp,0.9676,1,40,subset
+production,test_heldout,Obstacle,0.8889,2,40,subset
+production,test_heldout,SurfaceProblem,0.6581,2,40,subset
+production,test_heldout,Crosswalk,0.9241,2,40,subset
+qwen3vl-2b,test,all (pooled),0.6158,7,300,subset
+qwen3vl-2b,test,CurbRamp,0.5873,1,60,subset
+qwen3vl-2b,test,NoCurbRamp,0.6863,1,60,subset
+qwen3vl-2b,test,Obstacle,0.5061,3,60,subset
+qwen3vl-2b,test,SurfaceProblem,0.6000,2,60,subset
+qwen3vl-2b,test,Crosswalk,0.9815,2,60,subset
+qwen3vl-2b,test_heldout,all (pooled),0.5988,3,200,subset
+qwen3vl-2b,test_heldout,CurbRamp,0.6667,2,40,subset
+qwen3vl-2b,test_heldout,NoCurbRamp,0.4291,1,40,subset
+qwen3vl-2b,test_heldout,Obstacle,0.5309,2,40,subset
+qwen3vl-2b,test_heldout,SurfaceProblem,0.6325,2,40,subset
+qwen3vl-2b,test_heldout,Crosswalk,0.9304,2,40,subset
+qwen3vl-8b,test,all (pooled),0.6967,7,300,subset
+qwen3vl-8b,test,CurbRamp,0.6667,1,60,subset
+qwen3vl-8b,test,NoCurbRamp,0.1569,1,60,subset
+qwen3vl-8b,test,Obstacle,0.6037,3,60,subset
+qwen3vl-8b,test,SurfaceProblem,0.7714,2,60,subset
+qwen3vl-8b,test,Crosswalk,1.0000,2,60,subset
+qwen3vl-8b,test_heldout,all (pooled),0.6638,3,200,subset
+qwen3vl-8b,test_heldout,CurbRamp,0.8264,2,40,subset
+qwen3vl-8b,test_heldout,NoCurbRamp,0.3603,1,40,subset
+qwen3vl-8b,test_heldout,Obstacle,0.5802,2,40,subset
+qwen3vl-8b,test_heldout,SurfaceProblem,0.4957,2,40,subset
+qwen3vl-8b,test_heldout,Crosswalk,0.8544,2,40,subset
+gemma4-12b,test,all (pooled),0.7327,17,1250,full
+gemma4-12b,test,CurbRamp,0.8099,8,250,full
+gemma4-12b,test,NoCurbRamp,0.5882,6,250,full
+gemma4-12b,test,Obstacle,0.5535,4,250,full
+gemma4-12b,test,SurfaceProblem,0.7063,6,250,full
+gemma4-12b,test,Crosswalk,0.9807,7,250,full
+gemma4-12b,test_heldout,all (pooled),0.6965,3,738,full
+gemma4-12b,test_heldout,CurbRamp,0.7922,3,150,full
+gemma4-12b,test_heldout,NoCurbRamp,0.6193,2,150,full
+gemma4-12b,test_heldout,Obstacle,0.3135,3,150,full
+gemma4-12b,test_heldout,SurfaceProblem,0.6559,3,150,full
+gemma4-12b,test_heldout,Crosswalk,0.8899,3,138,full
+production,test,all (pooled),0.9168,17,1250,full
+production,test,CurbRamp,0.9498,8,250,full
+production,test,NoCurbRamp,0.9193,6,250,full
+production,test,Obstacle,0.8200,4,250,full
+production,test,SurfaceProblem,0.8449,6,250,full
+production,test,Crosswalk,0.9846,7,250,full
+production,test_heldout,all (pooled),0.8444,3,738,full
+production,test_heldout,CurbRamp,0.8336,3,150,full
+production,test_heldout,NoCurbRamp,0.9327,2,150,full
+production,test_heldout,Obstacle,0.7184,3,150,full
+production,test_heldout,SurfaceProblem,0.6754,3,150,full
+production,test_heldout,Crosswalk,0.9416,3,138,full

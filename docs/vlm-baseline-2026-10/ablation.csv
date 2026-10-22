@@ -1,0 +1,3 @@
+model,label_type,variant,n,n_incorrect,auc,balanced_accuracy,accuracy,recall_correct,recall_incorrect,r_correct_p92,r_correct_p95,r_incorrect_p92,r_incorrect_p95
+qwen3vl-8b,CurbRamp,definition,100,50,0.7608,0.6600,0.6600,0.3400,0.9800,0.4000,0.4000,0.0800,0.0800
+qwen3vl-8b,CurbRamp,no-definition,100,50,0.5560,0.5500,0.5500,0.8200,0.2800,0.0000,0.0000,0.0200,0.0200

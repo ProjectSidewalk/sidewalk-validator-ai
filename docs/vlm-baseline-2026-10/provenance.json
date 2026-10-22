@@ -1,0 +1,424 @@
+{
+ "bootstrap": {
+  "n_boot": 1000,
+  "seed": 20261021,
+  "stratified_by_class": true
+ },
+ "date": "2026-10-21",
+ "git_commit": "95f5d8e151a902fff77a1c75f595b441082cb147",
+ "git_dirty": false,
+ "greedy": {
+  "gemma4-12b.csv": {
+   "rows": 10,
+   "sha256": "03b999c079d64fc42fd8b7a4a2f432356c3838a63929eefc769e3120673af869"
+  },
+  "qwen3vl-2b.csv": {
+   "rows": 10,
+   "sha256": "8312c92978eae61b58229529c9d879140852bed54de47041486f6905f463033e"
+  },
+  "qwen3vl-8b.csv": {
+   "rows": 10,
+   "sha256": "275cec6733c5b636985c8edd7ebe2154eb6dc69fd8db8837a65bb3c68f4ba06b"
+  }
+ },
+ "hardware": "arm64 Apple M1 Max, 32 GB, macOS 15.5",
+ "headline_subset_per_type": 100,
+ "inputs": {
+  "cities.json": {
+   "sha256": "c11f21dc3853d58cc0f5264bcf969668c90cdf0b49a6f010ace0029805660df6"
+  },
+  "sample.csv": {
+   "rows": 1988,
+   "sha256": "51ef52aceee63f5c07cb24939ca2a5939d8e21edc99805aa21320c3dd8f7f2e3"
+  }
+ },
+ "min_city_n": 30,
+ "models": {
+  "gemma4-12b": {
+   "quantisation": "4-bit (MLX)",
+   "repo": "mlx-community/gemma-4-12B-it-qat-4bit",
+   "revision": "e70c6b3ba0979b3357dcd2f223ad8bde7787a6b6",
+   "size_bytes": 11020140534
+  },
+  "production": {
+   "Crosswalk": {
+    "repo": "projectsidewalk/sidewalk-validator-ai-crosswalk",
+    "revision": "b7936e5bd17a4b96db301f954e5d3a5fe9eaf361",
+    "size_bytes": 1217544220
+   },
+   "CurbRamp": {
+    "repo": "projectsidewalk/sidewalk-validator-ai-curbramp",
+    "revision": "969ad5a33079db7885c9e9a4eb5cd0f39d8fe57a",
+    "size_bytes": 1217544220
+   },
+   "NoCurbRamp": {
+    "repo": "projectsidewalk/sidewalk-validator-ai-nocurbramp",
+    "revision": "9f3f3bb2f40864a468fb65e43644ee5ba54e3e19",
+    "size_bytes": 1217544220
+   },
+   "Obstacle": {
+    "repo": "projectsidewalk/sidewalk-validator-ai-obstacle",
+    "revision": "8f0fe8fc48748fac35098e74c1848d015126deef",
+    "size_bytes": 1217544220
+   },
+   "SurfaceProblem": {
+    "repo": "projectsidewalk/sidewalk-validator-ai-surfaceproblem",
+    "revision": "0e1439daa5667c8a81f63e75f835bd51221df4c2",
+    "size_bytes": 1217544220
+   }
+  },
+  "qwen3vl-2b": {
+   "quantisation": "4-bit (MLX)",
+   "repo": "mlx-community/Qwen3-VL-2B-Instruct-4bit",
+   "revision": "9c4f5209e57b31f4b9dfba735de3fb983739c9cc",
+   "size_bytes": 1798023774
+  },
+  "qwen3vl-8b": {
+   "quantisation": "4-bit (MLX)",
+   "repo": "mlx-community/Qwen3-VL-8B-Instruct-4bit",
+   "revision": "defcdea7cc7a4b0858fea563cbbce171d328e457",
+   "size_bytes": 5776633051
+  }
+ },
+ "outputs": {
+  "ablation.csv": "3ce595686c92c6d085e56fc03a2f3aea03367e56d46349793bfe319b50eaf607",
+  "answer_mass.csv": "9a8f27a556518370f277e5ebf6d2b504656b87c86641ccf74d9ef13c8e523928",
+  "bootstrap_auc.csv": "dccbc851652fe8825779026973446d53b0b49b2d14f25bef4c93b2c7994b0e29",
+  "by_split.csv": "12fe80ee14625a4d9216cb0e393743cfc14ea8004617850d41c3ccfc438d8e59",
+  "full_sample.csv": "4d0e074aef47159ddcf3422a114ef7e9b273ca6ef7f838184d92fb29ab5f4453",
+  "greedy_check.csv": "9c19f76f4027ccedd6e60f1d1031683e041e5bbbe6382893f4baf8b984d8aa08",
+  "hard.csv": "785d9a77495c953f595e5e4f2a5f3911bd3d577b8f2b73d81be01a852ed4d83c",
+  "headline.csv": "8a3b8631d7f86f6c86a0559643448cbf623d591380392828402e3f204dac2e5d",
+  "latency.csv": "580e2eed5eb768d37e9611ca06fe2f54a0ef929d16e14e8fd10735bb4b7de472",
+  "per_city.csv": "284e9b292f64418c02301f9e3436363a192f08978b7e2e1941a654db4ecd3dd9",
+  "per_city_type.csv": "112cf19007296e261f1918f2d622a1e4556706b9cc2c791c3f10a4cad0bbdc67",
+  "split_diff.csv": "06a0b1c444e9ed6720ff04ac52bc8e3b5758aa190c1697e9dc7bb93f0a8a09eb",
+  "within_city.csv": "008fa38181a7f3b89c6f9d362fea0c24f5c39298781bf2cfff743405c8713045"
+ },
+ "packages": {
+  "matplotlib": "3.11.2",
+  "mlx": "0.32.4",
+  "mlx-vlm": "0.7.10",
+  "numpy": "2.5.4",
+  "pandas": "3.0.6",
+  "scikit-learn": "1.9.1",
+  "torch": "2.14.1",
+  "transformers": "5.20.2"
+ },
+ "packet": {
+  "explanations_csv": {
+   "rows": 100,
+   "sha256": "e7603326bcc47ef789dc4d871e27dd641af9dcdc1c786aec3004879675e82dc0"
+  },
+  "items_by_type_category": {
+   "Crosswalk/vlm_right_production_right": 5,
+   "Crosswalk/vlm_right_production_wrong": 5,
+   "Crosswalk/vlm_wrong_production_right": 7,
+   "Crosswalk/vlm_wrong_production_wrong": 3,
+   "CurbRamp/vlm_right_production_right": 1,
+   "CurbRamp/vlm_right_production_wrong": 9,
+   "CurbRamp/vlm_wrong_production_right": 7,
+   "CurbRamp/vlm_wrong_production_wrong": 3,
+   "NoCurbRamp/vlm_right_production_right": 5,
+   "NoCurbRamp/vlm_right_production_wrong": 5,
+   "NoCurbRamp/vlm_wrong_production_right": 6,
+   "NoCurbRamp/vlm_wrong_production_wrong": 4,
+   "Obstacle/vlm_right_production_right": 3,
+   "Obstacle/vlm_right_production_wrong": 7,
+   "Obstacle/vlm_wrong_production_right": 2,
+   "Obstacle/vlm_wrong_production_wrong": 8,
+   "SurfaceProblem/vlm_right_production_right": 3,
+   "SurfaceProblem/vlm_right_production_wrong": 7,
+   "SurfaceProblem/vlm_wrong_production_right": 4,
+   "SurfaceProblem/vlm_wrong_production_wrong": 6
+  },
+  "key_sha256": "12fe5dad393b82cb46dc80d58962d2783d0b3e82de902b36f63504fbdb47831e",
+  "median_reason_words": 27.0,
+  "n_items": 100,
+  "passes": 2,
+  "reason_source": {
+   "generated": 23,
+   "reused": 77
+  },
+  "vlm_correct_share_by_type": {
+   "Crosswalk": 0.5,
+   "CurbRamp": 0.5,
+   "NoCurbRamp": 0.5,
+   "Obstacle": 0.5,
+   "SurfaceProblem": 0.5
+  },
+  "vlm_model": [
+   "gemma4-12b"
+  ],
+  "why_prompt": "In at most 30 words, why?",
+  "zips": {
+   "vlm-explanations-packet-pass1.zip": {
+    "files": [
+     "RUBRIC.md",
+     "pass1_sheet.csv"
+    ],
+    "images": {
+     "items_bare": 100
+    }
+   },
+   "vlm-explanations-packet-pass2.zip": {
+    "files": [
+     "RUBRIC.md",
+     "pass2_sheet.csv"
+    ],
+    "images": {
+     "items_annotated": 100
+    }
+   }
+  }
+ },
+ "prompts": {
+  "Crosswalk": "A crosswalk label marks a designated place for pedestrians to cross a road, usually painted stripes or parallel lines on the roadway surface, sometimes raised or textured paving. The label is wrong if there is no marked crossing at the labelled point. The labelled point is at the centre of the image. Is this a correct crosswalk label? Answer yes or no.",
+  "CurbRamp": "A curb ramp is a short ramp cut into or built up to a curb so that people using wheelchairs, walkers or strollers can move between the sidewalk and the street, often with yellow tactile paving at the bottom. Driveways, alleys and flush building entrances are not curb ramps. The labelled point is at the centre of the image. Is this a correct curb ramp label? Answer yes or no.",
+  "NoCurbRamp": "A missing curb ramp label marks a place where a curb ramp is needed but absent: a sidewalk meets a street crossing or corner at a raised curb, with no ramp for wheelchair users. The label is wrong if a curb ramp is actually present, or if no pedestrian route crosses there. The labelled point is at the centre of the image. Is this a correct missing curb ramp label? Answer yes or no.",
+  "Obstacle": "An obstacle label marks an object in the sidewalk's pedestrian path that blocks it or narrows it so a wheelchair user could not easily pass, such as a pole, sign, fire hydrant, tree, bin, parked vehicle or overgrown vegetation. An object beside the path that leaves it clear is not an obstacle. The labelled point is at the centre of the image. Is this a correct obstacle label? Answer yes or no.",
+  "SurfaceProblem": "A surface problem label marks damage to the sidewalk's walking surface that makes it hard to roll or walk on, such as large cracks, uplifted or sunken slabs (often from tree roots), bumps, missing or broken pavement, loose gravel or dirt, or grass growing over the sidewalk. The labelled point is at the centre of the image. Is this a correct surface problem label? Answer yes or no."
+ },
+ "python": "3.12.14",
+ "reuse_check": {
+  "csv_sha256": "477df28451db1915c480ecabba47a59bcd1a8d6a0d9a2f9f6ecb04c1369d4da8",
+  "date": "2026-10-21",
+  "identical": 5,
+  "n": 5,
+  "what": "5 reused reasons (one per type) regenerated without --reuse in .venv with MlxVlm.generate, same prompt/answer turn/max_tokens 60, compared as strings to explanations.csv"
+ },
+ "scores": {
+  "gemma4-12b.csv": {
+   "meta": {
+    "model": "gemma4-12b",
+    "no_ids": [
+     1904,
+     3771,
+     7018,
+     951,
+     2301,
+     9424
+    ],
+    "no_tokens": [
+     "no",
+     "No",
+     "NO",
+     " no",
+     " No",
+     " NO"
+    ],
+    "peak_memory_gb": 11.584706586,
+    "repo": "mlx-community/gemma-4-12B-it-qat-4bit",
+    "variant": "definition",
+    "yes_ids": [
+     4443,
+     10784,
+     26915,
+     11262,
+     8438,
+     51327
+    ],
+    "yes_tokens": [
+     "yes",
+     "Yes",
+     "YES",
+     " yes",
+     " Yes",
+     " YES"
+    ]
+   },
+   "rows": 1988,
+   "sha256": "91938733e68c28d845a88ac66ad74ef98c98a781dd5b0dbdace3c8a3cc9e8efd"
+  },
+  "production.csv": {
+   "meta": {
+    "device": "mps",
+    "model": "production",
+    "repos": {
+     "Crosswalk": [
+      "projectsidewalk/sidewalk-validator-ai-crosswalk",
+      "b7936e5bd17a4b96db301f954e5d3a5fe9eaf361"
+     ],
+     "CurbRamp": [
+      "projectsidewalk/sidewalk-validator-ai-curbramp",
+      "969ad5a33079db7885c9e9a4eb5cd0f39d8fe57a"
+     ],
+     "NoCurbRamp": [
+      "projectsidewalk/sidewalk-validator-ai-nocurbramp",
+      "9f3f3bb2f40864a468fb65e43644ee5ba54e3e19"
+     ],
+     "Obstacle": [
+      "projectsidewalk/sidewalk-validator-ai-obstacle",
+      "8f0fe8fc48748fac35098e74c1848d015126deef"
+     ],
+     "SurfaceProblem": [
+      "projectsidewalk/sidewalk-validator-ai-surfaceproblem",
+      "0e1439daa5667c8a81f63e75f835bd51221df4c2"
+     ]
+    },
+    "torch": "2.14.1",
+    "transformers": "4.55.0"
+   },
+   "rows": 1988,
+   "sha256": "1d49cdeca732c2fede095e826232258cde1fdbe955ce81a176ae0ff26109bca9"
+  },
+  "qwen3vl-2b.csv": {
+   "meta": {
+    "model": "qwen3vl-2b",
+    "no_ids": [
+     2152,
+     2753,
+     8996,
+     902,
+     2308,
+     5664
+    ],
+    "no_tokens": [
+     "no",
+     "No",
+     "NO",
+     " no",
+     " No",
+     " NO"
+    ],
+    "peak_memory_gb": 2.959720157,
+    "repo": "mlx-community/Qwen3-VL-2B-Instruct-4bit",
+    "variant": "definition",
+    "yes_ids": [
+     9693,
+     9454,
+     14004,
+     9834,
+     7414,
+     14080
+    ],
+    "yes_tokens": [
+     "yes",
+     "Yes",
+     "YES",
+     " yes",
+     " Yes",
+     " YES"
+    ]
+   },
+   "rows": 671,
+   "sha256": "b0c14b3cda68d33d29e413950d43e666edabcae2f5d564895acfec04ed51ebdb"
+  },
+  "qwen3vl-8b.csv": {
+   "meta": {
+    "model": "qwen3vl-8b",
+    "no_ids": [
+     2152,
+     2753,
+     8996,
+     902,
+     2308,
+     5664
+    ],
+    "no_tokens": [
+     "no",
+     "No",
+     "NO",
+     " no",
+     " No",
+     " NO"
+    ],
+    "peak_memory_gb": 6.783643555,
+    "repo": "mlx-community/Qwen3-VL-8B-Instruct-4bit",
+    "variant": "definition",
+    "yes_ids": [
+     9693,
+     9454,
+     14004,
+     9834,
+     7414,
+     14080
+    ],
+    "yes_tokens": [
+     "yes",
+     "Yes",
+     "YES",
+     " yes",
+     " Yes",
+     " YES"
+    ]
+   },
+   "rows": 500,
+   "sha256": "9d179257a3362f855e4d7aac5c26ece64aa5baa00f5bae0d2efcecb42a2bc009"
+  },
+  "qwen3vl-8b__no-definition.csv": {
+   "meta": {
+    "model": "qwen3vl-8b",
+    "no_ids": [
+     2152,
+     2753,
+     8996,
+     902,
+     2308,
+     5664
+    ],
+    "no_tokens": [
+     "no",
+     "No",
+     "NO",
+     " no",
+     " No",
+     " NO"
+    ],
+    "peak_memory_gb": 6.779956104,
+    "repo": "mlx-community/Qwen3-VL-8B-Instruct-4bit",
+    "variant": "no-definition",
+    "yes_ids": [
+     9693,
+     9454,
+     14004,
+     9834,
+     7414,
+     14080
+    ],
+    "yes_tokens": [
+     "yes",
+     "Yes",
+     "YES",
+     " yes",
+     " Yes",
+     " YES"
+    ]
+   },
+   "rows": 100,
+   "sha256": "949d32e67b208c604bb7811f051d5f361d339a8b88d54707b49fe79b37de0f37"
+  }
+ },
+ "timing": {
+  "gemma4-12b.csv": {
+   "rows": 50,
+   "sha256": "b25ff0aeac54933c1bd09f4f118b1b5b2205221e5e439b5fdd26c0e05045ff58"
+  },
+  "production.csv": {
+   "rows": 50,
+   "sha256": "b06ee7645bccb53fa2e4eb86d575ce122d577f88dfb8c186a0207438432ebc41"
+  },
+  "qwen3vl-2b.csv": {
+   "rows": 50,
+   "sha256": "8d6a58d436c75f1894fb974e69873f7281780d532a6de7a14ee4b08db826fd1a"
+  },
+  "qwen3vl-8b.csv": {
+   "rows": 50,
+   "sha256": "c7b8f7666a88648b1796e619d5454c77c13b1f79b8e5df7bb4ea27b889853374"
+  }
+ },
+ "venvs": {
+  "production (.venv-prod, requirements.txt)": {
+   "device": "mps",
+   "torch": "2.14.1",
+   "transformers": "4.55.0"
+  },
+  "vlm (.venv)": {
+   "mlx": "0.32.4",
+   "mlx-vlm": "0.7.10",
+   "python": "3.12.14",
+   "torch": "2.14.1",
+   "transformers": "5.20.2"
+  }
+ }
+}

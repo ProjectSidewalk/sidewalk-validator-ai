@@ -1,0 +1,2 @@
+float32 depths in [1.0, 80.0): 52,428,800; crop_half differs for 3,113 (5.938e-05); API minus training: +1 for 3,050, -1 for 63, other 0
+sample depths n=1988, median 24.66 m; expected share of labels with a one-pixel crop-half difference: 1.114e-05

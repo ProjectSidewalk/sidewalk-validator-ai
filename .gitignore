@@ -14,6 +14,7 @@ slurm-*.out
 
 # Local environments
 .venv/
+.venv-*/
 
 # Analysis inputs/outputs contain private-city data and live outside the repo; never commit them here
 analysis/*.csv
