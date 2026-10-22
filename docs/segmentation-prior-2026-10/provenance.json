@@ -1,0 +1,172 @@
+{
+ "date": "2026-10-21",
+ "git_commit": "2912be1f0d44af83266934e2a3fa7610c10e671e",
+ "git_dirty": false,
+ "command": "python analysis/sidewalk_seg.py report --features ~/Data/sidewalk-validator-ai-seg-2026-10/features.csv --cls ~/Data/sidewalk-validator-ai-seg-2026-10/cls.npz --assessments ~/Data/sidewalk-validator-ai-prod-2026-10-17/ai_assessments_rounded4.csv --cities-json ~/Data/sidewalk-validator-ai-prod-2026-10-17/cities.json --run-dir ~/Data/sidewalk-validator-ai-seg-2026-10/klone --out-dir docs/segmentation-prior-2026-10 --private-dir ~/Data/sidewalk-validator-ai-seg-2026-10/private --extra-provenance ~/Data/sidewalk-validator-ai-seg-2026-10/klone_provenance.json --hash-extra sample_views_png=~/Data/sidewalk-validator-ai-seg-2026-10/sample_views.png",
+ "inputs": {
+  "features_csv": {
+   "sha256": "15786039f6dfcf278ceeda57bdd41ed4773a12c5b36f5240192cfcc882b867b2",
+   "rows": 800
+  },
+  "cls_npz": {
+   "sha256": "77c431a258345beffcea7c338ac6fefc46bcf0175f2d229aa10973f487587a7b",
+   "rows": null
+  },
+  "assessments": {
+   "sha256": "40a9a1f52f6d182b0075c4737c13614b5dfafc568b7dbd53ee1f0122afaa7c17",
+   "rows": 1005940
+  },
+  "cities_json": {
+   "sha256": "c11f21dc3853d58cc0f5264bcf969668c90cdf0b49a6f010ace0029805660df6",
+   "rows": null
+  },
+  "views_csv": {
+   "sha256": "087eb07317d6ac71ca9d2a2ccebeca4382cd6da674f4451fdbf108dbfef6ebf4",
+   "rows": 800
+  },
+  "oof_predictions_csv": {
+   "sha256": "9bf37973c63248a6bbeb30c944b5e76a34be6273afb091f1b6ae215a76ea01fd",
+   "rows": 800
+  },
+  "sample_views_png": {
+   "sha256": "1b1157a9b823e1376f0fda3b202a0aaa8c233adc0b0ccf331d4b4ec3d1537200",
+   "rows": null
+  }
+ },
+ "n_labels_ok": 800,
+ "outputs": {
+  "centre_class.csv": "5c5d20d3b9156dd1a4c4da19deae9d50e1e777b4c6abded9be4ea89e16f029f0",
+  "feature_auc.csv": "5549fe7c3c65c755e4ec3b1e8d6e97baf80eae4ccbbe1823c623a43460d75094",
+  "lift.csv": "49f46ea95d1ab33d46bba8b7b4e434ca06b8e9fd2e541315f79a755de8dc808e",
+  "lift_by_city.csv": "50a71b922bcd73683059e5bf037ecf3bea81b04e7e8baf2a603f9da9f46b5c19",
+  "production_on_sample.csv": "3ecc316f495be651bcca9f448a69605df18c81dd595845ace3e37ff87e6254dc",
+  "report.md": "d58635a4a223baa084851c5b2ba93b7c437f7065957d0472010e6761f4a437d8",
+  "sanity.csv": "774a4db521055e6061589a7755052204579266b540e36120f20234268a5f46b9",
+  "served_vs_rescored.csv": "eddb250c9fea0cf7028ec78101e6b77d37cae174ff27c63e93a8d467fbdbbb9c",
+  "strata.csv": "d4cc4e193b42494a82a3b1c84cf2f5ec93d6849abffc5ef7f07c3d03ab7d8be5"
+ },
+ "segmenter_run": {
+  "date": "2026-10-21",
+  "seg_model": "facebook/mask2former-swin-large-mapillary-vistas-semantic",
+  "seg_revision": "4772b6bf101d91f2534c106dc524d906aeb3c68a",
+  "seg_input_size": 1024,
+  "mask_sizes": [
+   1024,
+   512
+  ],
+  "sidewalk_classes": [
+   "Sidewalk",
+   "Curb Cut",
+   "Pedestrian Area"
+  ],
+  "road_classes": [
+   "Road",
+   "Service Lane",
+   "Bike Lane",
+   "Parking",
+   "Crosswalk - Plain",
+   "Lane Marking - Crosswalk",
+   "Lane Marking - General"
+  ],
+  "curb_classes": [
+   "Curb"
+  ],
+  "n_labels": 800,
+  "n_ok": 800,
+  "status_counts": {
+   "ok": 800
+  },
+  "pano_store_counts": {
+   "stage": 800
+  },
+  "seconds": {
+   "read": 1027.8,
+   "render_and_crop_check": 724.6,
+   "segment": 243.5
+  },
+  "seg_views_per_s": 3.285,
+  "device": "NVIDIA L40",
+  "versions": {
+   "python": "3.10.18",
+   "torch": "2.7.1+cu126",
+   "transformers": "4.55.0",
+   "opencv": "4.12.0",
+   "sidewalk_panorama_tools": "1.0.0",
+   "panorama_tools_source": "https://github.com/ProjectSidewalk/sidewalk-panorama-tools@7ce25ffbddae23d85f9976ec0a925707a0d64a89"
+  },
+  "slurm_job_id": "42113381"
+ },
+ "cls_models": [
+  "Obstacle=projectsidewalk/sidewalk-validator-ai-obstacle@8f0fe8fc48748fac35098e74c1848d015126deef",
+  "SurfaceProblem=projectsidewalk/sidewalk-validator-ai-surfaceproblem@0e1439daa5667c8a81f63e75f835bd51221df4c2"
+ ],
+ "stage_records": {
+  "features": {
+   "stage": "features",
+   "date": "2026-10-21",
+   "git_commit": "a204488a424f92df008425e115646ee86e6b6987",
+   "git_dirty": false,
+   "inputs": {
+    "labels": "3efa5cdd4d066aa28470fae4a44f8cf068974be791faf81b58f174a21eb3324c",
+    "views": "087eb07317d6ac71ca9d2a2ccebeca4382cd6da674f4451fdbf108dbfef6ebf4",
+    "seg_run": "069c28efb2486cf13f19106003f97c2df8905aaafd4a62c670168454d03ad72a",
+    "coords": "d8d0e53991a671bae2e21de88d0f4e415ab36278dbbc15adf91f8846be48e387"
+   },
+   "output_sha256": "15786039f6dfcf278ceeda57bdd41ed4773a12c5b36f5240192cfcc882b867b2"
+  },
+  "cls": null
+ },
+ "segmenter_params_m": 216.0,
+ "settings": {
+  "n_boot": 2000,
+  "pca": 64,
+  "min_city_n": 30,
+  "folds": 5,
+  "fold_seed": 20261021,
+  "f_px": 1024.0,
+  "disc_radius_px": 15,
+  "near_m": 1.0,
+  "bottom_frac": 0.1
+ },
+ "packages": {
+  "python": "3.12.14",
+  "numpy": "2.5.4",
+  "pandas": "3.0.6",
+  "scikit-learn": "1.9.1"
+ },
+ "hardware": "arm64 Darwin 15.5",
+ "hand_entered": {
+  "klone_jobs": {
+   "stage": {
+    "job_id": "42112597",
+    "script": "analysis/seg_prior_stage.slurm",
+    "result": "rsync exit 0, 768 of 768 panoramas, 7.4G, one connection, 2.6 min"
+   },
+   "render_segment": {
+    "job_id": "42113381",
+    "script": "analysis/seg_prior.slurm",
+    "git_commit": "b1a7761b617ee64829457b04b5b25b84fca9b50b",
+    "elapsed": "00:51:49",
+    "node_gpu": "NVIDIA L40 (ckpt-all)"
+   },
+   "coords": {
+    "job_id": "42113822",
+    "git_commit": "b3c99d59e70b5069a8e974805f72eb9b5fc619df",
+    "elapsed": "00:03:25",
+    "rawlabels": "the retrain's rawLabels exports on klone (54 deployments)"
+   }
+  },
+  "private_inputs_sha256": {
+   "labels.csv": "3efa5cdd4d066aa28470fae4a44f8cf068974be791faf81b58f174a21eb3324c",
+   "stage_files.txt": "d14a70387d4acf4f8a7120aad512f2288789d1c9c1359e1f94c827899241180a",
+   "coords.csv": "d8d0e53991a671bae2e21de88d0f4e415ab36278dbbc15adf91f8846be48e387",
+   "seg_run.json": "069c28efb2486cf13f19106003f97c2df8905aaafd4a62c670168454d03ad72a"
+  },
+  "cls_hardware": "Apple M1 Max, 32 GB, macOS 15.5, MPS, torch 2.14.1, transformers 4.55.0",
+  "note": "Hand-entered from sacct and the job logs on 2026-10-21; not machine-generated.",
+  "cls_stage": {
+   "git_commit": "b1a7761b617ee64829457b04b5b25b84fca9b50b",
+   "note": "cls.npz predates the stage sidecar; commit recorded by hand"
+  }
+ }
+}
