@@ -1,0 +1,67 @@
+{
+ "train_versions": {
+  "python": "3.10.19",
+  "machine": "Darwin arm64",
+  "numpy": "2.2.6",
+  "cv2": "4.12.0",
+  "PIL": "11.3.0",
+  "torch": "2.7.1",
+  "torchvision": "0.22.1",
+  "transformers": "4.55.0",
+  "sidewalk_panorama_tools": "1.0.0",
+  "libwebp": "1.5.0"
+ },
+ "api_versions": {
+  "python": "3.12.14",
+  "machine": "Darwin arm64",
+  "numpy": "2.5.4",
+  "cv2": "5.0.0",
+  "PIL": "12.3.0",
+  "torch": "2.14.1",
+  "torchvision": "0.29.1",
+  "transformers": "5.20.0",
+  "sidewalk_panorama_tools": "1.0.0",
+  "libwebp": "1.6.0"
+ },
+ "other_train_versions": {
+  "train_other1": {
+   "python": "3.12.14",
+   "machine": "Darwin arm64",
+   "numpy": "2.5.4",
+   "cv2": "5.0.0",
+   "PIL": "13.0.0",
+   "torch": "2.14.1",
+   "torchvision": "0.29.1",
+   "transformers": "4.55.0",
+   "sidewalk_panorama_tools": "1.0.0",
+   "libwebp": "1.6.0"
+  }
+ },
+ "api_head": "174a1698d8c52bae1749c230162440b4da279da9",
+ "pano_sha256": "3a85e22b22b994986560f45e923c6ad42ec3e62e95a0131da278dc0b69b69706",
+ "pano_native": [
+  13312,
+  6656
+ ],
+ "depth_checkpoint_sha256": "4dad67a7cc10b462bca48e6b8569c762b8eb3c1adada170a3851a6d3ba37bb3e",
+ "probe_api_depth_with_mps_visible": "RuntimeError: Input type (MPSFloatType) and weight type (torch.FloatTensor) should be the same",
+ "pano_train_vs_api": {
+  "identical": false,
+  "max_abs": 1.0,
+  "mean_abs": 0.10134406884511311,
+  "frac_diff": 0.10134406884511311,
+  "frac_px_diff": 0.1754705011844635,
+  "centre_max_abs": 0.0
+ },
+ "pano_train_vs_other": {
+  "train_other1": {
+   "identical": false,
+   "max_abs": 1.0,
+   "mean_abs": 0.10134406884511311,
+   "frac_diff": 0.10134406884511311,
+   "frac_px_diff": 0.1754705011844635,
+   "centre_max_abs": 0.0
+  }
+ },
+ "api_pano_source": "cache"
+}

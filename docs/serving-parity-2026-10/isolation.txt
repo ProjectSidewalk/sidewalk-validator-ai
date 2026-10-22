@@ -1,0 +1,5 @@
+train env: {"python": "3.10.19", "machine": "Darwin arm64", "numpy": "2.2.6", "cv2": "4.12.0", "PIL": "11.3.0", "torch": "2.7.1", "torchvision": "0.22.1", "transformers": "4.55.0", "sidewalk_panorama_tools": "1.0.0", "libwebp": "1.5.0"}
+api env: {"python": "3.12.14", "machine": "Darwin arm64", "numpy": "2.5.4", "cv2": "5.0.0", "PIL": "12.3.0", "torch": "2.14.1", "torchvision": "0.29.1", "transformers": "5.20.0", "sidewalk_panorama_tools": "1.0.0", "libwebp": "1.6.0"}
+api fed: pano_bgr.npy (the train worker's read+resize)
+matched poses: view identical 30/30 (max 0, px frac max 0.00e+00); depth identical 0/30 (max 0.00183 m); crop_half equal 30/30; crop identical 30/30 (mean abs max 0)
+roll1_only: view identical 0/10 (max 253, px frac max 9.94e-01); depth identical 0/10 (max 52.7 m); crop_half equal 0/10; crop identical 0/10 (mean abs max 22.1)
