@@ -204,10 +204,14 @@ def test_model_card_ignores_per_city():
 # --- per-city gold slice (issue #41) --------------------------------------------------------------------------------
 
 def _per_city_gold_predictions():
-    # test: a has 6 rows (4 gold), b 4 rows (1 gold), c 1 row (0 gold); heldout: d 3 rows (3 gold).
+    # test: a has 6 rows (4 gold), b 4 rows (1 gold), c 1 row (0 gold); heldout: d 3 rows (3 gold);
+    # plus 2 gold val rows of city a and 1 gold val row of city d, which no per-city or pooled slice may count.
     df = _per_city_predictions()
     df["gold"] = [True, True, True, True, False, False, True, False, False, False, False, True, True, True]
-    return df
+    val = pd.DataFrame({"label_uid": ["x:14", "x:15", "x:16"], "split": "val", "city": ["a", "a", "d"],
+                        "true": ["correct", "incorrect", "correct"], "p_incorrect": [0.1, 0.9, 0.2], "gold": True})
+    val["p_correct"] = 1 - val.p_incorrect
+    return pd.concat([df, val], ignore_index=True)
 
 
 def test_per_city_gold_counts_every_city_and_scores_only_the_big_ones():
@@ -222,8 +226,27 @@ def test_per_city_gold_counts_every_city_and_scores_only_the_big_ones():
     assert gold["below_min_n"] == {"b": 1, "c": 0}                    # b: 1 gold row; c: none, still listed
     heldout = m["per_city"]["test_heldout"]["gold"]
     assert list(heldout["cities"]) == ["d"] and heldout["cities"]["d"]["n"] == 3 and heldout["below_min_n"] == {}
-    # the pooled gold slice is untouched
+    # val rows never leak into a split's gold table (a: 4 test gold, not 6; d: 3 heldout gold, not 4) ...
+    assert "d" not in test["gold"]["cities"] and "d" not in test["gold"]["below_min_n"]
+    assert "a" not in heldout["gold"]["cities"] if "gold" in heldout else True
+    assert heldout["cities"]["d"]["n_by_class"] == {"correct": 1, "incorrect": 2}
+    # ... nor into the pooled gold slice
     assert m["gold"]["n"] == 8
+
+
+def test_per_city_gold_never_scores_an_empty_padded_city():
+    # min_city_n=0 used to crash on a city padded in with 0 gold rows (slice_metrics has no metrics for it)
+    m = report(_per_city_gold_predictions(), per_city=True, min_city_n=0)
+    gold = m["per_city"]["test"]["gold"]
+    assert set(gold["cities"]) == {"a", "b"} and gold["below_min_n"] == {"c": 0}
+    assert all("auc" in v for v in gold["cities"].values())
+
+
+def test_main_rejects_min_city_n_below_one(tmp_path):
+    from evaluate import main
+    with pytest.raises(SystemExit):
+        main(["--label_type", "CurbRamp", "--data-dir", str(tmp_path), "--skip-inference", "--per-city",
+              "--min-city-n", "0"])
 
 
 def test_per_city_gold_absent_without_a_gold_column():
@@ -239,7 +262,8 @@ def test_format_per_city_renders_a_gold_table_per_split():
     assert "### test_heldout: gold slice per city (gold n >= 3)" in md
     gold_section = md.split("### test: gold slice per city (gold n >= 3)")[1].split("### test_heldout")[0]
     assert "| a | 4 (3 / 1) |" in gold_section
-    assert "Below the minimum: b (n=1), c (n=0)." in gold_section
+    assert "Below the minimum: b (n=1)." in gold_section
+    assert "1 city with no gold labels: c." in gold_section
     assert "| b |" not in gold_section.split("Below the minimum")[0]
     # a split where no city has enough gold rows says so instead of printing an empty table
     md = format_per_city(report(_per_city_gold_predictions(), per_city=True, min_city_n=5)["per_city"])
@@ -266,4 +290,5 @@ def test_main_per_city_with_vote_weights_writes_the_gold_tables(tmp_path):
     assert metrics["per_city"]["test"]["gold"]["below_min_n"] == {"b": 1, "c": 0}
     assert metrics["gold"]["n"] == 8 and metrics["gold"]["gold_min_reliability"] == 0.85
     md = (base / "per_city.md").read_text()
-    assert "### test: gold slice per city (gold n >= 3)" in md and "Below the minimum: b (n=1), c (n=0)." in md
+    assert "### test: gold slice per city (gold n >= 3)" in md
+    assert "Below the minimum: b (n=1)." in md and "1 city with no gold labels: c." in md

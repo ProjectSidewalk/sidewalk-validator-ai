@@ -229,8 +229,9 @@ score ≥ 0.85. These are the labels with at least 3 human votes where every vot
 `incorrect` labels need only 2 votes (net disagree > 1), so the ≥ 3 rule leaves most of them out: with
 ≥ 2 votes the unanimous-Disagree counts are 48 at 0.90 and 640 at 0.85. Expect a gold slice heavily
 weighted towards `correct`. `evaluate.py` prints the gold count per split; with `--per-city` it also breaks the
-gold slice out per city, which separates a city that is weak because of its model from one whose crowd labels are
-noisy (counts for every city, metrics only where the city's gold rows reach `--min-city-n`).
+gold slice out per city, which is meant to separate a city that is weak because of its model from one whose crowd
+labels are noisy (counts for every city, metrics only where the city's gold rows reach `--min-city-n`; on the
+round-3 data the held-out cities have 0–3 gold rows per type, so it does not yet answer that question there).
 
 ## Crop geometry
 

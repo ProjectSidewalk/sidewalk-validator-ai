@@ -250,8 +250,9 @@ def _city_slices(df, levels, min_city_n, all_cities=None):
     if all_cities is not None:
         counts = counts.reindex(all_cities, fill_value=0)
     counts = counts.rename_axis("city").reset_index(name="n").sort_values(["n", "city"], ascending=[False, True])
-    big = counts[counts.n >= min_city_n]
-    small = counts[counts.n < min_city_n]
+    scored = (counts.n >= min_city_n) & (counts.n > 0)   # a padded-in city with 0 rows has no metrics to show
+    big = counts[scored]
+    small = counts[~scored]
     return {"min_city_n": int(min_city_n),
             "cities": {c: slice_metrics(df[df.city == c], levels) for c in big.city},
             "below_min_n": {c: int(n) for c, n in zip(small.city, small.n)}}
@@ -345,8 +346,8 @@ def format_per_city(per_city):
     Precision and recall are at the argmax verdict (the model's own decision, before any served-accuracy gate);
     AUC is shown only when the city has both classes, and a class with no rows in that city shows "—" for its
     precision and recall (scikit-learn's zero_division would print 0.000). With a ``gold`` entry (``--per-city``
-    together with ``--vote-weights``) a second table per split covers the gold slice per city, and its "below the
-    minimum" line lists every other city with its gold count, 0 included.
+    together with ``--vote-weights``) a second table per split covers the gold slice per city, its "below the
+    minimum" line lists the other cities with gold rows, and one more line counts and names the cities with none.
     """
     def pr(r):
         return ("—", "—") if r["support"] == 0 else (f"{r['precision']:.3f}", f"{r['recall']:.3f}")
@@ -370,9 +371,13 @@ def format_per_city(per_city):
                 lines.append(f"| {city} | {m['n']:,} ({m['n_by_class']['correct']:,} / "
                              f"{m['n_by_class']['incorrect']:,}) | {m['accuracy']:.3f} | {auc} | {pc_p} | {pc_r} "
                              f"| {pi_p} | {pi_r} |")
-            if block["below_min_n"]:
-                lines += ["", "Below the minimum: "
-                          + ", ".join(f"{c} (n={n})" for c, n in block["below_min_n"].items()) + "."]
+            some = {c: n for c, n in block["below_min_n"].items() if n > 0}
+            none = [c for c, n in block["below_min_n"].items() if n == 0]
+            if some:
+                lines += ["", "Below the minimum: " + ", ".join(f"{c} (n={n})" for c, n in some.items()) + "."]
+            if none:   # only the gold table pads cities in with 0 rows; one line, not one entry each
+                word = "city" if len(none) == 1 else "cities"
+                lines += ["", f"{len(none)} {word} with no gold labels: " + ", ".join(none) + "."]
             lines.append("")
     return "\n".join(lines)
 
@@ -417,7 +422,8 @@ def main(argv=None):
     parser.add_argument("--data-dir", default=".",
                         help="root holding <label_type>/split.csv, <label_type>/dinov2/ and deployment_priors.json "
                              "(data_generation.py's --out); outputs go to <data-dir>/<label_type>/")
-    parser.add_argument("--skip-inference", action="store_true", help="reuse <label_type>/predictions.csv")
+    parser.add_argument("--skip-inference", action="store_true",
+                        help="reuse <label_type>/predictions.csv (predictions_<tag>.csv with --tag)")
     parser.add_argument("--checkpoint", default=None,
                         help="score this model instead of the best checkpoint under <label_type>/dinov2/: a local "
                              "checkpoint or a Hugging Face model id (needs --tag)")
@@ -431,8 +437,8 @@ def main(argv=None):
                         help="add per-city metrics for test and test_heldout to metrics.json, and write them as "
                              "markdown to per_city.md (issue #15)")
     parser.add_argument("--min-city-n", type=int, default=50,
-                        help="rows a city needs in a split to get its own --per-city row (default 50); the same "
-                             "minimum applies to test and test_heldout")
+                        help="rows a city needs in a split to get its own --per-city row (default 50, at least 1); "
+                             "the same minimum applies to test and test_heldout, and to the gold slice per city")
     parser.add_argument("--vote-weights", default=None,
                         help="validator_reliability.py's vote_weights.csv: adds the 'gold' slice (labels with >= 3 "
                              "human votes, every one from a validator with reliability >= --gold-min-reliability)")
@@ -440,6 +446,8 @@ def main(argv=None):
                         help=f"reliability threshold for the gold slice (default {GOLD_MIN_RELIABILITY}; needs "
                              "--vote-weights)")
     args = parser.parse_args(argv)
+    if args.min_city_n < 1:
+        parser.error("--min-city-n must be at least 1")
     if args.gold_min_reliability is not None and not args.vote_weights:
         parser.error("--gold-min-reliability needs --vote-weights")
     if args.checkpoint and not args.tag:
