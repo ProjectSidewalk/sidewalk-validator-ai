@@ -1,0 +1,6 @@
+a: {"python": "3.10.19", "machine": "Darwin arm64", "numpy": "2.2.6", "cv2": "4.12.0", "PIL": "11.3.0", "torch": "2.7.1", "torchvision": "0.22.1", "transformers": "4.55.0", "sidewalk_panorama_tools": "1.0.0", "libwebp": "1.5.0"}
+b: {"python": "3.12.14", "machine": "Darwin arm64", "numpy": "2.5.4", "cv2": "5.0.0", "PIL": "12.3.0", "torch": "2.14.1", "torchvision": "0.29.1", "transformers": "5.20.0", "sidewalk_panorama_tools": "1.0.0", "libwebp": "1.6.0"}
+decode: identical=True max_abs=0 frac_values=0.0000
+resize_linear: identical=False max_abs=1 frac_values=0.1013
+resize_cubic: identical=True max_abs=0 frac_values=0.0000
+webp q95 bytes identical: 40/40 crops (PIL 11.3.0 libwebp 1.5.0 vs PIL 12.3.0 libwebp 1.6.0)
