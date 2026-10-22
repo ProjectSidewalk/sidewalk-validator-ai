@@ -471,6 +471,21 @@ def test_check_resume_detects_a_changed_city_list(tmp_path):
     assert dg.check_resume(str(run), h, st) == (None, {}, {})  # not compared when no list is given
 
 
+def test_check_resume_skips_depth_settings_only_when_both_runs_are_fixed_size(tmp_path):
+    a = pd.DataFrame({"label_uid": ["x:1"], "label_class": ["correct"]})
+    h = dg.selection_hash(a)
+    depth = {"tilt_beta": 0.95, "depth_encoder": "vitb", "depth_dataset": "vkitti"}
+    fixed = {"tilt_beta": 0.95, "fixed_crop_half_px": 300}
+    run = tmp_path / "generation_run.json"
+    run.write_text(json.dumps({"selection_sha256": h, "settings": {**depth, "fixed_crop_half_px": 300}}))
+    assert dg.check_resume(str(run), h, fixed) == (None, {}, {})  # a fixed record that still names the encoder
+    assert dg.check_resume(str(run), h, {**fixed, "fixed_crop_half_px": 200})[1] == {"fixed_crop_half_px": (300, 200)}
+    run.write_text(json.dumps({"selection_sha256": h, "settings": depth}))
+    assert dg.check_resume(str(run), h, fixed)[1] == {
+        "depth_encoder": ("vitb", None), "depth_dataset": ("vkitti", None), "fixed_crop_half_px": (None, 300)}
+    assert dg.check_resume(str(run), h, {**depth, "depth_encoder": "vitl"})[1] == {"depth_encoder": ("vitb", "vitl")}
+
+
 def test_manifest_row_uid_and_crop_path():
     row = pd.Series({"city": "seattle-wa", "label_id": 12345, "pano_id": "abc", "label_class": "correct",
                      "author": "human", "human_agree": 3, "human_disagree": 0, "camera_pitch": np.nan})
@@ -523,6 +538,17 @@ def test_fine_tune_reads_split_csv_with_stable_label_ids(tmp_path):
     assert train.label.tolist() == [1] and val.label.tolist() == [0]
     assert train.image.iloc[0] == str(base / "incorrect" / "a_1.webp")
     assert ft.load_split_frames("Missing", str(tmp_path)) is None
+
+
+def test_fine_tune_records_a_fixed_crop_size_only_when_there_is_one(tmp_path):
+    import fine_tune_classifier as ft
+    base = tmp_path / "Toy"
+    base.mkdir()
+    (base / "generation_run.json").write_text(json.dumps({"tilt_beta": 0.95, "depth_encoder": "vitb"}))
+    assert ft.generation_settings("Toy", str(tmp_path)) == {"tilt_beta": 0.95, "depth_encoder": "vitb"}
+    (base / "generation_run.json").write_text(json.dumps({"tilt_beta": 0.95, "fixed_crop_half_px": 300}))
+    assert ft.generation_settings("Toy", str(tmp_path)) == {"tilt_beta": 0.95, "depth_encoder": None,
+                                                            "fixed_crop_half_px": 300}
 
 
 def _write_priors_many(path, label_type):  # module level, so a spawned process can import it
