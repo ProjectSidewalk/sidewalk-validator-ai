@@ -245,7 +245,11 @@ half-size, `API_VERSION` 1.2.0, the smoke test and the placeholder guard)
        the #19 checkout with the step-5 revisions pinned, then `expected --train <train out> --api <api out> --out
        <csv>`, and copy the result over. `expected` writes `expected_p_incorrect` and `expected_validation_result` only;
        the `validation_estimated_accuracy` column (F4) is new code in `expected_values` and in `parity_smoke.py`, not
-       a flag. The file in #19 holds the 2025-08 values and every row fails until then.
+       a flag. The file in #19 holds the 2025-08 values and every row fails until then. **Generate it on x86, on the
+       server's own CPU or on klone, never on a Mac:** opencv 4.12's `INTER_CUBIC` crop resize differs by CPU type
+       (arm64 NEON vs x86 differs by 1 level on 2.5–4.2% of values; through the validators that is max |Δp| 0.050 and
+       12 of 105 smoke rows over the 0.01 tolerance in an SSE-only emulation; the size on AVX-512 hardware is
+       unmeasured). JPEG decode and `INTER_LINEAR` are byte-identical across the two. Found in the round-1 review of #19.
 7. [ ] On makelab2, from the PR branch, **before merging**: `./docker_build.sh dev && ./docker_start.sh dev`; confirm
        VRAM fits beside prod (`nvidia-smi`; the dev container needs ~9–10 GB); `python3 regression/parity_smoke.py`
        against `127.0.0.1:60655` (F8): all `in_smoke_set` rows within 0.01, accuracy column equal, and the whole

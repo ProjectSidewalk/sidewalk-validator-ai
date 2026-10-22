@@ -122,7 +122,11 @@ be the maps production serves today.
 | 4. Crop array | 0/30 identical, mean abs ≤ 3.95 levels | 30/30 identical |
 
 **Isolation.** `pixel_probe.txt`: on the same file, JPEG decode is identical across opencv 4.12 and 5.0, `INTER_CUBIC`
-on identical input is identical, and `INTER_LINEAR` on identical input differs (1 level, 10.1% of values).
+on identical input is identical, and `INTER_LINEAR` on identical input differs (1 level, 10.1% of values). Both
+measured on arm64 only. Across CPU types the picture inverts: on opencv 4.12.0.88, arm64 (NEON) vs x86_64 gives
+byte-identical JPEG decode and `INTER_LINEAR`, but `INTER_CUBIC` differs by 1 level on 2.5–4.2% of values (max |Δp|
+0.050 through the validators; measured 2026-10-22 under x86 emulation with SSE2/SSE3 only). So parity between the
+klone crops and the makelab2 server holds, but expected values for the API's smoke test must be generated on x86.
 `isolation.txt`: the API worker fed training's resized pano gives, on the matched poses, 30/30 identical views,
 30/30 equal crop half-sizes and 30/30 identical crops; depth maps differ by at most 0.0018 m (0/30 bit-identical:
 torch 2.7.1 vs 2.14.1). So every crop difference in the left column comes from the panorama resize, and the depth
