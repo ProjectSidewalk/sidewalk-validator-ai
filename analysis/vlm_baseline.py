@@ -43,10 +43,11 @@ Subcommands (all outputs with label-level rows go OUTSIDE the repo, under ``~/Da
     after its own answer; ``--reuse`` copies reasons for items an earlier run already explained. Writes
     ``<out-dir>/explanations.csv``.
 ``packet``
-    The blinded two-pass rater packet from ``explanations.csv``: ``items_bare/`` (crop only) with
-    ``pass1_sheet.csv`` for the rater's own verdict, then ``items_annotated/`` (crop, answer, reason) with
-    ``pass2_sheet.csv``; random 6-hex ids, shuffled with a secret ``--seed`` (no default); the key is written outside
-    the checkout and only its sha256 is committed.
+    The blinded two-pass rater packet from ``explanations.csv``, as two zips with the same items and ids:
+    ``...-pass1.zip`` (``items_bare/``, crop only, and ``pass1_sheet.csv`` for the rater's own verdict) and
+    ``...-pass2.zip`` (``items_annotated/``, crop + answer + reason, and ``pass2_sheet.csv``), the second handed out
+    only after the filled pass-1 sheet is back; random 6-hex ids, shuffled with a secret ``--seed`` (no default);
+    the key is written outside the checkout and only its sha256 is committed.
 ``agreement``
     Unblinds the two filled sheets against the key; prints rater-vs-VLM and rater-vs-crowd agreement and the reason
     codes, overall, by whether the VLM was right, and per category.
@@ -1053,7 +1054,7 @@ def write_provenance(args, sample, files, score_dir, complete):
     pp = os.path.join(args.doc_dir, "provenance.json")
     if os.path.exists(pp):
         old = json.load(open(pp))
-    prov = {**{k: v for k, v in old.items() if k in ("packet", "explain")}, **prov}
+    prov = {**{k: v for k, v in old.items() if k in ("packet", "explain", "reuse_check")}, **prov}
     with open(pp, "w") as f:
         json.dump(prov, f, indent=1, sort_keys=True)
 
@@ -1324,7 +1325,15 @@ def render_item(image_path, title, answer, reason, out_path, width=640):
     out.save(out_path, quality=90)
 
 
+PACKET_ZIPS = {1: "vlm-explanations-packet-pass1.zip", 2: "vlm-explanations-packet-pass2.zip"}
+
+
 def run_packet(args, parser):
+    """Two packets with the same items, ids and key: ``<packet-dir>/pass1/`` (bare crops, pass-1 sheet and rubric)
+    and ``<packet-dir>/pass2/`` (annotated crops, pass-2 sheet and rubric), each also zipped into ``--out-dir``
+    (``PACKET_ZIPS``). Hand out the pass-2 zip only after the filled pass-1 sheet has come back."""
+    import shutil
+
     if inside_this_repo(args.key):
         parser.error("--key must be outside every checkout of this repo until the rating is done "
                      "(commit only <key>.sha256)")
@@ -1332,20 +1341,25 @@ def run_packet(args, parser):
     sample = load_sample(args.sample_dir)
     img = dict(zip(sample.label_uid, sample.image))
     key = packet_key(ex, args.seed)
-    for sub_dir in ("items_bare", "items_annotated"):
-        os.makedirs(os.path.join(args.packet_dir, sub_dir), exist_ok=True)
+    dirs = {1: os.path.join(args.packet_dir, "pass1"), 2: os.path.join(args.packet_dir, "pass2")}
+    os.makedirs(os.path.join(dirs[1], "items_bare"), exist_ok=True)
+    os.makedirs(os.path.join(dirs[2], "items_annotated"), exist_ok=True)
     os.makedirs(os.path.dirname(os.path.abspath(args.key)), exist_ok=True)
     for i, k in enumerate(key.itertuples()):
         title = f"{i + 1:03d}  {k.packet_id}  label type: {TYPE_NAMES[k.label_type]}"
         name = f"{i + 1:03d}_{k.packet_id}.jpg"
-        render_item(img[k.label_uid], title, None, None, os.path.join(args.packet_dir, "items_bare", name))
+        render_item(img[k.label_uid], title, None, None, os.path.join(dirs[1], "items_bare", name))
         render_item(img[k.label_uid], title, k.vlm_answer, k.vlm_reason,
-                    os.path.join(args.packet_dir, "items_annotated", name))
+                    os.path.join(dirs[2], "items_annotated", name))
     pass1, pass2 = blank_sheets(key)
-    pass1.to_csv(os.path.join(args.packet_dir, "pass1_sheet.csv"), index=False)
-    pass2.to_csv(os.path.join(args.packet_dir, "pass2_sheet.csv"), index=False)
-    with open(os.path.join(args.packet_dir, "RUBRIC.md"), "w") as f:
-        f.write(RUBRIC_TEXT)
+    pass1.to_csv(os.path.join(dirs[1], "pass1_sheet.csv"), index=False)
+    pass2.to_csv(os.path.join(dirs[2], "pass2_sheet.csv"), index=False)
+    for n, text in ((1, RUBRIC_PASS1_TEXT), (2, RUBRIC_PASS2_TEXT)):
+        with open(os.path.join(dirs[n], "RUBRIC.md"), "w") as f:
+            f.write(text)
+    zips = {}
+    for n, d in dirs.items():
+        zips[n] = shutil.make_archive(os.path.join(args.out_dir, PACKET_ZIPS[n][:-4]), "zip", root_dir=d)
     key[KEY_COLUMNS].to_csv(args.key, index=False)
     digest = sha256_of(args.key)
     with open(args.key + ".sha256", "w") as f:
@@ -1365,31 +1379,44 @@ def run_packet(args, parser):
                                                         for t, g in ex.groupby("label_type")},
                           "reason_source": {k: int(v) for k, v in ex.reason_source.value_counts().items()},
                           "vlm_model": sorted(ex.vlm_model.unique()), "why_prompt": WHY_PROMPT,
-                          "median_reason_words": float(ex.n_words.median()), "passes": 2}
+                          "median_reason_words": float(ex.n_words.median()), "passes": 2,
+                          "zips": {PACKET_ZIPS[n]: zip_contents(dirs[n]) for n in dirs}}
         with open(pp, "w") as f:
             json.dump(prov, f, indent=1, sort_keys=True)
-    print(f"wrote {len(key)} items (items_bare/, items_annotated/), pass1_sheet.csv, pass2_sheet.csv and RUBRIC.md "
-          f"to {args.packet_dir}; key {args.key} (sha256 {digest})")
+    print(f"wrote {len(key)} items: pass 1 {zips[1]}, pass 2 {zips[2]} (hand out after the pass-1 sheet is back); "
+          f"key {args.key} (sha256 {digest})")
 
 
-RUBRIC_TEXT = """# Rating the VLM explanations (issue #16)
+def zip_contents(d):
+    """``{"files": [non-image files], "images": {subdir: count}}`` of one packet directory, for provenance."""
+    files, images = [], {}
+    for root, _, names in os.walk(d):
+        rel = os.path.relpath(root, d)
+        for n in names:
+            if n.endswith(".jpg"):
+                images[rel] = images.get(rel, 0) + 1
+            else:
+                files.append(os.path.normpath(os.path.join(rel, n)))
+    return {"files": sorted(files), "images": images}
 
-Two passes over the same items. Finish pass 1 completely before opening anything for pass 2.
 
-## Pass 1: your own verdict (`items_bare/`, `pass1_sheet.csv`)
+RUBRIC_PASS1_TEXT = """# Rating label crops, pass 1 of 2 (issue #16)
 
-Each image is a label crop. The labelled point is the centre, marked with a cyan ring, and the caption gives the
-label type. Do not look anything up; judge from the crop alone.
+Each image in `items_bare/` is a label crop. The labelled point is the centre, marked with a cyan ring, and the
+caption gives the label type. Do not look anything up; judge from the crop alone. Fill `pass1_sheet.csv` and send
+it back; the material for pass 2 is handed out after that.
 
 | column | values | meaning |
 |---|---|---|
 | `my_verdict` | `correct` / `incorrect` / `cant_tell` | Is this a correct label of the stated type at the ringed point? |
 | `notes_pass1` | free text | Optional. |
+"""
 
-## Pass 2: the model's answer and reason (`items_annotated/`, `pass2_sheet.csv`)
+RUBRIC_PASS2_TEXT = """# Rating the VLM explanations, pass 2 of 2 (issue #16)
 
-The same crops, now with a vision-language model's yes/no answer to "Is this a correct <type> label?" and its
-reason ("In at most 30 words, why?"). Do not go back and change pass 1.
+The same crops as pass 1 (same item ids), now in `items_annotated/` with a vision-language model's yes/no answer
+to "Is this a correct <type> label?" and its reason ("In at most 30 words, why?"). Your pass-1 sheet is final; do
+not change it. Fill `pass2_sheet.csv`.
 
 | column | values | meaning |
 |---|---|---|
@@ -1399,6 +1426,8 @@ reason ("In at most 30 words, why?"). Do not go back and change pass 1.
 
 Rate the reason on its own: judge whether it describes the crop accurately, whatever you think of the answer.
 """
+RUBRIC_TEXT = RUBRIC_PASS1_TEXT + "\n" + RUBRIC_PASS2_TEXT
+"""Both rubrics, for reference; each zip carries only its own."""
 
 
 def run_agreement(args):

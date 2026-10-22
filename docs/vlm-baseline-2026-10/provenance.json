@@ -150,7 +150,27 @@
   "vlm_model": [
    "gemma4-12b"
   ],
-  "why_prompt": "In at most 30 words, why?"
+  "why_prompt": "In at most 30 words, why?",
+  "zips": {
+   "vlm-explanations-packet-pass1.zip": {
+    "files": [
+     "RUBRIC.md",
+     "pass1_sheet.csv"
+    ],
+    "images": {
+     "items_bare": 100
+    }
+   },
+   "vlm-explanations-packet-pass2.zip": {
+    "files": [
+     "RUBRIC.md",
+     "pass2_sheet.csv"
+    ],
+    "images": {
+     "items_annotated": 100
+    }
+   }
+  }
  },
  "prompts": {
   "Crosswalk": "A crosswalk label marks a designated place for pedestrians to cross a road, usually painted stripes or parallel lines on the roadway surface, sometimes raised or textured paving. The label is wrong if there is no marked crossing at the labelled point. The labelled point is at the centre of the image. Is this a correct crosswalk label? Answer yes or no.",
@@ -160,6 +180,13 @@
   "SurfaceProblem": "A surface problem label marks damage to the sidewalk's walking surface that makes it hard to roll or walk on, such as large cracks, uplifted or sunken slabs (often from tree roots), bumps, missing or broken pavement, loose gravel or dirt, or grass growing over the sidewalk. The labelled point is at the centre of the image. Is this a correct surface problem label? Answer yes or no."
  },
  "python": "3.12.14",
+ "reuse_check": {
+  "csv_sha256": "477df28451db1915c480ecabba47a59bcd1a8d6a0d9a2f9f6ecb04c1369d4da8",
+  "date": "2026-10-21",
+  "identical": 5,
+  "n": 5,
+  "what": "5 reused reasons (one per type) regenerated without --reuse in .venv with MlxVlm.generate, same prompt/answer turn/max_tokens 60, compared as strings to explanations.csv"
+ },
  "scores": {
   "gemma4-12b.csv": {
    "meta": {

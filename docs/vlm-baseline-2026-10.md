@@ -3,8 +3,8 @@
 Issue [#16](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/16) asks how well current open-weight
 vision-language models (VLMs) validate Project Sidewalk labels zero-shot, and whether their explanations are
 worth showing. This is the first measurement. Three MLX models ran on a Mac on the round-3 held-out crops, which
-are the inputs the retrained validators are trained on. The five production DINOv2-L validators ran on the same
-crops. The code is `analysis/vlm_baseline.py`. Every number below comes from its `report` stage, apart from the
+come from the same crop pipeline as the round-3 training inputs. The five production DINOv2-L validators ran on the
+same crops. The code is `analysis/vlm_baseline.py`. Every number below comes from its `report` stage, apart from the
 packet counts, which come from `packet`. `vlm-baseline-2026-10/provenance.json` pins the inputs, the model
 revisions, both environments and the output tables.
 
@@ -124,7 +124,8 @@ precision 0.95 and 0.92 for each class. `R@P95 incorrect` is the share of incorr
 - **Test minus held-out difference.** A 95% CI from resampling labels within split and class.
 - **Within-city AUC.** Per-deployment AUCs averaged with weights n_incorrect x n_correct (the pairs each one
   contributes), over deployments with both classes and at least 10 rows. This is the stratified Mann-Whitney
-  statistic the segmentation-prior branch uses. A score that only tells deployments apart cannot raise it.
+  statistic the segmentation-prior analysis in [#49](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/49)
+  uses. A score that only tells deployments apart cannot raise it.
 - **Naming.** A deployment is named only if `calibration.per_city.public_name` lists it as public; every private
   deployment is pooled into one row.
 - **Best VLM.** This is the model with the highest mean per-type AUC on the 500-crop subset. It was picked on part of
@@ -132,7 +133,9 @@ precision 0.95 and 0.92 for each class. `R@P95 incorrect` is the share of incorr
 
 **Timing.** Each model was timed on its own:
 - 50 crops (10 per type, half per class) at batch size 1, after one warm-up call.
-- Each run started only once no other analysis process was running and the 1-minute load average was below 3.
+- Each run started once a `pgrep` found no other `python ... analysis/...` process and the 1-minute load average
+  was below 3 (2.6–3.0 at the four starts). The 5- and 15-minute averages were still 4.1–4.9 and 6.6–7.6, so the
+  machine had been busier shortly before. Processes outside that `pgrep` pattern were not checked.
 - The load before and after each run is in `latency.csv`. It rose to 7.7 by the end of `gemma4-12b`'s run, but
   that run's p90 stayed within 4% of its median.
 - The latencies logged during the scoring runs, taken while the machine was shared, are not used.
@@ -329,8 +332,8 @@ tokens per crop.
 
 ## Explanations packet (for rating)
 
-**Methods.** This section is the only place the packet's composition is written down, and Jon reads it only after
-rating. Nothing the rater sees describes the composition: not `RUBRIC.md`, not the sheets, not the images.
+**Methods.** Nothing the rater sees describes the packet's composition: not the rubrics, not the sheets, not the
+images. It is written down only here.
 
 The best VLM, `gemma4-12b`, gave a reason for each of 100 crops, 20 per type, all from public deployments and drawn
 from its full-sample run. The items were chosen so that neither the shown answer nor the item mix carries
@@ -355,30 +358,38 @@ Within each cell, items were taken in this order:
 CurbRamp has no "Yes" items. Among public CurbRamp crops there were not enough pairs where the model says yes and is
 right and where it says yes and is wrong, so all 10 of its pairs are "No".
 
-Of the 100 reasons, 77 are reused from the two earlier builds and 23 are new. Reuse changes nothing: the model, prompt and
-greedy decoding are the same, so a rerun gives identical text. The median reason is 27 words (range 19–32).
+Of the 100 reasons, 77 are reused from the two earlier builds and 23 are new. The reused ones came from the same
+model, prompt and greedy settings. A re-check regenerated 5 of them without `--reuse` (one per type, in `.venv`),
+and 5 of 5 came out character-for-character identical to the text in the packet (`reuse_check` in
+`provenance.json`). The median reason is 27 words
+(range 19–32).
 
-**Design.** The packet has two passes:
-- **Pass 1** shows only the crop and the label type (`items_bare/`). The rater records their own verdict in
-  `pass1_sheet.csv`.
-- **Pass 2** shows the same crops with the answer and reason (`items_annotated/`). The rater codes the reason in
-  `pass2_sheet.csv`.
+**Design.** The packet has two passes, shipped as two separate zips with the same items, ids and key:
+- **Pass 1**, `vlm-explanations-packet-pass1.zip`: only the crop and the label type (`items_bare/`), with
+  `pass1_sheet.csv` for the rater's own verdict and a pass-1 `RUBRIC.md` that does not mention the model.
+- **Pass 2**, `vlm-explanations-packet-pass2.zip`: the same crops with the answer and reason (`items_annotated/`),
+  with `pass2_sheet.csv` for coding the reason and the pass-2 `RUBRIC.md`.
 
-Pass 1 is finished before any answer is seen, so `my_verdict` is not anchored on the model's answer. The rest
-follows PR #40's packet:
+Hand out the pass-2 zip only after the filled pass-1 sheet has come back. That way the rater cannot see any answer
+before `my_verdict` is final, so `my_verdict` cannot be anchored on the model's answer. The rest follows PR #40's
+packet:
 - Each item gets a random `p<6 hex>` id, and the items are shuffled with a secret seed that has no default.
 - The category, crowd class, scores, deployment and label id are only in the key.
 - The key and the seed are kept outside the repo, in `~/Data/sidewalk-validator-ai-vlm-2026-10/private-key-do-not-share/`.
 
-The packet is `~/Data/sidewalk-validator-ai-vlm-2026-10/vlm-explanations-packet.zip`: 100 bare and 100 annotated
-images, the two sheets and `RUBRIC.md`.
+Both zips are in `~/Data/sidewalk-validator-ai-vlm-2026-10/`. Each holds 100 images, one sheet and one
+`RUBRIC.md`.
 
 - Key sha256: `12fe5dad393b82cb46dc80d58962d2783d0b3e82de902b36f63504fbdb47831e` (`vlm-baseline-2026-10/packet_key.sha256`).
-- Two earlier builds were never rated. The first had 86 items, 65 of them VLM errors, in one pass. The intermediate
-  one was balanced on VLM correctness but not on the shown answer. Both, with their keys, are in
-  `~/Data/sidewalk-validator-ai-vlm-2026-10/superseded/`.
+- Earlier builds were never rated, and their keys are in `~/Data/sidewalk-validator-ai-vlm-2026-10/superseded/`:
+  - the first: 86 items, 65 of them VLM errors, one pass;
+  - an intermediate one, balanced on VLM correctness but not on the shown answer;
+  - this packet as a single zip, which carried the pass-2 material alongside pass 1.
+- **Prior exposure.** The first two builds show 77 of these 100 crops together with the model's answer and reason.
+  The rater must not have opened them. A rater who has opened them has seen answers before pass 1, and should be
+  replaced by one who has not.
 
-**Rubric** (`RUBRIC.md`, abridged):
+**Rubrics** (the two `RUBRIC.md` files, abridged):
 
 | Pass | Column | Values | Meaning |
 |---|---|---|---|
@@ -459,7 +470,8 @@ second opinion has value and the volume is smaller.
 
 ## Next steps
 
-1. **Rate the packet** (`vlm-explanations-packet.zip`): pass 1, then pass 2. Then run `agreement` on the two
+1. **Rate the packet.** Give the rater `vlm-explanations-packet-pass1.zip`. Hand out
+   `vlm-explanations-packet-pass2.zip` only once the filled pass-1 sheet is back. Then run `agreement` on the two
    sheets. A second rater on the same packet gives inter-rater agreement.
 2. **Rerun against the round-3 retrained checkpoints** once they exist. That replaces the production column with a
    comparison that has neither the training overlap nor the tilt mismatch.
@@ -497,5 +509,6 @@ python analysis/vlm_baseline.py packet --packet-dir $O/packet --key $O/private-k
 
 The per-crop score, timing and greedy CSVs, and `explanations.csv`, hold label-level rows from private
 deployments. They stay in `~/Data/sidewalk-validator-ai-vlm-2026-10/`, and their sha256 values are in
-`provenance.json`. `--reuse` is only a shortcut: without it, `explain` regenerates the reused reasons, and they
-come out identical.
+`provenance.json`. `--reuse` is only a shortcut: without it, `explain` regenerates the reused reasons from the same
+model, prompt and greedy settings. A 5-item re-check, one per type, found 5 of 5 identical. `packet` writes both
+zips into `$O`.

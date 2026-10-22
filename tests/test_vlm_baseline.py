@@ -343,11 +343,53 @@ def test_sheets_leak_no_truth_category_score_or_uid_and_pass1_hides_the_answer()
     assert (pass1.my_verdict == "").all() and (pass2[["reason_correct", "would_change_my_vote"]] == "").all().all()
 
 
-def test_rubric_says_nothing_about_composition():
-    text = vb.RUBRIC_TEXT.lower()
-    for word in ("disagree", "crowd", "production", "category", "half", "balanced", "wrong"):
-        assert word not in text, word
-    assert "pass 1" in text and "pass 2" in text
+def test_rubrics_say_nothing_about_composition_and_pass1_says_nothing_about_the_model():
+    for text in (vb.RUBRIC_PASS1_TEXT.lower(), vb.RUBRIC_PASS2_TEXT.lower()):
+        for word in ("disagree", "crowd", "production", "category", "half", "balanced", "wrong"):
+            assert word not in text, word
+    p1 = vb.RUBRIC_PASS1_TEXT.lower()
+    for word in ("model", "answer", "reason", "vlm", "items_annotated", "pass2_sheet"):
+        assert word not in p1, word
+    assert "pass 1" in p1 and "pass 2" in vb.RUBRIC_PASS2_TEXT.lower()
+
+
+def test_packet_writes_two_zips_with_pass2_material_only_in_the_second(tmp_path):
+    import zipfile
+
+    from PIL import Image
+
+    sample_dir, out_dir = tmp_path / "sample", tmp_path / "out"
+    ex = _explanations(8)
+    rows = []
+    for uid, t in zip(ex.label_uid, ex.label_type):
+        crop = f"correct/{uid.replace(':', '_')}.webp"
+        (sample_dir / "crops" / t / "correct").mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (64, 64), (90, 90, 90)).save(sample_dir / "crops" / t / crop)
+        rows.append({"label_uid": uid, "label_id": uid.split(":")[1], "label_type": t, "crop_path": crop})
+    pd.DataFrame(rows).to_csv(sample_dir / "sample.csv", index=False)
+    out_dir.mkdir()
+    ex.assign(reason_source="generated", n_words=3, latency_s=1.0).to_csv(out_dir / "explanations.csv", index=False)
+    key = tmp_path / "private" / "packet_key.csv"
+    args = ["packet", "--sample-dir", str(sample_dir), "--out-dir", str(out_dir), "--packet-dir",
+            str(tmp_path / "packet"), "--key", str(key), "--seed", "5", "--doc-dir", str(tmp_path / "doc")]
+    vb.main(args)
+    z1 = zipfile.ZipFile(out_dir / vb.PACKET_ZIPS[1]).namelist()
+    z2 = zipfile.ZipFile(out_dir / vb.PACKET_ZIPS[2]).namelist()
+    assert {n for n in z1 if not n.endswith(".jpg") and not n.endswith("/")} == {"pass1_sheet.csv", "RUBRIC.md"}
+    assert {n for n in z2 if not n.endswith(".jpg") and not n.endswith("/")} == {"pass2_sheet.csv", "RUBRIC.md"}
+    jpg1 = sorted(n.split("/")[-1] for n in z1 if n.endswith(".jpg"))
+    jpg2 = sorted(n.split("/")[-1] for n in z2 if n.endswith(".jpg"))
+    assert jpg1 == jpg2 and len(jpg1) == 8                      # same items and ids in both
+    assert all(n.startswith("items_bare/") for n in z1 if n.endswith(".jpg"))
+    assert all(n.startswith("items_annotated/") for n in z2 if n.endswith(".jpg"))
+    with zipfile.ZipFile(out_dir / vb.PACKET_ZIPS[1]) as z:
+        sheet1 = z.read("pass1_sheet.csv").decode()
+        assert "vlm_answer" not in sheet1 and "reason" not in sheet1
+        assert z.read("RUBRIC.md").decode() == vb.RUBRIC_PASS1_TEXT
+    digest = vb.sha256_of(str(key))
+    vb.main(args)                                               # same seed and items: the key is unchanged
+    assert vb.sha256_of(str(key)) == digest
+    assert (tmp_path / "doc" / "packet_key.sha256").read_text().split()[0] == digest
 
 
 def test_unblind_and_agreement_round_trip():
