@@ -424,12 +424,12 @@ python -m calibration.calibrate --predictions CurbRamp/predictions.csv --priors 
 ```
 
 This writes the map (drop-in for `sidewalk-ai-api/accuracy_mappings/`), `calibration_report.json` (ECE, coverage and
-precision at the 0.92 gate on the test split) and `reliability.png`. `--hold-back incorrect` (any subset of the two
-verdicts) caps that verdict's map at 0.9199, the same hold-back `calibrate_from_production.py` applies to a class whose
-gate precision is not established, so the verdict is served with its accuracy but never clears the gate and never
-becomes a vote; the report records the held-back verdicts, the reason (`--hold-back-reason`) and what the uncapped
-map would have done at the gate. The first ship of a retrained revision holds `incorrect` back
-([#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56)). Unit tests for the metric and calibration code
+precision at the 0.92 gate on the test split) and `reliability.png`. `--hold-back incorrect --hold-back-reason "..."`
+(either verdict or both; the reason is required and goes on the model card) caps that verdict's map at 0.9199, the
+same hold-back `calibrate_from_production.py` applies to a class whose gate precision is not established: thresholds
+above the cap serve 0.9199, so the verdict never clears the gate and never becomes a vote. The report records the
+held-back verdicts, the reason and what the uncapped map would have done at the gate. The first ship of the October
+2026 retrain held `incorrect` back ([#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56)). Unit tests for the metric and calibration code
 run on a CPU: `pip install -r requirements.txt` (or just the CPU subset in `.github/workflows/tests.yml`), then
 `pytest -q`.
 

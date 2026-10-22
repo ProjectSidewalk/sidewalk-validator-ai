@@ -314,12 +314,15 @@ def _calibration_section(ctx):
     if hb.get("verdicts"):
         unc = hb.get("uncapped_eval") or {}
         held = ", ".join(f"`{v}`" for v in hb["verdicts"])
-        lines += ["", f"**Held back:** the {held} map is capped at {fmt(hb.get('cap'), 4)}, so that verdict is served with "
-                      f"its estimated accuracy but never reaches the {GATE} gate and never becomes a vote. "
-                      f"Reason: {hb.get('reason', 'n/a')}."]
+        reaches = hb.get("uncapped_reaches_gate") or {}
+        lines += ["", f"**Held back:** the {held} map is capped at {fmt(hb.get('cap'), 4)}: every threshold whose "
+                      f"fitted accuracy is higher serves {fmt(hb.get('cap'), 4)} instead, so that verdict never "
+                      f"reaches the {GATE} gate and never becomes a vote. Reason: {hb.get('reason', 'n/a')}."]
         for v in hb["verdicts"]:
             u = unc.get(v)
-            if u:
+            if reaches.get(v) is False:
+                lines.append(f"For `{v}` the cap changes nothing: the uncapped map never reached the gate either.")
+            elif u:
                 lines.append(f"Uncapped, `{v}` would have had coverage {fmt(u.get('gate_coverage'))} at precision "
                              f"{fmt(u.get('gate_precision'))} on the evaluation split (n {fmt(u.get('gate_n'))}).")
     if rep.get("fit_split") == "val":

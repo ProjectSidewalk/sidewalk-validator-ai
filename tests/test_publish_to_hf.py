@@ -1098,10 +1098,16 @@ def test_model_card_says_when_a_verdict_is_held_back(staged):
     capped = {v: ({k: min(x, 0.9199) for k, x in m.items()} if v == "incorrect" else m)
               for v, m in staged["api_map"].items()}
     section = hf_cards._calibration_section({"label_type": T, "api_map": capped, "calibration_report": rep})
-    assert "**Held back:** the `incorrect` map is capped at 0.9199" in section
+    assert "**Held back:** the `incorrect` map is capped at 0.9199" in section and "serves 0.9199" in section
     assert "prior under review (issue #56)" in section
     assert "coverage 0.42" in section and "precision 0.97" in section and "n 98" in section
     assert "| incorrect | never reaches the gate |" in section
+    # when the uncapped map never reached the gate, the card says the cap is a no-op instead of quoting 0.000 / n/a
+    rep["hold_back"]["uncapped_reaches_gate"]["incorrect"] = False
+    rep["hold_back"]["uncapped_eval"] = {"incorrect": {"gate_coverage": 0.0, "gate_precision": None, "gate_n": 0}}
+    noop = hf_cards._calibration_section({"label_type": T, "api_map": capped, "calibration_report": rep})
+    assert "the cap changes nothing: the uncapped map never reached the gate either" in noop
+    assert "coverage 0" not in noop
     plain = hf_cards._calibration_section({"label_type": T, "api_map": staged["api_map"],
                                            "calibration_report": staged["report"]})
     assert "Held back" not in plain

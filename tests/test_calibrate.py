@@ -82,14 +82,16 @@ def test_eval_split_missing_a_class_still_writes_map(tmp_path):
 
 def test_hold_back_caps_only_that_verdict_and_reports_it():
     a, b = 0.99, 0.98                                 # both verdicts clear the gate uncapped
-    preds = pd.concat([_predictions(5500, 4500, a, b, "val", conf=0.99), _predictions(550, 450, a, b, "test", conf=0.99)])
+    preds = pd.concat([_predictions(5500, 4500, a, b, "val", conf=0.99),
+                       _predictions(550, 450, a, b, "test", conf=0.99)])
     pi = {"correct": 0.6, "incorrect": 0.4}
     open_map, open_rep, _ = cal.calibrate(preds, pi)
     held_map, rep, _ = cal.calibrate(preds, pi, hold_back_verdicts=["incorrect"], hold_back_reason="why")
     assert max(open_map["incorrect"].values()) >= im.GATE                  # it would have cleared
     assert max(held_map["incorrect"].values()) <= im.HOLD_BACK_CAP          # now it never does
     assert held_map["correct"] == open_map["correct"]                       # the other verdict is untouched
-    assert all(held_map["incorrect"][k] == min(open_map["incorrect"][k], im.HOLD_BACK_CAP) for k in open_map["incorrect"])
+    assert all(held_map["incorrect"][k] == min(open_map["incorrect"][k], im.HOLD_BACK_CAP)
+               for k in open_map["incorrect"])
     im.validate_api_map(held_map)
     hb = rep["hold_back"]
     assert hb["verdicts"] == ["incorrect"] and hb["cap"] == im.HOLD_BACK_CAP and hb["reason"] == "why"
@@ -101,22 +103,46 @@ def test_hold_back_caps_only_that_verdict_and_reports_it():
                                      "uncapped_reaches_gate": {"correct": True, "incorrect": True}}
     with pytest.raises(ValueError, match="unknown verdict"):
         cal.hold_back(open_map, ["maybe"])
+    with pytest.raises(ValueError, match="needs a hold_back_reason"):
+        cal.calibrate(preds, pi, hold_back_verdicts=["incorrect"])
+    both, rep2, _ = cal.calibrate(preds, pi, hold_back_verdicts=["correct", "incorrect"], hold_back_reason="both")
+    assert all(max(both[v].values()) <= im.HOLD_BACK_CAP for v in im.API_CLASSES)
+    assert rep2["hold_back"]["verdicts"] == ["correct", "incorrect"]
 
 
 def test_cli_hold_back(tmp_path):
-    preds = pd.concat([_predictions(550, 450, 0.99, 0.98, "val", conf=0.99), _predictions(550, 450, 0.99, 0.98, "test", conf=0.99)])
+    preds = pd.concat([_predictions(550, 450, 0.99, 0.98, "val", conf=0.99),
+                       _predictions(550, 450, 0.99, 0.98, "test", conf=0.99)])
     preds.to_csv(tmp_path / "predictions.csv", index=False)
     (tmp_path / "priors.json").write_text(json.dumps({"Crosswalk": {"correct": 6, "incorrect": 4,
                                                                     "measured_on": "x", "source": "y"}}))
     out = tmp_path / "cal" / "crosswalk.json"
-    cal.main(["--predictions", str(tmp_path / "predictions.csv"), "--priors", str(tmp_path / "priors.json"),
-              "--label-type", "Crosswalk", "--out", str(out), "--hold-back", "incorrect"])
+    base = ["--predictions", str(tmp_path / "predictions.csv"), "--priors", str(tmp_path / "priors.json"),
+            "--label-type", "Crosswalk", "--out", str(out)]
+    cal.main(base + ["--hold-back", "incorrect", "--hold-back-reason", "test reason"])
     api_map = json.loads(out.read_text())
     im.validate_api_map(api_map)
     assert max(api_map["incorrect"].values()) <= im.HOLD_BACK_CAP < max(api_map["correct"].values())
     rep = json.loads((tmp_path / "cal" / "calibration_report.json").read_text())
     assert rep["hold_back"]["verdicts"] == ["incorrect"] and rep["hold_back"]["cap"] == im.HOLD_BACK_CAP
-    assert "issue #56" in rep["hold_back"]["reason"]
-    with pytest.raises(SystemExit):                     # argparse rejects a verdict that is not a class
-        cal.main(["--predictions", str(tmp_path / "predictions.csv"), "--priors", str(tmp_path / "priors.json"),
-                  "--label-type", "Crosswalk", "--out", str(out), "--hold-back", "unsure"])
+    assert rep["hold_back"]["reason"] == "test reason"
+    assert "NaN" not in (tmp_path / "cal" / "calibration_report.json").read_text()   # strict JSON: null, not NaN
+    assert rep["eval"]["incorrect"]["gate_precision"] is None                      # nothing clears the capped map
+
+    # repeated flags accumulate: both verdicts capped
+    cal.main(base + ["--hold-back", "incorrect", "--hold-back", "correct", "--hold-back-reason", "both"])
+    api_map = json.loads(out.read_text())
+    assert all(max(api_map[v].values()) <= im.HOLD_BACK_CAP for v in im.API_CLASSES)
+    rep = json.loads((tmp_path / "cal" / "calibration_report.json").read_text())
+    assert rep["hold_back"]["verdicts"] == ["correct", "incorrect"]
+
+    # usage errors: a verdict that is not a class, a bare flag, a hold-back without a reason
+    for bad in (["--hold-back", "unsure", "--hold-back-reason", "r"], ["--hold-back", "--hold-back-reason", "r"],
+                ["--hold-back", "incorrect"], ["--hold-back", "incorrect", "--hold-back-reason", "  "]):
+        with pytest.raises(SystemExit):
+            cal.main(base + bad)
+
+
+def test_without_nan():
+    out = cal.without_nan({"a": float("nan"), "b": [1.0, np.float64("nan"), {"c": np.nan}], "d": "NaN", "e": None})
+    assert out == {"a": None, "b": [1.0, None, {"c": None}], "d": "NaN", "e": None}
