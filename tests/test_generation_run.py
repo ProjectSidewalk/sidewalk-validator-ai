@@ -695,12 +695,13 @@ def test_depth_encoder_does_not_block_a_fixed_size_resume(stubbed):
         run_main(tmp, "--fixed-crop-half-px", "200")
 
 
-@pytest.mark.parametrize("half", ["0", "-5", str(dg.VIEW_SIZE // 2), "5000"])
+@pytest.mark.parametrize("half", ["0", "-5", str(dg.VIEW_SIZE // 2 + 1), "5000"])
 def test_fixed_crop_size_must_be_inside_the_view(stubbed, half):
-    with pytest.raises(SystemExit, match=f"must be positive and below {dg.VIEW_SIZE // 2}"):
+    with pytest.raises(SystemExit, match=f"must be 1 to {dg.VIEW_SIZE // 2}"):
         run_main(stubbed["tmp"], "--fixed-crop-half-px", half)
 
 
 def test_largest_fixed_crop_size_is_accepted(stubbed):
-    m = run_main(stubbed["tmp"], "--fixed-crop-half-px", str(dg.MAX_FIXED_CROP_HALF_PX - 1), "--limit", "1")
+    # Half the view is the whole view, unclipped (centre_crop clips only past the edge).
+    m = run_main(stubbed["tmp"], "--fixed-crop-half-px", str(dg.MAX_FIXED_CROP_HALF_PX), "--limit", "1")
     assert m.status.tolist() == ["ok"] and m.clipped.tolist() == [0]

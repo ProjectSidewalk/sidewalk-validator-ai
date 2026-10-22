@@ -1002,8 +1002,8 @@ OPTIONAL_SETTINGS = ("fixed_crop_half_px",)
 #: loaded), and :func:`check_resume` does not compare them when both runs are fixed-size, so ``--depth-encoder``
 #: cannot block a fixed-size resume (also one recorded before they were left out).
 DEPTH_SETTINGS = ("depth_encoder", "depth_dataset")
-#: ``--fixed-crop-half-px`` must be below this: a half-width of ``VIEW_SIZE // 2`` already covers the whole view, so
-#: every larger value gives the same crop.
+#: The largest ``--fixed-crop-half-px``: a half-width of ``VIEW_SIZE // 2`` is exactly the whole view, unclipped, and
+#: every larger value clips to that same crop.
 MAX_FIXED_CROP_HALF_PX = VIEW_SIZE // 2
 
 
@@ -1174,8 +1174,8 @@ def build_parser():
     p.add_argument('--fixed-crop-half-px', type=int, default=None,
                    help='ablation only (issue #21): give every crop this half-width in view pixels instead of sizing '
                         'it by depth, and skip depth inference (--depth-encoder is then ignored and not recorded). '
-                        f'Must be 1 to {MAX_FIXED_CROP_HALF_PX - 1}: the view is {VIEW_SIZE} px square, so a '
-                        f'half-width of {MAX_FIXED_CROP_HALF_PX} already crops the whole view. Serving sizes by depth, '
+                        f'Must be 1 to {MAX_FIXED_CROP_HALF_PX}: the view is {VIEW_SIZE} px square, so a half-width of '
+                        f'{MAX_FIXED_CROP_HALF_PX} is the whole view and larger values clip to it. Serving sizes by depth, '
                         'so publish_to_hf.py refuses models trained this way')
     p.add_argument('--seed', type=int, default=SEED)
     p.add_argument('--cities', default=None,
@@ -1212,9 +1212,9 @@ def main(argv=None):
     partial = (args.cities is not None and args.cities.strip(", ") != "") or args.limit is not None
     if partial:
         priors_path = os.path.splitext(priors_path)[0] + ".partial.json"
-    if args.fixed_crop_half_px is not None and not 0 < args.fixed_crop_half_px < MAX_FIXED_CROP_HALF_PX:
-        sys.exit(f"--fixed-crop-half-px must be positive and below {MAX_FIXED_CROP_HALF_PX} (half the {VIEW_SIZE} px "
-                 f"view, which would crop the whole view), got {args.fixed_crop_half_px}")
+    if args.fixed_crop_half_px is not None and not 0 < args.fixed_crop_half_px <= MAX_FIXED_CROP_HALF_PX:
+        sys.exit(f"--fixed-crop-half-px must be 1 to {MAX_FIXED_CROP_HALF_PX} (half the {VIEW_SIZE} px view; larger "
+                 f"values clip to the whole view), got {args.fixed_crop_half_px}")
     experts = parse_experts(os.environ.get(EXPERTS_ENV))  # a malformed value fails before the downloads
     if not args.select_only and not args.pano_store:  # before the city listing, which may need the network
         build_parser().error("--pano-store is required unless --select-only")
