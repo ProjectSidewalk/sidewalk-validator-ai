@@ -41,7 +41,8 @@ h1 { font-size:22px; } h2 { font-size:16px; margin:0 0 8px; }
 .bar { position:sticky; top:0; background:var(--bg); padding:8px 0; border-bottom:1px solid var(--line); z-index:1;
   display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; }
 .card { border-top:1px solid var(--line); padding:14px 0; scroll-margin-top:64px; }
-.card:focus { outline:none; } .card:focus-visible h2, .card.active h2 { text-decoration:underline; }
+.card:focus { outline:none; }
+.card.active { box-shadow: inset 4px 0 0 var(--focus); padding-left:12px; }
 .card.done h2::after { content:" \\2713"; color:var(--done); }
 .row { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; }
 .pic { flex:0 1 640px; min-width:0; overflow:auto; }
@@ -62,6 +63,7 @@ input[type=text] { font:inherit; color:var(--fg); background:var(--bg); border:1
   border-radius:4px; padding:4px 6px; }
 :focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
 button { font:inherit; padding:6px 12px; }
+.warn { color:#cf222e; font-weight:600; }
 .gate { border:1px solid var(--line); border-radius:6px; background:var(--panel); padding:12px; margin:16px 0; }
 [hidden] { display:none !important; }
 """
@@ -76,19 +78,30 @@ const cards = Array.from(document.querySelectorAll(".card"));
 const raterBox = $("rater");
 let answers = {};
 
-function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); }
-                       catch (e) { return null; } }
+let storageOk = true;
+function store(k, v) {
+  try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); }
+  catch (e) { storageOk = false; return null; }
+}
 function rater() { return raterBox.value.trim().toLowerCase(); }
-function slot() { return META.storage + ":" + (rater() || "default"); }
+function slot() { return META.storage + ":" + rater(); }
 function say(text) { $("msg").textContent = text; }
 
 function load() {
-  try { answers = JSON.parse(store(slot()) || "{}") || {}; } catch (e) { answers = {}; }
+  answers = {};
+  if (rater()) { try { answers = JSON.parse(store(slot()) || "{}") || {}; } catch (e) { answers = {}; } }
   for (const c of cards) paint(c);
   count();
   if (META.gate) gateCheck();
 }
-function save() { store(slot(), JSON.stringify(answers)); }
+function save() {
+  store(slot(), JSON.stringify(answers));
+  $("storewarn").hidden = storageOk;
+}
+function needRater() {
+  if (rater()) return false;
+  say("Enter your rater id first."); raterBox.focus(); return true;
+}
 
 function paint(card) {
   const a = answers[card.dataset.id] || {};
@@ -107,6 +120,7 @@ function count() {
   $("count").textContent = `${n} of ${cards.length} answered`;
 }
 function set(card, field, value) {
+  if (needRater()) { paint(card); return; }
   const id = card.dataset.id;
   answers[id] = Object.assign({}, answers[id], {[field]: value});
   save(); paint(card); count();
@@ -125,22 +139,23 @@ for (const b of document.querySelectorAll(".pic button"))
   b.addEventListener("click", () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true"));
 
 function visibleCards() { return $("cards").hidden ? [] : cards; }
+function onScreen(c, top) { const r = c.getBoundingClientRect(); return r.bottom > top + 40 && r.top < innerHeight - 40; }
 function current() {
-  const f = document.activeElement && document.activeElement.closest && document.activeElement.closest(".card");
-  if (f) return f;
   const top = document.querySelector(".bar").getBoundingClientRect().bottom;
-  return visibleCards().find(c => c.getBoundingClientRect().bottom > top + 40);
+  const f = document.activeElement && document.activeElement.closest && document.activeElement.closest(".card");
+  if (f && onScreen(f, top)) return f;
+  return visibleCards().find(c => onScreen(c, top));
 }
 function go(card) {
   if (!card) return;
   for (const c of cards) c.classList.toggle("active", c === card);
   card.focus({preventScroll: true});
-  card.scrollIntoView({block: "start", behavior: "smooth"});
+  card.scrollIntoView({block: "start"});
 }
 document.addEventListener("keydown", ev => {
-  if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
   const t = ev.target;
-  if (t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && t.type === "text")) return;
+  if (t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && (t.type === "text" || t.type === "file"))) return;
   const card = current();
   if (!card) return;
   const k = ev.key.toLowerCase(), list = visibleCards(), i = list.indexOf(card);
@@ -148,6 +163,7 @@ document.addEventListener("keydown", ev => {
   if (k === "k") { go(list[i - 1]); ev.preventDefault(); return; }
   if (!KEYS[k]) return;
   ev.preventDefault();
+  if (needRater()) return;
   const [field, value] = KEYS[k];
   set(card, field, value);
   if (complete(card.dataset.id)) go(list[i + 1]);
@@ -204,34 +220,58 @@ $("export").addEventListener("click", () => {
   say(`Exported ${link.download}` + (open ? ` (${open} cards still unanswered)` : ""));
 });
 $("importfile").addEventListener("change", ev => readFile(ev.target, rows => {
-  const ids = new Set(META.rows.map(r => r[ID]));
-  let n = 0;
+  if (needRater()) return;
+  const ids = new Set(META.rows.map(r => (r[ID])));
+  let n = 0, bad = 0;
   for (const r of rows) {
-    if (!ids.has(r[ID])) continue;
+    const id = (r[ID] || "").trim();
+    if (!ids.has(id)) continue;
     const a = {};
-    for (const f of META.fields) if (r[f.name]) a[f.name] = r[f.name].trim();
-    answers[r[ID]] = Object.assign({}, answers[r[ID]], a); n++;
+    for (const f of META.fields) {
+      let v = (r[f.name] || "").trim();
+      if (!v) continue;
+      if (f.kind === "radio") {
+        v = v.toLowerCase();
+        if (!f.options.some(o => o[0] === v)) { bad++; continue; }
+      }
+      a[f.name] = v;
+    }
+    if (Object.keys(a).length) { answers[id] = Object.assign({}, answers[id], a); n++; }
   }
-  save(); load(); say(`Imported answers for ${n} cards.`);
+  save(); load();
+  say(`Imported answers for ${n} cards` + (bad ? `; ${bad} values outside the rubric were skipped.` : "."));
 }));
 
 // ---- gate --------------------------------------------------------------------------------------------------------
 function gateCheck() {
-  const open = store(META.storage + ":gate:" + (rater() || "default")) === "ok";
+  const open = !!rater() && store(META.storage + ":gate:" + rater()) === "ok";
   $("cards").hidden = !open; $("gate").hidden = open;
 }
 if (META.gate) $("gatefile").addEventListener("change", ev => readFile(ev.target, rows => {
+  if (needRater()) return;
   const g = META.gate, got = {};
-  for (const r of rows) got[r[ID]] = (r[g.column] || "").trim().toLowerCase();
-  const missing = META.rows.map(r => r[ID]).filter(id => !g.values.includes(got[id]));
-  if (missing.length) { say(`That sheet is not complete: ${missing.length} of ${META.rows.length} items have no ${g.column}.`); return; }
-  store(META.storage + ":gate:" + (rater() || "default"), "ok");
+  if (!rows.length || !(ID in rows[0]) || !(g.column in rows[0])) {
+    say(`That file has no ${ID} and ${g.column} columns. Load the comma-separated sheet the earlier pass exported.`);
+    return;
+  }
+  for (const r of rows) got[(r[ID] || "").trim()] = (r[g.column] || "").trim().toLowerCase();
+  const absent = META.rows.filter(r => !(r[ID] in got)).length;
+  const blank = META.rows.filter(r => r[ID] in got && !g.values.includes(got[r[ID]])).length;
+  if (absent || blank) {
+    say(`That sheet is not complete: of ${META.rows.length} items, ${absent} are not in it and ${blank} have no ` +
+        `valid ${g.column}.`);
+    return;
+  }
+  store(META.storage + ":gate:" + rater(), "ok");
   gateCheck(); say("Pass-1 sheet checked. The cards are open.");
 }));
 
 const params = new URLSearchParams(location.search);
 raterBox.value = params.get("rater") || store(META.storage + ":last_rater") || "";
+store(META.storage + ":probe", "1");
+$("storewarn").hidden = storageOk;
 load();
+if (!rater()) say("Enter your rater id to start.");
 """
 
 
@@ -285,6 +325,9 @@ def render_page(*, title, heading, intro_html, items, fields, sheet_columns, fix
     names = {f["name"] for f in fields}
     if sheet_columns[0] in names or not names <= set(sheet_columns):
         raise ValueError("sheet_columns must start with the id column and include every field")
+    keys = [k.lower() for f in fields for _, _, k in f.get("options", []) if k]
+    if len(keys) != len(set(keys)) or {"j", "k"} & set(keys) or any(len(k) != 1 for k in keys):
+        raise ValueError("option keys must be single characters, distinct, and not J or K")
     rows = []
     for it in items:
         row = {sheet_columns[0]: it["id"]}
@@ -296,7 +339,9 @@ def render_page(*, title, heading, intro_html, items, fields, sheet_columns, fix
             "fields": [{"name": f["name"], "kind": f["kind"], "options": [list(o) for o in f.get("options", [])]}
                        for f in fields],
             "gate": {"column": gate["column"], "values": list(gate["values"])} if gate else None}
-    meta_js = json.dumps(meta, ensure_ascii=False).replace("</", "<\\/")
+    # Escape every <, > and & so no data can close or re-open a script element (``</script>``, ``<!--<script>``).
+    meta_js = (json.dumps(meta, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
+               .replace("&", "\\u0026"))
     gate_html = ""
     if gate:
         gate_html = (f'<div class="gate" id="gate">{gate["html"]}<p><label for="gatefile">Filled sheet</label> '
@@ -306,7 +351,8 @@ def render_page(*, title, heading, intro_html, items, fields, sheet_columns, fix
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         f"<title>{_e(title)}</title><style>{CSS}</style></head><body>",
         f"<h1>{_e(heading)}</h1><div class=\"intro\">{intro_html}</div>",
-        '<p class="muted">Answers are saved in this browser per rater id as you go. <strong>Export</strong> writes '
+        '<p class="muted">Enter your rater id first (it can also come from the address as <code>?rater=yourid</code>). '
+        'Answers are saved in this browser per rater id as you go. <strong>Export</strong> writes '
         f'the filled sheet (<code>{_e(export_name)}__&lt;rater&gt;.csv</code>); <strong>Import</strong> loads one '
         'back. Keys: the letter beside an answer sets it on the current card (the focused card, or the top one on '
         'screen) and moves on once the card is complete; <kbd>J</kbd> / <kbd>K</kbd> next / previous card. Click an '
@@ -316,7 +362,9 @@ def render_page(*, title, heading, intro_html, items, fields, sheet_columns, fix
         '<button type="button" id="export">Export sheet CSV</button>',
         '<label>Import <input type="file" id="importfile" accept=".csv,text/csv"></label>',
         '<button type="button" id="next">Next unanswered</button>',
-        '<span id="count" aria-live="polite"></span> <span id="msg" role="status"></span></div>',
+        '<span id="count" aria-live="polite"></span> <span id="msg" role="status"></span>',
+        '<span id="storewarn" class="warn" role="alert" hidden>This browser is not saving answers (private window?). '
+        'Export before you close the page.</span></div>',
         gate_html,
         f'<div id="cards"{" hidden" if gate else ""}>',
         "".join(_card(it, fields) for it in items),

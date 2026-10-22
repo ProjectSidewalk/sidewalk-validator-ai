@@ -420,7 +420,7 @@ def _meta(page):
     import re
 
     return json.loads(re.search(r'<script id="meta" type="application/json">(.*?)</script>', page, re.S)
-                      .group(1).replace("<\\/", "</"))
+                      .group(1))
 
 
 def test_rating_pages_keep_pass1_blind_and_match_the_sheets(tmp_path):
@@ -445,6 +445,28 @@ def test_rating_pages_keep_pass1_blind_and_match_the_sheets(tmp_path):
         assert (tmp_path / "packet" / "pass1" / "items_bare" / f"{i + 1:03d}_{pid}.jpg").exists()
     assert "rate.html" in zipfile.ZipFile(out_dir / vb.PACKET_ZIPS[1]).namelist()
     assert "rate.html" in zipfile.ZipFile(out_dir / vb.PACKET_ZIPS[2]).namelist()
+    assert set().union(*(r.keys() for r in m1["rows"])) == {"packet_id", "label_type"}
+    for i, pid in enumerate(sheet2.packet_id):
+        assert f'src="items_annotated/{i + 1:03d}_{pid}.jpg"' in p2
+    assert m1["storage"] != m2["storage"]
+    assert vb.sha256_of(str(key))[:8] in m1["storage"] and vb.sha256_of(str(key))[:8] in m2["storage"]
+
+
+def test_pass1_page_does_not_depend_on_anything_the_model_said(tmp_path):
+    ex = _explanations(8)
+    key = vb.packet_key(ex, 3)
+    pass1, pass2 = vb.blank_sheets(key)
+    other = pass2.assign(vlm_answer=np.where(pass2.vlm_answer == "Yes", "No", "Yes"), vlm_reason="<b>other</b>")
+    pages = []
+    for tag, p2 in (("a", pass2), ("b", other)):
+        dirs = {1: tmp_path / tag / "pass1", 2: tmp_path / tag / "pass2"}
+        for d in dirs.values():
+            d.mkdir(parents=True)
+        vb.write_rating_pages({k: str(v) for k, v in dirs.items()}, pass1, p2, "0" * 64)
+        pages.append(((dirs[1] / "rate.html").read_bytes(), (dirs[2] / "rate.html").read_text()))
+    assert pages[0][0] == pages[1][0]                           # pass 1 byte-identical
+    assert pages[0][1] != pages[1][1]
+    assert "&lt;b&gt;other&lt;/b&gt;" in pages[1][1] and "<b>other</b>" not in pages[1][1]
 
 
 def test_gallery_rebuilds_pages_on_an_old_packet_and_refuses_a_wrong_key(tmp_path):
@@ -462,13 +484,61 @@ def test_gallery_rebuilds_pages_on_an_old_packet_and_refuses_a_wrong_key(tmp_pat
     assert "rate.html" in prov["packet"]["zips"][vb.PACKET_ZIPS[1]]["files"]
     other = tmp_path / "other.sha256"
     other.write_text("0" * 64 + "  packet_key.csv\n")
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit, match="does not match"):
         vb.main(args[:-4] + ["--key-sha256", str(other), "--doc-dir", ""])
-    sheet = tmp_path / "packet" / "pass1" / "pass1_sheet.csv"
+
+
+def _gallery_args(tmp_path, out_dir, key):
+    return ["gallery", "--out-dir", str(out_dir), "--packet-dir", str(tmp_path / "packet"), "--key", str(key),
+            "--key-sha256", str(tmp_path / "doc" / "packet_key.sha256"), "--doc-dir", str(tmp_path / "doc")]
+
+
+def test_gallery_refuses_a_reordered_sheet_even_with_matching_crops(tmp_path):
+    out_dir, key, _ = _built_packet(tmp_path)
+    d = tmp_path / "packet" / "pass1"
+    sheet = d / "pass1_sheet.csv"
     rows = sheet.read_text().splitlines()
-    sheet.write_text("\n".join([rows[0], rows[2], rows[1]] + rows[3:]) + "\n")   # swap two items
-    with pytest.raises(SystemExit):
+    sheet.write_text("\n".join([rows[0], rows[2], rows[1]] + rows[3:]) + "\n")   # swap items 1 and 2
+    a, b = rows[1].split(",")[0], rows[2].split(",")[0]
+    (d / "items_bare" / f"001_{a}.jpg").rename(d / "items_bare" / "tmp.jpg")
+    (d / "items_bare" / f"002_{b}.jpg").rename(d / "items_bare" / f"001_{b}.jpg")
+    (d / "items_bare" / "tmp.jpg").rename(d / "items_bare" / f"002_{a}.jpg")   # crops follow the new order
+    with pytest.raises(SystemExit, match="order"):
+        vb.main(_gallery_args(tmp_path, out_dir, key))
+
+
+def test_gallery_refuses_missing_crops_wrong_columns_edited_or_filled_sheets(tmp_path):
+    out_dir, key, _ = _built_packet(tmp_path)
+    args = _gallery_args(tmp_path, out_dir, key)
+    d2 = tmp_path / "packet" / "pass2"
+    crop = sorted((d2 / "items_annotated").iterdir())[3]
+    crop.rename(crop.with_suffix(".bak"))
+    with pytest.raises(SystemExit, match="crops missing"):
         vb.main(args)
+    crop.with_suffix(".bak").rename(crop)
+    s2 = d2 / "pass2_sheet.csv"
+    blank = pd.read_csv(s2, dtype=str, keep_default_na=False)
+    for bad, match in ((blank.drop(columns="notes_pass2"), "columns"),
+                       (blank.assign(vlm_reason="edited"), "differ from the key"),
+                       (blank.assign(reason_correct="yes"), "not blank")):
+        bad.to_csv(s2, index=False)
+        with pytest.raises(SystemExit, match=match):
+            vb.main(args)
+    blank.to_csv(s2, index=False)
+    vb.main(args)
+
+
+def test_gallery_leaves_provenance_for_another_key_alone(tmp_path):
+    import json
+
+    out_dir, key, _ = _built_packet(tmp_path)
+    pp = tmp_path / "doc" / "provenance.json"
+    prov = json.load(open(pp))
+    prov["packet"]["key_sha256"] = "f" * 64
+    prov["packet"]["zips"] = "untouched"
+    pp.write_text(json.dumps(prov))
+    vb.main(_gallery_args(tmp_path, out_dir, key))
+    assert json.load(open(pp))["packet"]["zips"] == "untouched"
 
 
 def test_unblind_and_agreement_round_trip():

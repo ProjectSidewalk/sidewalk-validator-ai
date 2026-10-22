@@ -26,7 +26,7 @@ def _page(**kw):
 
 def meta(page):
     return json.loads(re.search(r'<script id="meta" type="application/json">(.*?)</script>', page, re.S)
-                      .group(1).replace("<\\/", "</"))
+                      .group(1))
 
 
 def test_doctests():
@@ -67,10 +67,21 @@ def test_gate_hides_cards_and_is_in_meta():
     assert meta(page)["gate"] == {"column": "my_verdict", "values": ["correct"]}
 
 
-def test_script_close_in_data_cannot_break_out():
-    page = _page(fixed={"p00000a": {"label_type": "</script><b>x"}, "p00000b": {}})
-    assert page.count("</script>") == 2
-    assert meta(page)["rows"][0]["label_type"] == "</script><b>x"
+@pytest.mark.parametrize("text", ["</script><b>x", "<!--<script>", "<!-- a", "a & b > c", "<\\/script>"])
+def test_data_cannot_close_or_reopen_a_script_element(text):
+    page = _page(fixed={"p00000a": {"label_type": text}, "p00000b": {}})
+    data = re.search(r'<script id="meta" type="application/json">(.*?)</script>', page, re.S).group(1)
+    assert "<" not in data and ">" not in data and "&" not in data
+    assert page.count("<script") == 2 and page.count("</script>") == 2
+    assert meta(page)["rows"][0]["label_type"] == text
+
+
+def test_rejects_colliding_or_reserved_option_keys():
+    for opts in ([("yes", "Yes", "y"), ("no", "No", "Y")], [("yes", "Yes", "j"), ("no", "No", "n")],
+                 [("yes", "Yes", "ye"), ("no", "No", "n")]):
+        with pytest.raises(ValueError):
+            _page(fields=[{"name": "v", "legend": "V", "kind": "radio", "options": opts}],
+                  sheet_columns=["packet_id", "label_type", "v"])
 
 
 def test_rejects_field_missing_from_sheet_or_id_column_as_field():
