@@ -260,9 +260,8 @@ def redact_metadata(obj, public):
             if len(v) != len(out[key]):
                 out[counter] = len(v) - len(out[key])
     cs = out.get("city_source")
-    if isinstance(cs, dict):
-        private_seen.update(k for k in cs if str(k) not in public)
-        out["city_source"] = {k: n for k, n in cs.items() if str(k) in public}
+    if isinstance(cs, dict):   # {"from": "--cities"} in the pipeline's files; a per-city map in older ones
+        out["city_source"] = {k: n for k, n in cs.items() if str(k) not in _known_private | private_seen}
     _known_private.update(private_seen)
     if isinstance(out.get("source"), str):
         out["source"] = scrub_source_text(out["source"], _known_private)
