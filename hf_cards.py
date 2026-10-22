@@ -310,6 +310,18 @@ def _calibration_section(ctx):
                          f"{fmt(r.get('ece'), 4)} | {fmt(r.get('gate_coverage'))} | {fmt(r.get('gate_precision'))} |")
     else:
         lines += ["", f"Evaluation of the map: n/a ({rep.get('eval_error', 'no eval rows')})."]
+    hb = rep.get("hold_back") or {}
+    if hb.get("verdicts"):
+        unc = hb.get("uncapped_eval") or {}
+        held = ", ".join(f"`{v}`" for v in hb["verdicts"])
+        lines += ["", f"**Held back:** the {held} map is capped at {fmt(hb.get('cap'), 4)}, so that verdict is served with "
+                      f"its estimated accuracy but never reaches the {GATE} gate and never becomes a vote. "
+                      f"Reason: {hb.get('reason', 'n/a')}."]
+        for v in hb["verdicts"]:
+            u = unc.get(v)
+            if u:
+                lines.append(f"Uncapped, `{v}` would have had coverage {fmt(u.get('gate_coverage'))} at precision "
+                             f"{fmt(u.get('gate_precision'))} on the evaluation split (n {fmt(u.get('gate_n'))}).")
     if rep.get("fit_split") == "val":
         lines += ["", "The map is fitted on the validation split, which also selected the checkpoint, so it is mildly "
                       "optimistic."]

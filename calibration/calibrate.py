@@ -13,6 +13,14 @@ written in sidewalk-ai-api's format (``_isotonic_map``). The eval split is rewei
 ``pi_eval``) and used for the ECE, a reliability diagram, and coverage + precision at the 0.92 gate per verdict,
 printed and saved as ``calibration_report.json`` next to the map.
 
+**Hold-back.** ``--hold-back incorrect`` (any subset of the verdicts) caps that verdict's map at
+``_isotonic_map.HOLD_BACK_CAP`` (0.9199), the same cap and JSON shape ``calibrate_from_production.py`` uses for a class
+whose out-of-fold gate precision is not established, so the API and the website treat the verdict exactly as a
+held-back production class: it is served, with its accuracy, but never reaches the 0.92 gate and never becomes a vote.
+The report records the held-back verdicts, the cap, the reason, and the gate statistics the uncapped map would have
+had, so the published card is truthful about what is served. First-ship default (issue #56): hold back ``incorrect``
+until the deployment prior is settled and the new revision has production outcomes to fit on.
+
 **Fit split.** The default fits on ``val``, which is also the split ``fine_tune_classifier.py`` uses to choose the
 checkpoint, so the fit is mildly optimistic. With a ``test_heldout`` split available, prefer
 ``--fit-split test --eval-split test_heldout``.
@@ -30,7 +38,8 @@ i.e. pre-downsampling counts of labels meeting the training vote thresholds on h
 Usage::
 
     python -m calibration.calibrate --predictions CurbRamp/predictions.csv --priors deployment_priors.json \\
-        --label-type CurbRamp --out CurbRamp/calibration/curbramp.json [--fit-split val --eval-split test]
+        --label-type CurbRamp --out CurbRamp/calibration/curbramp.json [--fit-split val --eval-split test] \\
+        [--hold-back incorrect]
 """
 import argparse
 import json
@@ -111,24 +120,56 @@ def evaluate_map(api_map, eval_df, pi_deploy):
     return out, tables
 
 
-def calibrate(predictions, pi_deploy, fit_split="val", eval_split="test"):
-    """Fit on ``fit_split`` and evaluate on ``eval_split``. Returns ``(api_map, report_dict, tables)``."""
+DEFAULT_HOLD_BACK_REASON = ("first ship of a retrained revision: the deployment prior is under review (issue #56) and "
+                            "the revision has no production outcomes to fit on yet")
+
+
+def hold_back(api_map, verdicts_to_hold, cap=im.HOLD_BACK_CAP):
+    """A copy of ``api_map`` with every verdict in ``verdicts_to_hold`` capped at ``cap`` (``cap_class_map``).
+
+    Example: hold_back(api_map, ["incorrect"])["incorrect"] never reaches 0.92; ["correct"] is unchanged.
+    """
+    unknown = sorted(set(verdicts_to_hold) - set(CLASSES))
+    if unknown:
+        raise ValueError(f"unknown verdict(s) to hold back: {unknown}; choose from {list(CLASSES)}")
+    return {v: (im.cap_class_map(m, cap) if v in verdicts_to_hold else dict(m)) for v, m in api_map.items()}
+
+
+def calibrate(predictions, pi_deploy, fit_split="val", eval_split="test", hold_back_verdicts=(),
+              hold_back_reason=DEFAULT_HOLD_BACK_REASON):
+    """Fit on ``fit_split``, optionally hold verdicts back, evaluate on ``eval_split``.
+
+    Returns ``(api_map, report_dict, tables)``; ``api_map`` is the shipped (capped) map, and the report's
+    ``hold_back`` entry lists the held-back verdicts, the cap, the reason and the uncapped gate statistics.
+    """
     df = verdicts(predictions)
     fit_df, eval_df = df[df.split == fit_split], df[df.split == eval_split]
     if len(fit_df) == 0:
         raise ValueError(f"no rows with split == {fit_split!r}")
     curves, _ = fit_curves(fit_df, pi_deploy)
-    api_map = im.build_api_map(curves)
+    uncapped = im.build_api_map(curves)
+    im.validate_api_map(uncapped)
+    held = [v for v in CLASSES if v in set(hold_back_verdicts)]
+    api_map = hold_back(uncapped, held)
     im.validate_api_map(api_map)
     rep = {"prior_deploy": pi_deploy, "fit_split": fit_split, "eval_split": eval_split,
            "prior_fit": fit_df["true"].value_counts(normalize=True).to_dict(), "n_fit": int(len(fit_df)),
-           "fit_range": {v: im.fit_range(curves[v]) for v in CLASSES}}
+           "fit_range": {v: im.fit_range(curves[v]) for v in CLASSES},
+           "hold_back": {"verdicts": held, "cap": im.HOLD_BACK_CAP if held else None,
+                         "reason": hold_back_reason if held else None,
+                         "uncapped_reaches_gate": {v: bool(max(uncapped[v].values()) >= im.GATE) for v in CLASSES}}}
     tables = {}
     if len(eval_df):
         rep["prior_eval"] = eval_df["true"].value_counts(normalize=True).to_dict()
         rep["n_eval"] = int(len(eval_df))
         try:
             rep["eval"], tables = evaluate_map(api_map, eval_df, pi_deploy)
+            if held:    # what the held-back verdicts would have done at the gate, for the record
+                unc, _ = evaluate_map(uncapped, eval_df, pi_deploy)
+                rep["hold_back"]["uncapped_eval"] = {v: {k: unc[v][k] for k in ("gate_coverage", "gate_precision",
+                                                                                "gate_n")} for v in held}
+            for v in CLASSES:
+                rep["eval"][v]["held_back"] = v in held
         except ValueError as e:      # e.g. the eval split has no examples of one class: cannot reweight it
             warnings.warn(f"evaluation on {eval_split!r} skipped: {e}")
             rep["eval"] = "n/a"
@@ -147,10 +188,16 @@ def main(argv=None):
     p.add_argument("--out", required=True, help="path of the map JSON to write (drop-in for sidewalk-ai-api)")
     p.add_argument("--fit-split", default="val")
     p.add_argument("--eval-split", default="test")
+    p.add_argument("--hold-back", nargs="*", default=[], choices=CLASSES, metavar="VERDICT",
+                   help=f"verdict(s) whose map is capped at {im.HOLD_BACK_CAP} so they never reach the gate "
+                        f"(choose from {', '.join(CLASSES)}); e.g. --hold-back incorrect for a first ship")
+    p.add_argument("--hold-back-reason", default=DEFAULT_HOLD_BACK_REASON,
+                   help="recorded in calibration_report.json next to the held-back verdicts")
     args = p.parse_args(argv)
 
     pi_deploy, entry = load_prior(args.priors, args.label_type)
-    api_map, rep, tables = calibrate(pd.read_csv(args.predictions), pi_deploy, args.fit_split, args.eval_split)
+    api_map, rep, tables = calibrate(pd.read_csv(args.predictions), pi_deploy, args.fit_split, args.eval_split,
+                                     args.hold_back, args.hold_back_reason)
     rep.update({"label_type": args.label_type, "prior_source": entry})
 
     out_dir = os.path.dirname(os.path.abspath(args.out))
@@ -177,7 +224,13 @@ def main(argv=None):
             r = e[v]
             gp = "n/a" if np.isnan(r["gate_precision"]) else f"{r['gate_precision']:.3f}"
             print(f"  verdict {v:9s} n={r['n']:5d} precision {r['precision'] if r['precision'] is not None else float('nan'):.3f} "
-                  f"ECE {r['ece']:.4f} | gate {im.GATE}: coverage {r['gate_coverage']:.3f}, precision {gp}")
+                  f"ECE {r['ece']:.4f} | gate {im.GATE}: coverage {r['gate_coverage']:.3f}, precision {gp}"
+                  + (" | HELD BACK" if r.get("held_back") else ""))
+        for v, u in (rep["hold_back"].get("uncapped_eval") or {}).items():
+            gp = "n/a" if u["gate_precision"] is None or np.isnan(u["gate_precision"]) else f"{u['gate_precision']:.3f}"
+            print(f"  (uncapped {v}: coverage {u['gate_coverage']:.3f}, precision {gp}, n {u['gate_n']})")
+    if rep["hold_back"]["verdicts"]:
+        print(f"held back at {im.HOLD_BACK_CAP}: {', '.join(rep['hold_back']['verdicts'])} ({rep['hold_back']['reason']})")
     print(f"wrote {args.out} and calibration_report.json")
 
 
