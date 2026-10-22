@@ -10,7 +10,8 @@ Replaces ``get_stats.py``. Two stages, kept separate so the metrics are testable
 (b) **Metrics** (``report``, pure pandas/scikit-learn): AUC, plain and balanced accuracy, per-class
     precision/recall/F1, and recall at precision 0.90..0.99 with the matching score threshold, for the ``test``
     split, for ``test_heldout`` if present, and for the ``hard == 1`` slice of the two (``--per-city`` adds the same
-    metrics per city of ``test`` and ``test_heldout``, in ``metrics.json`` and ``per_city.md``). Written to
+    metrics per city of ``test`` and ``test_heldout``, in ``metrics.json`` and ``per_city.md``; with ``--vote-weights``
+    too, the gold slice per city as well, under ``per_city.<split>.gold``, issue #41). Written to
     ``<label_type>/metrics.json`` and ``<label_type>/report.txt``, with ``pvr.png`` and ``report.png``. ``--checkpoint``
     scores another model (such as the one the API serves) on the same split; ``--tag`` suffixes all its outputs.
     ``--vote-weights`` (validator_reliability.py's ``vote_weights.csv``) adds a ``gold`` slice of the two test
@@ -40,6 +41,9 @@ Usage::
         --revision 969ad5a33079db7885c9e9a4eb5cd0f39d8fe57a --tag prod
     # Add the all-reliable-validators "gold" slice:
     python evaluate.py --label_type CurbRamp --skip-inference --vote-weights reliability/vote_weights.csv
+    # Both: per-city tables for every label and for the gold slice (gold counts for every city, metrics where
+    # the city's gold rows reach --min-city-n):
+    python evaluate.py --label_type CurbRamp --skip-inference --per-city --vote-weights reliability/vote_weights.csv
 """
 import argparse
 import glob
@@ -239,19 +243,42 @@ def gold_labels(vote_weights, min_reliability=GOLD_MIN_RELIABILITY, min_votes=GO
     return pd.Series(gold.to_numpy(), index=vote_weights["label_uid"].to_numpy())
 
 
-def per_city_metrics(df, levels=PRECISION_LEVELS, min_city_n=50):
-    """``slice_metrics`` for every city of one split with at least ``min_city_n`` rows (issue #15).
-
-    Returns:
-        ``{"min_city_n": ..., "cities": {city: slice_metrics(...)}, "below_min_n": {city: n}}``, cities by
-        descending n (ties by name).
-    """
-    counts = df.groupby("city").size().reset_index(name="n").sort_values(["n", "city"], ascending=[False, True])
+def _city_slices(df, levels, min_city_n, all_cities=None):
+    """``slice_metrics`` per city for the cities of ``df`` with at least ``min_city_n`` rows; the rest, and any city
+    of ``all_cities`` absent from ``df``, go to ``below_min_n`` with their count (0 when absent)."""
+    counts = df.groupby("city").size()
+    if all_cities is not None:
+        counts = counts.reindex(all_cities, fill_value=0)
+    counts = counts.rename_axis("city").reset_index(name="n").sort_values(["n", "city"], ascending=[False, True])
     big = counts[counts.n >= min_city_n]
     small = counts[counts.n < min_city_n]
     return {"min_city_n": int(min_city_n),
             "cities": {c: slice_metrics(df[df.city == c], levels) for c in big.city},
             "below_min_n": {c: int(n) for c, n in zip(small.city, small.n)}}
+
+
+def per_city_metrics(df, levels=PRECISION_LEVELS, min_city_n=50):
+    """``slice_metrics`` for every city of one split with at least ``min_city_n`` rows (issue #15).
+
+    Returns:
+        ``{"min_city_n": ..., "cities": {city: slice_metrics(...)}, "below_min_n": {city: n}}``, cities by
+        descending n (ties by name). When ``df`` has a ``gold`` column (see ``gold_labels``) a ``"gold"`` entry of
+        the same shape covers the gold rows per city under the same minimum (issue #41): every city of the split
+        appears, in ``cities`` when its gold rows reach ``min_city_n`` and in ``below_min_n`` with its gold count
+        (0 included) otherwise, so a city with no gold labels is visible rather than silently missing.
+
+    >>> df = pd.DataFrame({"city": list("aaab"), "true": ["correct", "incorrect"] * 2,
+    ...                    "p_incorrect": [0.1, 0.9, 0.2, 0.8], "gold": [True, True, False, False]})
+    >>> df["p_correct"] = 1 - df.p_incorrect
+    >>> m = per_city_metrics(df, min_city_n=2)
+    >>> list(m["cities"]), m["below_min_n"], list(m["gold"]["cities"]), m["gold"]["below_min_n"]
+    (['a'], {'b': 1}, ['a'], {'b': 0})
+    """
+    out = _city_slices(df, levels, min_city_n)
+    if "gold" in df.columns:
+        out["gold"] = _city_slices(df[df.gold.astype(bool)], levels, min_city_n,
+                                   all_cities=sorted(df.city.unique()))
+    return out
 
 
 def report(predictions_df, levels=PRECISION_LEVELS, per_city=False, min_city_n=50):
@@ -262,7 +289,8 @@ def report(predictions_df, levels=PRECISION_LEVELS, per_city=False, min_city_n=5
         predictions_df: columns ``label_uid, split, true, p_correct, p_incorrect`` and, optionally, ``hard``,
             ``gold`` and ``city``.
         per_city: also add ``per_city``: ``{split: per_city_metrics(...)}`` for ``test`` and ``test_heldout``
-            (needs ``city``); render with ``format_per_city``.
+            (needs ``city``); render with ``format_per_city``. With a ``gold`` column each split's entry also
+            carries the gold slice per city under ``"gold"`` (issue #41).
 
     Returns:
         ``{slice_name: slice_metrics(...)}``; render with ``format_report``.
@@ -316,29 +344,36 @@ def format_per_city(per_city):
 
     Precision and recall are at the argmax verdict (the model's own decision, before any served-accuracy gate);
     AUC is shown only when the city has both classes, and a class with no rows in that city shows "—" for its
-    precision and recall (scikit-learn's zero_division would print 0.000).
+    precision and recall (scikit-learn's zero_division would print 0.000). With a ``gold`` entry (``--per-city``
+    together with ``--vote-weights``) a second table per split covers the gold slice per city, and its "below the
+    minimum" line lists every other city with its gold count, 0 included.
     """
     def pr(r):
         return ("—", "—") if r["support"] == 0 else (f"{r['precision']:.3f}", f"{r['recall']:.3f}")
 
     lines = []
     for split, pc in per_city.items():
-        lines += [f"### {split}: per city (n >= {pc['min_city_n']})", ""]
-        if pc["cities"]:
-            lines += ["| city | n (correct / incorrect) | accuracy | AUC | precision correct | recall correct "
-                      "| precision incorrect | recall incorrect |",
-                      "|---|---:|---:|---:|---:|---:|---:|---:|"]
-        else:
-            lines.append("No city reaches the minimum.")
-        for city, m in pc["cities"].items():
-            auc = "—" if m["auc"] is None else f"{m['auc']:.3f}"
-            (pc_p, pc_r), (pi_p, pi_r) = pr(m["per_class"]["correct"]), pr(m["per_class"]["incorrect"])
-            lines.append(f"| {city} | {m['n']:,} ({m['n_by_class']['correct']:,} / {m['n_by_class']['incorrect']:,}) "
-                         f"| {m['accuracy']:.3f} | {auc} | {pc_p} | {pc_r} | {pi_p} | {pi_r} |")
-        if pc["below_min_n"]:
-            lines += ["", "Below the minimum: " + ", ".join(f"{c} (n={n})" for c, n in pc["below_min_n"].items())
-                      + "."]
-        lines.append("")
+        tables = [(f"### {split}: per city (n >= {pc['min_city_n']})", pc)]
+        if "gold" in pc:
+            tables.append((f"### {split}: gold slice per city (gold n >= {pc['gold']['min_city_n']})", pc["gold"]))
+        for heading, block in tables:
+            lines += [heading, ""]
+            if block["cities"]:
+                lines += ["| city | n (correct / incorrect) | accuracy | AUC | precision correct | recall correct "
+                          "| precision incorrect | recall incorrect |",
+                          "|---|---:|---:|---:|---:|---:|---:|---:|"]
+            else:
+                lines.append("No city reaches the minimum.")
+            for city, m in block["cities"].items():
+                auc = "—" if m["auc"] is None else f"{m['auc']:.3f}"
+                (pc_p, pc_r), (pi_p, pi_r) = pr(m["per_class"]["correct"]), pr(m["per_class"]["incorrect"])
+                lines.append(f"| {city} | {m['n']:,} ({m['n_by_class']['correct']:,} / "
+                             f"{m['n_by_class']['incorrect']:,}) | {m['accuracy']:.3f} | {auc} | {pc_p} | {pc_r} "
+                             f"| {pi_p} | {pi_r} |")
+            if block["below_min_n"]:
+                lines += ["", "Below the minimum: "
+                          + ", ".join(f"{c} (n={n})" for c, n in block["below_min_n"].items()) + "."]
+            lines.append("")
     return "\n".join(lines)
 
 

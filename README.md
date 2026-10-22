@@ -228,7 +228,9 @@ score ≥ 0.85. These are the labels with at least 3 human votes where every vot
 
 `incorrect` labels need only 2 votes (net disagree > 1), so the ≥ 3 rule leaves most of them out: with
 ≥ 2 votes the unanimous-Disagree counts are 48 at 0.90 and 640 at 0.85. Expect a gold slice heavily
-weighted towards `correct`. `evaluate.py` prints the gold count per split.
+weighted towards `correct`. `evaluate.py` prints the gold count per split; with `--per-city` it also breaks the
+gold slice out per city, which separates a city that is weak because of its model from one whose crowd labels are
+noisy (counts for every city, metrics only where the city's gold rows reach `--min-city-n`).
 
 ## Crop geometry
 
@@ -413,7 +415,7 @@ Writes, per label type:
 | `predictions.csv` | `label_uid,split,true,p_correct,p_incorrect` for every `val`, `test` and `test_heldout` row |
 | `metrics.json`, `report.txt` | accuracy, balanced accuracy, AUC, per-class precision/recall/F1 and recall at 90–99% precision, for `test`, `test_heldout` and the `hard` slice (small: e.g. 15 of 132 CurbRamp test rows, so read its numbers with wide error bars) |
 | `pvr.png`, `report.png` | precision–recall curve per class on the test split, and the curve with the text report |
-| `per_city.md` | with `--per-city` only: the same metrics per city of `test` and `test_heldout` (cities with at least `--min-city-n` rows, default 50), also under `per_city` in `metrics.json` |
+| `per_city.md` | with `--per-city` only: the same metrics per city of `test` and `test_heldout` (cities with at least `--min-city-n` rows, default 50), also under `per_city` in `metrics.json`. With `--vote-weights` too, a second table per split for the gold slice per city: metrics where a city's gold rows reach the same minimum, and every other city listed with its gold count, 0 included (`per_city.<split>.gold`; [#41](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/41)) |
 
 The same job then fits the map the API serves, on the val split reweighted to the deployment class prior
 in `deployment_priors.json`; for one label type:
