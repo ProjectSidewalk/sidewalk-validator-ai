@@ -178,7 +178,7 @@ def city_lists(cities_api=CITIES_API, public_cities_file=None):
         if not public:
             raise PublishError(f"--public-cities {public_cities_file} lists no public city ids")
         return {"public": public, "non_public_terms": terms, "source": os.path.abspath(public_cities_file),
-                "read_at": read_at}
+                "read_at": read_at, "mode": "json" if text.lstrip().startswith("{") else "plain"}
     try:
         import requests
         r = requests.get(cities_api, timeout=60)
@@ -186,10 +186,13 @@ def city_lists(cities_api=CITIES_API, public_cities_file=None):
         cities = r.json()["cities"]
         public = {str(c["city_id"]) for c in cities if c.get("visibility") == "public"}
         terms = set()
+        public_countries = {str(c.get("country_id")) for c in cities if c.get("visibility") == "public"}
         for c in cities:
             if c.get("visibility") == "public":
                 continue
             terms.add(str(c["city_id"]))
+            if c.get("country_id") and str(c["country_id"]) not in public_countries:
+                terms.add(str(c["country_id"]))        # a country only non-public deployments are in names them
             for key in ("city_name_short", "city_name_formatted"):
                 if c.get(key):
                     terms.add(str(c[key]))
@@ -201,7 +204,7 @@ def city_lists(cities_api=CITIES_API, public_cities_file=None):
         raise PublishError(f"could not read the city list from {cities_api} ({e}); pass --public-cities <file>") from e
     if not public:
         raise PublishError(f"{cities_api} lists no public cities; refusing to guess")
-    return {"public": public, "non_public_terms": terms, "source": cities_api, "read_at": read_at}
+    return {"public": public, "non_public_terms": terms, "source": cities_api, "read_at": read_at, "mode": "api"}
 
 
 def public_city_ids(cities_api=CITIES_API, public_cities_file=None):
@@ -306,35 +309,54 @@ def pool_private_city_metrics(metrics, root, label_type, public):
         if private:
             n_rows = sum(int(cities[c]["n"]) for c in private if c in cities) + sum(int(small[c]) for c in private
                                                                                    if c in small)
-            pooled = {"n_cities": len(private), "n": n_rows}
-            if preds is not None:
-                rows = preds[(preds["split"] == split_name) & preds["city"].astype(str).isin(private)]
-                if len(rows):
-                    pooled = {"n_cities": len(private), **evaluate.slice_metrics(rows)}
+            if len(private) == 1:        # one deployment would be published unnamed but alone: withhold it
+                pooled = {"n_cities": 1, "note": "metrics withheld: a single non-public deployment"}
+            else:
+                pooled = {"n_cities": len(private), "n": n_rows}
+                if preds is not None:
+                    rows = preds[(preds["split"] == split_name) & preds["city"].astype(str).isin(private)]
+                    if len(rows):
+                        pooled = {"n_cities": len(private), **evaluate.slice_metrics(rows)}
             nb["non_public"] = pooled
         out["per_city"][split_name] = nb
     return out
 
 
+def fold_text(text):
+    """Case- and accent-insensitive form for the survivor gate: NFKD, combining marks stripped, lower-cased, so
+    ``Zürich`` / ``ZÜRICH`` / ``Zurich`` all become ``zurich``. Transliterations that are not decompositions
+    (``ß`` -> ``ss``) are not folded; the API's own spellings are the terms, so a hand-written variant that differs
+    from them is the residual risk."""
+    import unicodedata
+    return "".join(ch for ch in unicodedata.normalize("NFKD", str(text)) if not unicodedata.combining(ch)).lower()
+
+
 def check_no_private_names(folder, terms, min_term_len=MIN_TERM_LEN):
-    """The survivor gate: read every text file under ``folder`` and refuse on any case-insensitive substring hit
-    for any term in ``terms`` (ids, display names, hostnames of non-public deployments). Independent of the
-    redaction: it knows nothing about aliases or slots, only bytes. Terms shorter than ``min_term_len`` that are
-    not ids (contain a space or capitals) are skipped and listed in the message.
+    """The survivor gate: read every file under ``folder`` that decodes as UTF-8 (whatever its suffix: cards, JSON,
+    CSV, ``SHA256SUMS``, ``.gitattributes``), plus every file *name*, and refuse on any accent- and
+    case-insensitive substring hit for any term in ``terms`` (ids, display names, hostnames and
+    non-public-only countries). Independent of the redaction: it knows nothing about aliases or slots, only
+    bytes. Terms shorter than ``min_term_len`` that are not ids (contain a space or capitals) are skipped.
+    Binary files (weights, images) are not read; PNG text chunks are not inspected, and no PNG is staged.
 
     Raises:
         PublishError: naming each offending file and term.
     """
-    gated = sorted(t for t in terms if t and (len(t) >= min_term_len or t == t.lower().replace(" ", "")))
+    gated = sorted({t for t in terms if t and (len(t) >= min_term_len or t == t.lower().replace(" ", ""))})
+    folded = [(t, fold_text(t)) for t in gated]
     hits = []
     for rel, _ in list_files(folder):
-        if not rel.lower().endswith(TEXT_SUFFIXES):
-            continue
-        with open(os.path.join(folder, rel), errors="ignore") as f:
-            text = f.read().lower()
-        for t in gated:
-            if t.lower() in text:
-                hits.append((rel, t))
+        texts = [("name", fold_text(rel))]
+        with open(os.path.join(folder, rel), "rb") as f:
+            raw = f.read()
+        try:
+            texts.append(("content", fold_text(raw.decode("utf-8"))))
+        except UnicodeDecodeError:
+            pass
+        for where, text in texts:
+            for t, ft in folded:
+                if ft in text:
+                    hits.append((rel if where == "content" else f"{rel} (file name)", t))
     if hits:
         raise PublishError(f"{folder}: {len(hits)} private-deployment name(s) survive in the staged files: "
                            + "; ".join(f"{rel}: {t!r}" for rel, t in hits[:20]))
@@ -345,7 +367,8 @@ def record_city_lists(lists):
     """What ``staging.json`` keeps about the lists a staging used: the public ids themselves, and only a count and
     hash of the non-public terms (never the names)."""
     terms = sorted(lists["non_public_terms"])
-    return {"source": lists["source"], "read_at": lists["read_at"], "public": sorted(lists["public"]),
+    return {"source": lists["source"], "read_at": lists["read_at"], "mode": lists.get("mode", "api"),
+            "public": sorted(lists["public"]),
             "n_non_public_terms": len(terms),
             "non_public_terms_sha256": hashlib.sha256("\n".join(terms).encode()).hexdigest()}
 
@@ -1141,7 +1164,8 @@ def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_pat
     return model_dir, dataset_dir
 
 
-def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None, what="both", lists=None):
+def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None, what="both", lists=None,
+                  accept_city_list_change=False):
     """Check an existing ``publish/`` before ``--push-staged`` uploads it without restaging.
 
     Re-runs ``assert_publishable`` and ``check_bindings``; refuses if any staged file other than the two cards
@@ -1165,6 +1189,9 @@ def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None, what="
                            f"{STAGING_RECORD}); restage")
     if lists is None:
         lists = city_lists()
+    if lists.get("mode") == "plain":
+        raise PublishError("--push-staged needs the non-public terms: use the cities API or a JSON --public-cities "
+                           "file with non_public_terms, not a plain id-per-line file (it gates nothing)")
     staged_what = record.get("what", "both")
     if staged_what == "model":
         if what != "model":
@@ -1176,6 +1203,16 @@ def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None, what="
         if folder is not None:
             assert_publishable(folder)
             check_no_private_names(folder, terms)
+    fresh = record_city_lists(lists)
+    rec_c = record["cities"]
+    if fresh["n_non_public_terms"] < rec_c.get("n_non_public_terms", 0) or \
+            fresh["non_public_terms_sha256"] != rec_c.get("non_public_terms_sha256"):
+        if not accept_city_list_change:
+            raise PublishError(f"the non-public term list changed since staging ({rec_c.get('n_non_public_terms')} "
+                               f"terms then, {fresh['n_non_public_terms']} now); restage, or pass "
+                               f"--accept-city-list-change after checking why")
+        print(f"WARNING: non-public term list changed since staging ({rec_c.get('n_non_public_terms')} -> "
+              f"{fresh['n_non_public_terms']} terms); accepted")
     if set(record["cities"]["public"]) - set(lists["public"]):
         raise PublishError(f"{pub} was staged with a public city list that names "
                            f"{len(set(record['cities']['public']) - set(lists['public']))} deployment(s) the current "
@@ -1699,6 +1736,9 @@ def build_parser():
     p.add_argument("--yes", action="store_true", help="really upload / delete")
     p.add_argument("--allow-todo", action="store_true", help="upload cards that still contain TODO: markers")
     p.add_argument("--cities-api", default=CITIES_API, help="where the public city list is read from")
+    p.add_argument("--accept-city-list-change", action="store_true",
+                   help="--push-staged: go on although the non-public term list differs from the one recorded at "
+                        "staging (after checking why)")
     p.add_argument("--public-cities", help="instead of --cities-api: a JSON file {\"public\": [...], "
                                            "\"non_public_terms\": [...]} or one public city id per line")
     return p
@@ -1727,7 +1767,7 @@ def main(argv=None):
         if args.push_staged:
             lists = city_lists(args.cities_api, args.public_cities)
             model_dir, dataset_dir = verify_staged(args.out, args.label_type, args.repo_prefix, args.calibration_map,
-                                                   args.what, lists)
+                                                   args.what, lists, args.accept_city_list_change)
             print(f"verified {model_dir}" + (f" and {dataset_dir}" if dataset_dir else " (model only)"))
         else:
             lists = city_lists(args.cities_api, args.public_cities)

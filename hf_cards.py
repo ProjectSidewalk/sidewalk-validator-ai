@@ -425,7 +425,7 @@ def model_card(ctx):
              f"(content hash `{ds.get('content_hash') or TODO + ' dataset not staged with this model; copy the hash from the dataset card'}`)."
              + ("" if ds.get("content_hash") else f" {TODO} the linked dataset repo holds an earlier selection; whether "
                 "this model's training data is published, which includes deployments that are not public, is a "
-                "policy decision (issues #2 and #7). ")
+                "policy decision (issues #2 and #7).")
              + " Labels are taken as correct "
              f"or incorrect from **human** validation votes only (AI votes excluded); see the dataset card for the "
              f"exact thresholds. Split sizes: train {fmt(split_rows.get('train'))}, val {fmt(split_rows.get('val'))}, "
@@ -500,7 +500,7 @@ def model_card(ctx):
              _doi_sentence(overrides.get("model_doi"), "model") + "\n",
              "There is no paper for this model yet. Please cite Project Sidewalk and link the training repository:\n",
              "```bibtex\n" + CITATION_BIBTEX + "\n```\n"]
-    return "\n".join(parts)
+    return link_issues("\n".join(parts))
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -689,4 +689,4 @@ def dataset_card(ctx, license_id=None):
              f"Published from [sidewalk-validator-ai]({CODE_URL})"
              + (f" at commit `{ctx['code_commit']}`" if ctx.get("code_commit") else "")
              + " with `publish_to_hf.py`.\n"]
-    return "\n".join(parts)
+    return link_issues("\n".join(parts))

@@ -1196,8 +1196,9 @@ def test_cli_what_model_stages_and_reports_model_only(tmp_path, capsys):
 
 PUBLIC = {"teaneck", "chicago", "oradell"}
 LISTS = {"public": PUBLIC, "non_public_terms": {"zurich", "zurich-infra3d", "Zurich", "Zürich, Switzerland",
-                                                "sidewalk-zurich.cs.washington.edu", "columbia-sc", "Columbia"},
-         "source": "tests", "read_at": "2026-10-22T00:00:00+00:00"}
+                                                "sidewalk-zurich.cs.washington.edu", "columbia-sc", "Columbia",
+                                                "switzerland"},
+         "source": "tests", "read_at": "2026-10-22T00:00:00+00:00", "mode": "api"}
 
 
 def _grep(folder, needle, flags=re.I):
@@ -1271,7 +1272,7 @@ def test_model_staging_removes_private_cities_and_pools_their_metrics(tmp_path, 
     card = open(os.path.join(model_dir, "README.md")).read()
     assert "test_heldout 2 (1 non-public deployment)" in card
     record = json.load(open(os.path.join(root, T, "publish", pub.STAGING_RECORD)))
-    assert record["cities"]["public"] == sorted(PUBLIC) and record["cities"]["n_non_public_terms"] == 7
+    assert record["cities"]["public"] == sorted(PUBLIC) and record["cities"]["n_non_public_terms"] == 8
     assert "zurich" not in json.dumps(record)
 
 
@@ -1402,16 +1403,18 @@ def test_city_lists_from_the_api_shape(monkeypatch):
 
         def json(self):
             return {"cities": [
-                {"city_id": "seattle-wa", "visibility": "public", "city_name_short": "Seattle", "url": "https://sidewalk-sea.cs.washington.edu"},
-                {"city_id": "zurich", "visibility": "private", "city_name_short": "Zurich",
+                {"city_id": "seattle-wa", "visibility": "public", "city_name_short": "Seattle", "country_id": "usa",
+                 "url": "https://sidewalk-sea.cs.washington.edu"},
+                {"city_id": "zurich", "visibility": "private", "city_name_short": "Zurich", "country_id": "switzerland",
                  "city_name_formatted": "Zürich, Switzerland", "url": "https://sidewalk-zurich.cs.washington.edu/"},
-                {"city_id": "mystery", "city_name_short": "M"}]}      # no visibility: private
+                {"city_id": "mystery", "city_name_short": "M", "country_id": "usa"}]}      # no visibility: private
 
     monkeypatch.setattr(requests, "get", lambda *a, **k: R())
     lists = _real_city_lists(cities_api="http://x/cities")
     assert lists["public"] == {"seattle-wa"}
     assert lists["non_public_terms"] == {"zurich", "Zurich", "Zürich, Switzerland", "sidewalk-zurich.cs.washington.edu",
-                                         "mystery", "M"}
+                                         "mystery", "M", "switzerland"}      # usa is a public country: not a term
+    assert lists["mode"] == "api"
 
 
 def test_cli_needs_a_city_list_and_what_dataset_stages_both(tmp_path, capsys):
@@ -1449,3 +1452,83 @@ def test_card_links_issue_numbers_and_flags_the_dataset_link():
     assert hf_cards.link_issues("[#56](x) already linked") == "[#56](x) already linked"
     assert hf_cards._city_list_text(["a", "b"], 2) == "a, b and 2 non-public deployments"
     assert hf_cards._city_list_text([], 1) == "1 non-public deployment"
+
+
+@pytest.mark.parametrize("text", ["Tram rails in Zürich read as curb ramps.", "TRAM RAILS IN ZÜRICH", "seen in Zurich",
+                                  "the Swiss deployment (Switzerland)", "ZÜRICH, SWITZERLAND"])
+def test_gate_folds_accents_and_case_and_knows_countries(tmp_path, text):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    json.dump({"failure_modes": [text]}, open(os.path.join(root, T, "card_overrides.json"), "w"))
+    with pytest.raises(pub.PublishError, match="survive in the staged files"):
+        pub.stage(root, T, what="model", lists=LISTS)
+
+
+def test_gate_reads_every_utf8_file_and_file_names(tmp_path):
+    d = tmp_path / "f"
+    d.mkdir()
+    (d / "SHA256SUMS").write_text("abc  test/correct/zurich_5.webp\n")          # no suffix
+    with pytest.raises(pub.PublishError, match="SHA256SUMS: 'zurich'"):
+        pub.check_no_private_names(str(d), {"zurich"})
+    (d / "SHA256SUMS").write_text("clean\n")
+    (d / "test").mkdir()
+    (d / "test" / "zurich_5.webp").write_bytes(b"RIFF\xff\xfe binary")        # name hit, content undecodable
+    with pytest.raises(pub.PublishError, match=r"zurich_5.webp \(file name\): 'zurich'"):
+        pub.check_no_private_names(str(d), {"zurich"})
+    (d / "test" / "zurich_5.webp").unlink()
+    (d / "weights.bin").write_bytes(b"\xff\xfe" + "zürich".encode())           # undecodable: not read
+    assert pub.check_no_private_names(str(d), {"zurich"}) == 1
+    assert pub.fold_text("ZÜRICH, Schweiz") == "zurich, schweiz"
+
+
+def test_push_staged_refuses_plain_file_lists_and_term_drift(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    model_dir, _ = pub.stage(root, T, what="model", lists=LISTS)
+    # H4: a hand-edited card naming a private deployment, verified with a plain id-per-line file: refused as plain
+    with open(os.path.join(model_dir, "README.md"), "a") as f:
+        f.write("\nValidated in Zurich too.\n")
+    plain = dict(LISTS, non_public_terms=set(), mode="plain")
+    with pytest.raises(pub.PublishError, match="plain id-per-line file"):
+        pub.verify_staged(root, T, what="model", lists=plain)
+    # with the real terms the edit is caught by the gate
+    with pytest.raises(pub.PublishError, match="survive in the staged files"):
+        pub.verify_staged(root, T, what="model", lists=LISTS)
+    # term drift: fewer terms than recorded, or a different set, is refused unless accepted
+    root, *_ = make_root(tmp_path / "b")
+    _remove_crops(root)
+    model_dir, _ = pub.stage(root, T, what="model", lists=LISTS)
+    fewer = dict(LISTS, non_public_terms=LISTS["non_public_terms"] - {"Columbia"})
+    with pytest.raises(pub.PublishError, match="non-public term list changed since staging"):
+        pub.verify_staged(root, T, what="model", lists=fewer)
+    assert pub.verify_staged(root, T, what="model", lists=fewer, accept_city_list_change=True) == (model_dir, None)
+    assert "accepted" in capsys.readouterr().out
+    assert pub.verify_staged(root, T, what="model", lists=LISTS) == (model_dir, None)
+    f = tmp_path / "public.txt"
+    f.write_text("teaneck\nchicago\noradell\n")
+    assert pub.main(["--label_type", T, "--out", root, "--push-staged", "--what", "model",
+                     "--public-cities", str(f)]) == 1
+    assert "plain id-per-line file" in capsys.readouterr().err
+
+
+def test_pooled_row_is_withheld_for_a_single_private_deployment(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _add_private_city(root)
+    _remove_crops(root)
+    base = os.path.join(root, T)
+    metrics = json.load(open(os.path.join(base, "metrics.json")))
+    metrics["per_city"]["test_heldout"]["below_min_n"] = {}          # leaves zurich alone in the pool
+    json.dump(metrics, open(os.path.join(base, "metrics.json"), "w"))
+    model_dir, _ = pub.stage(root, T, what="model", lists=LISTS)
+    block = json.load(open(os.path.join(model_dir, "metrics.json")))["per_city"]["test_heldout"]
+    assert block["non_public"] == {"n_cities": 1, "note": "metrics withheld: a single non-public deployment"}
+
+
+def test_whole_card_links_issue_numbers(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    model_dir, _ = pub.stage(root, T, what="model", lists=LISTS)
+    card = open(os.path.join(model_dir, "README.md")).read()
+    assert "(issues [#2](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/2) and [#7](" in card
+    assert re.search(r"(?<![\w\[/])#\d+\b", card) is None                   # no bare issue number of this repo
+    assert "policy decision (issues" in card and ").  Labels" not in card
