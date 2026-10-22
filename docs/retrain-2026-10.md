@@ -26,8 +26,9 @@ deploy chain and its checklist are [#55](https://github.com/ProjectSidewalk/side
   unseen deployments they clear pooled, 0.88 (SurfaceProblem) to 0.994 (Crosswalk) under each deployment's own
   class mix, but the per-deployment test that
   [#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52) proposes (a Wilson 95% lower
-  bound of at least 0.92 on that deployment's gated votes) passes in only two of the fifteen type × deployment
-  cells: CurbRamp and Obstacle in the unseen US deployment. The shipped maps hold every Disagree verdict back
+  bound of at least 0.92 on that deployment's gated votes) passes in only three of the fifteen type × deployment
+  cells: CurbRamp, Obstacle and SurfaceProblem in the unseen US deployment, the last by 0.0004 while the type
+  stays in shadow for type-level reasons. The shipped maps hold every Disagree verdict back
   below the gate
   ([#57](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/57)); whether a Disagree map could clear
   it depends on the deployment prior, which is under review
@@ -40,7 +41,8 @@ deploy chain and its checklist are [#55](https://github.com/ProjectSidewalk/side
   back for every type until the prior question is settled; and let Agree vote in an unseen or new deployment
   only after a per-deployment check, as
   [#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52) proposes. Applied to the unseen
-  deployments today, that check passes CurbRamp and Obstacle in private city B and nothing else: the other
+  deployments today, that check passes CurbRamp, Obstacle and SurfaceProblem in private city B (SurfaceProblem by
+  0.0004, and the type stays in shadow for type-level reasons) and nothing else: the other
   cells are precise but on too few votes (CurbRamp tucson-az, both private deployments for Crosswalk), or not
   precise enough (NoCurbRamp private city B, lower bound 0.894 on 150 votes).
 
@@ -504,8 +506,9 @@ In the training deployments every stratum with at least 50 Agree verdicts is at 
 estimate under either weighting except seattle-wa SurfaceProblem under the pooled prior (0.907; 0.936 under its
 own mix); on the lower bound, seattle-wa Obstacle (0.902) and SurfaceProblem (0.880) and the smaller strata
 would not pass #52's test either. (Strata under 50 votes are not shown; a few of them are below, on 6 to 14
-votes.) In the unseen deployments, #52's test passes in two cells: CurbRamp and Obstacle in private city B
-(lower bounds 0.965 and 0.947). NoCurbRamp private city B is 0.943 on the point estimate but 0.894 on the lower
+votes.) In the unseen deployments, #52's test passes in three cells: CurbRamp and Obstacle in private city B
+(lower bounds 0.965 and 0.947) and SurfaceProblem in private city B (0.920 on 119 votes, by 0.0004; the type
+stays in shadow for the type-level reasons above). NoCurbRamp private city B is 0.943 on the point estimate but 0.894 on the lower
 bound (15 of 150 wrong); tucson-az is below the gate for Obstacle (0.77 under its own mix, 11 of 35 wrong) and
 far below for SurfaceProblem (0.60); private city A is precise for CurbRamp and Crosswalk on 17 and 26 votes
 (lower bounds 0.79 and 0.85) and fails for the rest, with NoCurbRamp's three gated Agree votes all wrong. The
