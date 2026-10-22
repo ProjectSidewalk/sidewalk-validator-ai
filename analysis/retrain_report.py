@@ -40,10 +40,17 @@ a saved ``/v3/api/cities`` response or a text file of one ``city_id`` per line. 
 ``prior(class) / split_mix(class)`` so the pooled gate statistics hold under the deployment prior. Applied per
 deployment, that weighting erases the deployment's own class mix, which is the question "what precision would
 this deployment see". Because ``data_generation.select_training_labels`` keeps correct labels by one global
-hash-rank cutoff, every deployment lost the same share of its correct labels, so weighting every correct row by
-``prior(correct) / selected_mix(correct)`` (over the whole ``split.csv``) and every incorrect row by the incorrect
-counterpart restores each deployment's own mix under the margin rule. ``precision_city_own`` is the gated
-precision under that weighting; ``precision_pooled`` is ``calibrate.py``'s; ``precision_raw`` is unweighted.
+hash-rank cutoff, every deployment lost the same share of its correct labels. The keep rate is the selected
+human margin-rule correct count (``split.csv`` rows with ``author == human`` and ``class_source == margin``,
+every split) over the prior's correct count (``deployment_priors.json`` counts exactly those labels before the
+downsample), so weighting every correct row by ``1 / keep rate`` and every incorrect row by 1 restores each
+deployment's own class mix under the margin rule. Expert-classed and AI-placed rows were added to the pool
+outside that count, so the restored mix is exact for the human margin-rule labels and approximate where those
+rows are many. The weight is a fact of the data, so it is the same under every map, including the
+``--alt-prior`` refit. ``precision_city_own`` is the gated precision under that weighting; ``precision_pooled``
+is ``calibrate.py``'s; ``precision_raw`` is unweighted; ``wilson_lower_own`` is the Wilson 95% lower bound of
+``precision_city_own`` on the gated count (z = 1.96, as ``per_city.py``), the statistic issue #52's per-deployment gate uses
+(``calibration/per_city.py`` also asks for at least 50 votes).
 
 Usage::
 
@@ -82,6 +89,7 @@ SPLITS = ["test", "test_heldout"]
 PRECISION_LEVELS = ["0.92", "0.95"]
 CITIES_API = "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities"   # as data_generation.CITIES_API
 POOLED_PRIVATE = "other (private deployments)"
+WILSON_Z = 1.959964   # the 95% bound calibration/per_city.py uses (Z95), not the map's MAP_Z
 
 
 def public_cities(path=None):
@@ -117,7 +125,7 @@ def heldout_names(heldout_cities, public, us_cities):
 def load_type(run_dir, label_type):
     pred = pd.read_csv(f"{run_dir}/{label_type}/predictions.csv")
     split = pd.read_csv(f"{run_dir}/{label_type}/split.csv", usecols=[
-        "label_uid", "city", "pano_id", "label_class", "class_source", "hard", "split"])
+        "label_uid", "city", "pano_id", "label_class", "class_source", "author", "hard", "split"])
     assert pred.label_uid.is_unique and split.label_uid.is_unique
     df = pred.merge(split.drop(columns=["split"]), on="label_uid", how="left", validate="one_to_one")
     assert df.city.notna().all(), f"{label_type}: predictions without a split row"
@@ -329,12 +337,24 @@ def clears_at(class_map, gate=im.GATE):
     return above[0] if above else "never"
 
 
-def city_own_weights(split_all, true, pi):
-    """Weights that restore each deployment's own class mix under the margin rule: ``pi(class) / selected_mix(class)``
-    with the mix taken over the whole selected set (``split.csv``, every split), since the correct-class downsample
-    used one global cutoff (see the module docstring)."""
-    mix = split_all.label_class.value_counts(normalize=True)
-    return np.asarray(true.map(lambda c: pi[c] / mix[c]), float)
+def correct_weight(split_all, prior_entry):
+    """``1 / keep rate`` of the correct class: the prior's correct count over the selected human margin-rule correct
+    count (see the module docstring). Incorrect rows keep weight 1.
+
+    >>> sp = pd.DataFrame({"label_class": ["correct"] * 3 + ["incorrect"] * 2, "author": ["human"] * 5,
+    ...                    "class_source": ["margin", "margin", "expert", "margin", "margin"]})
+    >>> correct_weight(sp, {"correct": 10, "incorrect": 2})
+    5.0
+    """
+    hm = split_all[(split_all.author == "human") & (split_all.class_source == "margin")]
+    n_sel = int((hm.label_class == "correct").sum())
+    assert n_sel > 0, "no selected human margin-rule correct labels"
+    return float(prior_entry["correct"]) / n_sel
+
+
+def own_weights(true, k_correct):
+    """Per-row weights for a deployment's own mix: ``k_correct`` for correct rows, 1 for incorrect rows."""
+    return np.where(np.asarray(true) == "correct", k_correct, 1.0)
 
 
 def served_for(df, amap):
@@ -345,14 +365,14 @@ def served_for(df, amap):
     return served
 
 
-def gate_rows(df, split_all, amap, pi, prior_name, label_type, public, names, min_n):
-    """Agree gate statistics per deployment under ``amap``: pooled-prior weighting (``calibrate.py``'s), the
-    deployment's own mix, and raw."""
+def gate_rows(df, k_correct, amap, pi, prior_name, label_type, public, names, min_n):
+    """Agree gate statistics per deployment under ``amap``: pooled-prior weighting (``calibrate.py``'s, under
+    ``pi``), the deployment's own mix (``k_correct``, the same under every map), raw, and the Wilson lower bound."""
     rows = []
     for split in SPLITS:
         g = df[df.split == split].copy()
         g["w_pooled"] = np.asarray(cal.prior_weights(g["true"], pi))
-        g["w_own"] = city_own_weights(split_all, g["true"], pi)
+        g["w_own"] = own_weights(g["true"], k_correct)
         g["served"] = served_for(g, amap)
         g["gated"] = g.served >= im.GATE
         g["display"] = (display_test(g.city, public) if split == "test" else g.city.map(names)).values
@@ -368,16 +388,17 @@ def gate_rows(df, split_all, amap, pi, prior_name, label_type, public, names, mi
                          "coverage_city_own": float(p.w_own.sum() / a.w_own.sum()) if len(a) else np.nan,
                          "precision_pooled": float(np.average(p.hit, weights=p.w_pooled)) if len(p) else np.nan,
                          "precision_city_own": float(np.average(p.hit, weights=p.w_own)) if len(p) else np.nan,
-                         "precision_raw": float(p.hit.mean()) if len(p) else np.nan})
+                         "precision_raw": float(p.hit.mean()) if len(p) else np.nan,
+                         "wilson_lower_own": float(im.wilson_lower(np.average(p.hit, weights=p.w_own), len(p), WILSON_Z)) if len(p) else np.nan})
     return rows
 
 
-def pooled_city_own(df, split_all, amap, pi):
+def pooled_city_own(df, k_correct, amap):
     """Pooled Agree coverage / precision per split under the deployment's-own-mix weighting."""
     out = {}
     for split in SPLITS:
         g = df[df.split == split].copy()
-        w = city_own_weights(split_all, g["true"], pi)
+        w = own_weights(g["true"], k_correct)
         served = served_for(g, amap)
         a = (g.verdict == "correct").values
         s = im.gate_summary(served[a], g.hit.values[a], w[a])
@@ -385,20 +406,20 @@ def pooled_city_own(df, split_all, amap, pi):
     return out
 
 
-def calibration_rows(run_dir, label_type, df, split_all, pi):
+def calibration_rows(run_dir, label_type, df, k_correct):
     """One row per type from the calibration reports (shipped and uncapped) plus the city-own pooled precision."""
     amap, rep = load_map(run_dir, label_type)
     _, rep_h = load_map(run_dir, label_type, "eval-heldout")
     umap, rep_u = load_map(run_dir, label_type, "uncapped")
     _, rep_uh = load_map(run_dir, label_type, "uncapped/eval-heldout")
     _, rep_ft = load_map(run_dir, label_type, "uncapped/fit-test")
-    own = pooled_city_own(df, split_all, amap, pi)
+    own = pooled_city_own(df, k_correct, amap)
 
     def e(r, v):
         x = r["eval"][v]
         return x["gate_coverage"], x["gate_precision"], x["gate_n"]
     row = {"label_type": label_type, "prior_incorrect_share": rep["prior_deploy"]["incorrect"],
-           "agree_clears_at": clears_at(amap["correct"]),
+           "own_mix_correct_weight": k_correct, "agree_clears_at": clears_at(amap["correct"]),
            "disagree_map_max_shipped": max(amap["incorrect"].values()),
            "disagree_map_max_uncapped": max(umap["incorrect"].values()),
            "disagree_clears_at_uncapped": clears_at(umap["incorrect"])}
@@ -573,7 +594,8 @@ def main():
     headline, per_city, share, rp, hard, calib, altrows, gate, sat = [], [], [], [], [], [], [], [], []
     for t in TYPES:
         df, split_all = preds[t], splits[t]
-        pi, _ = cal.load_prior(priors_path, t)
+        pi, entry = cal.load_prior(priors_path, t)
+        k_correct = correct_weight(split_all, entry)
         headline += headline_rows(df, t, args)
         per_city += per_city_rows(df, t, public, names, args)
         share += class_share_rows(split_all, t, public, names, args.min_city_n)
@@ -581,13 +603,13 @@ def main():
         rp += a
         hard += b
         amap, _ = load_map(args.run_dir, t)
-        calib.append(calibration_rows(args.run_dir, t, df, split_all, pi))
-        gate += gate_rows(df, split_all, amap, pi, "file", t, public, names, args.min_city_n)
+        calib.append(calibration_rows(args.run_dir, t, df, k_correct))
+        gate += gate_rows(df, k_correct, amap, pi, "file", t, public, names, args.min_city_n)
         sat.append(saturation_row(df, t, amap))
         if alt:
             rows, amap_alt = alt_prior_rows(df, t, alt[t])
             altrows += rows
-            gate += gate_rows(df, split_all, amap_alt, alt[t], "alt", t, public, names, args.min_city_n)
+            gate += gate_rows(df, k_correct, amap_alt, alt[t], "alt", t, public, names, args.min_city_n)
     frames = {"headline": pd.DataFrame(headline), "per_city": pd.DataFrame(per_city), "class_share": pd.DataFrame(share),
               "recall_at_precision": pd.DataFrame(rp), "hard": pd.DataFrame(hard), "calibration": pd.DataFrame(calib),
               "gate_per_city": pd.DataFrame(gate), "saturation": pd.DataFrame(sat)}

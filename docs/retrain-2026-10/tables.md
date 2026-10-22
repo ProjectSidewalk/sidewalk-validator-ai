@@ -305,13 +305,13 @@
 
 ## calibration (file prior)
 
-| label_type | prior_incorrect_share | agree_clears_at | disagree_map_max_shipped | disagree_map_max_uncapped | disagree_clears_at_uncapped | agree_test_coverage | agree_test_precision | agree_test_n | agree_test_ece | agree_test_precision_city_own | agree_test_coverage_city_own | agree_heldout_coverage | agree_heldout_precision | agree_heldout_n | agree_heldout_ece | agree_heldout_precision_city_own | agree_heldout_coverage_city_own | disagree_uncapped_test_coverage | disagree_uncapped_test_precision | disagree_uncapped_test_n | disagree_uncapped_heldout_coverage | disagree_uncapped_heldout_precision | disagree_uncapped_heldout_n | agree_fit_test_heldout_coverage | agree_fit_test_heldout_precision | agree_fit_test_heldout_n | disagree_fit_test_heldout_coverage | disagree_fit_test_heldout_precision | disagree_fit_test_heldout_n |
-|---|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| CurbRamp | 0.1177 | 0.99992 | 0.8023 | 0.8023 | never | 0.8825 | 0.994 | 692 | 0.03448 | 0.9939 | 0.8825 | 0.7512 | 0.9912 | 198 | 0.07171 | 0.9923 | 0.7521 | 0 | — | 0 | 0 | — | 0 | 0.6874 | 0.9915 | 181 | 0 | — | 0 |
-| NoCurbRamp | 0.3737 | 0.9999 | 0.9199 | 0.9403 | 0.999994 | 0.4402 | 0.9727 | 627 | 0.05532 | 0.973 | 0.4404 | 0.3724 | 0.9331 | 158 | 0.0607 | 0.9144 | 0.3594 | 0.2063 | 0.9783 | 249 | 0.05567 | 1 | 17 | 0.5242 | 0.9234 | 224 | 0.01965 | 1 | 6 |
-| Obstacle | 0.3578 | 1.0 | 0.8923 | 0.8923 | never | 0.4751 | 0.9587 | 631 | 0.04667 | 0.9627 | 0.4798 | 0.4887 | 0.9698 | 325 | 0.03648 | 0.9263 | 0.3995 | 0 | — | 0 | 0 | — | 0 | 0.4887 | 0.9698 | 325 | 0 | — | 0 |
-| SurfaceProblem | 0.3198 | 0.999997 | 0.903 | 0.903 | never | 0.6756 | 0.9569 | 819 | 0.04402 | 0.9581 | 0.6766 | 0.5278 | 0.8897 | 178 | 0.07786 | 0.8373 | 0.5059 | 0 | — | 0 | 0 | — | 0 | 0.4719 | 0.8903 | 159 | 0 | — | 0 |
-| Crosswalk | 0.06114 | 0.9925 | 0.9199 | 0.9768 | 0.999989 | 0.9915 | 0.9953 | 255 | 0.03887 | 0.9954 | 0.9915 | 0.8639 | 0.9956 | 56 | 0.09318 | 0.9939 | 0.8628 | 0.422 | 1 | 98 | 0.319 | 0.6425 | 32 | 0.7967 | 0.9964 | 51 | 0.7455 | 0.5411 | 64 |
+| label_type | prior_incorrect_share | own_mix_correct_weight | agree_clears_at | disagree_map_max_shipped | disagree_map_max_uncapped | disagree_clears_at_uncapped | agree_test_coverage | agree_test_precision | agree_test_n | agree_test_ece | agree_test_precision_city_own | agree_test_coverage_city_own | agree_heldout_coverage | agree_heldout_precision | agree_heldout_n | agree_heldout_ece | agree_heldout_precision_city_own | agree_heldout_coverage_city_own | disagree_uncapped_test_coverage | disagree_uncapped_test_precision | disagree_uncapped_test_n | disagree_uncapped_heldout_coverage | disagree_uncapped_heldout_precision | disagree_uncapped_heldout_n | agree_fit_test_heldout_coverage | agree_fit_test_heldout_precision | agree_fit_test_heldout_n | disagree_fit_test_heldout_coverage | disagree_fit_test_heldout_precision | disagree_fit_test_heldout_n |
+|---|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| CurbRamp | 0.1177 | 7.789 | 0.99992 | 0.8023 | 0.8023 | never | 0.8825 | 0.994 | 692 | 0.03448 | 0.9952 | 0.8839 | 0.7512 | 0.9912 | 198 | 0.07171 | 0.9939 | 0.7536 | 0 | — | 0 | 0 | — | 0 | 0.6874 | 0.9915 | 181 | 0 | — | 0 |
+| NoCurbRamp | 0.3737 | 1.852 | 0.9999 | 0.9199 | 0.9403 | 0.999994 | 0.4402 | 0.9727 | 627 | 0.05532 | 0.9799 | 0.4472 | 0.3724 | 0.9331 | 158 | 0.0607 | 0.9351 | 0.3739 | 0.2063 | 0.9783 | 249 | 0.05567 | 1 | 17 | 0.5242 | 0.9234 | 224 | 0.01965 | 1 | 6 |
+| Obstacle | 0.3578 | 1.573 | 1.0 | 0.8923 | 0.8923 | never | 0.4751 | 0.9587 | 631 | 0.04667 | 0.9651 | 0.4827 | 0.4887 | 0.9698 | 325 | 0.03648 | 0.9309 | 0.4073 | 0 | — | 0 | 0 | — | 0 | 0.4887 | 0.9698 | 325 | 0 | — | 0 |
+| SurfaceProblem | 0.3198 | 2.559 | 0.999997 | 0.903 | 0.903 | never | 0.6756 | 0.9569 | 819 | 0.04402 | 0.9711 | 0.6878 | 0.5278 | 0.8897 | 178 | 0.07786 | 0.8832 | 0.525 | 0 | — | 0 | 0 | — | 0 | 0.4719 | 0.8903 | 159 | 0 | — | 0 |
+| Crosswalk | 0.06114 | 12.7 | 0.9925 | 0.9199 | 0.9768 | 0.999989 | 0.9915 | 0.9953 | 255 | 0.03887 | 0.9954 | 0.9915 | 0.8639 | 0.9956 | 56 | 0.09318 | 0.994 | 0.8629 | 0.422 | 1 | 98 | 0.319 | 0.6425 | 32 | 0.7967 | 0.9964 | 51 | 0.7455 | 0.5411 | 64 |
 
 ## alternative prior
 
@@ -330,80 +330,80 @@
 
 ## gate per deployment
 
-| label_type | prior | split | city | city_incorrect_share | n_agree | gated | n_wrong | coverage_pooled | coverage_city_own | precision_pooled | precision_city_own | precision_raw |
-|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| CurbRamp | file | test | chicago-il | 0.405 | 136 | 120 | 7 | 0.912 | 0.912 | 0.990 | 0.990 | 0.942 |
-| CurbRamp | file | test | other (private deployments) | 0.409 | 195 | 168 | 4 | 0.898 | 0.898 | 0.996 | 0.996 | 0.976 |
-| CurbRamp | file | test | seattle-wa | 0.616 | 149 | 135 | 4 | 0.942 | 0.942 | 0.995 | 0.995 | 0.970 |
-| CurbRamp | file | test_heldout | private city A (outside the US) | 0.592 | 71 | 17 | 2 | 0.265 | 0.266 | 0.976 | 0.979 | 0.882 |
-| CurbRamp | file | test_heldout | private city B (US) | 0.149 | 176 | 157 | 7 | 0.901 | 0.902 | 0.991 | 0.992 | 0.955 |
-| CurbRamp | file | test_heldout | tucson-az | 0.500 | 28 | 24 | 0 | 0.857 | 0.857 | 1.000 | 1.000 | 1.000 |
-| CurbRamp | alt | test | chicago-il | 0.405 | 136 | 120 | 7 | 0.916 | 0.916 | 0.995 | 0.995 | 0.942 |
-| CurbRamp | alt | test | other (private deployments) | 0.409 | 195 | 168 | 4 | 0.902 | 0.902 | 0.998 | 0.998 | 0.976 |
-| CurbRamp | alt | test | seattle-wa | 0.616 | 149 | 135 | 4 | 0.946 | 0.946 | 0.998 | 0.998 | 0.970 |
-| CurbRamp | alt | test_heldout | private city A (outside the US) | 0.592 | 71 | 17 | 2 | 0.269 | 0.269 | 0.988 | 0.990 | 0.882 |
-| CurbRamp | alt | test_heldout | private city B (US) | 0.149 | 176 | 157 | 7 | 0.903 | 0.903 | 0.996 | 0.996 | 0.955 |
-| CurbRamp | alt | test_heldout | tucson-az | 0.500 | 28 | 24 | 0 | 0.857 | 0.857 | 1.000 | 1.000 | 1.000 |
-| NoCurbRamp | file | test | cdmx | 0.226 | 54 | 32 | 3 | 0.601 | 0.602 | 0.929 | 0.930 | 0.906 |
-| NoCurbRamp | file | test | chicago-il | 0.850 | 66 | 14 | 1 | 0.227 | 0.228 | 0.946 | 0.947 | 0.929 |
-| NoCurbRamp | file | test | other (private deployments) | 0.414 | 193 | 123 | 5 | 0.655 | 0.655 | 0.970 | 0.970 | 0.959 |
-| NoCurbRamp | file | test | seattle-wa | 0.232 | 761 | 294 | 8 | 0.392 | 0.392 | 0.980 | 0.980 | 0.973 |
-| NoCurbRamp | file | test | spgg | 0.063 | 99 | 50 | 4 | 0.501 | 0.501 | 0.940 | 0.940 | 0.920 |
-| NoCurbRamp | file | test_heldout | private city A (outside the US) | 0.968 | 39 | 3 | 3 | 0.073 | 0.075 | 0.000 | 0.000 | 0.000 |
-| NoCurbRamp | file | test_heldout | private city B (US) | 0.409 | 407 | 150 | 15 | 0.394 | 0.383 | 0.942 | 0.925 | 0.900 |
-| NoCurbRamp | file | test_heldout | tucson-az | 0.630 | 17 | 5 | 0 | 0.319 | 0.309 | 1.000 | 1.000 | 1.000 |
-| NoCurbRamp | alt | test | cdmx | 0.226 | 54 | 36 | 4 | 0.686 | 0.686 | 0.963 | 0.963 | 0.889 |
-| NoCurbRamp | alt | test | chicago-il | 0.850 | 66 | 23 | 3 | 0.407 | 0.407 | 0.956 | 0.956 | 0.870 |
-| NoCurbRamp | alt | test | other (private deployments) | 0.414 | 193 | 143 | 9 | 0.785 | 0.785 | 0.980 | 0.980 | 0.937 |
-| NoCurbRamp | alt | test | seattle-wa | 0.232 | 761 | 556 | 20 | 0.754 | 0.754 | 0.989 | 0.989 | 0.964 |
-| NoCurbRamp | alt | test | spgg | 0.063 | 99 | 69 | 4 | 0.693 | 0.693 | 0.981 | 0.982 | 0.942 |
-| NoCurbRamp | alt | test_heldout | private city A (outside the US) | 0.968 | 39 | 7 | 7 | 0.143 | 0.153 | 0.000 | 0.000 | 0.000 |
-| NoCurbRamp | alt | test_heldout | private city B (US) | 0.409 | 407 | 247 | 35 | 0.662 | 0.656 | 0.963 | 0.952 | 0.858 |
-| NoCurbRamp | alt | test_heldout | tucson-az | 0.630 | 17 | 6 | 0 | 0.408 | 0.402 | 1.000 | 1.000 | 1.000 |
-| Obstacle | file | test | chicago-il | 0.451 | 259 | 125 | 3 | 0.503 | 0.510 | 0.982 | 0.984 | 0.976 |
-| Obstacle | file | test | other (private deployments) | 0.320 | 437 | 204 | 6 | 0.478 | 0.482 | 0.978 | 0.980 | 0.971 |
-| Obstacle | file | test | seattle-wa | 0.460 | 387 | 189 | 16 | 0.504 | 0.509 | 0.935 | 0.941 | 0.915 |
-| Obstacle | file | test_heldout | private city A (outside the US) | 0.916 | 350 | 21 | 12 | 0.097 | 0.068 | 0.738 | 0.524 | 0.429 |
-| Obstacle | file | test_heldout | private city B (US) | 0.312 | 460 | 269 | 11 | 0.631 | 0.604 | 0.989 | 0.972 | 0.959 |
-| Obstacle | file | test_heldout | tucson-az | 0.623 | 109 | 35 | 11 | 0.365 | 0.336 | 0.891 | 0.762 | 0.686 |
-| Obstacle | alt | test | chicago-il | 0.451 | 259 | 125 | 3 | 0.540 | 0.544 | 0.991 | 0.992 | 0.976 |
-| Obstacle | alt | test | other (private deployments) | 0.320 | 437 | 204 | 6 | 0.498 | 0.500 | 0.989 | 0.990 | 0.971 |
-| Obstacle | alt | test | seattle-wa | 0.460 | 387 | 189 | 16 | 0.531 | 0.534 | 0.966 | 0.969 | 0.915 |
-| Obstacle | alt | test_heldout | private city A (outside the US) | 0.916 | 350 | 21 | 12 | 0.123 | 0.087 | 0.847 | 0.685 | 0.429 |
-| Obstacle | alt | test_heldout | private city B (US) | 0.312 | 460 | 269 | 11 | 0.640 | 0.625 | 0.994 | 0.986 | 0.959 |
-| Obstacle | alt | test_heldout | tucson-az | 0.623 | 109 | 35 | 11 | 0.378 | 0.358 | 0.942 | 0.864 | 0.686 |
-| SurfaceProblem | file | test | chicago-il | 0.395 | 187 | 133 | 10 | 0.729 | 0.730 | 0.954 | 0.955 | 0.925 |
-| SurfaceProblem | file | test | columbus-oh | 0.190 | 60 | 32 | 2 | 0.550 | 0.550 | 0.962 | 0.963 | 0.938 |
-| SurfaceProblem | file | test | newberg-or | 0.296 | 52 | 36 | 2 | 0.722 | 0.723 | 0.966 | 0.967 | 0.944 |
-| SurfaceProblem | file | test | oradell-nj | 0.037 | 76 | 62 | 1 | 0.819 | 0.819 | 0.990 | 0.991 | 0.984 |
-| SurfaceProblem | file | test | other (private deployments) | 0.623 | 235 | 137 | 13 | 0.608 | 0.609 | 0.942 | 0.943 | 0.905 |
-| SurfaceProblem | file | test | pittsburgh-pa | 0.129 | 57 | 45 | 2 | 0.786 | 0.786 | 0.973 | 0.974 | 0.956 |
-| SurfaceProblem | file | test | seattle-wa | 0.557 | 247 | 128 | 19 | 0.544 | 0.546 | 0.907 | 0.909 | 0.852 |
-| SurfaceProblem | file | test | spgg | 0.209 | 59 | 42 | 3 | 0.737 | 0.738 | 0.957 | 0.958 | 0.929 |
-| SurfaceProblem | file | test | st-louis-mo | 0.015 | 62 | 58 | 1 | 0.935 | 0.935 | 0.990 | 0.990 | 0.983 |
-| SurfaceProblem | file | test_heldout | private city A (outside the US) | 0.601 | 64 | 5 | 2 | 0.082 | 0.080 | 0.804 | 0.723 | 0.600 |
-| SurfaceProblem | file | test_heldout | private city B (US) | 0.294 | 190 | 119 | 9 | 0.670 | 0.655 | 0.971 | 0.955 | 0.924 |
-| SurfaceProblem | file | test_heldout | tucson-az | 0.808 | 123 | 54 | 34 | 0.474 | 0.458 | 0.616 | 0.506 | 0.370 |
-| SurfaceProblem | alt | test | chicago-il | 0.395 | 187 | 133 | 10 | 0.747 | 0.748 | 0.982 | 0.983 | 0.925 |
-| SurfaceProblem | alt | test | columbus-oh | 0.190 | 60 | 32 | 2 | 0.566 | 0.566 | 0.985 | 0.986 | 0.938 |
-| SurfaceProblem | alt | test | newberg-or | 0.296 | 52 | 36 | 2 | 0.752 | 0.753 | 0.987 | 0.987 | 0.944 |
-| SurfaceProblem | alt | test | oradell-nj | 0.037 | 76 | 62 | 1 | 0.822 | 0.822 | 0.996 | 0.996 | 0.984 |
-| SurfaceProblem | alt | test | other (private deployments) | 0.623 | 235 | 137 | 13 | 0.634 | 0.635 | 0.977 | 0.978 | 0.905 |
-| SurfaceProblem | alt | test | pittsburgh-pa | 0.129 | 57 | 45 | 2 | 0.784 | 0.784 | 0.990 | 0.990 | 0.956 |
-| SurfaceProblem | alt | test | seattle-wa | 0.557 | 247 | 128 | 19 | 0.574 | 0.575 | 0.963 | 0.964 | 0.852 |
-| SurfaceProblem | alt | test | spgg | 0.209 | 59 | 42 | 3 | 0.763 | 0.763 | 0.983 | 0.984 | 0.929 |
-| SurfaceProblem | alt | test | st-louis-mo | 0.015 | 62 | 58 | 1 | 0.935 | 0.935 | 0.996 | 0.996 | 0.983 |
-| SurfaceProblem | alt | test_heldout | private city A (outside the US) | 0.601 | 64 | 5 | 2 | 0.084 | 0.083 | 0.916 | 0.874 | 0.600 |
-| SurfaceProblem | alt | test_heldout | private city B (US) | 0.294 | 190 | 119 | 9 | 0.689 | 0.682 | 0.989 | 0.983 | 0.924 |
-| SurfaceProblem | alt | test_heldout | tucson-az | 0.808 | 123 | 54 | 34 | 0.505 | 0.492 | 0.810 | 0.732 | 0.370 |
-| Crosswalk | file | test | other (private deployments) | 0.105 | 160 | 160 | 8 | 1.000 | 1.000 | 0.996 | 0.996 | 0.950 |
-| Crosswalk | file | test_heldout | private city A (outside the US) | 0.356 | 32 | 26 | 3 | 0.821 | 0.821 | 0.992 | 0.990 | 0.885 |
-| Crosswalk | file | test_heldout | private city B (US) | 0.610 | 33 | 27 | 1 | 0.891 | 0.890 | 0.998 | 0.997 | 0.963 |
-| Crosswalk | file | test_heldout | tucson-az | 0.625 | 3 | 3 | 0 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
-| Crosswalk | alt | test | other (private deployments) | 0.105 | 160 | 160 | 8 | 1.000 | 1.000 | 0.997 | 0.997 | 0.950 |
-| Crosswalk | alt | test_heldout | private city A (outside the US) | 0.356 | 32 | 26 | 3 | 0.821 | 0.821 | 0.995 | 0.993 | 0.885 |
-| Crosswalk | alt | test_heldout | private city B (US) | 0.610 | 33 | 27 | 1 | 0.893 | 0.892 | 0.999 | 0.998 | 0.963 |
-| Crosswalk | alt | test_heldout | tucson-az | 0.625 | 3 | 3 | 0 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| label_type | prior | split | city | city_incorrect_share | n_agree | gated | n_wrong | coverage_pooled | coverage_city_own | precision_pooled | precision_city_own | precision_raw | wilson_lower_own |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| CurbRamp | file | test | chicago-il | 0.405 | 136 | 120 | 7 | 0.912 | 0.914 | 0.990 | 0.992 | 0.942 | 0.955 |
+| CurbRamp | file | test | other (private deployments) | 0.409 | 195 | 168 | 4 | 0.898 | 0.900 | 0.996 | 0.997 | 0.976 | 0.972 |
+| CurbRamp | file | test | seattle-wa | 0.616 | 149 | 135 | 4 | 0.942 | 0.943 | 0.995 | 0.996 | 0.970 | 0.965 |
+| CurbRamp | file | test_heldout | private city A (outside the US) | 0.592 | 71 | 17 | 2 | 0.265 | 0.267 | 0.976 | 0.983 | 0.882 | 0.789 |
+| CurbRamp | file | test_heldout | private city B (US) | 0.149 | 176 | 157 | 7 | 0.901 | 0.902 | 0.991 | 0.994 | 0.955 | 0.965 |
+| CurbRamp | file | test_heldout | tucson-az | 0.500 | 28 | 24 | 0 | 0.857 | 0.857 | 1.000 | 1.000 | 1.000 | 0.862 |
+| CurbRamp | alt | test | chicago-il | 0.405 | 136 | 120 | 7 | 0.916 | 0.914 | 0.995 | 0.992 | 0.942 | 0.955 |
+| CurbRamp | alt | test | other (private deployments) | 0.409 | 195 | 168 | 4 | 0.902 | 0.900 | 0.998 | 0.997 | 0.976 | 0.972 |
+| CurbRamp | alt | test | seattle-wa | 0.616 | 149 | 135 | 4 | 0.946 | 0.943 | 0.998 | 0.996 | 0.970 | 0.965 |
+| CurbRamp | alt | test_heldout | private city A (outside the US) | 0.592 | 71 | 17 | 2 | 0.269 | 0.267 | 0.988 | 0.983 | 0.882 | 0.789 |
+| CurbRamp | alt | test_heldout | private city B (US) | 0.149 | 176 | 157 | 7 | 0.903 | 0.902 | 0.996 | 0.994 | 0.955 | 0.965 |
+| CurbRamp | alt | test_heldout | tucson-az | 0.500 | 28 | 24 | 0 | 0.857 | 0.857 | 1.000 | 1.000 | 1.000 | 0.862 |
+| NoCurbRamp | file | test | cdmx | 0.226 | 54 | 32 | 3 | 0.601 | 0.609 | 0.929 | 0.947 | 0.906 | 0.812 |
+| NoCurbRamp | file | test | chicago-il | 0.850 | 66 | 14 | 1 | 0.227 | 0.240 | 0.946 | 0.960 | 0.929 | 0.727 |
+| NoCurbRamp | file | test | other (private deployments) | 0.414 | 193 | 123 | 5 | 0.655 | 0.668 | 0.970 | 0.978 | 0.959 | 0.934 |
+| NoCurbRamp | file | test | seattle-wa | 0.232 | 761 | 294 | 8 | 0.392 | 0.396 | 0.980 | 0.985 | 0.973 | 0.964 |
+| NoCurbRamp | file | test | spgg | 0.063 | 99 | 50 | 4 | 0.501 | 0.498 | 0.940 | 0.955 | 0.920 | 0.859 |
+| NoCurbRamp | file | test_heldout | private city A (outside the US) | 0.968 | 39 | 3 | 3 | 0.073 | 0.072 | 0.000 | 0.000 | 0.000 | 0.000 |
+| NoCurbRamp | file | test_heldout | private city B (US) | 0.409 | 407 | 150 | 15 | 0.394 | 0.395 | 0.942 | 0.943 | 0.900 | 0.894 |
+| NoCurbRamp | file | test_heldout | tucson-az | 0.630 | 17 | 5 | 0 | 0.319 | 0.320 | 1.000 | 1.000 | 1.000 | 0.566 |
+| NoCurbRamp | alt | test | cdmx | 0.226 | 54 | 36 | 4 | 0.686 | 0.679 | 0.963 | 0.937 | 0.889 | 0.808 |
+| NoCurbRamp | alt | test | chicago-il | 0.850 | 66 | 23 | 3 | 0.407 | 0.384 | 0.956 | 0.925 | 0.870 | 0.748 |
+| NoCurbRamp | alt | test | other (private deployments) | 0.414 | 193 | 143 | 9 | 0.785 | 0.769 | 0.980 | 0.965 | 0.937 | 0.921 |
+| NoCurbRamp | alt | test | seattle-wa | 0.232 | 761 | 556 | 20 | 0.754 | 0.746 | 0.989 | 0.980 | 0.964 | 0.965 |
+| NoCurbRamp | alt | test | spgg | 0.063 | 99 | 69 | 4 | 0.693 | 0.695 | 0.981 | 0.968 | 0.942 | 0.896 |
+| NoCurbRamp | alt | test_heldout | private city A (outside the US) | 0.968 | 39 | 7 | 7 | 0.143 | 0.168 | 0.000 | 0.000 | 0.000 | 0.000 |
+| NoCurbRamp | alt | test_heldout | private city B (US) | 0.409 | 407 | 247 | 35 | 0.662 | 0.637 | 0.963 | 0.918 | 0.858 | 0.877 |
+| NoCurbRamp | alt | test_heldout | tucson-az | 0.630 | 17 | 6 | 0 | 0.408 | 0.384 | 1.000 | 1.000 | 1.000 | 0.610 |
+| Obstacle | file | test | chicago-il | 0.451 | 259 | 125 | 3 | 0.503 | 0.515 | 0.982 | 0.985 | 0.976 | 0.944 |
+| Obstacle | file | test | other (private deployments) | 0.320 | 437 | 204 | 6 | 0.478 | 0.484 | 0.978 | 0.981 | 0.971 | 0.952 |
+| Obstacle | file | test | seattle-wa | 0.460 | 387 | 189 | 16 | 0.504 | 0.512 | 0.935 | 0.944 | 0.915 | 0.902 |
+| Obstacle | file | test_heldout | private city A (outside the US) | 0.916 | 350 | 21 | 12 | 0.097 | 0.070 | 0.738 | 0.541 | 0.429 | 0.339 |
+| Obstacle | file | test_heldout | private city B (US) | 0.312 | 460 | 269 | 11 | 0.631 | 0.606 | 0.989 | 0.974 | 0.959 | 0.947 |
+| Obstacle | file | test_heldout | tucson-az | 0.623 | 109 | 35 | 11 | 0.365 | 0.339 | 0.891 | 0.774 | 0.686 | 0.613 |
+| Obstacle | alt | test | chicago-il | 0.451 | 259 | 125 | 3 | 0.540 | 0.515 | 0.991 | 0.985 | 0.976 | 0.944 |
+| Obstacle | alt | test | other (private deployments) | 0.320 | 437 | 204 | 6 | 0.498 | 0.484 | 0.989 | 0.981 | 0.971 | 0.952 |
+| Obstacle | alt | test | seattle-wa | 0.460 | 387 | 189 | 16 | 0.531 | 0.512 | 0.966 | 0.944 | 0.915 | 0.902 |
+| Obstacle | alt | test_heldout | private city A (outside the US) | 0.916 | 350 | 21 | 12 | 0.123 | 0.070 | 0.847 | 0.541 | 0.429 | 0.339 |
+| Obstacle | alt | test_heldout | private city B (US) | 0.312 | 460 | 269 | 11 | 0.640 | 0.606 | 0.994 | 0.974 | 0.959 | 0.947 |
+| Obstacle | alt | test_heldout | tucson-az | 0.623 | 109 | 35 | 11 | 0.378 | 0.339 | 0.942 | 0.774 | 0.686 | 0.613 |
+| SurfaceProblem | file | test | chicago-il | 0.395 | 187 | 133 | 10 | 0.729 | 0.739 | 0.954 | 0.969 | 0.925 | 0.924 |
+| SurfaceProblem | file | test | columbus-oh | 0.190 | 60 | 32 | 2 | 0.550 | 0.558 | 0.962 | 0.975 | 0.938 | 0.851 |
+| SurfaceProblem | file | test | newberg-or | 0.296 | 52 | 36 | 2 | 0.722 | 0.738 | 0.966 | 0.978 | 0.944 | 0.866 |
+| SurfaceProblem | file | test | oradell-nj | 0.037 | 76 | 62 | 1 | 0.819 | 0.821 | 0.990 | 0.994 | 0.984 | 0.930 |
+| SurfaceProblem | file | test | other (private deployments) | 0.623 | 235 | 137 | 13 | 0.608 | 0.622 | 0.942 | 0.961 | 0.905 | 0.914 |
+| SurfaceProblem | file | test | pittsburgh-pa | 0.129 | 57 | 45 | 2 | 0.786 | 0.785 | 0.973 | 0.982 | 0.956 | 0.891 |
+| SurfaceProblem | file | test | seattle-wa | 0.557 | 247 | 128 | 19 | 0.544 | 0.560 | 0.907 | 0.936 | 0.852 | 0.880 |
+| SurfaceProblem | file | test | spgg | 0.209 | 59 | 42 | 3 | 0.737 | 0.751 | 0.957 | 0.971 | 0.929 | 0.869 |
+| SurfaceProblem | file | test | st-louis-mo | 0.015 | 62 | 58 | 1 | 0.935 | 0.935 | 0.990 | 0.993 | 0.983 | 0.926 |
+| SurfaceProblem | file | test_heldout | private city A (outside the US) | 0.601 | 64 | 5 | 2 | 0.082 | 0.082 | 0.804 | 0.793 | 0.600 | 0.370 |
+| SurfaceProblem | file | test_heldout | private city B (US) | 0.294 | 190 | 119 | 9 | 0.670 | 0.668 | 0.971 | 0.969 | 0.924 | 0.920 |
+| SurfaceProblem | file | test_heldout | tucson-az | 0.808 | 123 | 54 | 34 | 0.474 | 0.471 | 0.616 | 0.601 | 0.370 | 0.468 |
+| SurfaceProblem | alt | test | chicago-il | 0.395 | 187 | 133 | 10 | 0.747 | 0.739 | 0.982 | 0.969 | 0.925 | 0.924 |
+| SurfaceProblem | alt | test | columbus-oh | 0.190 | 60 | 32 | 2 | 0.566 | 0.558 | 0.985 | 0.975 | 0.938 | 0.851 |
+| SurfaceProblem | alt | test | newberg-or | 0.296 | 52 | 36 | 2 | 0.752 | 0.738 | 0.987 | 0.978 | 0.944 | 0.866 |
+| SurfaceProblem | alt | test | oradell-nj | 0.037 | 76 | 62 | 1 | 0.822 | 0.821 | 0.996 | 0.994 | 0.984 | 0.930 |
+| SurfaceProblem | alt | test | other (private deployments) | 0.623 | 235 | 137 | 13 | 0.634 | 0.622 | 0.977 | 0.961 | 0.905 | 0.914 |
+| SurfaceProblem | alt | test | pittsburgh-pa | 0.129 | 57 | 45 | 2 | 0.784 | 0.785 | 0.990 | 0.982 | 0.956 | 0.891 |
+| SurfaceProblem | alt | test | seattle-wa | 0.557 | 247 | 128 | 19 | 0.574 | 0.560 | 0.963 | 0.936 | 0.852 | 0.880 |
+| SurfaceProblem | alt | test | spgg | 0.209 | 59 | 42 | 3 | 0.763 | 0.751 | 0.983 | 0.971 | 0.929 | 0.869 |
+| SurfaceProblem | alt | test | st-louis-mo | 0.015 | 62 | 58 | 1 | 0.935 | 0.935 | 0.996 | 0.993 | 0.983 | 0.926 |
+| SurfaceProblem | alt | test_heldout | private city A (outside the US) | 0.601 | 64 | 5 | 2 | 0.084 | 0.082 | 0.916 | 0.793 | 0.600 | 0.370 |
+| SurfaceProblem | alt | test_heldout | private city B (US) | 0.294 | 190 | 119 | 9 | 0.689 | 0.668 | 0.989 | 0.969 | 0.924 | 0.920 |
+| SurfaceProblem | alt | test_heldout | tucson-az | 0.808 | 123 | 54 | 34 | 0.505 | 0.471 | 0.810 | 0.601 | 0.370 | 0.468 |
+| Crosswalk | file | test | other (private deployments) | 0.105 | 160 | 160 | 8 | 1.000 | 1.000 | 0.996 | 0.996 | 0.950 | 0.969 |
+| Crosswalk | file | test_heldout | private city A (outside the US) | 0.356 | 32 | 26 | 3 | 0.821 | 0.821 | 0.992 | 0.990 | 0.885 | 0.854 |
+| Crosswalk | file | test_heldout | private city B (US) | 0.610 | 33 | 27 | 1 | 0.891 | 0.890 | 0.998 | 0.997 | 0.963 | 0.870 |
+| Crosswalk | file | test_heldout | tucson-az | 0.625 | 3 | 3 | 0 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0.439 |
+| Crosswalk | alt | test | other (private deployments) | 0.105 | 160 | 160 | 8 | 1.000 | 1.000 | 0.997 | 0.996 | 0.950 | 0.969 |
+| Crosswalk | alt | test_heldout | private city A (outside the US) | 0.356 | 32 | 26 | 3 | 0.821 | 0.821 | 0.995 | 0.990 | 0.885 | 0.854 |
+| Crosswalk | alt | test_heldout | private city B (US) | 0.610 | 33 | 27 | 1 | 0.893 | 0.890 | 0.999 | 0.997 | 0.963 | 0.870 |
+| Crosswalk | alt | test_heldout | tucson-az | 0.625 | 3 | 3 | 0 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 0.439 |
 
 ## saturation
 

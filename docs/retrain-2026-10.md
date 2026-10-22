@@ -23,10 +23,12 @@ deploy chain and its checklist are [#55](https://github.com/ProjectSidewalk/side
   their incorrect share (15% to 97%). The within-city AUC is what a deployment would see: 0.84 for CurbRamp,
   0.79 for Obstacle and 0.68 for SurfaceProblem on the unseen deployments.
 - **At the 0.92 gate, Agree votes clear with precision 0.96 to 0.995 in the training deployments.** In the
-  unseen deployments the answer depends on how the rows are weighted: 0.89 (SurfaceProblem) to 0.996
-  (Crosswalk) under the pooled deployment prior that the maps are fitted to, but 0.84 (SurfaceProblem), 0.91
-  (NoCurbRamp) and 0.93 (Obstacle) under each deployment's own class mix, which is what that deployment would
-  see. The shipped maps hold every Disagree verdict back below the gate
+  unseen deployments they clear pooled, 0.88 (SurfaceProblem) to 0.994 (Crosswalk) under each deployment's own
+  class mix, but the per-deployment test that
+  [#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52) proposes (a Wilson 95% lower
+  bound of at least 0.92 on that deployment's gated votes) passes in only two of the fifteen type × deployment
+  cells: CurbRamp and Obstacle in the unseen US deployment. The shipped maps hold every Disagree verdict back
+  below the gate
   ([#57](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/57)); whether a Disagree map could clear
   it depends on the deployment prior, which is under review
   ([#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56)).
@@ -37,8 +39,10 @@ deploy chain and its checklist are [#55](https://github.com/ProjectSidewalk/side
   deployments they were trained on; serve SurfaceProblem in shadow mode (both verdicts held back); hold Disagree
   back for every type until the prior question is settled; and let Agree vote in an unseen or new deployment
   only after a per-deployment check, as
-  [#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52) proposes. Under the conservative
-  weighting NoCurbRamp Agree does not clear the gate in any unseen deployment.
+  [#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52) proposes. Applied to the unseen
+  deployments today, that check passes CurbRamp and Obstacle in private city B and nothing else: the other
+  cells are precise but on too few votes (CurbRamp tucson-az, both private deployments for Crosswalk), or not
+  precise enough (NoCurbRamp private city B, lower bound 0.894 on 150 votes).
 
 **Reproduce.** Every table and figure comes from `analysis/retrain_report.py` on the five `evaluate.py` output
 folders (`predictions.csv`, `metrics.json`, `split.csv`), the calibration maps `python -m calibration.calibrate`
@@ -340,24 +344,29 @@ what the fitted Disagree curves would do without the cap.
 Coverage and precision are prior-weighted, as the map is: `calibrate.py` weights each eval row by the prior's
 class share over the split's. Applied to the unseen split, whose own incorrect share is 42% to 68%, that
 weighting imposes the pooled prior on deployments whose mix is nothing like it. A second column therefore gives
-the precision under **each deployment's own mix**: because `select_training_labels` keeps correct labels by one
-global hash-rank cutoff, every deployment lost the same share of its correct labels, so weighting every correct
-row by the prior's correct share over the selected set's (the whole `split.csv`) and every incorrect row by the
-incorrect counterpart restores each deployment's own class mix under the margin rule. `n` is the unweighted
-count of gated verdicts.
+the precision under **each deployment's own mix**: `select_training_labels` keeps correct labels by one global
+hash-rank cutoff, so every deployment lost the same share of its correct labels, and the keep rate is known
+exactly: the selected human margin-rule correct labels (`split.csv`, every split) over the prior's correct count
+(`deployment_priors.json` counts exactly those labels before the downsample). Weighting every correct row by
+one over that rate (7.8 CurbRamp, 1.9 NoCurbRamp, 1.6 Obstacle, 2.6 SurfaceProblem, 12.7 Crosswalk) and every
+incorrect row by 1 restores each deployment's own class mix under the margin rule. The weight is a fact of the
+data, so it is the same under every map. Expert-classed labels and AI-placed CurbRamp labels were added to the
+pool outside that count, so the restored mix is exact for the human margin-rule labels and approximate where
+those rows are many. `n` is the unweighted count of gated verdicts.
 
 | Type | file prior, incorrect share | Agree clears at confidence | Agree, training: coverage / precision pooled / precision own mix (n) | Agree, unseen: coverage / precision pooled / precision own mix (n) | Disagree map max, uncapped | Disagree uncapped, training: coverage / precision (n) | Disagree uncapped, unseen |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| CurbRamp | 11.8% | 0.99992 | 0.88 / 0.994 / 0.994 (692) | 0.75 / 0.991 / 0.992 (198) | 0.802 | never clears | never clears |
-| NoCurbRamp | 37.4% | 0.9999 | 0.44 / 0.973 / 0.973 (627) | 0.37 / 0.933 / 0.914 (158) | 0.940 | 0.21 / 0.978 (249) | 0.06 / 1.000 (17) |
-| Obstacle | 35.8% | 1.0 | 0.48 / 0.959 / 0.963 (631) | 0.49 / 0.970 / 0.926 (325) | 0.892 | never clears | never clears |
-| SurfaceProblem | 32.0% | 0.999997 | 0.68 / 0.957 / 0.958 (819) | 0.53 / 0.890 / 0.837 (178) | 0.903 | never clears | never clears |
+| CurbRamp | 11.8% | 0.99992 | 0.88 / 0.994 / 0.995 (692) | 0.75 / 0.991 / 0.994 (198) | 0.802 | never clears | never clears |
+| NoCurbRamp | 37.4% | 0.9999 | 0.44 / 0.973 / 0.980 (627) | 0.37 / 0.933 / 0.935 (158) | 0.940 | 0.21 / 0.978 (249) | 0.06 / 1.000 (17) |
+| Obstacle | 35.8% | 1.0 | 0.48 / 0.959 / 0.965 (631) | 0.49 / 0.970 / 0.931 (325) | 0.892 | never clears | never clears |
+| SurfaceProblem | 32.0% | 0.999997 | 0.68 / 0.957 / 0.971 (819) | 0.53 / 0.890 / 0.883 (178) | 0.903 | never clears | never clears |
 | Crosswalk | 6.1% | 0.9925 | 0.99 / 0.995 / 0.995 (255) | 0.86 / 0.996 / 0.994 (56) | 0.977 | 0.42 / 1.000 (98) | 0.32 / 0.643 (32) |
 
-The pooled prior and the own-mix weighting agree on the training deployments and disagree on the unseen ones:
-NoCurbRamp Agree drops from 0.933 to 0.914, below the gate; Obstacle from 0.970 to 0.926; SurfaceProblem from
-0.890 to 0.837. Those are the numbers a deployment would see, and the recommendation below uses the lower of the
-two.
+The two weightings agree on the training deployments and differ on the unseen ones, where the own-mix figure
+is lower for Obstacle (0.970 to 0.931) and SurfaceProblem (0.890 to 0.883) and level for the rest (NoCurbRamp
+0.933 to 0.935). Pooled over three deployments, all five types still clear 0.92 on the point estimate except
+SurfaceProblem. The own-mix numbers are what a deployment would see, and the per-deployment section below
+applies #52's rule to them.
 
 The maps are fitted on `val`, which is also the split that chose each model's checkpoint (best macro-F1), so the
 fit split is not independent of the model. The `uncapped/fit-test` variant fits on `test` instead and evaluates
@@ -435,9 +444,11 @@ refitted under the production-side estimate:
 | SurfaceProblem | 15% | 0.70 / 0.983 (819) | 0.56 / 0.956 (178) | never clears | never clears |
 | Crosswalk | 4% | 0.99 / 0.997 (255) | 0.86 / 0.997 (56) | 0.38 / 1.000 (98) | 0.29 / 0.535 (32) |
 
-A lower incorrect share raises Agree precision and coverage (NoCurbRamp Agree coverage 0.44 to 0.71) and lowers
-Disagree precision at every confidence: NoCurbRamp Disagree no longer clears the gate at all, and Crosswalk
-Disagree on the unseen deployments is 0.54 precise on 32 votes. **Every Disagree map should stay held back until
+A lower incorrect share raises the pooled Agree precision and coverage (NoCurbRamp Agree coverage 0.44 to 0.71)
+and lowers Disagree precision at every confidence: NoCurbRamp Disagree no longer clears the gate at all, and
+Crosswalk Disagree on the unseen deployments is 0.54 precise on 32 votes. Under a deployment's own mix the
+prior changes only the map, so the extra verdicts the lower map lets through can lower the precision (NoCurbRamp
+private city B, below). **Every Disagree map should stay held back until
 the prior is settled**, whichever way it goes: under the file prior only NoCurbRamp and Crosswalk Disagree would
 clear, on 17 and 32 unseen-deployment votes, and Crosswalk's at 0.64 precision.
 
@@ -445,96 +456,102 @@ clear, on 17 and 32 unseen-deployment votes, and Crosswalk's at 0.64 precision.
 
 The shipped maps applied per deployment (file prior; training deployments with at least 50 Agree verdicts, the
 private ones pooled), with the precision three ways: under the pooled prior, as the gate promises it; under the
-deployment's own mix; and raw. Gated counts below 30 are flagged:
+deployment's own mix; and raw. The last column is the Wilson 95% lower bound of the own-mix precision on the
+gated count, the statistic [#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52)'s
+per-deployment gate uses (`calibration/per_city.py` computes it the same way and also asks for at least 50
+votes). Gated counts below 30 are flagged:
 
-| Type | Deployments | Deployment | incorrect share | Agree verdicts | gated | wrong | coverage | precision, pooled prior | precision, own mix | precision, raw |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| CurbRamp | training | other (private deployments) | 41% | 195 | 168 | 4 | 0.90 | 0.996 | 0.996 | 0.976 |
-| CurbRamp | training | seattle-wa | 62% | 149 | 135 | 4 | 0.94 | 0.995 | 0.995 | 0.970 |
-| CurbRamp | training | chicago-il | 40% | 136 | 120 | 7 | 0.91 | 0.990 | 0.990 | 0.942 |
-| CurbRamp | unseen | private city B (US) | 15% | 176 | 157 | 7 | 0.90 | 0.991 | 0.992 | 0.955 |
-| CurbRamp | unseen | private city A (outside the US) | 59% | 71 | 17 ⚠ n<30 | 2 | 0.27 | 0.976 | 0.979 | 0.882 |
-| CurbRamp | unseen | tucson-az | 50% | 28 | 24 ⚠ n<30 | 0 | 0.86 | 1.000 | 1.000 | 1.000 |
-| NoCurbRamp | training | seattle-wa | 23% | 761 | 294 | 8 | 0.39 | 0.980 | 0.980 | 0.973 |
-| NoCurbRamp | training | other (private deployments) | 41% | 193 | 123 | 5 | 0.65 | 0.970 | 0.970 | 0.959 |
-| NoCurbRamp | training | spgg | 6% | 99 | 50 | 4 | 0.50 | 0.940 | 0.940 | 0.920 |
-| NoCurbRamp | training | chicago-il | 85% | 66 | 14 ⚠ n<30 | 1 | 0.23 | 0.946 | 0.947 | 0.929 |
-| NoCurbRamp | training | cdmx | 23% | 54 | 32 | 3 | 0.60 | 0.929 | 0.930 | 0.906 |
-| NoCurbRamp | unseen | private city B (US) | 41% | 407 | 150 | 15 | 0.39 | 0.942 | 0.925 | 0.900 |
-| NoCurbRamp | unseen | private city A (outside the US) | 97% | 39 | 3 ⚠ n<30 | 3 | 0.07 | 0.000 | 0.000 | 0.000 |
-| NoCurbRamp | unseen | tucson-az | 63% | 17 | 5 ⚠ n<30 | 0 | 0.32 | 1.000 | 1.000 | 1.000 |
-| Obstacle | training | other (private deployments) | 32% | 437 | 204 | 6 | 0.48 | 0.978 | 0.980 | 0.971 |
-| Obstacle | training | seattle-wa | 46% | 387 | 189 | 16 | 0.50 | 0.935 | 0.941 | 0.915 |
-| Obstacle | training | chicago-il | 45% | 259 | 125 | 3 | 0.50 | 0.982 | 0.984 | 0.976 |
-| Obstacle | unseen | private city B (US) | 31% | 460 | 269 | 11 | 0.63 | 0.989 | 0.972 | 0.959 |
-| Obstacle | unseen | private city A (outside the US) | 92% | 350 | 21 ⚠ n<30 | 12 | 0.10 | 0.738 | 0.524 | 0.429 |
-| Obstacle | unseen | tucson-az | 62% | 109 | 35 | 11 | 0.36 | 0.891 | 0.762 | 0.686 |
-| SurfaceProblem | training | seattle-wa | 56% | 247 | 128 | 19 | 0.54 | 0.907 | 0.909 | 0.852 |
-| SurfaceProblem | training | other (private deployments) | 62% | 235 | 137 | 13 | 0.61 | 0.942 | 0.943 | 0.905 |
-| SurfaceProblem | training | chicago-il | 39% | 187 | 133 | 10 | 0.73 | 0.954 | 0.955 | 0.925 |
-| SurfaceProblem | training | oradell-nj | 4% | 76 | 62 | 1 | 0.82 | 0.990 | 0.991 | 0.984 |
-| SurfaceProblem | training | st-louis-mo | 2% | 62 | 58 | 1 | 0.94 | 0.990 | 0.990 | 0.983 |
-| SurfaceProblem | training | columbus-oh | 19% | 60 | 32 | 2 | 0.55 | 0.962 | 0.963 | 0.938 |
-| SurfaceProblem | training | spgg | 21% | 59 | 42 | 3 | 0.74 | 0.957 | 0.958 | 0.929 |
-| SurfaceProblem | training | pittsburgh-pa | 13% | 57 | 45 | 2 | 0.79 | 0.973 | 0.974 | 0.956 |
-| SurfaceProblem | training | newberg-or | 30% | 52 | 36 | 2 | 0.72 | 0.966 | 0.967 | 0.944 |
-| SurfaceProblem | unseen | private city B (US) | 29% | 190 | 119 | 9 | 0.67 | 0.971 | 0.955 | 0.924 |
-| SurfaceProblem | unseen | tucson-az | 81% | 123 | 54 | 34 | 0.47 | 0.616 | 0.506 | 0.370 |
-| SurfaceProblem | unseen | private city A (outside the US) | 60% | 64 | 5 ⚠ n<30 | 2 | 0.08 | 0.804 | 0.723 | 0.600 |
-| Crosswalk | training | other (private deployments) | 11% | 160 | 160 | 8 | 1.00 | 0.996 | 0.996 | 0.950 |
-| Crosswalk | unseen | private city B (US) | 61% | 33 | 27 ⚠ n<30 | 1 | 0.89 | 0.998 | 0.997 | 0.963 |
-| Crosswalk | unseen | private city A (outside the US) | 36% | 32 | 26 ⚠ n<30 | 3 | 0.82 | 0.992 | 0.990 | 0.885 |
-| Crosswalk | unseen | tucson-az | 62% | 3 | 3 ⚠ n<30 | 0 | 1.00 | 1.000 | 1.000 | 1.000 |
+| Type | Deployments | Deployment | incorrect share | Agree verdicts | gated | wrong | coverage | precision, pooled prior | precision, own mix | precision, raw | Wilson lower bound, own mix |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| CurbRamp | training | other (private deployments) | 41% | 195 | 168 | 4 | 0.90 | 0.996 | 0.997 | 0.976 | 0.972 |
+| CurbRamp | training | seattle-wa | 62% | 149 | 135 | 4 | 0.94 | 0.995 | 0.996 | 0.970 | 0.965 |
+| CurbRamp | training | chicago-il | 40% | 136 | 120 | 7 | 0.91 | 0.990 | 0.992 | 0.942 | 0.955 |
+| CurbRamp | unseen | private city B (US) | 15% | 176 | 157 | 7 | 0.90 | 0.991 | 0.994 | 0.955 | 0.965 |
+| CurbRamp | unseen | private city A (outside the US) | 59% | 71 | 17 ⚠ n<30 | 2 | 0.27 | 0.976 | 0.983 | 0.882 | 0.789 (n<50) |
+| CurbRamp | unseen | tucson-az | 50% | 28 | 24 ⚠ n<30 | 0 | 0.86 | 1.000 | 1.000 | 1.000 | 0.862 (n<50) |
+| NoCurbRamp | training | seattle-wa | 23% | 761 | 294 | 8 | 0.39 | 0.980 | 0.985 | 0.973 | 0.964 |
+| NoCurbRamp | training | other (private deployments) | 41% | 193 | 123 | 5 | 0.65 | 0.970 | 0.978 | 0.959 | 0.934 |
+| NoCurbRamp | training | spgg | 6% | 99 | 50 | 4 | 0.50 | 0.940 | 0.955 | 0.920 | 0.859 |
+| NoCurbRamp | training | chicago-il | 85% | 66 | 14 ⚠ n<30 | 1 | 0.23 | 0.946 | 0.960 | 0.929 | 0.727 (n<50) |
+| NoCurbRamp | training | cdmx | 23% | 54 | 32 | 3 | 0.60 | 0.929 | 0.947 | 0.906 | 0.812 (n<50) |
+| NoCurbRamp | unseen | private city B (US) | 41% | 407 | 150 | 15 | 0.39 | 0.942 | 0.943 | 0.900 | 0.894 |
+| NoCurbRamp | unseen | private city A (outside the US) | 97% | 39 | 3 ⚠ n<30 | 3 | 0.07 | 0.000 | 0.000 | 0.000 | 0.000 (n<50) |
+| NoCurbRamp | unseen | tucson-az | 63% | 17 | 5 ⚠ n<30 | 0 | 0.32 | 1.000 | 1.000 | 1.000 | 0.566 (n<50) |
+| Obstacle | training | other (private deployments) | 32% | 437 | 204 | 6 | 0.48 | 0.978 | 0.981 | 0.971 | 0.952 |
+| Obstacle | training | seattle-wa | 46% | 387 | 189 | 16 | 0.50 | 0.935 | 0.944 | 0.915 | 0.902 |
+| Obstacle | training | chicago-il | 45% | 259 | 125 | 3 | 0.50 | 0.982 | 0.985 | 0.976 | 0.944 |
+| Obstacle | unseen | private city B (US) | 31% | 460 | 269 | 11 | 0.63 | 0.989 | 0.974 | 0.959 | 0.947 |
+| Obstacle | unseen | private city A (outside the US) | 92% | 350 | 21 ⚠ n<30 | 12 | 0.10 | 0.738 | 0.541 | 0.429 | 0.339 (n<50) |
+| Obstacle | unseen | tucson-az | 62% | 109 | 35 | 11 | 0.36 | 0.891 | 0.774 | 0.686 | 0.613 (n<50) |
+| SurfaceProblem | training | seattle-wa | 56% | 247 | 128 | 19 | 0.54 | 0.907 | 0.936 | 0.852 | 0.880 |
+| SurfaceProblem | training | other (private deployments) | 62% | 235 | 137 | 13 | 0.61 | 0.942 | 0.961 | 0.905 | 0.914 |
+| SurfaceProblem | training | chicago-il | 39% | 187 | 133 | 10 | 0.73 | 0.954 | 0.969 | 0.925 | 0.924 |
+| SurfaceProblem | training | oradell-nj | 4% | 76 | 62 | 1 | 0.82 | 0.990 | 0.994 | 0.984 | 0.930 |
+| SurfaceProblem | training | st-louis-mo | 2% | 62 | 58 | 1 | 0.94 | 0.990 | 0.993 | 0.983 | 0.926 |
+| SurfaceProblem | training | columbus-oh | 19% | 60 | 32 | 2 | 0.55 | 0.962 | 0.975 | 0.938 | 0.851 (n<50) |
+| SurfaceProblem | training | spgg | 21% | 59 | 42 | 3 | 0.74 | 0.957 | 0.971 | 0.929 | 0.869 (n<50) |
+| SurfaceProblem | training | pittsburgh-pa | 13% | 57 | 45 | 2 | 0.79 | 0.973 | 0.982 | 0.956 | 0.891 (n<50) |
+| SurfaceProblem | training | newberg-or | 30% | 52 | 36 | 2 | 0.72 | 0.966 | 0.978 | 0.944 | 0.866 (n<50) |
+| SurfaceProblem | unseen | private city B (US) | 29% | 190 | 119 | 9 | 0.67 | 0.971 | 0.969 | 0.924 | 0.920 |
+| SurfaceProblem | unseen | tucson-az | 81% | 123 | 54 | 34 | 0.47 | 0.616 | 0.601 | 0.370 | 0.468 |
+| SurfaceProblem | unseen | private city A (outside the US) | 60% | 64 | 5 ⚠ n<30 | 2 | 0.08 | 0.804 | 0.793 | 0.600 | 0.370 (n<50) |
+| Crosswalk | training | other (private deployments) | 11% | 160 | 160 | 8 | 1.00 | 0.996 | 0.996 | 0.950 | 0.969 |
+| Crosswalk | unseen | private city B (US) | 61% | 33 | 27 ⚠ n<30 | 1 | 0.89 | 0.998 | 0.997 | 0.963 | 0.870 (n<50) |
+| Crosswalk | unseen | private city A (outside the US) | 36% | 32 | 26 ⚠ n<30 | 3 | 0.82 | 0.992 | 0.990 | 0.885 | 0.854 (n<50) |
+| Crosswalk | unseen | tucson-az | 62% | 3 | 3 ⚠ n<30 | 0 | 1.00 | 1.000 | 1.000 | 1.000 | 0.439 (n<50) |
 
-In the training deployments every stratum with at least 50 Agree verdicts is at or above 0.92 under either
-weighting except seattle-wa SurfaceProblem (0.907); cdmx NoCurbRamp (0.929) and spgg NoCurbRamp (0.940) are
-the closest to the line. (Smaller strata are not shown; a few of them are below, on 6 to 14 votes.) In the
-unseen deployments, private city B is at or above 0.95 under its own mix for every type except NoCurbRamp
-(0.925, 15 of 150 gated votes wrong); tucson-az is below the gate for Obstacle (0.76 under its own mix, 11 of
-35 wrong) and far below for SurfaceProblem (0.51); private city A clears for CurbRamp and Crosswalk on 17 and
-26 votes, and fails for the rest, with NoCurbRamp's three gated Agree votes all wrong. The 0.92 promise holds in
-the deployments the model trained on and does not transfer by itself.
+In the training deployments every stratum with at least 50 Agree verdicts is at or above 0.92 on the point
+estimate under either weighting except seattle-wa SurfaceProblem under the pooled prior (0.907; 0.936 under its
+own mix); on the lower bound, seattle-wa Obstacle (0.902) and SurfaceProblem (0.880) and the smaller strata
+would not pass #52's test either. (Strata under 50 votes are not shown; a few of them are below, on 6 to 14
+votes.) In the unseen deployments, #52's test passes in two cells: CurbRamp and Obstacle in private city B
+(lower bounds 0.965 and 0.947). NoCurbRamp private city B is 0.943 on the point estimate but 0.894 on the lower
+bound (15 of 150 wrong); tucson-az is below the gate for Obstacle (0.77 under its own mix, 11 of 35 wrong) and
+far below for SurfaceProblem (0.60); private city A is precise for CurbRamp and Crosswalk on 17 and 26 votes
+(lower bounds 0.79 and 0.85) and fails for the rest, with NoCurbRamp's three gated Agree votes all wrong. The
+0.92 promise holds in the deployments the model trained on and does not transfer by itself.
 
-Under the production-side prior the same cells move up, and two of them cross the gate under the pooled
-weighting but not under the deployment's own mix:
+Under the production-side prior the maps let more verdicts through. One cell crosses the gate under the pooled
+weighting, Obstacle tucson-az (0.891 to 0.942), and does not under its own mix (0.774, unchanged); NoCurbRamp
+private city B goes the other way under its own mix (0.943 to 0.918, as the lower map gates 247 votes instead
+of 150):
 
-| Type | Deployment | gated, file → production-side prior | precision pooled, file → production-side | precision own mix, file → production-side |
-|---|---:|---:|---:|---:|
-| CurbRamp | private city A (outside the US) | 17 → 17 | 0.976 → 0.988 | 0.979 → 0.990 |
-| CurbRamp | private city B (US) | 157 → 157 | 0.991 → 0.996 | 0.992 → 0.996 |
-| CurbRamp | tucson-az | 24 → 24 | 1.000 → 1.000 | 1.000 → 1.000 |
-| NoCurbRamp | private city A (outside the US) | 3 → 7 | 0.000 → 0.000 | 0.000 → 0.000 |
-| NoCurbRamp | private city B (US) | 150 → 247 | 0.942 → 0.963 | 0.925 → 0.952 |
-| NoCurbRamp | tucson-az | 5 → 6 | 1.000 → 1.000 | 1.000 → 1.000 |
-| Obstacle | private city A (outside the US) | 21 → 21 | 0.738 → 0.847 | 0.524 → 0.685 |
-| Obstacle | private city B (US) | 269 → 269 | 0.989 → 0.994 | 0.972 → 0.986 |
-| Obstacle | tucson-az | 35 → 35 | 0.891 → 0.942 | 0.762 → 0.864 |
-| SurfaceProblem | private city A (outside the US) | 5 → 5 | 0.804 → 0.916 | 0.723 → 0.874 |
-| SurfaceProblem | private city B (US) | 119 → 119 | 0.971 → 0.989 | 0.955 → 0.983 |
-| SurfaceProblem | tucson-az | 54 → 54 | 0.616 → 0.810 | 0.506 → 0.732 |
-| Crosswalk | private city A (outside the US) | 26 → 26 | 0.992 → 0.995 | 0.990 → 0.993 |
-| Crosswalk | private city B (US) | 27 → 27 | 0.998 → 0.999 | 0.997 → 0.998 |
-| Crosswalk | tucson-az | 3 → 3 | 1.000 → 1.000 | 1.000 → 1.000 |
+| Type | Deployment | gated, file → production-side map | precision pooled, file → production-side | precision own mix, file → production-side | Wilson lower bound, own mix |
+|---|---:|---:|---:|---:|---:|
+| CurbRamp | private city A (outside the US) | 17 → 17 | 0.976 → 0.988 | 0.983 → 0.983 | 0.789 → 0.789 |
+| CurbRamp | private city B (US) | 157 → 157 | 0.991 → 0.996 | 0.994 → 0.994 | 0.965 → 0.965 |
+| CurbRamp | tucson-az | 24 → 24 | 1.000 → 1.000 | 1.000 → 1.000 | 0.862 → 0.862 |
+| NoCurbRamp | private city A (outside the US) | 3 → 7 | 0.000 → 0.000 | 0.000 → 0.000 | 0.000 → 0.000 |
+| NoCurbRamp | private city B (US) | 150 → 247 | 0.942 → 0.963 | 0.943 → 0.918 | 0.894 → 0.877 |
+| NoCurbRamp | tucson-az | 5 → 6 | 1.000 → 1.000 | 1.000 → 1.000 | 0.566 → 0.610 |
+| Obstacle | private city A (outside the US) | 21 → 21 | 0.738 → 0.847 | 0.541 → 0.541 | 0.339 → 0.339 |
+| Obstacle | private city B (US) | 269 → 269 | 0.989 → 0.994 | 0.974 → 0.974 | 0.947 → 0.947 |
+| Obstacle | tucson-az | 35 → 35 | 0.891 → 0.942 | 0.774 → 0.774 | 0.613 → 0.613 |
+| SurfaceProblem | private city A (outside the US) | 5 → 5 | 0.804 → 0.916 | 0.793 → 0.793 | 0.370 → 0.370 |
+| SurfaceProblem | private city B (US) | 119 → 119 | 0.971 → 0.989 | 0.969 → 0.969 | 0.920 → 0.920 |
+| SurfaceProblem | tucson-az | 54 → 54 | 0.616 → 0.810 | 0.601 → 0.601 | 0.468 → 0.468 |
+| Crosswalk | private city A (outside the US) | 26 → 26 | 0.992 → 0.995 | 0.990 → 0.990 | 0.854 → 0.854 |
+| Crosswalk | private city B (US) | 27 → 27 | 0.998 → 0.999 | 0.997 → 0.997 | 0.870 → 0.870 |
+| Crosswalk | tucson-az | 3 → 3 | 1.000 → 1.000 | 1.000 → 1.000 | 0.439 → 0.439 |
 
 ## Ship recommendation
 
 Per type, for the retrained model served with the maps above. "Ship Agree" means the capped map as fitted
 (Disagree held back). "Shadow" means the API scores and `label_ai_assessment` records the raw verdict, but the
 map caps both classes so nothing votes, as [#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52)
-proposes for new deployments. Each cell carries the gated Agree votes it rests on; fewer than 30 is flagged.
-The unseen-deployment calls use the lower of the pooled-prior and own-mix precisions. **Agree does not ship in
-a new deployment without a per-deployment check** (#52's gate: a precision lower bound of 0.92 on that
-deployment's own validated labels); the unseen-deployment column says what that check would conclude today.
-Every row assumes the prior question is open; the two cells that would change under the production-side prior
-are named.
+proposes for new deployments. Each cell carries the gated Agree votes it rests on and the Wilson 95% lower bound of the own-mix precision;
+fewer than 30 is flagged. The unseen-deployment calls apply #52's test (lower bound at least 0.92; `per_city.py`
+also wants at least 50 votes), so a precise cell on few votes is shadow until it has the votes. **Agree does not
+ship in a new deployment without that check.** Every row assumes the prior question is open; the cells that
+move under the production-side prior are named.
 
 | Type | Training deployments | Unseen deployments (per-deployment check applied) | New deployments | Disagree | Why |
 |---|---|---|---|---|---|
-| CurbRamp | **Ship Agree** (692 gated, 0.994) | Agree in private city B (157, 0.99) and tucson-az (24 ⚠ n<30, 1.00); shadow private city A (17 ⚠ n<30, 0.98 but AUC 0.82) | Shadow until checked | Hold back | The Disagree curve tops out at 0.80. |
-| NoCurbRamp | **Ship Agree** (627 gated, 0.973) | **Shadow all three**: pooled unseen precision 0.933 but 0.914 under own mix; private city B 0.925 own mix (150, 15 wrong); private city A 0 of 3 right; tucson-az 5 ⚠ n<30 | Shadow until checked | Hold back | Disagree would clear under the file prior only (17 unseen votes), never under the production-side prior. |
-| Obstacle | **Ship Agree** (631 gated, 0.959; Phase 0 lets 8% vote) | Agree in private city B (269, 0.97 own mix); shadow tucson-az (35, 0.76) and private city A (21 ⚠ n<30, 0.52) | Shadow until checked | Hold back | Disagree never clears. tucson-az would reach 0.94 under the production-side prior pooled, 0.86 under its own mix. Gate sits at confidence 1.0 exactly (saturation above). |
-| SurfaceProblem | **Shadow** (both verdicts held back) | Shadow | Shadow | Hold back | Unseen AUC 0.71; Agree 0.89 pooled / 0.84 own mix; tucson-az 0.51 (54 gated, 34 wrong); seattle-wa 0.907 even in training; private city B alone is fine (119, 0.96). Private city A would reach 0.92 pooled under the production-side prior on 5 votes, 0.87 own mix. Shadow keeps one tilt path for all types and accumulates per-deployment outcomes. |
-| Crosswalk | **Ship Agree** (255 gated, 0.995) | Agree in private city B (27 ⚠ n<30, 1.00) and private city A (26 ⚠ n<30, 0.99, raw 0.885); tucson-az 3 ⚠ n<30 | Shadow until checked | Hold back | Disagree on the unseen deployments is 0.54 to 0.64 precise. All unseen strata are under 30 votes. |
+| CurbRamp | **Ship Agree** (692 gated, 0.994) | Agree in private city B (157 gated, 0.994, lower bound 0.965); shadow tucson-az (24 ⚠ n<30, 1.00, bound 0.862) and private city A (17 ⚠ n<30, 0.98, bound 0.79, AUC 0.82) | Shadow until checked | Hold back | The Disagree curve tops out at 0.80. |
+| NoCurbRamp | **Ship Agree** (627 gated, 0.973) | **Shadow all three**: private city B 0.943 own mix on 150 gated (15 wrong) but lower bound 0.894; private city A 0 of 3 right; tucson-az 5 ⚠ n<30 | Shadow until checked | Hold back | Disagree would clear under the file prior only (17 unseen votes), never under the production-side prior. Under the production-side map private city B falls to 0.918 own mix (247 gated). |
+| Obstacle | **Ship Agree** (631 gated, 0.959; Phase 0 lets 8% vote) | Agree in private city B (269 gated, 0.974 own mix, bound 0.947); shadow tucson-az (35, 0.77, bound 0.61) and private city A (21 ⚠ n<30, 0.54) | Shadow until checked | Hold back | Disagree never clears. tucson-az reaches 0.94 pooled under the production-side prior but stays 0.77 under its own mix. Gate sits at confidence 1.0 exactly (saturation above). |
+| SurfaceProblem | **Shadow** (both verdicts held back) | Shadow | Shadow | Hold back | Unseen AUC 0.71; Agree 0.89 pooled / 0.88 own mix; tucson-az 0.60 (54 gated, 34 wrong); private city B alone passes (119 gated, 0.969, bound 0.920); seattle-wa's lower bound is 0.880 even in training. Shadow keeps one tilt path for all types and accumulates per-deployment outcomes. |
+| Crosswalk | **Ship Agree** (255 gated, 0.995) | **Shadow all three** until they have the votes: private city B 27 ⚠ n<30 (0.997, bound 0.870), private city A 26 ⚠ n<30 (0.99, raw 0.885, bound 0.854), tucson-az 3 ⚠ n<30 | Shadow until checked | Hold back | Disagree on the unseen deployments is 0.54 to 0.64 precise. |
 
 Two serving conditions go with this. The API must apply the same tilt correction training used
 ([sidewalk-ai-api#17](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/17), with
@@ -558,6 +575,8 @@ belongs in the first 48 hours ([#55](https://github.com/ProjectSidewalk/sidewalk
   split also chose the checkpoint. The first weeks of production outcomes under the new maps are the real test,
   and `calibration/calibrate_from_production.py` plus `calibration/per_city.py` are the tools for it.
 - The own-mix weighting assumes the global correct-class downsample removed the same share of correct labels in
-  every deployment, which holds in expectation for a hash-rank cutoff but not exactly in any one deployment.
+  every deployment, which holds in expectation for a hash-rank cutoff but not exactly in any one deployment; and
+  expert-classed and AI-placed labels entered the pool outside the prior's count, so a deployment with many of
+  them is restored only approximately.
 - AI-placed labels (`include_ai_labels: true` in `generation_run.json`) are in the training set under the same
   vote margins as human-placed ones; nothing here separates them.
