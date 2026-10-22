@@ -422,7 +422,7 @@ def model_card(ctx):
              "imagery that is not a label-centred crop made the same way as the training crops.\n",
              "## Training data\n",
              f"[`{ctx['dataset_repo']}`](https://huggingface.co/datasets/{ctx['dataset_repo']}) "
-             f"(content hash `{ds.get('content_hash', TODO + ' dataset not staged')}`). Labels are taken as correct "
+             f"(content hash `{ds.get('content_hash') or TODO + ' dataset not staged with this model; copy the hash from the dataset card'}`). Labels are taken as correct "
              f"or incorrect from **human** validation votes only (AI votes excluded); see the dataset card for the "
              f"exact thresholds. Split sizes: train {fmt(split_rows.get('train'))}, val {fmt(split_rows.get('val'))}, "
              f"test {fmt(split_rows.get('test'))}"

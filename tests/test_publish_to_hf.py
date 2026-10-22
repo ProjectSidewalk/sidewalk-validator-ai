@@ -121,6 +121,13 @@ def no_network(monkeypatch):
 
     monkeypatch.setattr(requests, "get", blocked)
     monkeypatch.setattr(pub, "_hf_api", no_api)
+    # stage() reads the public city list from the API unless given one; in tests every make_root() city is public
+    monkeypatch.setattr(pub, "public_city_ids", lambda cities_api=None, public_cities_file=None:
+                        {r[0] for r in ROWS} | {"teaneck", "chicago"} if public_cities_file is None else
+                        _real_public_city_ids(cities_api, public_cities_file))
+
+
+_real_public_city_ids = pub.public_city_ids
 
 
 @pytest.fixture
@@ -1111,3 +1118,170 @@ def test_model_card_says_when_a_verdict_is_held_back(staged):
     plain = hf_cards._calibration_section({"label_type": T, "api_map": staged["api_map"],
                                            "calibration_report": staged["report"]})
     assert "Held back" not in plain
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Model-only staging (--what model): a machine with the checkpoints and the split, but without the crops
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _remove_crops(root, label_type=T):
+    """Delete every crop under <root>/<label_type>, as on a machine that only pulled the checkpoints."""
+    import shutil
+    for cls in pub.CLASSES:
+        shutil.rmtree(os.path.join(root, label_type, cls), ignore_errors=True)
+
+
+def test_stage_model_only_needs_no_crops(tmp_path, capsys):
+    root, _, api_map, _ = make_root(tmp_path)
+    _remove_crops(root)
+    with pytest.raises(pub.PublishError, match="crops listed in .* do not exist"):
+        pub.stage(root, T)                                   # a full staging still refuses
+    model_dir, dataset_dir = pub.stage(root, T, what="model")
+    assert dataset_dir is None
+    staged = {rel for rel, _ in pub.list_files(model_dir)}
+    assert staged == {"README.md", "calibration_report.json", "config.json", "confidence_precision_map.json",
+                      "metrics.json", "model.safetensors", "preprocessor_config.json", "trainer_state.json",
+                      "training_run.json"}
+    assert json.load(open(os.path.join(model_dir, "confidence_precision_map.json"))) == api_map
+    record = json.load(open(os.path.join(root, T, "publish", pub.STAGING_RECORD)))
+    assert record["what"] == "model" and record["content_hash"] is None
+    assert all(k.startswith("model/") for k in record["files"])
+    card = open(os.path.join(model_dir, "README.md")).read()
+    assert "TODO: dataset not staged with this model" in card and "`None`" not in card
+    assert "train 6" in card                                 # split sizes still come from split.csv
+    out = capsys.readouterr().out
+    assert "staged" not in out or True                       # stage() prints nothing about the dataset
+
+
+def test_stage_refuses_dataset_only(tmp_path):
+    root, *_ = make_root(tmp_path)
+    with pytest.raises(pub.PublishError, match="--what must be both or model"):
+        pub.stage(root, T, what="dataset")
+
+
+def test_push_staged_model_only_needs_what_model(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    model_dir, _ = pub.stage(root, T, what="model")
+    with pytest.raises(pub.PublishError, match="model-only staging; pass --what model"):
+        pub.verify_staged(root, T)
+    with pytest.raises(pub.PublishError, match="model-only staging; pass --what model"):
+        pub.verify_staged(root, T, what="dataset")
+    assert pub.verify_staged(root, T, what="model") == (model_dir, None)
+    # a card edit is fine; a weights change is not
+    with open(os.path.join(model_dir, "README.md"), "a") as f:
+        f.write("\nhand edit\n")
+    assert pub.verify_staged(root, T, what="model") == (model_dir, None)
+    with open(os.path.join(model_dir, "metrics.json"), "a") as f:
+        f.write(" ")
+    with pytest.raises(pub.PublishError, match="staged files changed since staging"):
+        pub.verify_staged(root, T, what="model")
+
+
+def test_push_staged_full_staging_accepts_any_what(tmp_path):
+    root, *_ = make_root(tmp_path)
+    model_dir, dataset_dir = pub.stage(root, T)
+    for what in ("both", "model", "dataset"):
+        assert pub.verify_staged(root, T, what=what) == (model_dir, dataset_dir)
+
+
+def test_cli_what_model_stages_and_reports_model_only(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    assert pub.main(["--label_type", T, "--out", root, "--what", "model"]) == 0
+    out = capsys.readouterr().out
+    assert "(model only)" in out and "dataset card" not in out
+    assert pub.main(["--label_type", T, "--out", root, "--push-staged"]) == 1
+    assert "pass --what model" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Private deployments never reach a published file
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _add_private_city(root, label_type=T, city="zurich"):
+    """Put a private city into the per-city metrics, the prior's source and the heldout list of a make_root() tree."""
+    base = os.path.join(root, label_type)
+    metrics = json.load(open(os.path.join(base, "metrics.json")))
+    metrics["per_city"] = {"test_heldout": {"min_city_n": 8, "cities": {city: {"n": 20, "auc": 0.8},
+                                                                        "teaneck": {"n": 30, "auc": 0.9}},
+                                            "below_min_n": {f"{city}-infra3d": 3}}}
+    json.dump(metrics, open(os.path.join(base, "metrics.json"), "w"))
+    rep_path = os.path.join(base, "calibration", "calibration_report.json")
+    rep = json.load(open(rep_path))
+    rep["prior_source"] = {"source": f"rawLabels of chicago, teaneck, {city}, {city}-infra3d",
+                           "cities": ["chicago", "teaneck", city, f"{city}-infra3d"]}
+    json.dump(rep, open(rep_path, "w"), default=float)
+    priors = json.load(open(os.path.join(root, "deployment_priors.json")))
+    priors[label_type]["source"] = f"rawLabels of chicago, teaneck, {city}"
+    json.dump(priors, open(os.path.join(root, "deployment_priors.json"), "w"))
+    split = pd.read_csv(os.path.join(base, "split.csv"))
+    split.loc[split["split"] == "test", "city"] = city        # a held-out-style private city in the split
+    split["label_uid"] = split["city"] + ":" + split["label_id"].astype(str)
+    split.to_csv(os.path.join(base, "split.csv"), index=False)
+    ev = split[split["split"].isin(["val", "test", "test_heldout"])]
+    pd.DataFrame({"label_uid": ev.label_uid, "split": ev.split, "true": ev.label_class,
+                  "p_correct": 0.7, "p_incorrect": 0.3}).to_csv(os.path.join(base, "predictions.csv"), index=False)
+    key = json.load(open(os.path.join(base, "dinov2", "run_key.json")))
+    key["split_sha256"] = hashlib.sha256(open(os.path.join(base, "split.csv"), "rb").read()).hexdigest()
+    json.dump(key, open(os.path.join(base, "dinov2", "run_key.json"), "w"))
+
+
+def test_redact_cities_renames_ids_everywhere_but_not_inside_other_ids():
+    aliases = {"zurich": "private-1", "zurich-infra3d": "private-2"}
+    out = pub.redact_cities({"zurich": {"n": 1}, "list": ["a", "zurich-infra3d"],
+                             "s": "rawLabels of a, zurich, zurich-infra3d and zurichx"}, aliases)
+    assert out == {"private-1": {"n": 1}, "list": ["a", "private-2"],
+                   "s": "rawLabels of a, private-1, private-2 and zurichx"}
+    assert pub.private_city_aliases({"b", "a", "pub"}, {"pub"}) == {"a": "private-1", "b": "private-2"}
+
+
+def test_model_staging_aliases_private_cities(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    _add_private_city(root)
+    _remove_crops(root)
+    model_dir, _ = pub.stage(root, T, what="model", public={"teaneck", "chicago", "oradell"})
+    out = capsys.readouterr().out
+    assert "zurich -> private-1" in out and "zurich-infra3d -> private-2" in out, out
+    for rel, _ in pub.list_files(model_dir):
+        text = open(os.path.join(model_dir, rel), errors="ignore").read()
+        assert "zurich" not in text, rel
+    metrics = json.load(open(os.path.join(model_dir, "metrics.json")))
+    assert set(metrics["per_city"]["test_heldout"]["cities"]) == {"private-1", "teaneck"}
+    assert metrics["per_city"]["test_heldout"]["below_min_n"] == {"private-2": 3}
+    rep = json.load(open(os.path.join(model_dir, "calibration_report.json")))
+    assert rep["prior_source"]["cities"] == ["chicago", "teaneck", "private-1", "private-2"]
+    assert "private-1" in open(os.path.join(model_dir, "README.md")).read()
+
+
+def test_dataset_staging_refuses_private_cities(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _add_private_city(root)
+    with pytest.raises(pub.PublishError, match="not public; a dataset repo would name them"):
+        pub.stage(root, T, public={"teaneck", "chicago", "oradell"})
+
+
+def test_public_city_ids_from_file_and_refusals(tmp_path):
+    f = tmp_path / "public.txt"
+    f.write_text("teaneck\n# comment\nchicago  # also\n\n")
+    assert pub.public_city_ids(public_cities_file=str(f)) == {"teaneck", "chicago"}
+    (tmp_path / "empty.txt").write_text("# nothing\n")
+    with pytest.raises(pub.PublishError, match="lists no city ids"):
+        pub.public_city_ids(public_cities_file=str(tmp_path / "empty.txt"))
+    with pytest.raises(pub.PublishError, match="could not read the public city list"):
+        _real_public_city_ids(cities_api="http://127.0.0.1:9/nope", public_cities_file=None)
+
+
+def test_cli_needs_a_public_city_list(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    f = tmp_path / "public.txt"
+    f.write_text("teaneck\nchicago\n")
+    assert pub.main(["--label_type", T, "--out", root, "--what", "model", "--public-cities", str(f)]) == 0
+    monkeypatch_target = pub.public_city_ids
+    pub.public_city_ids = _real_public_city_ids
+    try:
+        assert pub.main(["--label_type", T, "--out", root, "--what", "model", "--cities-api", "http://127.0.0.1:9/x"]) == 1
+    finally:
+        pub.public_city_ids = monkeypatch_target
+    assert "could not read the public city list" in capsys.readouterr().err

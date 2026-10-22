@@ -36,6 +36,21 @@ license, DOIs) go in ``<out>/<label_type>/card_overrides.json`` (keys in ``hf_ca
 unknown is a ``TODO:`` in the card. To hand-edit a card, stage, edit ``publish/*/README.md``, then ``--push-staged``,
 which uploads the staged folders without restaging after re-verifying them against ``publish/staging.json``.
 
+**Model only** (``--what model``, at staging and at ``--push-staged``). Stages ``model/`` alone, for a machine that
+has the checkpoints, ``split.csv``, ``predictions.csv`` and the map but not the crops (the crops live where
+``data_generation.py`` ran). The model card is built from ``split.csv`` as usual; its dataset content hash is a
+``TODO`` (the hash is the sha256 of ``SHA256SUMS``, which only a dataset staging computes), so the upload needs
+``--allow-todo`` or a card edit, and the dataset repo is published from the crop machine in its own run. The
+binding checks (split sha256, predictions coverage, label type) run exactly as for a full staging.
+
+**Private deployments.** Training may use deployments that are not public (``/v3/api/cities`` lists them with
+``visibility`` other than ``public``). Nothing published may name them: a model staging renames every such city id
+to ``private-<n>`` in ``metrics.json`` (the per-city blocks), ``calibration_report.json`` (the prior's source and city
+list), the prior and the card's held-out list, and prints the aliases it used; a dataset staging is refused outright
+when ``split.csv`` holds a label from one (crop names and the manifest would carry the city). The public list is
+read from the cities API (``--cities-api``) or from a file with one city id per line (``--public-cities``), and
+staging refuses to run without one.
+
 **Audit** (``--audit``; public API, no token, no local files): lists the five model and five dataset repos and
 reports stray training files and datasets whose crops overlap (by path or sha256) by more than 5%.
 
@@ -115,6 +130,84 @@ OVERLAP_LIMIT = 0.05
 """Share of staged crops (by sha256) allowed to appear in another label type's dataset repo before upload stops."""
 
 STAGING_RECORD = "staging.json"
+CITIES_API = "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities"
+"""Lists every deployment with its ``visibility``; only ``public`` ones may be named in anything published."""
+PRIVATE_ALIAS = "private-{n}"
+
+
+def public_city_ids(cities_api=CITIES_API, public_cities_file=None):
+    """The set of city ids that may be named in public: from ``public_cities_file`` (one id per line, ``#`` comments)
+    when given, else from the cities API (``visibility == "public"``). Raises ``PublishError`` if neither works."""
+    if public_cities_file:
+        try:
+            with open(public_cities_file) as f:
+                ids = {line.split("#")[0].strip() for line in f}
+        except OSError as e:
+            raise PublishError(f"cannot read --public-cities {public_cities_file}: {e}") from e
+        ids.discard("")
+        if not ids:
+            raise PublishError(f"--public-cities {public_cities_file} lists no city ids")
+        return ids
+    try:
+        import requests
+        r = requests.get(cities_api, timeout=60)
+        r.raise_for_status()
+        cities = r.json()["cities"]
+    except Exception as e:  # network, JSON or shape: all mean "do not guess"
+        raise PublishError(f"could not read the public city list from {cities_api} ({e}); pass --public-cities "
+                           f"<file> with one public city id per line") from e
+    ids = {c["city_id"] for c in cities if c.get("visibility") == "public"}
+    if not ids:
+        raise PublishError(f"{cities_api} lists no public cities; refusing to guess")
+    return ids
+
+
+def private_city_aliases(city_ids, public):
+    """``{city_id: "private-<n>"}`` for every id in ``city_ids`` that is not in ``public``, numbered in sorted order so
+    every file of one staging uses the same alias for the same deployment."""
+    private = sorted(set(map(str, city_ids)) - set(public))
+    return {c: PRIVATE_ALIAS.format(n=i + 1) for i, c in enumerate(private)}
+
+
+def redact_cities(obj, aliases):
+    """Return ``obj`` with every private city id replaced by its alias: dict keys, list items, and whole-word
+    occurrences inside strings (``zurich`` in ``"rawLabels of amsterdam, zurich"``; never ``zurich`` inside
+    ``zurich-infra3d``, which is its own id and gets its own alias).
+
+    Example: ``redact_cities({"zurich": 1, "s": "a, zurich"}, {"zurich": "private-1"})`` ->
+    ``{"private-1": 1, "s": "a, private-1"}``.
+    """
+    if not aliases:
+        return obj
+    if isinstance(obj, dict):
+        return {redact_cities(k, aliases): redact_cities(v, aliases) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [redact_cities(v, aliases) for v in obj]
+    if isinstance(obj, str):
+        if obj in aliases:
+            return aliases[obj]
+        for city, alias in aliases.items():
+            obj = re.sub(rf"(?<![\w-]){re.escape(city)}(?![\w-])", alias, obj)
+        return obj
+    return obj
+
+
+def collect_city_ids(*objs):
+    """Every string that sits where a city id can sit in the staged metadata: ``per_city`` keys in ``metrics.json``,
+    ``prior_source.cities`` and the ``cities`` / ``heldout_cities`` of a dataset summary. Strings elsewhere are not
+    treated as ids (they are redacted by whole-word substitution of the ids found here)."""
+    ids = set()
+    for o in objs:
+        if not isinstance(o, dict):
+            continue
+        for split_block in (o.get("per_city") or {}).values():
+            for key in ("cities", "below_min_n"):
+                ids.update(map(str, (split_block.get(key) or {}).keys()))
+        src = o.get("prior_source") or {}
+        ids.update(map(str, src.get("cities") or []))
+        ids.update(map(str, o.get("cities") or []))         # prior entry or dataset summary
+        ids.update(map(str, o.get("heldout_cities") or []))
+    return ids
 """Written to ``<T>/publish/`` (not uploaded): hashes of what was staged, for ``--push-staged``."""
 
 EXIT_ERROR, EXIT_REMOTE = 1, 3
@@ -371,11 +464,9 @@ def check_depth_sized(root, label_type):
                            f"--fixed-crop-half-px) to publish") from e
 
 
-def stage_dataset(root, label_type, out_dir, link_mode="hardlink"):
-    """Stage ``<root>/<label_type>``'s crops and metadata into ``out_dir``; return ``(summary, prior, generation_run)``.
-
-    ``out_dir`` is emptied first. Crops are placed by ``split.csv`` only; a row whose crop is missing stops staging.
-    """
+def read_dataset_context(root, label_type):
+    """``(split, manifest, prior, generation_run)`` from ``<root>/<label_type>`` after the label-type, label-uid, split
+    and class checks; no crop is touched. ``prior`` is this type's ``deployment_priors.json`` entry or None."""
     base = os.path.join(root, label_type)
     split_path, manifest_path = os.path.join(base, "split.csv"), os.path.join(base, "manifest.csv")
     for p in (split_path, manifest_path):
@@ -392,6 +483,22 @@ def stage_dataset(root, label_type, out_dir, link_mode="hardlink"):
     bad_class = sorted(set(split["label_class"].astype(str)) - set(CLASSES))
     if bad_class:
         raise PublishError(f"{split_path} has unknown label_class values {bad_class}")
+    priors = _read_json(os.path.join(root, "deployment_priors.json")) or {}
+    prior = priors.get(label_type)
+    if prior is None:
+        print(f"WARNING: no {label_type} entry in {os.path.join(root, 'deployment_priors.json')}; the card says TODO")
+    gen = _read_json(os.path.join(base, "generation_run.json")) or {}
+    return split, manifest, prior, gen
+
+
+def stage_dataset(root, label_type, out_dir, link_mode="hardlink"):
+    """Stage ``<root>/<label_type>``'s crops and metadata into ``out_dir``; return ``(summary, prior, generation_run)``.
+
+    ``out_dir`` is emptied first. Crops are placed by ``split.csv`` only; a row whose crop is missing stops staging.
+    """
+    base = os.path.join(root, label_type)
+    split_path = os.path.join(base, "split.csv")
+    split, manifest, prior, gen = read_dataset_context(root, label_type)
 
     _reset_dir(out_dir, root)
     rel_paths, missing = [], []
@@ -414,13 +521,8 @@ def stage_dataset(root, label_type, out_dir, link_mode="hardlink"):
     manifest.drop(columns=[c for c in PRIVATE_COLUMNS if c in manifest.columns]).to_csv(
         os.path.join(out_dir, "manifest.csv"), index=False)
 
-    priors = _read_json(os.path.join(root, "deployment_priors.json")) or {}
-    prior = priors.get(label_type)
-    if prior is None:
-        print(f"WARNING: no {label_type} entry in {os.path.join(root, 'deployment_priors.json')}; the card says TODO")
-    else:
+    if prior is not None:
         _write_json(os.path.join(out_dir, "deployment_priors.json"), {label_type: prior})
-    gen = _read_json(os.path.join(base, "generation_run.json")) or {}
     if gen:
         _write_json(os.path.join(out_dir, "generation_run.json"),
                     {k: v for k, v in gen.items() if k not in PRIVATE_RUN_KEYS})
@@ -746,6 +848,8 @@ def _staged_record(model_dir, dataset_dir):
     """sha256 of every staged file except the crops (covered by SHA256SUMS) and the two cards (hand edits allowed)."""
     record = {}
     for name, folder in (("model", model_dir), ("dataset", dataset_dir)):
+        if folder is None:
+            continue
         for rel, _ in list_files(folder):
             if rel == "README.md" or (name == "dataset" and _is_crop_path(rel)):
                 continue
@@ -761,16 +865,26 @@ def _is_crop_path(rel, remote=False):
     return len(parts) == 3 and parts[0] in splits and parts[1] in CLASSES and parts[2].endswith(".webp")
 
 
-def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_path=None, dataset_license=None):
+def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_path=None, dataset_license=None,
+          what="both", public=None):
     """Stage ``<root>/<label_type>/publish/{dataset,model}/`` with cards. Returns ``(model_dir, dataset_dir)``.
 
-    Also writes ``publish/staging.json`` (hashes of everything staged except crops and cards), which
-    ``--push-staged`` uses to prove nothing but the cards changed since.
+    Also writes ``publish/staging.json`` (hashes of everything staged except crops and cards, and ``what``), which
+    ``--push-staged`` uses to prove nothing but the cards changed since. With ``what="model"`` the dataset folder is
+    not staged (nor touched if present): the model card still reads ``split.csv`` for its split sizes and cities,
+    but its content hash is a ``TODO`` and ``dataset_dir`` is returned as None.
 
     Example::
 
         model_dir, dataset_dir = stage("/gscratch/makelab/validator", "CurbRamp")
+        model_dir, _ = stage("/gscratch/makelab/validator", "CurbRamp", what="model")   # no crops needed
+
+    ``public`` is the set of city ids that may be named (``public_city_ids``); private ones are aliased in a model
+    staging and refuse a dataset staging. None reads the list from the cities API.
     """
+    if what not in ("both", "model"):
+        raise PublishError(f"stage: --what must be both or model, not {what!r} (a dataset is never staged alone, "
+                           f"its card names the model it trained)")
     validate_prefix(prefix)
     check_depth_sized(root, label_type)
     pub = os.path.join(root, label_type, "publish")
@@ -780,8 +894,38 @@ def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_pat
     overrides = load_overrides(root, label_type)
     dataset_license = dataset_license or overrides.get("dataset_license")
 
-    summary, prior, gen = stage_dataset(root, label_type, dataset_dir, link_mode)
+    if public is None:
+        public = public_city_ids()
+    if what == "model":
+        split, _, prior, gen = read_dataset_context(root, label_type)
+        summary = dataset_summary(split, None)
+        dataset_dir = None
+    else:
+        split, _, _, _ = read_dataset_context(root, label_type)
+        private_rows = sorted(set(split["city"].astype(str)) - public)
+        if private_rows:
+            raise PublishError(f"{label_type}/split.csv holds labels from {len(private_rows)} deployment(s) that are "
+                               f"not public; a dataset repo would name them in crop names and the manifest. Stage "
+                               f"the model alone (--what model) or build the dataset from public deployments only")
+        summary, prior, gen = stage_dataset(root, label_type, dataset_dir, link_mode)
     model = stage_model(root, label_type, model_dir, map_path, link_mode)
+    aliases = private_city_aliases(collect_city_ids(model["metrics"], model["calibration_report"], prior, summary),
+                                   public)
+    if aliases:
+        print(f"private deployments renamed in the published files: " + ", ".join(
+            f"{c} -> {a}" for c, a in aliases.items()))
+        for key, name in (("metrics", "metrics.json"), ("calibration_report", "calibration_report.json")):
+            if model.get(key) is not None:
+                model[key] = redact_cities(model[key], aliases)
+                _write_json(os.path.join(model_dir, name), model[key])
+        prior = redact_cities(prior, aliases)
+        summary = redact_cities(summary, aliases)
+    for name in ("metrics.json", "calibration_report.json"):
+        path = os.path.join(model_dir, name)
+        if os.path.exists(path):
+            leaked = sorted(c for c in aliases if re.search(rf"(?<![\w-]){re.escape(c)}(?![\w-])", open(path).read()))
+            if leaked:
+                raise PublishError(f"{path} still names private deployment(s) {leaked} after redaction")
     ok, msg = check_train_size(model["trainer"], summary["split_counts"].get("train", 0))
     if ok:
         print(f"train-size cross-check passed: {msg}")
@@ -791,18 +935,19 @@ def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_pat
         print(f"WARNING: train-size cross-check failed: {msg}. Check that this dataset is the one the model was "
               f"trained on (the binding checks passed, so the split file is the training one).")
 
-    split_csv = os.path.join(dataset_dir, "split.csv")
-    croissant = build_croissant(summary, label_type, d_repo, sha256_file(split_csv),
-                                list(pd.read_csv(split_csv, nrows=0).columns), dataset_license,
-                                date_published=gen.get("started"))
-    croissant_path = os.path.join(dataset_dir, "croissant.json")
-    _write_json(croissant_path, croissant)
-    print(validate_croissant(croissant_path)[1])
+    if dataset_dir is not None:
+        split_csv = os.path.join(dataset_dir, "split.csv")
+        croissant = build_croissant(summary, label_type, d_repo, sha256_file(split_csv),
+                                    list(pd.read_csv(split_csv, nrows=0).columns), dataset_license,
+                                    date_published=gen.get("started"))
+        croissant_path = os.path.join(dataset_dir, "croissant.json")
+        _write_json(croissant_path, croissant)
+        print(validate_croissant(croissant_path)[1])
 
-    ds_ctx = {"label_type": label_type, "dataset_repo": d_repo, "model_repo": m_repo, "dataset": summary,
-              "prior": prior, "generation_run": gen, "code_commit": commit, "overrides": overrides}
-    with open(os.path.join(dataset_dir, "README.md"), "w") as f:
-        f.write(hf_cards.dataset_card(ds_ctx, dataset_license))
+        ds_ctx = {"label_type": label_type, "dataset_repo": d_repo, "model_repo": m_repo, "dataset": summary,
+                  "prior": prior, "generation_run": gen, "code_commit": commit, "overrides": overrides}
+        with open(os.path.join(dataset_dir, "README.md"), "w") as f:
+            f.write(hf_cards.dataset_card(ds_ctx, dataset_license))
     m_ctx = {"label_type": label_type, "model_repo": m_repo, "dataset_repo": d_repo, "dataset": summary,
              "generation_run": gen, "code_commit": commit, "overrides": overrides, **{k: model[k] for k in (
                  "trainer", "metrics", "api_map", "calibration_report", "training_run")}}
@@ -810,22 +955,28 @@ def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_pat
         f.write(hf_cards.model_card(m_ctx))
 
     for folder in (model_dir, dataset_dir):
-        assert_publishable(folder)
+        if folder is not None:
+            assert_publishable(folder)
+            card = open(os.path.join(folder, "README.md")).read()
+            leaked = sorted(c for c in aliases if re.search(rf"(?<![\w-]){re.escape(c)}(?![\w-])", card))
+            if leaked:
+                raise PublishError(f"{folder}/README.md names private deployment(s) {leaked}")
     _write_json(os.path.join(pub, STAGING_RECORD),
-                {"label_type": label_type, "prefix": prefix, "content_hash": summary["content_hash"],
+                {"label_type": label_type, "prefix": prefix, "what": what, "content_hash": summary["content_hash"],
                  "best_checkpoint": os.path.basename(model["best_dir"]),
                  "files": _staged_record(model_dir, dataset_dir)})
     return model_dir, dataset_dir
 
 
-def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None):
+def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None, what="both"):
     """Check an existing ``publish/`` before ``--push-staged`` uploads it without restaging.
 
     Re-runs ``assert_publishable`` and ``check_bindings``; refuses if any staged file other than the two cards
     differs from ``staging.json``, if the crops differ from ``SHA256SUMS`` or its hash from the recorded content
     hash, if the dataset card does not state that hash, or if the best checkpoint's weights changed since staging
     (a retrain), or if the run is the fixed-size ablation (``check_depth_sized``). Returns
-    ``(model_dir, dataset_dir)``.
+    ``(model_dir, dataset_dir)``; ``dataset_dir`` is None for a model-only staging, which can only be pushed with
+    ``--what model`` (a full staging can be pushed with any ``--what``).
     """
     check_depth_sized(root, label_type)
     pub = os.path.join(root, label_type, "publish")
@@ -836,13 +987,30 @@ def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None):
     if record.get("label_type") != label_type or record.get("prefix") != prefix:
         raise PublishError(f"{pub} was staged for {record.get('label_type')} under {record.get('prefix')!r}, not "
                            f"{label_type} under {prefix!r}; restage")
+    staged_what = record.get("what", "both")
+    if staged_what == "model":
+        if what != "model":
+            raise PublishError(f"{pub} holds a model-only staging; pass --what model, or restage with the crops "
+                               f"present to publish the dataset")
+        dataset_dir = None
     for folder in (model_dir, dataset_dir):
-        assert_publishable(folder)
+        if folder is not None:
+            assert_publishable(folder)
     current = _staged_record(model_dir, dataset_dir)
     changed = sorted(k for k in set(current) | set(record["files"]) if current.get(k) != record["files"].get(k))
     if changed:
         raise PublishError(f"staged files changed since staging (only the README.md cards may be edited): "
                            f"{', '.join(changed[:10])}; restage")
+    if dataset_dir is None:
+        best_dir, _ = resolve_checkpoints(root, label_type)
+        if os.path.basename(best_dir) != record["best_checkpoint"] or \
+                sha256_file(os.path.join(best_dir, "model.safetensors")) != record["files"]["model/model.safetensors"]:
+            raise PublishError("the best checkpoint changed since staging (a retrain?); restage")
+        map_path = map_path or default_map_path(root, label_type)
+        report = _read_json(os.path.join(os.path.dirname(map_path), "calibration_report.json"))
+        for w in check_bindings(root, label_type, best_dir, map_path, report):
+            print(f"WARNING: {w}")
+        return model_dir, None
     sums = read_sha256sums(dataset_dir)
     crops = {rel for rel, _ in list_files(dataset_dir) if _is_crop_path(rel)}
     if set(sums) != crops:
@@ -1336,11 +1504,15 @@ def build_parser():
                         "after re-checking it (dry run unless --yes)")
     p.add_argument("--prune-remote", action="store_true",
                    help="delete stray training files from existing model repos (dry run unless --yes)")
-    p.add_argument("--what", choices=("both", "model", "dataset"), default="both", help="which repo(s) to upload")
+    p.add_argument("--what", choices=("both", "model", "dataset"), default="both",
+                   help="which repo(s) to stage and upload; 'model' stages and pushes the model alone, for a machine "
+                        "without the crops (the model card's dataset content hash is then a TODO)")
     p.add_argument("--create-repo", action="store_true",
                    help="create missing repos (private), only under a --repo-prefix outside the projectsidewalk namespace")
     p.add_argument("--yes", action="store_true", help="really upload / delete")
     p.add_argument("--allow-todo", action="store_true", help="upload cards that still contain TODO: markers")
+    p.add_argument("--cities-api", default=CITIES_API, help="where the public city list is read from")
+    p.add_argument("--public-cities", help="file with one public city id per line, instead of --cities-api")
     return p
 
 
@@ -1365,13 +1537,17 @@ def main(argv=None):
         if args.push and args.push_staged:
             raise PublishError("use --push (restage, then upload) or --push-staged (upload what is staged), not both")
         if args.push_staged:
-            model_dir, dataset_dir = verify_staged(args.out, args.label_type, args.repo_prefix, args.calibration_map)
-            print(f"verified {model_dir} and {dataset_dir}")
+            model_dir, dataset_dir = verify_staged(args.out, args.label_type, args.repo_prefix, args.calibration_map,
+                                                   args.what)
+            print(f"verified {model_dir}" + (f" and {dataset_dir}" if dataset_dir else " (model only)"))
         else:
+            public = public_city_ids(args.cities_api, args.public_cities)
             model_dir, dataset_dir = stage(args.out, args.label_type, args.repo_prefix, args.link_mode,
-                                           args.calibration_map, args.dataset_license)
-            print(f"staged {model_dir} and {dataset_dir}")
+                                           args.calibration_map, args.dataset_license, args.what, public)
+            print(f"staged {model_dir}" + (f" and {dataset_dir}" if dataset_dir else " (model only)"))
         for name, folder in (("model", model_dir), ("dataset", dataset_dir)):
+            if folder is None:
+                continue
             n = count_todos(folder)
             print(f"  {name} card: {n} TODO markers" + (" to fill before --yes" if n else ""))
         if args.push or args.push_staged:
