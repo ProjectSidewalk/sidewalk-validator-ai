@@ -389,11 +389,11 @@ end:
 
 | Type | Agree clears the gate at confidence | map value at 0.999999 | test Agree verdicts | share at exactly 1.0 | share ≥ 0.999999 | test Disagree verdicts at 1.0 |
 |---|---:|---:|---:|---:|---:|---:|
-| CurbRamp | 0.99992 | 0.943 | 814 | 51% | 52% | 52% |
-| NoCurbRamp | 0.9999 | 0.961 | 1454 | 1% | 1% | 1% |
-| Obstacle | 1.0 | 0.788 | 1370 | 46% | 34% | 34% |
-| SurfaceProblem | 0.999997 | 0.923 | 1254 | 29% | 36% | 36% |
-| Crosswalk | 0.9925 | 0.966 | 258 | 0% | 2% | 2% |
+| CurbRamp | 0.99992 | 0.943 | 814 | 51% | 69% | 52% |
+| NoCurbRamp | 0.9999 | 0.961 | 1454 | 1% | 5% | 1% |
+| Obstacle | 1.0 | 0.788 | 1370 | 46% | 60% | 34% |
+| SurfaceProblem | 0.999997 | 0.923 | 1254 | 29% | 58% | 36% |
+| Crosswalk | 0.9925 | 0.966 | 258 | 0% | 13% | 2% |
 
 Obstacle Agree votes only when the softmax is exactly 1.0 in float32, which 46% of its test Agree verdicts are;
 one grid step below (0.999999) the map is 0.788, far under the gate. SurfaceProblem clears at 0.999997 with 29%
