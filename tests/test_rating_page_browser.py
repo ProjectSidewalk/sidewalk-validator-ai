@@ -69,7 +69,7 @@ def test_keys_need_a_rater_id_and_answers_persist_per_rater(browser, tmp_path):
     pg.click("h1")
     for k in "y1n0":
         pg.keyboard.press(k)
-    assert pg.text_content("#count").startswith("2 of 12")
+    assert pg.text_content("#count").startswith("2 of 12") and pg.text_content("#msg") == ""
     pg.reload()
     assert pg.input_value("#rater") == "r1" and pg.text_content("#count").startswith("2 of 12")
     pg.fill("#rater", "r2")
@@ -80,10 +80,11 @@ def test_keys_need_a_rater_id_and_answers_persist_per_rater(browser, tmp_path):
 
 def test_key_repeat_is_ignored(browser, tmp_path):
     pg, _ = open_page(browser, write_page(tmp_path))
-    for _ in range(4):
+    pg.keyboard.press("1")                                      # card 1 half done: one more answer completes it
+    for _ in range(4):                                          # without the guard: card 1 done, then cards 2, 3...
         pg.evaluate("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'y', repeat: true, bubbles: true}))")
-    pg.keyboard.press("y")
-    assert pg.eval_on_selector_all("input[value=yes]:checked", "els => els.length") == 1
+    assert pg.eval_on_selector_all("input[value=yes]:checked", "els => els.length") == 0
+    assert pg.text_content("#count").startswith("0 of 12")
 
 
 def test_keys_act_on_a_visible_card_after_scrolling_away_from_the_focused_one(browser, tmp_path):
@@ -117,7 +118,7 @@ def test_export_matches_the_sheet_format_and_import_reads_it_back(browser, tmp_p
     pg.press("#rater", "Tab")
     pg.set_input_files("#importfile", str(path))
     pg.wait_for_timeout(300)
-    assert "1 values outside the rubric" in pg.text_content("#msg")
+    assert "for 1 cards; 1 values outside the rubric" in pg.text_content("#msg")   # unknown id not counted
     assert pg.is_checked(f'input[name="{IDS[0]}__v"][value=yes]')
     assert not pg.is_checked(f'input[name="{IDS[0]}__w"][value=b]')
     assert pg.input_value('textarea[data-field="notes"] >> nth=0') == 'say "hi", then\nleave'
@@ -146,3 +147,17 @@ def test_gate_opens_only_on_a_complete_sheet(browser, tmp_path):
     pg.press("#rater", "Tab")
     assert pg.is_hidden("#cards")                               # the gate is per rater
     assert errors == []
+
+
+def test_auto_advance_keeps_the_caption_below_a_wrapped_bar(browser, tmp_path):
+    ctx = browser.new_context(viewport={"width": 390, "height": 700})
+    pg = ctx.new_page()
+    pg.goto(write_page(tmp_path))
+    pg.fill("#rater", "r1")
+    pg.press("#rater", "Tab")
+    pg.click("h1")
+    pg.keyboard.press("y")
+    pg.keyboard.press("1")                                      # advances to card 2
+    bar = pg.locator(".bar").bounding_box()
+    h2 = pg.locator(f"#h_{IDS[1]}").bounding_box()
+    assert h2["y"] >= bar["y"] + bar["height"]

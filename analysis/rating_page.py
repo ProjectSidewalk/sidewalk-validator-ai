@@ -93,6 +93,7 @@ function load() {
   for (const c of cards) paint(c);
   count();
   if (META.gate) gateCheck();
+  if (rater() && $("msg").textContent.startsWith("Enter your rater id")) say("");
 }
 function save() {
   store(slot(), JSON.stringify(answers));
@@ -150,7 +151,8 @@ function go(card) {
   if (!card) return;
   for (const c of cards) c.classList.toggle("active", c === card);
   card.focus({preventScroll: true});
-  card.scrollIntoView({block: "start"});
+  const bar = document.querySelector(".bar").offsetHeight;   // the sticky bar wraps on narrow screens
+  scrollTo(0, card.getBoundingClientRect().top + scrollY - bar - 8);
 }
 document.addEventListener("keydown", ev => {
   if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
