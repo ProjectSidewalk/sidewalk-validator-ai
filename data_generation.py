@@ -967,7 +967,7 @@ def load_depth_model(encoder, device):
 
 def create_perspective_crop(depth_model, pano_rgb, label_x_norm, label_y_norm, camera_pitch=None, camera_roll=None,
                             apply_tilt=True, beta=DEFAULT_TILT_BETA, device=None, fixed_crop_half_px=None):
-    """Render the label-centred view and cut a depth-sized crop around the centre.
+    """Render the label-centred view and cut a crop around the centre, sized by depth unless ``fixed_crop_half_px``.
 
     Returns ``(crop_rgb, info)`` with ``info`` = ``tilt_applied``, ``depth_m``, ``crop_half_px``, ``clipped``.
     Depth is inferred on the BGR view (``infer_image`` takes an OpenCV BGR image, as sidewalk-ai-api passes it); the
@@ -998,6 +998,13 @@ RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "p
 #: Settings recorded only when they are not the default, so earlier runs' records stay as they were. Unlike
 #: :data:`RESUME_SETTINGS` they are compared when present on EITHER side, so switching to or from one is caught.
 OPTIONAL_SETTINGS = ("fixed_crop_half_px",)
+#: Settings that only matter when crops are sized by depth. A fixed-size run does not record them (no depth model is
+#: loaded), and :func:`check_resume` does not compare them when both runs are fixed-size, so ``--depth-encoder``
+#: cannot block a fixed-size resume (also one recorded before they were left out).
+DEPTH_SETTINGS = ("depth_encoder", "depth_dataset")
+#: ``--fixed-crop-half-px`` must be below this: a half-width of ``VIEW_SIZE // 2`` already covers the whole view, so
+#: every larger value gives the same crop.
+MAX_FIXED_CROP_HALF_PX = VIEW_SIZE // 2
 
 
 def package_source(dist="sidewalk-panorama-tools"):
@@ -1023,11 +1030,14 @@ def check_resume(run_path, new_hash, settings, cities=None):
     """Compare a resumed run with the ``generation_run.json`` of the previous one.
 
     Returns ``(old_hash or None, changed_settings, city_change)``: the previous selection hash if it differs from
-    ``new_hash``; ``{name: (old, new)}`` for every :data:`RESUME_SETTINGS` entry that differs; and, when ``cities`` is
-    given and the recorded city list is a different set, ``{"added": [...], "removed": [...]}`` (else ``{}``). The
-    caller refuses to resume on any of them unless ``--force-reselect``. The city list is compared on its own because
-    the selection hash misses a city that contributes no selected label; like a selection change (and unlike a
-    settings change) it keeps the crops of labels still selected.
+    ``new_hash``; ``{name: (old, new)}`` for every setting that differs; and, when ``cities`` is given and the
+    recorded city list is a different set, ``{"added": [...], "removed": [...]}`` (else ``{}``). A
+    :data:`RESUME_SETTINGS` entry is compared only if the old record has it (a record older than the setting resumes),
+    except that :data:`DEPTH_SETTINGS` are skipped when both runs have ``fixed_crop_half_px``; an
+    :data:`OPTIONAL_SETTINGS` entry is compared whenever either side has it. The caller refuses to resume on any of
+    them unless ``--force-reselect``. The city list is compared on its own because the selection hash misses a city
+    that contributes no selected label; like a selection change (and unlike a settings change) it keeps the crops of
+    labels still selected.
 
     >>> check_resume("/nonexistent/generation_run.json", "abc", {"tilt_beta": 0.95})
     (None, {}, {})
@@ -1038,7 +1048,9 @@ def check_resume(run_path, new_hash, settings, cities=None):
         old = json.load(f)
     old_hash = old.get("selection_sha256")
     old_settings = old.get("settings", {})
-    changed = {k: (old_settings.get(k), settings.get(k)) for k in RESUME_SETTINGS
+    both_fixed = old_settings.get("fixed_crop_half_px") is not None and settings.get("fixed_crop_half_px") is not None
+    compared = [k for k in RESUME_SETTINGS if not (both_fixed and k in DEPTH_SETTINGS)]
+    changed = {k: (old_settings.get(k), settings.get(k)) for k in compared
                if k in old_settings and old_settings.get(k) != settings.get(k)}
     changed.update({k: (old_settings.get(k), settings.get(k)) for k in OPTIONAL_SETTINGS
                     if old_settings.get(k) != settings.get(k)})
@@ -1160,9 +1172,11 @@ def build_parser():
     p.add_argument('--depth-encoder', choices=['vitb', 'vitl'], default='vitb', help='the API serves vitb')
     p.add_argument('--tilt-beta', type=float, default=DEFAULT_TILT_BETA)
     p.add_argument('--fixed-crop-half-px', type=int, default=None,
-                   help='ablation only (issue #21): give every crop this half-width in view pixels instead of sizing it '
-                        'by depth, and skip depth inference. Serving sizes by depth, so models trained this way are '
-                        'not deployable as is')
+                   help='ablation only (issue #21): give every crop this half-width in view pixels instead of sizing '
+                        'it by depth, and skip depth inference (--depth-encoder is then ignored and not recorded). '
+                        f'Must be 1 to {MAX_FIXED_CROP_HALF_PX - 1}: the view is {VIEW_SIZE} px square, so a '
+                        f'half-width of {MAX_FIXED_CROP_HALF_PX} already crops the whole view. Serving sizes by depth, '
+                        'so publish_to_hf.py refuses models trained this way')
     p.add_argument('--seed', type=int, default=SEED)
     p.add_argument('--cities', default=None,
                    help='comma list of city_id[=subdomain], overriding the public deployments /v3/api/cities lists')
@@ -1198,8 +1212,9 @@ def main(argv=None):
     partial = (args.cities is not None and args.cities.strip(", ") != "") or args.limit is not None
     if partial:
         priors_path = os.path.splitext(priors_path)[0] + ".partial.json"
-    if args.fixed_crop_half_px is not None and args.fixed_crop_half_px <= 0:
-        sys.exit(f"--fixed-crop-half-px must be positive, got {args.fixed_crop_half_px}")
+    if args.fixed_crop_half_px is not None and not 0 < args.fixed_crop_half_px < MAX_FIXED_CROP_HALF_PX:
+        sys.exit(f"--fixed-crop-half-px must be positive and below {MAX_FIXED_CROP_HALF_PX} (half the {VIEW_SIZE} px "
+                 f"view, which would crop the whole view), got {args.fixed_crop_half_px}")
     experts = parse_experts(os.environ.get(EXPERTS_ENV))  # a malformed value fails before the downloads
     if not args.select_only and not args.pano_store:  # before the city listing, which may need the network
         build_parser().error("--pano-store is required unless --select-only")
@@ -1275,7 +1290,8 @@ def main(argv=None):
     settings = {"tilt_beta": args.tilt_beta, "depth_encoder": args.depth_encoder, "depth_dataset": DEPTH_DATASET,
                 "renderer": "torch" if device else "numpy", "include_ai_labels": args.include_ai_labels,
                 "package_source": package_source()}
-    if args.fixed_crop_half_px is not None:
+    if args.fixed_crop_half_px is not None:  # no depth model is loaded: recording an encoder would misstate the crops
+        settings = {k: v for k, v in settings.items() if k not in DEPTH_SETTINGS}
         settings["fixed_crop_half_px"] = args.fixed_crop_half_px
     previous, changed, city_change = check_resume(run_path, sel_hash, settings, list(cities))
     if (previous or changed or city_change) and not args.force_reselect:

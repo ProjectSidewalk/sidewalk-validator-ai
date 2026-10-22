@@ -74,6 +74,33 @@ LINEAGE = """| year | work | relation |
 # Small formatting helpers
 # ---------------------------------------------------------------------------------------------------------------------
 
+def fixed_crop_half_px(*runs):
+    """The ``fixed_crop_half_px`` any of ``runs`` (``generation_run.json`` / ``training_run.json`` dicts, top level
+    or under ``settings``) records, else None. Such crops come from data_generation.py's fixed-size ablation
+    (issue #21); the cards describe depth-sized crops, which is what serving makes.
+
+    >>> fixed_crop_half_px({"tilt_beta": 0.95}, {"settings": {"fixed_crop_half_px": 300}})
+    300
+    >>> fixed_crop_half_px({}, None) is None
+    True
+    """
+    for run in runs:
+        run = run or {}
+        for d in (run, run.get("settings") or {}):
+            if d.get("fixed_crop_half_px") is not None:
+                return d["fixed_crop_half_px"]
+    return None
+
+
+def require_depth_sized(*runs):
+    """Raise ``ValueError`` if any of ``runs`` records fixed-size crops: a card would describe the wrong crops."""
+    half = fixed_crop_half_px(*runs)
+    if half is not None:
+        raise ValueError(f"the crops were cut at a fixed half-width of {half} px (--fixed-crop-half-px, the issue #21 "
+                         f"ablation), but serving sizes each crop by depth ({dg.CROP_DEPTH_CONSTANT} / depth_m): "
+                         f"this is an ablation-only model or dataset, and it is not published")
+
+
 _BARE = re.compile(r"^[A-Za-z][A-Za-z0-9_./-]*$")
 _YAML_WORDS = {"true", "false", "yes", "no", "on", "off", "null", "none", "~"}
 
@@ -319,8 +346,13 @@ def model_card(ctx):
 
     Returns:
         The card as a string (front matter + Markdown).
+
+    Raises:
+        ValueError: if ``training_run`` or ``generation_run`` records ``fixed_crop_half_px`` (the card's crop
+            description would be wrong; see :func:`require_depth_sized`).
     """
     t = ctx["label_type"]
+    require_depth_sized(ctx.get("training_run"), ctx.get("generation_run"))
     overrides = ctx.get("overrides") or {}
     metrics = ctx.get("metrics") or {}
     trainer = ctx.get("trainer") or {}
@@ -489,8 +521,12 @@ def dataset_card(ctx, license_id=None):
         license_id: Hub license identifier for the dataset (``--dataset-license``, or ``dataset_license`` in the
             overrides). None writes a ``TODO:`` (the dataset license has not been decided; issue #2) and leaves
             ``license`` out of the metadata rather than guessing.
+
+    Raises:
+        ValueError: if ``generation_run`` records ``fixed_crop_half_px`` (see :func:`require_depth_sized`).
     """
     t = ctx["label_type"]
+    require_depth_sized(ctx.get("generation_run"))
     overrides = ctx.get("overrides") or {}
     license_id = license_id or overrides.get("dataset_license")
     split_seed = overrides.get("split_seed")

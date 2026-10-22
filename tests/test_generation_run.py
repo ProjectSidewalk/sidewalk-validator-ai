@@ -648,12 +648,22 @@ def test_setting_experts_is_a_selection_change(stubbed, monkeypatch, capsys):
         run_main(stubbed["tmp"])
 
 
-def test_fixed_crop_size_skips_depth_and_is_recorded(stubbed):
-    m = run_main(stubbed["tmp"], "--fixed-crop-half-px", "300")
+def test_fixed_crop_size_skips_depth_and_is_recorded(stubbed, monkeypatch):
+    def no_depth_model(encoder, device):
+        raise RuntimeError("the depth model was loaded for fixed-size crops")
+    monkeypatch.setattr(dg, "load_depth_model", no_depth_model)
+    m = run_main(stubbed["tmp"], "--fixed-crop-half-px", "300").set_index("label_uid")
     assert (m.status == "ok").all() and (m.crop_half_px == 300).all() and m.depth_m.isna().all()
+    assert (m.clipped == 0).all()
+    assert m.loc["toy-city:4", "author"] == "ai" and m.loc["toy-city:4", "tilt_applied"] == 0
+    assert (m.loc[m.author == "human", "tilt_applied"] == 1).all()  # tilt correction still applies
     assert stubbed["depth"].calls == 0
+    crop = np.asarray(Image.open(stubbed["tmp"] / "out" / "CurbRamp" / m.crop_path.iloc[0]).convert("RGB"))
+    assert np.allclose(crop[crop.shape[0] // 2, crop.shape[1] // 2], PANO_BGR[::-1], atol=3)  # saved as RGB
     run = json.loads((stubbed["tmp"] / "out" / "CurbRamp" / "generation_run.json").read_text())
-    assert run["settings"]["fixed_crop_half_px"] == 300
+    assert run["settings"] == {"tilt_beta": 0.95, "renderer": "numpy", "include_ai_labels": True,
+                               "package_source": dg.package_source(), "fixed_crop_half_px": 300}
+    assert run["fixed_crop_half_px"] == 300 and "depth_encoder" not in run  # no unused encoder in the record
 
 
 def test_resume_refuses_switching_between_depth_and_fixed_sizing(stubbed):
@@ -661,11 +671,36 @@ def test_resume_refuses_switching_between_depth_and_fixed_sizing(stubbed):
     run_main(tmp)
     with pytest.raises(SystemExit, match=r"fixed_crop_half_px None -> 300"):
         run_main(tmp, "--fixed-crop-half-px", "300")
-    run_main(tmp, "--fixed-crop-half-px", "300", "--force-reselect")
+    m = run_main(tmp, "--fixed-crop-half-px", "300", "--force-reselect")
+    assert (m.crop_half_px == 300).all() and m.depth_m.isna().all()  # every depth-sized row redone
     with pytest.raises(SystemExit, match=r"fixed_crop_half_px 300 -> None"):
         run_main(tmp)
+    calls = stubbed["depth"].calls
+    m = run_main(tmp, "--force-reselect")
+    assert (m.crop_half_px == int(6100 / DEPTH_AT_CENTRE)).all() and np.allclose(m.depth_m, DEPTH_AT_CENTRE)
+    assert stubbed["depth"].calls == calls + len(m)  # and every fixed-size row
 
 
-def test_fixed_crop_size_must_be_positive(stubbed):
-    with pytest.raises(SystemExit, match="must be positive"):
-        run_main(stubbed["tmp"], "--fixed-crop-half-px", "0")
+def test_depth_encoder_does_not_block_a_fixed_size_resume(stubbed):
+    tmp = stubbed["tmp"]
+    run_main(tmp, "--fixed-crop-half-px", "300")
+    run_path = tmp / "out" / "CurbRamp" / "generation_run.json"
+    run_main(tmp, "--fixed-crop-half-px", "300", "--depth-encoder", "vitl")  # unused, so no refusal
+    run = json.loads(run_path.read_text())  # a record that still names the encoder (written before it was dropped)
+    run["settings"].update(depth_encoder="vitb", depth_dataset="vkitti")
+    run_path.write_text(json.dumps(run))
+    m = run_main(tmp, "--fixed-crop-half-px", "300", "--depth-encoder", "vitl")
+    assert (m.crop_half_px == 300).all()
+    with pytest.raises(SystemExit, match=r"fixed_crop_half_px 300 -> 200"):
+        run_main(tmp, "--fixed-crop-half-px", "200")
+
+
+@pytest.mark.parametrize("half", ["0", "-5", str(dg.VIEW_SIZE // 2), "5000"])
+def test_fixed_crop_size_must_be_inside_the_view(stubbed, half):
+    with pytest.raises(SystemExit, match=f"must be positive and below {dg.VIEW_SIZE // 2}"):
+        run_main(stubbed["tmp"], "--fixed-crop-half-px", half)
+
+
+def test_largest_fixed_crop_size_is_accepted(stubbed):
+    m = run_main(stubbed["tmp"], "--fixed-crop-half-px", str(dg.MAX_FIXED_CROP_HALF_PX - 1), "--limit", "1")
+    assert m.status.tolist() == ["ok"] and m.clipped.tolist() == [0]

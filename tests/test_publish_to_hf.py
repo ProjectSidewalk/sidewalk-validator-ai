@@ -587,6 +587,49 @@ def test_push_staged_needs_a_staging_record(tmp_path):
         pub.verify_staged(root, T)
 
 
+def _mark_fixed_crop(root, record):
+    """Record ``fixed_crop_half_px`` the way data_generation.py (``generation_run.json``, top level and under
+    ``settings``) or fine_tune_classifier.py (``dinov2/training_run.json``, top level) writes it."""
+    path = os.path.join(root, T, record)
+    run = json.loads(_read(path))
+    run["fixed_crop_half_px"] = 300
+    if "settings" in run:
+        run["settings"]["fixed_crop_half_px"] = 300
+    with open(path, "w") as f:
+        json.dump(run, f)
+
+
+@pytest.mark.parametrize("record", ["generation_run.json", os.path.join("dinov2", "training_run.json")])
+def test_a_fixed_crop_ablation_is_never_staged(tmp_path, capsys, record):
+    root, *_ = make_root(tmp_path)
+    _mark_fixed_crop(root, record)
+    with pytest.raises(pub.PublishError, match="serving sizes each crop by depth.*ablation-only"):
+        pub.stage(root, T)
+    assert not os.path.exists(os.path.join(root, T, "publish"))  # refused before anything is staged
+    assert pub.main(["--label_type", T, "--out", root]) == pub.EXIT_ERROR
+    assert "--fixed-crop-half-px" in capsys.readouterr().err
+
+
+def test_push_staged_refuses_a_model_retrained_as_the_ablation(tmp_path):
+    root, *_ = make_root(tmp_path)
+    pub.stage(root, T)
+    _mark_fixed_crop(root, os.path.join("dinov2", "training_run.json"))
+    with pytest.raises(pub.PublishError, match="ablation-only"):
+        pub.verify_staged(root, T)
+
+
+def test_cards_refuse_fixed_crop_runs(staged):
+    ctx = {"label_type": T, "model_repo": "m", "dataset_repo": "d", "dataset": {}, "code_commit": None,
+           "overrides": {}, "training_run": {"fixed_crop_half_px": 300}}
+    with pytest.raises(ValueError, match="fixed half-width of 300 px"):
+        hf_cards.model_card(ctx)
+    with pytest.raises(ValueError, match="fixed half-width of 300 px"):
+        hf_cards.dataset_card({**ctx, "generation_run": {"settings": {"fixed_crop_half_px": 300}}})
+    model_run = json.loads(_read(os.path.join(staged["model"], "training_run.json")))
+    gen_run = json.loads(_read(os.path.join(staged["dataset"], "generation_run.json")))
+    assert hf_cards.fixed_crop_half_px(model_run, gen_run) is None  # the depth-sized fixture publishes
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Audit and listings (mocked API, no network)
 # ---------------------------------------------------------------------------------------------------------------------

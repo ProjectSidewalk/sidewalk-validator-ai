@@ -210,13 +210,22 @@ def load_split_frames(label_type, data_dir=".", target="hard", vote_weights=None
 
 def generation_settings(label_type, data_dir="."):
     """The tilt beta and depth encoder the dataset was built with, from data_generation.py's
-    ``<label_type>/generation_run.json`` (empty values if it is missing, e.g. an old imagefolder dataset)."""
+    ``<label_type>/generation_run.json`` (empty values if it is missing, e.g. an old imagefolder dataset), plus
+    ``fixed_crop_half_px`` when the crops were cut at a fixed size (the issue #21 ablation, which serving does not
+    implement; ``publish_to_hf.py`` refuses such a model).
+
+    >>> generation_settings("CurbRamp", "/nonexistent")
+    {'tilt_beta': None, 'depth_encoder': None}
+    """
     path = os.path.join(data_dir, label_type, "generation_run.json")
     run = {}
     if os.path.exists(path):
         with open(path) as f:
             run = json.load(f)
-    return {"tilt_beta": run.get("tilt_beta"), "depth_encoder": run.get("depth_encoder")}
+    settings = {"tilt_beta": run.get("tilt_beta"), "depth_encoder": run.get("depth_encoder")}
+    if run.get("fixed_crop_half_px") is not None:  # absent for depth-sized crops, so their record is unchanged
+        settings["fixed_crop_half_px"] = run["fixed_crop_half_px"]
+    return settings
 
 
 def default_num_workers():

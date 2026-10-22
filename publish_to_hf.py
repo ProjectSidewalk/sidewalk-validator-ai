@@ -27,7 +27,9 @@ script writes to), builds two folders under ``<out>/<label_type>/publish/``:
 **Binding checks** (refuse): every manifest row's ``label_type`` equals ``--label_type``; the calibration report
 names the same label type; ``split.csv`` still has the sha256 recorded in ``dinov2/run_key.json`` at training time;
 ``predictions.csv`` covers exactly the split's evaluation rows; the dataset's content hash differs from every other
-staged label type's. A train-size cross-check against ``trainer_state.json`` and out-of-order file times only warn.
+staged label type's; neither ``generation_run.json`` nor ``dinov2/training_run.json`` records ``fixed_crop_half_px``
+(the fixed-size ablation of issue #21, which serving does not reproduce: it sizes every crop by depth). A train-size
+cross-check against ``trainer_state.json`` and out-of-order file times only warn.
 
 **Card overrides.** Facts the pipeline does not record (per-type failure modes, the split seed, the dataset
 license, DOIs) go in ``<out>/<label_type>/card_overrides.json`` (keys in ``hf_cards.OVERRIDE_KEYS``); anything still
@@ -353,6 +355,20 @@ def check_not_duplicate(root, label_type, content_hash):
         if info and info.get("content_hash") == content_hash:
             raise PublishError(f"the staged {label_type} dataset has the same content hash as the staged {other} "
                                f"dataset ({content_hash[:12]}); one of them is a copy of the other")
+
+
+def check_depth_sized(root, label_type):
+    """Raise ``PublishError`` if ``<root>/<label_type>``'s ``generation_run.json`` or ``dinov2/training_run.json``
+    records ``fixed_crop_half_px``: those crops come from the fixed-size ablation (issue #21), serving sizes every
+    crop by depth, and the cards say so. Checked before anything is staged, and again before ``--push-staged``."""
+    base = os.path.join(root, label_type)
+    runs = [_read_json(os.path.join(base, "generation_run.json")),
+            _read_json(os.path.join(base, "dinov2", "training_run.json"))]
+    try:
+        hf_cards.require_depth_sized(*runs)
+    except ValueError as e:
+        raise PublishError(f"{base}: {e}. Retrain on depth-sized crops (data_generation.py without "
+                           f"--fixed-crop-half-px) to publish") from e
 
 
 def stage_dataset(root, label_type, out_dir, link_mode="hardlink"):
@@ -756,6 +772,7 @@ def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_pat
         model_dir, dataset_dir = stage("/gscratch/makelab/validator", "CurbRamp")
     """
     validate_prefix(prefix)
+    check_depth_sized(root, label_type)
     pub = os.path.join(root, label_type, "publish")
     dataset_dir, model_dir = os.path.join(pub, "dataset"), os.path.join(pub, "model")
     m_repo, d_repo = model_repo_id(label_type, prefix), dataset_repo_id(label_type, prefix)
@@ -807,8 +824,10 @@ def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None):
     Re-runs ``assert_publishable`` and ``check_bindings``; refuses if any staged file other than the two cards
     differs from ``staging.json``, if the crops differ from ``SHA256SUMS`` or its hash from the recorded content
     hash, if the dataset card does not state that hash, or if the best checkpoint's weights changed since staging
-    (a retrain). Returns ``(model_dir, dataset_dir)``.
+    (a retrain), or if the run is the fixed-size ablation (``check_depth_sized``). Returns
+    ``(model_dir, dataset_dir)``.
     """
+    check_depth_sized(root, label_type)
     pub = os.path.join(root, label_type, "publish")
     dataset_dir, model_dir = os.path.join(pub, "dataset"), os.path.join(pub, "model")
     record = _read_json(os.path.join(pub, STAGING_RECORD))
