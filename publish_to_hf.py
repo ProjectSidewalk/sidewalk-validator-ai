@@ -36,6 +36,26 @@ license, DOIs) go in ``<out>/<label_type>/card_overrides.json`` (keys in ``hf_ca
 unknown is a ``TODO:`` in the card. To hand-edit a card, stage, edit ``publish/*/README.md``, then ``--push-staged``,
 which uploads the staged folders without restaging after re-verifying them against ``publish/staging.json``.
 
+**Model only** (``--what model``, at staging and at ``--push-staged``). Stages ``model/`` alone, for a machine that
+has the checkpoints, ``split.csv``, ``predictions.csv`` and the map but not the crops (the crops live where
+``data_generation.py`` ran). The model card is built from ``split.csv`` as usual; its dataset content hash is a
+``TODO`` (the hash is the sha256 of ``SHA256SUMS``, which only a dataset staging computes), so the upload needs
+``--allow-todo`` or a card edit, and the dataset repo is published from the crop machine in its own run. The
+binding checks (split sha256, predictions coverage, label type) run exactly as for a full staging.
+
+**Private deployments.** Training may use deployments that are not public (``/v3/api/cities`` lists them with a
+``visibility`` other than ``public``). Nothing published may name them, and the API itself lists them, so no alias
+scheme can be safe: they are *removed*. A model staging drops them from every city list and source string ("and N
+non-public deployments"), pools their per-city rows in ``metrics.json`` into one ``non_public`` row (recomputed from
+``predictions.csv``), and the card names only public cities. A dataset staging is refused when ``split.csv`` holds a
+label from one (crop names would carry it) and otherwise drops them from ``manifest.csv``, ``deployment_priors.json``
+and ``generation_run.json`` the same way. Independently of that redaction, a final gate reads every staged text file
+and refuses on any case-insensitive substring hit for any non-public id, display name or hostname the API lists; the
+list used is recorded in ``staging.json`` and ``--push-staged`` runs the gate again with a fresh list. The lists come
+from the cities API (``--cities-api``) or from a JSON file ``{"public": [...], "non_public_terms": [...]}``
+(``--public-cities``; a plain file with one public id per line is accepted but then only ids seen in the metadata are
+gated), and staging refuses to run without one.
+
 **Audit** (``--audit``; public API, no token, no local files): lists the five model and five dataset repos and
 reports stray training files and datasets whose crops overlap (by path or sha256) by more than 5%.
 
@@ -115,7 +135,262 @@ OVERLAP_LIMIT = 0.05
 """Share of staged crops (by sha256) allowed to appear in another label type's dataset repo before upload stops."""
 
 STAGING_RECORD = "staging.json"
-"""Written to ``<T>/publish/`` (not uploaded): hashes of what was staged, for ``--push-staged``."""
+"""Written to ``<T>/publish/`` (not uploaded): hashes of what was staged and the city lists used, for
+``--push-staged``."""
+CITIES_API = "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities"
+"""Lists every deployment with its ``visibility``; only ``public`` ones may be named in anything published."""
+MIN_TERM_LEN = 4
+"""Non-public display names shorter than this are not gated as substrings (too many false hits); ids always are."""
+TEXT_SUFFIXES = (".md", ".json", ".jsonld", ".csv", ".txt", ".yaml", ".yml", ".html")
+"""Staged files the survivor gate reads; everything else staged is weights or images."""
+
+
+def city_lists(cities_api=CITIES_API, public_cities_file=None):
+    """The city lists staging works from: ``{"public": set, "non_public_terms": set, "source": str, "read_at": str}``.
+
+    From the API: ``public`` is every ``city_id`` whose ``visibility`` is ``"public"``; ``non_public_terms`` is, for
+    every other entry, its id, ``city_name_short``, ``city_name_formatted`` and the hostname of its ``url``. From
+    ``public_cities_file``: a JSON object with ``public`` and optional ``non_public_terms`` lists, or a plain file with
+    one public id per line (``#`` comments), which gives no non-public terms. Raises ``PublishError`` rather than
+    guess when neither can be read.
+    """
+    import datetime
+    read_at = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    if public_cities_file:
+        try:
+            with open(public_cities_file) as f:
+                text = f.read()
+        except OSError as e:
+            raise PublishError(f"cannot read --public-cities {public_cities_file}: {e}") from e
+        public, terms = set(), set()
+        if text.lstrip().startswith("{"):
+            try:
+                d = json.loads(text)
+                public = {str(c) for c in d["public"]}
+                terms = {str(t) for t in d.get("non_public_terms", [])}
+            except (ValueError, KeyError, TypeError) as e:
+                raise PublishError(f"--public-cities {public_cities_file}: expected {{\"public\": [...], "
+                                   f"\"non_public_terms\": [...]}} ({e})") from e
+        else:
+            public = {line.split("#")[0].strip() for line in text.splitlines()}
+        public.discard("")
+        terms.discard("")
+        if not public:
+            raise PublishError(f"--public-cities {public_cities_file} lists no public city ids")
+        return {"public": public, "non_public_terms": terms, "source": os.path.abspath(public_cities_file),
+                "read_at": read_at, "mode": "json" if text.lstrip().startswith("{") else "plain"}
+    try:
+        import requests
+        r = requests.get(cities_api, timeout=60)
+        r.raise_for_status()
+        cities = r.json()["cities"]
+        public = {str(c["city_id"]) for c in cities if c.get("visibility") == "public"}
+        terms = set()
+        public_countries = {str(c.get("country_id")) for c in cities if c.get("visibility") == "public"}
+        for c in cities:
+            if c.get("visibility") == "public":
+                continue
+            terms.add(str(c["city_id"]))
+            if c.get("country_id") and str(c["country_id"]) not in public_countries:
+                terms.add(str(c["country_id"]))        # a country only non-public deployments are in names them
+            for key in ("city_name_short", "city_name_formatted"):
+                if c.get(key):
+                    terms.add(str(c[key]))
+            if c.get("url"):
+                host = re.sub(r"^https?://", "", str(c["url"])).split("/")[0]
+                if host:
+                    terms.add(host)
+    except Exception as e:  # network, JSON or shape: all mean "do not guess"
+        raise PublishError(f"could not read the city list from {cities_api} ({e}); pass --public-cities <file>") from e
+    if not public:
+        raise PublishError(f"{cities_api} lists no public cities; refusing to guess")
+    return {"public": public, "non_public_terms": terms, "source": cities_api, "read_at": read_at, "mode": "api"}
+
+
+def public_city_ids(cities_api=CITIES_API, public_cities_file=None):
+    """Just the public ids (see ``city_lists``)."""
+    return city_lists(cities_api, public_cities_file)["public"]
+
+
+def scrub_city_list(items, public):
+    """``(kept, n_dropped)``: the items of ``items`` that are public ids, in order, and how many were dropped."""
+    kept = [c for c in items if str(c) in public]
+    return kept, len(items) - len(kept)
+
+
+def scrub_source_text(text, private_ids):
+    """Remove every id in ``private_ids`` from a comma-separated list inside ``text`` and say how many went.
+
+    Example: ``scrub_source_text("rawLabels of a, zurich, b, human votes only", {"zurich"})`` ->
+    ``"rawLabels of a, b, human votes only (and 1 non-public deployment)"``.
+    """
+    if not isinstance(text, str) or not private_ids:
+        return text
+    n = 0
+    for city in sorted(private_ids, key=len, reverse=True):
+        pat = rf"(?<![\w-]){re.escape(city)}(?![\w-])"
+        if not re.search(pat, text):
+            continue
+        n += len(re.findall(pat, text))
+        text = re.sub(rf",?\s*{pat}", "", text, count=0)      # ", zurich" or "zurich"
+    text = re.sub(r"\s+,", ",", text).replace(",,", ",").strip()
+    text = re.sub(r"\bof\s*,", "of", text)
+    if n:
+        text += f" (and {n} non-public deployment{'s' if n != 1 else ''})"
+    return text
+
+
+def redact_metadata(obj, public):
+    """One structured object (a prior entry, ``prior_source``, ``generation_run``, a dataset summary) with every
+    private deployment removed: a ``cities`` list keeps public ids and gains ``n_non_public_cities``;
+    ``heldout_cities`` likewise with ``n_non_public_heldout``; a ``cities`` dict (summary) and ``city_source`` dict
+    drop private keys; ``source`` text is scrubbed. Returns a new object; None stays None."""
+    if not isinstance(obj, dict):
+        return obj
+    out = dict(obj)
+    private_seen = set()
+    for key, counter in (("cities", "n_non_public_cities"), ("heldout_cities", "n_non_public_heldout")):
+        v = out.get(key)
+        if isinstance(v, list):
+            kept, dropped = scrub_city_list(v, public)
+            private_seen.update(str(c) for c in v if str(c) not in public)
+            out[key] = kept
+            if dropped:
+                out[counter] = dropped
+        elif isinstance(v, dict):
+            private_seen.update(k for k in v if str(k) not in public)
+            out[key] = {k: n for k, n in v.items() if str(k) in public}
+            if len(v) != len(out[key]):
+                out[counter] = len(v) - len(out[key])
+    cs = out.get("city_source")
+    if isinstance(cs, dict):   # {"from": "--cities"} in the pipeline's files; a per-city map in older ones
+        out["city_source"] = {k: n for k, n in cs.items() if str(k) not in _known_private | private_seen}
+    _known_private.update(private_seen)
+    if isinstance(out.get("source"), str):
+        out["source"] = scrub_source_text(out["source"], _known_private)
+    return out
+
+
+_known_private = set()
+"""Private ids the current staging knows: the API's non-public ids plus every id seen in a structured slot that is
+not public. ``redact_metadata`` strips these from free text too. Reset and seeded by ``stage()``."""
+
+
+def _id_like(terms):
+    """The terms that look like city ids (``kaohsiung-tw``), as opposed to display names or hostnames."""
+    return {t for t in terms if re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", t) and "." not in t}
+
+
+def pool_private_city_metrics(metrics, root, label_type, public):
+    """``metrics.json`` with every private deployment's per-city row removed and one pooled ``non_public`` row
+    per split in its place, recomputed from ``predictions.csv`` + ``split.csv`` (the same ``slice_metrics`` the
+    public rows use). Without predictions the pooled row carries counts only."""
+    if not isinstance(metrics, dict) or not metrics.get("per_city"):
+        return metrics
+    import evaluate
+    base = os.path.join(root, label_type)
+    preds = None
+    try:
+        preds = pd.read_csv(os.path.join(base, "predictions.csv"))
+        split = pd.read_csv(os.path.join(base, "split.csv"), usecols=["label_uid", "city"])
+        preds = preds.merge(split, on="label_uid", how="left", validate="one_to_one")
+    except (OSError, ValueError, KeyError):
+        preds = None
+    out = dict(metrics)
+    out["per_city"] = {}
+    for split_name, block in metrics["per_city"].items():
+        cities = block.get("cities") or {}
+        small = block.get("below_min_n") or {}
+        private = [c for c in list(cities) + list(small) if str(c) not in public]
+        _known_private.update(map(str, private))
+        nb = dict(block)
+        nb["cities"] = {c: v for c, v in cities.items() if str(c) in public}
+        nb["below_min_n"] = {c: n for c, n in small.items() if str(c) in public}
+        if private:
+            n_rows = sum(int(cities[c]["n"]) for c in private if c in cities) + sum(int(small[c]) for c in private
+                                                                                   if c in small)
+            if len(private) == 1:        # one deployment would be published unnamed but alone: withhold it
+                pooled = {"n_cities": 1, "note": "metrics withheld: a single non-public deployment"}
+            else:
+                pooled = {"n_cities": len(private), "n": n_rows}
+                if preds is not None:
+                    rows = preds[(preds["split"] == split_name) & preds["city"].astype(str).isin(private)]
+                    if len(rows):
+                        pooled = {"n_cities": len(private), **evaluate.slice_metrics(rows)}
+            nb["non_public"] = pooled
+        out["per_city"][split_name] = nb
+    return out
+
+
+def fold_text(text):
+    """Case- and accent-insensitive form for the survivor gate: NFKD, combining marks stripped, lower-cased, so
+    ``Zürich`` / ``ZÜRICH`` / ``Zurich`` all become ``zurich``. Transliterations that are not decompositions
+    (``ß`` -> ``ss``) are not folded; the API's own spellings are the terms, so a hand-written variant that differs
+    from them is the residual risk."""
+    import unicodedata
+    return "".join(ch for ch in unicodedata.normalize("NFKD", str(text)) if not unicodedata.combining(ch)).lower()
+
+
+def check_no_private_names(folder, terms, min_term_len=MIN_TERM_LEN):
+    """The survivor gate: read every file under ``folder`` that decodes as UTF-8 (whatever its suffix: cards, JSON,
+    CSV, ``SHA256SUMS``, ``.gitattributes``), plus every file *name*, and refuse on any accent- and
+    case-insensitive substring hit for any term in ``terms`` (ids, display names, hostnames and
+    non-public-only countries). Independent of the redaction: it knows nothing about aliases or slots, only
+    bytes. Terms shorter than ``min_term_len`` that are not ids (contain a space or capitals) are skipped.
+    Binary files (weights, images) are not read; PNG text chunks are not inspected, and no PNG is staged.
+
+    Raises:
+        PublishError: naming each offending file and term.
+    """
+    gated = sorted({t for t in terms if t and (len(t) >= min_term_len or t == t.lower().replace(" ", ""))})
+    folded = [(t, fold_text(t)) for t in gated]
+    hits = []
+    for rel, _ in list_files(folder):
+        texts = [("name", fold_text(rel))]
+        with open(os.path.join(folder, rel), "rb") as f:
+            raw = f.read()
+        try:
+            texts.append(("content", fold_text(raw.decode("utf-8"))))
+        except UnicodeDecodeError:
+            pass
+        for where, text in texts:
+            for t, ft in folded:
+                if ft in text:
+                    hits.append((rel if where == "content" else f"{rel} (file name)", t))
+    if hits:
+        raise PublishError(f"{folder}: {len(hits)} private-deployment name(s) survive in the staged files: "
+                           + "; ".join(f"{rel}: {t!r}" for rel, t in hits[:20]))
+    return len(gated)
+
+
+def record_city_lists(lists):
+    """What ``staging.json`` keeps about the lists a staging used: the public ids themselves, and only a count and
+    hash of the non-public terms (never the names)."""
+    terms = sorted(lists["non_public_terms"])
+    return {"source": lists["source"], "read_at": lists["read_at"], "mode": lists.get("mode", "api"),
+            "public": sorted(lists["public"]),
+            "n_non_public_terms": len(terms),
+            "non_public_terms_sha256": hashlib.sha256("\n".join(terms).encode()).hexdigest()}
+
+
+def gate_terms(lists, *objs):
+    """Everything the survivor gate looks for: the API's non-public terms plus every id seen in structured slots
+    of ``objs`` that is not public (covers a plain ``--public-cities`` file, which lists no terms)."""
+    terms = set(lists["non_public_terms"]) | set(_known_private)
+    for o in objs:
+        if not isinstance(o, dict):
+            continue
+        for key in ("cities", "heldout_cities"):
+            v = o.get(key)
+            if isinstance(v, (list, dict)):
+                terms.update(str(c) for c in v if str(c) not in lists["public"])
+        for block in (o.get("per_city") or {}).values():
+            for key in ("cities", "below_min_n"):
+                terms.update(str(c) for c in (block.get(key) or {}) if str(c) not in lists["public"])
+        src = o.get("prior_source")
+        if isinstance(src, dict):
+            terms.update(str(c) for c in (src.get("cities") or []) if str(c) not in lists["public"])
+    return terms
 
 EXIT_ERROR, EXIT_REMOTE = 1, 3
 
@@ -371,11 +646,9 @@ def check_depth_sized(root, label_type):
                            f"--fixed-crop-half-px) to publish") from e
 
 
-def stage_dataset(root, label_type, out_dir, link_mode="hardlink"):
-    """Stage ``<root>/<label_type>``'s crops and metadata into ``out_dir``; return ``(summary, prior, generation_run)``.
-
-    ``out_dir`` is emptied first. Crops are placed by ``split.csv`` only; a row whose crop is missing stops staging.
-    """
+def read_dataset_context(root, label_type):
+    """``(split, manifest, prior, generation_run)`` from ``<root>/<label_type>`` after the label-type, label-uid, split
+    and class checks; no crop is touched. ``prior`` is this type's ``deployment_priors.json`` entry or None."""
     base = os.path.join(root, label_type)
     split_path, manifest_path = os.path.join(base, "split.csv"), os.path.join(base, "manifest.csv")
     for p in (split_path, manifest_path):
@@ -392,6 +665,37 @@ def stage_dataset(root, label_type, out_dir, link_mode="hardlink"):
     bad_class = sorted(set(split["label_class"].astype(str)) - set(CLASSES))
     if bad_class:
         raise PublishError(f"{split_path} has unknown label_class values {bad_class}")
+    priors = _read_json(os.path.join(root, "deployment_priors.json")) or {}
+    prior = priors.get(label_type)
+    if prior is None:
+        print(f"WARNING: no {label_type} entry in {os.path.join(root, 'deployment_priors.json')}; the card says TODO")
+    gen = _read_json(os.path.join(base, "generation_run.json")) or {}
+    return split, manifest, prior, gen
+
+
+def stage_dataset(root, label_type, out_dir, link_mode="hardlink", public=None):
+    """Stage ``<root>/<label_type>``'s crops and metadata into ``out_dir``; return ``(summary, prior, generation_run)``.
+
+    ``out_dir`` is emptied first. Crops are placed by ``split.csv`` only; a row whose crop is missing stops staging.
+    With ``public`` (a set of city ids), manifest rows from other deployments are dropped and the prior and
+    generation run are redacted (``redact_metadata``) before they are written; the split itself must already be
+    public-only (``stage`` refuses otherwise).
+    """
+    base = os.path.join(root, label_type)
+    split_path = os.path.join(base, "split.csv")
+    split, manifest, prior, gen = read_dataset_context(root, label_type)
+    if public is not None:
+        private_rows = sorted(set(split["city"].astype(str)) - set(public))
+        if private_rows:
+            raise PublishError(f"{split_path} holds labels from {len(private_rows)} deployment(s) that are not "
+                               f"public; a dataset repo would name them in crop names and the manifest. Stage the "
+                               f"model alone (--what model) or build the dataset from public deployments only")
+        n_before = len(manifest)
+        manifest = manifest[manifest["city"].astype(str).isin(public)]
+        if len(manifest) != n_before:
+            print(f"manifest.csv: {n_before - len(manifest)} rows from non-public deployments dropped")
+        prior = redact_metadata(prior, public)
+        gen = redact_metadata(gen, public)
 
     _reset_dir(out_dir, root)
     rel_paths, missing = [], []
@@ -414,13 +718,8 @@ def stage_dataset(root, label_type, out_dir, link_mode="hardlink"):
     manifest.drop(columns=[c for c in PRIVATE_COLUMNS if c in manifest.columns]).to_csv(
         os.path.join(out_dir, "manifest.csv"), index=False)
 
-    priors = _read_json(os.path.join(root, "deployment_priors.json")) or {}
-    prior = priors.get(label_type)
-    if prior is None:
-        print(f"WARNING: no {label_type} entry in {os.path.join(root, 'deployment_priors.json')}; the card says TODO")
-    else:
+    if prior is not None:
         _write_json(os.path.join(out_dir, "deployment_priors.json"), {label_type: prior})
-    gen = _read_json(os.path.join(base, "generation_run.json")) or {}
     if gen:
         _write_json(os.path.join(out_dir, "generation_run.json"),
                     {k: v for k, v in gen.items() if k not in PRIVATE_RUN_KEYS})
@@ -746,6 +1045,8 @@ def _staged_record(model_dir, dataset_dir):
     """sha256 of every staged file except the crops (covered by SHA256SUMS) and the two cards (hand edits allowed)."""
     record = {}
     for name, folder in (("model", model_dir), ("dataset", dataset_dir)):
+        if folder is None:
+            continue
         for rel, _ in list_files(folder):
             if rel == "README.md" or (name == "dataset" and _is_crop_path(rel)):
                 continue
@@ -761,16 +1062,26 @@ def _is_crop_path(rel, remote=False):
     return len(parts) == 3 and parts[0] in splits and parts[1] in CLASSES and parts[2].endswith(".webp")
 
 
-def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_path=None, dataset_license=None):
+def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_path=None, dataset_license=None,
+          what="both", public=None, lists=None):
     """Stage ``<root>/<label_type>/publish/{dataset,model}/`` with cards. Returns ``(model_dir, dataset_dir)``.
 
-    Also writes ``publish/staging.json`` (hashes of everything staged except crops and cards), which
-    ``--push-staged`` uses to prove nothing but the cards changed since.
+    Also writes ``publish/staging.json`` (hashes of everything staged except crops and cards, and ``what``), which
+    ``--push-staged`` uses to prove nothing but the cards changed since. With ``what="model"`` the dataset folder is
+    not staged (nor touched if present): the model card still reads ``split.csv`` for its split sizes and cities,
+    but its content hash is a ``TODO`` and ``dataset_dir`` is returned as None.
 
     Example::
 
         model_dir, dataset_dir = stage("/gscratch/makelab/validator", "CurbRamp")
+        model_dir, _ = stage("/gscratch/makelab/validator", "CurbRamp", what="model")   # no crops needed
+
+    ``lists`` is ``city_lists()``'s result (read from the API when None); ``public`` overrides its public set.
+    Private deployments are removed from a model staging and refuse a dataset staging whose split holds one.
     """
+    stage_what = "both" if what == "dataset" else what     # --what dataset uploads the dataset of a full staging
+    if stage_what not in ("both", "model"):
+        raise PublishError(f"stage: --what must be both, model or dataset, not {what!r}")
     validate_prefix(prefix)
     check_depth_sized(root, label_type)
     pub = os.path.join(root, label_type, "publish")
@@ -780,8 +1091,38 @@ def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_pat
     overrides = load_overrides(root, label_type)
     dataset_license = dataset_license or overrides.get("dataset_license")
 
-    summary, prior, gen = stage_dataset(root, label_type, dataset_dir, link_mode)
+    if lists is None:
+        lists = city_lists()
+    if public is not None:                                   # tests and callers that bring their own set
+        lists = dict(lists, public=set(public))
+    public = set(lists["public"])
+    _known_private.clear()
+    _known_private.update(_id_like(lists["non_public_terms"]) - public)
+    if stage_what == "model":
+        split, _, prior, gen = read_dataset_context(root, label_type)
+        summary = dataset_summary(split, None)
+        dataset_dir = None
+    else:
+        summary, prior, gen = stage_dataset(root, label_type, dataset_dir, link_mode, public)
     model = stage_model(root, label_type, model_dir, map_path, link_mode)
+
+    # Redaction: private deployments are removed (never aliased) from every structured slot, and the per-city
+    # metrics of private deployments are pooled into one row. The survivor gate below is a separate check.
+    if model.get("metrics") is not None:
+        model["metrics"] = pool_private_city_metrics(model["metrics"], root, label_type, public)
+        _write_json(os.path.join(model_dir, "metrics.json"), model["metrics"])
+    rep = model.get("calibration_report")
+    if rep is not None and isinstance(rep.get("prior_source"), dict):
+        rep = dict(rep, prior_source=redact_metadata(rep["prior_source"], public))
+        model["calibration_report"] = rep
+        _write_json(os.path.join(model_dir, "calibration_report.json"), rep)
+    prior = redact_metadata(prior, public)
+    gen = redact_metadata(gen, public)
+    summary = redact_metadata(summary, public)
+    if summary.get("n_non_public_cities") or summary.get("n_non_public_heldout"):
+        print(f"{summary.get('n_non_public_cities', 0)} non-public deployment(s) dropped from the card's city "
+              f"counts, {summary.get('n_non_public_heldout', 0)} from its held-out list")
+
     ok, msg = check_train_size(model["trainer"], summary["split_counts"].get("train", 0))
     if ok:
         print(f"train-size cross-check passed: {msg}")
@@ -791,41 +1132,48 @@ def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_pat
         print(f"WARNING: train-size cross-check failed: {msg}. Check that this dataset is the one the model was "
               f"trained on (the binding checks passed, so the split file is the training one).")
 
-    split_csv = os.path.join(dataset_dir, "split.csv")
-    croissant = build_croissant(summary, label_type, d_repo, sha256_file(split_csv),
-                                list(pd.read_csv(split_csv, nrows=0).columns), dataset_license,
-                                date_published=gen.get("started"))
-    croissant_path = os.path.join(dataset_dir, "croissant.json")
-    _write_json(croissant_path, croissant)
-    print(validate_croissant(croissant_path)[1])
+    if dataset_dir is not None:
+        split_csv = os.path.join(dataset_dir, "split.csv")
+        croissant = build_croissant(summary, label_type, d_repo, sha256_file(split_csv),
+                                    list(pd.read_csv(split_csv, nrows=0).columns), dataset_license,
+                                    date_published=gen.get("started"))
+        croissant_path = os.path.join(dataset_dir, "croissant.json")
+        _write_json(croissant_path, croissant)
+        print(validate_croissant(croissant_path)[1])
 
-    ds_ctx = {"label_type": label_type, "dataset_repo": d_repo, "model_repo": m_repo, "dataset": summary,
-              "prior": prior, "generation_run": gen, "code_commit": commit, "overrides": overrides}
-    with open(os.path.join(dataset_dir, "README.md"), "w") as f:
-        f.write(hf_cards.dataset_card(ds_ctx, dataset_license))
+        ds_ctx = {"label_type": label_type, "dataset_repo": d_repo, "model_repo": m_repo, "dataset": summary,
+                  "prior": prior, "generation_run": gen, "code_commit": commit, "overrides": overrides}
+        with open(os.path.join(dataset_dir, "README.md"), "w") as f:
+            f.write(hf_cards.dataset_card(ds_ctx, dataset_license))
     m_ctx = {"label_type": label_type, "model_repo": m_repo, "dataset_repo": d_repo, "dataset": summary,
              "generation_run": gen, "code_commit": commit, "overrides": overrides, **{k: model[k] for k in (
                  "trainer", "metrics", "api_map", "calibration_report", "training_run")}}
     with open(os.path.join(model_dir, "README.md"), "w") as f:
         f.write(hf_cards.model_card(m_ctx))
 
+    terms = gate_terms(lists, model.get("metrics"), model.get("calibration_report"), prior, gen, summary)
     for folder in (model_dir, dataset_dir):
-        assert_publishable(folder)
+        if folder is not None:
+            assert_publishable(folder)
+            n = check_no_private_names(folder, terms)
+    print(f"survivor gate: no non-public deployment name in the staged files ({n} terms checked)")
     _write_json(os.path.join(pub, STAGING_RECORD),
-                {"label_type": label_type, "prefix": prefix, "content_hash": summary["content_hash"],
-                 "best_checkpoint": os.path.basename(model["best_dir"]),
-                 "files": _staged_record(model_dir, dataset_dir)})
+                {"label_type": label_type, "prefix": prefix, "what": stage_what,
+                 "content_hash": summary["content_hash"], "best_checkpoint": os.path.basename(model["best_dir"]),
+                 "cities": record_city_lists(lists), "files": _staged_record(model_dir, dataset_dir)})
     return model_dir, dataset_dir
 
 
-def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None):
+def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None, what="both", lists=None,
+                  accept_city_list_change=False):
     """Check an existing ``publish/`` before ``--push-staged`` uploads it without restaging.
 
     Re-runs ``assert_publishable`` and ``check_bindings``; refuses if any staged file other than the two cards
     differs from ``staging.json``, if the crops differ from ``SHA256SUMS`` or its hash from the recorded content
     hash, if the dataset card does not state that hash, or if the best checkpoint's weights changed since staging
     (a retrain), or if the run is the fixed-size ablation (``check_depth_sized``). Returns
-    ``(model_dir, dataset_dir)``.
+    ``(model_dir, dataset_dir)``; ``dataset_dir`` is None for a model-only staging, which can only be pushed with
+    ``--what model`` (a full staging can be pushed with any ``--what``).
     """
     check_depth_sized(root, label_type)
     pub = os.path.join(root, label_type, "publish")
@@ -836,13 +1184,54 @@ def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None):
     if record.get("label_type") != label_type or record.get("prefix") != prefix:
         raise PublishError(f"{pub} was staged for {record.get('label_type')} under {record.get('prefix')!r}, not "
                            f"{label_type} under {prefix!r}; restage")
+    if not record.get("cities"):
+        raise PublishError(f"{pub} was staged before the private-deployment gate existed (no city lists in "
+                           f"{STAGING_RECORD}); restage")
+    if lists is None:
+        lists = city_lists()
+    if lists.get("mode") == "plain":
+        raise PublishError("--push-staged needs the non-public terms: use the cities API or a JSON --public-cities "
+                           "file with non_public_terms, not a plain id-per-line file (it gates nothing)")
+    staged_what = record.get("what", "both")
+    if staged_what == "model":
+        if what != "model":
+            raise PublishError(f"{pub} holds a model-only staging; pass --what model, or restage with the crops "
+                               f"present to publish the dataset")
+        dataset_dir = None
+    terms = set(lists["non_public_terms"])
     for folder in (model_dir, dataset_dir):
-        assert_publishable(folder)
+        if folder is not None:
+            assert_publishable(folder)
+            check_no_private_names(folder, terms)
+    fresh = record_city_lists(lists)
+    rec_c = record["cities"]
+    if fresh["n_non_public_terms"] < rec_c.get("n_non_public_terms", 0) or \
+            fresh["non_public_terms_sha256"] != rec_c.get("non_public_terms_sha256"):
+        if not accept_city_list_change:
+            raise PublishError(f"the non-public term list changed since staging ({rec_c.get('n_non_public_terms')} "
+                               f"terms then, {fresh['n_non_public_terms']} now); restage, or pass "
+                               f"--accept-city-list-change after checking why")
+        print(f"WARNING: non-public term list changed since staging ({rec_c.get('n_non_public_terms')} -> "
+              f"{fresh['n_non_public_terms']} terms); accepted")
+    if set(record["cities"]["public"]) - set(lists["public"]):
+        raise PublishError(f"{pub} was staged with a public city list that names "
+                           f"{len(set(record['cities']['public']) - set(lists['public']))} deployment(s) the current "
+                           f"list does not; restage")
     current = _staged_record(model_dir, dataset_dir)
     changed = sorted(k for k in set(current) | set(record["files"]) if current.get(k) != record["files"].get(k))
     if changed:
         raise PublishError(f"staged files changed since staging (only the README.md cards may be edited): "
                            f"{', '.join(changed[:10])}; restage")
+    if dataset_dir is None:
+        best_dir, _ = resolve_checkpoints(root, label_type)
+        if os.path.basename(best_dir) != record["best_checkpoint"] or \
+                sha256_file(os.path.join(best_dir, "model.safetensors")) != record["files"]["model/model.safetensors"]:
+            raise PublishError("the best checkpoint changed since staging (a retrain?); restage")
+        map_path = map_path or default_map_path(root, label_type)
+        report = _read_json(os.path.join(os.path.dirname(map_path), "calibration_report.json"))
+        for w in check_bindings(root, label_type, best_dir, map_path, report):
+            print(f"WARNING: {w}")
+        return model_dir, None
     sums = read_sha256sums(dataset_dir)
     crops = {rel for rel, _ in list_files(dataset_dir) if _is_crop_path(rel)}
     if set(sums) != crops:
@@ -1264,14 +1653,16 @@ def push(label_type, model_dir, dataset_dir, prefix=DEFAULT_PREFIX, what="both",
             raise RemoteError(
                 f"the upload to {plan['repo_id']} failed: {e}. Each repo's commit is atomic, so nothing of it "
                 f"landed. Already committed in this run: {', '.join(committed) or 'none'}. Retry the rest with: "
-                + retry_command(label_type, dataset_dir, prefix, remaining, allow_todo, create_repo)) from e
+                + retry_command(label_type, model_dir or dataset_dir, prefix, remaining, allow_todo,
+                                create_repo)) from e
         committed.append(plan["repo_id"])
     return plans
 
 
-def retry_command(label_type, dataset_dir, prefix, remaining, allow_todo=False, create_repo=False):
-    """The ``--push-staged`` command that uploads only the repos in ``remaining`` (plans not yet committed)."""
-    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(dataset_dir))))
+def retry_command(label_type, staged_dir, prefix, remaining, allow_todo=False, create_repo=False):
+    """The ``--push-staged`` command that uploads only the repos in ``remaining`` (plans not yet committed).
+    ``staged_dir`` is either staged folder (``<root>/<T>/publish/{model,dataset}``)."""
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(staged_dir))))
     what = "both" if len(remaining) > 1 else remaining[0]["repo_type"]
     parts = ["python publish_to_hf.py", f"--label_type {label_type}", f"--out {root}", "--push-staged",
              f"--what {what}", "--yes"]
@@ -1336,11 +1727,20 @@ def build_parser():
                         "after re-checking it (dry run unless --yes)")
     p.add_argument("--prune-remote", action="store_true",
                    help="delete stray training files from existing model repos (dry run unless --yes)")
-    p.add_argument("--what", choices=("both", "model", "dataset"), default="both", help="which repo(s) to upload")
+    p.add_argument("--what", choices=("both", "model", "dataset"), default="both",
+                   help="which repo(s) to upload; 'model' also stages the model alone, for a machine without the "
+                        "crops (the model card's dataset content hash is then a TODO); 'dataset' stages both and "
+                        "uploads the dataset")
     p.add_argument("--create-repo", action="store_true",
                    help="create missing repos (private), only under a --repo-prefix outside the projectsidewalk namespace")
     p.add_argument("--yes", action="store_true", help="really upload / delete")
     p.add_argument("--allow-todo", action="store_true", help="upload cards that still contain TODO: markers")
+    p.add_argument("--cities-api", default=CITIES_API, help="where the public city list is read from")
+    p.add_argument("--accept-city-list-change", action="store_true",
+                   help="--push-staged: go on although the non-public term list differs from the one recorded at "
+                        "staging (after checking why)")
+    p.add_argument("--public-cities", help="instead of --cities-api: a JSON file {\"public\": [...], "
+                                           "\"non_public_terms\": [...]} or one public city id per line")
     return p
 
 
@@ -1365,13 +1765,18 @@ def main(argv=None):
         if args.push and args.push_staged:
             raise PublishError("use --push (restage, then upload) or --push-staged (upload what is staged), not both")
         if args.push_staged:
-            model_dir, dataset_dir = verify_staged(args.out, args.label_type, args.repo_prefix, args.calibration_map)
-            print(f"verified {model_dir} and {dataset_dir}")
+            lists = city_lists(args.cities_api, args.public_cities)
+            model_dir, dataset_dir = verify_staged(args.out, args.label_type, args.repo_prefix, args.calibration_map,
+                                                   args.what, lists, args.accept_city_list_change)
+            print(f"verified {model_dir}" + (f" and {dataset_dir}" if dataset_dir else " (model only)"))
         else:
+            lists = city_lists(args.cities_api, args.public_cities)
             model_dir, dataset_dir = stage(args.out, args.label_type, args.repo_prefix, args.link_mode,
-                                           args.calibration_map, args.dataset_license)
-            print(f"staged {model_dir} and {dataset_dir}")
+                                           args.calibration_map, args.dataset_license, args.what, lists=lists)
+            print(f"staged {model_dir}" + (f" and {dataset_dir}" if dataset_dir else " (model only)"))
         for name, folder in (("model", model_dir), ("dataset", dataset_dir)):
+            if folder is None:
+                continue
             n = count_todos(folder)
             print(f"  {name} card: {n} TODO markers" + (" to fill before --yes" if n else ""))
         if args.push or args.push_staged:
