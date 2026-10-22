@@ -375,8 +375,10 @@ def test_packet_writes_two_zips_with_pass2_material_only_in_the_second(tmp_path)
     vb.main(args)
     z1 = zipfile.ZipFile(out_dir / vb.PACKET_ZIPS[1]).namelist()
     z2 = zipfile.ZipFile(out_dir / vb.PACKET_ZIPS[2]).namelist()
-    assert {n for n in z1 if not n.endswith(".jpg") and not n.endswith("/")} == {"pass1_sheet.csv", "RUBRIC.md"}
-    assert {n for n in z2 if not n.endswith(".jpg") and not n.endswith("/")} == {"pass2_sheet.csv", "RUBRIC.md"}
+    assert {n for n in z1 if not n.endswith(".jpg") and not n.endswith("/")} == {"pass1_sheet.csv", "RUBRIC.md",
+                                                                                 "rate.html"}
+    assert {n for n in z2 if not n.endswith(".jpg") and not n.endswith("/")} == {"pass2_sheet.csv", "RUBRIC.md",
+                                                                                 "rate.html"}
     jpg1 = sorted(n.split("/")[-1] for n in z1 if n.endswith(".jpg"))
     jpg2 = sorted(n.split("/")[-1] for n in z2 if n.endswith(".jpg"))
     assert jpg1 == jpg2 and len(jpg1) == 8                      # same items and ids in both
@@ -390,6 +392,83 @@ def test_packet_writes_two_zips_with_pass2_material_only_in_the_second(tmp_path)
     vb.main(args)                                               # same seed and items: the key is unchanged
     assert vb.sha256_of(str(key)) == digest
     assert (tmp_path / "doc" / "packet_key.sha256").read_text().split()[0] == digest
+
+
+def _built_packet(tmp_path):
+    """A packet built by ``packet`` on 8 synthetic items; returns (args used, key path, explanations)."""
+    from PIL import Image
+
+    sample_dir, out_dir = tmp_path / "sample", tmp_path / "out"
+    ex = _explanations(8)
+    rows = []
+    for uid, t in zip(ex.label_uid, ex.label_type):
+        crop = f"correct/{uid.replace(':', '_')}.webp"
+        (sample_dir / "crops" / t / "correct").mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (64, 64), (90, 90, 90)).save(sample_dir / "crops" / t / crop)
+        rows.append({"label_uid": uid, "label_id": uid.split(":")[1], "label_type": t, "crop_path": crop})
+    pd.DataFrame(rows).to_csv(sample_dir / "sample.csv", index=False)
+    out_dir.mkdir()
+    ex.assign(reason_source="generated", n_words=3, latency_s=1.0).to_csv(out_dir / "explanations.csv", index=False)
+    key = tmp_path / "private" / "packet_key.csv"
+    vb.main(["packet", "--sample-dir", str(sample_dir), "--out-dir", str(out_dir), "--packet-dir",
+             str(tmp_path / "packet"), "--key", str(key), "--seed", "5", "--doc-dir", str(tmp_path / "doc")])
+    return out_dir, key, ex
+
+
+def _meta(page):
+    import json
+    import re
+
+    return json.loads(re.search(r'<script id="meta" type="application/json">(.*?)</script>', page, re.S)
+                      .group(1).replace("<\\/", "</"))
+
+
+def test_rating_pages_keep_pass1_blind_and_match_the_sheets(tmp_path):
+    import zipfile
+
+    out_dir, key, ex = _built_packet(tmp_path)
+    p1 = (tmp_path / "packet" / "pass1" / "rate.html").read_text()
+    p2 = (tmp_path / "packet" / "pass2" / "rate.html").read_text()
+    for reason in ex.vlm_reason:
+        assert reason not in p1
+    assert "vlm_answer" not in p1 and "items_annotated" not in p1 and "Model" not in p1
+    assert 'id="gatefile"' not in p1 and 'id="gatefile"' in p2
+    sheet1 = pd.read_csv(tmp_path / "packet" / "pass1" / "pass1_sheet.csv", dtype=str, keep_default_na=False)
+    sheet2 = pd.read_csv(tmp_path / "packet" / "pass2" / "pass2_sheet.csv", dtype=str, keep_default_na=False)
+    m1, m2 = _meta(p1), _meta(p2)
+    assert m1["columns"] == vb.PASS1_COLUMNS and m2["columns"] == vb.PASS2_COLUMNS
+    assert [r["packet_id"] for r in m1["rows"]] == list(sheet1.packet_id) == list(sheet2.packet_id)
+    assert [r["vlm_reason"] for r in m2["rows"]] == list(sheet2.vlm_reason)
+    assert m2["gate"]["column"] == "my_verdict" and m1["gate"] is None
+    for i, pid in enumerate(sheet1.packet_id):                  # every card points at a crop that exists
+        assert f'src="items_bare/{i + 1:03d}_{pid}.jpg"' in p1
+        assert (tmp_path / "packet" / "pass1" / "items_bare" / f"{i + 1:03d}_{pid}.jpg").exists()
+    assert "rate.html" in zipfile.ZipFile(out_dir / vb.PACKET_ZIPS[1]).namelist()
+    assert "rate.html" in zipfile.ZipFile(out_dir / vb.PACKET_ZIPS[2]).namelist()
+
+
+def test_gallery_rebuilds_pages_on_an_old_packet_and_refuses_a_wrong_key(tmp_path):
+    out_dir, key, _ = _built_packet(tmp_path)
+    for n in (1, 2):
+        (tmp_path / "packet" / f"pass{n}" / "rate.html").unlink()
+    digest = vb.sha256_of(str(key))
+    args = ["gallery", "--out-dir", str(out_dir), "--packet-dir", str(tmp_path / "packet"), "--key", str(key),
+            "--key-sha256", str(tmp_path / "doc" / "packet_key.sha256"), "--doc-dir", str(tmp_path / "doc")]
+    vb.main(args)
+    assert (tmp_path / "packet" / "pass2" / "rate.html").exists()
+    assert vb.sha256_of(str(key)) == digest
+    import json
+    prov = json.load(open(tmp_path / "doc" / "provenance.json"))
+    assert "rate.html" in prov["packet"]["zips"][vb.PACKET_ZIPS[1]]["files"]
+    other = tmp_path / "other.sha256"
+    other.write_text("0" * 64 + "  packet_key.csv\n")
+    with pytest.raises(SystemExit):
+        vb.main(args[:-4] + ["--key-sha256", str(other), "--doc-dir", ""])
+    sheet = tmp_path / "packet" / "pass1" / "pass1_sheet.csv"
+    rows = sheet.read_text().splitlines()
+    sheet.write_text("\n".join([rows[0], rows[2], rows[1]] + rows[3:]) + "\n")   # swap two items
+    with pytest.raises(SystemExit):
+        vb.main(args)
 
 
 def test_unblind_and_agreement_round_trip():
