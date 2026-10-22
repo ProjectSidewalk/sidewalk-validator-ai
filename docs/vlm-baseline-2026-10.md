@@ -377,8 +377,17 @@ packet:
 - The category, crowd class, scores, deployment and label id are only in the key.
 - The key and the seed are kept outside the repo, in `~/Data/sidewalk-validator-ai-vlm-2026-10/private-key-do-not-share/`.
 
-Both zips are in `~/Data/sidewalk-validator-ai-vlm-2026-10/`. Each holds 100 images, one sheet and one
-`RUBRIC.md`.
+Both zips are in `~/Data/sidewalk-validator-ai-vlm-2026-10/`. Each holds 100 images, one sheet, one `RUBRIC.md`
+and `rate.html`.
+
+**Rating page.** `rate.html` (`analysis/rating_page.py`, modelled on RampNet's GT-check galleries) is an alternative
+to editing the sheet by hand. It shows one card per item, with radio answers, a notes box and keyboard shortcuts.
+Answers are saved in the browser per rater id. **Export** writes the sheet in the blank sheet's exact columns and
+order, so `agreement` reads it unchanged. The pass-1 page holds only the bare crops and label types. The pass-2
+page keeps its cards hidden until a pass-1 sheet with a verdict for every item is loaded, which guards against
+opening pass 2 first by accident; it is not a security boundary, since the annotated crops sit beside it. The
+pages were added after the packet was built, with `vlm_baseline.py gallery`, which leaves the key, ids, sheets and
+crops unchanged.
 
 - Key sha256: `12fe5dad393b82cb46dc80d58962d2783d0b3e82de902b36f63504fbdb47831e` (`vlm-baseline-2026-10/packet_key.sha256`).
 - Earlier builds were never rated, and their keys are in `~/Data/sidewalk-validator-ai-vlm-2026-10/superseded/`:
@@ -470,7 +479,7 @@ second opinion has value and the volume is smaller.
 
 ## Next steps
 
-1. **Rate the packet.** Give the rater `vlm-explanations-packet-pass1.zip`. Hand out
+1. **Rate the packet.** Give the rater `vlm-explanations-packet-pass1.zip` (open `rate.html` in it). Hand out
    `vlm-explanations-packet-pass2.zip` only once the filled pass-1 sheet is back. Then run `agreement` on the two
    sheets. A second rater on the same packet gives inter-rater agreement.
 2. **Rerun against the round-3 retrained checkpoints** once they exist. That replaces the production column with a
