@@ -1,0 +1,4 @@
+model,answer_mass_median
+gemma4-12b,0.9838
+qwen3vl-2b,0.9789
+qwen3vl-8b,0.9861
