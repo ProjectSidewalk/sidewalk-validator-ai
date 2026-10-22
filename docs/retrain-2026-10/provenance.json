@@ -1,0 +1,86 @@
+{
+ "generated": "2026-10-22",
+ "run_dir": "round3",
+ "priors": "deployment_priors.json",
+ "public_cities_source": "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities",
+ "public_cities": [
+  "amsterdam",
+  "auckland",
+  "bayonne-fr",
+  "blackhawk-hills-il",
+  "burnaby",
+  "cdmx",
+  "chandigarh-india",
+  "chicago-il",
+  "cliffside-park-nj",
+  "clifton-nj",
+  "columbus-oh",
+  "cuenca",
+  "danville-il",
+  "detroit-mi",
+  "fort-wayne-in",
+  "gainesville-fl",
+  "hackensack-nj",
+  "houston-tx",
+  "knox-oh",
+  "la-ca",
+  "la-piedad",
+  "laurens-ia",
+  "madison-wi",
+  "maywood-nj",
+  "mendota-il",
+  "newberg-or",
+  "newport-ky",
+  "niagara-falls-ny",
+  "oradell-nj",
+  "paterson-nj",
+  "pittsburgh-pa",
+  "rancagua-chile",
+  "richmond-va",
+  "santiago-chile",
+  "sao-paulo-brazil",
+  "seattle-wa",
+  "spgg",
+  "st-louis-mo",
+  "teaneck-nj",
+  "tucson-az",
+  "vancouver-wa",
+  "virden-il",
+  "walla-walla-wa",
+  "waltham-ma",
+  "washington-dc",
+  "west-chester-pa"
+ ],
+ "n_boot": 2000,
+ "seed": 20261022,
+ "min_city_n": 50,
+ "min_minority": 8,
+ "within_min_n": 10,
+ "alt_prior": {
+  "Crosswalk": {
+   "correct": 0.96,
+   "incorrect": 0.04
+  },
+  "CurbRamp": {
+   "correct": 0.94,
+   "incorrect": 0.06
+  },
+  "NoCurbRamp": {
+   "correct": 0.8,
+   "incorrect": 0.2
+  },
+  "Obstacle": {
+   "correct": 0.78,
+   "incorrect": 0.22
+  },
+  "SurfaceProblem": {
+   "correct": 0.85,
+   "incorrect": 0.15
+  }
+ },
+ "heldout_display_names": [
+  "private city A (outside the US)",
+  "private city B (US)",
+  "tucson-az"
+ ]
+}
