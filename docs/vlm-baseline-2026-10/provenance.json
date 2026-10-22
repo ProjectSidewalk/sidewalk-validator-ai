@@ -5,7 +5,7 @@
   "stratified_by_class": true
  },
  "date": "2026-10-21",
- "git_commit": "2d466617cb14f1d6c75480098b7e8e882b8629d8",
+ "git_commit": "95f5d8e151a902fff77a1c75f595b441082cb147",
  "git_dirty": false,
  "greedy": {
   "gemma4-12b.csv": {
