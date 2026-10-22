@@ -272,6 +272,11 @@ Each model is `Dinov2ForImageClassification` with `id2label = {0: correct, 1: in
 `preprocessor_config.json` (resize 256, centre-crop 224, ImageNet normalisation). The per-model
 `confidence_precision_map.json` is copied into `sidewalk-ai-api/accuracy_mappings/`.
 
+The retrain on the panorama-grouped split with tilt-corrected crops (round 3, October 2026) is reported in
+[`docs/retrain-2026-10.md`](docs/retrain-2026-10.md): test and held-out-city results per type, the comparison with
+these production models, the calibration maps at the 0.92 gate and a per-type ship recommendation. The table
+above still describes the models in production.
+
 These are still the manual 2025-08-16 uploads: every model repo also holds `optimizer.pt`, `scheduler.pt`,
 `rng_state.pth` and `training_args.bin`, and none of the ten repos has a real card (`python publish_to_hf.py --audit`
 lists both problems). [`publish_to_hf.py`](#publishing-to-hugging-face) now builds the repos with cards, but nothing is
