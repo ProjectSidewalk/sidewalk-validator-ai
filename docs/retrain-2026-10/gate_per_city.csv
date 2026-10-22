@@ -1,0 +1,137 @@
+label_type,prior,split,city,verdict,n,gated_n,coverage_w,precision_w,precision_raw
+CurbRamp,file,test,chicago-il,Agree,136,120,0.9122843247216089,0.9900423537012933,0.9416666666666667
+CurbRamp,file,test,chicago-il,Disagree,84,0,0.0,,
+CurbRamp,file,test,other (private deployments),Agree,195,168,0.8983832333822467,0.9960555810026487,0.9761904761904762
+CurbRamp,file,test,other (private deployments),Disagree,145,0,0.0,,
+CurbRamp,file,test,seattle-wa,Agree,149,135,0.9417929369845643,0.9950668504726862,0.9703703703703703
+CurbRamp,file,test,seattle-wa,Disagree,218,0,0.0,,
+CurbRamp,file,test,spgg,Disagree,91,0,0.0,,
+CurbRamp,file,test_heldout,private city A (outside the US),Agree,71,17,0.26514365992138406,0.9757983911614296,0.8823529411764706
+CurbRamp,file,test_heldout,private city A (outside the US),Disagree,213,0,0.0,,
+CurbRamp,file,test_heldout,private city B (US),Agree,176,157,0.9013581079901635,0.9913940564142737,0.9554140127388535
+CurbRamp,file,test_heldout,private city B (US),Disagree,26,0,0.0,,
+CurbRamp,file,test_heldout,tucson-az,Agree,28,24,0.8571428571428571,1.0,1.0
+CurbRamp,file,test_heldout,tucson-az,Disagree,32,0,0.0,,
+CurbRamp,approx,test,chicago-il,Agree,136,120,0.9150520431402812,0.994355744428766,0.9416666666666667
+CurbRamp,approx,test,chicago-il,Disagree,84,0,0.0,,
+CurbRamp,approx,test,other (private deployments),Agree,195,168,0.9017114513096849,0.997770066556687,0.9761904761904762
+CurbRamp,approx,test,other (private deployments),Disagree,145,0,0.0,,
+CurbRamp,approx,test,seattle-wa,Agree,149,135,0.9450288896811034,0.997209894908414,0.9703703703703703
+CurbRamp,approx,test,seattle-wa,Disagree,218,0,0.0,,
+CurbRamp,approx,test,spgg,Disagree,91,0,0.0,,
+CurbRamp,approx,test_heldout,private city A (outside the US),Agree,71,17,0.26834942537916995,0.9861958624795356,0.8823529411764706
+CurbRamp,approx,test_heldout,private city A (outside the US),Disagree,213,0,0.0,,
+CurbRamp,approx,test_heldout,private city B (US),Agree,176,157,0.902334870264282,0.9951248082868873,0.9554140127388535
+CurbRamp,approx,test_heldout,private city B (US),Disagree,26,0,0.0,,
+CurbRamp,approx,test_heldout,tucson-az,Agree,28,24,0.8571428571428573,1.0,1.0
+CurbRamp,approx,test_heldout,tucson-az,Disagree,32,0,0.0,,
+NoCurbRamp,file,test,amsterdam,Disagree,62,0,0.0,,
+NoCurbRamp,file,test,cdmx,Agree,54,32,0.6014550274463151,0.9292636273718514,0.90625
+NoCurbRamp,file,test,chicago-il,Agree,66,14,0.22721684127281158,0.9464295225966404,0.9285714285714286
+NoCurbRamp,file,test,chicago-il,Disagree,435,0,0.0,,
+NoCurbRamp,file,test,mendota-il,Disagree,155,0,0.0,,
+NoCurbRamp,file,test,other (private deployments),Agree,193,123,0.6546552912502603,0.969763304017985,0.959349593495935
+NoCurbRamp,file,test,other (private deployments),Disagree,109,0,0.0,,
+NoCurbRamp,file,test,seattle-wa,Agree,761,294,0.3917152746722235,0.9798323034980368,0.9727891156462585
+NoCurbRamp,file,test,seattle-wa,Disagree,203,0,0.0,,
+NoCurbRamp,file,test,spgg,Agree,99,50,0.5010621801078443,0.9398622785589259,0.92
+NoCurbRamp,file,test_heldout,private city A (outside the US),Agree,39,3,0.07250149062532275,0.0,0.0
+NoCurbRamp,file,test_heldout,private city A (outside the US),Disagree,86,0,0.0,,
+NoCurbRamp,file,test_heldout,private city B (US),Agree,407,150,0.39375131282559594,0.9416412083120795,0.9
+NoCurbRamp,file,test_heldout,private city B (US),Disagree,165,0,0.0,,
+NoCurbRamp,file,test_heldout,tucson-az,Agree,17,5,0.3190130182804345,1.0,1.0
+NoCurbRamp,file,test_heldout,tucson-az,Disagree,29,0,0.0,,
+NoCurbRamp,approx,test,amsterdam,Disagree,62,0,0.0,,
+NoCurbRamp,approx,test,cdmx,Agree,54,36,0.6856946354883084,0.962888665997994,0.8888888888888888
+NoCurbRamp,approx,test,chicago-il,Agree,66,23,0.4065080135988344,0.9557945041816011,0.8695652173913043
+NoCurbRamp,approx,test,chicago-il,Disagree,435,0,0.0,,
+NoCurbRamp,approx,test,mendota-il,Disagree,155,0,0.0,,
+NoCurbRamp,approx,test,other (private deployments),Agree,193,143,0.7845977341173096,0.9797112045329921,0.9370629370629371
+NoCurbRamp,approx,test,other (private deployments),Disagree,109,0,0.0,,
+NoCurbRamp,approx,test,seattle-wa,Agree,761,556,0.7535325457493629,0.9886258837995697,0.9640287769784173
+NoCurbRamp,approx,test,seattle-wa,Disagree,203,0,0.0,,
+NoCurbRamp,approx,test,spgg,Agree,99,69,0.6932402965547316,0.9813789632611977,0.9420289855072463
+NoCurbRamp,approx,test_heldout,private city A (outside the US),Agree,39,7,0.1433378964179786,0.0,0.0
+NoCurbRamp,approx,test_heldout,private city A (outside the US),Disagree,86,0,0.0,,
+NoCurbRamp,approx,test_heldout,private city B (US),Agree,407,247,0.6618556781732464,0.9628470979931816,0.8582995951417004
+NoCurbRamp,approx,test_heldout,private city B (US),Disagree,165,0,0.0,,
+NoCurbRamp,approx,test_heldout,tucson-az,Agree,17,6,0.40813072937425277,1.0,1.0
+NoCurbRamp,approx,test_heldout,tucson-az,Disagree,29,0,0.0,,
+Obstacle,file,test,chicago-il,Agree,259,125,0.5034783252467094,0.981738916091551,0.976
+Obstacle,file,test,chicago-il,Disagree,178,0,0.0,,
+Obstacle,file,test,other (private deployments),Agree,437,204,0.47840733203314206,0.9775915094914576,0.9705882352941176
+Obstacle,file,test,other (private deployments),Disagree,194,0,0.0,,
+Obstacle,file,test,seattle-wa,Agree,387,189,0.5036615274528169,0.9346153349474169,0.9153439153439153
+Obstacle,file,test,seattle-wa,Disagree,295,0,0.0,,
+Obstacle,file,test_heldout,private city A (outside the US),Agree,350,21,0.09653469708025153,0.7375198524702206,0.42857142857142855
+Obstacle,file,test_heldout,private city A (outside the US),Disagree,643,0,0.0,,
+Obstacle,file,test_heldout,private city B (US),Agree,460,269,0.6305606698061661,0.988747669956224,0.9591078066914498
+Obstacle,file,test_heldout,private city B (US),Disagree,168,0,0.0,,
+Obstacle,file,test_heldout,tucson-az,Agree,109,35,0.36492778982234614,0.8909962745079727,0.6857142857142857
+Obstacle,file,test_heldout,tucson-az,Disagree,82,0,0.0,,
+Obstacle,approx,test,chicago-il,Agree,259,125,0.5397705564387026,0.9906694893275987,0.976
+Obstacle,approx,test,chicago-il,Disagree,178,0,0.0,,
+Obstacle,approx,test,other (private deployments),Agree,437,204,0.4976982942615179,0.9885266656116476,0.9705882352941176
+Obstacle,approx,test,other (private deployments),Disagree,194,0,0.0,,
+Obstacle,approx,test,seattle-wa,Agree,387,189,0.5305284234727491,0.965788576441038,0.9153439153439153
+Obstacle,approx,test,seattle-wa,Disagree,295,0,0.0,,
+Obstacle,approx,test_heldout,private city A (outside the US),Agree,350,21,0.12319178687434149,0.8473098319273086,0.42857142857142855
+Obstacle,approx,test_heldout,private city A (outside the US),Disagree,643,0,0.0,,
+Obstacle,approx,test_heldout,private city B (US),Agree,460,269,0.6398946373354155,0.994270619361478,0.9591078066914498
+Obstacle,approx,test_heldout,private city B (US),Disagree,168,0,0.0,,
+Obstacle,approx,test_heldout,tucson-az,Agree,109,35,0.3776511524835067,0.9416676864097133,0.6857142857142857
+Obstacle,approx,test_heldout,tucson-az,Disagree,82,0,0.0,,
+SurfaceProblem,file,test,amsterdam,Disagree,84,0,0.0,,
+SurfaceProblem,file,test,chicago-il,Agree,187,133,0.7292247613090427,0.9541424349270018,0.924812030075188
+SurfaceProblem,file,test,chicago-il,Disagree,127,0,0.0,,
+SurfaceProblem,file,test,columbus-oh,Agree,60,32,0.5496690071455033,0.9620838227987428,0.9375
+SurfaceProblem,file,test,newberg-or,Agree,52,36,0.7219957086774778,0.9663946452239969,0.9444444444444444
+SurfaceProblem,file,test,oradell-nj,Agree,76,62,0.8192240126114736,0.9904019164034917,0.9838709677419355
+SurfaceProblem,file,test,other (private deployments),Agree,235,137,0.6079583771820088,0.9416407372282628,0.9051094890510949
+SurfaceProblem,file,test,other (private deployments),Disagree,349,0,0.0,,
+SurfaceProblem,file,test,pittsburgh-pa,Agree,57,45,0.7864096525426973,0.9732401036118338,0.9555555555555556
+SurfaceProblem,file,test,seattle-wa,Agree,247,128,0.5444449481860648,0.9065807283437841,0.8515625
+SurfaceProblem,file,test,seattle-wa,Disagree,311,0,0.0,,
+SurfaceProblem,file,test,spgg,Agree,59,42,0.7370420522647861,0.9565042864879368,0.9285714285714286
+SurfaceProblem,file,test,st-louis-mo,Agree,62,58,0.9350556120391152,0.9897352804764443,0.9827586206896551
+SurfaceProblem,file,test_heldout,private city A (outside the US),Agree,64,5,0.08181309690519176,0.8036534585129286,0.6
+SurfaceProblem,file,test_heldout,private city A (outside the US),Disagree,292,0,0.0,,
+SurfaceProblem,file,test_heldout,private city B (US),Agree,190,119,0.6700325138552887,0.9708884808228695,0.9243697478991597
+SurfaceProblem,file,test_heldout,private city B (US),Disagree,72,0,0.0,,
+SurfaceProblem,file,test_heldout,tucson-az,Agree,123,54,0.47375415472679494,0.616139366346012,0.37037037037037035
+SurfaceProblem,file,test_heldout,tucson-az,Disagree,106,0,0.0,,
+SurfaceProblem,approx,test,amsterdam,Disagree,84,0,0.0,,
+SurfaceProblem,approx,test,chicago-il,Agree,187,133,0.7473657908110013,0.9822814845745933,0.924812030075188
+SurfaceProblem,approx,test,chicago-il,Disagree,127,0,0.0,,
+SurfaceProblem,approx,test,columbus-oh,Agree,60,32,0.5661323171933511,0.9854243306912996,0.9375
+SurfaceProblem,approx,test,newberg-or,Agree,52,36,0.7524582066282818,0.9871170237863229,0.9444444444444444
+SurfaceProblem,approx,test,oradell-nj,Agree,76,62,0.8223911196746287,0.996375985711689,0.9838709677419355
+SurfaceProblem,approx,test,other (private deployments),Agree,235,137,0.634471915273251,0.977268297572575,0.9051094890510949
+SurfaceProblem,approx,test,other (private deployments),Disagree,349,0,0.0,,
+SurfaceProblem,approx,test,pittsburgh-pa,Agree,57,45,0.7835643759936535,0.9897859190436499,0.9555555555555556
+SurfaceProblem,approx,test,seattle-wa,Agree,247,128,0.5741162917981597,0.9627656171742497,0.8515625
+SurfaceProblem,approx,test,seattle-wa,Disagree,311,0,0.0,,
+SurfaceProblem,approx,test,spgg,Agree,59,42,0.7628467763305407,0.9832195486913653,0.9285714285714286
+SurfaceProblem,approx,test,st-louis-mo,Agree,62,58,0.9346638697893972,0.996122654993471,0.9827586206896551
+SurfaceProblem,approx,test_heldout,private city A (outside the US),Agree,64,5,0.08400079873976612,0.9160063391442157,0.6
+SurfaceProblem,approx,test_heldout,private city A (outside the US),Disagree,292,0,0.0,,
+SurfaceProblem,approx,test_heldout,private city B (US),Agree,190,119,0.6886135194040881,0.9888716939754726,0.9243697478991597
+SurfaceProblem,approx,test_heldout,private city B (US),Disagree,72,0,0.0,,
+SurfaceProblem,approx,test_heldout,tucson-az,Agree,123,54,0.5053679623002515,0.8104886769964246,0.37037037037037035
+SurfaceProblem,approx,test_heldout,tucson-az,Disagree,106,0,0.0,,
+Crosswalk,file,test,other (private deployments),Agree,160,160,1.0,0.9957425659802566,0.95
+Crosswalk,file,test,other (private deployments),Disagree,11,0,0.0,,
+Crosswalk,file,test_heldout,private city A (outside the US),Agree,32,26,0.8208417520576419,0.9924935550862082,0.8846153846153846
+Crosswalk,file,test_heldout,private city A (outside the US),Disagree,13,0,0.0,,
+Crosswalk,file,test_heldout,private city B (US),Agree,33,27,0.8914217067822625,0.9977747830283173,0.9629629629629629
+Crosswalk,file,test_heldout,private city B (US),Disagree,44,0,0.0,,
+Crosswalk,file,test_heldout,tucson-az,Agree,3,3,1.0,1.0,1.0
+Crosswalk,file,test_heldout,tucson-az,Disagree,13,0,0.0,,
+Crosswalk,approx,test,other (private deployments),Agree,160,160,1.0,0.9972717733473242,0.95
+Crosswalk,approx,test,other (private deployments),Disagree,11,1,0.03420105234007201,1.0,1.0
+Crosswalk,approx,test_heldout,private city A (outside the US),Agree,32,26,0.8210519912401656,0.995184114988516,0.8846153846153846
+Crosswalk,approx,test_heldout,private city A (outside the US),Disagree,13,2,0.05134281200631912,1.0,1.0
+Crosswalk,approx,test_heldout,private city B (US),Agree,33,27,0.8932599671026868,0.9985750926189798,0.9629629629629629
+Crosswalk,approx,test_heldout,private city B (US),Disagree,44,27,0.38596877061798995,1.0,1.0
+Crosswalk,approx,test_heldout,tucson-az,Agree,3,3,1.0,1.0,1.0
+Crosswalk,approx,test_heldout,tucson-az,Disagree,13,3,0.31865899085675586,0.06907545164718386,0.6666666666666666
