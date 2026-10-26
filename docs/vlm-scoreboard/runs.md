@@ -131,3 +131,16 @@ Prompts are about 3,100 tokens (nine images), so 2.5 s/crop on 2×L40S and 4.2 s
 Nemotron: three preemptions in total (smoke once, full run twice), each during the 25-minute weight load on a
 ckpt H200 pair. It was left queued on ckpt rather than moved to the lab's `gpu-l40s` allocation, which has no H200
 and would need a whole 8×L40S node to hold the 249 GB of weights.
+| 42391323 | smoke GLM-5.3-Flash, 40/type, `OUT=smoke-vllm` | 4×H200 | submitted 10:22 | — | — | **unknown**: the klone SSH master died before the job was read (checked 15:05); read `sacct -j 42391323` and `/gscratch/scrubbed/jfroehli/logs/vlm_vllm.42391323{,.server}.log` |
+
+### Where it stands (2026-10-26 15:05)
+
+- Done: client, launcher, tests; container path working; Qwen3-VL-8B smoke through vLLM agrees with transformers
+  (table above).
+- Not done: the GLM-5.3-Flash smoke result is unread, and the full 13,144-crop GLM run plus the concurrency-1 timing
+  run were not submitted. Both wait for the SSH master to be reopened (Duo).
+- Next: if 42391323 completed, check its rendered-prompt tail ends in `<think></think>` and `answer_floor` /
+  `top20_mass_outside` in the metas. Then run `sbatch analysis/vlm_vllm.slurm` from
+  `/gscratch/makelab/jfroehli/sva-wt-vlm`; the defaults are the full GLM run, with timing at concurrency 1 first.
+  Stage `scores/glm5.3-flash/` to `~/Data/sidewalk-validator-ai-vlm-scoreboard-2026-10/scores/glm5.3-flash/` and its
+  `timing.csv` as `scores/timing_glm5.3-flash.csv`.
