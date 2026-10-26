@@ -304,3 +304,16 @@ def test_batch_invariance_compares_timing_rows_with_the_run(tmp_path):
     assert b.model.tolist() == ["m"] and b.n.tolist() == [2] and b.max_abs_dp.iloc[0] == pytest.approx(.02)
     assert b.timing_gpu.tolist() == ["NVIDIA A40"] and b.run_gpu.tolist() == ["NVIDIA L40S"]
     assert vb.timing_summary(str(tmp_path / "scores"), str(tmp_path / "timing")).model.tolist()[0] == "m"
+
+
+def test_timing_summary_uses_a_legs_own_timing_csv(tmp_path):
+    """The vLLM leg's per-request latency_s is wall time under concurrency; its own timing.csv must win."""
+    leg = tmp_path / "scores" / "glm"
+    leg.mkdir(parents=True)
+    pd.DataFrame({"label_uid": ["a", "b"], "latency_s": [3.2, 3.2], "batch_size": 32,
+                  "gpu": "4xNVIDIA H200"}).to_csv(leg / "CurbRamp.csv", index=False)
+    own = pd.DataFrame([{"model": "glm", "gpu": "4xNVIDIA H200", "batch_size": 32, "n_crops": 2,
+                         "median_s_per_crop": 0.1, "p90_s_per_crop": 0.12, "source": "vllm chunk wall"}])
+    own.to_csv(leg / "timing.csv", index=False)
+    t = vb.timing_summary(str(tmp_path / "scores"), str(tmp_path / "timing"))
+    assert t.to_dict("records") == own.to_dict("records")

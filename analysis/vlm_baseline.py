@@ -1175,7 +1175,8 @@ def batch_invariance(score_dir, timing_dir):
 
 def timing_summary(score_dir, timing_dir):
     """``timing.csv`` rows: batch-1 runs from ``timing/<model>.csv``, and each full run's per-crop latency (its batch
-    latency / batch size, every batch including the first) per leg and GPU, at the leg's largest batch size."""
+    latency / batch size, every batch including the first) per leg and GPU, at the leg's largest batch size. A leg
+    directory with its own ``timing.csv`` (same columns) contributes those rows instead of latency-derived ones."""
     rows = []
     if os.path.isdir(timing_dir):
         for f in sorted(os.listdir(timing_dir)):
@@ -1187,7 +1188,13 @@ def timing_summary(score_dir, timing_dir):
                              "source": "batch-1 timing run"})
     legs = sorted(os.listdir(score_dir)) if os.path.isdir(score_dir) else []
     for leg in [x for x in legs if os.path.isdir(os.path.join(score_dir, x))]:
-        csvs = [os.path.join(score_dir, leg, f) for f in os.listdir(os.path.join(score_dir, leg)) if f.endswith(".csv")]
+        own = os.path.join(score_dir, leg, "timing.csv")
+        if os.path.exists(own):
+            # a leg that times itself (the vLLM scorer: per-request latency under concurrency is not s/crop)
+            rows += pd.read_csv(own).to_dict("records")
+            continue
+        csvs = [os.path.join(score_dir, leg, f) for f in os.listdir(os.path.join(score_dir, leg))
+                if f.endswith(".csv") and f != "timing.csv"]
         frames = [pd.read_csv(c) for c in csvs]
         frames = [f for f in frames if {"latency_s", "batch_size", "gpu"} <= set(f.columns)]
         if not frames:
