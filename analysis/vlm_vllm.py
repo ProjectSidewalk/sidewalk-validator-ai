@@ -196,6 +196,22 @@ def limit_rows(df, limit):
             .groupby(["label_type", "label_class"]).head(max(1, limit // 2)))
 
 
+BACKEND = "vllm-openai-server"
+
+
+def check_owned(path, meta_path):
+    """Refuse to write into a score CSV or meta file another backend wrote (e.g. the transformers leg's directory).
+
+    >>> check_owned("/nonexistent/a.csv", "/nonexistent/a.meta.json")
+    """
+    if os.path.exists(path):
+        header = list(pd.read_csv(path, nrows=0).columns)
+        if header != SCORE_COLUMNS:
+            raise SystemExit(f"{path} was not written by vlm_vllm (columns {header}); use another --out-dir or --model")
+    if os.path.exists(meta_path) and _read_json(meta_path).get("backend") != BACKEND:
+        raise SystemExit(f"{meta_path} was not written by vlm_vllm; use another --out-dir or --model")
+
+
 def done_uids(path):
     """``label_uid`` values already in a score CSV (empty set when it does not exist)."""
     return set(pd.read_csv(path, usecols=["label_uid"]).label_uid) if os.path.exists(path) else set()
@@ -333,7 +349,7 @@ def _server_version(server, get=http_get):
 
 def _base_meta(args, version):
     return {"model": args.model, "repo": args.repo, "revision": hf_revision(args.repo, args.hf_home),
-            "variant": args.variant, "backend": "vllm-openai-server", "vllm_version": version,
+            "variant": args.variant, "backend": BACKEND, "vllm_version": version,
             "image_tag": args.image_tag, "tensor_parallel_size": args.tp, "gpu": args.gpu,
             "batch_size": args.concurrency, "concurrency": args.concurrency,
             "request": {"max_tokens": 1, "temperature": 0.0, "top_logprobs": TOP_K, "prefill": args.prefill,
@@ -375,6 +391,7 @@ def run_score(args):
         df = limit_rows(load_heldout(args.data_root, t), args.limit)
         path = os.path.join(model_dir, f"{t}.csv")
         meta_path = path.replace(".csv", ".meta.json")
+        check_owned(path, meta_path)
         done = done_uids(path)
         todo = df[~df.label_uid.isin(done)]
         print(f"{args.model} {t}: {len(todo)} to score, {len(done)} done, concurrency {args.concurrency}", flush=True)
@@ -422,6 +439,8 @@ def run_timing(args):
     crops = vb.stratified_crops(sample, args.per_type)
     model_dir = os.path.join(args.out_dir, args.model)
     os.makedirs(model_dir, exist_ok=True)
+    for t in args.label_types.split(","):
+        check_owned(os.path.join(model_dir, f"{t}.csv"), os.path.join(model_dir, f"{t}.meta.json"))
     first = crops.iloc[0]
     client.score(first.image, vb.build_prompt(first.label_type, args.variant))   # warm-up, not timed
     rows = []

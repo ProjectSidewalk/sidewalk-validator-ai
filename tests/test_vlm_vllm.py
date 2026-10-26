@@ -215,3 +215,24 @@ def test_hf_revision(tmp_path):
     assert vv.hf_revision("org/m", str(tmp_path)) == "abc123"
     assert vv.hf_revision("org/other", str(tmp_path)) is None
     assert os.path.isdir(tmp_path)
+
+
+def test_refuses_another_backends_files(tmp_path, monkeypatch):
+    """A transformers-leg CSV or meta in the same <out>/<model>/ is never appended to or merged into."""
+    root, out = _data_root(tmp_path), tmp_path / "out"
+    stub = _Stub()
+    monkeypatch.setattr(vv, "Client", lambda *a, **k: _orig_client(*a, **{**k, "post": stub}))
+    monkeypatch.setattr(vv, "_server_version", lambda server: "0.0-test")
+    d = out / "stub"
+    d.mkdir(parents=True)
+    other = pd.DataFrame({"label_uid": ["city0:CurbRamp1"], "p_incorrect": [0.2], "batch_size": [16], "gpu": ["A40"]})
+    other.to_csv(d / "CurbRamp.csv", index=False)
+    with pytest.raises(SystemExit):
+        vv.main(_args(root, out))
+    assert pd.read_csv(d / "CurbRamp.csv").equals(other) and not stub.calls
+    (d / "CurbRamp.csv").unlink()
+    meta = {"model": "stub", "gpu": "NVIDIA A40", "batch_size": 16}
+    (d / "CurbRamp.meta.json").write_text(json.dumps(meta))
+    with pytest.raises(SystemExit):
+        vv.main(_args(root, out))
+    assert json.loads((d / "CurbRamp.meta.json").read_text()) == meta
