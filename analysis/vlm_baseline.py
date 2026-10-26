@@ -1156,7 +1156,8 @@ def batch_invariance(score_dir, timing_dir):
         leg = os.path.join(score_dir, timing_model(f[:-4]))
         if "p_incorrect" not in t or not os.path.isdir(leg):
             continue
-        full = pd.concat([pd.read_csv(os.path.join(leg, x)) for x in os.listdir(leg) if x.endswith(".csv")])
+        full = pd.concat([pd.read_csv(os.path.join(leg, x)) for x in os.listdir(leg)
+                          if x.endswith(".csv") and x != "timing.csv"])
         tg = _read_meta(os.path.join(timing_dir, f.replace(".csv", ".meta.json"))).get("gpu")
         b1 = t[["label_uid", "p_incorrect", "log_odds_incorrect"]].add_suffix("_b1").rename(
             columns={"label_uid_b1": "label_uid"})
