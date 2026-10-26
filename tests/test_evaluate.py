@@ -228,7 +228,7 @@ def test_per_city_gold_counts_every_city_and_scores_only_the_big_ones():
     assert list(heldout["cities"]) == ["d"] and heldout["cities"]["d"]["n"] == 3 and heldout["below_min_n"] == {}
     # val rows never leak into a split's gold table (a: 4 test gold, not 6; d: 3 heldout gold, not 4) ...
     assert "d" not in test["gold"]["cities"] and "d" not in test["gold"]["below_min_n"]
-    assert "a" not in heldout["gold"]["cities"] if "gold" in heldout else True
+    assert "a" not in heldout["cities"] and "a" not in heldout["below_min_n"]
     assert heldout["cities"]["d"]["n_by_class"] == {"correct": 1, "incorrect": 2}
     # ... nor into the pooled gold slice
     assert m["gold"]["n"] == 8
@@ -242,11 +242,13 @@ def test_per_city_gold_never_scores_an_empty_padded_city():
     assert all("auc" in v for v in gold["cities"].values())
 
 
-def test_main_rejects_min_city_n_below_one(tmp_path):
+@pytest.mark.parametrize("bad", ["0", "-1"])
+def test_main_rejects_min_city_n_below_one(tmp_path, capsys, bad):
     from evaluate import main
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as e:
         main(["--label_type", "CurbRamp", "--data-dir", str(tmp_path), "--skip-inference", "--per-city",
-              "--min-city-n", "0"])
+              "--min-city-n", bad])
+    assert e.value.code == 2 and "at least 1" in capsys.readouterr().err
 
 
 def test_per_city_gold_absent_without_a_gold_column():
