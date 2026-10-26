@@ -1091,6 +1091,7 @@ def run_timing_torch(args):
     data = pd.concat([load_split_rows(args.split_root, t) for t in LABEL_TYPES], ignore_index=True)
     crops = stratified_crops(data, args.n_per_type)
     vlm = TorchVlm(args.model)
+    gpu = _gpu_info().get("gpu")
     first = crops.iloc[0]
     vlm.score_batch([build_messages(build_prompt(first.label_type), Image.open(first.image).convert("RGB"))])
     rows = []
@@ -1098,15 +1099,16 @@ def run_timing_torch(args):
         s, dt = vlm.score_batch([build_messages(build_prompt(r.label_type), Image.open(r.image).convert("RGB"))])
         rows.append({"label_uid": r.label_uid, "label_type": r.label_type, "latency_s": dt,
                      "prompt_tokens": s[0]["prompt_tokens"], "p_incorrect": s[0]["p_incorrect"],
-                     "log_odds_incorrect": s[0]["log_odds_incorrect"]})
+                     "log_odds_incorrect": s[0]["log_odds_incorrect"], "gpu": gpu})
     out = os.path.join(args.out_dir, "timing")
     os.makedirs(out, exist_ok=True)
     t = pd.DataFrame(rows)
-    t.to_csv(os.path.join(out, f"{args.model}.csv"), index=False)
+    stem = timing_stem(args.model, gpu)
+    t.to_csv(os.path.join(out, f"{stem}.csv"), index=False)
     meta = {"model": args.model, "repo": vlm.repo, "batch_size": 1, "n": int(len(t)), **_gpu_info(),
             "peak_memory_gb": _peak_memory_gb(), "median_s_per_crop": float(t.latency_s.median()),
             "p90_s_per_crop": float(t.latency_s.quantile(0.9)), **_env_versions()}
-    _write_meta(os.path.join(out, f"{args.model}.meta.json"), meta)
+    _write_meta(os.path.join(out, f"{stem}.meta.json"), meta)
     print(f"{args.model}: batch-1 median {meta['median_s_per_crop']:.3f}s p90 {meta['p90_s_per_crop']:.3f}s "
           f"on {meta.get('gpu')}")
 
@@ -1127,6 +1129,21 @@ def run_export_heldout(args):
         print(f"{t}: {len(s)} held-out rows")
 
 
+def timing_stem(model, gpu):
+    """File stem of one batch-1 timing run: the model and a slug of the GPU it ran on, so runs on several GPU
+    types sit side by side. ``timing_model`` inverts it.
+
+    >>> timing_stem("molmo2-8b", "NVIDIA L40S"), timing_model("molmo2-8b__nvidia-l40s")
+    ('molmo2-8b__nvidia-l40s', 'molmo2-8b')
+    """
+    slug = "".join(c if c.isalnum() else "-" for c in str(gpu).lower()).strip("-")
+    return f"{model}__{slug}"
+
+
+def timing_model(stem):
+    return stem.split("__")[0]
+
+
 def batch_invariance(score_dir, timing_dir):
     """Per leg: the batch-1 timing crops' scores against the same crops in the full (batched) run, as a check on
     batching that does not depend on one batch. ``model, n, run_batch_size, max_abs_dp, median_abs_dp,
@@ -1136,7 +1153,7 @@ def batch_invariance(score_dir, timing_dir):
         if not f.endswith(".csv"):
             continue
         t = pd.read_csv(os.path.join(timing_dir, f))
-        leg = os.path.join(score_dir, f[:-4])
+        leg = os.path.join(score_dir, timing_model(f[:-4]))
         if "p_incorrect" not in t or not os.path.isdir(leg):
             continue
         full = pd.concat([pd.read_csv(os.path.join(leg, x)) for x in os.listdir(leg) if x.endswith(".csv")])
@@ -1145,7 +1162,9 @@ def batch_invariance(score_dir, timing_dir):
             continue
         dp = (m.p_incorrect_b1 - m.p_incorrect_run).abs()
         dl = (m.log_odds_incorrect_b1 - m.log_odds_incorrect_run).abs()
-        rows.append({"model": f[:-4], "n": len(m), "run_batch_size": int(m.batch_size.max()),
+        rows.append({"model": timing_model(f[:-4]), "timing_gpu": t.gpu.iloc[0] if "gpu" in t else None,
+                     "run_gpu": ",".join(sorted(m.gpu.astype(str).unique())) if "gpu" in m else None,
+                     "n": len(m), "run_batch_size": int(m.batch_size.max()),
                      "max_abs_dp": dp.max(), "median_abs_dp": dp.median(), "max_abs_dlogodds": dl.max()})
     return pd.DataFrame(rows)
 
@@ -1159,7 +1178,7 @@ def timing_summary(score_dir, timing_dir):
             if f.endswith(".csv"):
                 t = pd.read_csv(os.path.join(timing_dir, f))
                 m = _read_meta(os.path.join(timing_dir, f.replace(".csv", ".meta.json")))
-                rows.append({"model": f[:-4], "gpu": m.get("gpu"), "batch_size": 1, "n_crops": len(t),
+                rows.append({"model": timing_model(f[:-4]), "gpu": m.get("gpu"), "batch_size": 1, "n_crops": len(t),
                              "median_s_per_crop": t.latency_s.median(), "p90_s_per_crop": t.latency_s.quantile(.9),
                              "source": "batch-1 timing run"})
     legs = sorted(os.listdir(score_dir)) if os.path.isdir(score_dir) else []
