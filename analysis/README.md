@@ -6,6 +6,8 @@ Their inputs and outputs include private-city labels, so keep them **outside the
 | script | what it does |
 |---|---|
 | `pull_ai_assessments.sh` | On the database host, read-only: one row per AI-assessed label across all city schemas (raw verdict, served accuracy, confidence, human votes excluding the AI) → `ai_assessments.csv`. Optional `EXPERT1_ID`/`EXPERT2_ID` env vars add two validators' own votes. |
+| `ai_disagree_census.sh` | On the database host, read-only: per city and label type, the SidewalkAI validator's Disagree votes, how many hide their label, how many it decided alone or by breaking a human tie, and how often the human majority agrees with it (SidewalkWebpage #5793). |
+| `ai_disagree_to_unsure.sh` | On the database host: turns the AI's Disagree votes into Unsure and recomputes label counts/`correct` and the labelers' accuracy and `high_quality` with the app's own SQL. Read-only dry run by default (one row per city of what would change); `--apply --backup-dir <dir>` writes, one transaction per city, after backing up the vote rows. Runbook: [`docs/ai-disagree-reversal-2026-10.md`](../docs/ai-disagree-reversal-2026-10.md). |
 | `analyze_calib.py` | Served accuracy vs observed human-majority agreement, gate pass rates, reliability bins, per-city precision, from `ai_assessments.csv` → `calib.txt`. |
 | `fetch_all.py` | Downloads the public `rawLabels` CSV for every public city into a cache directory (tiling by bbox if an export truncates). |
 | `analyze.py` | AI vs human majority (and vs expert validators given as `EXPERTS="name=user_id,..."`) from that cache → `analysis.txt`, `ai_vs_humans.csv`. Expert columns are always role-keyed `expert1`, `expert2`, … in `EXPERTS` order, whatever the names; `hard_examples.py` reads those names. |
