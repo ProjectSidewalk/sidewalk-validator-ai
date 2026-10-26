@@ -219,8 +219,9 @@ def test_score_torch_writes_mlx_compatible_columns_and_resumes(tmp_path, monkeyp
     full = pd.read_csv(path)
     assert full.label_uid.is_unique and len(full) == 8     # 8 held-out rows, train excluded
     assert sum(_StubVlm.calls) == 4                        # only the 4 new rows (batch check done on run 1)
+    assert vb.batch_invariance(str(out / "scores"), str(out / "timing")).empty
     meta = json.loads((out / "scores" / "qwen3vl-8b-bf16" / "CurbRamp.meta.json").read_text())
-    assert meta["batch_check"]["within_1e-3"] and len(meta["runs"]) == 2
+    assert meta["batch_check"]["within_1e-3"] and meta["batch_check"]["n"] == 3 and len(meta["runs"]) == 2
     vb.run_score_torch(_args(root, out))                     # nothing left: the model is never loaded
     assert len(pd.read_csv(path)) == 8
 
@@ -288,3 +289,15 @@ def test_patch_cuda_prod_matches_prod_semantics():
         alt = y.cumprod(d).narrow(d, y.shape[d] - 1, 1)
         alt = alt if keep else alt.squeeze(d)
         assert torch.equal(ref, alt)
+
+
+def test_batch_invariance_compares_timing_rows_with_the_run(tmp_path):
+    leg = tmp_path / "scores" / "m"
+    leg.mkdir(parents=True)
+    pd.DataFrame({"label_uid": ["a", "b"], "p_incorrect": [.5, .9], "log_odds_incorrect": [0, 2.2],
+                  "batch_size": 16}).to_csv(leg / "T.csv", index=False)
+    (tmp_path / "timing").mkdir()
+    pd.DataFrame({"label_uid": ["a", "b"], "latency_s": .1, "p_incorrect": [.52, .9],
+                  "log_odds_incorrect": [.08, 2.2]}).to_csv(tmp_path / "timing" / "m.csv", index=False)
+    b = vb.batch_invariance(str(tmp_path / "scores"), str(tmp_path / "timing"))
+    assert b.model.tolist() == ["m"] and b.n.tolist() == [2] and b.max_abs_dp.iloc[0] == pytest.approx(.02)

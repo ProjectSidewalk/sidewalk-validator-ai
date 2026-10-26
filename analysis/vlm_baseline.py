@@ -965,6 +965,24 @@ def _write_meta(path, meta):
     os.replace(tmp, path)
 
 
+def batch_check(batched, alone, uids):
+    """Batch-of-N vs batch-of-1 agreement on the same rows (lists of score dicts): max and median absolute
+    differences in ``p_incorrect`` and in ``log_odds_incorrect``, and whether every p is within 1e-3.
+
+    >>> b = [{"p_incorrect": .5, "log_odds_incorrect": 0.0}, {"p_incorrect": .9, "log_odds_incorrect": 2.2}]
+    >>> a = [{"p_incorrect": .5, "log_odds_incorrect": 0.0}, {"p_incorrect": .9005, "log_odds_incorrect": 2.2062}]
+    >>> c = batch_check(b, a, ["x:1", "x:2"])
+    >>> c["n"], round(c["max_abs_dp"], 4), c["worst_label_uid"], c["within_1e-3"]
+    (2, 0.0005, 'x:2', True)
+    """
+    dp = np.abs([x["p_incorrect"] - y["p_incorrect"] for x, y in zip(batched, alone)])
+    dl = np.abs([x["log_odds_incorrect"] - y["log_odds_incorrect"] for x, y in zip(batched, alone)])
+    return {"n": int(len(dp)), "batch_size": int(len(batched)), "max_abs_dp": float(dp.max()),
+            "median_abs_dp": float(np.median(dp)), "max_abs_dlogodds": float(dl.max()),
+            "median_abs_dlogodds": float(np.median(dl)), "worst_label_uid": uids[int(dp.argmax())],
+            "within_1e-3": bool(dp.max() <= 1e-3)}
+
+
 def run_score_torch(args):
     """Score the held-out crops of ``--label-types`` with one roster model; one CSV + meta per type under
     ``<out-dir>/scores/<leg>/``. Resumable: rows already in the CSV are skipped (Slurm ``--requeue`` safe)."""
@@ -1032,18 +1050,17 @@ def run_score_torch(args):
             swaps += sum(args.fewshot > 0 and r.pano_id in set(base.pano_id) for r in chunk)
             scored, dt = vlm.score_batch(convs)
             if "batch_check" not in meta and len(chunk) > 1:
-                # the padding check: the most-padded row alone must score as it did inside the batch
-                j = int(np.argmin([s["prompt_tokens"] for s in scored]))
-                alone, _ = vlm.score_batch([convs[j]])
-                diff = abs(alone[0]["p_incorrect"] - scored[j]["p_incorrect"])
-                meta["batch_check"] = {"label_uid": chunk[j].label_uid, "batch_size": len(chunk),
-                                       "p_incorrect_batch": scored[j]["p_incorrect"],
-                                       "p_incorrect_alone": alone[0]["p_incorrect"], "abs_diff": diff,
-                                       "within_1e-3": bool(diff <= 1e-3)}
-                print(f"batch check: |batch - alone| = {diff:.2e} on {chunk[j].label_uid}", flush=True)
-                if diff > args.max_batch_diff:
+                # every row of the first batch scored again alone: padding and batch-composition effects. A single
+                # row is not enough: near p = 0 or 1 a large log-odds change moves p by almost nothing.
+                alone = [vlm.score_batch([c])[0][0] for c in convs]
+                meta["batch_check"] = batch_check(scored, alone, [r.label_uid for r in chunk])
+                bc = meta["batch_check"]
+                print(f"batch check: max |batch - alone| p {bc['max_abs_dp']:.2e}, log-odds "
+                      f"{bc['max_abs_dlogodds']:.2e} over {bc['n']} rows", flush=True)
+                if bc["max_abs_dp"] > args.max_batch_diff:
                     _write_meta(meta_path, meta)
-                    raise RuntimeError(f"batch-of-{len(chunk)} vs batch-of-1 differ by {diff:.3g}; check padding")
+                    raise RuntimeError(f"batch-of-{len(chunk)} vs batch-of-1 differ by up to {bc['max_abs_dp']:.3g} "
+                                       f"in p_incorrect; rerun with --batch 1")
             if i > 0:   # the first batch includes warm-up
                 lat.append(dt / len(chunk))
             for r, s in zip(chunk, scored):
@@ -1080,7 +1097,8 @@ def run_timing_torch(args):
     for r in crops.itertuples():
         s, dt = vlm.score_batch([build_messages(build_prompt(r.label_type), Image.open(r.image).convert("RGB"))])
         rows.append({"label_uid": r.label_uid, "label_type": r.label_type, "latency_s": dt,
-                     "prompt_tokens": s[0]["prompt_tokens"]})
+                     "prompt_tokens": s[0]["prompt_tokens"], "p_incorrect": s[0]["p_incorrect"],
+                     "log_odds_incorrect": s[0]["log_odds_incorrect"]})
     out = os.path.join(args.out_dir, "timing")
     os.makedirs(out, exist_ok=True)
     t = pd.DataFrame(rows)
@@ -1107,6 +1125,29 @@ def run_export_heldout(args):
             os.makedirs(os.path.join(args.out_dir, sub), exist_ok=True)
             df.sort_values("label_uid").to_csv(os.path.join(args.out_dir, sub, f"{t}.csv"), index=False)
         print(f"{t}: {len(s)} held-out rows")
+
+
+def batch_invariance(score_dir, timing_dir):
+    """Per leg: the batch-1 timing crops' scores against the same crops in the full (batched) run, as a check on
+    batching that does not depend on one batch. ``model, n, run_batch_size, max_abs_dp, median_abs_dp,
+    max_abs_dlogodds``; legs without p in their timing CSV are skipped."""
+    rows = []
+    for f in sorted(os.listdir(timing_dir)) if os.path.isdir(timing_dir) else []:
+        if not f.endswith(".csv"):
+            continue
+        t = pd.read_csv(os.path.join(timing_dir, f))
+        leg = os.path.join(score_dir, f[:-4])
+        if "p_incorrect" not in t or not os.path.isdir(leg):
+            continue
+        full = pd.concat([pd.read_csv(os.path.join(leg, x)) for x in os.listdir(leg) if x.endswith(".csv")])
+        m = t.merge(full, on="label_uid", suffixes=("_b1", "_run"), validate="one_to_one")
+        if m.empty:
+            continue
+        dp = (m.p_incorrect_b1 - m.p_incorrect_run).abs()
+        dl = (m.log_odds_incorrect_b1 - m.log_odds_incorrect_run).abs()
+        rows.append({"model": f[:-4], "n": len(m), "run_batch_size": int(m.batch_size.max()),
+                     "max_abs_dp": dp.max(), "median_abs_dp": dp.median(), "max_abs_dlogodds": dl.max()})
+    return pd.DataFrame(rows)
 
 
 def timing_summary(score_dir, timing_dir):
@@ -2290,6 +2331,9 @@ def main(argv=None):
         t = timing_summary(os.path.join(args.out_dir, "scores"), os.path.join(args.out_dir, "timing"))
         t.to_csv(os.path.join(args.out_dir, "scores", "timing.csv"), index=False)
         print(t.to_string(index=False))
+        b = batch_invariance(os.path.join(args.out_dir, "scores"), os.path.join(args.out_dir, "timing"))
+        b.to_csv(os.path.join(args.out_dir, "scores", "batch_invariance.csv"), index=False)
+        print(b.to_string(index=False))
     elif args.command == "report":
         run_report(args)
     elif args.command == "explain":
