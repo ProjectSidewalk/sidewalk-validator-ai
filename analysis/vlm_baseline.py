@@ -887,7 +887,7 @@ class TorchVlm:
             if hasattr(v, "to"):
                 v = v.to(self.input_device)
                 if v.is_floating_point():
-                    v = v.to(self.torch.bfloat16)
+                    v = v.to(self.model.dtype)   # bf16 unless a probe casts the model
             out[k] = v
         return out
 
