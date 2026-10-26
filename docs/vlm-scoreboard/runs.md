@@ -113,6 +113,21 @@ reproduce their batch-1 timing scores exactly (0.0), so batch-1 runs are determi
 | 42389429 | t-qvl32 | batch-1 timing qwen3vl-32b | 2×L40S | 3:44 | done |
 | 42395024 | g31-fs8 | 8-shot, all types, 2×A40 | 2×A40 | 9:42 | cancelled at 64 rows (4.2 s/crop; split per type instead) |
 | 42396176, 42396190 | g31-fs8-h/-a | 8-shot split by GPU type | — | — | cancelled before or just after start |
-| 42396336, -337, -339, -340, -341 | fs8-* | **gemma4-31b-fewshot8**, one job per type, batch 4 | 2×L40S (Obstacle, SurfaceProblem, NoCurbRamp), 2×A40 (CurbRamp, Crosswalk) | Crosswalk 46:35; others running | 2.5 s/crop on 2×L40S, 4.2 s/crop on 2×A40 |
-| 42383195 | smk-nemo | smoke nemotron3.5-super-vl-120b, batch 4 | 2×H200 | preempted once while loading (10:15), done on the second start | loads in 25 min (`attn=default`: sdpa refused), 0.108 s/crop, 248 GB peak |
-| 42399869 | nemo | **nemotron3.5-super-vl-120b full, batch 4** | 2×H200 | queued | |
+| 42396336 | fs8-Obst | **gemma4-31b-fewshot8** Obstacle, batch 4 | 2×L40S | 3:00:40 | done, 0 preemptions |
+| 42396337 | fs8-Surf | **gemma4-31b-fewshot8** SurfaceProblem | 2×L40S | 2:24:20 | done, 0 preemptions |
+| 42396339 | fs8-NoCu | **gemma4-31b-fewshot8** NoCurbRamp | 2×L40S | 2:31:48 | done, 0 preemptions |
+| 42396340 | fs8-Curb | **gemma4-31b-fewshot8** CurbRamp (64 rows came from 42395024) | 2×A40, then 2×L40S | 1:42 + 0:37 | done; preempted once at 13:23 and resumed (Slurm restart count 3) |
+| 42396341 | fs8-Cros | **gemma4-31b-fewshot8** Crosswalk | 2×A40 | 46:35 | done, 0 preemptions |
+| 42383195 | smk-nemo | smoke nemotron3.5-super-vl-120b, batch 4 | 2×H200 | 35:21 (second start) | preempted once while loading, then done: loads in 25 min (`attn=default`; sdpa refused), 0.108 s/crop, 248 GB peak |
+| 42399869 | nemo | nemotron3.5-super-vl-120b full, batch 4 | 2×H200 | — | preempted while loading the weights; cancelled and resubmitted with parallel loading |
+| 42401600 | nemo | **nemotron3.5-super-vl-120b full**, batch 4, `HF_ENABLE_PARALLEL_LOADING` | 2×H200 | — | preempted while loading at 14:15; requeued (still on ckpt at the time of writing) |
+
+8-shot arm: the leg with the best mean per-type AUC among the finished zero-shot legs when it was launched was
+`gemma4-31b`. Examples: 4 correct + 4 incorrect `train` crops per type, seed 20261021, interleaved correct/incorrect,
+the same eight for every query of a type (the chosen `label_uid`s are in each type's meta file, outside the repo).
+No query shared a panorama with its type's examples, so no example was swapped (`fewshot_swaps` = 0 for every run).
+Prompts are about 3,100 tokens (nine images), so 2.5 s/crop on 2×L40S and 4.2 s/crop on 2×A40 at batch 4.
+
+Nemotron: three preemptions in total (smoke once, full run twice), each during the 25-minute weight load on a
+ckpt H200 pair. It was left queued on ckpt rather than moved to the lab's `gpu-l40s` allocation, which has no H200
+and would need a whole 8×L40S node to hold the 249 GB of weights.
