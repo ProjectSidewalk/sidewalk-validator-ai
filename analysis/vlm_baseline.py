@@ -583,18 +583,26 @@ TORCH_MODELS = {
     "molmo2-8b": {"repo": "allenai/Molmo2-8B", "thinking": None, "remote_code": True, "env": "molmo2"},
     "minicpm-v4.7-35b-a3b": {"repo": "openbmb/MiniCPM-V-4.7-35B-A3B", "thinking": "enable_thinking",
                              "remote_code": False, "env": "vlm-scoreboard"},
+    # Muse has no on/off switch: its generation prompt ends at "<|start|>assistant" and the model picks a channel
+    # (" to=self" is reasoning). The prefix opens the final-answer channel directly; reasoning_strength is the
+    # template's own knob (default "high"), set to "low" so the system line does not ask for reasoning.
     "muse-glimmer-30b": {"repo": "meta-models/Muse-Glimmer-30B", "thinking": None, "remote_code": False,
-                         "env": "vlm-scoreboard"},
+                         "env": "vlm-scoreboard", "template_kwargs": {"reasoning_strength": "low"},
+                         "answer_prefix": " to=user<|message|>"},
     "qwen3vl-8b-bf16": {"repo": "Qwen/Qwen3-VL-8B-Instruct", "thinking": None, "remote_code": False,
                         "env": "vlm-scoreboard"},
     "qwen3vl-32b-bf16": {"repo": "Qwen/Qwen3-VL-32B-Instruct", "thinking": None, "remote_code": False,
                          "env": "vlm-scoreboard"},
     "nemotron3.5-super-vl-120b": {"repo": "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
                                   "thinking": "enable_thinking", "remote_code": True, "env": "vlm-scoreboard"},
+    # Phi's system prompt has the model open its answer with "<nothink>" or "<think>"; the prefix picks NOTHINK.
     "phi4-rv-15b": {"repo": "microsoft/Phi-4-reasoning-vision-15B", "thinking": None, "remote_code": True,
-                    "env": "vlm-scoreboard"},
+                    "env": "vlm-scoreboard", "answer_prefix": "<nothink>"},
 }
-"""Roster of the transformers legs (issue #63). ``thinking`` is the template kwarg set to False, or None."""
+"""Roster of the transformers legs (issue #63). ``thinking`` is the template kwarg set to False, or None;
+``template_kwargs`` are further template kwargs; ``answer_prefix`` is appended after the generation prompt, for
+templates whose thinking is chosen by the model's first tokens rather than by a switch (read from each chat
+template, 2026-10-26)."""
 
 HELDOUT_SPLITS = ("test", "test_heldout")
 FEWSHOT_SEED = 20261021
@@ -607,8 +615,20 @@ def chat_kwargs(short):
     >>> chat_kwargs("qwen3.8-27b"), chat_kwargs("qwen3vl-8b-bf16")
     ({'enable_thinking': False}, {})
     """
-    key = TORCH_MODELS[short]["thinking"]
-    return {key: False} if key else {}
+    spec = TORCH_MODELS[short]
+    kw = dict(spec.get("template_kwargs") or {})
+    if spec["thinking"]:
+        kw[spec["thinking"]] = False
+    return kw
+
+
+def with_answer_prefix(text, short):
+    """The templated prompt with the model's ``answer_prefix`` appended (unchanged when it has none).
+
+    >>> with_answer_prefix("<|im_start|>assistant<|im_sep|>", "phi4-rv-15b")
+    '<|im_start|>assistant<|im_sep|><nothink>'
+    """
+    return text + (TORCH_MODELS[short].get("answer_prefix") or "")
 
 
 def leg_name(model, variant="definition", fewshot=0):
@@ -785,8 +805,15 @@ class TorchVlm:
         raise RuntimeError("could not load " + self.repo + "\n" + "\n".join(errors))
 
     def inputs(self, conversations):
-        b = self.processor.apply_chat_template(conversations, tokenize=True, return_dict=True, return_tensors="pt",
-                                               padding=True, add_generation_prompt=True, **chat_kwargs(self.short))
+        kw = chat_kwargs(self.short)
+        if self.spec.get("answer_prefix"):   # template text + prefix, then the processor (no second BOS)
+            texts = [with_answer_prefix(self.processor.apply_chat_template(c, tokenize=False, add_generation_prompt=True,
+                                                                           **kw), self.short) for c in conversations]
+            images = [[p["image"] for m in c for p in m["content"] if p.get("type") == "image"] for c in conversations]
+            b = self.processor(text=texts, images=images, padding=True, return_tensors="pt", add_special_tokens=False)
+        else:
+            b = self.processor.apply_chat_template(conversations, tokenize=True, return_dict=True,
+                                                   return_tensors="pt", padding=True, add_generation_prompt=True, **kw)
         out = {}
         for k, v in b.items():
             if hasattr(v, "to"):

@@ -95,14 +95,22 @@ def test_answer_ids_sentencepiece_without_leading_space_variants():
 def test_thinking_switch_only_for_families_that_have_it():
     for short, spec in vb.TORCH_MODELS.items():
         kw = vb.chat_kwargs(short)
+        extra = spec.get("template_kwargs") or {}
         if spec["thinking"]:
-            assert kw == {spec["thinking"]: False}, short
+            assert kw == {**extra, spec["thinking"]: False}, short
         else:
-            assert kw == {}, short
+            assert kw == extra and False not in kw.values(), short
     assert vb.chat_kwargs("qwen3.8-27b") == {"enable_thinking": False}
     assert vb.chat_kwargs("gemma4-31b") == {"enable_thinking": False}
     assert vb.chat_kwargs("qwen3vl-8b-bf16") == {}            # instruct model, no switch in its template
     assert vb.chat_kwargs("molmo2-8b") == {}
+    assert vb.chat_kwargs("muse-glimmer-30b") == {"reasoning_strength": "low"}
+
+
+def test_answer_prefix_only_where_the_model_chooses_its_own_mode():
+    assert vb.with_answer_prefix("P", "qwen3.8-27b") == "P"
+    assert vb.with_answer_prefix("<|start|>assistant", "muse-glimmer-30b") == "<|start|>assistant to=user<|message|>"
+    assert vb.with_answer_prefix("x", "phi4-rv-15b") == "x<nothink>"
 
 
 def test_roster_names_are_distinct_from_the_mlx_legs():
