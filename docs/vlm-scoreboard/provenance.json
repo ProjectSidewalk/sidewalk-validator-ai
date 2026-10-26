@@ -58,6 +58,45 @@
  "public_cities_source": "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities",
  "seed": 20261021,
  "staged_files": {
+  "scores/batch_invariance.csv": {
+   "rows": 8,
+   "sha256": "fdc7d76edba046e315622eca6418e7161011c5cd7767d14fc9c4d214c407b873"
+  },
+  "scores/gemma4-12b-bf16/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "1639596b6e2e7a6d07b35a93a3c5baf2e9ddd719ed086775cc83ea229d26f3a6"
+  },
+  "scores/gemma4-12b-bf16/Crosswalk.meta.json": {
+   "sha256": "89dec1208583ef71fbfbd61b05220a7e60fc562fd9d99bd3cbf5a85793b7e068"
+  },
+  "scores/gemma4-12b-bf16/CurbRamp.csv": {
+   "rows": 2025,
+   "sha256": "824196726725fb77ddf255a09eedc825a3107195d56ae91fb021a736ec53619b"
+  },
+  "scores/gemma4-12b-bf16/CurbRamp.meta.json": {
+   "sha256": "af48698008c384d779fe39f05974ff2e4b8d9f340aebb72150c25bb7c36fddad"
+  },
+  "scores/gemma4-12b-bf16/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "08d06b286a4082252db871f103dc46097fe08f0e610bc44a71016b4469278850"
+  },
+  "scores/gemma4-12b-bf16/NoCurbRamp.meta.json": {
+   "sha256": "9557a606021781284eea2a1c14c73fa255c7e9b190ab2ee17bd27985b8d198dc"
+  },
+  "scores/gemma4-12b-bf16/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "7c8559a00d2adb09a3797b0e25e1e1b07f132d85de56c4a4812638f2eec0aa8e"
+  },
+  "scores/gemma4-12b-bf16/Obstacle.meta.json": {
+   "sha256": "de0a8686f33682575ad0c6ded568e3e9a91a959b2c469f7aac58af6ff3ff3814"
+  },
+  "scores/gemma4-12b-bf16/SurfaceProblem.csv": {
+   "rows": 3102,
+   "sha256": "df1297d8b3c5cfc80dc7c390618424f9e1dc83fa054db0bd402c852a142156d3"
+  },
+  "scores/gemma4-12b-bf16/SurfaceProblem.meta.json": {
+   "sha256": "5e2013466c63c86cdd50037f1c0b924cb1837a80d66b1d4fba1ad5f770d90863"
+  },
   "scores/gemma4-12b-mlx4/Crosswalk.csv": {
    "rows": 388,
    "sha256": "cd78c7577423cc412fa69cadf0b1aa8ae6607c330cb90d4f30c7e7dad0bb7d80"
@@ -93,6 +132,232 @@
   "scores/gemma4-12b-mlx4/SurfaceProblem.meta.json": {
    "sha256": "885db0f24def31352a7039c5542758ce2a97930067c70eb09beda91d06286074"
   },
+  "scores/gemma4-31b-fewshot8/CurbRamp.csv": {
+   "rows": 64,
+   "sha256": "af9c8528a333ea6d42d5c6ca630adf59f554e503c173441d4f29ccb8f638060e"
+  },
+  "scores/gemma4-31b-fewshot8/CurbRamp.meta.json": {
+   "sha256": "e6e22440f9e10524c27589aedbde4f2877994a90261af9ef3b0c65ee438f1dac"
+  },
+  "scores/gemma4-31b/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "5af5c492196aa736a52ebdf87dcce3336618ce0e378068f148013e9ab39d4677"
+  },
+  "scores/gemma4-31b/Crosswalk.meta.json": {
+   "sha256": "cbc089e68a54276985d0453387580fc083e0edce79f092c984ea0c05a3b7aaec"
+  },
+  "scores/gemma4-31b/CurbRamp.csv": {
+   "rows": 2025,
+   "sha256": "b20b9f09a9f51988e1bb48a00a11f74068131fb70af6c156358a650ea43ea6e6"
+  },
+  "scores/gemma4-31b/CurbRamp.meta.json": {
+   "sha256": "6286cb3c2b2f5a609d53c5a118058b46c63504119817ea02fc95d5637a43d75f"
+  },
+  "scores/gemma4-31b/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "729ea169ec7f1396dbd62a9f7d6d79d4b59a8297511083aacbad5022ff55e239"
+  },
+  "scores/gemma4-31b/NoCurbRamp.meta.json": {
+   "sha256": "233b76c957f331f62dd3efa3bee98da808034ea03f14669735a783c38c541542"
+  },
+  "scores/gemma4-31b/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "f1d680bca046b4f0eb315f0a9f9e21984702be0a9255f4b5cbfe67e72f66cb03"
+  },
+  "scores/gemma4-31b/Obstacle.meta.json": {
+   "sha256": "f245108500f6f775b4e01060ae3f13e0a5a114324f43b82e7e714cf74811851c"
+  },
+  "scores/gemma4-31b/SurfaceProblem.csv": {
+   "rows": 3102,
+   "sha256": "409f5044a81b5ebfaabffcc1335ed76bba0fc7e27cd246b28741a77589da9228"
+  },
+  "scores/gemma4-31b/SurfaceProblem.meta.json": {
+   "sha256": "251912215393d4ddd3a8da81d0895a3f3786880dca4c25652af1b5140f9b9b3d"
+  },
+  "scores/minicpm-v4.7-35b-a3b/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "1c457b3d86d4d11b4fd2dfa4f7e62aae5e75c7a5bbf82400b506abe6684bfcf0"
+  },
+  "scores/minicpm-v4.7-35b-a3b/Crosswalk.meta.json": {
+   "sha256": "efde0f8c473309f526972965aa2b57305661f8238b54fb38217d100579491af6"
+  },
+  "scores/minicpm-v4.7-35b-a3b/CurbRamp.csv": {
+   "rows": 2025,
+   "sha256": "1f2b4228dc45acaedc4800895c6811cbff55aa2afa4bfb8a8d9425b439187d45"
+  },
+  "scores/minicpm-v4.7-35b-a3b/CurbRamp.meta.json": {
+   "sha256": "d001a9447733a23ee11726c73f7bd2642aebf4f6df6dc523fdee1d61c654f96a"
+  },
+  "scores/minicpm-v4.7-35b-a3b/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "d986afcfb0285e9be9f6f33e92da1cd0f259784b8ae82356533b8f2d21581f15"
+  },
+  "scores/minicpm-v4.7-35b-a3b/NoCurbRamp.meta.json": {
+   "sha256": "eaec23ed519fcb05ca5e4f71c4fa0db41074205ee9f20a746709915d806e30df"
+  },
+  "scores/minicpm-v4.7-35b-a3b/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "720ffb4f2a23a6223617ae2f2fc950dfcb299c1a519dcc798cfb5496eec7346d"
+  },
+  "scores/minicpm-v4.7-35b-a3b/Obstacle.meta.json": {
+   "sha256": "8f2bfe5156380e0a6fed835430e340a9d0aaa4e0200fce3890ec4f79b4ea7121"
+  },
+  "scores/minicpm-v4.7-35b-a3b/SurfaceProblem.csv": {
+   "rows": 3102,
+   "sha256": "bae52d0749df55bef2a864bb83c20e743dd470c6441f596a1f3c4c189c3fcfcd"
+  },
+  "scores/minicpm-v4.7-35b-a3b/SurfaceProblem.meta.json": {
+   "sha256": "3241b773b4761ecc0d6e84e3e31d8653384d10f99af5b6b3223bd613be1e7eaf"
+  },
+  "scores/molmo2-8b/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "439249c599eff0c8805d004e537381b9558751dac3298d14786965e93f813e63"
+  },
+  "scores/molmo2-8b/Crosswalk.meta.json": {
+   "sha256": "a502fcf6e553de2a059e8ce0435fe3a3e3fe43f44a5ba3807be0f73cb1d1b43e"
+  },
+  "scores/molmo2-8b/CurbRamp.csv": {
+   "rows": 2025,
+   "sha256": "2b00ead09c53ca5290050f5f7245e4594d350a22c49d3d8769fd62574f8b8c38"
+  },
+  "scores/molmo2-8b/CurbRamp.meta.json": {
+   "sha256": "56ba7c71d842d7312107319dd77813f1e53e43cd37d84296cc25939fc970a25a"
+  },
+  "scores/molmo2-8b/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "f2031b71a7bb3966d363a48a64adbd36e95988c4ea33c55210c017b290ae0bcd"
+  },
+  "scores/molmo2-8b/NoCurbRamp.meta.json": {
+   "sha256": "8418a0825aeeda605fac7217f6d9fa86fdb0444f814d6f76c44ca390b38090d3"
+  },
+  "scores/molmo2-8b/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "a9846d80a5ea353920877b87658d5c06462549f46b76a8ec78aef3bdda20ee55"
+  },
+  "scores/molmo2-8b/Obstacle.meta.json": {
+   "sha256": "9fca230ebff9de7bc06772515c4f42f7497d21fb6bb4aa549d5f9b98c561240c"
+  },
+  "scores/molmo2-8b/SurfaceProblem.csv": {
+   "rows": 3102,
+   "sha256": "8b8c19cf83c490fe0384709278a0e29f4c0c1e1475a4899c04539b4f48edc897"
+  },
+  "scores/molmo2-8b/SurfaceProblem.meta.json": {
+   "sha256": "a212fb29ae2aa995fcd1a0c4b3070fdf2cddf7f81faa77644f37ca16c782035d"
+  },
+  "scores/muse-glimmer-30b/CurbRamp.csv": {
+   "rows": 2025,
+   "sha256": "5fa316aa9e67f39596d0c9621ad2a3a24a7f597cc596a70c91e423158f28d990"
+  },
+  "scores/muse-glimmer-30b/CurbRamp.meta.json": {
+   "sha256": "6751bedbbb59609050e38438f1b8c8b6b0a492bfc80be14ac1f50fa3fa2b1cb7"
+  },
+  "scores/muse-glimmer-30b/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "2080ee146089f4d6bf1ea29c23edb508e99fd791b1bd5436c575f6cc49a4cad0"
+  },
+  "scores/muse-glimmer-30b/NoCurbRamp.meta.json": {
+   "sha256": "e62c6fdcd8da60a6b9cb8d56b34fe0c9e03ec1be257807c410b10b25a516196d"
+  },
+  "scores/muse-glimmer-30b/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "9f41173833ee4eeca1fcb5e85ea64af495905da51e8580ecc3ee4a329492f0db"
+  },
+  "scores/muse-glimmer-30b/Obstacle.meta.json": {
+   "sha256": "b8b7b746ed5ebd55d429e868e11158be91879c595eeb1776448375f36949809e"
+  },
+  "scores/muse-glimmer-30b/SurfaceProblem.csv": {
+   "rows": 1984,
+   "sha256": "448cb1ce25c1f32f5067f0effc3391990e652ff9c76825585fe72d3e7fdcc7e4"
+  },
+  "scores/muse-glimmer-30b/SurfaceProblem.meta.json": {
+   "sha256": "795ae83002c3cd17682fcc62c6c945ad33745056196abc766550592cedce6689"
+  },
+  "scores/phi4-rv-15b/CurbRamp.csv": {
+   "rows": 2025,
+   "sha256": "acd388b100a8652aec036832a1dd5c289e0fcf5226ea43ca1d417ab8fb888557"
+  },
+  "scores/phi4-rv-15b/CurbRamp.meta.json": {
+   "sha256": "34c17101488e4737a82650a451e87d8a082d7ed8c2e2037f2a90d9e068caa239"
+  },
+  "scores/phi4-rv-15b/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "38dc36dacecd399a27bfbcd145fcd2bf6c37389a9ae86bc14a2fb8ada7e885c3"
+  },
+  "scores/phi4-rv-15b/NoCurbRamp.meta.json": {
+   "sha256": "c6279bb6b2eebabbfdf2d1cdfcecf8931762f73db97b47dee3929d2826434f44"
+  },
+  "scores/phi4-rv-15b/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "f9c6397e69f167449e7c4254a642db3079c463bc447b366fd3b4e767e408d323"
+  },
+  "scores/phi4-rv-15b/Obstacle.meta.json": {
+   "sha256": "ec13f92362da0b8c58e52ec65053a534d31d534256268957485dda874ed6ca16"
+  },
+  "scores/phi4-rv-15b/SurfaceProblem.csv": {
+   "rows": 2560,
+   "sha256": "60691b3d8fc3d70f413bb0df3f100f3fe6416371b2eb5635d9df79df71172f8b"
+  },
+  "scores/phi4-rv-15b/SurfaceProblem.meta.json": {
+   "sha256": "51543f9250fa2346633c07903db09662a1cd3841f8524e0e7914c664e8a7ead8"
+  },
+  "scores/production/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "9880095b6e5f17329b9abfb2f1721751a799bada562a3555d2521efb95d8c8f1"
+  },
+  "scores/production/CurbRamp.csv": {
+   "rows": 2025,
+   "sha256": "7e1f683dcb9c3bdae0f20de9b789a0cec639c3f80e350889114e02dec2e359b0"
+  },
+  "scores/production/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "55743171864586a327481cf9e81e8fdbd5d8c79034abad1a107f3e84cf3494c5"
+  },
+  "scores/production/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "a4d5da1f4524db1ae25bf732a2e390edfe708ca2c23dab45fd2aaba0005f45eb"
+  },
+  "scores/production/SurfaceProblem.csv": {
+   "rows": 3102,
+   "sha256": "742e5652696f9671d51508b3e32ff284acf802ae1b5f843978c46dc52edd2270"
+  },
+  "scores/production/production.meta.json": {
+   "sha256": "9a2166fe01388ca0ac3b5dc21ec55a2f72f4b3f02d8eb2aa057f48c3f24c6ee3"
+  },
+  "scores/qwen3.8-27b/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "cebc638d9afb13cc8ff7f2fb289e3b79e1c93621af986f4552b5a3b7d28470cc"
+  },
+  "scores/qwen3.8-27b/Crosswalk.meta.json": {
+   "sha256": "83c89411c5c2a4b9b12af92c171de1f3cf093d7dd5a3cfe605f2fae14a465032"
+  },
+  "scores/qwen3.8-27b/CurbRamp.csv": {
+   "rows": 2025,
+   "sha256": "7421f9a470f46c4783f86b1dfd1c20077856024084126af74ce3f6a2b24058d0"
+  },
+  "scores/qwen3.8-27b/CurbRamp.meta.json": {
+   "sha256": "0c6365704cec4eb757d107bb7093604e97859d0169eeb80ba91368523b0b3798"
+  },
+  "scores/qwen3.8-27b/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "a7c973cd98e450154c45bea8d61952e21710c52291b26e4866f05d45dc453531"
+  },
+  "scores/qwen3.8-27b/NoCurbRamp.meta.json": {
+   "sha256": "6e748d989103b022fc1fce9d31f534eb7e0f8c0cc23d3a7a19cf02b50e1b924e"
+  },
+  "scores/qwen3.8-27b/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "56e4a927fcb98dba629f92a937c27c50864d15cbf4e82f5ed97102f1a8c67b98"
+  },
+  "scores/qwen3.8-27b/Obstacle.meta.json": {
+   "sha256": "89c73ca00f53906ddb7559799653177146e884632578b7e326468e13cdc1653a"
+  },
+  "scores/qwen3.8-27b/SurfaceProblem.csv": {
+   "rows": 3102,
+   "sha256": "05fc3f9024284225d0281fe4b78dfa0987fb9ee5cd0df547f1c259f5a77ecd9b"
+  },
+  "scores/qwen3.8-27b/SurfaceProblem.meta.json": {
+   "sha256": "a0d7b500c4d3f353f00fb3f3a4cfd9f570eca7def014ee4d0f92dd8a82dbd749"
+  },
   "scores/qwen3vl-2b-mlx4/Crosswalk.csv": {
    "rows": 100,
    "sha256": "4622686f64f23691e985dec13938e99749ded7843abd647e10ff4a3ae90f79f1"
@@ -127,6 +392,76 @@
   },
   "scores/qwen3vl-2b-mlx4/SurfaceProblem.meta.json": {
    "sha256": "2ddac9822d56b2d701d918953f9282b831d1b0fe8f43ab4a3c765ee268572582"
+  },
+  "scores/qwen3vl-32b-bf16/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "1a6cb6e2e88a5166895fad6959fa4e4fe277560bba4fabe60ff8da006174061e"
+  },
+  "scores/qwen3vl-32b-bf16/Crosswalk.meta.json": {
+   "sha256": "49bd8113b657d72613a04ee25e0e1e40484072d638eab07b237f8ef9b2df3f89"
+  },
+  "scores/qwen3vl-32b-bf16/CurbRamp.csv": {
+   "rows": 2025,
+   "sha256": "25de6dc96ecd670b7f77dfbd5a31e8007adb61d8dbf9f375a726a655022751b2"
+  },
+  "scores/qwen3vl-32b-bf16/CurbRamp.meta.json": {
+   "sha256": "af1e320fab0fad5598c4bc1e1ee5618ab78a149cbc6b0a8c81b988f89579980e"
+  },
+  "scores/qwen3vl-32b-bf16/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "5cbb1dfb331914dcb4ca3a27946f54fa499c6f0e50613e1bb2808e6a048e199d"
+  },
+  "scores/qwen3vl-32b-bf16/NoCurbRamp.meta.json": {
+   "sha256": "aaee0871784ff9aa8f9f8bdadb219d9c15f360fe4f18baee05ddf97d6b3e60ac"
+  },
+  "scores/qwen3vl-32b-bf16/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "b48250fcf10f5591e452ba7a06af14d2ea5d1749a6607712fd779ffd7b40f1c4"
+  },
+  "scores/qwen3vl-32b-bf16/Obstacle.meta.json": {
+   "sha256": "10478cce503311e56f633180609ac3767410f8495cc33e1ca9e7a753a32a554c"
+  },
+  "scores/qwen3vl-32b-bf16/SurfaceProblem.csv": {
+   "rows": 3102,
+   "sha256": "30bdf5c37bce6e90becdb9b2503ff3fb4ac583f1873f748e9327ae61aec8c001"
+  },
+  "scores/qwen3vl-32b-bf16/SurfaceProblem.meta.json": {
+   "sha256": "1ec1921da87ea4f25e0b7bb4cae935c05ffbe84d7e4e659ab8624d86cd99e5a8"
+  },
+  "scores/qwen3vl-8b-bf16/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "12a625de12e887582971a1033b06cf44d7ce54869ec179f3379c45bfb2227be4"
+  },
+  "scores/qwen3vl-8b-bf16/Crosswalk.meta.json": {
+   "sha256": "a29367cc6493af6a750fe190fd65cd22fd5b68061b47a35228ebf9f6f903290f"
+  },
+  "scores/qwen3vl-8b-bf16/CurbRamp.csv": {
+   "rows": 2025,
+   "sha256": "02900fe1d47a4b67287ac4f7536d1e53c6a77b6a6ce38c8105d57e6acc0b5080"
+  },
+  "scores/qwen3vl-8b-bf16/CurbRamp.meta.json": {
+   "sha256": "d55e2d7017de681e742c6457e138e9bb5c92b6a88e1707f272ad5c4a09f78806"
+  },
+  "scores/qwen3vl-8b-bf16/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "03f5e439987f9ac7d90648eb046b9f69c6f9a75a118b4c9bea09297795b4d351"
+  },
+  "scores/qwen3vl-8b-bf16/NoCurbRamp.meta.json": {
+   "sha256": "f852ff027013acd99b5efe90a1860ddfb2426598e489754fbff9d815b5cf0b0f"
+  },
+  "scores/qwen3vl-8b-bf16/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "4f593769d016b29b6e134becb06a0751af47fd2c7f61cef282ca2b7dc1fce920"
+  },
+  "scores/qwen3vl-8b-bf16/Obstacle.meta.json": {
+   "sha256": "3c5ad963400cf997cb3c95a347d239aa1234b93f388008427570adce2acb3dce"
+  },
+  "scores/qwen3vl-8b-bf16/SurfaceProblem.csv": {
+   "rows": 3102,
+   "sha256": "a7de3687af93314936ecf053976e8ade523f974370aa75ff33849312b7a2b060"
+  },
+  "scores/qwen3vl-8b-bf16/SurfaceProblem.meta.json": {
+   "sha256": "4b84338cb76b1cf0f0a953a94d88b8ccca3d3d26f4a322a7cee82e0141d2c19c"
   },
   "scores/qwen3vl-8b-mlx4/Crosswalk.csv": {
    "rows": 100,
@@ -183,6 +518,10 @@
    "rows": 3102,
    "sha256": "e9b7fb1cda4a331c9d74a8e1b9b58f7fd2f27e829c0c3ac57fae795830246930"
   },
+  "scores/timing.csv": {
+   "rows": 15,
+   "sha256": "961245e1aded1663b396089c59679c44556ac0806b28e67f26fe30606ceb484b"
+  },
   "scores/timing_mac.csv": {
    "rows": 3,
    "sha256": "7daf8fa1e69c7629ff464fdbe95b82c00b52b5f6defa5670eadc21755d29fa27"
@@ -206,6 +545,90 @@
   "splits/SurfaceProblem.csv": {
    "rows": 3102,
    "sha256": "d6896263e6898845b9d8563dc18a431e4e6bf603371083c2d7c568b6161a7f32"
+  },
+  "timing/gemma4-12b-bf16__nvidia-a40.csv": {
+   "rows": 50,
+   "sha256": "ec0ceca02bc881bb4897ae213e8cdaedc64d6907d5e69ac4265dca23a3590516"
+  },
+  "timing/gemma4-12b-bf16__nvidia-a40.meta.json": {
+   "sha256": "3bde08529ed26d125faa22f3eeab80a87722bb226a644701f128fad80eb138d3"
+  },
+  "timing/gemma4-12b-bf16__nvidia-l40s.csv": {
+   "rows": 50,
+   "sha256": "3dd29b7b09f833d1c55869f410991ffe0fb2d3e4276cb0f2a52126f52790a4a4"
+  },
+  "timing/gemma4-12b-bf16__nvidia-l40s.meta.json": {
+   "sha256": "9c34e6b2e6fc52fe67546ac716f6be45fbda7752b304265d80b542eaf2585d75"
+  },
+  "timing/gemma4-31b__2xnvidia-a40.csv": {
+   "rows": 50,
+   "sha256": "099ccec31c16f01e5a25a443669007480a7aaeffae96114094cea37aabc5cddf"
+  },
+  "timing/gemma4-31b__2xnvidia-a40.meta.json": {
+   "sha256": "777683b2274ded578cd188ba23c1b818e3215495452b40ad09cc28c9ccd92f9e"
+  },
+  "timing/minicpm-v4.7-35b-a3b__nvidia-h200.csv": {
+   "rows": 50,
+   "sha256": "c450d4055cc573fc492ff2cb33b78a446aef98ccc5a7638a6c2deb8374e09cb5"
+  },
+  "timing/minicpm-v4.7-35b-a3b__nvidia-h200.meta.json": {
+   "sha256": "eba50f64ef0c3d7c7cb6a1a0c792ea35d8ee4bce6b95c6cf27aa8ac54b73f54a"
+  },
+  "timing/molmo2-8b__nvidia-a40.csv": {
+   "rows": 50,
+   "sha256": "c442bb03949014e1dcdbf8cf3d7e4bac2dfc0fd08ba867cf5be527797a89eb15"
+  },
+  "timing/molmo2-8b__nvidia-a40.meta.json": {
+   "sha256": "75a1e24988deeb53535d5ed2e7e400d9b1e8e80419e13dfd5759d189b823fb99"
+  },
+  "timing/molmo2-8b__nvidia-l40s.csv": {
+   "rows": 50,
+   "sha256": "f1657879b2a740119fde3ba9a52d2f64b616d91ba3c15bab3ef4df5356eb913a"
+  },
+  "timing/molmo2-8b__nvidia-l40s.meta.json": {
+   "sha256": "7c594762f9905c95f2834f4d20409eb23718ff16b44df34e178275b92d72168a"
+  },
+  "timing/muse-glimmer-30b__2xnvidia-a40.csv": {
+   "rows": 50,
+   "sha256": "f4025087ae361d70fdc2c3fb8c9c32bc4807643989405c44afe487c311570c89"
+  },
+  "timing/muse-glimmer-30b__2xnvidia-a40.meta.json": {
+   "sha256": "f2b52c12317841c675c6678631acc836849897ba231b61b1d32827688192b50d"
+  },
+  "timing/phi4-rv-15b__nvidia-a40.csv": {
+   "rows": 50,
+   "sha256": "812d3f2bda2b279b4b4400b7f2af650d7964cc645005d5c771be5c8a217ca860"
+  },
+  "timing/phi4-rv-15b__nvidia-a40.meta.json": {
+   "sha256": "33bd4a77712d7f96c84f59fda887163c61436a0c8b574e793d2e88bf3a2f21b3"
+  },
+  "timing/qwen3.8-27b__2xnvidia-a40.csv": {
+   "rows": 50,
+   "sha256": "1af5f530a1de02f5ef7692396f0c57b44901b80461be226ec76675eba8fd1c09"
+  },
+  "timing/qwen3.8-27b__2xnvidia-a40.meta.json": {
+   "sha256": "7fc009f0a30b736d7fa4a60f587880f23dbcee3571d101303b402a2d567a5334"
+  },
+  "timing/qwen3vl-32b-bf16__2xnvidia-l40s.csv": {
+   "rows": 50,
+   "sha256": "fd3856028be5fe676da5d88f3b0a78f8eb27ad0b94722cb2b87ca26b6b4ea922"
+  },
+  "timing/qwen3vl-32b-bf16__2xnvidia-l40s.meta.json": {
+   "sha256": "dde75c39c8c2da01bcbb609ded2556bf7d4fcc321515f9878e4e502314f07a27"
+  },
+  "timing/qwen3vl-8b-bf16__nvidia-a40.csv": {
+   "rows": 50,
+   "sha256": "91ae9cd61e4df70873887b9a16265c9e2abe70e81b1ab2ed0288f6e8bb5df724"
+  },
+  "timing/qwen3vl-8b-bf16__nvidia-a40.meta.json": {
+   "sha256": "c66e9902161110ad5669d2f241f8d36fd75a586e2e413f7b0f430ea634c1b4bf"
+  },
+  "timing/qwen3vl-8b-bf16__nvidia-l40s.csv": {
+   "rows": 50,
+   "sha256": "75b9e3b609919199af044176150509faaaabbf4bf38f4cd9af90bf58fe59da29"
+  },
+  "timing/qwen3vl-8b-bf16__nvidia-l40s.meta.json": {
+   "sha256": "297d0db04d26396806f5b22d175cb3e05b8d8b9ae74480b7bc2b8bdfae633a70"
   }
  }
 }

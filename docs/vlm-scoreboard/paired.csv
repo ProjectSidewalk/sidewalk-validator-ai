@@ -1,16 +1,76 @@
 leg,reference,label_type,n,auc_leg,auc_ref,diff,diff_lo,diff_hi
+gemma4-12b-bf16,round3,CurbRamp,2025,0.8092,0.9534,-0.1442,-0.1615,-0.1268
+gemma4-12b-bf16,round3,NoCurbRamp,3356,0.6325,0.9197,-0.2872,-0.3069,-0.2675
+gemma4-12b-bf16,round3,Obstacle,4078,0.5495,0.8731,-0.3236,-0.3441,-0.3036
+gemma4-12b-bf16,round3,SurfaceProblem,3102,0.7379,0.8551,-0.1172,-0.1337,-0.0986
+gemma4-12b-bf16,round3,Crosswalk,583,0.9485,0.9716,-0.0231,-0.0384,-0.0098
+gemma4-12b-bf16,round3,macro (5 types),13144,0.7355,0.9146,-0.1791,-0.1873,-0.1714
 gemma4-12b-mlx4,round3,CurbRamp,400,0.7898,0.9365,-0.1467,-0.1927,-0.1060
 gemma4-12b-mlx4,round3,NoCurbRamp,400,0.6340,0.9096,-0.2756,-0.3380,-0.2224
 gemma4-12b-mlx4,round3,Obstacle,400,0.5084,0.8808,-0.3724,-0.4323,-0.3113
 gemma4-12b-mlx4,round3,SurfaceProblem,400,0.7350,0.8306,-0.0955,-0.1469,-0.0485
 gemma4-12b-mlx4,round3,Crosswalk,388,0.9444,0.9680,-0.0236,-0.0447,-0.0065
 gemma4-12b-mlx4,round3,macro (5 types),1988,0.7223,0.9051,-0.1828,-0.2061,-0.1623
+gemma4-31b,round3,CurbRamp,2025,0.8252,0.9534,-0.1282,-0.1471,-0.1117
+gemma4-31b,round3,NoCurbRamp,3356,0.6594,0.9197,-0.2603,-0.2791,-0.2400
+gemma4-31b,round3,Obstacle,4078,0.5841,0.8731,-0.2890,-0.3086,-0.2708
+gemma4-31b,round3,SurfaceProblem,3102,0.7564,0.8551,-0.0988,-0.1168,-0.0810
+gemma4-31b,round3,Crosswalk,583,0.9542,0.9716,-0.0174,-0.0314,-0.0048
+gemma4-31b,round3,macro (5 types),13144,0.7559,0.9146,-0.1587,-0.1667,-0.1514
+gemma4-31b-fewshot8,round3,CurbRamp,64,0.8330,0.9434,-0.1104,-0.2324,-0.0078
+gemma4-31b-fewshot8,round3,macro (1 types),64,0.8330,0.9434,-0.1104,-0.2324,-0.0078
+minicpm-v4.7-35b-a3b,round3,CurbRamp,2025,0.7932,0.9534,-0.1601,-0.1796,-0.1429
+minicpm-v4.7-35b-a3b,round3,NoCurbRamp,3356,0.6520,0.9197,-0.2677,-0.2863,-0.2469
+minicpm-v4.7-35b-a3b,round3,Obstacle,4078,0.5799,0.8731,-0.2932,-0.3124,-0.2750
+minicpm-v4.7-35b-a3b,round3,SurfaceProblem,3102,0.7425,0.8551,-0.1126,-0.1293,-0.0945
+minicpm-v4.7-35b-a3b,round3,Crosswalk,583,0.9407,0.9716,-0.0310,-0.0473,-0.0145
+minicpm-v4.7-35b-a3b,round3,macro (5 types),13144,0.7417,0.9146,-0.1729,-0.1814,-0.1650
+molmo2-8b,round3,CurbRamp,2025,0.7316,0.9534,-0.2217,-0.2469,-0.1992
+molmo2-8b,round3,NoCurbRamp,3356,0.5605,0.9197,-0.3592,-0.3809,-0.3376
+molmo2-8b,round3,Obstacle,4078,0.5127,0.8731,-0.3604,-0.3810,-0.3410
+molmo2-8b,round3,SurfaceProblem,3102,0.7281,0.8551,-0.1271,-0.1467,-0.1076
+molmo2-8b,round3,Crosswalk,583,0.9346,0.9716,-0.0370,-0.0564,-0.0213
+molmo2-8b,round3,macro (5 types),13144,0.6935,0.9146,-0.2211,-0.2302,-0.2121
+muse-glimmer-30b,round3,CurbRamp,2025,0.8022,0.9534,-0.1511,-0.1697,-0.1335
+muse-glimmer-30b,round3,NoCurbRamp,3356,0.6051,0.9197,-0.3146,-0.3352,-0.2948
+muse-glimmer-30b,round3,Obstacle,4078,0.5683,0.8731,-0.3048,-0.3247,-0.2866
+muse-glimmer-30b,round3,SurfaceProblem,1984,0.7505,0.8786,-0.1281,-0.1512,-0.1066
+muse-glimmer-30b,round3,macro (4 types),11443,0.6815,0.9062,-0.2247,-0.2354,-0.2145
+phi4-rv-15b,round3,CurbRamp,2025,0.7088,0.9534,-0.2446,-0.2684,-0.2229
+phi4-rv-15b,round3,NoCurbRamp,3356,0.5690,0.9197,-0.3507,-0.3723,-0.3286
+phi4-rv-15b,round3,Obstacle,4078,0.5664,0.8731,-0.3067,-0.3268,-0.2870
+phi4-rv-15b,round3,SurfaceProblem,2560,0.7276,0.8844,-0.1568,-0.1785,-0.1364
+phi4-rv-15b,round3,macro (4 types),12019,0.6430,0.9076,-0.2647,-0.2756,-0.2547
+production,round3,CurbRamp,2025,0.9418,0.9534,-0.0116,-0.0195,-0.0037
+production,round3,NoCurbRamp,3356,0.9246,0.9197,0.0049,-0.0046,0.0136
+production,round3,Obstacle,4078,0.8142,0.8731,-0.0589,-0.0721,-0.0461
+production,round3,SurfaceProblem,3102,0.8464,0.8551,-0.0088,-0.0203,0.0027
+production,round3,Crosswalk,583,0.9701,0.9716,-0.0015,-0.0137,0.0115
+production,round3,macro (5 types),13144,0.8994,0.9146,-0.0152,-0.0198,-0.0105
+qwen3.8-27b,round3,CurbRamp,2025,0.7786,0.9534,-0.1747,-0.1948,-0.1554
+qwen3.8-27b,round3,NoCurbRamp,3356,0.6185,0.9197,-0.3012,-0.3217,-0.2805
+qwen3.8-27b,round3,Obstacle,4078,0.5889,0.8731,-0.2842,-0.3049,-0.2659
+qwen3.8-27b,round3,SurfaceProblem,3102,0.7460,0.8551,-0.1091,-0.1270,-0.0921
+qwen3.8-27b,round3,Crosswalk,583,0.9475,0.9716,-0.0241,-0.0405,-0.0098
+qwen3.8-27b,round3,macro (5 types),13144,0.7359,0.9146,-0.1787,-0.1872,-0.1706
 qwen3vl-2b-mlx4,round3,CurbRamp,271,0.5303,0.9584,-0.4281,-0.5014,-0.3514
 qwen3vl-2b-mlx4,round3,NoCurbRamp,100,0.5456,0.9296,-0.3840,-0.5128,-0.2584
 qwen3vl-2b-mlx4,round3,Obstacle,100,0.4856,0.8944,-0.4088,-0.5384,-0.2844
 qwen3vl-2b-mlx4,round3,SurfaceProblem,100,0.6176,0.7772,-0.1596,-0.2829,-0.0328
 qwen3vl-2b-mlx4,round3,Crosswalk,100,0.9244,0.9728,-0.0484,-0.1012,-0.0028
 qwen3vl-2b-mlx4,round3,macro (5 types),671,0.6207,0.9065,-0.2858,-0.3344,-0.2365
+qwen3vl-32b-bf16,round3,CurbRamp,2025,0.7849,0.9534,-0.1684,-0.1889,-0.1500
+qwen3vl-32b-bf16,round3,NoCurbRamp,3356,0.6452,0.9197,-0.2745,-0.2936,-0.2551
+qwen3vl-32b-bf16,round3,Obstacle,4078,0.6133,0.8731,-0.2598,-0.2787,-0.2417
+qwen3vl-32b-bf16,round3,SurfaceProblem,3102,0.7524,0.8551,-0.1027,-0.1192,-0.0857
+qwen3vl-32b-bf16,round3,Crosswalk,583,0.9458,0.9716,-0.0258,-0.0415,-0.0111
+qwen3vl-32b-bf16,round3,macro (5 types),13144,0.7483,0.9146,-0.1662,-0.1745,-0.1585
+qwen3vl-8b-bf16,round3,CurbRamp,2025,0.7373,0.9534,-0.2161,-0.2386,-0.1947
+qwen3vl-8b-bf16,round3,NoCurbRamp,3356,0.5399,0.9197,-0.3798,-0.4009,-0.3588
+qwen3vl-8b-bf16,round3,Obstacle,4078,0.5148,0.8731,-0.3583,-0.3786,-0.3398
+qwen3vl-8b-bf16,round3,SurfaceProblem,3102,0.6918,0.8551,-0.1633,-0.1823,-0.1430
+qwen3vl-8b-bf16,round3,Crosswalk,583,0.9116,0.9716,-0.0600,-0.0812,-0.0400
+qwen3vl-8b-bf16,round3,macro (5 types),13144,0.6791,0.9146,-0.2355,-0.2457,-0.2265
 qwen3vl-8b-mlx4,round3,CurbRamp,100,0.7608,0.9516,-0.1908,-0.2948,-0.0900
 qwen3vl-8b-mlx4,round3,NoCurbRamp,100,0.4572,0.9296,-0.4724,-0.5816,-0.3604
 qwen3vl-8b-mlx4,round3,Obstacle,100,0.5148,0.8944,-0.3796,-0.5096,-0.2572

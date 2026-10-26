@@ -1,14 +1,69 @@
 leg,display,label_type,n,total,complete,why
+gemma4-12b-bf16,Gemma 4 12B,CurbRamp,2025,2025,True,
+gemma4-12b-bf16,Gemma 4 12B,NoCurbRamp,3356,3356,True,
+gemma4-12b-bf16,Gemma 4 12B,Obstacle,4078,4078,True,
+gemma4-12b-bf16,Gemma 4 12B,SurfaceProblem,3102,3102,True,
+gemma4-12b-bf16,Gemma 4 12B,Crosswalk,583,583,True,
 gemma4-12b-mlx4,"Gemma 4 12B (4-bit, Mac)",CurbRamp,400,2025,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
 gemma4-12b-mlx4,"Gemma 4 12B (4-bit, Mac)",NoCurbRamp,400,3356,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
 gemma4-12b-mlx4,"Gemma 4 12B (4-bit, Mac)",Obstacle,400,4078,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
 gemma4-12b-mlx4,"Gemma 4 12B (4-bit, Mac)",SurfaceProblem,400,3102,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
 gemma4-12b-mlx4,"Gemma 4 12B (4-bit, Mac)",Crosswalk,388,583,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
+gemma4-31b,Gemma 4 31B,CurbRamp,2025,2025,True,
+gemma4-31b,Gemma 4 31B,NoCurbRamp,3356,3356,True,
+gemma4-31b,Gemma 4 31B,Obstacle,4078,4078,True,
+gemma4-31b,Gemma 4 31B,SurfaceProblem,3102,3102,True,
+gemma4-31b,Gemma 4 31B,Crosswalk,583,583,True,
+gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",CurbRamp,64,2025,False,partial: run incomplete (64 of 2025)
+gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",NoCurbRamp,0,3356,False,not run yet
+gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",Obstacle,0,4078,False,not run yet
+gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",SurfaceProblem,0,3102,False,not run yet
+gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",Crosswalk,0,583,False,not run yet
+minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,CurbRamp,2025,2025,True,
+minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,NoCurbRamp,3356,3356,True,
+minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,Obstacle,4078,4078,True,
+minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,SurfaceProblem,3102,3102,True,
+minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,Crosswalk,583,583,True,
+molmo2-8b,Molmo2-8B,CurbRamp,2025,2025,True,
+molmo2-8b,Molmo2-8B,NoCurbRamp,3356,3356,True,
+molmo2-8b,Molmo2-8B,Obstacle,4078,4078,True,
+molmo2-8b,Molmo2-8B,SurfaceProblem,3102,3102,True,
+molmo2-8b,Molmo2-8B,Crosswalk,583,583,True,
+muse-glimmer-30b,Muse Glimmer 30B,CurbRamp,2025,2025,True,
+muse-glimmer-30b,Muse Glimmer 30B,NoCurbRamp,3356,3356,True,
+muse-glimmer-30b,Muse Glimmer 30B,Obstacle,4078,4078,True,
+muse-glimmer-30b,Muse Glimmer 30B,SurfaceProblem,1984,3102,False,partial: run incomplete (1984 of 3102)
+muse-glimmer-30b,Muse Glimmer 30B,Crosswalk,0,583,False,not run yet
+phi4-rv-15b,Phi-4-reasoning-vision-15B,CurbRamp,2025,2025,True,
+phi4-rv-15b,Phi-4-reasoning-vision-15B,NoCurbRamp,3356,3356,True,
+phi4-rv-15b,Phi-4-reasoning-vision-15B,Obstacle,4078,4078,True,
+phi4-rv-15b,Phi-4-reasoning-vision-15B,SurfaceProblem,2560,3102,False,optional leg; not run
+phi4-rv-15b,Phi-4-reasoning-vision-15B,Crosswalk,0,583,False,optional leg; not run
+production,"Production (DINOv2-L, 2025-08)",CurbRamp,2025,2025,True,
+production,"Production (DINOv2-L, 2025-08)",NoCurbRamp,3356,3356,True,
+production,"Production (DINOv2-L, 2025-08)",Obstacle,4078,4078,True,
+production,"Production (DINOv2-L, 2025-08)",SurfaceProblem,3102,3102,True,
+production,"Production (DINOv2-L, 2025-08)",Crosswalk,583,583,True,
+qwen3.8-27b,Qwen3.8-27B,CurbRamp,2025,2025,True,
+qwen3.8-27b,Qwen3.8-27B,NoCurbRamp,3356,3356,True,
+qwen3.8-27b,Qwen3.8-27B,Obstacle,4078,4078,True,
+qwen3.8-27b,Qwen3.8-27B,SurfaceProblem,3102,3102,True,
+qwen3.8-27b,Qwen3.8-27B,Crosswalk,583,583,True,
 qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",CurbRamp,271,2025,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
 qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",NoCurbRamp,100,3356,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
 qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",Obstacle,100,4078,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
 qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",SurfaceProblem,100,3102,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
 qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",Crosswalk,100,583,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
+qwen3vl-32b-bf16,Qwen3-VL-32B,CurbRamp,2025,2025,True,
+qwen3vl-32b-bf16,Qwen3-VL-32B,NoCurbRamp,3356,3356,True,
+qwen3vl-32b-bf16,Qwen3-VL-32B,Obstacle,4078,4078,True,
+qwen3vl-32b-bf16,Qwen3-VL-32B,SurfaceProblem,3102,3102,True,
+qwen3vl-32b-bf16,Qwen3-VL-32B,Crosswalk,583,583,True,
+qwen3vl-8b-bf16,Qwen3-VL-8B,CurbRamp,2025,2025,True,
+qwen3vl-8b-bf16,Qwen3-VL-8B,NoCurbRamp,3356,3356,True,
+qwen3vl-8b-bf16,Qwen3-VL-8B,Obstacle,4078,4078,True,
+qwen3vl-8b-bf16,Qwen3-VL-8B,SurfaceProblem,3102,3102,True,
+qwen3vl-8b-bf16,Qwen3-VL-8B,Crosswalk,583,583,True,
 qwen3vl-8b-mlx4,"Qwen3-VL-8B (4-bit, Mac)",CurbRamp,100,2025,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
 qwen3vl-8b-mlx4,"Qwen3-VL-8B (4-bit, Mac)",NoCurbRamp,100,3356,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
 qwen3vl-8b-mlx4,"Qwen3-VL-8B (4-bit, Mac)",Obstacle,100,4078,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
@@ -19,41 +74,6 @@ round3,"Round 3 (DINOv2-L, 2026-10)",NoCurbRamp,3356,3356,True,
 round3,"Round 3 (DINOv2-L, 2026-10)",Obstacle,4078,4078,True,
 round3,"Round 3 (DINOv2-L, 2026-10)",SurfaceProblem,3102,3102,True,
 round3,"Round 3 (DINOv2-L, 2026-10)",Crosswalk,583,583,True,
-production,"Production (DINOv2-L, 2025-08)",CurbRamp,0,2025,False,not staged yet (the full-split production run is on klone)
-production,"Production (DINOv2-L, 2025-08)",NoCurbRamp,0,3356,False,not staged yet (the full-split production run is on klone)
-production,"Production (DINOv2-L, 2025-08)",Obstacle,0,4078,False,not staged yet (the full-split production run is on klone)
-production,"Production (DINOv2-L, 2025-08)",SurfaceProblem,0,3102,False,not staged yet (the full-split production run is on klone)
-production,"Production (DINOv2-L, 2025-08)",Crosswalk,0,583,False,not staged yet (the full-split production run is on klone)
-qwen3.8-27b,Qwen3.8-27B,CurbRamp,0,2025,False,not run yet
-qwen3.8-27b,Qwen3.8-27B,NoCurbRamp,0,3356,False,not run yet
-qwen3.8-27b,Qwen3.8-27B,Obstacle,0,4078,False,not run yet
-qwen3.8-27b,Qwen3.8-27B,SurfaceProblem,0,3102,False,not run yet
-qwen3.8-27b,Qwen3.8-27B,Crosswalk,0,583,False,not run yet
-gemma4-31b,Gemma 4 31B,CurbRamp,0,2025,False,not run yet
-gemma4-31b,Gemma 4 31B,NoCurbRamp,0,3356,False,not run yet
-gemma4-31b,Gemma 4 31B,Obstacle,0,4078,False,not run yet
-gemma4-31b,Gemma 4 31B,SurfaceProblem,0,3102,False,not run yet
-gemma4-31b,Gemma 4 31B,Crosswalk,0,583,False,not run yet
-gemma4-12b-bf16,Gemma 4 12B,CurbRamp,0,2025,False,not run yet
-gemma4-12b-bf16,Gemma 4 12B,NoCurbRamp,0,3356,False,not run yet
-gemma4-12b-bf16,Gemma 4 12B,Obstacle,0,4078,False,not run yet
-gemma4-12b-bf16,Gemma 4 12B,SurfaceProblem,0,3102,False,not run yet
-gemma4-12b-bf16,Gemma 4 12B,Crosswalk,0,583,False,not run yet
-molmo2-8b,Molmo2-8B,CurbRamp,0,2025,False,not run yet
-molmo2-8b,Molmo2-8B,NoCurbRamp,0,3356,False,not run yet
-molmo2-8b,Molmo2-8B,Obstacle,0,4078,False,not run yet
-molmo2-8b,Molmo2-8B,SurfaceProblem,0,3102,False,not run yet
-molmo2-8b,Molmo2-8B,Crosswalk,0,583,False,not run yet
-minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,CurbRamp,0,2025,False,not run yet
-minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,NoCurbRamp,0,3356,False,not run yet
-minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,Obstacle,0,4078,False,not run yet
-minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,SurfaceProblem,0,3102,False,not run yet
-minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,Crosswalk,0,583,False,not run yet
-muse-glimmer-30b,Muse Glimmer 30B,CurbRamp,0,2025,False,not run yet
-muse-glimmer-30b,Muse Glimmer 30B,NoCurbRamp,0,3356,False,not run yet
-muse-glimmer-30b,Muse Glimmer 30B,Obstacle,0,4078,False,not run yet
-muse-glimmer-30b,Muse Glimmer 30B,SurfaceProblem,0,3102,False,not run yet
-muse-glimmer-30b,Muse Glimmer 30B,Crosswalk,0,583,False,not run yet
 nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,CurbRamp,0,2025,False,not run yet
 nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,NoCurbRamp,0,3356,False,not run yet
 nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,Obstacle,0,4078,False,not run yet
@@ -64,23 +84,3 @@ glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",NoCurbRamp,0,3356,False,not run yet
 glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",Obstacle,0,4078,False,not run yet
 glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",SurfaceProblem,0,3102,False,not run yet
 glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",Crosswalk,0,583,False,not run yet
-qwen3vl-8b-bf16,Qwen3-VL-8B,CurbRamp,0,2025,False,not run yet
-qwen3vl-8b-bf16,Qwen3-VL-8B,NoCurbRamp,0,3356,False,not run yet
-qwen3vl-8b-bf16,Qwen3-VL-8B,Obstacle,0,4078,False,not run yet
-qwen3vl-8b-bf16,Qwen3-VL-8B,SurfaceProblem,0,3102,False,not run yet
-qwen3vl-8b-bf16,Qwen3-VL-8B,Crosswalk,0,583,False,not run yet
-qwen3vl-32b-bf16,Qwen3-VL-32B,CurbRamp,0,2025,False,not run yet
-qwen3vl-32b-bf16,Qwen3-VL-32B,NoCurbRamp,0,3356,False,not run yet
-qwen3vl-32b-bf16,Qwen3-VL-32B,Obstacle,0,4078,False,not run yet
-qwen3vl-32b-bf16,Qwen3-VL-32B,SurfaceProblem,0,3102,False,not run yet
-qwen3vl-32b-bf16,Qwen3-VL-32B,Crosswalk,0,583,False,not run yet
-phi4-rv-15b,Phi-4-reasoning-vision-15B,CurbRamp,0,2025,False,optional leg; not run
-phi4-rv-15b,Phi-4-reasoning-vision-15B,NoCurbRamp,0,3356,False,optional leg; not run
-phi4-rv-15b,Phi-4-reasoning-vision-15B,Obstacle,0,4078,False,optional leg; not run
-phi4-rv-15b,Phi-4-reasoning-vision-15B,SurfaceProblem,0,3102,False,optional leg; not run
-phi4-rv-15b,Phi-4-reasoning-vision-15B,Crosswalk,0,583,False,optional leg; not run
-fewshot8,8-shot arm,CurbRamp,0,2025,False,the 8-shot arm runs on the best zero-shot leg once the board names it
-fewshot8,8-shot arm,NoCurbRamp,0,3356,False,the 8-shot arm runs on the best zero-shot leg once the board names it
-fewshot8,8-shot arm,Obstacle,0,4078,False,the 8-shot arm runs on the best zero-shot leg once the board names it
-fewshot8,8-shot arm,SurfaceProblem,0,3102,False,the 8-shot arm runs on the best zero-shot leg once the board names it
-fewshot8,8-shot arm,Crosswalk,0,583,False,the 8-shot arm runs on the best zero-shot leg once the board names it
