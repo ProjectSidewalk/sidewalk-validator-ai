@@ -784,6 +784,37 @@ def answer_word(label_class):
     return "No" if label_class == "incorrect" else "Yes"
 
 
+def patch_cuda_prod(torch):
+    """Work around ``Tensor.prod`` failing on CUDA ("CUDA driver error: invalid argument", torch 2.14.1+cu126 with
+    klone's 580 driver, measured 2026-10-26 on A40 and H200; ``sum`` and ``cumprod`` work). Qwen3-VL and Molmo2 take
+    ``prod`` of their image grids on the GPU. If a probe fails, ``torch.prod`` / ``Tensor.prod`` on CUDA tensors are
+    routed through the last element of ``cumprod``, which is the same product. Returns whether it patched."""
+    try:
+        torch.ones(2, 2, device="cuda", dtype=torch.long).prod(-1).tolist()
+        return False
+    except RuntimeError:
+        pass
+    orig_t, orig_f = torch.Tensor.prod, torch.prod
+
+    def _prod(x, dim=None, keepdim=False, *, dtype=None):
+        if not x.is_cuda:
+            return (orig_t(x, dtype=dtype) if dim is None else orig_t(x, dim, keepdim=keepdim, dtype=dtype))
+        y = x if dtype is None else x.to(dtype)
+        if dim is None:
+            y, dim = y.reshape(-1), 0
+        if y.shape[dim] == 0:
+            shape = list(y.shape)
+            shape[dim] = 1
+            out = torch.ones(shape, dtype=y.dtype, device=y.device)
+        else:
+            out = y.cumprod(dim).narrow(dim, y.shape[dim] - 1, 1)
+        return out if keepdim else out.squeeze(dim)
+
+    torch.Tensor.prod = _prod
+    torch.prod = lambda x, *a, **k: _prod(x, *a, **k) if x.is_cuda else orig_f(x, *a, **k)
+    return True
+
+
 class TorchVlm:
     """One transformers VLM in bf16 with the yes/no scorer, batched with left padding."""
 
@@ -796,6 +827,7 @@ class TorchVlm:
         self.short, self.spec = short, TORCH_MODELS[short]
         self.repo, rc = self.spec["repo"], self.spec["remote_code"]
         self.torch = torch
+        self.cuda_prod_patched = patch_cuda_prod(torch) if torch.cuda.is_available() else False
         self.processor = AutoProcessor.from_pretrained(self.repo, trust_remote_code=rc, padding_side="left")
         self.tokenizer = getattr(self.processor, "tokenizer", self.processor)
         self.tokenizer.padding_side = "left"
@@ -976,6 +1008,7 @@ def run_score_torch(args):
         meta.update({"model": args.model, "leg": leg, "repo": vlm.repo, "revision": hf_snapshot(vlm.repo)[0],
                      "variant": args.variant, "label_type": t, "prompt": question, "fewshot": args.fewshot,
                      "chat_kwargs": chat_kwargs(args.model), "loader": vlm.loader, "device_map": vlm.device_map,
+                     "cuda_prod_patched": getattr(vlm, "cuda_prod_patched", False),
                      "yes_tokens": vlm.yes_used, "yes_ids": vlm.yes_ids, "no_tokens": vlm.no_used,
                      "no_ids": vlm.no_ids, "batch_size": args.batch, "n_crops": int(len(df)), **gpu})
         if args.fewshot:

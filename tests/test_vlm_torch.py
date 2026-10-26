@@ -274,3 +274,17 @@ def test_export_heldout_and_timing_summary(tmp_path):
     assert t.to_dict("records") == [{"model": "m", "gpu": "NVIDIA L40S", "batch_size": 8, "n_crops": 2,
                                      "median_s_per_crop": pytest.approx(.15), "p90_s_per_crop": pytest.approx(.19),
                                      "source": "full run"}]
+
+
+def test_patch_cuda_prod_matches_prod_semantics():
+    """The cumprod route that patch_cuda_prod uses gives prod's values and shapes (on CPU; skipped without torch)."""
+    torch = pytest.importorskip("torch")
+    x = torch.tensor([[1, 22, 34], [2, 20, 30]])
+    for dim, keep in ((-1, False), (0, True), (None, False)):
+        ref = x.prod() if dim is None else x.prod(dim, keepdim=keep)
+        y = x if dim is None else x
+        d = 0 if dim is None else dim
+        y = y.reshape(-1) if dim is None else y
+        alt = y.cumprod(d).narrow(d, y.shape[d] - 1, 1)
+        alt = alt if keep else alt.squeeze(d)
+        assert torch.equal(ref, alt)
