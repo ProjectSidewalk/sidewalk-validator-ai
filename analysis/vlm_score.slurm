@@ -38,6 +38,7 @@ VARIANT="${VARIANT:-definition}"
 BATCH="${BATCH:-8}"
 FEWSHOT="${FEWSHOT:-0}"
 LIMIT="${LIMIT:-0}"
+MAX_BATCH_DIFF="${MAX_BATCH_DIFF:-0.25}"     # abort threshold of the batch-of-N vs batch-of-1 check (p_incorrect)
 ENV="${ENV:-/gscratch/scrubbed/$USER/envs/vlm-scoreboard}"
 SPLIT_ROOT="${SPLIT_ROOT:-/gscratch/makelab/$USER/sidewalk-validator-ai/retrain-2026-10}"
 OUT="${OUT:-/gscratch/scrubbed/$USER/vlm-scoreboard-2026-10}"
@@ -61,7 +62,8 @@ nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv || true
 case "$MODE" in
   score)
     "$PY" -u analysis/vlm_baseline.py score-torch --model "$MODEL" --split-root "$SPLIT_ROOT" --out-dir "$OUT" \
-        --label-types "$TYPES" --variant "$VARIANT" --batch "$BATCH" --fewshot "$FEWSHOT" --limit "$LIMIT" ;;
+        --label-types "$TYPES" --variant "$VARIANT" --batch "$BATCH" --fewshot "$FEWSHOT" --limit "$LIMIT" \
+        --max-batch-diff "$MAX_BATCH_DIFF" ;;
   timing)
     "$PY" -u analysis/vlm_baseline.py timing-torch --model "$MODEL" --split-root "$SPLIT_ROOT" --out-dir "$OUT" ;;
   production)
