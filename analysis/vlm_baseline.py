@@ -1060,7 +1060,7 @@ def run_score_torch(args):
                 if bc["max_abs_dp"] > args.max_batch_diff:
                     _write_meta(meta_path, meta)
                     raise RuntimeError(f"batch-of-{len(chunk)} vs batch-of-1 differ by up to {bc['max_abs_dp']:.3g} "
-                                       f"in p_incorrect; rerun with --batch 1")
+                                       f"in p_incorrect, more than bf16 noise; check padding")
             if i > 0:   # the first batch includes warm-up
                 lat.append(dt / len(chunk))
             for r, s in zip(chunk, scored):
@@ -2267,8 +2267,10 @@ def main(argv=None):
     st.add_argument("--batch", type=int, default=8)
     st.add_argument("--chunk", type=int, default=64, help="rows per CSV append")
     st.add_argument("--fewshot", type=int, default=0, help="in-context train examples per prompt (even; 0 = none)")
-    st.add_argument("--max-batch-diff", type=float, default=0.02,
-                    help="abort if batch-of-N and batch-of-1 p_incorrect differ by more (logged either way)")
+    st.add_argument("--max-batch-diff", type=float, default=0.25,
+                    help="abort if batch-of-N and batch-of-1 p_incorrect differ by more (logged either way). bf16 "
+                         "alone moves p by up to ~0.05 between batch sizes (Qwen3-VL-8B, 16 crops of one length: "
+                         "max 0.054 in bf16, 2e-5 in fp32), so this only catches padding bugs")
 
     tt = sub.add_parser("timing-torch", help="issue #63: batch-1 latency of one transformers VLM")
     tt.add_argument("--model", required=True, choices=sorted(TORCH_MODELS))
