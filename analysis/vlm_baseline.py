@@ -599,7 +599,8 @@ TORCH_MODELS = {
     # Its Hub code needs transformers < 5 (runs in the molmo2 env, 4.57.1) and takes "<image>" placeholders in
     # plain-text messages templated by the tokenizer, not image content parts (``image_token``).
     "phi4-rv-15b": {"repo": "microsoft/Phi-4-reasoning-vision-15B", "thinking": None, "remote_code": True,
-                    "env": "molmo2", "answer_prefix": "<nothink>", "image_token": "<image>"},
+                    "env": "molmo2", "answer_prefix": "<nothink>", "image_token": "<image>",
+                    "local_path": True},   # its from_pretrained finds the vision weights only in a local directory
 }
 """Roster of the transformers legs (issue #63). ``thinking`` is the template kwarg set to False, or None;
 ``template_kwargs`` are further template kwargs; ``answer_prefix`` is appended after the generation prompt, for
@@ -826,9 +827,13 @@ class TorchVlm:
 
         self.short, self.spec = short, TORCH_MODELS[short]
         self.repo, rc = self.spec["repo"], self.spec["remote_code"]
+        self.source = self.repo
+        if self.spec.get("local_path"):
+            from huggingface_hub import snapshot_download
+            self.source = snapshot_download(self.repo, local_files_only=True)
         self.torch = torch
         self.cuda_prod_patched = patch_cuda_prod(torch) if torch.cuda.is_available() else False
-        self.processor = AutoProcessor.from_pretrained(self.repo, trust_remote_code=rc, padding_side="left")
+        self.processor = AutoProcessor.from_pretrained(self.source, trust_remote_code=rc, padding_side="left")
         self.tokenizer = getattr(self.processor, "tokenizer", self.processor)
         self.tokenizer.padding_side = "left"
         if self.tokenizer.pad_token is None:
@@ -852,7 +857,7 @@ class TorchVlm:
             cls = getattr(transformers, cls_name)
             for attn in ("sdpa", None):
                 try:
-                    m = cls.from_pretrained(self.repo, **kw, **({"attn_implementation": attn} if attn else {}))
+                    m = cls.from_pretrained(self.source, **kw, **({"attn_implementation": attn} if attn else {}))
                     self.loader = f"{cls_name}, attn={attn or 'default'}"
                     return m
                 except (ValueError, KeyError, TypeError, ImportError) as e:
