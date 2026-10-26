@@ -317,3 +317,14 @@ def test_timing_summary_uses_a_legs_own_timing_csv(tmp_path):
     own.to_csv(leg / "timing.csv", index=False)
     t = vb.timing_summary(str(tmp_path / "scores"), str(tmp_path / "timing"))
     assert t.to_dict("records") == own.to_dict("records")
+
+
+def test_timing_summary_production_takes_its_gpu_from_the_meta(tmp_path):
+    leg = tmp_path / "scores" / "production"
+    leg.mkdir(parents=True)
+    pd.DataFrame({"label_uid": ["a", "b", "c"], "p_incorrect": .5,
+                  "latency_s": [np.nan, .02, .04]}).to_csv(leg / "CurbRamp.csv", index=False)
+    (leg / "production.meta.json").write_text('{"gpu": "NVIDIA A40"}')
+    t = vb.timing_summary(str(tmp_path / "scores"), str(tmp_path / "timing"))
+    assert t[["model", "gpu", "batch_size", "n_crops"]].values.tolist() == [["production", "NVIDIA A40", 1, 2]]
+    assert t.median_s_per_crop.iloc[0] == pytest.approx(.03)

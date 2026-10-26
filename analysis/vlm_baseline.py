@@ -1197,7 +1197,14 @@ def timing_summary(score_dir, timing_dir):
         csvs = [os.path.join(score_dir, leg, f) for f in os.listdir(os.path.join(score_dir, leg))
                 if f.endswith(".csv") and f != "timing.csv"]
         frames = [pd.read_csv(c) for c in csvs]
-        frames = [f for f in frames if {"latency_s", "batch_size", "gpu"} <= set(f.columns)]
+        meta_gpu = [m.get("gpu") for m in (_read_meta(os.path.join(score_dir, leg, f))
+                                           for f in os.listdir(os.path.join(score_dir, leg))
+                                           if f.endswith(".meta.json")) if m.get("gpu")]
+        if meta_gpu:   # per-crop scorers that run unbatched and name the GPU only in their meta (production)
+            frames = [f.assign(gpu=meta_gpu[0], batch_size=1) if "latency_s" in f and "gpu" not in f else f
+                      for f in frames]
+        frames = [f.dropna(subset=["latency_s"]) for f in frames
+                  if {"latency_s", "batch_size", "gpu"} <= set(f.columns)]
         if not frames:
             continue
         d = pd.concat(frames)
