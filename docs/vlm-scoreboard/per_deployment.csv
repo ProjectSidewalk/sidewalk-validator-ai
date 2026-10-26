@@ -41,6 +41,27 @@ gemma4-31b,teaneck-nj,True,False,214,72,0.8266,0.8318,5
 gemma4-31b,tucson-az,True,True,542,373,0.5937,0.7226,5
 gemma4-31b,vancouver-wa,True,False,36,4,0.8203,0.8203,1
 gemma4-31b,walla-walla-wa,True,False,134,51,0.6267,0.7199,4
+gemma4-31b-fewshot8,amsterdam,True,False,317,234,0.6889,0.6759,5
+gemma4-31b-fewshot8,burnaby,True,False,93,28,0.7742,0.8413,3
+gemma4-31b-fewshot8,cdmx,True,False,183,47,0.7298,0.5465,4
+gemma4-31b-fewshot8,chicago-il,True,False,1529,873,0.7585,0.7738,5
+gemma4-31b-fewshot8,columbus-oh,True,False,228,80,0.6266,0.6854,4
+gemma4-31b-fewshot8,knox-oh,True,False,33,10,0.7478,1.0000,1
+gemma4-31b-fewshot8,mendota-il,True,False,297,229,0.8779,0.9287,5
+gemma4-31b-fewshot8,newberg-or,True,False,208,78,0.8383,0.8341,4
+gemma4-31b-fewshot8,oradell-nj,True,False,163,28,0.8471,0.8353,4
+gemma4-31b-fewshot8,other (5 private deployments),False,False,2028,848,0.8002,0.7805,5
+gemma4-31b-fewshot8,paterson-nj,True,False,35,20,0.5800,0.5207,2
+gemma4-31b-fewshot8,pittsburgh-pa,True,False,216,64,0.7176,0.6813,4
+gemma4-31b-fewshot8,private city A (outside the US),False,True,1803,1429,0.4283,0.7012,5
+gemma4-31b-fewshot8,private city B (US),False,True,1741,584,0.6925,0.7513,5
+gemma4-31b-fewshot8,seattle-wa,True,False,2630,1109,0.7730,0.8412,5
+gemma4-31b-fewshot8,spgg,True,False,337,125,0.6708,0.6811,4
+gemma4-31b-fewshot8,st-louis-mo,True,False,156,24,0.5492,0.5374,4
+gemma4-31b-fewshot8,teaneck-nj,True,False,214,72,0.8626,0.8475,5
+gemma4-31b-fewshot8,tucson-az,True,True,542,373,0.6696,0.6989,5
+gemma4-31b-fewshot8,vancouver-wa,True,False,36,4,0.7266,0.7266,1
+gemma4-31b-fewshot8,walla-walla-wa,True,False,134,51,0.6556,0.8015,4
 minicpm-v4.7-35b-a3b,amsterdam,True,False,317,234,0.5633,0.6394,5
 minicpm-v4.7-35b-a3b,burnaby,True,False,93,28,0.6236,0.8818,3
 minicpm-v4.7-35b-a3b,cdmx,True,False,183,47,0.6535,0.4903,4
@@ -83,6 +104,48 @@ molmo2-8b,teaneck-nj,True,False,214,72,0.5696,0.7191,5
 molmo2-8b,tucson-az,True,True,542,373,0.4805,0.6326,5
 molmo2-8b,vancouver-wa,True,False,36,4,0.8594,0.8594,1
 molmo2-8b,walla-walla-wa,True,False,134,51,0.3499,0.7033,4
+muse-glimmer-30b,amsterdam,True,False,317,234,0.5074,0.6911,5
+muse-glimmer-30b,burnaby,True,False,93,28,0.6269,0.7886,3
+muse-glimmer-30b,cdmx,True,False,183,47,0.7675,0.5543,4
+muse-glimmer-30b,chicago-il,True,False,1529,873,0.6883,0.7135,5
+muse-glimmer-30b,columbus-oh,True,False,228,80,0.6367,0.6950,4
+muse-glimmer-30b,knox-oh,True,False,33,10,0.7913,0.8571,1
+muse-glimmer-30b,mendota-il,True,False,297,229,0.7524,0.7907,5
+muse-glimmer-30b,newberg-or,True,False,208,78,0.6740,0.7041,4
+muse-glimmer-30b,oradell-nj,True,False,163,28,0.8479,0.7568,4
+muse-glimmer-30b,other (5 private deployments),False,False,2028,848,0.6850,0.7262,5
+muse-glimmer-30b,paterson-nj,True,False,35,20,0.4200,0.4207,2
+muse-glimmer-30b,pittsburgh-pa,True,False,216,64,0.6815,0.6250,4
+muse-glimmer-30b,private city A (outside the US),False,True,1803,1429,0.3892,0.6719,5
+muse-glimmer-30b,private city B (US),False,True,1741,584,0.5869,0.6624,5
+muse-glimmer-30b,seattle-wa,True,False,2630,1109,0.5756,0.7334,5
+muse-glimmer-30b,spgg,True,False,337,125,0.8116,0.7297,4
+muse-glimmer-30b,st-louis-mo,True,False,156,24,0.6613,0.5368,4
+muse-glimmer-30b,teaneck-nj,True,False,214,72,0.7242,0.7809,5
+muse-glimmer-30b,tucson-az,True,True,542,373,0.4812,0.6285,5
+muse-glimmer-30b,vancouver-wa,True,False,36,4,0.8906,0.8906,1
+muse-glimmer-30b,walla-walla-wa,True,False,134,51,0.4581,0.7165,4
+phi4-rv-15b,amsterdam,True,False,317,234,0.5977,0.5617,5
+phi4-rv-15b,burnaby,True,False,93,28,0.6604,0.7891,3
+phi4-rv-15b,cdmx,True,False,183,47,0.6079,0.3893,4
+phi4-rv-15b,chicago-il,True,False,1529,873,0.6216,0.6735,5
+phi4-rv-15b,columbus-oh,True,False,228,80,0.4952,0.5661,4
+phi4-rv-15b,knox-oh,True,False,33,10,0.6174,0.7143,1
+phi4-rv-15b,mendota-il,True,False,297,229,0.5611,0.6510,5
+phi4-rv-15b,newberg-or,True,False,208,78,0.5447,0.6001,4
+phi4-rv-15b,oradell-nj,True,False,163,28,0.5553,0.6122,4
+phi4-rv-15b,other (5 private deployments),False,False,2028,848,0.7221,0.7036,5
+phi4-rv-15b,paterson-nj,True,False,35,20,0.4667,0.4622,2
+phi4-rv-15b,pittsburgh-pa,True,False,216,64,0.6359,0.6368,4
+phi4-rv-15b,private city A (outside the US),False,True,1803,1429,0.4395,0.5789,5
+phi4-rv-15b,private city B (US),False,True,1741,584,0.6285,0.6526,5
+phi4-rv-15b,seattle-wa,True,False,2630,1109,0.6671,0.7513,5
+phi4-rv-15b,spgg,True,False,337,125,0.5976,0.6830,4
+phi4-rv-15b,st-louis-mo,True,False,156,24,0.4230,0.5216,4
+phi4-rv-15b,teaneck-nj,True,False,214,72,0.6507,0.7283,5
+phi4-rv-15b,tucson-az,True,True,542,373,0.5679,0.6353,5
+phi4-rv-15b,vancouver-wa,True,False,36,4,0.7188,0.7188,1
+phi4-rv-15b,walla-walla-wa,True,False,134,51,0.4481,0.5714,4
 production,amsterdam,True,False,317,234,0.9281,0.9473,5
 production,burnaby,True,False,93,28,0.8538,0.8354,3
 production,cdmx,True,False,183,47,0.9018,0.7706,4

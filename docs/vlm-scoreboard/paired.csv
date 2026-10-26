@@ -17,8 +17,12 @@ gemma4-31b,round3,Obstacle,4078,0.5841,0.8731,-0.2890,-0.3086,-0.2708
 gemma4-31b,round3,SurfaceProblem,3102,0.7564,0.8551,-0.0988,-0.1168,-0.0810
 gemma4-31b,round3,Crosswalk,583,0.9542,0.9716,-0.0174,-0.0314,-0.0048
 gemma4-31b,round3,macro (5 types),13144,0.7559,0.9146,-0.1587,-0.1667,-0.1514
-gemma4-31b-fewshot8,round3,CurbRamp,64,0.8330,0.9434,-0.1104,-0.2324,-0.0078
-gemma4-31b-fewshot8,round3,macro (1 types),64,0.8330,0.9434,-0.1104,-0.2324,-0.0078
+gemma4-31b-fewshot8,round3,CurbRamp,2025,0.8649,0.9534,-0.0884,-0.1033,-0.0742
+gemma4-31b-fewshot8,round3,NoCurbRamp,3356,0.7451,0.9197,-0.1746,-0.1926,-0.1578
+gemma4-31b-fewshot8,round3,Obstacle,4078,0.5567,0.8731,-0.3164,-0.3354,-0.2984
+gemma4-31b-fewshot8,round3,SurfaceProblem,3102,0.7722,0.8551,-0.0829,-0.1004,-0.0654
+gemma4-31b-fewshot8,round3,Crosswalk,583,0.9378,0.9716,-0.0338,-0.0535,-0.0164
+gemma4-31b-fewshot8,round3,macro (5 types),13144,0.7754,0.9146,-0.1392,-0.1471,-0.1318
 minicpm-v4.7-35b-a3b,round3,CurbRamp,2025,0.7932,0.9534,-0.1601,-0.1796,-0.1429
 minicpm-v4.7-35b-a3b,round3,NoCurbRamp,3356,0.6520,0.9197,-0.2677,-0.2863,-0.2469
 minicpm-v4.7-35b-a3b,round3,Obstacle,4078,0.5799,0.8731,-0.2932,-0.3124,-0.2750
@@ -34,13 +38,15 @@ molmo2-8b,round3,macro (5 types),13144,0.6935,0.9146,-0.2211,-0.2302,-0.2121
 muse-glimmer-30b,round3,CurbRamp,2025,0.8022,0.9534,-0.1511,-0.1697,-0.1335
 muse-glimmer-30b,round3,NoCurbRamp,3356,0.6051,0.9197,-0.3146,-0.3352,-0.2948
 muse-glimmer-30b,round3,Obstacle,4078,0.5683,0.8731,-0.3048,-0.3247,-0.2866
-muse-glimmer-30b,round3,SurfaceProblem,1984,0.7505,0.8786,-0.1281,-0.1512,-0.1066
-muse-glimmer-30b,round3,macro (4 types),11443,0.6815,0.9062,-0.2247,-0.2354,-0.2145
+muse-glimmer-30b,round3,SurfaceProblem,3102,0.7455,0.8551,-0.1096,-0.1270,-0.0914
+muse-glimmer-30b,round3,Crosswalk,583,0.8906,0.9716,-0.0811,-0.1061,-0.0577
+muse-glimmer-30b,round3,macro (5 types),13144,0.7223,0.9146,-0.1922,-0.2016,-0.1836
 phi4-rv-15b,round3,CurbRamp,2025,0.7088,0.9534,-0.2446,-0.2684,-0.2229
 phi4-rv-15b,round3,NoCurbRamp,3356,0.5690,0.9197,-0.3507,-0.3723,-0.3286
 phi4-rv-15b,round3,Obstacle,4078,0.5664,0.8731,-0.3067,-0.3268,-0.2870
-phi4-rv-15b,round3,SurfaceProblem,2560,0.7276,0.8844,-0.1568,-0.1785,-0.1364
-phi4-rv-15b,round3,macro (4 types),12019,0.6430,0.9076,-0.2647,-0.2756,-0.2547
+phi4-rv-15b,round3,SurfaceProblem,3102,0.7212,0.8551,-0.1339,-0.1523,-0.1151
+phi4-rv-15b,round3,Crosswalk,583,0.9342,0.9716,-0.0374,-0.0549,-0.0212
+phi4-rv-15b,round3,macro (5 types),13144,0.6999,0.9146,-0.2146,-0.2236,-0.2061
 production,round3,CurbRamp,2025,0.9418,0.9534,-0.0116,-0.0195,-0.0037
 production,round3,NoCurbRamp,3356,0.9246,0.9197,0.0049,-0.0046,0.0136
 production,round3,Obstacle,4078,0.8142,0.8731,-0.0589,-0.0721,-0.0461

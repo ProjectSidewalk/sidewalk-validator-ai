@@ -59,8 +59,8 @@
  "seed": 20261021,
  "staged_files": {
   "scores/batch_invariance.csv": {
-   "rows": 8,
-   "sha256": "fdc7d76edba046e315622eca6418e7161011c5cd7767d14fc9c4d214c407b873"
+   "rows": 12,
+   "sha256": "94d7d4dda6d27053df960eb3f0fd41bce847a5f578444bb83a4f38ba9ff2d390"
   },
   "scores/gemma4-12b-bf16/Crosswalk.csv": {
    "rows": 583,
@@ -132,12 +132,40 @@
   "scores/gemma4-12b-mlx4/SurfaceProblem.meta.json": {
    "sha256": "885db0f24def31352a7039c5542758ce2a97930067c70eb09beda91d06286074"
   },
+  "scores/gemma4-31b-fewshot8/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "4e5877d1239fbc40b62f3b2a769f3d35597225324845e4bf333e427ca1c0097f"
+  },
+  "scores/gemma4-31b-fewshot8/Crosswalk.meta.json": {
+   "sha256": "0d035cb6c244f2a95bcc147f50c2d74749468aa1c6036a6c36cf7eb359837499"
+  },
   "scores/gemma4-31b-fewshot8/CurbRamp.csv": {
-   "rows": 64,
-   "sha256": "af9c8528a333ea6d42d5c6ca630adf59f554e503c173441d4f29ccb8f638060e"
+   "rows": 2025,
+   "sha256": "7867eb00275fbfbc70768a21f82d9ff65c54161340b6852055666c05f2376da4"
   },
   "scores/gemma4-31b-fewshot8/CurbRamp.meta.json": {
-   "sha256": "e6e22440f9e10524c27589aedbde4f2877994a90261af9ef3b0c65ee438f1dac"
+   "sha256": "e91cffa07c85481f3713ca53da2859696f3355dd2f54c570fcc82f0224acb081"
+  },
+  "scores/gemma4-31b-fewshot8/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "2bdcd04126df864840fc850d4c9654386cffa0be90d12a32bdd71abccb3d9f38"
+  },
+  "scores/gemma4-31b-fewshot8/NoCurbRamp.meta.json": {
+   "sha256": "710574ce6b09aee556e624999ecd686d52806c732228ff6350e78d3abb3da5d9"
+  },
+  "scores/gemma4-31b-fewshot8/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "dd99ef0aac2a028587ba0bcf75bdb86ca64ea3dcda4f37b220324c92b52febbb"
+  },
+  "scores/gemma4-31b-fewshot8/Obstacle.meta.json": {
+   "sha256": "ef3c8e771dc757b357fcbec2d258090735a55ac9124c4e6552511d0c3cec3db7"
+  },
+  "scores/gemma4-31b-fewshot8/SurfaceProblem.csv": {
+   "rows": 3102,
+   "sha256": "0f27cbdd9b85cb1960f7186343998031953bf7d3dc18abfbdf3ad15d426a561f"
+  },
+  "scores/gemma4-31b-fewshot8/SurfaceProblem.meta.json": {
+   "sha256": "ffc78791e181da736332a5dda3a8cc60fbfddf8b36dd29dcc52974789ac0c3a5"
   },
   "scores/gemma4-31b/Crosswalk.csv": {
    "rows": 583,
@@ -244,6 +272,13 @@
   "scores/molmo2-8b/SurfaceProblem.meta.json": {
    "sha256": "a212fb29ae2aa995fcd1a0c4b3070fdf2cddf7f81faa77644f37ca16c782035d"
   },
+  "scores/muse-glimmer-30b/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "bc32736c3fa073edb0a21d463b32d93a22e233ad6f7cd855147d98f150a13ed6"
+  },
+  "scores/muse-glimmer-30b/Crosswalk.meta.json": {
+   "sha256": "fcf8f0472983a3d7ada6b0a6e9e1db7ea94de28fc2bab6f763576728964224bf"
+  },
   "scores/muse-glimmer-30b/CurbRamp.csv": {
    "rows": 2025,
    "sha256": "5fa316aa9e67f39596d0c9621ad2a3a24a7f597cc596a70c91e423158f28d990"
@@ -266,11 +301,21 @@
    "sha256": "b8b7b746ed5ebd55d429e868e11158be91879c595eeb1776448375f36949809e"
   },
   "scores/muse-glimmer-30b/SurfaceProblem.csv": {
-   "rows": 1984,
-   "sha256": "448cb1ce25c1f32f5067f0effc3391990e652ff9c76825585fe72d3e7fdcc7e4"
+   "rows": 3102,
+   "sha256": "6c04170ed79a7b206d15126596bb2a545f0cdb03248d33f4563f2a180ae76867"
   },
   "scores/muse-glimmer-30b/SurfaceProblem.meta.json": {
-   "sha256": "795ae83002c3cd17682fcc62c6c945ad33745056196abc766550592cedce6689"
+   "sha256": "020f5e017f68fda79f3639ca961f9310b72fb6c932a7e85879aee00e5b074ccc"
+  },
+  "scores/notes.json": {
+   "sha256": "cb4dba8dd0d46528173009ed3b98001536c0cc992313a197bd264d833ee9f51e"
+  },
+  "scores/phi4-rv-15b/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "9264534797dce9e2866e5ccd8aa1ace8d050688d5f3c177d47e80ce3bd13c98e"
+  },
+  "scores/phi4-rv-15b/Crosswalk.meta.json": {
+   "sha256": "5604b7fc423b8b0a58abb39ddd42c3393b815389ddd2d565f319ea56456b2972"
   },
   "scores/phi4-rv-15b/CurbRamp.csv": {
    "rows": 2025,
@@ -294,11 +339,11 @@
    "sha256": "ec13f92362da0b8c58e52ec65053a534d31d534256268957485dda874ed6ca16"
   },
   "scores/phi4-rv-15b/SurfaceProblem.csv": {
-   "rows": 2560,
-   "sha256": "60691b3d8fc3d70f413bb0df3f100f3fe6416371b2eb5635d9df79df71172f8b"
+   "rows": 3102,
+   "sha256": "2cf8482402fdb549d33d06170bd05b71b0183d094001502760bad6805802ab87"
   },
   "scores/phi4-rv-15b/SurfaceProblem.meta.json": {
-   "sha256": "51543f9250fa2346633c07903db09662a1cd3841f8524e0e7914c664e8a7ead8"
+   "sha256": "fcdbd7903aa77fb2ff412ec4f37f69cd1be963ed5189890a66ce87cb283690b3"
   },
   "scores/production/Crosswalk.csv": {
    "rows": 583,
@@ -519,8 +564,8 @@
    "sha256": "e9b7fb1cda4a331c9d74a8e1b9b58f7fd2f27e829c0c3ac57fae795830246930"
   },
   "scores/timing.csv": {
-   "rows": 15,
-   "sha256": "961245e1aded1663b396089c59679c44556ac0806b28e67f26fe30606ceb484b"
+   "rows": 24,
+   "sha256": "e9110538e5e30f68d0cbd9c23dda873fbb3ffb2406071d4853d7bc55542cd4a3"
   },
   "scores/timing_mac.csv": {
    "rows": 3,

@@ -14,11 +14,11 @@ gemma4-31b,Gemma 4 31B,NoCurbRamp,3356,3356,True,
 gemma4-31b,Gemma 4 31B,Obstacle,4078,4078,True,
 gemma4-31b,Gemma 4 31B,SurfaceProblem,3102,3102,True,
 gemma4-31b,Gemma 4 31B,Crosswalk,583,583,True,
-gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",CurbRamp,64,2025,False,partial: run incomplete (64 of 2025)
-gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",NoCurbRamp,0,3356,False,not run yet
-gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",Obstacle,0,4078,False,not run yet
-gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",SurfaceProblem,0,3102,False,not run yet
-gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",Crosswalk,0,583,False,not run yet
+gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",CurbRamp,2025,2025,True,
+gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",NoCurbRamp,3356,3356,True,
+gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",Obstacle,4078,4078,True,
+gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",SurfaceProblem,3102,3102,True,
+gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",Crosswalk,583,583,True,
 minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,CurbRamp,2025,2025,True,
 minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,NoCurbRamp,3356,3356,True,
 minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,Obstacle,4078,4078,True,
@@ -32,13 +32,13 @@ molmo2-8b,Molmo2-8B,Crosswalk,583,583,True,
 muse-glimmer-30b,Muse Glimmer 30B,CurbRamp,2025,2025,True,
 muse-glimmer-30b,Muse Glimmer 30B,NoCurbRamp,3356,3356,True,
 muse-glimmer-30b,Muse Glimmer 30B,Obstacle,4078,4078,True,
-muse-glimmer-30b,Muse Glimmer 30B,SurfaceProblem,1984,3102,False,partial: run incomplete (1984 of 3102)
-muse-glimmer-30b,Muse Glimmer 30B,Crosswalk,0,583,False,not run yet
+muse-glimmer-30b,Muse Glimmer 30B,SurfaceProblem,3102,3102,True,
+muse-glimmer-30b,Muse Glimmer 30B,Crosswalk,583,583,True,
 phi4-rv-15b,Phi-4-reasoning-vision-15B,CurbRamp,2025,2025,True,
 phi4-rv-15b,Phi-4-reasoning-vision-15B,NoCurbRamp,3356,3356,True,
 phi4-rv-15b,Phi-4-reasoning-vision-15B,Obstacle,4078,4078,True,
-phi4-rv-15b,Phi-4-reasoning-vision-15B,SurfaceProblem,2560,3102,False,optional leg; not run
-phi4-rv-15b,Phi-4-reasoning-vision-15B,Crosswalk,0,583,False,optional leg; not run
+phi4-rv-15b,Phi-4-reasoning-vision-15B,SurfaceProblem,3102,3102,True,
+phi4-rv-15b,Phi-4-reasoning-vision-15B,Crosswalk,583,583,True,
 production,"Production (DINOv2-L, 2025-08)",CurbRamp,2025,2025,True,
 production,"Production (DINOv2-L, 2025-08)",NoCurbRamp,3356,3356,True,
 production,"Production (DINOv2-L, 2025-08)",Obstacle,4078,4078,True,
@@ -74,13 +74,13 @@ round3,"Round 3 (DINOv2-L, 2026-10)",NoCurbRamp,3356,3356,True,
 round3,"Round 3 (DINOv2-L, 2026-10)",Obstacle,4078,4078,True,
 round3,"Round 3 (DINOv2-L, 2026-10)",SurfaceProblem,3102,3102,True,
 round3,"Round 3 (DINOv2-L, 2026-10)",Crosswalk,583,583,True,
-nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,CurbRamp,0,2025,False,not run yet
-nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,NoCurbRamp,0,3356,False,not run yet
-nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,Obstacle,0,4078,False,not run yet
-nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,SurfaceProblem,0,3102,False,not run yet
-nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,Crosswalk,0,583,False,not run yet
-glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",CurbRamp,0,2025,False,not run yet
-glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",NoCurbRamp,0,3356,False,not run yet
-glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",Obstacle,0,4078,False,not run yet
-glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",SurfaceProblem,0,3102,False,not run yet
-glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",Crosswalk,0,583,False,not run yet
+nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,CurbRamp,0,2025,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
+nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,NoCurbRamp,0,3356,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
+nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,Obstacle,0,4078,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
+nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,SurfaceProblem,0,3102,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
+nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,Crosswalk,0,583,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
+glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",CurbRamp,0,2025,False,"not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009)"
+glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",NoCurbRamp,0,3356,False,"not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009)"
+glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",Obstacle,0,4078,False,"not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009)"
+glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",SurfaceProblem,0,3102,False,"not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009)"
+glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",Crosswalk,0,583,False,"not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009)"
