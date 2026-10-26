@@ -44,8 +44,8 @@ TEMPLATE_KWARGS=${TEMPLATE_KWARGS:-'{"reasoning_effort":"low"}'}
 THINKING_NOTE=${THINKING_NOTE:-"template has no off switch; closed by assistant prefill <think></think> (continue_final_message); reasoning_effort=low"}
 MAX_MODEL_LEN=${MAX_MODEL_LEN:-8192}
 EXTRA_SERVE_ARGS=${EXTRA_SERVE_ARGS:-}
-IMAGE_TAG=${IMAGE_TAG:-vllm/vllm-openai:v0.32.0-x86_64-cu129}
-SIF=${SIF:-/gscratch/scrubbed/jfroehli/containers/vllm-openai_v0.32.0-x86_64-cu129.sif}
+IMAGE_TAG=${IMAGE_TAG:-vllm/vllm-openai:v0.32.0-x86_64}   # CUDA 13.0; the -cu129 variant dies at import (torchcodec wants libnvrtc.so.13)
+SIF=${SIF:-/gscratch/scrubbed/jfroehli/containers/vllm-openai_v0.32.0-x86_64.sif}
 SCRUB=/gscratch/scrubbed/jfroehli
 CODE=${CODE:-/gscratch/makelab/jfroehli/sva-wt-vlm}
 DATA=${DATA:-/gscratch/makelab/jfroehli/sidewalk-validator-ai/retrain-2026-10}
