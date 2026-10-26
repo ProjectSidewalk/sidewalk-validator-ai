@@ -136,11 +136,14 @@ def test_cli_hold_back(tmp_path):
     rep = json.loads((tmp_path / "cal" / "calibration_report.json").read_text())
     assert rep["hold_back"]["verdicts"] == ["correct", "incorrect"]
 
-    # usage errors: a verdict that is not a class, a bare flag, a hold-back without a reason
+    # usage errors: a verdict that is not a class, a bare flag, a hold-back without a reason, a reason without a
+    # hold-back (it would be silently dropped)
     for bad in (["--hold-back", "unsure", "--hold-back-reason", "r"], ["--hold-back", "--hold-back-reason", "r"],
-                ["--hold-back", "incorrect"], ["--hold-back", "incorrect", "--hold-back-reason", "  "]):
-        with pytest.raises(SystemExit):
+                ["--hold-back", "incorrect"], ["--hold-back", "incorrect", "--hold-back-reason", "  "],
+                ["--hold-back-reason", "r"]):
+        with pytest.raises(SystemExit) as e:
             cal.main(base + bad)
+        assert e.value.code == 2
 
 
 def test_without_nan():

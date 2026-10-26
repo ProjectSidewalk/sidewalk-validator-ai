@@ -209,10 +209,12 @@ def main(argv=None):
                         f"ship); requires --hold-back-reason")
     p.add_argument("--hold-back-reason", default=None,
                    help="why the verdict(s) are held back; recorded in calibration_report.json and printed on the "
-                        "model card. Required with --hold-back")
+                        "model card. Required with --hold-back, and only meaningful with it")
     args = p.parse_args(argv)
     if args.hold_back and not (args.hold_back_reason or "").strip():
         p.error("--hold-back requires --hold-back-reason (it is published on the model card)")
+    if args.hold_back_reason is not None and not args.hold_back:
+        p.error("--hold-back-reason needs --hold-back (nothing is held back, so the reason would be dropped)")
 
     pi_deploy, entry = load_prior(args.priors, args.label_type)
     api_map, rep, tables = calibrate(pd.read_csv(args.predictions), pi_deploy, args.fit_split, args.eval_split,
