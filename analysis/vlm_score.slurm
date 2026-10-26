@@ -45,11 +45,17 @@ OUT="${OUT:-/gscratch/scrubbed/$USER/vlm-scoreboard-2026-10}"
 
 export HF_HOME="${HF_HOME:-/gscratch/scrubbed/$USER/hf}"
 export HF_HUB_OFFLINE=1 HF_HUB_DISABLE_XET=1 TOKENIZERS_PARALLELISM=false PYTHONUNBUFFERED=1
+# Home is over quota on klone: keep compile caches on scrubbed.
+export TRITON_CACHE_DIR="/gscratch/scrubbed/$USER/cache/triton" TORCHINDUCTOR_CACHE_DIR="/gscratch/scrubbed/$USER/cache/inductor"
+# The envs use the system python3.12, which ships no Python.h, and Triton compiles a small C helper at first use
+# (Molmo2's rotary embedding goes through torch.compile). Borrow the headers of a uv-managed CPython 3.12.
+PY_INC="${PY_INC:-$(ls -d "$HOME"/.local/share/uv/python/cpython-3.12*/include/python3.12 2>/dev/null | head -1)}"
+[ -n "$PY_INC" ] && export CPATH="$PY_INC${CPATH:+:$CPATH}"
 PY="$ENV/bin/python"
 
 echo "--- vlm_score: mode=$MODE model=$MODEL types=$TYPES variant=$VARIANT batch=$BATCH fewshot=$FEWSHOT limit=$LIMIT"
 echo "job ${SLURM_JOB_ID:-?} restart ${SLURM_RESTART_COUNT:-0} on ${SLURMD_NODENAME:-?}; env $ENV; out $OUT"
-nvidia-smi --query-gpu=name,memory.total --format=csv || true
+nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv || true
 "$PY" -c 'import sys, torch, transformers; print(sys.version.split()[0], "torch", torch.__version__, "transformers", transformers.__version__)'
 
 case "$MODE" in
