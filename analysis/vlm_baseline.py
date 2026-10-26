@@ -596,8 +596,10 @@ TORCH_MODELS = {
     "nemotron3.5-super-vl-120b": {"repo": "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
                                   "thinking": "enable_thinking", "remote_code": True, "env": "vlm-scoreboard"},
     # Phi's system prompt has the model open its answer with "<nothink>" or "<think>"; the prefix picks NOTHINK.
+    # Its Hub code needs transformers < 5 (runs in the molmo2 env, 4.57.1) and takes "<image>" placeholders in
+    # plain-text messages templated by the tokenizer, not image content parts (``image_token``).
     "phi4-rv-15b": {"repo": "microsoft/Phi-4-reasoning-vision-15B", "thinking": None, "remote_code": True,
-                    "env": "vlm-scoreboard", "answer_prefix": "<nothink>"},
+                    "env": "molmo2", "answer_prefix": "<nothink>", "image_token": "<image>"},
 }
 """Roster of the transformers legs (issue #63). ``thinking`` is the template kwarg set to False, or None;
 ``template_kwargs`` are further template kwargs; ``answer_prefix`` is appended after the generation prompt, for
@@ -748,6 +750,27 @@ def build_messages(question, image, examples=()):
     return msgs
 
 
+def text_only_messages(messages, image_token):
+    """``build_messages`` output flattened to plain-text contents with ``image_token`` + newline where each image
+    was, and the images in order, for processors that take placeholders in text (Phi-4-reasoning-vision).
+
+    >>> m, ims = text_only_messages(build_messages("Q?", "q", [("e", "Yes")]), "<image>")
+    >>> [x["content"] for x in m], ims
+    (['<image>\\nQ?', 'Yes', '<image>\\nQ?'], ['e', 'q'])
+    """
+    out, images = [], []
+    for m in messages:
+        parts = []
+        for p in m["content"]:
+            if p.get("type") == "image":
+                parts.append(image_token + "\n")
+                images.append(p["image"])
+            else:
+                parts.append(p["text"])
+        out.append({"role": m["role"], "content": "".join(parts)})
+    return out, images
+
+
 def todo_rows(df, path):
     """Rows of ``df`` whose ``label_uid`` is not yet in the score CSV at ``path`` (resumability)."""
     if not os.path.exists(path):
@@ -806,7 +829,15 @@ class TorchVlm:
 
     def inputs(self, conversations):
         kw = chat_kwargs(self.short)
-        if self.spec.get("answer_prefix"):   # template text + prefix, then the processor (no second BOS)
+        if self.spec.get("image_token"):   # text placeholders, tokenizer template, flat image list
+            texts, images = [], []
+            for c in conversations:
+                msgs, ims = text_only_messages(c, self.spec["image_token"])
+                texts.append(with_answer_prefix(self.tokenizer.apply_chat_template(
+                    msgs, tokenize=False, add_generation_prompt=True, **kw), self.short))
+                images += ims
+            b = self.processor(text=texts, images=images, padding=True, return_tensors="pt")
+        elif self.spec.get("answer_prefix"):   # template text + prefix, then the processor (no second BOS)
             texts = [with_answer_prefix(self.processor.apply_chat_template(c, tokenize=False, add_generation_prompt=True,
                                                                            **kw), self.short) for c in conversations]
             images = [[p["image"] for m in c for p in m["content"] if p.get("type") == "image"] for c in conversations]
