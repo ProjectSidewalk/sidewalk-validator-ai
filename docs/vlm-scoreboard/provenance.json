@@ -165,23 +165,23 @@
   },
   "scores/round3/Crosswalk.csv": {
    "rows": 583,
-   "sha256": "eaadb6a450bedbe33de5106633bdd5b3ff5f50fd109b7baeeecb3b25b88d4f22"
+   "sha256": "0121de46182e4ee3f7f283c63eb8cb0a661de10b1bb77fb4b184294ba15fd62d"
   },
   "scores/round3/CurbRamp.csv": {
    "rows": 2025,
-   "sha256": "29948e683f4ba812e180955529d4b3e9b186bac41da5ab2fc7288112cc4879cb"
+   "sha256": "5076033066dfd3d48e8dd30a9d7e2d2f7ac72093af50441a39ee9f7e207e1c5f"
   },
   "scores/round3/NoCurbRamp.csv": {
    "rows": 3356,
-   "sha256": "259e6980c2deaff6e96aacd76fa38baa32706ec4740e138b9a164e9e5e452373"
+   "sha256": "3c418ea893e993adc4a66f51192b538a4f479e69eff1e37236685f3b34ab94da"
   },
   "scores/round3/Obstacle.csv": {
    "rows": 4078,
-   "sha256": "4e271b4ca2c8440a7711339c23363e0e7871decf8f59b87eb61920a7c15c5137"
+   "sha256": "5789f267f0aaf8b78b807ff93e96aa8a89e8b0e8cbb7bbdf48bbe2c880ea5c80"
   },
   "scores/round3/SurfaceProblem.csv": {
    "rows": 3102,
-   "sha256": "f135706ec1ced2a8819e9ecb54dc89f56790789ee364b9e9b866431c69e64d6d"
+   "sha256": "e9b7fb1cda4a331c9d74a8e1b9b58f7fd2f27e829c0c3ac57fae795830246930"
   },
   "scores/timing_mac.csv": {
    "rows": 3,
