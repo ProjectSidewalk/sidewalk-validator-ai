@@ -317,7 +317,7 @@ def _calibration_section(ctx):
         reaches = hb.get("uncapped_reaches_gate") or {}
         lines += ["", f"**Held back:** the {held} map is capped at {fmt(hb.get('cap'), 4)}: every threshold whose "
                       f"fitted accuracy is higher serves {fmt(hb.get('cap'), 4)} instead, so that verdict never "
-                      f"reaches the {GATE} gate and never becomes a vote. Reason: {hb.get('reason', 'n/a')}."]
+                      f"reaches the {GATE} gate and never becomes a vote. Reason: {link_issues(hb.get('reason', 'n/a'))}."]
         for v in hb["verdicts"]:
             u = unc.get(v)
             if reaches.get(v) is False:
@@ -422,11 +422,16 @@ def model_card(ctx):
              "imagery that is not a label-centred crop made the same way as the training crops.\n",
              "## Training data\n",
              f"[`{ctx['dataset_repo']}`](https://huggingface.co/datasets/{ctx['dataset_repo']}) "
-             f"(content hash `{ds.get('content_hash', TODO + ' dataset not staged')}`). Labels are taken as correct "
+             f"(content hash `{ds.get('content_hash') or TODO + ' dataset not staged with this model; copy the hash from the dataset card'}`)."
+             + ("" if ds.get("content_hash") else f" {TODO} the linked dataset repo holds an earlier selection; whether "
+                "this model's training data is published, which includes deployments that are not public, is a "
+                "policy decision (issues #2 and #7).")
+             + " Labels are taken as correct "
              f"or incorrect from **human** validation votes only (AI votes excluded); see the dataset card for the "
              f"exact thresholds. Split sizes: train {fmt(split_rows.get('train'))}, val {fmt(split_rows.get('val'))}, "
              f"test {fmt(split_rows.get('test'))}"
-             + (f", test_heldout {fmt(split_rows.get('test_heldout'))} ({', '.join(heldout)})" if heldout else "")
+             + (f", test_heldout {fmt(split_rows.get('test_heldout'))} ({_city_list_text(heldout, ds.get('n_non_public_heldout'))})"
+                if heldout or ds.get("n_non_public_heldout") else "")
              + ". The split is grouped by panorama (no panorama in two splits), stratified by class, seeded, with "
                "optional whole held-out cities (`split_data.py`).\n",
              "## How the input crop is made\n",
@@ -495,7 +500,7 @@ def model_card(ctx):
              _doi_sentence(overrides.get("model_doi"), "model") + "\n",
              "There is no paper for this model yet. Please cite Project Sidewalk and link the training repository:\n",
              "```bibtex\n" + CITATION_BIBTEX + "\n```\n"]
-    return "\n".join(parts)
+    return link_issues("\n".join(parts))
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -515,6 +520,21 @@ def _counts_table(ds):
     lines.append(f"| **all** | {fmt(tc.get('correct', 0))} | {fmt(tc.get('incorrect', 0))} | {fmt(ds.get('n'))} | "
                  f"{fmt(tc.get('incorrect', 0) / ds['n'] if ds.get('n') else None)} |")
     return "\n".join(lines) + "\n"
+
+
+def link_issues(text):
+    """``issue #56`` / ``#56`` in free text -> a Markdown link to this repo's issue (bare numbers do not resolve on
+    the Hub). Example: ``link_issues("see #56")`` -> ``"see [#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56)"``."""
+    return re.sub(r"(?<![\w/\[])#(\d+)\b", lambda m: f"[#{m.group(1)}]({CODE_URL}/issues/{m.group(1)})", str(text))
+
+
+def _city_list_text(cities, n_non_public=None):
+    """``"a, b"``, ``"a, b and 2 non-public deployments"`` or ``"2 non-public deployments"``."""
+    pub = ", ".join(cities or [])
+    if n_non_public:
+        extra = f"{n_non_public} non-public deployment{'s' if n_non_public != 1 else ''}"
+        return f"{pub} and {extra}" if pub else extra
+    return pub
 
 
 def _cities_table(ds):
@@ -669,4 +689,4 @@ def dataset_card(ctx, license_id=None):
              f"Published from [sidewalk-validator-ai]({CODE_URL})"
              + (f" at commit `{ctx['code_commit']}`" if ctx.get("code_commit") else "")
              + " with `publish_to_hf.py`.\n"]
-    return "\n".join(parts)
+    return link_issues("\n".join(parts))

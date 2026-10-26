@@ -121,6 +121,16 @@ def no_network(monkeypatch):
 
     monkeypatch.setattr(requests, "get", blocked)
     monkeypatch.setattr(pub, "_hf_api", no_api)
+    # stage() reads the city lists from the API unless given them; in tests every make_root() city is public and
+    # a file still goes through the real parser
+    monkeypatch.setattr(pub, "city_lists", lambda cities_api=None, public_cities_file=None:
+                        TEST_LISTS if public_cities_file is None else
+                        _real_city_lists(cities_api, public_cities_file))
+
+
+_real_city_lists = pub.city_lists
+TEST_LISTS = {"public": {r[0] for r in ROWS} | {"teaneck", "chicago"}, "non_public_terms": set(),
+              "source": "tests", "read_at": "2026-10-22T00:00:00+00:00"}
 
 
 @pytest.fixture
@@ -1099,7 +1109,7 @@ def test_model_card_says_when_a_verdict_is_held_back(staged):
               for v, m in staged["api_map"].items()}
     section = hf_cards._calibration_section({"label_type": T, "api_map": capped, "calibration_report": rep})
     assert "**Held back:** the `incorrect` map is capped at 0.9199" in section and "serves 0.9199" in section
-    assert "prior under review (issue #56)" in section
+    assert "prior under review (issue [#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56))" in section
     assert "coverage 0.42" in section and "precision 0.97" in section and "n 98" in section
     assert "| incorrect | never reaches the gate |" in section
     # when the uncapped map never reached the gate, the card says the cap is a no-op instead of quoting 0.000 / n/a
@@ -1111,3 +1121,414 @@ def test_model_card_says_when_a_verdict_is_held_back(staged):
     plain = hf_cards._calibration_section({"label_type": T, "api_map": staged["api_map"],
                                            "calibration_report": staged["report"]})
     assert "Held back" not in plain
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Model-only staging (--what model): a machine with the checkpoints and the split, but without the crops
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _remove_crops(root, label_type=T):
+    """Delete every crop under <root>/<label_type>, as on a machine that only pulled the checkpoints."""
+    import shutil
+    for cls in pub.CLASSES:
+        shutil.rmtree(os.path.join(root, label_type, cls), ignore_errors=True)
+
+
+def test_stage_model_only_needs_no_crops(tmp_path, capsys):
+    root, _, api_map, _ = make_root(tmp_path)
+    _remove_crops(root)
+    with pytest.raises(pub.PublishError, match="crops listed in .* do not exist"):
+        pub.stage(root, T)                                   # a full staging still refuses
+    model_dir, dataset_dir = pub.stage(root, T, what="model")
+    assert dataset_dir is None
+    staged = {rel for rel, _ in pub.list_files(model_dir)}
+    assert staged == {"README.md", "calibration_report.json", "config.json", "confidence_precision_map.json",
+                      "metrics.json", "model.safetensors", "preprocessor_config.json", "trainer_state.json",
+                      "training_run.json"}
+    assert json.load(open(os.path.join(model_dir, "confidence_precision_map.json"))) == api_map
+    record = json.load(open(os.path.join(root, T, "publish", pub.STAGING_RECORD)))
+    assert record["what"] == "model" and record["content_hash"] is None
+    assert all(k.startswith("model/") for k in record["files"])
+    card = open(os.path.join(model_dir, "README.md")).read()
+    assert "TODO: dataset not staged with this model" in card and "`None`" not in card
+    assert "train 6" in card                                 # split sizes still come from split.csv
+
+
+def test_push_staged_model_only_needs_what_model(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    model_dir, _ = pub.stage(root, T, what="model")
+    with pytest.raises(pub.PublishError, match="model-only staging; pass --what model"):
+        pub.verify_staged(root, T)
+    with pytest.raises(pub.PublishError, match="model-only staging; pass --what model"):
+        pub.verify_staged(root, T, what="dataset")
+    assert pub.verify_staged(root, T, what="model") == (model_dir, None)
+    # a card edit is fine; a weights change is not
+    with open(os.path.join(model_dir, "README.md"), "a") as f:
+        f.write("\nhand edit\n")
+    assert pub.verify_staged(root, T, what="model") == (model_dir, None)
+    with open(os.path.join(model_dir, "metrics.json"), "a") as f:
+        f.write(" ")
+    with pytest.raises(pub.PublishError, match="staged files changed since staging"):
+        pub.verify_staged(root, T, what="model")
+
+
+def test_push_staged_full_staging_accepts_any_what(tmp_path):
+    root, *_ = make_root(tmp_path)
+    model_dir, dataset_dir = pub.stage(root, T)
+    for what in ("both", "model", "dataset"):
+        assert pub.verify_staged(root, T, what=what) == (model_dir, dataset_dir)
+
+
+def test_cli_what_model_stages_and_reports_model_only(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    assert pub.main(["--label_type", T, "--out", root, "--what", "model"]) == 0
+    out = capsys.readouterr().out
+    assert "(model only)" in out and "dataset card" not in out
+    assert pub.main(["--label_type", T, "--out", root, "--push-staged"]) == 1
+    assert "pass --what model" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Private deployments never reach a published file
+# ---------------------------------------------------------------------------------------------------------------------
+
+PUBLIC = {"teaneck", "chicago", "oradell"}
+LISTS = {"public": PUBLIC, "non_public_terms": {"zurich", "zurich-infra3d", "Zurich", "Zürich, Switzerland",
+                                                "sidewalk-zurich.cs.washington.edu", "columbia-sc", "Columbia",
+                                                "switzerland"},
+         "source": "tests", "read_at": "2026-10-22T00:00:00+00:00", "mode": "api"}
+
+
+def _grep(folder, needle, flags=re.I):
+    hits = []
+    for rel, _ in pub.list_files(folder):
+        if rel.lower().endswith(pub.TEXT_SUFFIXES):
+            if re.search(needle, open(os.path.join(folder, rel), errors="ignore").read(), flags):
+                hits.append(rel)
+    return hits
+
+
+def _add_private_city(root, label_type=T, city="zurich"):
+    """Put a private city into the per-city metrics, the prior's source and the held-out split of a make_root() tree."""
+    base = os.path.join(root, label_type)
+    metrics = json.load(open(os.path.join(base, "metrics.json")))
+    metrics["per_city"] = {"test_heldout": {"min_city_n": 1, "cities": {city: {"n": 2, "auc": 0.8},
+                                                                        "oradell": {"n": 2, "auc": 0.9}},
+                                            "below_min_n": {f"{city}-infra3d": 0}}}
+    json.dump(metrics, open(os.path.join(base, "metrics.json"), "w"))
+    rep_path = os.path.join(base, "calibration", "calibration_report.json")
+    rep = json.load(open(rep_path))
+    rep["prior_source"] = {"source": f"rawLabels of chicago, teaneck, {city}, {city}-infra3d, human votes only",
+                           "cities": ["chicago", "teaneck", city, f"{city}-infra3d"]}
+    json.dump(rep, open(rep_path, "w"), default=float)
+    priors = json.load(open(os.path.join(root, "deployment_priors.json")))
+    priors[label_type]["source"] = f"rawLabels of chicago, teaneck, {city}"
+    priors[label_type]["cities"] = ["chicago", "teaneck", city]
+    json.dump(priors, open(os.path.join(root, "deployment_priors.json"), "w"))
+    split = pd.read_csv(os.path.join(base, "split.csv"))
+    split.loc[split["split"] == "test_heldout", "city"] = city      # the private city is a held-out city
+    split["label_uid"] = split["city"] + ":" + split["label_id"].astype(str)
+    split.to_csv(os.path.join(base, "split.csv"), index=False)
+    key = json.load(open(os.path.join(base, "dinov2", "run_key.json")))
+    key["split_sha256"] = hashlib.sha256(open(os.path.join(base, "split.csv"), "rb").read()).hexdigest()
+    json.dump(key, open(os.path.join(base, "dinov2", "run_key.json"), "w"))
+    ev = split[split["split"].isin(["val", "test", "test_heldout"])]
+    pd.DataFrame({"label_uid": ev.label_uid, "split": ev.split, "true": ev.label_class,
+                  "p_correct": [0.7, 0.4, 0.8, 0.3, 0.9, 0.2][:len(ev)], "p_incorrect": [0.3, 0.6, 0.2, 0.7, 0.1, 0.8][:len(ev)]}
+                 ).to_csv(os.path.join(base, "predictions.csv"), index=False)
+
+
+def test_scrub_source_text_and_city_lists():
+    assert pub.scrub_source_text("rawLabels of a, zurich, b, human votes only", {"zurich"}) == \
+        "rawLabels of a, b, human votes only (and 1 non-public deployment)"
+    assert pub.scrub_source_text("rawLabels of zurich, zurich-infra3d, a", {"zurich", "zurich-infra3d"}) == \
+        "rawLabels of a (and 2 non-public deployments)"
+    assert pub.scrub_source_text("no cities here", {"zurich"}) == "no cities here"
+    assert pub.scrub_city_list(["a", "zurich", "b"], {"a", "b"}) == (["a", "b"], 1)
+    out = pub.redact_metadata({"cities": ["a", "zurich"], "heldout_cities": ["zurich"], "city_source": {"a": 1, "zurich": 2},
+                               "source": "rawLabels of a, zurich"}, {"a"})
+    assert out == {"cities": ["a"], "n_non_public_cities": 1, "heldout_cities": [], "n_non_public_heldout": 1,
+                   "city_source": {"a": 1}, "source": "rawLabels of a (and 1 non-public deployment)"}
+
+
+def test_model_staging_removes_private_cities_and_pools_their_metrics(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    _add_private_city(root)
+    _remove_crops(root)
+    model_dir, _ = pub.stage(root, T, what="model", lists=LISTS)
+    out = capsys.readouterr().out
+    assert "survivor gate: no non-public deployment name" in out
+    assert not _grep(model_dir, "zurich|columbia|private-")
+    metrics = json.load(open(os.path.join(model_dir, "metrics.json")))
+    block = metrics["per_city"]["test_heldout"]
+    assert set(block["cities"]) == {"oradell"} and block["below_min_n"] == {}
+    assert block["non_public"]["n_cities"] == 2 and block["non_public"]["n"] == 2      # pooled from predictions.csv
+    assert "auc" in block["non_public"]
+    rep = json.load(open(os.path.join(model_dir, "calibration_report.json")))
+    assert rep["prior_source"]["cities"] == ["chicago", "teaneck"] and rep["prior_source"]["n_non_public_cities"] == 2
+    assert rep["prior_source"]["source"].endswith("(and 2 non-public deployments)")
+    card = open(os.path.join(model_dir, "README.md")).read()
+    assert "test_heldout 2 (1 non-public deployment)" in card
+    record = json.load(open(os.path.join(root, T, "publish", pub.STAGING_RECORD)))
+    assert record["cities"]["public"] == sorted(PUBLIC) and record["cities"]["n_non_public_terms"] == 8
+    assert "zurich" not in json.dumps(record)
+
+
+@pytest.mark.parametrize("source", [
+    "rawLabels of chicago, teaneck, zurich (Zurich, Switzerland)",      # display case
+    "rawLabels of chicago, zurich; e.g. zurich_123.webp",               # crop name, underscore
+    "rawLabels from sidewalk-zurich.cs.washington.edu",                 # hostname
+    "rawLabels of chicago, teaneck, columbia-sc, human votes only",     # id only in free text, no structured slot
+])
+def test_survivor_gate_catches_names_the_redaction_misses(tmp_path, source):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    p = os.path.join(root, T, "calibration", "calibration_report.json")
+    r = json.load(open(p))
+    r["prior_source"] = {"source": source}
+    json.dump(r, open(p, "w"), default=float)
+    try:
+        model_dir, _ = pub.stage(root, T, what="model", lists=LISTS)
+    except pub.PublishError as e:
+        assert "survive in the staged files" in str(e)
+        return
+    assert not _grep(model_dir, "zurich|columbia")
+
+
+def test_overrides_naming_a_private_city_are_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    json.dump({"failure_modes": ["Tram rails in Zurich read as curb ramps."]},
+              open(os.path.join(root, T, "card_overrides.json"), "w"))
+    with pytest.raises(pub.PublishError, match="survive in the staged files"):
+        pub.stage(root, T, what="model", lists=LISTS)
+
+
+def test_survivor_gate_is_independent_of_the_redaction(tmp_path, monkeypatch):
+    """A no-op redaction must still be caught: the gate reads bytes, not slots."""
+    root, *_ = make_root(tmp_path)
+    _add_private_city(root)
+    _remove_crops(root)
+    monkeypatch.setattr(pub, "redact_metadata", lambda obj, public: obj)
+    monkeypatch.setattr(pub, "pool_private_city_metrics", lambda m, *a: m)
+    with pytest.raises(pub.PublishError, match="survive in the staged files"):
+        pub.stage(root, T, what="model", lists=LISTS)
+    # and the gate alone, on a folder
+    d = tmp_path / "f"
+    d.mkdir()
+    (d / "x.json").write_text('{"a": "Seen in ZURICH once"}')
+    (d / "w.safetensors").write_bytes(b"zurich")                 # binary: not a text file
+    with pytest.raises(pub.PublishError, match="x.json: 'zurich'"):
+        pub.check_no_private_names(str(d), {"zurich"})
+    assert pub.check_no_private_names(str(d), {"nowhere"}) == 1
+    assert pub.check_no_private_names(str(d), {"DC"}) == 0        # short display name: skipped, not an id
+
+
+def test_dataset_staging_refuses_a_private_split_and_scrubs_the_rest(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _add_private_city(root)
+    with pytest.raises(pub.PublishError, match="not public; a dataset repo would name them"):
+        pub.stage(root, T, lists=LISTS)
+    # all-public split, but the prior, the generation run and the manifest still name a private deployment
+    root, *_ = make_root(tmp_path / "b")
+    pri = json.load(open(os.path.join(root, "deployment_priors.json")))
+    pri[T]["source"] = "rawLabels of teaneck, chicago, zurich, human votes only"
+    pri[T]["cities"] = ["chicago", "teaneck", "zurich"]
+    json.dump(pri, open(os.path.join(root, "deployment_priors.json"), "w"))
+    g = json.load(open(os.path.join(root, T, "generation_run.json")))
+    g["cities"] = ["chicago", "teaneck", "zurich"]
+    g["city_source"] = {"zurich": "api"}
+    json.dump(g, open(os.path.join(root, T, "generation_run.json"), "w"))
+    m = pd.read_csv(os.path.join(root, T, "manifest.csv"))
+    extra = m.iloc[[0]].assign(city="zurich", label_uid="zurich:5", label_id=5, crop_path="correct/zurich_5.webp")
+    pd.concat([m, extra]).to_csv(os.path.join(root, T, "manifest.csv"), index=False)
+    model_dir, dataset_dir = pub.stage(root, T, lists=LISTS)
+    assert not _grep(dataset_dir, "zurich") and not _grep(model_dir, "zurich")
+    assert "zurich" not in pd.read_csv(os.path.join(dataset_dir, "manifest.csv"))["city"].values
+    gen = json.load(open(os.path.join(dataset_dir, "generation_run.json")))
+    assert gen["cities"] == ["chicago", "teaneck"] and gen["n_non_public_cities"] == 1 and gen["city_source"] == {}
+    prior = json.load(open(os.path.join(dataset_dir, "deployment_priors.json")))[T]
+    assert prior["cities"] == ["chicago", "teaneck"] and "non-public" in prior["source"]
+
+
+def test_push_staged_reruns_the_gate_and_needs_the_record(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    model_dir, _ = pub.stage(root, T, what="model", lists=LISTS)
+    assert pub.verify_staged(root, T, what="model", lists=LISTS) == (model_dir, None)
+    # a fresher list that now knows a name sitting in the card refuses
+    bigger = dict(LISTS, non_public_terms=LISTS["non_public_terms"] | {"dinov2"})
+    with pytest.raises(pub.PublishError, match="survive in the staged files"):
+        pub.verify_staged(root, T, what="model", lists=bigger)
+    # a list that no longer calls a staged city public refuses
+    smaller = dict(LISTS, public=PUBLIC - {"teaneck"})
+    with pytest.raises(pub.PublishError, match="public city list that names 1 deployment"):
+        pub.verify_staged(root, T, what="model", lists=smaller)
+    # a staging from before the gate (no cities record) refuses
+    rec_path = os.path.join(root, T, "publish", pub.STAGING_RECORD)
+    rec = json.load(open(rec_path))
+    del rec["cities"]
+    json.dump(rec, open(rec_path, "w"))
+    with pytest.raises(pub.PublishError, match="before the private-deployment gate"):
+        pub.verify_staged(root, T, what="model", lists=LISTS)
+
+
+def test_city_lists_from_files_and_refusals(tmp_path):
+    f = tmp_path / "public.txt"
+    f.write_text("teaneck\n# comment\nchicago  # also\n\n")
+    lists = _real_city_lists(public_cities_file=str(f))
+    assert lists["public"] == {"teaneck", "chicago"} and lists["non_public_terms"] == set()
+    j = tmp_path / "cities.json"
+    j.write_text(json.dumps({"public": ["teaneck"], "non_public_terms": ["zurich", "Zurich"]}))
+    lists = _real_city_lists(public_cities_file=str(j))
+    assert lists["public"] == {"teaneck"} and lists["non_public_terms"] == {"zurich", "Zurich"}
+    (tmp_path / "empty.txt").write_text("# nothing\n")
+    with pytest.raises(pub.PublishError, match="lists no public city ids"):
+        _real_city_lists(public_cities_file=str(tmp_path / "empty.txt"))
+    (tmp_path / "bad.json").write_text('{"nope": 1}')
+    with pytest.raises(pub.PublishError, match="expected"):
+        _real_city_lists(public_cities_file=str(tmp_path / "bad.json"))
+    with pytest.raises(pub.PublishError, match="could not read the city list"):
+        _real_city_lists(cities_api="http://127.0.0.1:9/nope", public_cities_file=None)
+
+
+def test_city_lists_from_the_api_shape(monkeypatch):
+    import requests
+
+    class R:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"cities": [
+                {"city_id": "seattle-wa", "visibility": "public", "city_name_short": "Seattle", "country_id": "usa",
+                 "url": "https://sidewalk-sea.cs.washington.edu"},
+                {"city_id": "zurich", "visibility": "private", "city_name_short": "Zurich", "country_id": "switzerland",
+                 "city_name_formatted": "Zürich, Switzerland", "url": "https://sidewalk-zurich.cs.washington.edu/"},
+                {"city_id": "mystery", "city_name_short": "M", "country_id": "usa"}]}      # no visibility: private
+
+    monkeypatch.setattr(requests, "get", lambda *a, **k: R())
+    lists = _real_city_lists(cities_api="http://x/cities")
+    assert lists["public"] == {"seattle-wa"}
+    assert lists["non_public_terms"] == {"zurich", "Zurich", "Zürich, Switzerland", "sidewalk-zurich.cs.washington.edu",
+                                         "mystery", "M", "switzerland"}      # usa is a public country: not a term
+    assert lists["mode"] == "api"
+
+
+def test_cli_needs_a_city_list_and_what_dataset_stages_both(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    f = tmp_path / "public.txt"
+    f.write_text("teaneck\nchicago\noradell\n")
+    assert pub.main(["--label_type", T, "--out", root, "--what", "dataset", "--public-cities", str(f)]) == 0
+    out = capsys.readouterr().out
+    assert "and " in out and "(model only)" not in out
+    record = json.load(open(os.path.join(root, T, "publish", pub.STAGING_RECORD)))
+    assert record["what"] == "both" and record["cities"]["source"].endswith("public.txt")
+    _remove_crops(root)
+    assert pub.main(["--label_type", T, "--out", root, "--what", "model", "--public-cities", str(f)]) == 0
+    assert "(model only)" in capsys.readouterr().out
+    pub.city_lists = _real_city_lists
+    try:
+        assert pub.main(["--label_type", T, "--out", root, "--what", "model", "--cities-api", "http://127.0.0.1:9/x"]) == 1
+    finally:
+        pass
+    assert "could not read the city list" in capsys.readouterr().err
+
+
+def test_retry_command_works_for_a_model_only_staging(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    model_dir, _ = pub.stage(root, T, what="model", lists=LISTS)
+    cmd = pub.retry_command(T, model_dir, pub.DEFAULT_PREFIX, [{"repo_type": "model"}], allow_todo=True)
+    assert cmd == f"python publish_to_hf.py --label_type {T} --out {root} --push-staged --what model --yes --allow-todo"
+
+
+def test_card_links_issue_numbers_and_flags_the_dataset_link():
+    assert hf_cards.link_issues("under review (issue #56) and #7") == (
+        "under review (issue [#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56)) and "
+        "[#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7)")
+    assert hf_cards.link_issues("[#56](x) already linked") == "[#56](x) already linked"
+    assert hf_cards._city_list_text(["a", "b"], 2) == "a, b and 2 non-public deployments"
+    assert hf_cards._city_list_text([], 1) == "1 non-public deployment"
+
+
+@pytest.mark.parametrize("text", ["Tram rails in Zürich read as curb ramps.", "TRAM RAILS IN ZÜRICH", "seen in Zurich",
+                                  "the Swiss deployment (Switzerland)", "ZÜRICH, SWITZERLAND"])
+def test_gate_folds_accents_and_case_and_knows_countries(tmp_path, text):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    json.dump({"failure_modes": [text]}, open(os.path.join(root, T, "card_overrides.json"), "w"))
+    with pytest.raises(pub.PublishError, match="survive in the staged files"):
+        pub.stage(root, T, what="model", lists=LISTS)
+
+
+def test_gate_reads_every_utf8_file_and_file_names(tmp_path):
+    d = tmp_path / "f"
+    d.mkdir()
+    (d / "SHA256SUMS").write_text("abc  test/correct/zurich_5.webp\n")          # no suffix
+    with pytest.raises(pub.PublishError, match="SHA256SUMS: 'zurich'"):
+        pub.check_no_private_names(str(d), {"zurich"})
+    (d / "SHA256SUMS").write_text("clean\n")
+    (d / "test").mkdir()
+    (d / "test" / "zurich_5.webp").write_bytes(b"RIFF\xff\xfe binary")        # name hit, content undecodable
+    with pytest.raises(pub.PublishError, match=r"zurich_5.webp \(file name\): 'zurich'"):
+        pub.check_no_private_names(str(d), {"zurich"})
+    (d / "test" / "zurich_5.webp").unlink()
+    (d / "weights.bin").write_bytes(b"\xff\xfe" + "zürich".encode())           # undecodable: not read
+    assert pub.check_no_private_names(str(d), {"zurich"}) == 1
+    assert pub.fold_text("ZÜRICH, Schweiz") == "zurich, schweiz"
+
+
+def test_push_staged_refuses_plain_file_lists_and_term_drift(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    model_dir, _ = pub.stage(root, T, what="model", lists=LISTS)
+    # H4: a hand-edited card naming a private deployment, verified with a plain id-per-line file: refused as plain
+    with open(os.path.join(model_dir, "README.md"), "a") as f:
+        f.write("\nValidated in Zurich too.\n")
+    plain = dict(LISTS, non_public_terms=set(), mode="plain")
+    with pytest.raises(pub.PublishError, match="plain id-per-line file"):
+        pub.verify_staged(root, T, what="model", lists=plain)
+    # with the real terms the edit is caught by the gate
+    with pytest.raises(pub.PublishError, match="survive in the staged files"):
+        pub.verify_staged(root, T, what="model", lists=LISTS)
+    # term drift: fewer terms than recorded, or a different set, is refused unless accepted
+    root, *_ = make_root(tmp_path / "b")
+    _remove_crops(root)
+    model_dir, _ = pub.stage(root, T, what="model", lists=LISTS)
+    fewer = dict(LISTS, non_public_terms=LISTS["non_public_terms"] - {"Columbia"})
+    with pytest.raises(pub.PublishError, match="non-public term list changed since staging"):
+        pub.verify_staged(root, T, what="model", lists=fewer)
+    assert pub.verify_staged(root, T, what="model", lists=fewer, accept_city_list_change=True) == (model_dir, None)
+    assert "accepted" in capsys.readouterr().out
+    assert pub.verify_staged(root, T, what="model", lists=LISTS) == (model_dir, None)
+    f = tmp_path / "public.txt"
+    f.write_text("teaneck\nchicago\noradell\n")
+    assert pub.main(["--label_type", T, "--out", root, "--push-staged", "--what", "model",
+                     "--public-cities", str(f)]) == 1
+    assert "plain id-per-line file" in capsys.readouterr().err
+
+
+def test_pooled_row_is_withheld_for_a_single_private_deployment(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _add_private_city(root)
+    _remove_crops(root)
+    base = os.path.join(root, T)
+    metrics = json.load(open(os.path.join(base, "metrics.json")))
+    metrics["per_city"]["test_heldout"]["below_min_n"] = {}          # leaves zurich alone in the pool
+    json.dump(metrics, open(os.path.join(base, "metrics.json"), "w"))
+    model_dir, _ = pub.stage(root, T, what="model", lists=LISTS)
+    block = json.load(open(os.path.join(model_dir, "metrics.json")))["per_city"]["test_heldout"]
+    assert block["non_public"] == {"n_cities": 1, "note": "metrics withheld: a single non-public deployment"}
+
+
+def test_whole_card_links_issue_numbers(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    model_dir, _ = pub.stage(root, T, what="model", lists=LISTS)
+    card = open(os.path.join(model_dir, "README.md")).read()
+    assert "(issues [#2](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/2) and [#7](" in card
+    assert re.search(r"(?<![\w\[/])#\d+\b", card) is None                   # no bare issue number of this repo
+    assert "policy decision (issues" in card and ").  Labels" not in card
