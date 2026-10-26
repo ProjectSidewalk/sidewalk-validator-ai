@@ -55,6 +55,8 @@ PORT=${PORT:-$((18000 + ${SLURM_JOB_ID:-0} % 1000))}
 HEALTH_TIMEOUT_S=${HEALTH_TIMEOUT_S:-5400}
 
 export HF_HOME=$SCRUB/hf HF_HUB_OFFLINE=1
+# klone sets http_proxy for every login; its no_proxy lists localhost but not 127.0.0.1, so local calls hit the proxy
+export no_proxy="127.0.0.1,${no_proxy:-}" NO_PROXY="127.0.0.1,${NO_PROXY:-}"
 case "$OUT" in /tmp*) echo "refusing to write under /tmp"; exit 2 ;; esac
 mkdir -p "$OUT" "$SCRUB/vllm_home" "$SCRUB/logs"
 SHM=/dev/shm/vllm_${SLURM_JOB_ID:-$$}
@@ -85,14 +87,14 @@ cleanup() { kill "$SERVER" 2>/dev/null; sleep 5; kill -9 "$SERVER" 2>/dev/null; 
 trap cleanup EXIT
 
 t0=$(date +%s)
-until curl -sf "http://127.0.0.1:$PORT/health" > /dev/null; do
+until curl -sf --noproxy "*" "http://127.0.0.1:$PORT/health" > /dev/null; do
   if ! kill -0 "$SERVER" 2>/dev/null; then
     echo "server exited before becoming healthy"; tail -50 "$SCRUB/logs/vlm_vllm.${SLURM_JOB_ID:-x}.server.log"; exit 3
   fi
   if (( $(date +%s) - t0 > HEALTH_TIMEOUT_S )); then echo "server not healthy after ${HEALTH_TIMEOUT_S}s"; exit 4; fi
   sleep 15
 done
-echo "server healthy after $(( $(date +%s) - t0 ))s"; curl -s "http://127.0.0.1:$PORT/version"; echo
+echo "server healthy after $(( $(date +%s) - t0 ))s"; curl -s --noproxy "*" "http://127.0.0.1:$PORT/version"; echo
 
 COMMON=(--server "http://127.0.0.1:$PORT" --model "$MODEL" --repo "$REPO" --data-root "$DATA" --out-dir "$OUT"
         --gpu "$GPU_LABEL" --tp "$TP" --image-tag "$IMAGE_TAG" --template-kwargs "$TEMPLATE_KWARGS"

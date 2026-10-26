@@ -240,14 +240,18 @@ def hf_revision(repo, hf_home):
 # HTTP -- ``post``/``get`` are injectable so the tests need no server
 # --------------------------------------------------------------------------------------------------------------------
 
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+"""Ignores http_proxy: the server is local, and klone's proxy settings do not exempt 127.0.0.1."""
+
+
 def http_post(url, body, timeout=600):
     req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with _OPENER.open(req, timeout=timeout) as r:
         return json.loads(r.read())
 
 
 def http_get(url, timeout=30):
-    with urllib.request.urlopen(url, timeout=timeout) as r:
+    with _OPENER.open(url, timeout=timeout) as r:
         return json.loads(r.read() or b"null")
 
 
