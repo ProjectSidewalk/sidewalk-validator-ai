@@ -1,0 +1,4 @@
+model,display,gpu,n_gpus,batch_size,n_crops,median_s_per_crop,p90_s_per_crop,gpu_hours_per_1000,gpu_hours_per_800,source
+gemma4-12b-mlx4,"Gemma 4 12B (4-bit, Mac)",Apple M1 Max (MLX),1,1,50,2.3283,2.4219,0.6468,0.5174,"vlm_baseline timing (#16), idle Mac"
+qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",Apple M1 Max (MLX),1,1,50,0.7168,0.7267,0.1991,0.1593,"vlm_baseline timing (#16), idle Mac"
+qwen3vl-8b-mlx4,"Qwen3-VL-8B (4-bit, Mac)",Apple M1 Max (MLX),1,1,50,2.1926,2.2967,0.6091,0.4872,"vlm_baseline timing (#16), idle Mac"

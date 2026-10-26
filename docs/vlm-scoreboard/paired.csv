@@ -1,0 +1,19 @@
+leg,reference,label_type,n,auc_leg,auc_ref,diff,diff_lo,diff_hi
+gemma4-12b-mlx4,round3,CurbRamp,400,0.7898,0.9365,-0.1467,-0.1927,-0.1060
+gemma4-12b-mlx4,round3,NoCurbRamp,400,0.6340,0.9096,-0.2756,-0.3380,-0.2224
+gemma4-12b-mlx4,round3,Obstacle,400,0.5084,0.8808,-0.3724,-0.4323,-0.3113
+gemma4-12b-mlx4,round3,SurfaceProblem,400,0.7350,0.8306,-0.0955,-0.1469,-0.0485
+gemma4-12b-mlx4,round3,Crosswalk,388,0.9444,0.9680,-0.0236,-0.0447,-0.0065
+gemma4-12b-mlx4,round3,macro (5 types),1988,0.7223,0.9051,-0.1828,-0.2061,-0.1623
+qwen3vl-2b-mlx4,round3,CurbRamp,271,0.5303,0.9584,-0.4281,-0.5014,-0.3514
+qwen3vl-2b-mlx4,round3,NoCurbRamp,100,0.5456,0.9296,-0.3840,-0.5128,-0.2584
+qwen3vl-2b-mlx4,round3,Obstacle,100,0.4856,0.8944,-0.4088,-0.5384,-0.2844
+qwen3vl-2b-mlx4,round3,SurfaceProblem,100,0.6176,0.7772,-0.1596,-0.2829,-0.0328
+qwen3vl-2b-mlx4,round3,Crosswalk,100,0.9244,0.9728,-0.0484,-0.1012,-0.0028
+qwen3vl-2b-mlx4,round3,macro (5 types),671,0.6207,0.9065,-0.2858,-0.3344,-0.2365
+qwen3vl-8b-mlx4,round3,CurbRamp,100,0.7608,0.9516,-0.1908,-0.2948,-0.0900
+qwen3vl-8b-mlx4,round3,NoCurbRamp,100,0.4572,0.9296,-0.4724,-0.5816,-0.3604
+qwen3vl-8b-mlx4,round3,Obstacle,100,0.5148,0.8944,-0.3796,-0.5096,-0.2572
+qwen3vl-8b-mlx4,round3,SurfaceProblem,100,0.6556,0.7772,-0.1216,-0.2412,0.0004
+qwen3vl-8b-mlx4,round3,Crosswalk,100,0.8952,0.9728,-0.0776,-0.1440,-0.0212
+qwen3vl-8b-mlx4,round3,macro (5 types),500,0.6567,0.9051,-0.2484,-0.2980,-0.2007

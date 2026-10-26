@@ -1,0 +1,5 @@
+leg,display,model_class,n,n_total,full,n_types,macro_auc,macro_auc_lo,macro_auc_hi,auc_CurbRamp,auc_NoCurbRamp,auc_Obstacle,auc_SurfaceProblem,auc_Crosswalk,auc_test,auc_heldout,within_city_auc,balanced_accuracy,r_incorrect_p95,s_per_crop,gpu,batch_size,diff_vs_round3,diff_lo,diff_hi,rank
+round3,"Round 3 (DINOv2-L, 2026-10)",purpose-trained,13144,13144,True,5,0.9146,0.9096,0.9195,0.9534,0.9197,0.8731,0.8551,0.9716,0.9319,0.8615,0.8861,0.8502,0.4072,,,,,,,1
+gemma4-12b-mlx4,"Gemma 4 12B (4-bit, Mac)",chat VLM,1988,13144,False,5,0.7223,0.7016,0.7448,0.7898,0.6340,0.5084,0.7350,0.9444,0.7244,0.7179,0.6957,0.6253,0.1854,2.3283,Apple M1 Max (MLX),1.0000,-0.1828,-0.2061,-0.1623,
+qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",chat VLM,671,13144,False,5,0.6207,0.5780,0.6617,0.5303,0.5456,0.4856,0.6176,0.9244,0.6134,0.6485,0.6294,0.5699,0.1520,0.7168,Apple M1 Max (MLX),1.0000,-0.2858,-0.3344,-0.2365,
+qwen3vl-8b-mlx4,"Qwen3-VL-8B (4-bit, Mac)",chat VLM,500,13144,False,5,0.6567,0.6112,0.7014,0.7608,0.4572,0.5148,0.6556,0.8952,0.6553,0.6580,0.6330,0.6140,0.1000,2.1926,Apple M1 Max (MLX),1.0000,-0.2484,-0.2980,-0.2007,

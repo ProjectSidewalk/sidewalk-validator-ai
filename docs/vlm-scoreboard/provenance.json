@@ -1,0 +1,211 @@
+{
+ "min_city_n": 30,
+ "n_boot": 1000,
+ "packages": {
+  "matplotlib": "3.11.2",
+  "numpy": "2.5.4",
+  "pandas": "3.1.0",
+  "scikit-learn": "1.9.1"
+ },
+ "public_cities": [
+  "amsterdam",
+  "auckland",
+  "bayonne-fr",
+  "blackhawk-hills-il",
+  "burnaby",
+  "cdmx",
+  "chandigarh-india",
+  "chicago-il",
+  "cliffside-park-nj",
+  "clifton-nj",
+  "columbus-oh",
+  "cuenca",
+  "danville-il",
+  "detroit-mi",
+  "fort-wayne-in",
+  "gainesville-fl",
+  "hackensack-nj",
+  "houston-tx",
+  "knox-oh",
+  "la-ca",
+  "la-piedad",
+  "laurens-ia",
+  "madison-wi",
+  "maywood-nj",
+  "mendota-il",
+  "newberg-or",
+  "newport-ky",
+  "niagara-falls-ny",
+  "oradell-nj",
+  "paterson-nj",
+  "pittsburgh-pa",
+  "rancagua-chile",
+  "richmond-va",
+  "santiago-chile",
+  "sao-paulo-brazil",
+  "seattle-wa",
+  "spgg",
+  "st-louis-mo",
+  "teaneck-nj",
+  "tucson-az",
+  "vancouver-wa",
+  "virden-il",
+  "walla-walla-wa",
+  "waltham-ma",
+  "washington-dc",
+  "west-chester-pa"
+ ],
+ "public_cities_source": "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities",
+ "seed": 20261021,
+ "staged_files": {
+  "scores/gemma4-12b-mlx4/Crosswalk.csv": {
+   "rows": 388,
+   "sha256": "cd78c7577423cc412fa69cadf0b1aa8ae6607c330cb90d4f30c7e7dad0bb7d80"
+  },
+  "scores/gemma4-12b-mlx4/Crosswalk.meta.json": {
+   "sha256": "885db0f24def31352a7039c5542758ce2a97930067c70eb09beda91d06286074"
+  },
+  "scores/gemma4-12b-mlx4/CurbRamp.csv": {
+   "rows": 400,
+   "sha256": "ded7e57071f5e31bec49f8e0293f12929bdd0b68955d7036615434f186210ecc"
+  },
+  "scores/gemma4-12b-mlx4/CurbRamp.meta.json": {
+   "sha256": "885db0f24def31352a7039c5542758ce2a97930067c70eb09beda91d06286074"
+  },
+  "scores/gemma4-12b-mlx4/NoCurbRamp.csv": {
+   "rows": 400,
+   "sha256": "aedcd45439556341e1cbb37b4513cc711358c6a0d2fd943996ca3bfa7c58b7ab"
+  },
+  "scores/gemma4-12b-mlx4/NoCurbRamp.meta.json": {
+   "sha256": "885db0f24def31352a7039c5542758ce2a97930067c70eb09beda91d06286074"
+  },
+  "scores/gemma4-12b-mlx4/Obstacle.csv": {
+   "rows": 400,
+   "sha256": "254a11b0886bf076144f70f33bdc2e6c607d82ef638eae890e13d66a910b8363"
+  },
+  "scores/gemma4-12b-mlx4/Obstacle.meta.json": {
+   "sha256": "885db0f24def31352a7039c5542758ce2a97930067c70eb09beda91d06286074"
+  },
+  "scores/gemma4-12b-mlx4/SurfaceProblem.csv": {
+   "rows": 400,
+   "sha256": "81ee645a9646470813d46ae83f28cb658385c1da06546cf8cffc7414fe333908"
+  },
+  "scores/gemma4-12b-mlx4/SurfaceProblem.meta.json": {
+   "sha256": "885db0f24def31352a7039c5542758ce2a97930067c70eb09beda91d06286074"
+  },
+  "scores/qwen3vl-2b-mlx4/Crosswalk.csv": {
+   "rows": 100,
+   "sha256": "4622686f64f23691e985dec13938e99749ded7843abd647e10ff4a3ae90f79f1"
+  },
+  "scores/qwen3vl-2b-mlx4/Crosswalk.meta.json": {
+   "sha256": "2ddac9822d56b2d701d918953f9282b831d1b0fe8f43ab4a3c765ee268572582"
+  },
+  "scores/qwen3vl-2b-mlx4/CurbRamp.csv": {
+   "rows": 271,
+   "sha256": "fc639a53a9fc5aefc174b332df427eab2b65a0d9341232e23a8248b6378993b5"
+  },
+  "scores/qwen3vl-2b-mlx4/CurbRamp.meta.json": {
+   "sha256": "2ddac9822d56b2d701d918953f9282b831d1b0fe8f43ab4a3c765ee268572582"
+  },
+  "scores/qwen3vl-2b-mlx4/NoCurbRamp.csv": {
+   "rows": 100,
+   "sha256": "5056b0aa89734c10d34eb4b46d5e9e2a9a0b62544e020eb74a85a1c80048b17d"
+  },
+  "scores/qwen3vl-2b-mlx4/NoCurbRamp.meta.json": {
+   "sha256": "2ddac9822d56b2d701d918953f9282b831d1b0fe8f43ab4a3c765ee268572582"
+  },
+  "scores/qwen3vl-2b-mlx4/Obstacle.csv": {
+   "rows": 100,
+   "sha256": "b442819fa050f8fa43afc8f095d0d9eae07f9591b31ee5e55385e7c002b3bb48"
+  },
+  "scores/qwen3vl-2b-mlx4/Obstacle.meta.json": {
+   "sha256": "2ddac9822d56b2d701d918953f9282b831d1b0fe8f43ab4a3c765ee268572582"
+  },
+  "scores/qwen3vl-2b-mlx4/SurfaceProblem.csv": {
+   "rows": 100,
+   "sha256": "7a3c3f5e296a64a020b0e8c1a0a775bca011bde8556d3cb8febe365cff713f75"
+  },
+  "scores/qwen3vl-2b-mlx4/SurfaceProblem.meta.json": {
+   "sha256": "2ddac9822d56b2d701d918953f9282b831d1b0fe8f43ab4a3c765ee268572582"
+  },
+  "scores/qwen3vl-8b-mlx4/Crosswalk.csv": {
+   "rows": 100,
+   "sha256": "a3ffd82bdef57a04239446bb39e58eeaf6f913ffe34c49ecc0d336c3ea453371"
+  },
+  "scores/qwen3vl-8b-mlx4/Crosswalk.meta.json": {
+   "sha256": "299dd05761d3ffb3e47afda46e5b1d1a03fd1e00ab9cf193e983e90bdd898a07"
+  },
+  "scores/qwen3vl-8b-mlx4/CurbRamp.csv": {
+   "rows": 100,
+   "sha256": "d03770f6057ec317f607f8d4304359a44e06a27bb1f77efd42e7f13b94b54729"
+  },
+  "scores/qwen3vl-8b-mlx4/CurbRamp.meta.json": {
+   "sha256": "299dd05761d3ffb3e47afda46e5b1d1a03fd1e00ab9cf193e983e90bdd898a07"
+  },
+  "scores/qwen3vl-8b-mlx4/NoCurbRamp.csv": {
+   "rows": 100,
+   "sha256": "3fe5a5ea5992df28a5e46753f8a1fed383c2849840cc806fd192dc4ede69f0cd"
+  },
+  "scores/qwen3vl-8b-mlx4/NoCurbRamp.meta.json": {
+   "sha256": "299dd05761d3ffb3e47afda46e5b1d1a03fd1e00ab9cf193e983e90bdd898a07"
+  },
+  "scores/qwen3vl-8b-mlx4/Obstacle.csv": {
+   "rows": 100,
+   "sha256": "73fed98a80928230e77c961f3c722eb4a71be52d071fc42f370189ed59eb7205"
+  },
+  "scores/qwen3vl-8b-mlx4/Obstacle.meta.json": {
+   "sha256": "299dd05761d3ffb3e47afda46e5b1d1a03fd1e00ab9cf193e983e90bdd898a07"
+  },
+  "scores/qwen3vl-8b-mlx4/SurfaceProblem.csv": {
+   "rows": 100,
+   "sha256": "ad265183700cd442c13bfe873922e6906b4e03768dab8d729a9d832426a06e39"
+  },
+  "scores/qwen3vl-8b-mlx4/SurfaceProblem.meta.json": {
+   "sha256": "299dd05761d3ffb3e47afda46e5b1d1a03fd1e00ab9cf193e983e90bdd898a07"
+  },
+  "scores/round3/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "eaadb6a450bedbe33de5106633bdd5b3ff5f50fd109b7baeeecb3b25b88d4f22"
+  },
+  "scores/round3/CurbRamp.csv": {
+   "rows": 2025,
+   "sha256": "29948e683f4ba812e180955529d4b3e9b186bac41da5ab2fc7288112cc4879cb"
+  },
+  "scores/round3/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "259e6980c2deaff6e96aacd76fa38baa32706ec4740e138b9a164e9e5e452373"
+  },
+  "scores/round3/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "4e271b4ca2c8440a7711339c23363e0e7871decf8f59b87eb61920a7c15c5137"
+  },
+  "scores/round3/SurfaceProblem.csv": {
+   "rows": 3102,
+   "sha256": "f135706ec1ced2a8819e9ecb54dc89f56790789ee364b9e9b866431c69e64d6d"
+  },
+  "scores/timing_mac.csv": {
+   "rows": 3,
+   "sha256": "7daf8fa1e69c7629ff464fdbe95b82c00b52b5f6defa5670eadc21755d29fa27"
+  },
+  "splits/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "8056548da4aec2031a4cc17e3d426dbb14072dc8d434477aa411c6a60d28afc2"
+  },
+  "splits/CurbRamp.csv": {
+   "rows": 2025,
+   "sha256": "fcef25b07959682e00f9d27fabef552781176e418c2f191f25750008bb6fa0f1"
+  },
+  "splits/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "db9e21132a954f4bb08ce48ae07b69241461586998c276d998f91966d9443567"
+  },
+  "splits/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "e63859082a6b16b783d2db30f42a0e7a65622d52ee0e59508ab751f0cf208626"
+  },
+  "splits/SurfaceProblem.csv": {
+   "rows": 3102,
+   "sha256": "d6896263e6898845b9d8563dc18a431e4e6bf603371083c2d7c568b6161a7f32"
+  }
+ }
+}

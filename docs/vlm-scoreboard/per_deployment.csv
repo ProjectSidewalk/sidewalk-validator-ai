@@ -1,0 +1,22 @@
+leg,deployment,public,held_out,n,n_incorrect,auc_pooled,mean_within_type_auc,n_types
+round3,amsterdam,True,False,317,234,0.8818,0.8816,5
+round3,burnaby,True,False,93,28,0.8552,0.9211,3
+round3,cdmx,True,False,183,47,0.8702,0.7108,4
+round3,chicago-il,True,False,1529,873,0.9149,0.9103,5
+round3,columbus-oh,True,False,228,80,0.8232,0.8275,4
+round3,knox-oh,True,False,33,10,0.8217,0.7619,1
+round3,mendota-il,True,False,297,229,0.9544,0.9482,5
+round3,newberg-or,True,False,208,78,0.9088,0.9160,4
+round3,oradell-nj,True,False,163,28,0.9447,0.8744,4
+round3,other (5 private deployments),False,False,2028,848,0.9316,0.9224,5
+round3,paterson-nj,True,False,35,20,0.7833,0.6889,2
+round3,pittsburgh-pa,True,False,216,64,0.8551,0.8308,4
+round3,private city A (outside the US),False,True,1803,1429,0.6324,0.7573,5
+round3,private city B (US),False,True,1741,584,0.8754,0.8816,5
+round3,seattle-wa,True,False,2630,1109,0.8928,0.9181,5
+round3,spgg,True,False,337,125,0.9036,0.7624,4
+round3,st-louis-mo,True,False,156,24,0.9160,0.8274,4
+round3,teaneck-nj,True,False,214,72,0.9460,0.9396,5
+round3,tucson-az,True,True,542,373,0.7916,0.8428,5
+round3,vancouver-wa,True,False,36,4,0.9609,0.9609,1
+round3,walla-walla-wa,True,False,134,51,0.9141,0.9329,4
