@@ -76,10 +76,12 @@ SERVE_ARGS="--tensor-parallel-size $TP --port $PORT --host 127.0.0.1 --served-mo
 export VLLM_SERVE_ARGS="vllm serve $REPO $SERVE_ARGS"
 echo "$VLLM_SERVE_ARGS"
 
-# --home keeps vLLM/torch/flashinfer caches off the over-quota home; HF cache bound at the same path.
+# --home keeps vLLM/torch/flashinfer caches off the over-quota home; HF cache bound at the same path. One --env per
+# variable: --env takes a comma-separated list, and CUDA_VISIBLE_DEVICES=0,1,2,3 would be split.
 # shellcheck disable=SC2086
 apptainer exec --nv --cleanenv --home "$SCRUB/vllm_home" --bind /gscratch --bind "$SHM" \
-  --env CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}",HF_HOME="$HF_HOME",HF_HUB_OFFLINE=1,TMPDIR="$SHM",VLLM_CACHE_ROOT="$SCRUB/vllm_home/.cache/vllm" \
+  --env CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}" --env HF_HOME="$HF_HOME" --env HF_HUB_OFFLINE=1 \
+  --env TMPDIR="$SHM" --env VLLM_CACHE_ROOT="$SCRUB/vllm_home/.cache/vllm" \
   "$SIF" vllm serve "$REPO" $SERVE_ARGS > "$SCRUB/logs/vlm_vllm.${SLURM_JOB_ID:-x}.server.log" 2>&1 &
 SERVER=$!
 
