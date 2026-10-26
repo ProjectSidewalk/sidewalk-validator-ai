@@ -851,7 +851,9 @@ def _gpu_info():
         if not torch.cuda.is_available():
             return {"gpu": "cpu", "n_gpus": 0}
         names = [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]
-        return {"gpu": names[0] if len(set(names)) == 1 else "+".join(names), "n_gpus": len(names),
+        # the count is in the name ("2xNVIDIA H200") so GPU-hours computed from it count every card
+        gpu = names[0] if len(set(names)) == 1 else "+".join(names)
+        return {"gpu": gpu if len(names) == 1 else f"{len(names)}x{gpu}", "n_gpus": len(names),
                 "gpu_memory_gb": [round(torch.cuda.get_device_properties(i).total_memory / 1e9, 1)
                                   for i in range(len(names))]}
     except Exception as e:   # noqa: BLE001 -- provenance only
