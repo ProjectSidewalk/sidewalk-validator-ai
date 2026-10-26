@@ -310,6 +310,21 @@ def _calibration_section(ctx):
                          f"{fmt(r.get('ece'), 4)} | {fmt(r.get('gate_coverage'))} | {fmt(r.get('gate_precision'))} |")
     else:
         lines += ["", f"Evaluation of the map: n/a ({rep.get('eval_error', 'no eval rows')})."]
+    hb = rep.get("hold_back") or {}
+    if hb.get("verdicts"):
+        unc = hb.get("uncapped_eval") or {}
+        held = ", ".join(f"`{v}`" for v in hb["verdicts"])
+        reaches = hb.get("uncapped_reaches_gate") or {}
+        lines += ["", f"**Held back:** the {held} map is capped at {fmt(hb.get('cap'), 4)}: every threshold whose "
+                      f"fitted accuracy is higher serves {fmt(hb.get('cap'), 4)} instead, so that verdict never "
+                      f"reaches the {GATE} gate and never becomes a vote. Reason: {hb.get('reason', 'n/a')}."]
+        for v in hb["verdicts"]:
+            u = unc.get(v)
+            if reaches.get(v) is False:
+                lines.append(f"For `{v}` the cap changes nothing: the uncapped map never reached the gate either.")
+            elif u:
+                lines.append(f"Uncapped, `{v}` would have had coverage {fmt(u.get('gate_coverage'))} at precision "
+                             f"{fmt(u.get('gate_precision'))} on the evaluation split (n {fmt(u.get('gate_n'))}).")
     if rep.get("fit_split") == "val":
         lines += ["", "The map is fitted on the validation split, which also selected the checkpoint, so it is mildly "
                       "optimistic."]
