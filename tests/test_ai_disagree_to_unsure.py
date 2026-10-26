@@ -125,6 +125,8 @@ BEGIN
     FOR i IN 1..29 LOOP l := add_label('L2', 2, 1, 0, 0, TRUE); PERFORM vote(l, 'H1', 'Agree'); END LOOP;
     FOR i IN 1..20 LOOP l := add_label('L2', 2, 0, 1, 0, FALSE); PERFORM vote(l, 'H1', 'Disagree'); END LOOP;
     l := add_label('L2', 2, 0, 1, 0, FALSE); PERFORM vote(l, '{ai}', 'Disagree');
+    -- ... and one unvalidated label the AI never saw: hidden only because L2 is low quality.
+    PERFORM add_label('L2', 2, 0, 0, 0, NULL);
     -- L3: 36 right, 23 wrong, 1 wrong by an AI tie-break: 60 judged at exactly 0.6, which is not > 0.6.
     FOR i IN 1..36 LOOP l := add_label('L3', 3, 1, 0, 0, TRUE); PERFORM vote(l, 'H1', 'Agree'); END LOOP;
     FOR i IN 1..23 LOOP l := add_label('L3', 3, 0, 1, 0, FALSE); PERFORM vote(l, 'H1', 'Disagree'); END LOOP;
@@ -268,6 +270,8 @@ EXPECTED_A = {
     "becomes_visible_now": 3, "becomes_visible_after_quality_flip": 2, "stays_hidden_low_quality": 1,
     "becomes_hidden": 0, "labelers_touched": 4, "accuracy_changed": 4, "quality_low_to_high": 2,
     "quality_high_to_low": 0, "no_longer_judged": 1, "stat_rows_rewritten": 5, "quality_rows_changed": 3,
+    # L2 and L3 flip low -> high: L2's lone-AI label, L3's tie label, and L2's unvalidated label the AI never voted on.
+    "quality_flip_unhides_all": 3, "quality_flip_hides_all": 0,
 }
 
 

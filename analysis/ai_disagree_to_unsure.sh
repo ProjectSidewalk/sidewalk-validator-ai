@@ -218,7 +218,7 @@ visible() {  # $1 = high-quality expression, $2 = prefix of the count/correct co
 REPORT_HEADER="phase,schema,ai_disagree_rows,on_deleted_or_tutorial,labels_recounted,false_to_null,null_to_true,\
 correct_unchanged,other_transition,becomes_visible_now,becomes_visible_after_quality_flip,stays_hidden_low_quality,\
 becomes_hidden,labelers_touched,accuracy_changed,quality_low_to_high,quality_high_to_low,no_longer_judged,\
-stat_rows_rewritten,quality_rows_changed"
+stat_rows_rewritten,quality_rows_changed,quality_flip_unhides_all,quality_flip_hides_all"
 
 # One CSV row for the current schema (no phase column), preceded by the connection's transaction_read_only, which the
 # caller checks: the dry run must prove it ran read-only, not assume it.
@@ -244,6 +244,19 @@ report_sql() {
                AS changed,
            MAX(old_validated) AS old_validated, MAX(new_validated) AS new_validated
     FROM quality GROUP BY user_id
+), flip_labels AS (  -- every map-eligible label of a labeler whose high_quality flips, AI-voted or not
+    SELECT labeler_quality.old_hq, labeler_quality.new_hq,
+           label.agree_count AS old_agree, label.disagree_count AS old_disagree, label.correct AS old_correct,
+           COALESCE(recount.new_agree, label.agree_count) AS new_agree,
+           COALESCE(recount.new_disagree, label.disagree_count) AS new_disagree,
+           CASE WHEN recount.label_id IS NULL THEN label.correct ELSE recount.new_correct END AS new_correct
+    FROM label
+    INNER JOIN labeler_quality ON label.user_id = labeler_quality.user_id
+        AND NOT labeler_quality.excluded AND labeler_quality.old_hq <> labeler_quality.new_hq
+    LEFT JOIN recount ON label.label_id = recount.label_id
+    WHERE NOT label.deleted AND NOT label.tutorial
+), flip_vis AS (
+    SELECT old_hq, new_hq, $(visible old_hq old_) AS before, $(visible new_hq new_) AS after_flip FROM flip_labels
 )
 SELECT current_setting('transaction_read_only'),
        current_schema(),
@@ -270,7 +283,9 @@ SELECT current_setting('transaction_read_only'),
        (SELECT COUNT(*) FROM labeler_quality WHERE NOT excluded AND old_hq AND NOT new_hq),
        (SELECT COUNT(*) FROM per_user WHERE old_validated >= 50 AND new_validated < 50),
        (SELECT COUNT(*) FROM stat_new WHERE rewritten),
-       (SELECT COUNT(*) FROM quality WHERE NOT excluded AND new_hq IS DISTINCT FROM old_hq);
+       (SELECT COUNT(*) FROM quality WHERE NOT excluded AND new_hq IS DISTINCT FROM old_hq),
+       (SELECT COUNT(*) FROM flip_vis WHERE NOT old_hq AND new_hq AND NOT before AND after_flip),
+       (SELECT COUNT(*) FROM flip_vis WHERE old_hq AND NOT new_hq AND before AND NOT after_flip);
 EOSQL
 }
 

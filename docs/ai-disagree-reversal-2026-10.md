@@ -122,6 +122,8 @@ calibration maps. Those can come later as a separate pass.
 | `quality_low_to_high`, `quality_high_to_low` | `high_quality` flips in step 4. high→low should be 0. Either can include a flag that was already stale for another reason, which step 4 corrects as the app would |
 | `no_longer_judged` | `own_labels_validated` drops below 50, so accuracy stops counting against the labeler |
 | `stat_rows_rewritten`, `quality_rows_changed` | `user_stat` rows steps 3 and 4 write (the figures `--apply` checks itself against) |
+| `quality_flip_unhides_all` | **every** non-deleted, non-tutorial label of the labelers in `quality_low_to_high` that is hidden before (old counts, old `high_quality`) and shown after (new counts, new `high_quality`), including labels the AI never voted on. A labeler's flip un-hides all of their labels that are not incorrect, so this, not `becomes_visible_after_quality_flip`, is the number of labels that come back through step 4. It overlaps `becomes_visible_after_quality_flip` (which is the AI-voted subset of it) and can include labels counted in `becomes_visible_now` |
+| `quality_flip_hides_all` | the mirror for `quality_high_to_low`: every such label shown before and hidden after. It overlaps `becomes_hidden` |
 
 The script checks two invariants on every row and warns if either fails. First, `false_to_null + null_to_true +
 correct_unchanged + other_transition = labels_recounted`. Second, `ai_disagree_rows ≥ labels_recounted`. The
@@ -169,15 +171,24 @@ analysis/ai_disagree_census.sh > ~/ai-disagree/prod_census.csv
 analysis/ai_disagree_to_unsure.sh --apply --backup-dir ~/ai-disagree/prod > ~/ai-disagree/prod_apply.csv
 ```
 
+**There is no single quiet hour across the cities.** The nightly AI validation job (`ScheduledJobs.GetAiValidations`,
+00:30) and the user-stats job (`UserStats`, 01:30) are both shifted by each city's `config.offset_hours`
+(`GetAiValidationsActor.scala:34-45`), so they run at a different time in each schema. In a long run over every
+city, a non-zero `after` `ai_disagree_rows` for one city can be that city's nightly AI job firing between its backup
+and its write, not step 1 missing. Rather than one run over all 52 schemas, apply in `--cities` batches that avoid
+each batch's job hours, with a dry run right before each batch.
+
 `--apply` creates `<backup-dir>/run-<UTC time>/` and never overwrites an earlier run. For each city it writes
 `<schema>_ai_disagree_votes.csv` and `<schema>_report.csv` (the before and after rows). Each city's transaction locks
-the labels and `user_stat` rows it updates, typically for a few seconds. Run it off-peak anyway. A city that fails
+the labels and `user_stat` rows it updates until it commits. How long that takes has not been measured; the 6432
+rehearsal is where to measure it (time each city), before choosing batches for production. Run it off-peak. A city that fails
 rolls back whole. The script then goes on to the next city and exits 1 at the end, naming the cities that failed.
 
 ### Checks afterwards
 
 - Rerun the dry run. Every city's `ai_disagree_rows` and `labels_recounted` should be 0. A non-zero
-  `ai_disagree_rows` means the AI voted Disagree after the backup was taken, so step 1 is not in place.
+  `ai_disagree_rows` means the AI voted Disagree after the backup was taken: step 1 is not in place, or it is not
+  yet deployed to that city.
 - In each city's admin API, `POST /adminapi/recalculateValidationCounts` recounts every label in that city. It
   should return `{"labels_updated": 0}`, or only labels the AI never voted on whose counts had drifted.
 - `GET /adminapi/updateUserStats` (with no `hoursCutoff`, it covers every user since the beginning) recomputes
