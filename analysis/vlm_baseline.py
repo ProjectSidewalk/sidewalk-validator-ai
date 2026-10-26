@@ -56,6 +56,12 @@ Subcommands (all outputs with label-level rows go OUTSIDE the repo, under ``~/Da
     Unblinds the two filled sheets against the key; prints rater-vs-VLM and rater-vs-crowd agreement and the reason
     codes, overall, by whether the VLM was right, and per category.
 
+Issue #63 adds the klone path (transformers, bf16, batched with left padding; same prompts and score, so rows are
+comparable with the MLX ones): ``score-torch`` (one ``TORCH_MODELS`` leg over every held-out crop of the round-3 run
+root, ``--fewshot 8`` for the in-context arm; resumable; ``analysis/vlm_score.slurm`` launches it), ``timing-torch``
+(batch-1 latency), ``export-heldout`` (split slices and round-3 scores), ``timing-summary`` and ``baseline
+--split-root`` (production on the same crops). Their outputs carry private-city label ids: keep them outside the repo.
+
 Install (on top of ``requirements.txt``; the production baseline needs the pinned transformers 4.55, and mlx-vlm
 upgrades transformers, so run ``baseline`` and production ``timing`` from a second venv with ``requirements.txt``
 only)::
@@ -518,8 +524,12 @@ def run_baseline(args):
     from PIL import Image
     from transformers import AutoImageProcessor, AutoModelForImageClassification
 
-    sample = load_sample(args.sample_dir)
-    path = score_path(args.out_dir, PRODUCTION_NAME)
+    if args.split_root:   # issue #63: every held-out crop, one CSV per type under <out-dir>/scores/production/
+        sample = pd.concat([load_split_rows(args.split_root, t) for t in LABEL_TYPES], ignore_index=True)
+        path = os.path.join(args.out_dir, "scores", PRODUCTION_NAME, "all.csv")
+    else:
+        sample = load_sample(args.sample_dir)
+        path = score_path(args.out_dir, PRODUCTION_NAME)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     rows = []
     for label_type, g in sample.groupby("label_type"):
@@ -542,12 +552,492 @@ def run_baseline(args):
                          "latency_s": latency})
         print(f"{label_type}: {len(g)} crops")
         del model
-    pd.DataFrame(rows).to_csv(path, index=False)
     meta = {"model": PRODUCTION_NAME, "repos": PRODUCTION, "device": args.device, "torch": torch.__version__,
             "transformers": transformers.__version__}
+    if args.split_root:
+        meta.update(_gpu_info())
+        d = pd.DataFrame(rows).merge(sample[["label_uid", "label_type"]], on="label_uid", validate="one_to_one")
+        for t, g in d.groupby("label_type"):
+            g.drop(columns="label_type").to_csv(os.path.join(os.path.dirname(path), f"{t}.csv"), index=False)
+        path = os.path.join(os.path.dirname(path), "production.csv")   # meta name only
+    else:
+        pd.DataFrame(rows).to_csv(path, index=False)
     with open(path.replace(".csv", ".meta.json"), "w") as f:
         json.dump(meta, f, indent=1)
     print(f"wrote {path}")
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# Torch inference on klone (issue #63) -- needs torch + transformers; the pure helpers are unit-tested on CPU
+# --------------------------------------------------------------------------------------------------------------------
+
+TORCH_MODELS = {
+    # short name -> repo, the chat-template switch that turns thinking off (None: the template has none), whether
+    # the Hub code is needed, and the env it runs in on klone. Read the thinking switch from each repo's chat template.
+    "qwen3.8-27b": {"repo": "Qwen/Qwen3.8-27B", "thinking": "enable_thinking", "remote_code": False,
+                    "env": "vlm-scoreboard"},
+    "gemma4-31b": {"repo": "google/gemma-4-31B-it", "thinking": "enable_thinking", "remote_code": False,
+                   "env": "vlm-scoreboard"},
+    "gemma4-12b-bf16": {"repo": "google/gemma-4-12B-it", "thinking": "enable_thinking", "remote_code": False,
+                        "env": "vlm-scoreboard"},
+    "molmo2-8b": {"repo": "allenai/Molmo2-8B", "thinking": None, "remote_code": True, "env": "molmo2"},
+    "minicpm-v4.7-35b-a3b": {"repo": "openbmb/MiniCPM-V-4.7-35B-A3B", "thinking": "enable_thinking",
+                             "remote_code": False, "env": "vlm-scoreboard"},
+    "muse-glimmer-30b": {"repo": "meta-models/Muse-Glimmer-30B", "thinking": None, "remote_code": False,
+                         "env": "vlm-scoreboard"},
+    "qwen3vl-8b-bf16": {"repo": "Qwen/Qwen3-VL-8B-Instruct", "thinking": None, "remote_code": False,
+                        "env": "vlm-scoreboard"},
+    "qwen3vl-32b-bf16": {"repo": "Qwen/Qwen3-VL-32B-Instruct", "thinking": None, "remote_code": False,
+                         "env": "vlm-scoreboard"},
+    "nemotron3.5-super-vl-120b": {"repo": "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
+                                  "thinking": "enable_thinking", "remote_code": True, "env": "vlm-scoreboard"},
+    "phi4-rv-15b": {"repo": "microsoft/Phi-4-reasoning-vision-15B", "thinking": None, "remote_code": True,
+                    "env": "vlm-scoreboard"},
+}
+"""Roster of the transformers legs (issue #63). ``thinking`` is the template kwarg set to False, or None."""
+
+HELDOUT_SPLITS = ("test", "test_heldout")
+FEWSHOT_SEED = 20261021
+SPLIT_COLUMNS = ["label_uid", "city", "label_type", "label_class", "split", "pano_id"]
+
+
+def chat_kwargs(short):
+    """Extra ``apply_chat_template`` kwargs for a roster model: its thinking switch turned off, or nothing.
+
+    >>> chat_kwargs("qwen3.8-27b"), chat_kwargs("qwen3vl-8b-bf16")
+    ({'enable_thinking': False}, {})
+    """
+    key = TORCH_MODELS[short]["thinking"]
+    return {key: False} if key else {}
+
+
+def leg_name(model, variant="definition", fewshot=0):
+    """Directory name of one scored leg: ``<model>[-fewshot<N>][__<variant>]``.
+
+    >>> leg_name("gemma4-31b", fewshot=8), leg_name("qwen3vl-8b-bf16", "no-definition")
+    ('gemma4-31b-fewshot8', 'qwen3vl-8b-bf16__no-definition')
+    """
+    name = model + (f"-fewshot{fewshot}" if fewshot else "")
+    return name + ("" if variant == "definition" else f"__{variant}")
+
+
+def load_split_rows(root, label_type, splits=HELDOUT_SPLITS):
+    """Rows of ``<root>/<Type>/split.csv`` in ``splits`` with an absolute ``image`` column; unique uids."""
+    df = pd.read_csv(os.path.join(root, label_type, "split.csv"), dtype={"label_id": str}, low_memory=False)
+    if "status" in df:
+        df = df[df.status == "ok"]
+    df = df[df.split.isin(splits)].copy()
+    if df.label_uid.duplicated().any():
+        raise ValueError(f"{label_type}: duplicate label_uid in split.csv")
+    df["image"] = [os.path.join(root, label_type, p) for p in df.crop_path]
+    return df.sort_values("label_uid").reset_index(drop=True)
+
+
+def pilot_rows(df, limit):
+    """The first ``limit`` rows of one type, half per class (by ``label_uid``), for smoke runs.
+
+    >>> d = pd.DataFrame({"label_uid": list("abcdef"), "label_class": ["correct"] * 3 + ["incorrect"] * 3})
+    >>> pilot_rows(d, 4).label_uid.tolist()
+    ['a', 'b', 'd', 'e']
+    """
+    return (df.sort_values(["label_class", "label_uid"]).groupby("label_class").head(max(1, limit // 2))
+            .sort_values(["label_class", "label_uid"]).reset_index(drop=True))
+
+
+def last_token_positions(attention_mask):
+    """Index of each row's last real token, for left OR right padding (``attention_mask`` B x T of 0/1).
+
+    With left padding every row ends at ``T - 1``; with right padding row i ends at ``sum(mask_i) - 1``.
+
+    >>> last_token_positions(np.array([[0, 0, 1, 1], [1, 1, 1, 1]])).tolist()   # left padded
+    [3, 3]
+    >>> last_token_positions(np.array([[1, 1, 0, 0], [1, 1, 1, 1]])).tolist()   # right padded
+    [1, 3]
+    """
+    m = np.asarray(attention_mask).astype(int)
+    t = m.shape[1]
+    # the last index whose mask is 1: reverse, argmax finds the first 1 from the end
+    return (t - 1 - np.argmax(m[:, ::-1], axis=1)).astype(int)
+
+
+def score_rows(last_logits, yes_ids, no_ids, decode=None):
+    """``yes_no_score`` per row of a B x V array of next-token logits (float32 log-softmax first)."""
+    x = np.asarray(last_logits, dtype=np.float64)
+    lp = x - (x.max(axis=1, keepdims=True) + np.log(np.exp(x - x.max(axis=1, keepdims=True)).sum(1, keepdims=True)))
+    out = []
+    for row in lp:
+        s = yes_no_score(row, yes_ids, no_ids)
+        s["top_token"] = decode([int(row.argmax())]) if decode else int(row.argmax())
+        out.append(s)
+    return out
+
+
+def fewshot_pools(train, seed=FEWSHOT_SEED):
+    """Per class, the train rows of one type in a seeded order: the candidate list the examples are drawn from.
+
+    Sorted by ``label_uid`` first so the order depends only on the data, then permuted with ``seed``.
+    """
+    pools = {}
+    rng = np.random.default_rng(seed)
+    for cls in evaluate.CLASSES:
+        g = train[train.label_class == cls].sort_values("label_uid").reset_index(drop=True)
+        pools[cls] = g.iloc[rng.permutation(len(g))].reset_index(drop=True)
+    return pools
+
+
+def fewshot_examples(pools, query_pano=None, n=8):
+    """The ``n`` in-context examples for one query: ``n // 2`` per class, the first of each pool whose panorama is
+    not the query's (a clash is replaced by the pool's next example), interleaved correct/incorrect. For every query
+    whose panorama is not among them the set is the same, so the prompt prefix is shared.
+
+    >>> tr = pd.DataFrame({"label_uid": [f"c:{i}" for i in range(8)], "pano_id": list("ppqrstuv"),
+    ...                    "label_class": ["correct", "incorrect"] * 4})
+    >>> pools = {c: tr[tr.label_class == c].reset_index(drop=True) for c in ("correct", "incorrect")}
+    >>> fewshot_examples(pools, "x", 4).label_uid.tolist(), fewshot_examples(pools, "p", 4).label_uid.tolist()
+    (['c:0', 'c:1', 'c:2', 'c:3'], ['c:2', 'c:3', 'c:4', 'c:5'])
+    """
+    if n % 2:
+        raise ValueError("n must be even (half per class)")
+    picks = {}
+    for cls in evaluate.CLASSES:
+        p = pools[cls]
+        p = p[p.pano_id != query_pano] if query_pano is not None else p
+        if len(p) < n // 2:
+            raise ValueError(f"only {len(p)} {cls} examples for {n // 2}")
+        picks[cls] = p.head(n // 2).reset_index(drop=True)
+    rows = []
+    for i in range(n // 2):
+        rows += [picks["correct"].iloc[i], picks["incorrect"].iloc[i]]
+    return pd.DataFrame(rows).reset_index(drop=True)
+
+
+def build_messages(question, image, examples=()):
+    """Chat messages for one crop: optional ``(image, answer)`` example turns, each the same question with its
+    answer as the assistant reply, then the query. The image is first in every user turn.
+
+    >>> m = build_messages("Q?", "img", [("e1", "Yes"), ("e2", "No")])
+    >>> [x["role"] for x in m], m[1]["content"][0]["text"], m[-1]["content"][0]["image"]
+    (['user', 'assistant', 'user', 'assistant', 'user'], 'Yes', 'img')
+    """
+    msgs = []
+    for ex_image, answer in examples:
+        msgs.append({"role": "user", "content": [{"type": "image", "image": ex_image},
+                                                 {"type": "text", "text": question}]})
+        msgs.append({"role": "assistant", "content": [{"type": "text", "text": answer}]})
+    msgs.append({"role": "user", "content": [{"type": "image", "image": image}, {"type": "text", "text": question}]})
+    return msgs
+
+
+def todo_rows(df, path):
+    """Rows of ``df`` whose ``label_uid`` is not yet in the score CSV at ``path`` (resumability)."""
+    if not os.path.exists(path):
+        return df
+    done = set(pd.read_csv(path, usecols=["label_uid"]).label_uid)
+    return df[~df.label_uid.isin(done)]
+
+
+def answer_word(label_class):
+    """The in-context answer for an example of ``label_class``."""
+    return "No" if label_class == "incorrect" else "Yes"
+
+
+class TorchVlm:
+    """One transformers VLM in bf16 with the yes/no scorer, batched with left padding."""
+
+    def __init__(self, short):
+        import inspect
+
+        import torch
+        from transformers import AutoProcessor
+
+        self.short, self.spec = short, TORCH_MODELS[short]
+        self.repo, rc = self.spec["repo"], self.spec["remote_code"]
+        self.torch = torch
+        self.processor = AutoProcessor.from_pretrained(self.repo, trust_remote_code=rc, padding_side="left")
+        self.tokenizer = getattr(self.processor, "tokenizer", self.processor)
+        self.tokenizer.padding_side = "left"
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        n_gpu = torch.cuda.device_count()
+        self.device_map = "auto" if n_gpu > 1 else ("cuda" if n_gpu else "cpu")
+        self.model = self._load(rc)
+        self.model.eval()
+        enc = lambda s: self.tokenizer.encode(s, add_special_tokens=False)  # noqa: E731
+        self.yes_ids, self.yes_used = answer_token_ids(enc, YES_VARIANTS)
+        self.no_ids, self.no_used = answer_token_ids(enc, NO_VARIANTS)
+        self.keep_one = "logits_to_keep" in inspect.signature(self.model.forward).parameters
+        self.input_device = "cuda:0" if n_gpu else "cpu"
+
+    def _load(self, rc):
+        import transformers
+
+        kw = dict(dtype=self.torch.bfloat16, device_map=self.device_map, trust_remote_code=rc)
+        errors = []
+        for cls_name in ("AutoModelForImageTextToText", "AutoModelForCausalLM"):
+            cls = getattr(transformers, cls_name)
+            for attn in ("sdpa", None):
+                try:
+                    m = cls.from_pretrained(self.repo, **kw, **({"attn_implementation": attn} if attn else {}))
+                    self.loader = f"{cls_name}, attn={attn or 'default'}"
+                    return m
+                except (ValueError, KeyError, TypeError, ImportError) as e:
+                    errors.append(f"{cls_name}/{attn}: {type(e).__name__}: {str(e)[:300]}")
+        raise RuntimeError("could not load " + self.repo + "\n" + "\n".join(errors))
+
+    def inputs(self, conversations):
+        b = self.processor.apply_chat_template(conversations, tokenize=True, return_dict=True, return_tensors="pt",
+                                               padding=True, add_generation_prompt=True, **chat_kwargs(self.short))
+        out = {}
+        for k, v in b.items():
+            if hasattr(v, "to"):
+                v = v.to(self.input_device)
+                if v.is_floating_point():
+                    v = v.to(self.torch.bfloat16)
+            out[k] = v
+        return out
+
+    def score_batch(self, conversations):
+        """Score a list of conversations; ``(rows, seconds)`` with per-row prompt token counts."""
+        t0 = time.perf_counter()
+        inp = self.inputs(conversations)
+        mask = inp["attention_mask"].cpu().numpy()
+        left = bool(mask[:, -1].all())
+        kw = {"logits_to_keep": 1} if (self.keep_one and left) else {}
+        with self.torch.inference_mode():
+            logits = self.model(**inp, **kw).logits
+        if kw:
+            last = logits[:, -1, :]
+        else:
+            pos = self.torch.as_tensor(last_token_positions(mask), device=logits.device)
+            last = logits[self.torch.arange(logits.shape[0], device=logits.device), pos]
+        last = self.torch.log_softmax(last.float(), dim=-1).cpu().numpy()
+        dt = time.perf_counter() - t0
+        rows = score_rows(last, self.yes_ids, self.no_ids, decode=self.tokenizer.decode)
+        for r, n in zip(rows, mask.sum(1)):
+            r["prompt_tokens"] = int(n)
+        return rows, dt
+
+
+def _gpu_info():
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            return {"gpu": "cpu", "n_gpus": 0}
+        names = [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]
+        return {"gpu": names[0] if len(set(names)) == 1 else "+".join(names), "n_gpus": len(names),
+                "gpu_memory_gb": [round(torch.cuda.get_device_properties(i).total_memory / 1e9, 1)
+                                  for i in range(len(names))]}
+    except Exception as e:   # noqa: BLE001 -- provenance only
+        return {"gpu": f"unknown ({type(e).__name__})"}
+
+
+def _peak_memory_gb():
+    try:
+        import torch
+    except ImportError:
+        return None
+    if not torch.cuda.is_available():
+        return None
+    return round(sum(torch.cuda.max_memory_allocated(i) for i in range(torch.cuda.device_count())) / 1e9, 2)
+
+
+def _env_versions():
+    out = {"python": platform.python_version(), "host": platform.node()}
+    for mod in ("torch", "transformers", "accelerate", "PIL"):
+        try:
+            out[mod] = __import__(mod).__version__
+        except Exception:   # noqa: BLE001
+            out[mod] = None
+    out["slurm_job_id"] = os.environ.get("SLURM_JOB_ID")
+    out["slurm_restart_count"] = os.environ.get("SLURM_RESTART_COUNT", "0")
+    out["git_commit"] = _git(REPO_DIR, "rev-parse", "HEAD")
+    return out
+
+
+def _read_meta(path):
+    if os.path.exists(path):
+        with open(path) as f:
+            return json.load(f)
+    return {}
+
+
+def _write_meta(path, meta):
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(meta, f, indent=1, default=str)
+    os.replace(tmp, path)
+
+
+def run_score_torch(args):
+    """Score the held-out crops of ``--label-types`` with one roster model; one CSV + meta per type under
+    ``<out-dir>/scores/<leg>/``. Resumable: rows already in the CSV are skipped (Slurm ``--requeue`` safe)."""
+    from PIL import Image
+
+    types = args.label_types.split(",") if args.label_types else list(LABEL_TYPES)
+    leg = leg_name(args.model, args.variant, args.fewshot)
+    out_dir = os.path.join(args.out_dir, "scores", leg)
+    os.makedirs(out_dir, exist_ok=True)
+    vlm = None
+    gpu = _gpu_info()
+    for t in types:
+        df = load_split_rows(args.split_root, t)
+        if args.limit:
+            df = pilot_rows(df, args.limit)
+        path = os.path.join(out_dir, f"{t}.csv")
+        todo = todo_rows(df, path)
+        print(f"{leg} {t}: {len(todo)} to score, {len(df) - len(todo)} done", flush=True)
+        if todo.empty:
+            continue
+        if vlm is None:
+            t_load = time.perf_counter()
+            vlm = TorchVlm(args.model)
+            load_s = time.perf_counter() - t_load
+            print(f"loaded {vlm.repo} ({vlm.loader}, device_map={vlm.device_map}) in {load_s:.0f}s; "
+                  f"yes {vlm.yes_used} no {vlm.no_used}", flush=True)
+        question = build_prompt(t, args.variant)
+        pools = fewshot_pools(load_split_rows(args.split_root, t, ("train",))) if args.fewshot else None
+        base = fewshot_examples(pools, None, args.fewshot) if args.fewshot else None
+        img_cache = {}
+
+        def image(p):
+            if p not in img_cache:
+                img_cache[p] = Image.open(p).convert("RGB")
+            return img_cache[p]
+
+        def conv(r):
+            exs = []
+            if args.fewshot:
+                ex = base if r.pano_id not in set(base.pano_id) else fewshot_examples(pools, r.pano_id, args.fewshot)
+                exs = [(image(e.image), answer_word(e.label_class)) for e in ex.itertuples()]
+            return build_messages(question, Image.open(r.image).convert("RGB"), exs)
+
+        meta_path = path.replace(".csv", ".meta.json")
+        meta = _read_meta(meta_path)
+        meta.update({"model": args.model, "leg": leg, "repo": vlm.repo, "revision": hf_snapshot(vlm.repo)[0],
+                     "variant": args.variant, "label_type": t, "prompt": question, "fewshot": args.fewshot,
+                     "chat_kwargs": chat_kwargs(args.model), "loader": vlm.loader, "device_map": vlm.device_map,
+                     "yes_tokens": vlm.yes_used, "yes_ids": vlm.yes_ids, "no_tokens": vlm.no_used,
+                     "no_ids": vlm.no_ids, "batch_size": args.batch, "n_crops": int(len(df)), **gpu})
+        if args.fewshot:
+            meta["fewshot_examples"] = base.label_uid.tolist()
+            meta["fewshot_seed"] = FEWSHOT_SEED
+        runs = meta.setdefault("runs", [])
+        run = {"start": datetime.datetime.now().isoformat(timespec="seconds"), **_env_versions(),
+               "n_todo": int(len(todo))}
+        runs.append(run)
+        swaps = 0
+        rows, lat = [], []
+        recs = list(todo.itertuples())
+        for i in range(0, len(recs), args.batch):
+            chunk = recs[i:i + args.batch]
+            convs = [conv(r) for r in chunk]
+            swaps += sum(args.fewshot > 0 and r.pano_id in set(base.pano_id) for r in chunk)
+            scored, dt = vlm.score_batch(convs)
+            if "batch_check" not in meta and len(chunk) > 1:
+                # the padding check: the most-padded row alone must score as it did inside the batch
+                j = int(np.argmin([s["prompt_tokens"] for s in scored]))
+                alone, _ = vlm.score_batch([convs[j]])
+                diff = abs(alone[0]["p_incorrect"] - scored[j]["p_incorrect"])
+                meta["batch_check"] = {"label_uid": chunk[j].label_uid, "batch_size": len(chunk),
+                                       "p_incorrect_batch": scored[j]["p_incorrect"],
+                                       "p_incorrect_alone": alone[0]["p_incorrect"], "abs_diff": diff,
+                                       "within_1e-3": bool(diff <= 1e-3)}
+                print(f"batch check: |batch - alone| = {diff:.2e} on {chunk[j].label_uid}", flush=True)
+                if diff > args.max_batch_diff:
+                    _write_meta(meta_path, meta)
+                    raise RuntimeError(f"batch-of-{len(chunk)} vs batch-of-1 differ by {diff:.3g}; check padding")
+            if i > 0:   # the first batch includes warm-up
+                lat.append(dt / len(chunk))
+            for r, s in zip(chunk, scored):
+                rows.append({"label_uid": r.label_uid, "model": leg, "variant": args.variant, **s,
+                             "latency_s": dt / len(chunk), "batch_size": len(chunk), "gpu": gpu.get("gpu")})
+            if len(rows) >= args.chunk or i + args.batch >= len(recs):
+                cols = ["label_uid", "model", "variant", "p_yes", "p_no", "answer_mass", "log_odds_incorrect",
+                        "p_incorrect", "p_correct", "top_token", "prompt_tokens", "latency_s", "batch_size", "gpu"]
+                pd.DataFrame(rows)[cols].to_csv(path, mode="a", header=not os.path.exists(path), index=False)
+                rows = []
+                run.update(n_scored=i + len(chunk), peak_memory_gb=_peak_memory_gb(),
+                           s_per_crop_median=float(np.median(lat)) if lat else None, fewshot_swaps=int(swaps))
+                meta["peak_memory_gb"] = max(meta.get("peak_memory_gb") or 0, run["peak_memory_gb"] or 0)
+                _write_meta(meta_path, meta)
+                print(f"  {t} {i + len(chunk)}/{len(recs)}  {run['s_per_crop_median'] or 0:.3f} s/crop  "
+                      f"peak {run['peak_memory_gb']} GB", flush=True)
+        run["end"] = datetime.datetime.now().isoformat(timespec="seconds")
+        all_lat = [x.get("s_per_crop_median") for x in runs if x.get("s_per_crop_median")]
+        meta["s_per_crop"] = float(np.median(all_lat)) if all_lat else None
+        _write_meta(meta_path, meta)
+
+
+def run_timing_torch(args):
+    """Batch-1 latency for one roster model: ``--n-per-type`` crops per type (``stratified_crops``) after one
+    warm-up, on whatever GPU the job got. Writes ``<out-dir>/timing/<model>.csv`` and ``.meta.json``."""
+    from PIL import Image
+
+    data = pd.concat([load_split_rows(args.split_root, t) for t in LABEL_TYPES], ignore_index=True)
+    crops = stratified_crops(data, args.n_per_type)
+    vlm = TorchVlm(args.model)
+    first = crops.iloc[0]
+    vlm.score_batch([build_messages(build_prompt(first.label_type), Image.open(first.image).convert("RGB"))])
+    rows = []
+    for r in crops.itertuples():
+        s, dt = vlm.score_batch([build_messages(build_prompt(r.label_type), Image.open(r.image).convert("RGB"))])
+        rows.append({"label_uid": r.label_uid, "label_type": r.label_type, "latency_s": dt,
+                     "prompt_tokens": s[0]["prompt_tokens"]})
+    out = os.path.join(args.out_dir, "timing")
+    os.makedirs(out, exist_ok=True)
+    t = pd.DataFrame(rows)
+    t.to_csv(os.path.join(out, f"{args.model}.csv"), index=False)
+    meta = {"model": args.model, "repo": vlm.repo, "batch_size": 1, "n": int(len(t)), **_gpu_info(),
+            "peak_memory_gb": _peak_memory_gb(), "median_s_per_crop": float(t.latency_s.median()),
+            "p90_s_per_crop": float(t.latency_s.quantile(0.9)), **_env_versions()}
+    _write_meta(os.path.join(out, f"{args.model}.meta.json"), meta)
+    print(f"{args.model}: batch-1 median {meta['median_s_per_crop']:.3f}s p90 {meta['p90_s_per_crop']:.3f}s "
+          f"on {meta.get('gpu')}")
+
+
+def run_export_heldout(args):
+    """The scoreboard's inputs from the round-3 run root: ``<out-dir>/splits/<Type>.csv`` (``SPLIT_COLUMNS``) and
+    ``<out-dir>/scores/round3/<Type>.csv`` (``label_uid, p_incorrect`` on the held-out rows). Private-city rows:
+    write outside the repo only."""
+    for t in LABEL_TYPES:
+        s = load_split_rows(args.split_root, t)
+        pred = pd.read_csv(os.path.join(args.split_root, t, "predictions.csv"))
+        pred = pred[pred.label_uid.isin(s.label_uid)]
+        if len(pred) != len(s):
+            raise ValueError(f"{t}: {len(pred)} round-3 predictions for {len(s)} held-out rows")
+        for sub, df in (("splits", s[SPLIT_COLUMNS]), ("scores/round3", pred[["label_uid", "p_incorrect"]])):
+            os.makedirs(os.path.join(args.out_dir, sub), exist_ok=True)
+            df.sort_values("label_uid").to_csv(os.path.join(args.out_dir, sub, f"{t}.csv"), index=False)
+        print(f"{t}: {len(s)} held-out rows")
+
+
+def timing_summary(score_dir, timing_dir):
+    """``timing.csv`` rows: batch-1 runs from ``timing/<model>.csv``, and each full run's per-crop latency (its batch
+    latency / batch size, every batch including the first) per leg and GPU, at the leg's largest batch size."""
+    rows = []
+    if os.path.isdir(timing_dir):
+        for f in sorted(os.listdir(timing_dir)):
+            if f.endswith(".csv"):
+                t = pd.read_csv(os.path.join(timing_dir, f))
+                m = _read_meta(os.path.join(timing_dir, f.replace(".csv", ".meta.json")))
+                rows.append({"model": f[:-4], "gpu": m.get("gpu"), "batch_size": 1, "n_crops": len(t),
+                             "median_s_per_crop": t.latency_s.median(), "p90_s_per_crop": t.latency_s.quantile(.9),
+                             "source": "batch-1 timing run"})
+    legs = sorted(os.listdir(score_dir)) if os.path.isdir(score_dir) else []
+    for leg in [x for x in legs if os.path.isdir(os.path.join(score_dir, x))]:
+        csvs = [os.path.join(score_dir, leg, f) for f in os.listdir(os.path.join(score_dir, leg)) if f.endswith(".csv")]
+        frames = [pd.read_csv(c) for c in csvs]
+        frames = [f for f in frames if {"latency_s", "batch_size", "gpu"} <= set(f.columns)]
+        if not frames:
+            continue
+        d = pd.concat(frames)
+        for gpu, g in d.groupby("gpu"):
+            g = g[g.batch_size == g.batch_size.max()]
+            rows.append({"model": leg, "gpu": gpu, "batch_size": int(g.batch_size.iloc[0]), "n_crops": len(g),
+                         "median_s_per_crop": g.latency_s.median(), "p90_s_per_crop": g.latency_s.quantile(.9),
+                         "source": "full run"})
+    return pd.DataFrame(rows, columns=["model", "gpu", "batch_size", "n_crops", "median_s_per_crop",
+                                       "p90_s_per_crop", "source"])
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -1605,7 +2095,35 @@ def main(argv=None):
 
     b = sub.add_parser("baseline", help="score the sample with the five production validators")
     common(b)
-    b.add_argument("--device", default="cpu", help="cpu or mps")
+    b.add_argument("--device", default="cpu", help="cpu, mps or cuda")
+    b.add_argument("--split-root", default=None,
+                   help="issue #63: score every held-out crop of this round-3 run root instead of the sample")
+
+    st = sub.add_parser("score-torch", help="issue #63: score the held-out split with one transformers VLM (klone)")
+    st.add_argument("--model", required=True, choices=sorted(TORCH_MODELS))
+    st.add_argument("--split-root", required=True, help="round-3 run root with <Type>/split.csv and the crops")
+    st.add_argument("--out-dir", required=True, help="output root, outside the repo; writes scores/<leg>/<Type>.csv")
+    st.add_argument("--variant", default="definition", choices=VARIANTS)
+    st.add_argument("--label-types", default=None, help="comma-separated subset (default all five)")
+    st.add_argument("--limit", type=int, default=0, help="smoke run: this many crops per type, half per class")
+    st.add_argument("--batch", type=int, default=8)
+    st.add_argument("--chunk", type=int, default=64, help="rows per CSV append")
+    st.add_argument("--fewshot", type=int, default=0, help="in-context train examples per prompt (even; 0 = none)")
+    st.add_argument("--max-batch-diff", type=float, default=0.02,
+                    help="abort if batch-of-N and batch-of-1 p_incorrect differ by more (logged either way)")
+
+    tt = sub.add_parser("timing-torch", help="issue #63: batch-1 latency of one transformers VLM")
+    tt.add_argument("--model", required=True, choices=sorted(TORCH_MODELS))
+    tt.add_argument("--split-root", required=True)
+    tt.add_argument("--out-dir", required=True)
+    tt.add_argument("--n-per-type", type=int, default=10)
+
+    ex = sub.add_parser("export-heldout", help="issue #63: split slices + round-3 held-out scores, outside the repo")
+    ex.add_argument("--split-root", required=True)
+    ex.add_argument("--out-dir", required=True)
+
+    ts = sub.add_parser("timing-summary", help="issue #63: timing.csv from the timing runs and the full runs")
+    ts.add_argument("--out-dir", required=True, help="root with scores/ and timing/; writes scores/timing.csv")
 
     r = sub.add_parser("report", help="tables, figure and provenance into --doc-dir")
     common(r)
@@ -1664,6 +2182,16 @@ def main(argv=None):
         run_greedy(args)
     elif args.command == "baseline":
         run_baseline(args)
+    elif args.command == "score-torch":
+        run_score_torch(args)
+    elif args.command == "timing-torch":
+        run_timing_torch(args)
+    elif args.command == "export-heldout":
+        run_export_heldout(args)
+    elif args.command == "timing-summary":
+        t = timing_summary(os.path.join(args.out_dir, "scores"), os.path.join(args.out_dir, "timing"))
+        t.to_csv(os.path.join(args.out_dir, "scores", "timing.csv"), index=False)
+        print(t.to_string(index=False))
     elif args.command == "report":
         run_report(args)
     elif args.command == "explain":
