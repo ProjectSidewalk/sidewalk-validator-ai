@@ -295,11 +295,12 @@ def test_batch_invariance_compares_timing_rows_with_the_run(tmp_path):
     leg = tmp_path / "scores" / "m"
     leg.mkdir(parents=True)
     pd.DataFrame({"label_uid": ["a", "b"], "p_incorrect": [.5, .9], "log_odds_incorrect": [0, 2.2],
-                  "batch_size": 16}).to_csv(leg / "T.csv", index=False)
+                  "batch_size": 16, "gpu": "NVIDIA L40S"}).to_csv(leg / "T.csv", index=False)
     (tmp_path / "timing").mkdir()
+    (tmp_path / "timing" / "m__nvidia-a40.meta.json").write_text('{"gpu": "NVIDIA A40"}')
     pd.DataFrame({"label_uid": ["a", "b"], "latency_s": .1, "p_incorrect": [.52, .9], "gpu": "NVIDIA A40",
                   "log_odds_incorrect": [.08, 2.2]}).to_csv(tmp_path / "timing" / "m__nvidia-a40.csv", index=False)
     b = vb.batch_invariance(str(tmp_path / "scores"), str(tmp_path / "timing"))
     assert b.model.tolist() == ["m"] and b.n.tolist() == [2] and b.max_abs_dp.iloc[0] == pytest.approx(.02)
-    assert b.timing_gpu.tolist() == ["NVIDIA A40"]
+    assert b.timing_gpu.tolist() == ["NVIDIA A40"] and b.run_gpu.tolist() == ["NVIDIA L40S"]
     assert vb.timing_summary(str(tmp_path / "scores"), str(tmp_path / "timing")).model.tolist()[0] == "m"

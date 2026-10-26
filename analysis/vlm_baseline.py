@@ -1157,15 +1157,19 @@ def batch_invariance(score_dir, timing_dir):
         if "p_incorrect" not in t or not os.path.isdir(leg):
             continue
         full = pd.concat([pd.read_csv(os.path.join(leg, x)) for x in os.listdir(leg) if x.endswith(".csv")])
-        m = t.merge(full, on="label_uid", suffixes=("_b1", "_run"), validate="one_to_one")
+        tg = _read_meta(os.path.join(timing_dir, f.replace(".csv", ".meta.json"))).get("gpu")
+        b1 = t[["label_uid", "p_incorrect", "log_odds_incorrect"]].add_suffix("_b1").rename(
+            columns={"label_uid_b1": "label_uid"})
+        m = b1.merge(full, on="label_uid", validate="one_to_one")
         if m.empty:
             continue
-        dp = (m.p_incorrect_b1 - m.p_incorrect_run).abs()
-        dl = (m.log_odds_incorrect_b1 - m.log_odds_incorrect_run).abs()
-        rows.append({"model": timing_model(f[:-4]), "timing_gpu": t.gpu.iloc[0] if "gpu" in t else None,
+        dp = (m.p_incorrect_b1 - m.p_incorrect).abs()
+        dl = (m.log_odds_incorrect_b1 - m.log_odds_incorrect).abs()
+        rows.append({"model": timing_model(f[:-4]), "timing_gpu": tg,
                      "run_gpu": ",".join(sorted(m.gpu.astype(str).unique())) if "gpu" in m else None,
                      "n": len(m), "run_batch_size": int(m.batch_size.max()),
-                     "max_abs_dp": dp.max(), "median_abs_dp": dp.median(), "max_abs_dlogodds": dl.max()})
+                     "max_abs_dp": dp.max(), "median_abs_dp": dp.median(), "max_abs_dlogodds": dl.max(),
+                     "median_abs_dlogodds": dl.median()})
     return pd.DataFrame(rows)
 
 
