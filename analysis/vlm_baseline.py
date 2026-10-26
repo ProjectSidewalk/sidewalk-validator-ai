@@ -47,7 +47,11 @@ Subcommands (all outputs with label-level rows go OUTSIDE the repo, under ``~/Da
     ``...-pass1.zip`` (``items_bare/``, crop only, and ``pass1_sheet.csv`` for the rater's own verdict) and
     ``...-pass2.zip`` (``items_annotated/``, crop + answer + reason, and ``pass2_sheet.csv``), the second handed out
     only after the filled pass-1 sheet is back; random 6-hex ids, shuffled with a secret ``--seed`` (no default);
-    the key is written outside the checkout and only its sha256 is committed.
+    the key is written outside the checkout and only its sha256 is committed. Each zip also carries ``rate.html``
+    (``analysis/rating_page.py``), a browser page that saves answers as you go and exports the filled sheet.
+``gallery``
+    Adds ``rate.html`` to a packet built before the page existed and re-zips it; key, ids, sheets and crops are
+    unchanged, and it refuses a key that does not match the committed sha256.
 ``agreement``
     Unblinds the two filled sheets against the key; prints rater-vs-VLM and rater-vs-crowd agreement and the reason
     codes, overall, by whether the VLM was right, and per category.
@@ -91,6 +95,7 @@ Example (the score)::
 import argparse
 import datetime
 import hashlib
+import html
 import json
 import os
 import platform
@@ -101,7 +106,8 @@ import time
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO_DIR)
 import evaluate  # noqa: E402
 from calibration.per_city import load_cities, private_label, public_name  # noqa: E402
 
@@ -1332,8 +1338,6 @@ def run_packet(args, parser):
     """Two packets with the same items, ids and key: ``<packet-dir>/pass1/`` (bare crops, pass-1 sheet and rubric)
     and ``<packet-dir>/pass2/`` (annotated crops, pass-2 sheet and rubric), each also zipped into ``--out-dir``
     (``PACKET_ZIPS``). Hand out the pass-2 zip only after the filled pass-1 sheet has come back."""
-    import shutil
-
     if inside_this_repo(args.key):
         parser.error("--key must be outside every checkout of this repo until the rating is done "
                      "(commit only <key>.sha256)")
@@ -1354,14 +1358,10 @@ def run_packet(args, parser):
     pass1, pass2 = blank_sheets(key)
     pass1.to_csv(os.path.join(dirs[1], "pass1_sheet.csv"), index=False)
     pass2.to_csv(os.path.join(dirs[2], "pass2_sheet.csv"), index=False)
-    for n, text in ((1, RUBRIC_PASS1_TEXT), (2, RUBRIC_PASS2_TEXT)):
-        with open(os.path.join(dirs[n], "RUBRIC.md"), "w") as f:
-            f.write(text)
-    zips = {}
-    for n, d in dirs.items():
-        zips[n] = shutil.make_archive(os.path.join(args.out_dir, PACKET_ZIPS[n][:-4]), "zip", root_dir=d)
     key[KEY_COLUMNS].to_csv(args.key, index=False)
     digest = sha256_of(args.key)
+    write_rating_pages(dirs, pass1, pass2, digest)
+    zips = zip_packet(dirs, args.out_dir)
     with open(args.key + ".sha256", "w") as f:
         f.write(f"{digest}  {os.path.basename(args.key)}\n")
     if args.doc_dir:
@@ -1387,6 +1387,126 @@ def run_packet(args, parser):
           f"key {args.key} (sha256 {digest})")
 
 
+def write_rating_pages(dirs, pass1, pass2, key_digest):
+    """``RUBRIC.md`` and ``rate.html`` (``analysis/rating_page.py``) in each packet directory, from the blank sheets
+    in packet order. The pass-1 page holds only the bare crops and label types; the pass-2 page adds the VLM's
+    answer and reason as text and stays closed until a complete pass-1 sheet is loaded. Each page exports its sheet
+    in the blank sheet's format, so ``agreement`` reads it unchanged. Answers are kept in the browser under a key
+    that includes the start of ``key_digest``, so two packets never share saved answers."""
+    from analysis.rating_page import render_page
+
+    def items(sheet, subdir, extra=None):
+        return [{"id": r.packet_id, "image": f"{subdir}/{i + 1:03d}_{r.packet_id}.jpg",
+                 "alt": f"Item {i + 1}, label type {TYPE_NAMES[r.label_type]}",
+                 "caption_html": f"{i + 1}. {r.packet_id} &middot; label type: <strong>{TYPE_NAMES[r.label_type]}"
+                                 "</strong>",
+                 "extra_html": extra(r) if extra else None}
+                for i, r in enumerate(sheet.itertuples())]
+
+    def fixed(sheet, cols):
+        return {r["packet_id"]: {c: "" if pd.isna(r[c]) else r[c] for c in cols} for r in sheet.to_dict("records")}
+
+    def vlm_text(r):
+        return (f"<p><strong>Model's answer:</strong> {html.escape(str(r.vlm_answer))}</p>"
+                f"<p><strong>Its reason:</strong> {html.escape(str(r.vlm_reason))}</p>")
+
+    tag = key_digest[:8]
+    pages = {
+        1: render_page(
+            title="Rate label crops, pass 1", heading="Rating label crops, pass 1 of 2",
+            intro_html="<p>Each card is a label crop. The labelled point is the centre, marked with a cyan ring, "
+                       "and the caption gives the label type. Do not look anything up; judge from the crop alone. "
+                       "When every card is done, export the sheet and send it back; the material for pass 2 is "
+                       "handed out after that.</p>",
+            items=items(pass1, "items_bare"),
+            fields=[{"name": "my_verdict", "kind": "radio",
+                     "legend": "Is this a correct label of the stated type at the ringed point?",
+                     "options": [("correct", "Correct", "c"), ("incorrect", "Incorrect", "i"),
+                                 ("cant_tell", "Can't tell", "t")]},
+                    {"name": "notes_pass1", "kind": "text", "legend": "Notes (optional)"}],
+            sheet_columns=PASS1_COLUMNS, fixed=fixed(pass1, ["label_type"]),
+            storage_key=f"vlm16_{tag}_pass1", export_name="pass1_sheet"),
+        2: render_page(
+            title="Rate VLM explanations, pass 2", heading="Rating the VLM explanations, pass 2 of 2",
+            intro_html="<p>The same crops as pass 1 (same item ids), now with a vision-language model's yes/no "
+                       "answer to &ldquo;Is this a correct &lt;type&gt; label?&rdquo; and its reason (&ldquo;In at "
+                       "most 30 words, why?&rdquo;). Your pass-1 sheet is final; do not change it. Rate the reason "
+                       "on its own: judge whether it describes the crop accurately, whatever you think of the "
+                       "answer.</p>",
+            items=items(pass2, "items_annotated", vlm_text),
+            fields=[{"name": "reason_correct", "kind": "radio",
+                     "legend": "Is the reason a true description of what the crop shows, and does it bear on the "
+                               "question? (Partly: some of it is right, or it is right but misses the deciding "
+                               "feature.)",
+                     "options": [("yes", "Yes", "y"), ("partly", "Partly", "p"), ("no", "No", "n")]},
+                    {"name": "would_change_my_vote", "kind": "radio",
+                     "legend": "Had you been validating this label, would reading this answer and reason have "
+                               "changed your vote?",
+                     "options": [("yes", "Yes", "1"), ("no", "No", "0")]},
+                    {"name": "notes_pass2", "kind": "text", "legend": "Notes (optional)"}],
+            sheet_columns=PASS2_COLUMNS, fixed=fixed(pass2, ["label_type", "vlm_answer", "vlm_reason"]),
+            storage_key=f"vlm16_{tag}_pass2", export_name="pass2_sheet",
+            gate={"column": "my_verdict", "values": list(RUBRIC["my_verdict"]),
+                  "html": "<p><strong>Load your filled pass-1 sheet to open the cards.</strong> The page only "
+                          "checks that every item has a verdict; it does not store or show them.</p>"}),
+    }
+    for n, text in ((1, RUBRIC_PASS1_TEXT), (2, RUBRIC_PASS2_TEXT)):
+        with open(os.path.join(dirs[n], "RUBRIC.md"), "w") as f:
+            f.write(text)
+        with open(os.path.join(dirs[n], "rate.html"), "w") as f:
+            f.write(pages[n])
+
+
+def zip_packet(dirs, out_dir):
+    """Zip each packet directory into ``out_dir`` as ``PACKET_ZIPS``; returns ``{pass: zip path}``."""
+    import shutil
+
+    return {n: shutil.make_archive(os.path.join(out_dir, PACKET_ZIPS[n][:-4]), "zip", root_dir=d)
+            for n, d in dirs.items()}
+
+
+def run_gallery(args):
+    """Add ``rate.html`` to an existing packet (``write_rating_pages``) and re-zip it, leaving the key, ids, sheets
+    and crops unchanged. Refuses unless the key matches ``--key-sha256`` and both blank sheets hold the key's ids in
+    the key's order with the expected columns."""
+    if sha256_of(args.key) != open(args.key_sha256).read().split()[0]:
+        raise SystemExit(f"{args.key} does not match {args.key_sha256}")
+    key = pd.read_csv(args.key, dtype=str, keep_default_na=False)
+    dirs = {1: os.path.join(args.packet_dir, "pass1"), 2: os.path.join(args.packet_dir, "pass2")}
+    sheets = {}
+    for n, cols, sub in ((1, PASS1_COLUMNS, "items_bare"), (2, PASS2_COLUMNS, "items_annotated")):
+        s = pd.read_csv(os.path.join(dirs[n], f"pass{n}_sheet.csv"), dtype=str, keep_default_na=False)
+        if list(s.columns) != cols:
+            raise SystemExit(f"pass{n}_sheet.csv has columns {list(s.columns)}, expected {cols}")
+        if list(s.packet_id) != list(key.packet_id):
+            raise SystemExit(f"pass{n}_sheet.csv does not hold the key's packet ids in the key's order")
+        fixed = [c for c in cols[1:] if c in key]
+        if not (s[fixed] == key[fixed]).all().all():
+            raise SystemExit(f"pass{n}_sheet.csv: {', '.join(fixed)} differ from the key")
+        answers = [c for c in cols if c not in key]
+        if (s[answers] != "").any().any():
+            raise SystemExit(f"pass{n}_sheet.csv is not blank ({', '.join(answers)}); rebuild from a blank packet")
+        missing = [p for i, p in enumerate(s.packet_id)
+                   if not os.path.exists(os.path.join(dirs[n], sub, f"{i + 1:03d}_{p}.jpg"))]
+        if missing:
+            raise SystemExit(f"pass {n}: {len(missing)} crops missing, e.g. {missing[0]}")
+        sheets[n] = s
+    digest = sha256_of(args.key)
+    write_rating_pages(dirs, sheets[1], sheets[2], digest)
+    zips = zip_packet(dirs, args.out_dir)
+    pp = os.path.join(args.doc_dir, "provenance.json") if args.doc_dir else None
+    if pp and os.path.exists(pp):
+        prov = json.load(open(pp))
+        if prov.get("packet", {}).get("key_sha256") == digest:
+            prov["packet"]["zips"] = {PACKET_ZIPS[n]: zip_contents(dirs[n]) for n in dirs}
+            with open(pp, "w") as f:
+                json.dump(prov, f, indent=1, sort_keys=True)
+            print(f"refreshed the packet's zip contents in {pp}")
+        else:
+            print(f"left {pp} alone: its packet entry is for a different key")
+    print(f"wrote rate.html to {dirs[1]} and {dirs[2]}; re-zipped {zips[1]} and {zips[2]} (key sha256 {digest})")
+
+
 def zip_contents(d):
     """``{"files": [non-image files], "images": {subdir: count}}`` of one packet directory, for provenance."""
     files, images = [], {}
@@ -1404,7 +1524,8 @@ RUBRIC_PASS1_TEXT = """# Rating label crops, pass 1 of 2 (issue #16)
 
 Each image in `items_bare/` is a label crop. The labelled point is the centre, marked with a cyan ring, and the
 caption gives the label type. Do not look anything up; judge from the crop alone. Fill `pass1_sheet.csv` and send
-it back; the material for pass 2 is handed out after that.
+it back; the material for pass 2 is handed out after that. To rate in a browser instead, extract the zip and open `rate.html`:
+it saves as you go and exports the filled sheet.
 
 | column | values | meaning |
 |---|---|---|
@@ -1416,7 +1537,8 @@ RUBRIC_PASS2_TEXT = """# Rating the VLM explanations, pass 2 of 2 (issue #16)
 
 The same crops as pass 1 (same item ids), now in `items_annotated/` with a vision-language model's yes/no answer
 to "Is this a correct <type> label?" and its reason ("In at most 30 words, why?"). Your pass-1 sheet is final; do
-not change it. Fill `pass2_sheet.csv`.
+not change it. Fill `pass2_sheet.csv`, or extract the zip and open `rate.html` in a browser (load your filled
+pass-1 sheet there to open the cards; it exports the filled pass-2 sheet).
 
 | column | values | meaning |
 |---|---|---|
@@ -1516,6 +1638,16 @@ def main(argv=None):
     k.add_argument("--seed", type=int, required=True,
                    help="blinding seed; no default, keep it secret until rating is done")
 
+    g = sub.add_parser("gallery", help="add the rate.html rating pages to an existing packet and re-zip it")
+    g.add_argument("--out-dir", default=os.path.expanduser("~/Data/sidewalk-validator-ai-vlm-2026-10"),
+                   help="where the two zips are written (default: the packet's private output directory)")
+    g.add_argument("--packet-dir", required=True, help="packet directory (with pass1/ and pass2/)")
+    g.add_argument("--key", required=True, help="the packet's key CSV, outside the repo")
+    g.add_argument("--key-sha256", default=os.path.join(REPO_DIR, "docs/vlm-baseline-2026-10/packet_key.sha256"),
+                   help="committed sha256 the key must match")
+    g.add_argument("--doc-dir", default=os.path.join(REPO_DIR, "docs/vlm-baseline-2026-10"),
+                   help="where the packet's provenance entry is refreshed ('' to skip)")
+
     a = sub.add_parser("agreement", help="unblind a filled sheet; VLM-vs-rater and rater-vs-crowd agreement")
     a.add_argument("pass1", help="filled pass1_sheet.csv")
     a.add_argument("pass2", help="filled pass2_sheet.csv")
@@ -1538,6 +1670,8 @@ def main(argv=None):
         run_explain(args)
     elif args.command == "packet":
         run_packet(args, parser)
+    elif args.command == "gallery":
+        run_gallery(args)
     else:
         run_agreement(args)
 

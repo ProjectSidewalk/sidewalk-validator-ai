@@ -155,7 +155,8 @@
    "vlm-explanations-packet-pass1.zip": {
     "files": [
      "RUBRIC.md",
-     "pass1_sheet.csv"
+     "pass1_sheet.csv",
+     "rate.html"
     ],
     "images": {
      "items_bare": 100
@@ -164,7 +165,8 @@
    "vlm-explanations-packet-pass2.zip": {
     "files": [
      "RUBRIC.md",
-     "pass2_sheet.csv"
+     "pass2_sheet.csv",
+     "rate.html"
     ],
     "images": {
      "items_annotated": 100
