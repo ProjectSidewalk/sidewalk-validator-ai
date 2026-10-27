@@ -894,8 +894,10 @@ def pin(manifest_path, name, path, rows, repin=False):
     if old and old != sha and not repin:
         sys.exit(f"{name} is already pinned to a different file (sha256 {old[:12]}...); pass --repin to replace it")
     mtime = pd.Timestamp(os.path.getmtime(path), unit="s", tz="UTC").isoformat()
-    man.setdefault("rating", {})[name] = {"file": os.path.basename(path), "sha256": sha, "rows": int(rows),
-                                          "written_at": mtime}
+    entry = man.setdefault("rating", {}).setdefault(name, {})
+    if old != sha:
+        entry.clear()  # a new file: details recorded for the old one (e.g. dataset revisions) no longer apply
+    entry.update(file=os.path.basename(path), sha256=sha, rows=int(rows), written_at=mtime)
     write_manifest(manifest_path, man)
 
 
@@ -1053,6 +1055,17 @@ def confidence_table(m, bins=CONF_BINS):
     return bands, means
 
 
+def confidence_separation(m):
+    """``(auc, p, n)``: how well the served accuracy ranks the AI's right Disagrees above its wrong ones, pooled over
+    types (ROC AUC, and the two-sided Mann-Whitney p-value)."""
+    from scipy.stats import mannwhitneyu
+    from sklearn.metrics import roc_auc_score
+    d = disagree_decided(m)
+    auc = float(roc_auc_score(d.ai_right, d.ai_accuracy))
+    p = float(mannwhitneyu(d[d.ai_right].ai_accuracy, d[~d.ai_right].ai_accuracy).pvalue)
+    return auc, p, len(d)
+
+
 def crowd_crosstab(m):
     """On decided ``voted_disagree`` items: the crowd majority's verdict against the expert's (counts)."""
     v = m[(m.group == "voted_disagree") & m.verdict.isin(["correct", "incorrect"])]
@@ -1093,6 +1106,9 @@ def report_markdown(m, comments, trains, sources):
     out.append("\n### AI Disagree precision by the AI's served accuracy\n")
     out.append("| ai_accuracy | Expert agrees with the AI | n |\n|---|---:|---:|")
     out += [f"| {r.band} | {_md_rate(r)} | {r.n} |" for _, r in bands.iterrows()]
+    auc, p, n = confidence_separation(m)
+    out.append(f"\nPooled, the served accuracy ranks right Disagrees above wrong ones with AUC {auc:.3f} "
+               f"(two-sided Mann-Whitney p = {p:.3f}, n = {n}).")
     out.append("\n| Type | mean ai_accuracy, AI right | mean ai_accuracy, AI wrong | n |\n|---|---:|---:|---:|")
     out += [f"| {r.label_type} | {r.right:.3f} | {r.wrong:.3f} | {r.n} |" for _, r in means.iterrows()]
     ct = crowd_crosstab(m)

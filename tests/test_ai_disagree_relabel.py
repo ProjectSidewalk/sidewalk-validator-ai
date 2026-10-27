@@ -484,7 +484,15 @@ def test_report_end_to_end_enforces_every_pin(tmp_path):
             "--out", str(out), "--private-out", str(joined), "--manifest", str(man)]
     rl.main(argv)
     assert "1 production training rows were not found" in out.read_text()
+    assert "| Crosswalk | 1 | 0.0% [0.0, 65.8] | 2 | 0 | 1 |" in out.read_text()   # the missing row is not counted
     assert "joined" in json.load(open(man))["rating"]
+    m2 = json.load(open(man))
+    del m2["rating"]["joined"]
+    rl.write_manifest(str(man), m2)
+    paths["sheet"].write_text(paths["sheet"].read_text() + "\n")
+    rl.main(argv + ["--allow-unpinned"])                      # runs, but the joined file is not pinned
+    assert "joined" not in json.load(open(man))["rating"]
+    paths["sheet"].write_text(paths["sheet"].read_text()[:-1])
     for name in ("sheet", "comments", "prod", "key"):
         orig = paths[name].read_text()
         paths[name].write_text(orig + ("\n" if name != "comments" else "sidewalk_a,2,2026-10-27 09:00:00-07,,y\n"))
@@ -494,3 +502,101 @@ def test_report_end_to_end_enforces_every_pin(tmp_path):
     (split_dir / "Obstacle" / "split.csv").write_text("label_type,severity,tags,split\n")
     with pytest.raises(SystemExit):
         rl.main(argv)
+
+
+def test_repin_of_the_same_file_keeps_extra_details_and_a_new_file_drops_them(tmp_path):
+    f, man = tmp_path / "p.csv", tmp_path / "manifest.json"
+    f.write_text("a\n1\n")
+    rl.pin(str(man), "prod_train", str(f), 1)
+    m = json.load(open(man))
+    m["rating"]["prod_train"]["dataset_revisions"] = {"Obstacle": "abc"}
+    rl.write_manifest(str(man), m)
+    rl.pin(str(man), "prod_train", str(f), 1)
+    assert json.load(open(man))["rating"]["prod_train"]["dataset_revisions"] == {"Obstacle": "abc"}
+    f.write_text("a\n2\n")
+    rl.pin(str(man), "prod_train", str(f), 1, repin=True)
+    assert "dataset_revisions" not in json.load(open(man))["rating"]["prod_train"]
+
+
+def test_pin_splits_refuses_a_silent_replace(tmp_path):
+    (tmp_path / "r3").mkdir()
+    d, man = _split_dir(tmp_path / "r3"), tmp_path / "manifest.json"
+    rl.pin_splits(str(man), str(d))
+    (d / "Obstacle" / "split.csv").write_text("x\n")
+    with pytest.raises(SystemExit, match="already pinned"):
+        rl.pin_splits(str(man), str(d))
+    rl.pin_splits(str(man), str(d), repin=True)
+
+
+def test_confidence_separation():
+    auc, p, n = rl.confidence_separation(_rated())
+    assert n == 3 and auc == pytest.approx(1.0) and 0 < p <= 1
+
+
+def _pull_env(tmp_path, monkeypatch):
+    key = tmp_path / "key.csv"
+    pd.DataFrame({"packet_id": ["r1"], "label_uid": ["sidewalk_a:1"], "schema": ["sidewalk_a"], "label_id": [1],
+                  "label_type": ["CurbRamp"]}).to_csv(key, index=False)
+    calls = []
+
+    def fake_remote(host, script, binary=False):
+        calls.append(script)
+        if "label_validation" in script:
+            return "schema,label_id,vote\nsidewalk_a,1,Agree\n"
+        if "validation_task_comment" in script:
+            return "sidewalk_a,1,2026-10-27 09:00:00-07,,hi\n"
+        return "schema,label_id,label_type,severity,tags\nsidewalk_a,1,Obstacle,2,\n"
+    monkeypatch.setattr(rl, "remote", fake_remote)
+    return key, tmp_path / "manifest.json", calls
+
+
+def test_pulls_refuse_existing_out_and_repin_reaches_pin(tmp_path, monkeypatch):
+    key, man, calls = _pull_env(tmp_path, monkeypatch)
+    for cmd in ("votes", "comments"):
+        out = tmp_path / f"{cmd}.csv"
+        argv = [cmd, "--key", str(key), "--rater-id", "0-0", "--out", str(out), "--manifest", str(man)]
+        rl.main(argv)
+        assert json.load(open(man))["rating"][cmd]["sha256"] == rl.sha256_file(str(out))
+        n = len(calls)
+        with pytest.raises(SystemExit, match="exists"):
+            rl.main(argv)
+        assert len(calls) == n                                   # refused before touching the server
+        out.write_text(out.read_text())
+        rl.main(argv + ["--repin"])                             # same content: re-pin allowed
+    # a different file under --repin replaces the pin
+    out = tmp_path / "votes.csv"
+    calls_before = len(calls)
+    rl.main(["votes", "--key", str(key), "--rater-id", "0-0", "--out", str(out), "--manifest", str(man), "--repin"])
+    assert len(calls) == calls_before + 1
+
+
+def test_prod_train_reads_the_pinned_revision(tmp_path, monkeypatch):
+    import urllib.request
+    key, man, _ = _pull_env(tmp_path, monkeypatch)
+    rl.write_manifest(str(man), {"rating": {"prod_train": {"sha256": "old", "dataset_revisions":
+                                                            {t: f"rev{t}" for t in rl.PROD_DATASETS}}}})
+    urls = []
+
+    def fake_urlopen(url, timeout=None):
+        urls.append(url)
+        t = next(t for t, ds in rl.PROD_DATASETS.items() if ds in url)
+        files = [{"rfilename": "train/correct/a_1.webp"}] if t == "Obstacle" else []
+        return io.StringIO(json.dumps({"sha": f"rev{t}", "siblings": files}))
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    out = tmp_path / "prod.csv"
+    rl.main(["prod-train", "--key", str(key), "--out", str(out), "--manifest", str(man), "--repin"])
+    assert all("/revision/rev" in u for u in urls) and len(urls) == len(rl.PROD_DATASETS)
+    assert json.load(open(man))["rating"]["prod_train"]["dataset_revisions"]["Obstacle"] == "revObstacle"
+    with pytest.raises(SystemExit, match="exists"):
+        rl.main(["prod-train", "--key", str(key), "--out", str(out), "--manifest", str(man)])
+
+
+def test_score_checks_the_key_pin(tmp_path):
+    m = _rated()
+    key, sheet, man = tmp_path / "key.csv", tmp_path / "sheet.csv", tmp_path / "manifest.json"
+    m.drop(columns="verdict").to_csv(key, index=False)
+    m.assign(notes="")[["packet_id", "label_type", "verdict", "notes"]].to_csv(sheet, index=False)
+    rl.write_manifest(str(man), {"key_sha256": "0" * 64})
+    rl.pin(str(man), "votes", str(sheet), 5)
+    with pytest.raises(SystemExit, match="key"):
+        rl.main(["score", "--key", str(key), "--sheet", str(sheet), "--manifest", str(man)])

@@ -89,7 +89,7 @@ the 0.92 the gate targets. On the crowd-voted items the human majority matches t
 against 54% for the AI.
 
 **Confidence separates right from wrong only weakly.** The expert agrees 50%, 57% and 65% of the time across
-served accuracy bands (AUC of `ai_accuracy` for a right Disagree 0.574, Mann-Whitney p = 0.087). Within each type, the AI's mean served accuracy differs by at most 0.01 between right and wrong. No
+served accuracy bands (AUC of `ai_accuracy` for a right Disagree 0.574, Mann-Whitney p = 0.087; both in the report). Within each type, the AI's mean served accuracy differs by at most 0.01 between right and wrong. No
 band comes near 0.92.
 
 **Where the AI is wrong:** real features in poor condition. The verdicts show it in the slices (Crosswalk severity
@@ -229,6 +229,8 @@ Both Disagree groups pooled: 57.6% [50.4, 64.5] (n = 184). `decoy_unsure` rows a
 | (0.95, 0.98] | 57.1% [47.3, 66.5] | 98 |
 | (0.98, 1.0] | 64.6% [50.4, 76.6] | 48 |
 
+Pooled, the served accuracy ranks right Disagrees above wrong ones with AUC 0.574 (two-sided Mann-Whitney p = 0.087, n = 184).
+
 | Type | mean ai_accuracy, AI right | mean ai_accuracy, AI wrong | n |
 |---|---:|---:|---:|
 | Crosswalk | 0.979 | 0.977 | 40 |
@@ -309,7 +311,8 @@ the same queries and pinned afterwards with `pin`; their hashes are the ones bel
 | `packet/relabel_sheet__jon.csv` (votes, pulled 2026-10-27 22:26 UTC) | `7a758981cffd30abe10bb360dccb5fc1c8321eb5c31710a01571f01d7ff87383` |
 | `packet/jon_comments.csv` (184 comments, pulled 22:26 UTC) | `23eeb2da130e7ddfa1964a310341813d4981e67dd2d4a47060020471551d4373` |
 | `prod_train_labels.csv` (15,854 rows; none missing or retyped) | `89ba27c6e9f8f33a2f243283ea87fe2f854dadbc5506485a9cf2fc46bcf7d9e0` |
-| `results_report.md` (the report above) | `83810c3b0450f3fa47340e47a69957bc08dadddfc5ac128811732756369c60f5` |
+| `packet/joined_scored.csv` (key, verdicts and comments; private) | `145aac54b3e5c219fbd32a085471495c62fbc01e4baa8612ecc465cec21ebc0e` |
+| `results_report.md` (the report above) | `e07f1654e4397812aa003bcfacd390b082bf344c347aba1fe1ae1f966c236436` |
 | round-3 `Crosswalk/split.csv` | `91001f64b778ec3d59b381d50911c6bd8ea35449052574d97eb4c9380d37f00f` |
 | round-3 `CurbRamp/split.csv` | `f2ec89f8032c9b6b7c1533bea7ac82d82b7c139847b14286dd53d932a2195610` |
 | round-3 `NoCurbRamp/split.csv` | `fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33` |
