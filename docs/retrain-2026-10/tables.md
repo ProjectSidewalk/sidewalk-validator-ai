@@ -414,3 +414,509 @@
 | Obstacle | 1.0 | 0.788 | 1370 | 0.461 | 0.601 | 0.344 |
 | SurfaceProblem | 0.999997 | 0.923 | 1254 | 0.293 | 0.585 | 0.359 |
 | Crosswalk | 0.9925 | 0.966 | 258 | 0.000 | 0.132 | 0.021 |
+
+## by severity and tag
+
+### CurbRamp / test / by severity
+
+| Severity | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| 1 | 1,080 | 659 / 421 | 0.969 [0.958, 0.979] | 0.921 | 5,083 |
+| 2 | 196 | 74 / 122 | 0.950 [0.915, 0.979] | 0.893 | 837 |
+| 3 | 102 | 28 / 74 | 0.906 [0.819, 0.973] | 0.863 | 551 |
+| (none) | 101 | 51 / 50 | 0.982 [0.958, 0.998] | 0.941 | 454 |
+
+### CurbRamp / test / by severity: round 3 vs production
+
+| Severity | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| 1 | 1,080 | 421 | 0.969 | 0.957 | +0.013 [+0.004, +0.023] |
+| 2 | 196 | 122 | 0.950 | 0.936 | +0.014 [-0.024, +0.052] |
+| 3 | 102 | 74 | 0.906 | 0.946 | -0.040 [-0.111, +0.020] |
+| (none) | 101 | 50 | 0.982 | 0.984 | -0.001 [-0.021, +0.018] |
+
+### CurbRamp / test / by tag
+
+| Tag | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| (none) | 862 | 521 / 341 | 0.974 [0.963, 0.983] | 0.923 | 3,933 |
+| missing tactile warning | 303 | 156 / 147 | 0.935 [0.905, 0.964] | 0.871 | 1,482 |
+| points into traffic | 156 | 92 / 64 | 0.988 [0.969, 1.000] | 0.968 | 770 |
+| not level with street | 123 | 30 / 93 | 0.933 [0.856, 0.990] | 0.902 | 513 |
+| narrow | 95 | 38 / 57 | 0.925 [0.857, 0.976] | 0.853 | 451 |
+| surface problem | 79 | 38 / 41 | 0.909 [0.832, 0.971] | 0.835 | 351 |
+| not enough landing space | 69 | 37 / 32 | 0.952 [0.894, 0.995] | 0.899 | 348 |
+| steep | 50 | 9 / 41 | 0.957 [0.886, 1.000] | 0.880 | 226 |
+| debris / pooled water | 9 | 9 / 0 |  |  | 74 ⚠ thin |
+| parallel lines | 7 | 7 / 0 |  |  | 14 ⚠ thin |
+| not aligned with crosswalk | 3 | 2 / 1 |  |  | 35 ⚠ thin |
+
+### CurbRamp / test / by tag: round 3 vs production
+
+| Tag | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| (none) | 862 | 341 | 0.974 | 0.958 | +0.016 [+0.006, +0.027] |
+| missing tactile warning | 303 | 147 | 0.935 | 0.931 | +0.004 [-0.029, +0.036] |
+| points into traffic | 156 | 64 | 0.988 | 0.969 | +0.019 [-0.002, +0.046] |
+| not level with street | 123 | 93 | 0.933 | 0.930 | +0.003 [-0.066, +0.066] |
+| narrow | 95 | 57 | 0.925 | 0.910 | +0.014 [-0.055, +0.080] |
+| surface problem | 79 | 41 | 0.909 | 0.922 | -0.012 [-0.093, +0.064] |
+| not enough landing space | 69 | 32 | 0.952 | 0.959 | -0.007 [-0.063, +0.048] |
+| steep | 50 | 41 | 0.957 | 0.916 | +0.041 [-0.018, +0.121] |
+| debris / pooled water | 9 | 0 |  |  |  |
+| parallel lines | 7 | 0 |  |  |  |
+| not aligned with crosswalk | 3 | 1 |  |  |  |
+
+### CurbRamp / test_heldout / by severity
+
+| Severity | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| 1 | 444 | 273 / 171 | 0.913 [0.883, 0.941] | 0.813 | 5,083 |
+| 2 | 55 | 28 / 27 | 0.873 [0.751, 0.967] | 0.873 | 837 |
+| (none) | 24 | 4 / 20 |  |  | 454 |
+| 3 | 23 | 13 / 10 |  |  | 551 |
+
+### CurbRamp / test_heldout / by severity: round 3 vs production
+
+| Severity | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| 1 | 444 | 171 | 0.913 | 0.884 | +0.029 [+0.008, +0.050] |
+| 2 | 55 | 27 | 0.873 | 0.852 | +0.021 [-0.059, +0.107] |
+| (none) | 24 | 20 |  |  |  |
+| 3 | 23 | 10 |  |  |  |
+
+### CurbRamp / test_heldout / by tag
+
+| Tag | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| (none) | 329 | 179 / 150 | 0.925 [0.894, 0.953] | 0.839 | 3,933 |
+| missing tactile warning | 141 | 96 / 45 | 0.858 [0.790, 0.917] | 0.759 | 1,482 |
+| points into traffic | 73 | 51 / 22 | 0.937 [0.834, 0.999] | 0.945 | 770 |
+| not level with street | 28 | 14 / 14 |  |  | 513 |
+| not enough landing space | 22 | 22 / 0 |  |  | 348 |
+| surface problem | 20 | 11 / 9 |  |  | 351 |
+| narrow | 18 | 12 / 6 |  |  | 451 |
+| debris / pooled water | 8 | 7 / 1 |  |  | 74 ⚠ thin |
+| steep | 5 | 3 / 2 |  |  | 226 |
+
+### CurbRamp / test_heldout / by tag: round 3 vs production
+
+| Tag | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| (none) | 329 | 150 | 0.925 | 0.899 | +0.026 [+0.001, +0.052] |
+| missing tactile warning | 141 | 45 | 0.858 | 0.791 | +0.066 [-0.000, +0.137] |
+| points into traffic | 73 | 22 | 0.937 | 0.898 | +0.038 [-0.027, +0.124] |
+| not level with street | 28 | 14 |  |  |  |
+| not enough landing space | 22 | 0 |  |  |  |
+| surface problem | 20 | 9 |  |  |  |
+| narrow | 18 | 6 |  |  |  |
+| debris / pooled water | 8 | 1 |  |  |  |
+| steep | 5 | 2 |  |  |  |
+
+### NoCurbRamp / test / by severity
+
+| Severity | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| 3 | 1,391 | 859 / 532 | 0.946 [0.932, 0.960] | 0.902 | 6,074 |
+| 2 | 743 | 429 / 314 | 0.915 [0.894, 0.935] | 0.844 | 3,595 |
+| 1 | 340 | 110 / 230 | 0.894 [0.851, 0.930] | 0.868 | 1,839 |
+| (none) | 139 | 45 / 94 | 0.918 [0.870, 0.960] | 0.856 | 691 |
+
+### NoCurbRamp / test / by severity: round 3 vs production
+
+| Severity | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| 3 | 1,391 | 532 | 0.946 | 0.937 | +0.010 [-0.005, +0.023] |
+| 2 | 743 | 314 | 0.915 | 0.925 | -0.010 [-0.029, +0.010] |
+| 1 | 340 | 230 | 0.894 | 0.900 | -0.007 [-0.042, +0.029] |
+| (none) | 139 | 94 | 0.918 | 0.922 | -0.004 [-0.057, +0.054] |
+
+### NoCurbRamp / test / by tag
+
+| Tag | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| no alternate route | 1,032 | 718 / 314 | 0.944 [0.925, 0.960] | 0.902 | 4,670 |
+| (none) | 979 | 451 / 528 | 0.945 [0.930, 0.958] | 0.891 | 4,631 |
+| alternate route present | 478 | 231 / 247 | 0.879 [0.843, 0.910] | 0.816 | 2,300 |
+| unclear if needed | 181 | 61 / 120 | 0.845 [0.763, 0.911] | 0.807 | 860 |
+
+### NoCurbRamp / test / by tag: round 3 vs production
+
+| Tag | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| no alternate route | 1,032 | 314 | 0.944 | 0.941 | +0.003 [-0.017, +0.021] |
+| (none) | 979 | 528 | 0.945 | 0.944 | +0.001 [-0.012, +0.015] |
+| alternate route present | 478 | 247 | 0.879 | 0.883 | -0.004 [-0.032, +0.024] |
+| unclear if needed | 181 | 120 | 0.845 | 0.848 | -0.004 [-0.079, +0.063] |
+
+### NoCurbRamp / test_heldout / by severity
+
+| Severity | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| 3 | 418 | 296 / 122 | 0.873 [0.830, 0.910] | 0.823 | 6,074 |
+| 2 | 158 | 49 / 109 | 0.843 [0.769, 0.912] | 0.703 | 3,595 |
+| 1 | 149 | 11 / 138 | 0.781 [0.583, 0.938] | 0.691 | 1,839 |
+| (none) | 18 | 3 / 15 |  |  | 691 |
+
+### NoCurbRamp / test_heldout / by severity: round 3 vs production
+
+| Severity | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| 3 | 418 | 122 | 0.873 | 0.881 | -0.008 [-0.048, +0.032] |
+| 2 | 158 | 109 | 0.843 | 0.854 | -0.011 [-0.061, +0.043] |
+| 1 | 149 | 138 | 0.781 | 0.882 | -0.101 [-0.262, +0.015] |
+| (none) | 18 | 15 |  |  |  |
+
+### NoCurbRamp / test_heldout / by tag
+
+| Tag | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| no alternate route | 348 | 270 / 78 | 0.867 [0.813, 0.913] | 0.836 | 4,670 |
+| alternate route present | 209 | 31 / 178 | 0.856 [0.777, 0.921] | 0.727 | 2,300 |
+| (none) | 125 | 46 / 79 | 0.858 [0.783, 0.922] | 0.720 | 4,631 |
+| unclear if needed | 73 | 16 / 57 | 0.865 [0.736, 0.961] | 0.685 | 860 |
+
+### NoCurbRamp / test_heldout / by tag: round 3 vs production
+
+| Tag | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| no alternate route | 348 | 78 | 0.867 | 0.881 | -0.015 [-0.058, +0.032] |
+| alternate route present | 209 | 178 | 0.856 | 0.880 | -0.024 [-0.092, +0.043] |
+| (none) | 125 | 79 | 0.858 | 0.888 | -0.030 [-0.092, +0.035] |
+| unclear if needed | 73 | 57 | 0.865 | 0.873 | -0.008 [-0.096, +0.081] |
+
+### Obstacle / test / by severity
+
+| Severity | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| 3 | 803 | 581 / 222 | 0.903 [0.878, 0.926] | 0.866 | 3,899 |
+| 1 | 679 | 275 / 404 | 0.862 [0.833, 0.890] | 0.775 | 3,142 |
+| 2 | 641 | 397 / 244 | 0.853 [0.820, 0.883] | 0.796 | 2,844 |
+| (none) | 143 | 52 / 91 | 0.877 [0.811, 0.937] | 0.797 | 669 |
+
+### Obstacle / test / by severity: round 3 vs production
+
+| Severity | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| 3 | 803 | 222 | 0.903 | 0.845 | +0.058 [+0.028, +0.088] |
+| 1 | 679 | 404 | 0.862 | 0.837 | +0.025 [-0.009, +0.061] |
+| 2 | 641 | 244 | 0.853 | 0.812 | +0.041 [+0.004, +0.078] |
+| (none) | 143 | 91 | 0.877 | 0.811 | +0.066 [-0.021, +0.157] |
+
+### Obstacle / test / by tag
+
+| Tag | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| pole | 468 | 249 / 219 | 0.873 [0.840, 0.903] | 0.795 | 2,087 |
+| (none) | 358 | 177 / 181 | 0.891 [0.854, 0.922] | 0.810 | 1,933 |
+| parked car | 286 | 166 / 120 | 0.862 [0.816, 0.904] | 0.797 | 1,293 |
+| trash/recycling can | 236 | 170 / 66 | 0.934 [0.900, 0.963] | 0.890 | 1,046 |
+| vegetation | 230 | 152 / 78 | 0.831 [0.762, 0.885] | 0.787 | 1,136 |
+| narrow | 204 | 156 / 48 | 0.881 [0.825, 0.928] | 0.824 | 908 |
+| tree | 204 | 84 / 120 | 0.893 [0.843, 0.934] | 0.814 | 854 |
+| parked scooter/motorcycle | 105 | 80 / 25 | 0.896 [0.808, 0.962] | 0.857 | 527 |
+| construction | 99 | 76 / 23 | 0.816 [0.716, 0.907] | 0.808 | 416 |
+| sign | 99 | 56 / 43 | 0.914 [0.851, 0.967] | 0.848 | 486 |
+| fire hydrant | 82 | 37 / 45 | 0.865 [0.774, 0.941] | 0.817 | 354 |
+| utility cabinet | 45 | 42 / 3 | 0.690 | 0.889 | 223 |
+| parked bike | 41 | 25 / 16 | 0.960 [0.895, 1.000] | 0.854 | 191 |
+| litter/garbage | 39 | 23 / 16 | 0.889 [0.758, 1.000] | 0.872 | 235 |
+| garage entrance | 29 | 13 / 16 |  |  | 95 ⚠ thin |
+| street vendor | 24 | 22 / 2 |  |  | 114 |
+| mailbox | 12 | 6 / 6 |  |  | 36 ⚠ thin |
+| height difference | 10 | 7 / 3 |  |  | 74 ⚠ thin |
+| stairs | 10 | 4 / 6 |  |  | 35 ⚠ thin |
+
+### Obstacle / test / by tag: round 3 vs production
+
+| Tag | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| pole | 468 | 219 | 0.873 | 0.825 | +0.047 [+0.009, +0.084] |
+| (none) | 358 | 181 | 0.891 | 0.788 | +0.103 [+0.057, +0.150] |
+| parked car | 286 | 120 | 0.862 | 0.822 | +0.040 [-0.003, +0.084] |
+| trash/recycling can | 236 | 66 | 0.934 | 0.942 | -0.009 [-0.042, +0.024] |
+| vegetation | 230 | 78 | 0.831 | 0.836 | -0.005 [-0.070, +0.057] |
+| narrow | 204 | 48 | 0.881 | 0.924 | -0.044 [-0.100, +0.010] |
+| tree | 204 | 120 | 0.893 | 0.837 | +0.056 [-0.011, +0.121] |
+| parked scooter/motorcycle | 105 | 25 | 0.896 | 0.667 | +0.229 [+0.107, +0.358] |
+| construction | 99 | 23 | 0.816 | 0.951 | -0.135 [-0.243, -0.036] |
+| sign | 99 | 43 | 0.914 | 0.945 | -0.031 [-0.094, +0.027] |
+| fire hydrant | 82 | 45 | 0.865 | 0.909 | -0.043 [-0.146, +0.046] |
+| utility cabinet | 45 | 3 | 0.690 | 0.786 | -0.095 |
+| parked bike | 41 | 16 | 0.960 | 0.955 | +0.005 [-0.063, +0.095] |
+| litter/garbage | 39 | 16 | 0.889 | 0.921 | -0.033 [-0.153, +0.080] |
+| garage entrance | 29 | 16 |  |  |  |
+| street vendor | 24 | 2 |  |  |  |
+| mailbox | 12 | 6 |  |  |  |
+| height difference | 10 | 3 |  |  |  |
+| stairs | 10 | 6 |  |  |  |
+
+### Obstacle / test_heldout / by severity
+
+| Severity | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| 1 | 1,006 | 116 / 890 | 0.868 [0.824, 0.909] | 0.703 | 3,142 |
+| 3 | 421 | 285 / 136 | 0.811 [0.766, 0.855] | 0.746 | 3,899 |
+| 2 | 335 | 177 / 158 | 0.870 [0.830, 0.906] | 0.764 | 2,844 |
+| (none) | 50 | 9 / 41 | 0.829 [0.647, 0.987] | 0.700 | 669 |
+
+### Obstacle / test_heldout / by severity: round 3 vs production
+
+| Severity | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| 1 | 1,006 | 890 | 0.868 | 0.833 | +0.035 [-0.004, +0.077] |
+| 3 | 421 | 136 | 0.811 | 0.777 | +0.034 [-0.002, +0.071] |
+| 2 | 335 | 158 | 0.870 | 0.805 | +0.065 [+0.022, +0.113] |
+| (none) | 50 | 41 | 0.829 | 0.837 | -0.008 [-0.182, +0.140] |
+
+### Obstacle / test_heldout / by tag
+
+| Tag | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| pole | 439 | 84 / 355 | 0.927 [0.892, 0.955] | 0.790 | 2,087 |
+| trash/recycling can | 286 | 197 / 89 | 0.939 [0.901, 0.968] | 0.871 | 1,046 |
+| parked car | 164 | 66 / 98 | 0.767 [0.680, 0.842] | 0.622 | 1,293 |
+| vegetation | 156 | 69 / 87 | 0.833 [0.758, 0.895] | 0.750 | 1,136 |
+| (none) | 154 | 38 / 116 | 0.856 [0.781, 0.922] | 0.760 | 1,933 |
+| sign | 139 | 15 / 124 | 0.822 [0.676, 0.947] | 0.662 | 486 |
+| outdoor dining area | 128 | 6 / 122 | 0.652 | 0.633 | 1 ⚠ thin |
+| narrow | 75 | 40 / 35 | 0.763 [0.639, 0.864] | 0.667 | 908 |
+| parked bike | 60 | 3 / 57 | 0.439 | 0.467 | 191 |
+| construction | 59 | 41 / 18 | 0.730 [0.584, 0.854] | 0.678 | 416 |
+| tree | 59 | 11 / 48 | 0.874 [0.667, 0.990] | 0.831 | 854 |
+| stairs | 47 | 26 / 21 | 0.397 [0.211, 0.576] | 0.447 | 35 ⚠ thin |
+| litter/garbage | 43 | 30 / 13 | 0.810 [0.642, 0.941] | 0.791 | 235 |
+| fire hydrant | 37 | 3 / 34 | 1.000 | 0.838 | 354 |
+| parked scooter/motorcycle | 37 | 0 / 37 |  | 0.378 | 527 |
+| mailbox | 24 | 11 / 13 |  |  | 36 ⚠ thin |
+| height difference | 13 | 1 / 12 |  |  | 74 ⚠ thin |
+| garage entrance | 1 | 0 / 1 |  |  | 95 ⚠ thin |
+
+### Obstacle / test_heldout / by tag: round 3 vs production
+
+| Tag | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| pole | 439 | 355 | 0.927 | 0.891 | +0.036 [-0.007, +0.080] |
+| trash/recycling can | 286 | 89 | 0.939 | 0.934 | +0.005 [-0.028, +0.038] |
+| parked car | 164 | 98 | 0.767 | 0.748 | +0.020 [-0.043, +0.088] |
+| vegetation | 156 | 87 | 0.833 | 0.763 | +0.070 [-0.010, +0.149] |
+| (none) | 154 | 116 | 0.856 | 0.791 | +0.065 [-0.004, +0.136] |
+| sign | 139 | 124 | 0.822 | 0.848 | -0.027 [-0.152, +0.088] |
+| outdoor dining area | 128 | 122 | 0.652 | 0.616 | +0.036 |
+| narrow | 75 | 35 | 0.763 | 0.567 | +0.196 [+0.075, +0.324] |
+| parked bike | 60 | 57 | 0.439 | 0.632 | -0.193 |
+| construction | 59 | 18 | 0.730 | 0.650 | +0.080 [-0.053, +0.216] |
+| tree | 59 | 48 | 0.874 | 0.824 | +0.050 [-0.079, +0.228] |
+| stairs | 47 | 21 | 0.397 | 0.273 | +0.125 [-0.094, +0.320] |
+| litter/garbage | 43 | 13 | 0.810 | 0.710 | +0.100 [-0.064, +0.282] |
+| fire hydrant | 37 | 34 | 1.000 | 0.843 | +0.157 |
+| parked scooter/motorcycle | 37 | 37 |  |  |  |
+| mailbox | 24 | 13 |  |  |  |
+| height difference | 13 | 12 |  |  |  |
+| garage entrance | 1 | 1 |  |  |  |
+
+### SurfaceProblem / test / by severity
+
+| Severity | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| 1 | 1,107 | 590 / 517 | 0.902 [0.882, 0.920] | 0.833 | 5,050 |
+| 2 | 647 | 384 / 263 | 0.884 [0.854, 0.912] | 0.832 | 2,959 |
+| 3 | 378 | 233 / 145 | 0.899 [0.860, 0.932] | 0.847 | 1,833 |
+| (none) | 123 | 49 / 74 | 0.868 [0.794, 0.924] | 0.789 | 658 |
+
+### SurfaceProblem / test / by severity: round 3 vs production
+
+| Severity | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| 1 | 1,107 | 517 | 0.902 | 0.893 | +0.009 [-0.010, +0.028] |
+| 2 | 647 | 263 | 0.884 | 0.889 | -0.006 [-0.033, +0.021] |
+| 3 | 378 | 145 | 0.899 | 0.870 | +0.029 [-0.007, +0.065] |
+| (none) | 123 | 74 | 0.868 | 0.825 | +0.043 [-0.028, +0.117] |
+
+### SurfaceProblem / test / by tag
+
+| Tag | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| cracks | 662 | 501 / 161 | 0.889 [0.855, 0.919] | 0.852 | 3,031 |
+| grass | 528 | 375 / 153 | 0.881 [0.844, 0.915] | 0.833 | 2,636 |
+| bumpy | 437 | 263 / 174 | 0.906 [0.876, 0.934] | 0.831 | 1,982 |
+| (none) | 379 | 116 / 263 | 0.897 [0.856, 0.933] | 0.863 | 1,490 |
+| uneven/slanted | 328 | 231 / 97 | 0.859 [0.811, 0.902] | 0.829 | 1,574 |
+| narrow sidewalk | 217 | 117 / 100 | 0.843 [0.790, 0.894] | 0.765 | 1,160 |
+| height difference | 163 | 131 / 32 | 0.954 [0.916, 0.980] | 0.914 | 770 |
+| utility panel | 162 | 64 / 98 | 0.915 [0.860, 0.960] | 0.877 | 904 |
+| very broken | 113 | 83 / 30 | 0.886 [0.807, 0.955] | 0.850 | 625 |
+| brick/cobblestone | 77 | 26 / 51 | 0.884 [0.799, 0.956] | 0.779 | 337 |
+| sand/gravel | 65 | 36 / 29 | 0.891 [0.810, 0.962] | 0.800 | 284 |
+| construction | 19 | 14 / 5 |  |  | 44 ⚠ thin |
+| debris | 14 | 8 / 6 |  |  | 66 ⚠ thin |
+| rail/tram track | 5 | 2 / 3 |  |  | 25 ⚠ thin |
+
+### SurfaceProblem / test / by tag: round 3 vs production
+
+| Tag | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| cracks | 662 | 161 | 0.889 | 0.883 | +0.006 [-0.027, +0.036] |
+| grass | 528 | 153 | 0.881 | 0.863 | +0.018 [-0.018, +0.053] |
+| bumpy | 437 | 174 | 0.906 | 0.884 | +0.023 [-0.005, +0.052] |
+| (none) | 379 | 263 | 0.897 | 0.886 | +0.011 [-0.034, +0.058] |
+| uneven/slanted | 328 | 97 | 0.859 | 0.865 | -0.006 [-0.053, +0.040] |
+| narrow sidewalk | 217 | 100 | 0.843 | 0.848 | -0.005 [-0.052, +0.046] |
+| height difference | 163 | 32 | 0.954 | 0.928 | +0.026 [-0.029, +0.092] |
+| utility panel | 162 | 98 | 0.915 | 0.907 | +0.008 [-0.041, +0.055] |
+| very broken | 113 | 30 | 0.886 | 0.914 | -0.028 [-0.113, +0.048] |
+| brick/cobblestone | 77 | 51 | 0.884 | 0.922 | -0.038 [-0.111, +0.024] |
+| sand/gravel | 65 | 29 | 0.891 | 0.898 | -0.007 [-0.095, +0.084] |
+| construction | 19 | 5 |  |  |  |
+| debris | 14 | 6 |  |  |  |
+| rail/tram track | 5 | 3 |  |  |  |
+
+### SurfaceProblem / test_heldout / by severity
+
+| Severity | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| 1 | 574 | 237 / 337 | 0.701 [0.656, 0.746] | 0.666 | 5,050 |
+| 2 | 174 | 95 / 79 | 0.672 [0.591, 0.750] | 0.598 | 2,959 |
+| 3 | 74 | 31 / 43 | 0.823 [0.716, 0.915] | 0.716 | 1,833 |
+| (none) | 25 | 8 / 17 |  |  | 658 |
+
+### SurfaceProblem / test_heldout / by severity: round 3 vs production
+
+| Severity | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| 1 | 574 | 337 | 0.701 | 0.684 | +0.017 [-0.021, +0.055] |
+| 2 | 174 | 79 | 0.672 | 0.634 | +0.037 [-0.020, +0.093] |
+| 3 | 74 | 43 | 0.823 | 0.870 | -0.047 [-0.137, +0.034] |
+| (none) | 25 | 17 |  |  |  |
+
+### SurfaceProblem / test_heldout / by tag
+
+| Tag | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| brick/cobblestone | 288 | 97 / 191 | 0.540 [0.469, 0.606] | 0.608 | 337 |
+| narrow sidewalk | 148 | 28 / 120 | 0.696 [0.576, 0.800] | 0.642 | 1,160 |
+| cracks | 113 | 85 / 28 | 0.901 [0.817, 0.962] | 0.867 | 3,031 |
+| uneven/slanted | 94 | 56 / 38 | 0.704 [0.597, 0.806] | 0.617 | 1,574 |
+| sand/gravel | 80 | 41 / 39 | 0.615 [0.471, 0.745] | 0.625 | 284 |
+| utility panel | 68 | 36 / 32 | 0.458 [0.325, 0.597] | 0.485 | 904 |
+| bumpy | 63 | 50 / 13 | 0.726 [0.554, 0.890] | 0.651 | 1,982 |
+| grass | 57 | 40 / 17 | 0.803 [0.612, 0.947] | 0.860 | 2,636 |
+| height difference | 31 | 15 / 16 | 0.929 [0.800, 1.000] | 0.903 | 770 |
+| debris | 29 | 24 / 5 |  |  | 66 ⚠ thin |
+| very broken | 21 | 13 / 8 |  |  | 625 |
+| (none) | 20 | 8 / 12 |  |  | 1,490 |
+| rail/tram track | 20 | 11 / 9 |  |  | 25 ⚠ thin |
+| construction | 6 | 1 / 5 |  |  | 44 ⚠ thin |
+
+### SurfaceProblem / test_heldout / by tag: round 3 vs production
+
+| Tag | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| brick/cobblestone | 288 | 191 | 0.540 | 0.593 | -0.053 [-0.131, +0.024] |
+| narrow sidewalk | 148 | 120 | 0.696 | 0.669 | +0.026 [-0.059, +0.106] |
+| cracks | 113 | 28 | 0.901 | 0.874 | +0.027 [-0.041, +0.100] |
+| uneven/slanted | 94 | 38 | 0.704 | 0.595 | +0.109 [+0.025, +0.196] |
+| sand/gravel | 80 | 39 | 0.615 | 0.542 | +0.073 [-0.043, +0.180] |
+| utility panel | 68 | 32 | 0.458 | 0.510 | -0.052 [-0.172, +0.074] |
+| bumpy | 63 | 13 | 0.726 | 0.757 | -0.031 [-0.201, +0.151] |
+| grass | 57 | 17 | 0.803 | 0.866 | -0.063 [-0.219, +0.057] |
+| height difference | 31 | 16 | 0.929 | 0.963 | -0.033 [-0.137, +0.050] |
+| debris | 29 | 5 |  |  |  |
+| very broken | 21 | 8 |  |  |  |
+| (none) | 20 | 12 |  |  |  |
+| rail/tram track | 20 | 9 |  |  |  |
+| construction | 6 | 5 |  |  |  |
+
+### Crosswalk / test / by severity
+
+| Severity | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| 1 | 287 | 228 / 59 | 0.969 [0.938, 0.992] | 0.951 | 1,394 |
+| 3 | 79 | 1 / 78 | 0.987 | 0.975 | 369 |
+| 2 | 49 | 10 / 39 | 0.941 [0.859, 1.000] | 0.939 | 187 |
+| (none) | 30 | 8 / 22 | 1.000 [1.000, 1.000] | 1.000 | 139 |
+
+### Crosswalk / test / by severity: round 3 vs production
+
+| Severity | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| 1 | 287 | 59 | 0.969 | 0.962 | +0.007 [-0.019, +0.036] |
+| 3 | 79 | 78 | 0.987 | 0.987 | +0.000 |
+| 2 | 49 | 39 | 0.941 | 0.967 | -0.026 [-0.083, +0.011] |
+| (none) | 30 | 22 | 1.000 | 1.000 | +0.000 [+0.000, +0.000] |
+
+### Crosswalk / test / by tag
+
+| Tag | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| (none) | 324 | 199 / 125 | 0.988 [0.973, 0.998] | 0.966 | 1,557 |
+| paint fading | 78 | 34 / 44 | 0.965 [0.909, 1.000] | 0.949 | 339 |
+| uneven surface | 17 | 4 / 13 |  |  | 64 ⚠ thin |
+| bumpy | 15 | 7 / 8 |  |  | 58 ⚠ thin |
+| broken surface | 14 | 10 / 4 |  |  | 58 ⚠ thin |
+| very long crossing | 12 | 4 / 8 |  |  | 68 ⚠ thin |
+| no pedestrian priority | 10 | 2 / 8 |  |  | 33 ⚠ thin |
+| brick/cobblestone | 5 | 1 / 4 |  |  | 48 ⚠ thin |
+| too close to traffic | 4 | 4 / 0 |  |  | 20 ⚠ thin |
+| rail/tram track | 3 | 1 / 2 |  |  | 10 ⚠ thin |
+
+### Crosswalk / test / by tag: round 3 vs production
+
+| Tag | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| (none) | 324 | 125 | 0.988 | 0.977 | +0.011 [-0.004, +0.030] |
+| paint fading | 78 | 44 | 0.965 | 0.967 | -0.002 [-0.031, +0.026] |
+| uneven surface | 17 | 13 |  |  |  |
+| bumpy | 15 | 8 |  |  |  |
+| broken surface | 14 | 4 |  |  |  |
+| very long crossing | 12 | 8 |  |  |  |
+| no pedestrian priority | 10 | 8 |  |  |  |
+| brick/cobblestone | 5 | 4 |  |  |  |
+| too close to traffic | 4 | 0 |  |  |  |
+| rail/tram track | 3 | 2 |  |  |  |
+
+### Crosswalk / test_heldout / by severity
+
+| Severity | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| 1 | 69 | 56 / 13 | 0.782 [0.635, 0.932] | 0.870 | 1,394 |
+| 2 | 47 | 5 / 42 | 1.000 | 0.979 | 187 |
+| 3 | 17 | 4 / 13 |  |  | 369 |
+| (none) | 5 | 0 / 5 |  |  | 139 |
+
+### Crosswalk / test_heldout / by severity: round 3 vs production
+
+| Severity | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| 1 | 69 | 13 | 0.782 | 0.780 | +0.001 [-0.174, +0.196] |
+| 2 | 47 | 42 | 1.000 | 0.990 | +0.010 |
+| 3 | 17 | 13 |  |  |  |
+| (none) | 5 | 5 |  |  |  |
+
+### Crosswalk / test_heldout / by tag
+
+| Tag | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 | training rows |
+|---|---:|---:|---:|---:|---:|
+| paint fading | 66 | 16 / 50 | 0.944 [0.855, 1.000] | 0.939 | 339 |
+| (none) | 55 | 40 / 15 | 0.817 [0.676, 0.959] | 0.836 | 1,557 |
+| broken surface | 12 | 6 / 6 |  |  | 58 ⚠ thin |
+| rail/tram track | 6 | 5 / 1 |  |  | 10 ⚠ thin |
+| brick/cobblestone | 5 | 3 / 2 |  |  | 48 ⚠ thin |
+| no pedestrian priority | 5 | 0 / 5 |  |  | 33 ⚠ thin |
+| uneven surface | 4 | 2 / 2 |  |  | 64 ⚠ thin |
+| bumpy | 2 | 0 / 2 |  |  | 58 ⚠ thin |
+| very long crossing | 1 | 1 / 0 |  |  | 68 ⚠ thin |
+
+### Crosswalk / test_heldout / by tag: round 3 vs production
+
+| Tag | n | incorrect | AUC, round 3 | AUC, production | Δ [95% CI] |
+|---|---:|---:|---:|---:|---:|
+| paint fading | 66 | 50 | 0.944 | 0.917 | +0.026 [-0.005, +0.069] |
+| (none) | 55 | 15 | 0.817 | 0.782 | +0.035 [-0.132, +0.229] |
+| broken surface | 12 | 6 |  |  |  |
+| rail/tram track | 6 | 1 |  |  |  |
+| brick/cobblestone | 5 | 2 |  |  |  |
+| no pedestrian priority | 5 | 5 |  |  |  |
+| uneven surface | 4 | 2 |  |  |  |
+| bumpy | 2 | 2 |  |  |  |
+| very long crossing | 1 | 0 |  |  |  |

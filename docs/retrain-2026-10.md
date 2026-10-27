@@ -323,6 +323,50 @@ distribution ([`serving-parity-2026-10.md`](serving-parity-2026-10.md) measures 
 serving). The sample is class-balanced, so the pooled figures in this table are not comparable with the
 full-split AUCs above; the VLM note has production only on this sample, not on the full held-out split.
 
+## By severity and tag
+
+Label type is coarse; severity and tags say much more about what is in the crop, so every report is now sliced by
+both ([`decisions.md`](decisions.md)). Production was also scored on round 3's **full** `test` and `test_heldout`
+splits (`evaluate.py --checkpoint <served revision> --tag prod`, klone, 2026-10-27), so the comparison below uses
+every row, not the 1,988-crop sample. Full tables: [`retrain-2026-10/tables.md`](retrain-2026-10/tables.md)
+("by severity and tag"), [`slices.csv`](retrain-2026-10/slices.csv),
+[`slices_vs_production.csv`](retrain-2026-10/slices_vs_production.csv).
+
+**How the comparison is computed.**
+
+- Slices need at least 30 labels.
+- Δ is round 3 minus production on the same rows.
+- Intervals come from 2,000 resamples of whole panoramas.
+- The same caveats as the production comparison above apply: production probably trained on many of the
+  training-deployment crops, and it is scored on tilt-corrected crops it was not trained on.
+
+**Round 3 against production.** Of 105 slices scored, 13 differ with an interval that excludes zero:
+
+- **12 favour round 3, mostly Obstacle:**
+  - `parked scooter/motorcycle` +0.23 (0.90 vs 0.67)
+  - `narrow` in the unseen deployments +0.20 (0.76 vs 0.57)
+  - untagged +0.10
+  - severity 3 +0.06
+- **SurfaceProblem `uneven/slanted`** in the unseen deployments, +0.11.
+- **CurbRamp severity 1 and untagged**, +0.01 to +0.03.
+- **One favours production: Obstacle `construction`** in the training deployments, 0.82 vs 0.95, Δ −0.14
+  [−0.24, −0.04], n = 99.
+
+**Where round 3 is weakest.** All in the unseen deployments, where it is near or below chance:
+
+| Type | Slice | n | AUC, round 3 | AUC, production |
+|---|---|---:|---:|---:|
+| Obstacle | `stairs` | 47 | 0.40 | 0.27 |
+| Obstacle | `parked bike` | 60 | 0.44 | 0.63 |
+| SurfaceProblem | `utility panel` | 68 | 0.46 | 0.51 |
+| SurfaceProblem | `brick/cobblestone` | 288 | 0.54 | 0.59 |
+| SurfaceProblem | `sand/gravel` | 80 | 0.62 | 0.54 |
+| Obstacle | `outdoor dining area` | 128 | 0.65 | 0.62 |
+
+These are features that look different from city to city, so they are the clearest candidates for more training
+data from more deployments. Eighteen tags in the test split also have fewer than 100 training rows (`⚠ thin` in the
+tables), for example Crosswalk `brick/cobblestone` with 48.
+
 ## The fixed-crop ablation
 
 [#51](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/51) trained a second CurbRamp model on
