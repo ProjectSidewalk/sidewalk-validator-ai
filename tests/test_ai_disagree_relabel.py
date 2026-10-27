@@ -1,6 +1,7 @@
 """Tests for analysis/ai_disagree_relabel.py: sampling, masking, unmasking, scoring and the severity/tag breakdown
 (the server calls are thin and run by hand)."""
 import doctest
+import json
 import io
 
 import numpy as np
@@ -364,3 +365,132 @@ def test_pin_and_check_pin(tmp_path):
     rl.check_pin(str(man), "votes", str(f), allow_unpinned=True)
     with pytest.raises(SystemExit, match="no pin"):
         rl.check_pin(str(man), "comments", str(f))
+
+
+def test_check_schema_refuses_shell_metacharacters():
+    assert rl.check_schema("sidewalk_st_louis") == "sidewalk_st_louis"
+    for bad in ["sidewalk_x$(id)", "sidewalk_a;rm", "public", "sidewalk_A", None]:
+        with pytest.raises(ValueError):
+            rl.check_schema(bad)
+    with pytest.raises(ValueError):
+        rl.hf_train_labels(["train/correct/x$(id>~.pwn)_1.webp"], "Obstacle")
+    key = pd.DataFrame({"schema": ["sidewalk_x\"; id; \""], "label_id": [1]})
+    for build in (lambda: rl.comments_script(key, "0-0"), lambda: rl.votes_script(key, "0-0"),
+                  lambda: rl.label_attrs_script(key)):
+        with pytest.raises(ValueError):
+            build()
+
+
+def test_remote_scripts_stop_on_error_and_filter_on_the_rater():
+    key = pd.DataFrame({"schema": ["sidewalk_foo"], "label_id": [7]})
+    for sc in (rl.comments_script(key, "0-0"), rl.votes_script(key, "0-0"), rl.label_attrs_script(key)):
+        assert sc.startswith("set -euo pipefail\n") and "ON_ERROR_STOP=1" in sc
+    assert "user_id = '0-0'" in rl.comments_script(key, "0-0")
+
+
+def test_comments_without_text_do_not_crash():
+    c = rl.load_comments(io.StringIO("sidewalk_a,1,2026-10-27 09:00:00-07,driveway,\n"))
+    assert rl.comments_per_label(c).comment.tolist() == [""]
+
+
+def test_pin_refuses_a_silent_repin_and_file_rows_counts_records(tmp_path):
+    f, g, man = tmp_path / "c.csv", tmp_path / "d.csv", tmp_path / "manifest.json"
+    f.write_text('sidewalk_a,1,2026-10-27 09:00:00-07,,"two\nlines"\n')
+    g.write_text("sidewalk_a,1,2026-10-27 09:00:00-07,,other\n")
+    assert rl.file_rows("comments", str(f)) == 1
+    rl.pin(str(man), "comments", str(f), 1)
+    rl.pin(str(man), "comments", str(f), 1)                     # same file: fine
+    with pytest.raises(SystemExit, match="already pinned"):
+        rl.pin(str(man), "comments", str(g), 1)
+    rl.pin(str(man), "comments", str(g), 1, repin=True)
+    assert rl.check_pin(str(man), "comments", str(g))
+    with pytest.raises(SystemExit, match="exists"):
+        rl.refuse_overwrite(str(g), repin=False)
+
+
+def test_key_and_split_pins(tmp_path):
+    k, man = tmp_path / "key.csv", tmp_path / "manifest.json"
+    k.write_text("packet_id\nr1\n")
+    rl.write_manifest(str(man), {"key_sha256": rl.sha256_file(str(k))})
+    assert rl.check_pin(str(man), "key", str(k))
+    k.write_text("packet_id\nr2\n")
+    with pytest.raises(SystemExit, match="sha256 differs"):
+        rl.check_pin(str(man), "key", str(k))
+    with pytest.raises(SystemExit, match="no pin"):
+        rl.check_split_pins(str(man), {"CurbRamp": "x"})
+    assert not rl.check_split_pins(str(man), {"CurbRamp": "x"}, allow_unpinned=True)
+
+
+def _split_dir(tmp_path):
+    for t in rl.LABEL_TYPES:
+        (tmp_path / t).mkdir()
+        pd.DataFrame({"label_type": [t] * 3, "severity": [1, 1, 2], "tags": ['["a"]', "[]", '["a"]'],
+                      "split": ["train", "test", "train"]}).to_csv(tmp_path / t / "split.csv", index=False)
+    return tmp_path
+
+
+def test_load_round_train_keeps_only_the_train_split(tmp_path):
+    rt, shas = rl.load_round_train(str(_split_dir(tmp_path)))
+    assert len(rt) == 2 * len(rl.LABEL_TYPES) and set(shas) == set(rl.LABEL_TYPES)
+
+
+def test_report_markdown_training_columns_and_reason_codes():
+    m = _rated()
+    prod = pd.DataFrame({"label_type": ["Crosswalk", "CurbRamp"], "severity": [1, 1], "tags": [None, None]})
+    round3 = pd.DataFrame({"label_type": ["Crosswalk"], "severity": [1], "tags": ['["paint fading"]']})
+    comments = rl.load_comments(io.StringIO("sidewalk_a,2,2026-10-27 09:00:00-07,no-visible-crosswalk,x\n"))
+    md = rl.report_markdown(m, comments, [("prod_train_n", prod), ("round3_train_n", round3)],
+                            {"train_labels": {"prod_train_n": "P", "round3_train_n": "R"}, "notes": ["NOTE X"]})
+    assert "| Crosswalk | 1 | 0.0% [0.0, 65.8] | 2 | 1 | 1 |" in md           # trained rows counted, not -1
+    assert "| Crosswalk | (none) | 100.0% [20.7, 100.0] | 1 | 0 | 0 |" in md   # absent slice fills 0
+    assert "| Crosswalk | no-visible-crosswalk | 0 | 1 | 0 |" in md and "NOTE X" in md
+    cr = rl.report_markdown(m.assign(label_type="CurbRamp"), comments,
+                            [("prod_train_n", prod), ("round3_train_n", round3)],
+                            {"train_labels": {"prod_train_n": "P", "round3_train_n": "R"}})
+    assert "| CurbRamp | 1 | 0.0% [0.0, 65.8] | 2 |  | 0 |" in cr          # production column blank for CurbRamp
+
+
+def test_parse_tags_drops_empty_segments():
+    assert rl.parse_tags("a;;b;") == ["a", "b"]
+
+
+def test_comments_per_label_joins_in_time_order():
+    c = rl.load_comments(io.StringIO("sidewalk_a,1,2026-10-27 10:00:00-07,,later\n"
+                                     "sidewalk_a,1,2026-10-27 09:00:00-07,,earlier\n"))
+    assert rl.comments_per_label(c).comment.tolist() == ["earlier | later"]
+
+
+def test_report_end_to_end_enforces_every_pin(tmp_path):
+    m = _rated()
+    key = m.drop(columns="verdict")
+    paths = {n: tmp_path / f"{n}.csv" for n in ("key", "sheet", "comments", "prod")}
+    key.to_csv(paths["key"], index=False)
+    m.assign(label_type=m.label_type, notes="")[["packet_id", "label_type", "verdict", "notes"]].to_csv(
+        paths["sheet"], index=False)
+    paths["comments"].write_text("sidewalk_a,1,2026-10-27 09:00:00-07,,x\n")
+    pd.DataFrame({"label_type": ["Crosswalk"], "schema": ["sidewalk_a"], "label_id": [9], "label_class": ["correct"],
+                  "db_label_type": [None], "severity": [1], "tags": [None]}).to_csv(paths["prod"], index=False)
+    man = tmp_path / "manifest.json"
+    rl.write_manifest(str(man), {"key_sha256": rl.sha256_file(str(paths["key"]))})
+    rl.pin(str(man), "votes", str(paths["sheet"]), 5)
+    rl.pin(str(man), "comments", str(paths["comments"]), 1)
+    rl.pin(str(man), "prod_train", str(paths["prod"]), 1)
+    (tmp_path / "r3").mkdir()
+    split_dir = _split_dir(tmp_path / "r3")
+    rl.pin_splits(str(man), str(split_dir))
+    out, joined = tmp_path / "report.md", tmp_path / "joined.csv"
+    argv = ["report", "--key", str(paths["key"]), "--sheet", str(paths["sheet"]), "--comments",
+            str(paths["comments"]), "--prod-train", str(paths["prod"]), "--train-split", str(split_dir),
+            "--out", str(out), "--private-out", str(joined), "--manifest", str(man)]
+    rl.main(argv)
+    assert "1 production training rows were not found" in out.read_text()
+    assert "joined" in json.load(open(man))["rating"]
+    for name in ("sheet", "comments", "prod", "key"):
+        orig = paths[name].read_text()
+        paths[name].write_text(orig + ("\n" if name != "comments" else "sidewalk_a,2,2026-10-27 09:00:00-07,,y\n"))
+        with pytest.raises(SystemExit):
+            rl.main(argv)
+        paths[name].write_text(orig)
+    (split_dir / "Obstacle" / "split.csv").write_text("label_type,severity,tags,split\n")
+    with pytest.raises(SystemExit):
+        rl.main(argv)

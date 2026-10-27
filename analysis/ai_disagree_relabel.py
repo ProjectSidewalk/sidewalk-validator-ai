@@ -452,6 +452,32 @@ def breakdown_markdown(pool, min_n=100):
 # Server access (thin; through an existing SSH control master)
 # ---------------------------------------------------------------------------------------------------------------------
 
+SCHEMA_RE = r"^sidewalk_[a-z0-9_]+$"
+# Every remote script built here starts with this: stop at the first failure (a psql error included), read-only.
+SCRIPT_HEAD = ["set -euo pipefail", "export PGOPTIONS='-c default_transaction_read_only=on'"]
+PSQL = "psql -X -q -v ON_ERROR_STOP=1 -d sidewalk_prod -p 5434"
+
+
+def check_schema(schema):
+    """``schema`` if it is a plain city schema name; anything else (it is pasted into a remote shell script) raises.
+
+    >>> check_schema("sidewalk_new_taipei")
+    'sidewalk_new_taipei'
+    """
+    import re
+    if not isinstance(schema, str) or not re.fullmatch(SCHEMA_RE, schema):
+        raise ValueError(f"not a city schema name: {schema!r}")
+    return schema
+
+
+def write_manifest(path, man):
+    """Write the manifest atomically (temp file, then rename), so a crash cannot leave it half written."""
+    tmp = f"{path}.tmp.{os.getpid()}"
+    with open(tmp, "w") as f:
+        json.dump(man, f, indent=1)
+    os.replace(tmp, path)
+
+
 def remote(host, script, binary=False):
     """Run ``script`` on ``host`` with ``bash -s`` (one connection; BatchMode, so a dead master fails fast)."""
     r = subprocess.run(["ssh", "-o", "BatchMode=yes", host, "bash -s"], input=script.encode(), capture_output=True)
@@ -468,6 +494,7 @@ def crop_status(host, cands):
     lines = ["export PGOPTIONS='-c default_transaction_read_only=on'",
              'P="psql -X -q -d sidewalk_prod -p 5434 -At -F,"']
     for schema, g in cands.groupby("schema"):
+        check_schema(schema)
         ids = ",".join(str(int(i)) for i in g.label_id)
         lines.append(f"[ \"$($P -c \"SELECT to_regclass('{schema}.label_crop') IS NOT NULL\")\" = t ] && "
                      f"$P -c \"SELECT '{schema}', label_id, marker_x, marker_y FROM {schema}.label_crop "
@@ -608,6 +635,7 @@ def score_markdown(t):
 def cmd_score(args):
     key = pd.read_csv(args.key, dtype={"tags": str, "expert2": str})
     mpath = args.manifest or default_manifest(args.key)
+    check_pin(mpath, "key", args.key, args.allow_unpinned)
     check_pin(mpath, "votes", args.sheet, args.allow_unpinned)
     pop = json.load(open(mpath)).get("population") if os.path.exists(mpath) else None
     t = score_table(unmask(key, pd.read_csv(args.sheet, dtype=str, keep_default_na=False)), pop)
@@ -755,9 +783,9 @@ def votes_script(key, rater_id):
     """Read-only SQL (run on the database host with ``bash -s``) printing ``schema,label_id,vote`` for the rater's
     current vote on each key label."""
     _check_uuid(rater_id)
-    lines = ["export PGOPTIONS='-c default_transaction_read_only=on'",
-             'P="psql -X -q -d sidewalk_prod -p 5434 -At -F,"', "echo schema,label_id,vote"]
+    lines = SCRIPT_HEAD + [f'P="{PSQL} -At -F,"', "echo schema,label_id,vote"]
     for schema, g in key.groupby("schema"):
+        check_schema(schema)
         ids = ",".join(str(int(i)) for i in g.label_id)
         lines.append(f"$P -c \"SELECT DISTINCT ON (label_id) '{schema}', label_id, validation_result::text "
                      f"FROM {schema}.label_validation WHERE user_id = '{rater_id}' AND label_id IN ({ids}) "
@@ -807,18 +835,18 @@ def cmd_gallery(args):
                           "cityparams_commit": commit,
                           "lists": len(lists), "labels": int(urls.n.sum()), "css_sha256":
                           hashlib.sha256(GALLERY_MASK_CSS.encode()).hexdigest()}
-        with open(mpath, "w") as f:
-            json.dump(man, f, indent=1)
+        write_manifest(mpath, man)
     print(f"{int(urls.n.sum())} labels in {len(lists)} lists -> {args.out}/index.html, {upath}")
 
 
 def cmd_votes(args):
+    refuse_overwrite(args.out, args.repin)
     key = pd.read_csv(args.key)
     out = remote(args.host, votes_script(key, args.rater_id))
     votes = pd.read_csv(io.StringIO(out))
     sheet = votes_to_sheet(key, votes)
     sheet.to_csv(args.out, index=False)
-    pin(args.manifest or default_manifest(args.key), "votes", args.out, len(sheet))
+    pin(args.manifest or default_manifest(args.key), "votes", args.out, len(sheet), args.repin)
     print(f"{int((sheet.verdict != '').sum())} of {len(sheet)} items voted -> {args.out} (pinned)")
 
 
@@ -855,39 +883,75 @@ def default_manifest(key_path):
     return os.path.join(os.path.dirname(os.path.abspath(key_path)), "manifest.json")
 
 
-def pin(manifest_path, name, path, rows):
+def pin(manifest_path, name, path, rows, repin=False):
     """Record ``path`` (a rater pull or a derived file) under ``rating.<name>`` in the manifest: its sha256, row
-    count and modification time, so the results can be rebuilt from exactly these files. No rater ids are written."""
+    count and modification time, so the results can be rebuilt from exactly these files. No rater ids are written.
+    An existing pin with a different sha256 is only replaced with ``repin``: re-pulling from prod must not quietly
+    move the frozen record."""
     man = json.load(open(manifest_path)) if os.path.exists(manifest_path) else {}
+    sha = sha256_file(path)
+    old = man.get("rating", {}).get(name, {}).get("sha256")
+    if old and old != sha and not repin:
+        sys.exit(f"{name} is already pinned to a different file (sha256 {old[:12]}...); pass --repin to replace it")
     mtime = pd.Timestamp(os.path.getmtime(path), unit="s", tz="UTC").isoformat()
-    man.setdefault("rating", {})[name] = {"file": os.path.basename(path), "sha256": sha256_file(path),
-                                          "rows": int(rows), "written_at": mtime}
-    with open(manifest_path, "w") as f:
-        json.dump(man, f, indent=1)
+    man.setdefault("rating", {})[name] = {"file": os.path.basename(path), "sha256": sha, "rows": int(rows),
+                                          "written_at": mtime}
+    write_manifest(manifest_path, man)
+
+
+def pin_splits(manifest_path, split_dir, repin=False):
+    """Pin the sha256 of each label type's ``split.csv`` under ``rating.round3_splits``."""
+    man = json.load(open(manifest_path)) if os.path.exists(manifest_path) else {}
+    shas = {t: sha256_file(os.path.join(split_dir, t, "split.csv")) for t in LABEL_TYPES}
+    old = man.get("rating", {}).get("round3_splits")
+    if old and old != shas and not repin:
+        sys.exit("round3_splits is already pinned to different files; pass --repin to replace it")
+    man.setdefault("rating", {})["round3_splits"] = shas
+    write_manifest(manifest_path, man)
 
 
 def check_pin(manifest_path, name, path, allow_unpinned=False):
-    """Refuse ``path`` unless its sha256 is the one pinned under ``rating.<name>`` (a later re-pull of prod votes
-    could otherwise silently change the results). ``allow_unpinned`` downgrades a missing or different pin to a
-    warning."""
-    pinned = (json.load(open(manifest_path)).get("rating", {}).get(name, {}) if os.path.exists(manifest_path)
-              else {}).get("sha256")
+    """Refuse ``path`` unless its sha256 is the one pinned for it: ``key_sha256`` for ``name == "key"``,
+    ``rating.<name>`` otherwise. ``allow_unpinned`` downgrades a missing or different pin to a warning. Returns
+    whether the file matched its pin."""
+    man = json.load(open(manifest_path)) if os.path.exists(manifest_path) else {}
+    pinned = man.get("key_sha256") if name == "key" else man.get("rating", {}).get(name, {}).get("sha256")
     if pinned == sha256_file(path):
-        return
+        return True
     msg = f"{path} is not the pinned {name} file ({'no pin' if pinned is None else 'sha256 differs'})"
     if not allow_unpinned:
         sys.exit(msg + "; pin it with `pin`, or pass --allow-unpinned")
     print(f"WARNING: {msg}", file=sys.stderr)
+    return False
+
+
+def check_split_pins(manifest_path, shas, allow_unpinned=False):
+    """Refuse round-3 split files whose sha256s differ from ``rating.round3_splits``; returns whether they match."""
+    man = json.load(open(manifest_path)) if os.path.exists(manifest_path) else {}
+    pinned = man.get("rating", {}).get("round3_splits")
+    if pinned == shas:
+        return True
+    msg = f"round-3 split.csv files are not the pinned ones ({'no pin' if pinned is None else 'sha256 differs'})"
+    if not allow_unpinned:
+        sys.exit(msg + "; pin them with `pin --name round3_splits`, or pass --allow-unpinned")
+    print(f"WARNING: {msg}", file=sys.stderr)
+    return False
+
+
+def file_rows(name, path):
+    """Records in a pinned file (comments may hold newlines, so lines are not records)."""
+    return len(load_comments(path)) if name == "comments" else len(pd.read_csv(path))
 
 
 def comments_script(key, rater_id):
     """Read-only SQL (run on the database host with ``bash -s``) printing, as headerless CSV, the rater's comments on
     the key's labels: ``schema, label_id, timestamp, reason, comment``."""
     _check_uuid(rater_id)
-    lines = ["export PGOPTIONS='-c default_transaction_read_only=on'"]
+    lines = list(SCRIPT_HEAD)
     for schema, g in key.groupby("schema"):
+        check_schema(schema)
         ids = ",".join(str(int(i)) for i in g.label_id)
-        lines.append(f"psql -X -q -d sidewalk_prod -p 5434 -c \"COPY (SELECT '{schema}', label_id, timestamp, "
+        lines.append(f"{PSQL} -c \"COPY (SELECT '{schema}', label_id, timestamp, "
                      f"reason::text, comment FROM {schema}.validation_task_comment WHERE user_id = '{rater_id}' "
                      f"AND label_id IN ({ids}) ORDER BY timestamp) TO STDOUT WITH CSV\"")
     return "\n".join(lines) + "\n"
@@ -902,7 +966,7 @@ def load_comments(path_or_buf):
 
 def comments_per_label(comments):
     """One row per commented label: its comments joined in time order (`` | ``), and how many there were."""
-    c = comments.sort_values("timestamp")
+    c = comments.assign(comment=comments.comment.fillna("")).sort_values("timestamp")
     return c.groupby("label_uid").agg(comment=("comment", " | ".join), n_comments=("comment", "size")).reset_index()
 
 
@@ -920,16 +984,17 @@ def hf_train_labels(filenames, label_type):
         if len(parts) != 3 or parts[0] != "train" or not parts[2].endswith(".webp"):
             continue
         prefix, label_id = parts[2][:-len(".webp")].rsplit("_", 1)
-        rows.append({"label_type": label_type, "schema": HF_PREFIX_SCHEMA.get(prefix, "sidewalk_" + prefix),
+        schema = check_schema(HF_PREFIX_SCHEMA.get(prefix, "sidewalk_" + prefix))
+        rows.append({"label_type": label_type, "schema": schema,
                      "label_id": int(label_id), "label_class": parts[1]})
     return pd.DataFrame(rows, columns=["label_type", "schema", "label_id", "label_class"])
 
 
 def label_attrs_script(labels):
     """Read-only SQL printing ``schema,label_id,label_type,severity,tags`` (tags ``;``-joined) for ``labels``."""
-    lines = ["export PGOPTIONS='-c default_transaction_read_only=on'",
-             'P="psql -X -q -d sidewalk_prod -p 5434"', "echo schema,label_id,label_type,severity,tags"]
+    lines = SCRIPT_HEAD + [f'P="{PSQL}"', "echo schema,label_id,label_type,severity,tags"]
     for schema, g in labels.groupby("schema"):
+        check_schema(schema)
         ids = ",".join(str(int(i)) for i in sorted(set(g.label_id)))
         lines.append(f"$P -c \"COPY (SELECT '{schema}', label_id, label_type::text, severity, "
                      f"array_to_string(tags, ';') FROM {schema}.label WHERE label_id IN ({ids})) TO STDOUT WITH CSV\"")
@@ -1034,38 +1099,74 @@ def report_markdown(m, comments, trains, sources):
     out.append("\n### Crowd majority against the expert (`voted_disagree`, decided items)\n")
     out.append("| Crowd says | Expert: correct | Expert: incorrect |\n|---|---:|---:|")
     out += [f"| {c} | {ct.loc[c].get('correct', 0)} | {ct.loc[c].get('incorrect', 0)} |" for c in ct.index]
+    out.append("\n### Comment reason codes on AI Disagree items\n")
+    out.append(reason_markdown(m, comments))
     out.append("\n### Comments\n")
     out.append("| Expert verdict | items | with a comment |\n|---|---:|---:|")
     for v, g in j.groupby("verdict"):
         out.append(f"| {v} | {len(g)} | {int(g.comment.notna().sum())} |")
+    out += [f"\n{n}" for n in sources.get("notes", [])]
     return "\n".join(out) + "\n"
 
 
+def reason_markdown(m, comments):
+    """Counts of the canned comment reasons the rater picked, per label type x verdict, on the AI Disagree items
+    (labels whose comments carry several reasons count once per reason)."""
+    r = (comments.dropna(subset=["reason"]).groupby("label_uid").reason
+         .apply(lambda x: sorted(set(x))).rename("reasons").reset_index())
+    d = m[m.group.isin(["lone_disagree", "voted_disagree"])].merge(r, on="label_uid", how="inner",
+                                                                    validate="one_to_one")
+    d = d.explode("reasons")
+    ct = d.groupby(["label_type", "reasons", "verdict"]).size().unstack(fill_value=0)
+    lines = ["| Type | Reason | Expert: correct | Expert: incorrect | Expert: can't tell |", "|---|---|---:|---:|---:|"]
+    for (t, reason), row in ct.iterrows():
+        lines.append(f"| {t} | {reason} | {row.get('correct', 0)} | {row.get('incorrect', 0)} | "
+                     f"{row.get('cant_tell', 0)} |")
+    return "\n".join(lines)
+
+
 def cmd_pin(args):
-    rows = sum(1 for _ in open(args.file)) - (0 if args.name == "comments" else 1)
-    pin(args.manifest or default_manifest(args.key), args.name, args.file, rows)
+    mpath = args.manifest or default_manifest(args.key)
+    if args.name == "round3_splits":
+        pin_splits(mpath, args.file, args.repin)
+        print(f"pinned round3_splits: {args.file}")
+        return
+    pin(mpath, args.name, args.file, file_rows(args.name, args.file), args.repin)
     print(f"pinned {args.name}: {args.file} (sha256 {sha256_file(args.file)})")
+
+
+def refuse_overwrite(path, repin):
+    """A pull must not overwrite a pinned file in place unless asked to (``--repin``)."""
+    if os.path.exists(path) and not repin:
+        sys.exit(f"{path} exists (possibly a pinned rating file); write elsewhere, or pass --repin to replace it")
 
 
 def cmd_comments(args):
     if inside_git_checkout(args.out):
         sys.exit(f"refusing to write comments inside a git checkout: {args.out}")
+    refuse_overwrite(args.out, args.repin)
     key = pd.read_csv(args.key)
     with open(args.out, "w") as f:
         f.write(remote(args.host, comments_script(key, args.rater_id)))
     c = load_comments(args.out)
-    pin(args.manifest or default_manifest(args.key), "comments", args.out, len(c))
+    pin(args.manifest or default_manifest(args.key), "comments", args.out, len(c), args.repin)
     print(f"{len(c)} comments on {c.label_uid.nunique()} items -> {args.out} (pinned)")
 
 
 def cmd_prod_train(args):
-    """The 2025-08 production training rows with their severity and tags, from the published datasets."""
+    """The 2025-08 production training rows with their severity and tags, from the published datasets, read at the
+    revisions already pinned in the manifest when there are any (so a later push to a dataset changes nothing)."""
     import urllib.request
     if inside_git_checkout(args.out):
         sys.exit(f"refusing to write inside a git checkout: {args.out}")
+    refuse_overwrite(args.out, args.repin)
+    mpath = args.manifest or default_manifest(args.key)
+    man = json.load(open(mpath)) if os.path.exists(mpath) else {}
+    pinned = man.get("rating", {}).get("prod_train", {}).get("dataset_revisions", {})
     parts, revs = [], {}
     for t, ds in PROD_DATASETS.items():
-        meta = json.load(urllib.request.urlopen(HF_DATASET_API.format(ds), timeout=120))
+        url = HF_DATASET_API.format(ds) + (f"/revision/{pinned[t]}" if t in pinned else "")
+        meta = json.load(urllib.request.urlopen(url, timeout=120))
         revs[t] = meta["sha"]
         parts.append(hf_train_labels([x["rfilename"] for x in meta["siblings"]], t))
     hf = pd.concat(parts, ignore_index=True)
@@ -1075,35 +1176,40 @@ def cmd_prod_train(args):
     missing = int(out.db_label_type.isna().sum())
     retyped = int((out.db_label_type.notna() & (out.db_label_type != out.label_type)).sum())
     out.to_csv(args.out, index=False)
-    mpath = args.manifest or default_manifest(args.key)
-    pin(mpath, "prod_train", args.out, len(out))
+    pin(mpath, "prod_train", args.out, len(out), args.repin)
     man = json.load(open(mpath))
     man["rating"]["prod_train"].update(dataset_revisions=revs, missing_in_db=missing, label_type_changed=retyped)
-    with open(mpath, "w") as f:
-        json.dump(man, f, indent=1)
+    write_manifest(mpath, man)
     print(f"{len(out):,} training rows ({missing} not in the database, {retyped} retyped since) -> {args.out}")
 
 
 def cmd_report(args):
     mpath = args.manifest or default_manifest(args.key)
-    check_pin(mpath, "votes", args.sheet, args.allow_unpinned)
-    check_pin(mpath, "comments", args.comments, args.allow_unpinned)
+    ok = all([check_pin(mpath, "key", args.key, args.allow_unpinned),
+              check_pin(mpath, "votes", args.sheet, args.allow_unpinned),
+              check_pin(mpath, "comments", args.comments, args.allow_unpinned)])
     key = pd.read_csv(args.key, dtype={"tags": str, "expert2": str})
     m = unmask(key, pd.read_csv(args.sheet, dtype=str, keep_default_na=False))
     comments = load_comments(args.comments)
-    trains, sources = [], {"train_labels": {}}
+    trains, sources = [], {"train_labels": {}, "notes": []}
     man = json.load(open(mpath)) if os.path.exists(mpath) else {}
     sources["population"] = man.get("population")
     if args.prod_train:
-        check_pin(mpath, "prod_train", args.prod_train, args.allow_unpinned)
+        ok &= check_pin(mpath, "prod_train", args.prod_train, args.allow_unpinned)
         pt = pd.read_csv(args.prod_train, dtype={"tags": str})
+        dropped = int(pt.db_label_type.isna().sum())
+        if dropped:
+            print(f"WARNING: {dropped} production training rows are not in the database and are left out",
+                  file=sys.stderr)
+            sources["notes"].append(f"{dropped} production training rows were not found in the database and are "
+                                    "not counted.")
         trains.append(("prod_train_n", pt[pt.db_label_type.notna()]))
         sources["train_labels"]["prod_train_n"] = "2025-08 production"
     if args.train_split:
         rt, shas = load_round_train(args.train_split)
+        ok &= check_split_pins(mpath, shas, args.allow_unpinned)
         trains.append(("round3_train_n", rt))
         sources["train_labels"]["round3_train_n"] = "round 3"
-        print("round-3 split.csv sha256: " + ", ".join(f"{t} {h[:12]}" for t, h in shas.items()), file=sys.stderr)
     md = report_markdown(m, comments, trains, sources)
     with open(args.out, "w") as f:
         f.write(md)
@@ -1111,7 +1217,10 @@ def cmd_report(args):
         if inside_git_checkout(args.private_out):
             sys.exit(f"refusing to write the joined per-label file inside a git checkout: {args.private_out}")
         join_results(m, comments).to_csv(args.private_out, index=False)
-        pin(mpath, "joined", args.private_out, len(m))
+        if ok:
+            pin(mpath, "joined", args.private_out, len(m), repin=True)  # derived: follows its pinned inputs
+        else:
+            print("WARNING: inputs were not all pinned, so the joined file is not pinned", file=sys.stderr)
     print(f"-> {args.out}")
 
 
@@ -1146,6 +1255,7 @@ def build_parser():
     v.add_argument("--out", required=True)
     v.add_argument("--host", default="makelab1")
     v.add_argument("--manifest", help="default: manifest.json next to the key")
+    v.add_argument("--repin", action="store_true", help="overwrite --out and replace its pin")
     v.set_defaults(func=cmd_votes)
     for name, fn, hlp in (("comments", cmd_comments, "the rater's prod comments on the key's labels (pinned)"),):
         c = sub.add_parser(name, help=hlp)
@@ -1154,11 +1264,13 @@ def build_parser():
         c.add_argument("--out", required=True)
         c.add_argument("--host", default="makelab1")
         c.add_argument("--manifest", help="default: manifest.json next to the key")
+        c.add_argument("--repin", action="store_true", help="overwrite --out and replace its pin")
         c.set_defaults(func=fn)
     pn = sub.add_parser("pin", help="pin a rating file's sha256 in the manifest (votes, comments, prod_train)")
     pn.add_argument("--key", required=True)
-    pn.add_argument("--name", required=True, choices=["votes", "comments", "prod_train"])
-    pn.add_argument("--file", required=True)
+    pn.add_argument("--name", required=True, choices=["votes", "comments", "prod_train", "round3_splits"])
+    pn.add_argument("--file", required=True, help="the file (for round3_splits: the run dir with <Type>/split.csv)")
+    pn.add_argument("--repin", action="store_true", help="replace an existing, different pin")
     pn.add_argument("--manifest")
     pn.set_defaults(func=cmd_pin)
     pt = sub.add_parser("prod-train", help="the 2025-08 production training rows with severity and tags (pinned)")
@@ -1166,6 +1278,7 @@ def build_parser():
     pt.add_argument("--out", required=True)
     pt.add_argument("--host", default="makelab1")
     pt.add_argument("--manifest")
+    pt.add_argument("--repin", action="store_true", help="overwrite --out and replace its pin")
     pt.set_defaults(func=cmd_prod_train)
     rp = sub.add_parser("report", help="every aggregate behind the results, as Markdown, from pinned inputs")
     rp.add_argument("--key", required=True)
