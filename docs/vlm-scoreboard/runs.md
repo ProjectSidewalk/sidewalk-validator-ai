@@ -125,7 +125,8 @@ node), and the full-run row is the one to quote (the board picks it: `run_speed`
 | 42383195 | smk-nemo | smoke nemotron3.5-super-vl-120b, batch 4 | 2×H200 | 35:21 (second start) | preempted once while loading, then done: loads in 25 min (`attn=default`; sdpa refused), 0.108 s/crop, 248 GB peak |
 | 42399869 | nemo | nemotron3.5-super-vl-120b full, batch 4 | 2×H200 | — | preempted while loading the weights; cancelled and resubmitted with parallel loading |
 | 42401600 | nemo | **nemotron3.5-super-vl-120b full**, batch 4, `HF_ENABLE_PARALLEL_LOADING` | 2×H200 | 31:23 (third start) | preempted while loading at 14:15, requeued, ran 17:25–17:56 on g3127 and scored 1,728 CurbRamp rows, then **FAILED with `Disk quota exceeded`** writing the meta file on `/gscratch/scrubbed` (the shared fileset was at 99%; writes succeeded again at 18:37, so the quota hit was transient) |
-| 42413443 | nemo | **nemotron3.5-super-vl-120b full**, resubmitted 18:40 after the quota failure; resumes from the 1,728 rows already in CurbRamp.csv | 2×H200 | — | queued on ckpt |
+| 42413443 | nemo | **nemotron3.5-super-vl-120b full**, resubmitted 18:40 after the quota failure; resumes from the 1,728 rows already in CurbRamp.csv | 2×H200 | 20:53 | ran 18:47–19:08 on g3128, loaded in 19 min, scored 64 more rows at 0.203 s/crop, then **FAILED again with `Disk quota exceeded`** on the CSV append |
+| 42454116 | nemo | **nemotron3.5-super-vl-120b full**, `OUT=/gscratch/makelab/jfroehli/vlm-out` (the 1,792 scored rows copied there); submitted 2026-10-27 05:48 | 2×H200 | — | queued on ckpt |
 
 8-shot arm: the leg with the best mean per-type AUC among the finished zero-shot legs when it was launched was
 `gemma4-31b`. Examples: 4 correct + 4 incorrect `train` crops per type, seed 20261021, interleaved correct/incorrect,
@@ -133,11 +134,14 @@ the same eight for every query of a type (the chosen `label_uid`s are in each ty
 No query shared a panorama with its type's examples, so no example was swapped (`fewshot_swaps` = 0 for every run).
 Prompts are about 3,100 tokens (nine images), so 2.5 s/crop on 2×L40S and 4.2 s/crop on 2×A40 at batch 4.
 
+**`/gscratch/scrubbed` quota (2026-10-26/27).** Both Nemotron attempts on 26 Oct died with `OSError: [Errno 122] Disk quota exceeded` while appending to their CSV on scrubbed, 20–30 min into the job, after writes had succeeded for several chunks. `hyakstorage /gscratch/scrubbed` shows the shared fileset at 98% of its 153,600 GB quota (151,155 GB used), so writes fail whenever other users push it over the line and succeed again when they free space. Reads (the HF weight cache) are unaffected. Per-crop outputs for the remaining legs therefore go to `/gscratch/makelab/jfroehli/vlm-out` (`OUT=`), which has its own quota, and are staged to the Mac from there.
+
 Nemotron: three preemptions in total (smoke once, full run twice), each during the 25-minute weight load on a
 ckpt H200 pair. It was left queued on ckpt rather than moved to the lab's `gpu-l40s` allocation, which has no H200
 and would need a whole 8×L40S node to hold the 249 GB of weights.
-| 42391323 | smoke GLM-5.3-Flash, 40/type, `OUT=smoke-vllm` | 4×H200 | submitted 10:22 | — | — | still PENDING (Resources) at 18:30, eight hours after submission; Slurm's estimated start 2026-10-27 02:15 |
-| 42413444 | **full GLM-5.3-Flash**, launcher defaults (timing at concurrency 1, then all 13,144 crops) | 4×H200 | submitted 18:40 | — | — | submitted alongside the smoke rather than after it, so the full run does not wait on a second 4×H200 queue cycle; whichever starts first confirms the `<think></think>` prefill from its meta's rendered prompt tail |
+| 42391323 | smoke GLM-5.3-Flash, 40/type, `OUT=smoke-vllm` | 4×H200 | submitted 10:22 | — | — | started 18:56 on g3127 and was **preempted at 18:58** while loading the tokenizer; requeued, estimated start 2026-10-27 14:22 |
+| 42413444 | **full GLM-5.3-Flash**, launcher defaults (timing at concurrency 1, then all 13,144 crops) | 4×H200 | submitted 18:40 | — | — | submitted alongside the smoke rather than after it, so the full run does not wait on a second 4×H200 queue cycle; whichever starts first confirms the `<think></think>` prefill from its meta's rendered prompt tail | Estimated start 2026-10-27 14:22. Writes to scrubbed, so it may hit the quota below |
+| 42454117 | **full GLM-5.3-Flash**, same defaults, `OUT=/gscratch/makelab/jfroehli/vlm-out/scores-vllm` | 4×H200 | submitted 2026-10-27 05:48 | — | — | hedge against the scrubbed quota: whichever of 42413444 and 42454117 starts first is kept and the other cancelled |
 
 ### Where it stands (2026-10-26 18:45; the 15:05 state is below for the record)
 
