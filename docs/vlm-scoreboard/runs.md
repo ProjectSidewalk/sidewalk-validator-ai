@@ -120,7 +120,8 @@ reproduce their batch-1 timing scores exactly (0.0), so batch-1 runs are determi
 | 42396341 | fs8-Cros | **gemma4-31b-fewshot8** Crosswalk | 2×A40 | 46:35 | done, 0 preemptions |
 | 42383195 | smk-nemo | smoke nemotron3.5-super-vl-120b, batch 4 | 2×H200 | 35:21 (second start) | preempted once while loading, then done: loads in 25 min (`attn=default`; sdpa refused), 0.108 s/crop, 248 GB peak |
 | 42399869 | nemo | nemotron3.5-super-vl-120b full, batch 4 | 2×H200 | — | preempted while loading the weights; cancelled and resubmitted with parallel loading |
-| 42401600 | nemo | **nemotron3.5-super-vl-120b full**, batch 4, `HF_ENABLE_PARALLEL_LOADING` | 2×H200 | — | preempted while loading at 14:15; requeued (still on ckpt at the time of writing) |
+| 42401600 | nemo | **nemotron3.5-super-vl-120b full**, batch 4, `HF_ENABLE_PARALLEL_LOADING` | 2×H200 | 31:23 (third start) | preempted while loading at 14:15, requeued, ran 17:25–17:56 on g3127 and scored 1,728 CurbRamp rows, then **FAILED with `Disk quota exceeded`** writing the meta file on `/gscratch/scrubbed` (the shared fileset was at 99%; writes succeeded again at 18:37, so the quota hit was transient) |
+| 42413443 | nemo | **nemotron3.5-super-vl-120b full**, resubmitted 18:40 after the quota failure; resumes from the 1,728 rows already in CurbRamp.csv | 2×H200 | — | queued on ckpt |
 
 8-shot arm: the leg with the best mean per-type AUC among the finished zero-shot legs when it was launched was
 `gemma4-31b`. Examples: 4 correct + 4 incorrect `train` crops per type, seed 20261021, interleaved correct/incorrect,
@@ -131,9 +132,10 @@ Prompts are about 3,100 tokens (nine images), so 2.5 s/crop on 2×L40S and 4.2 s
 Nemotron: three preemptions in total (smoke once, full run twice), each during the 25-minute weight load on a
 ckpt H200 pair. It was left queued on ckpt rather than moved to the lab's `gpu-l40s` allocation, which has no H200
 and would need a whole 8×L40S node to hold the 249 GB of weights.
-| 42391323 | smoke GLM-5.3-Flash, 40/type, `OUT=smoke-vllm` | 4×H200 | submitted 10:22 | — | — | **unknown**: the klone SSH master died before the job was read (checked 15:05); read `sacct -j 42391323` and `/gscratch/scrubbed/jfroehli/logs/vlm_vllm.42391323{,.server}.log` |
+| 42391323 | smoke GLM-5.3-Flash, 40/type, `OUT=smoke-vllm` | 4×H200 | submitted 10:22 | — | — | still PENDING (Resources) at 18:30, eight hours after submission; Slurm's estimated start 2026-10-27 02:15 |
+| 42413444 | **full GLM-5.3-Flash**, launcher defaults (timing at concurrency 1, then all 13,144 crops) | 4×H200 | submitted 18:40 | — | — | submitted alongside the smoke rather than after it, so the full run does not wait on a second 4×H200 queue cycle; whichever starts first confirms the `<think></think>` prefill from its meta's rendered prompt tail |
 
-### Where it stands (2026-10-26 15:05)
+### Where it stands (2026-10-26 18:45; the 15:05 state is below for the record)
 
 - Done: client, launcher, tests; container path working; Qwen3-VL-8B smoke through vLLM agrees with transformers
   (table above).
