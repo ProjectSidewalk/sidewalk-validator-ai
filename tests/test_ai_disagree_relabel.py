@@ -51,13 +51,51 @@ def test_candidates_exclude_labels_the_rater_voted_on_or_placed():
     assert sorted(c.label_id) == [1, 4]
 
 
-def test_decoys_rank_agree_before_unsure_within_a_city():
+@pytest.mark.parametrize("seed", [f"s{i}" for i in range(12)])
+def test_decoys_rank_agree_before_unsure_within_a_city(seed):
     rows = [{}] + [{"ai_vote": "Unsure"} for _ in range(6)] + [{"ai_vote": "Agree"}]
-    c = rl.candidates(_pool(rows), seed="s", per_cell=1, oversample=2)
+    c = rl.candidates(_pool(rows), seed=seed, per_cell=1, oversample=2)
     dec = c[c.cell == "decoy"]
     assert list(dec.group) == ["decoy_agree", "decoy_unsure"]
-    picked, _ = rl.pick(c, set(c.label_uid), "s", per_cell=1)
+    # pick must prefer the Agree even when the Unsure ranks first
+    c.loc[c.group == "decoy_unsure", "rank"] = 0
+    picked, _ = rl.pick(c, set(c.label_uid), seed, per_cell=1)
     assert list(picked[picked.cell == "decoy"].ai_vote) == ["Agree"]
+
+
+def test_scarce_agree_decoy_gets_first_pass_over_all_slots():
+    # Two Disagree items, one in each city; the only Agree decoy is in the city whose slot may come second.
+    rows = ([{"schema": "sidewalk_a"}, {"schema": "sidewalk_b", "h_agree": 2}]
+            + [{"schema": "sidewalk_a", "ai_vote": "Unsure"}] * 3 + [{"schema": "sidewalk_b", "ai_vote": "Agree"}])
+    for seed in (f"s{i}" for i in range(12)):
+        c = rl.candidates(_pool(rows), seed=seed, per_cell=1, oversample=3)
+        picked, _ = rl.pick(c, set(c.label_uid), seed, per_cell=1)
+        assert list(picked[picked.cell == "decoy"].ai_vote) == ["Agree"]
+
+
+def test_decoys_stop_at_per_cell_with_more_slots_than_needed():
+    rows = [{} for _ in range(4)] + [{"h_agree": 2} for _ in range(4)] + [{"ai_vote": "Agree"} for _ in range(10)]
+    c = rl.candidates(_pool(rows), seed="s", per_cell=3, oversample=4)
+    picked, short = rl.pick(c, set(c.label_uid), "s", per_cell=3)
+    assert (picked.cell == "decoy").sum() == 3 and "decoy/CurbRamp" not in short
+
+
+def test_decoy_slot_order_is_seeded_not_lone_first():
+    # lone items all in city a, voted in city b; with one decoy, a seeded slot order must sometimes pick city b.
+    rows = ([{"schema": "sidewalk_a"}] * 3 + [{"schema": "sidewalk_b", "h_agree": 2}] * 3
+            + [{"schema": s, "ai_vote": "Agree"} for s in ("sidewalk_a", "sidewalk_b") for _ in range(3)])
+    cities = set()
+    for seed in (f"s{i}" for i in range(20)):
+        c = rl.candidates(_pool(rows), seed=seed, per_cell=3, oversample=2)
+        picked, _ = rl.pick(c, set(c.label_uid), seed, per_cell=1)
+        cities |= set(picked[picked.cell == "decoy"].schema)
+    assert cities == {"sidewalk_a", "sidewalk_b"}
+
+
+def test_population_counts_only_eligible_labels():
+    p = _pool([{}, {}, {"expert1": "Agree"}, {"expert1_labeled": "t"}, {"h_dis": 2}])
+    pop = rl.population(p)
+    assert pop["lone_disagree"]["CurbRamp"] == 2 and pop["voted_disagree"]["CurbRamp"] == 1
 
 
 def test_decoys_follow_the_disagree_items_cities():

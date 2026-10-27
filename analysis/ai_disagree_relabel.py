@@ -161,8 +161,9 @@ def pick(cands, available, seed, per_cell=PER_CELL):
     """``(picked, shortfall)``. Each Disagree cell takes its first ``per_cell`` candidates, in rank order, whose
     ``label_uid`` is in ``available``. The decoys of a label type then follow the picked Disagree items' cities:
     those items are put in a seeded order, and each in turn gives one decoy slot in its city, filled with the best
-    unused available decoy there (Agree before Unsure), until ``per_cell`` decoys are found. So a city's share of
-    the decoys tracks its share of the Disagree items, and the place does not tell the rater which is which.
+    unused available decoy there, until ``per_cell`` decoys are found. Agree decoys get a first pass over all the
+    slots and Unsure decoys fill what is left, so a scarce Agree is used wherever its city has a slot. A city's share
+    of the decoys tracks its share of the Disagree items, and the place does not tell the rater which is which.
     ``shortfall`` maps each cell that came up short to how many it is missing."""
     ok = cands[cands.label_uid.isin(available)]
     dis = ok[ok.cell != "decoy"].groupby(["cell", "label_type"], sort=False).head(per_cell)
@@ -171,15 +172,19 @@ def pick(cands, available, seed, per_cell=PER_CELL):
     for t in LABEL_TYPES:
         slots = dis[dis.label_type == t]
         slots = slots.iloc[np.argsort([seeded_rank(f"{seed}:slot", u) for u in slots.label_uid], kind="stable")]
-        used, n = set(), 0
-        for schema in slots.schema:
-            if n == per_cell:
-                break
-            c = dec_pool[(dec_pool.label_type == t) & (dec_pool.schema == schema) & ~dec_pool.label_uid.isin(used)]
-            if len(c):
-                used.add(c.label_uid.iloc[0])
-                decoys.append(c.iloc[0])
-                n += 1
+        used, filled = set(), set()
+        for fallback in (False, True):
+            for i, schema in enumerate(slots.schema):
+                if len(filled) == per_cell:
+                    break
+                if i in filled:
+                    continue
+                c = dec_pool[(dec_pool.label_type == t) & (dec_pool.schema == schema) & (dec_pool.fallback == fallback)
+                             & ~dec_pool.label_uid.isin(used)]
+                if len(c):
+                    used.add(c.label_uid.iloc[0])
+                    filled.add(i)
+                    decoys.append(c.iloc[0])
     picked = pd.concat([dis, pd.DataFrame(decoys)], ignore_index=True) if decoys else dis.reset_index(drop=True)
     counts = picked.groupby(["cell", "label_type"]).size()
     shortfall = {f"{g}/{t}": per_cell - int(counts.get((g, t), 0)) for g in CELLS for t in LABEL_TYPES
@@ -212,8 +217,8 @@ def schema_dir_map(schemas, dirs):
     """``{schema: images directory}`` for the schemas that have one.
 
     A directory matches a schema when its name, with ``-`` as ``_``, equals the schema's city part or starts with
-    it plus ``_`` (``sidewalk_columbus`` -> ``columbus-oh``). A directory that exactly matches another schema is
-    never a prefix match (``la-piedad`` is not ``sidewalk_la``'s). Ambiguous prefixes are left out.
+    it plus ``_`` (``sidewalk_foo`` -> ``foo-xx``). A directory that exactly matches another schema is never a
+    prefix match (``foo-bar`` is not ``sidewalk_foo``'s). Ambiguous prefixes are left out.
 
     >>> schema_dir_map(["sidewalk_foo", "sidewalk_foo_bar", "sidewalk_dc", "sidewalk_baz"],
     ...                ["foo-xx", "foo-bar", "washington-dc", "baz", "baz-qux"])
@@ -261,12 +266,16 @@ def _rate(k, n):
 def weighted_rate(per_type, weights):
     """Population estimate from per-type rates of a stratified sample: ``(rate, lo, hi)``, the strata weighted by
     ``weights`` (population counts), with a normal-approximation 95% interval from the stratified variance
-    ``sum(w^2 p (1 - p) / n)``. ``per_type``: ``{type: (k, n)}``; types with ``n == 0`` are left out and the
+    ``sum(w^2 p~ (1 - p~) / n)``, where ``p~ = (k + 2) / (n + 4)`` (the Agresti-Coull adjustment, so a stratum at
+    0 or n still carries variance). ``per_type``: ``{type: (k, n)}``; types with ``n == 0`` are left out and the
     weights renormalised over the rest.
 
     >>> r, lo, hi = weighted_rate({"A": (5, 10), "B": (9, 10)}, {"A": 300, "B": 100})
     >>> round(r, 3), round(lo, 3), round(hi, 3)
-    (0.6, 0.363, 0.837)
+    (0.6, 0.359, 0.841)
+    >>> r, lo, hi = weighted_rate({"A": (20, 20), "B": (19, 19)}, {"A": 1, "B": 1})
+    >>> r, round(lo, 3)
+    (1.0, 0.912)
     """
     ts = [t for t, (k, n) in per_type.items() if n and weights.get(t)]
     if not ts:
@@ -275,7 +284,8 @@ def weighted_rate(per_type, weights):
     w = {t: weights[t] / tot for t in ts}
     p = {t: per_type[t][0] / per_type[t][1] for t in ts}
     rate = sum(w[t] * p[t] for t in ts)
-    se = math.sqrt(sum(w[t] ** 2 * p[t] * (1 - p[t]) / per_type[t][1] for t in ts))
+    pa = {t: (per_type[t][0] + 2) / (per_type[t][1] + 4) for t in ts}
+    se = math.sqrt(sum(w[t] ** 2 * pa[t] * (1 - pa[t]) / per_type[t][1] for t in ts))
     return float(rate), max(0.0, rate - Z95 * se), min(1.0, rate + Z95 * se)
 
 

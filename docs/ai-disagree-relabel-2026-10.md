@@ -23,12 +23,13 @@ labels, of which 529,298 Agree, 91,626 Disagree and 366,647 Unsure (an abstentio
 |---|---|---|
 | `lone_disagree` | AI Disagree, no human vote of any kind | Hidden on the AI's vote alone; their precision decides whether to restore them |
 | `voted_disagree` | AI Disagree, ≥ 2 decisive human votes with a strict majority | Ties the re-label to the crowd numbers and measures the crowd's own error |
-| decoys | AI Agree (Obstacle: AI Unsure) | Without them every item is an AI Disagree and the rater knows the verdict |
+| decoys | AI Agree (Obstacle: 1 Agree + 19 AI Unsure) | Without them every item is an AI Disagree and the rater knows the verdict |
 
 - **Exclusions:** labels the rater has voted on or placed.
-- **Obstacle decoys are abstentions.** Production has only 7 Obstacle Agree votes (its old map never lets one clear
-  the gate), and after matching on city none was available, so all 20 Obstacle decoys are labels the AI abstained
-  on. They mask as well, but they are scored apart and give no AI precision.
+- **Obstacle decoys are mostly abstentions.** Production has only 7 Obstacle Agree votes, because its old map never
+  lets one clear the gate. Agree decoys get first pass at every city slot, but only one of the seven is in a city
+  with an Obstacle Disagree item and has a crop. The other 19 Obstacle decoys are labels the AI abstained on. They
+  mask the verdict as well, but they are scored apart and give no AI precision.
 - **Decoys are matched on city.** They are drawn city by city in proportion to the Disagree items of the same type,
   so the place, which the imagery and the Street View link show, does not separate decoys from Disagree items. It
   can still hint lone from crowd-voted, which does not reveal the AI's verdict.
@@ -36,12 +37,15 @@ labels, of which 529,298 Agree, 91,626 Disagree and 366,647 Unsure (an abstentio
   from `label_crop.marker_x/y`, the label type, and a Street View link to the same pano. Nothing about the AI, the
   crowd or the labeler.
 - **Masking:** random ids, and the order is shuffled with a secret seed. The key's sha256 is
-  `72a7b316b5b3feb4838a7cc6591b7fa88b9e998004eb008857b26fdf1f01eb12`.
+  `ae3468a6409150c61e45ef358d44b579dd21cae6d01e15db720a3f447aabb860`.
 
 **Precision is reported two ways.** The sample has 20 per type, so its plain rate weights the five types equally.
 `score` also gives the population-weighted estimate for each Disagree group. The weights are the eligible
 labels per type, for example 10,505 CurbRamp and 3,384 SurfaceProblem among the lone Disagrees, with a stratified
-interval. That weighted figure is what the restore decision rests on. Each per-type rate rests on 20 items, less
+interval. The interval uses the Agresti-Coull adjustment, so a type rated 20 of 20 still carries variance. That
+weighted figure is what the restore decision rests on. "Eligible" leaves out labels the rater voted on or placed.
+That removes under 1% of the lone Disagrees but 14–25% of the crowd-voted ones per type, so the voted group's
+weights describe the labels the rater has not seen. Each per-type rate rests on 20 items, less
 any rated can't tell.
 
 **Result:** pending the rating ([#58](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/58)).
@@ -77,8 +81,9 @@ What stands out:
   ramp.
 - **Obstacle Disagree falls with severity** (73% → 59%), so the AI is most often wrong on the obstacles that matter
   most. `parked scooter/motorcycle` is the worst tag (54%).
-- **SurfaceProblem Disagree is right 84% on untagged labels** and 54–68% on tagged ones.
-- **Labels with no severity are where Disagree does best**, 66–81% by type.
+- **SurfaceProblem Disagree is right 84% on untagged labels** and 54–75% on tagged ones.
+- **Labels with no severity are where Disagree does best for four of the five types** (69–81%). Crosswalk is the
+  exception: 66% with no severity, against 78% at severity 3.
 
 ### By severity (human majority of at least 2; rates with under 100 votes left blank; rows shown when any column reaches 100)
 
