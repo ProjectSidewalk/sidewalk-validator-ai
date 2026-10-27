@@ -580,6 +580,199 @@ def cmd_score(args):
         print(f"\nWARNING: {int(t[t.label_type == 'all'].unanswered.sum())} items unanswered")
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# Rating on the live site: Gallery review lists, and the rater's votes back as a sheet
+# ---------------------------------------------------------------------------------------------------------------------
+
+DEFAULT_CITYPARAMS = os.path.expanduser("~/Git/SidewalkWebpage/conf/cityparams.conf")
+GALLERY_MASK_CSS = """\
+.card-validation-info, .validation-info-content { display: none !important; }
+.label-detail__vote-count, .label-detail__vote-icon { display: none !important; }
+.label-detail__admin-prev-validations, .label-detail__validator-comments, .label-detail__comments-section,
+.label-detail__comments-count, .label-detail__admin-username { display: none !important; }
+#ps-tooltip { display: none !important; }
+.ai-icon { display: none !important; }
+"""
+VOTE_TO_VERDICT = {"Agree": "correct", "Disagree": "incorrect", "Unsure": "cant_tell"}
+
+
+def _conf_block(lines, start):
+    """``{key: value}`` of the flat ``key = "value"`` lines in the HOCON block opened at ``lines[start]``."""
+    out, depth = {}, 0
+    for line in lines[start:]:
+        t = line.strip()
+        if t.endswith("{"):
+            depth += 1
+            continue
+        if t == "}":
+            depth -= 1
+            if depth == 0:
+                return out
+            continue
+        if depth == 1 and "=" in t:
+            k, v = (x.strip() for x in t.split("=", 1))
+            out[k] = v.strip('"') if v.startswith('"') else None
+    return out
+
+
+def cityparams(text):
+    """``(schema -> city_id, city_id -> prod URL)`` from SidewalkWebpage's ``conf/cityparams.conf``: the
+    ``db-schema`` block and ``landing-page-url.prod``. Unlike ``/v3/api/cities`` this has the URLs of non-public
+    deployments too. Only plain string values are read (``staging = ${...}`` references are skipped).
+
+    >>> conf = '''city-params {
+    ...   db-schema {
+    ...     foo-xx = "sidewalk_foo"
+    ...     staging = ${city-params.db-schema.foo-xx}
+    ...   }
+    ...   landing-page-url {
+    ...     prod {
+    ...       foo-xx = "https://sidewalk-foo.example.edu"
+    ...     }
+    ...     test {
+    ...       foo-xx = "https://sidewalk-foo-test.example.edu"
+    ...     }
+    ...   }
+    ... }'''
+    >>> cityparams(conf)
+    ({'sidewalk_foo': 'foo-xx'}, {'foo-xx': 'https://sidewalk-foo.example.edu'})
+    """
+    lines = text.splitlines()
+    idx = {l.strip(): i for i, l in enumerate(lines) if l.strip().endswith("{")}
+    schemas = {v: k for k, v in _conf_block(lines, idx["db-schema {"]).items() if v and k != "staging"}
+    lp = idx["landing-page-url {"]
+    prod = next(i for i in range(lp + 1, len(lines)) if lines[i].strip() == "prod {")
+    urls = {k: v.rstrip("/") for k, v in _conf_block(lines, prod).items() if v}
+    return schemas, urls
+
+
+def gallery_lists(key, schema_city, city_url, seed):
+    """One Gallery review list per deployment: ``[(city_id, base_url, [label_id, ...]), ...]``.
+
+    ``schema_city`` / ``city_url`` from :func:`cityparams`. Within a deployment the items keep the key's (shuffled)
+    order; the deployments are in a seeded order. Raises if a schema has no deployment or no prod URL.
+
+    >>> key = pd.DataFrame({"schema": ["sidewalk_foo", "sidewalk_bar", "sidewalk_foo"], "label_id": [3, 1, 2]})
+    >>> lists = gallery_lists(key, {"sidewalk_foo": "foo-xx", "sidewalk_bar": "bar"},
+    ...                       {"foo-xx": "https://f", "bar": "https://b"}, "s")
+    >>> sorted((c, ids) for c, _, ids in lists)
+    [('bar', [1]), ('foo-xx', [3, 2])]
+    """
+    missing = sorted(s for s in set(key.schema) if city_url.get(schema_city.get(s)) is None)
+    if missing:
+        raise ValueError(f"no deployment URL for {missing}")
+    out = [(schema_city[sch], city_url[schema_city[sch]], [int(i) for i in g.label_id])
+           for sch, g in key.groupby("schema", sort=False)]
+    return sorted(out, key=lambda r: seeded_rank(f"{seed}:city", r[0]))
+
+
+def gallery_url(base, label_ids):
+    """The Gallery page that shows exactly ``label_ids``, in order (SidewalkWebpage#5444; at most 500)."""
+    if len(label_ids) > 500:
+        raise ValueError("Gallery review lists hold at most 500 labels")
+    return f"{base}/gallery?labelIds={','.join(str(i) for i in label_ids)}"
+
+
+def gallery_index_html(lists):
+    """A local page linking each deployment's review list, with the masking CSS and how to apply it."""
+    import html as h
+    rows = "".join(f'<li><a href="{h.escape(gallery_url(b, ids))}" target="_blank" rel="noopener">{h.escape(c)}</a> '
+                   f'&middot; {len(ids)} label{"s" if len(ids) != 1 else ""}</li>' for c, b, ids in lists)
+    total = sum(len(ids) for _, _, ids in lists)
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Re-label lists</title><style>
+:root {{ color-scheme: light dark; --bg:#fff; --fg:#1f2328; --muted:#57606a; --panel:#f6f8fa; }}
+@media (prefers-color-scheme: dark) {{ :root {{ --bg:#0d1117; --fg:#e6edf3; --muted:#8d96a0; --panel:#161b22; }} }}
+body {{ background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; margin:0 16px 48px; max-width:900px; }}
+pre {{ background:var(--panel); padding:12px; overflow-x:auto; white-space:pre-wrap; }} li {{ margin:4px 0; }}
+</style></head><body>
+<h1>AI Disagree re-label: {total} labels in {len(lists)} deployments</h1>
+<ol>
+<li>Sign in on any Project Sidewalk site once; the sign-in carries over to every deployment.</li>
+<li><strong>Before opening a list</strong>, make the masking CSS below apply on <code>*.cs.washington.edu</code>
+(a user-stylesheet extension such as Stylus, so it applies before the page draws). Check it once on a label whose
+votes you know: no counts, no vote icons, no tooltips.</li>
+<li>For each label, open it, pan around as needed, and vote <strong>Agree</strong> (correct label),
+<strong>Disagree</strong> (incorrect) or <strong>Unsure</strong> (can't tell). Your vote is the record.</li>
+</ol>
+<h2>Review lists</h2><ul>{rows}</ul>
+<h2>Masking CSS</h2><pre>{h.escape(GALLERY_MASK_CSS)}</pre>
+</body></html>
+"""
+
+
+def votes_script(key, rater_id):
+    """Read-only SQL (run on the database host with ``bash -s``) printing ``schema,label_id,vote`` for the rater's
+    current vote on each key label."""
+    if not all(c in "0123456789abcdef-" for c in rater_id.lower()):
+        raise ValueError("rater id must be a user_id UUID")
+    lines = ["export PGOPTIONS='-c default_transaction_read_only=on'",
+             'P="psql -X -q -d sidewalk_prod -p 5434 -At -F,"', "echo schema,label_id,vote"]
+    for schema, g in key.groupby("schema"):
+        ids = ",".join(str(int(i)) for i in g.label_id)
+        lines.append(f"$P -c \"SELECT DISTINCT ON (label_id) '{schema}', label_id, validation_result::text "
+                     f"FROM {schema}.label_validation WHERE user_id = '{rater_id}' AND label_id IN ({ids}) "
+                     f"ORDER BY label_id, label_validation_id DESC\"")
+    return "\n".join(lines) + "\n"
+
+
+def votes_to_sheet(key, votes):
+    """The rater's prod votes as a filled sheet (``packet_id, label_type, verdict, notes``); unvoted items blank."""
+    v = votes.assign(label_uid=votes.schema + ":" + votes.label_id.astype(str))
+    if not v.label_uid.is_unique:
+        raise ValueError("more than one vote per label")
+    m = key[["packet_id", "label_uid", "label_type"]].merge(v[["label_uid", "vote"]], on="label_uid", how="left",
+                                                             validate="one_to_one")
+    m["verdict"] = m.vote.map(VOTE_TO_VERDICT).fillna("")
+    m["notes"] = ""
+    return m[SHEET_COLUMNS]
+
+
+def cmd_gallery(args):
+    if inside_git_checkout(args.out):
+        sys.exit(f"refusing to write the review lists inside a git checkout: {args.out}")
+    key = pd.read_csv(args.key)
+    conf_text = open(args.cityparams).read()
+    lists = gallery_lists(key, *cityparams(conf_text), args.seed)
+    os.makedirs(args.out, exist_ok=True)
+    with open(os.path.join(args.out, "index.html"), "w") as f:
+        f.write(gallery_index_html(lists))
+    with open(os.path.join(args.out, "gallery-mask.css"), "w") as f:
+        f.write(GALLERY_MASK_CSS)
+    # Replicability: the exact lists (one row per deployment, in the order shown) and the cities snapshot they were
+    # built from, with their sha256 in the key's manifest.
+    urls = pd.DataFrame([{"order": i, "city_id": c, "n": len(ids), "label_ids": " ".join(map(str, ids)),
+                          "url": gallery_url(b, ids)} for i, (c, b, ids) in enumerate(lists, 1)])
+    upath = os.path.join(args.out, "gallery_urls.csv")
+    urls.to_csv(upath, index=False)
+    cpath = os.path.join(args.out, "cityparams_snapshot.conf")
+    with open(cpath, "w") as f:
+        f.write(conf_text)
+    commit = subprocess.run(["git", "-C", os.path.dirname(os.path.abspath(args.cityparams)), "log", "-1",
+                             "--format=%H %cI", "--", os.path.basename(args.cityparams)],
+                            capture_output=True, text=True).stdout.strip()
+    mpath = os.path.join(os.path.dirname(os.path.abspath(args.key)), "manifest.json")
+    if os.path.exists(mpath):
+        man = json.load(open(mpath))
+        man["gallery"] = {"urls_sha256": sha256_file(upath), "cityparams_sha256": sha256_file(cpath),
+                          "cityparams_commit": commit,
+                          "lists": len(lists), "labels": int(urls.n.sum()), "css_sha256":
+                          hashlib.sha256(GALLERY_MASK_CSS.encode()).hexdigest()}
+        with open(mpath, "w") as f:
+            json.dump(man, f, indent=1)
+    print(f"{int(urls.n.sum())} labels in {len(lists)} lists -> {args.out}/index.html, {upath}")
+
+
+def cmd_votes(args):
+    key = pd.read_csv(args.key)
+    out = remote(args.host, votes_script(key, args.rater_id))
+    votes = pd.read_csv(io.StringIO(out))
+    sheet = votes_to_sheet(key, votes)
+    sheet.to_csv(args.out, index=False)
+    print(f"{int((sheet.verdict != '').sum())} of {len(sheet)} items voted -> {args.out}")
+
+
 def cmd_breakdown(args):
     md = breakdown_markdown(load_pool(args.pool), args.min_n)
     if args.out:
@@ -607,6 +800,19 @@ def build_parser():
     s.add_argument("--sheet", required=True)
     s.add_argument("--manifest", help="build's manifest.json (default: next to the key), for the population weights")
     s.set_defaults(func=cmd_score)
+    g = sub.add_parser("gallery", help="per-deployment Gallery review lists (index.html) for rating on the live site")
+    g.add_argument("--key", required=True)
+    g.add_argument("--out", required=True, help="directory for index.html (outside any git checkout)")
+    g.add_argument("--seed", required=True, help="the build seed (orders the deployments)")
+    g.add_argument("--cityparams", default=DEFAULT_CITYPARAMS,
+                   help="SidewalkWebpage conf/cityparams.conf (schema -> city and prod URLs; default %(default)s)")
+    g.set_defaults(func=cmd_gallery)
+    v = sub.add_parser("votes", help="the rater's prod votes on the key's labels, as a filled sheet for score")
+    v.add_argument("--key", required=True)
+    v.add_argument("--rater-id", required=True, help="the rater's user_id (pass it in; never commit it)")
+    v.add_argument("--out", required=True)
+    v.add_argument("--host", default="makelab1")
+    v.set_defaults(func=cmd_votes)
     d = sub.add_parser("breakdown", help="AI confirmation rate by severity and by tag, from the pool")
     d.add_argument("--pool", required=True)
     d.add_argument("--min-n", type=int, default=100)

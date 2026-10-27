@@ -39,6 +39,27 @@ labels, of which 529,298 Agree, 91,626 Disagree and 366,647 Unsure (an abstentio
 - **Masking:** random ids, and the order is shuffled with a secret seed. The key's sha256 is
   `ae3468a6409150c61e45ef358d44b579dd21cae6d01e15db720a3f447aabb860`.
 
+**Rated on the live site.** Telling whether a missing curb ramp is truly missing often means panning around the
+intersection, which a fixed crop cannot do. So the items are rated in Project Sidewalk's Gallery, one review list
+per deployment (\`/gallery?labelIds=…\`, SidewalkWebpage#5444), with a user stylesheet that hides the vote counts,
+the AI's vote, the vote tooltips, earlier validations and comments (\`GALLERY_MASK_CSS\` in the script).
+
+- **The rater's prod vote is the record:** Agree = correct, Disagree = incorrect, Unsure = can't tell. \`votes\`
+  pulls the votes back as a sheet for \`score\`.
+- **Rating changes prod as it goes.** A vote joins the crowd for later analyses, and a lone label stops being lone.
+  Scoring uses the groups as they were at sampling time.
+- **\`rate.html\` remains the offline fallback.**
+
+**Replicability.** The run directory keeps everything needed to rebuild and check the lists:
+- the 28 review lists in the order shown, with label ids and URLs (\`gallery/gallery_urls.csv\`, sha256
+  \`c3bf124966c2a4155398e58a1f0ee32308de9052aab1abf2fb2c147c38cb6c71\`);
+- the \`cityparams.conf\` snapshot that mapped schemas to deployments (SidewalkWebpage 38599ca5, sha256
+  \`9731618a43f90d1b3dde757f19f4420a6dc26c42ec0e69c0eae7572c2e0d246a\`);
+- the masking CSS (sha256 \`904fbf76e99943fb74a017226c59308513b44616b8e7d4d9b2a96c99b52eaec5\`);
+- the pool, the key and the seed.
+
+The lists name non-public deployments, so they stay outside the repo; the hashes here pin them.
+
 **Precision is reported two ways.** The sample has 20 per type, so its plain rate weights the five types equally.
 `score` also gives the population-weighted estimate for each Disagree group. The weights are the eligible
 labels per type, for example 10,505 CurbRamp and 3,384 SurfaceProblem among the lone Disagrees, with a stratified

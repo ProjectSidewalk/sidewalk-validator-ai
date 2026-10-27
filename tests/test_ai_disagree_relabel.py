@@ -237,3 +237,37 @@ def test_marked_image_downscales_to_jpeg():
 
 def test_street_view_url():
     assert rl.street_view_url("abc", 10, -5.5).endswith("pano=abc&heading=10.00&pitch=-5.50")
+
+
+def test_votes_to_sheet_maps_prod_votes_and_leaves_unvoted_blank():
+    key = pd.DataFrame({"packet_id": ["r1", "r2", "r3", "r4"], "label_uid": ["s_a:1", "s_a:2", "s_b:1", "s_b:2"],
+                        "label_type": ["CurbRamp"] * 4})
+    votes = pd.DataFrame({"schema": ["s_a", "s_a", "s_b"], "label_id": [1, 2, 1],
+                          "vote": ["Agree", "Disagree", "Unsure"]})
+    sheet = rl.votes_to_sheet(key, votes)
+    assert list(sheet.verdict) == ["correct", "incorrect", "cant_tell", ""]
+    assert list(sheet.columns) == rl.SHEET_COLUMNS
+    with pytest.raises(ValueError, match="more than one"):
+        rl.votes_to_sheet(key, pd.concat([votes, votes.iloc[:1]]))
+
+
+def test_votes_script_is_read_only_and_refuses_odd_rater_ids():
+    key = pd.DataFrame({"schema": ["sidewalk_foo"], "label_id": [7]})
+    sc = rl.votes_script(key, "00000000-0000-0000-0000-000000000000")
+    assert "default_transaction_read_only=on" in sc and "label_id IN (7)" in sc and "DISTINCT ON" in sc
+    with pytest.raises(ValueError):
+        rl.votes_script(key, "x'; drop table label; --")
+
+
+def test_gallery_urls_cap_and_index_carries_mask():
+    assert rl.gallery_url("https://f", [1, 2]) == "https://f/gallery?labelIds=1,2"
+    with pytest.raises(ValueError):
+        rl.gallery_url("https://f", list(range(501)))
+    page = rl.gallery_index_html([("foo-xx", "https://f", [1, 2])])
+    assert "labelIds=1,2" in page and ".label-detail__vote-icon" in page
+
+
+def test_gallery_lists_refuses_a_schema_without_url():
+    key = pd.DataFrame({"schema": ["sidewalk_foo"], "label_id": [1]})
+    with pytest.raises(ValueError, match="no deployment URL"):
+        rl.gallery_lists(key, {"sidewalk_foo": "foo-xx"}, {}, "s")
