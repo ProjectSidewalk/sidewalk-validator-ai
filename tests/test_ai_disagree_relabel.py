@@ -271,3 +271,96 @@ def test_gallery_lists_refuses_a_schema_without_url():
     key = pd.DataFrame({"schema": ["sidewalk_foo"], "label_id": [1]})
     with pytest.raises(ValueError, match="no deployment URL"):
         rl.gallery_lists(key, {"sidewalk_foo": "foo-xx"}, {}, "s")
+
+
+# --- results: pins, comments, training counts, report -------------------------------------------------------------
+
+def _rated():
+    """An unmasked key: four Disagree items and one Agree decoy, with severity, tags and served accuracy."""
+    key = pd.DataFrame({
+        "packet_id": ["r1", "r2", "r3", "r4", "r5"],
+        "label_uid": ["sidewalk_a:1", "sidewalk_a:2", "sidewalk_b:1", "sidewalk_b:2", "sidewalk_b:3"],
+        "label_type": ["Crosswalk"] * 4 + ["CurbRamp"],
+        "group": ["lone_disagree", "lone_disagree", "voted_disagree", "voted_disagree", "decoy_agree"],
+        "ai_vote": ["Disagree"] * 4 + ["Agree"], "ai_accuracy": [0.93, 0.99, 0.96, 0.97, 0.9],
+        "severity": [1, np.nan, 1, 3, 1], "tags": ["paint fading", None, "paint fading;bumpy", None, None],
+        "crowd": [None, None, "Agree", "Disagree", None]})
+    sheet = pd.DataFrame({"packet_id": key.packet_id,
+                          "verdict": ["correct", "incorrect", "correct", "cant_tell", "correct"]})
+    return rl.unmask(key, sheet)
+
+
+def test_comments_script_is_read_only_and_refuses_odd_rater_ids():
+    key = pd.DataFrame({"schema": ["sidewalk_foo", "sidewalk_bar"], "label_id": [7, 8]})
+    sc = rl.comments_script(key, "00000000-0000-0000-0000-000000000000")
+    assert "default_transaction_read_only=on" in sc and "sidewalk_foo.validation_task_comment" in sc
+    assert "label_id IN (7)" in sc and "label_id IN (8)" in sc
+    assert not any(w in sc.upper() for w in ("INSERT", "UPDATE ", "DELETE", "DROP"))
+    with pytest.raises(ValueError):
+        rl.comments_script(key, "x'; drop table label; --")
+
+
+def test_load_comments_keeps_commas_quotes_newlines_and_joins_per_label():
+    raw = ('sidewalk_a,1,2026-10-27 09:00:00-07,,"Faded, but ""there"",\nreally"\n'
+           'sidewalk_a,1,2026-10-27 09:05:00-07,,second\n'
+           'sidewalk_b,1,2026-10-27 08:00:00-07,other,only\n')
+    c = rl.load_comments(io.StringIO(raw))
+    assert c.comment.iloc[0] == 'Faded, but "there",\nreally'
+    per = rl.comments_per_label(c).set_index("label_uid")
+    assert per.loc["sidewalk_a:1", "n_comments"] == 2 and per.loc["sidewalk_a:1", "comment"].endswith(" | second")
+    assert rl.load_comments(io.StringIO(raw)).label_uid.tolist()[2] == "sidewalk_b:1"
+
+
+def test_with_slice_reads_both_tag_encodings_and_missing_severity():
+    d = pd.DataFrame({"severity": [1.0, np.nan], "tags": ["narrow;pole", '["narrow"]']})
+    assert sorted(rl.with_slice(d, "tag").tag) == ["narrow", "narrow", "pole"]
+    assert rl.with_slice(d, "severity").severity.tolist() == ["1", "(none)"]
+    assert rl.with_slice(pd.DataFrame({"tags": [None, "[]"]}), "tag").tag.tolist() == ["(none)", "(none)"]
+
+
+def test_precision_slices_drop_cant_tell_and_carry_training_counts():
+    train = pd.DataFrame({"label_type": ["Crosswalk"] * 3, "severity": [1, 1, 2],
+                          "tags": ['["paint fading"]', "[]", '["paint fading","bumpy"]']})
+    ps = rl.precision_slices(_rated(), "tag", [("t_n", train)]).set_index(["label_type", "tag"])
+    pf = ps.loc[("Crosswalk", "paint fading")]
+    assert (pf.n, pf.k, pf.t_n) == (2, 0, 2)          # both paint-fading Disagrees were correct labels
+    assert ("Crosswalk", "(none)") in ps.index and ps.loc[("Crosswalk", "(none)")].k == 1
+    assert ps.loc[("Crosswalk", "bumpy")].t_n == 1
+    sev = rl.precision_slices(_rated(), "severity").set_index(["label_type", "severity"])
+    assert set(sev.index) == {("Crosswalk", "1"), ("Crosswalk", "(none)")}   # severity 3 was can't tell
+
+
+def test_confidence_table_bands_and_means():
+    bands, means = rl.confidence_table(_rated())
+    assert dict(zip(bands.band, bands.n)) == {"(0.9, 0.95]": 1, "(0.95, 0.98]": 1, "(0.98, 1.0]": 1}
+    row = means.set_index("label_type").loc["Crosswalk"]
+    assert row.right == pytest.approx(0.99) and row.wrong == pytest.approx((0.93 + 0.96) / 2)
+
+
+def test_crowd_crosstab_and_report_has_no_ids_or_comment_text():
+    ct = rl.crowd_crosstab(_rated())
+    assert ct.loc["correct", "correct"] == 1 and ct.values.sum() == 1
+    comments = rl.load_comments(io.StringIO("sidewalk_a,1,2026-10-27 09:00:00-07,,SECRET TEXT\n"))
+    md = rl.report_markdown(_rated(), comments, [], {"train_labels": {}})
+    assert "sidewalk_" not in md and "SECRET" not in md and "| correct | 3 | 1 |" in md
+
+
+def test_hf_train_labels_skips_other_splits_and_maps_prefixes():
+    t = rl.hf_train_labels(["train/correct/sea_5.webp", "train/correct/st_louis_9.webp", "test/correct/sea_6.webp",
+                            ".gitattributes"], "Crosswalk")
+    assert t[["schema", "label_id"]].values.tolist() == [["sidewalk_seattle", 5], ["sidewalk_st_louis", 9]]
+    sc = rl.label_attrs_script(t)
+    assert "default_transaction_read_only=on" in sc and "label_id IN (5)" in sc
+
+
+def test_pin_and_check_pin(tmp_path):
+    f, man = tmp_path / "sheet.csv", tmp_path / "manifest.json"
+    f.write_text("packet_id,label_type,verdict,notes\nr1,CurbRamp,correct,\n")
+    rl.pin(str(man), "votes", str(f), 1)
+    rl.check_pin(str(man), "votes", str(f))                     # unchanged: passes
+    f.write_text("packet_id,label_type,verdict,notes\nr1,CurbRamp,incorrect,\n")
+    with pytest.raises(SystemExit, match="sha256 differs"):
+        rl.check_pin(str(man), "votes", str(f))
+    rl.check_pin(str(man), "votes", str(f), allow_unpinned=True)
+    with pytest.raises(SystemExit, match="no pin"):
+        rl.check_pin(str(man), "comments", str(f))

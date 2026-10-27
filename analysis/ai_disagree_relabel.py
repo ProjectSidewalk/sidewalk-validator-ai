@@ -30,6 +30,13 @@ Subcommands (every file with label-level rows goes OUTSIDE the repo, under ``~/D
 ``build``
     Pool -> candidates -> crop check on the server -> packet (``rate.html``, ``sheet.csv``, ``items/``) and key
     (``key.csv`` plus its sha256 in ``manifest.json``). Needs a live SSH control master to the database host.
+``votes`` / ``comments``
+    The rater's prod votes (as a filled sheet) and comments on the key's labels, pinned in the manifest.
+``prod-train``
+    The 2025-08 production training rows (from the published datasets) with their severity and tags, pinned.
+``report``
+    Every aggregate behind the results as Markdown, from pinned inputs: precision per group and type, per type x
+    severity and type x tag with training rows per slice, by served accuracy, crowd vs expert, comment counts.
 ``score``
     Unmasks a filled sheet against the key: AI precision per group with Wilson 95% intervals, per type, the
     can't-tell rate, and on ``voted_disagree`` how often the crowd majority matches the expert.
@@ -48,6 +55,10 @@ Usage::
     python analysis/ai_disagree_relabel.py score --key $D/private-key-do-not-share/key.csv \\
         --sheet $D/packet/relabel_sheet__jon.csv
     python analysis/ai_disagree_relabel.py breakdown --pool $D/relabel_pool.csv --out $D/breakdown.md
+
+Rating on the live site and the results (``gallery``, then ``votes`` / ``comments`` / ``prod-train``, each pinned by
+sha256 in the key's ``manifest.json``, then ``report``): the full command list is in the results doc,
+``docs/ai-disagree-relabel-2026-10.md``, under "Reproducing".
 """
 import argparse
 import hashlib
@@ -347,6 +358,35 @@ def score_table(m, population=None):
 # Severity and tag breakdown (pure, unit-tested)
 # ---------------------------------------------------------------------------------------------------------------------
 
+def parse_tags(value):
+    """One label's tags from either encoding in use: ``;``-joined (the database pulls here) or a JSON array
+    (``split.csv``); missing or empty gives ``[]``.
+
+    >>> parse_tags("narrow;pole"), parse_tags('["narrow","pole"]'), parse_tags("[]"), parse_tags(float("nan"))
+    (['narrow', 'pole'], ['narrow', 'pole'], [], [])
+    """
+    if not isinstance(value, str):
+        return []
+    s = value.strip()
+    if s.startswith("["):
+        return [str(t) for t in json.loads(s) if str(t)]
+    return [t for t in s.split(";") if t]
+
+
+def with_slice(df, by):
+    """``df`` with a ``by`` column (``severity`` or ``tag``) holding the slice as a string: the integer severity, or
+    one row per tag (a label with several tags counts once per tag). Missing severity and untagged labels are
+    ``(none)``."""
+    d = df.copy()
+    if by == "tag":
+        d["tag"] = [parse_tags(v) or ["(none)"] for v in d.tags]
+        return d.explode("tag").reset_index(drop=True)
+    if by != "severity":
+        raise ValueError(f"by must be severity or tag, not {by!r}")
+    d["severity"] = [("(none)" if pd.isna(v) else str(int(v))) for v in pd.to_numeric(d.severity, errors="coerce")]
+    return d
+
+
 def confirm_rows(pool):
     """AI Agree / Disagree votes with a human majority of at least two decisive votes, and whether it confirms."""
     d = pool[pool.ai_vote.isin(["Agree", "Disagree"]) & (pool.h_dec >= 2) & pool.crowd.notna()
@@ -359,12 +399,7 @@ def breakdown(pool, by, min_n=100):
     """Confirmation rate of the AI's Agree and Disagree votes per label type x ``by`` (``severity`` or ``tag``), with
     Wilson intervals; cells with fewer than ``min_n`` votes of that verdict are left blank. For ``tag`` a label with
     several tags counts once per tag; untagged labels are ``(none)``."""
-    d = confirm_rows(pool)
-    if by == "tag":
-        d = d.assign(tag=d.tags.fillna("").str.split(";")).explode("tag")
-        d["tag"] = d.tag.replace("", "(none)")
-    else:
-        d[by] = d[by].astype("Int64").astype(str).fillna("(none)").replace("<NA>", "(none)")
+    d = with_slice(confirm_rows(pool), by)
     rows = []
     for (t, v), g in d.groupby(["label_type", by]):
         row = {"label_type": t, by: v}
@@ -382,12 +417,7 @@ def breakdown(pool, by, min_n=100):
 def lone_counts(pool, by):
     """How many labels the AI's Disagree alone has hidden (no human vote), per label type x ``by``."""
     n_h = pool.h_agree + pool.h_dis + pool.h_unsure
-    d = pool[(pool.ai_vote == "Disagree") & (n_h == 0) & pool.label_type.isin(LABEL_TYPES)].copy()
-    if by == "tag":
-        d = d.assign(tag=d.tags.fillna("").str.split(";")).explode("tag")
-        d["tag"] = d.tag.replace("", "(none)")
-    else:
-        d[by] = d[by].astype("Int64").astype(str).fillna("(none)").replace("<NA>", "(none)")
+    d = with_slice(pool[(pool.ai_vote == "Disagree") & (n_h == 0) & pool.label_type.isin(LABEL_TYPES)], by)
     return d.groupby(["label_type", by]).size().rename("lone_disagree").reset_index()
 
 
@@ -563,18 +593,25 @@ def cmd_build(args):
     print(f"{len(key)} items -> {args.packet_dir}/rate.html\nkey -> {kpath} (sha256 {manifest['key_sha256']})")
 
 
-def cmd_score(args):
-    key = pd.read_csv(args.key, dtype={"tags": str, "expert2": str})
-    mpath = args.manifest or os.path.join(os.path.dirname(os.path.abspath(args.key)), "manifest.json")
-    pop = json.load(open(mpath)).get("population") if os.path.exists(mpath) else None
-    t = score_table(unmask(key, pd.read_csv(args.sheet, dtype=str, keep_default_na=False)), pop)
-    print("| Group | Type | Expert agrees with the AI (sample) | n | can't tell | population-weighted | "
-          "crowd majority agrees with the expert |")
-    print("|---|---|---:|---:|---:|---:|---:|")
+def score_markdown(t):
+    """:func:`score_table` as a Markdown table (shared by ``score`` and ``report``)."""
+    out = ["| Group | Type | Expert agrees with the AI (sample) | n | can't tell | population-weighted | "
+           "crowd majority agrees with the expert |", "|---|---|---:|---:|---:|---:|---:|"]
     for _, r in t.iterrows():
         crowd = _pct(r.get("crowd_rate"), r.get("crowd_lo"), r.get("crowd_hi")) if "crowd_rate" in r else ""
         w = _pct(r.get("w_rate"), r.get("w_lo"), r.get("w_hi")) if "w_rate" in r else ""
-        print(f"| {r.group} | {r.label_type} | {_pct(r.rate, r.lo, r.hi)} | {r.n} | {r.cant_tell} | {w} | {crowd} |")
+        out.append(f"| {r.group} | {r.label_type} | {_pct(r.rate, r.lo, r.hi)} | {r.n} | {r.cant_tell} | {w} | "
+                   f"{crowd} |")
+    return "\n".join(out)
+
+
+def cmd_score(args):
+    key = pd.read_csv(args.key, dtype={"tags": str, "expert2": str})
+    mpath = args.manifest or default_manifest(args.key)
+    check_pin(mpath, "votes", args.sheet, args.allow_unpinned)
+    pop = json.load(open(mpath)).get("population") if os.path.exists(mpath) else None
+    t = score_table(unmask(key, pd.read_csv(args.sheet, dtype=str, keep_default_na=False)), pop)
+    print(score_markdown(t))
     print("\ndecoy_unsure rows are the share the expert called correct (the AI abstained): not an AI precision.")
     if t.unanswered.sum():
         print(f"\nWARNING: {int(t[t.label_type == 'all'].unanswered.sum())} items unanswered")
@@ -717,8 +754,7 @@ Check it once on a label whose votes you know: no counts, no vote icons, no tool
 def votes_script(key, rater_id):
     """Read-only SQL (run on the database host with ``bash -s``) printing ``schema,label_id,vote`` for the rater's
     current vote on each key label."""
-    if not all(c in "0123456789abcdef-" for c in rater_id.lower()):
-        raise ValueError("rater id must be a user_id UUID")
+    _check_uuid(rater_id)
     lines = ["export PGOPTIONS='-c default_transaction_read_only=on'",
              'P="psql -X -q -d sidewalk_prod -p 5434 -At -F,"', "echo schema,label_id,vote"]
     for schema, g in key.groupby("schema"):
@@ -782,7 +818,8 @@ def cmd_votes(args):
     votes = pd.read_csv(io.StringIO(out))
     sheet = votes_to_sheet(key, votes)
     sheet.to_csv(args.out, index=False)
-    print(f"{int((sheet.verdict != '').sum())} of {len(sheet)} items voted -> {args.out}")
+    pin(args.manifest or default_manifest(args.key), "votes", args.out, len(sheet))
+    print(f"{int((sheet.verdict != '').sum())} of {len(sheet)} items voted -> {args.out} (pinned)")
 
 
 def cmd_breakdown(args):
@@ -793,6 +830,289 @@ def cmd_breakdown(args):
         print(f"-> {args.out}")
     else:
         print(md)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Results: pinned ratings, the rater's comments, training counts per slice, and the report (pure parts unit-tested)
+# ---------------------------------------------------------------------------------------------------------------------
+
+COMMENT_COLUMNS = ["schema", "label_id", "timestamp", "reason", "comment"]
+# The Hugging Face datasets the 2025-08 production models were trained on. CurbRamp's published dataset is a copy of
+# Crosswalk's (audit finding 13), so the CurbRamp model's training rows cannot be recovered.
+PROD_DATASETS = {"Crosswalk": "crosswalk", "NoCurbRamp": "nocurbramp", "Obstacle": "obstacle",
+                 "SurfaceProblem": "surfaceproblem"}
+HF_DATASET_API = "https://huggingface.co/api/datasets/projectsidewalk/sidewalk-validator-ai-dataset-{}"
+HF_PREFIX_SCHEMA = {"sea": "sidewalk_seattle"}  # file-name prefixes that are not the schema minus "sidewalk_"
+CONF_BINS = [0.0, 0.9, 0.95, 0.98, 1.0]
+
+
+def _check_uuid(user_id):
+    if not user_id or not all(c in "0123456789abcdef-" for c in user_id.lower()):
+        raise ValueError("rater id must be a user_id UUID")
+
+
+def default_manifest(key_path):
+    return os.path.join(os.path.dirname(os.path.abspath(key_path)), "manifest.json")
+
+
+def pin(manifest_path, name, path, rows):
+    """Record ``path`` (a rater pull or a derived file) under ``rating.<name>`` in the manifest: its sha256, row
+    count and modification time, so the results can be rebuilt from exactly these files. No rater ids are written."""
+    man = json.load(open(manifest_path)) if os.path.exists(manifest_path) else {}
+    mtime = pd.Timestamp(os.path.getmtime(path), unit="s", tz="UTC").isoformat()
+    man.setdefault("rating", {})[name] = {"file": os.path.basename(path), "sha256": sha256_file(path),
+                                          "rows": int(rows), "written_at": mtime}
+    with open(manifest_path, "w") as f:
+        json.dump(man, f, indent=1)
+
+
+def check_pin(manifest_path, name, path, allow_unpinned=False):
+    """Refuse ``path`` unless its sha256 is the one pinned under ``rating.<name>`` (a later re-pull of prod votes
+    could otherwise silently change the results). ``allow_unpinned`` downgrades a missing or different pin to a
+    warning."""
+    pinned = (json.load(open(manifest_path)).get("rating", {}).get(name, {}) if os.path.exists(manifest_path)
+              else {}).get("sha256")
+    if pinned == sha256_file(path):
+        return
+    msg = f"{path} is not the pinned {name} file ({'no pin' if pinned is None else 'sha256 differs'})"
+    if not allow_unpinned:
+        sys.exit(msg + "; pin it with `pin`, or pass --allow-unpinned")
+    print(f"WARNING: {msg}", file=sys.stderr)
+
+
+def comments_script(key, rater_id):
+    """Read-only SQL (run on the database host with ``bash -s``) printing, as headerless CSV, the rater's comments on
+    the key's labels: ``schema, label_id, timestamp, reason, comment``."""
+    _check_uuid(rater_id)
+    lines = ["export PGOPTIONS='-c default_transaction_read_only=on'"]
+    for schema, g in key.groupby("schema"):
+        ids = ",".join(str(int(i)) for i in g.label_id)
+        lines.append(f"psql -X -q -d sidewalk_prod -p 5434 -c \"COPY (SELECT '{schema}', label_id, timestamp, "
+                     f"reason::text, comment FROM {schema}.validation_task_comment WHERE user_id = '{rater_id}' "
+                     f"AND label_id IN ({ids}) ORDER BY timestamp) TO STDOUT WITH CSV\"")
+    return "\n".join(lines) + "\n"
+
+
+def load_comments(path_or_buf):
+    """The comments CSV as a DataFrame with ``label_uid``; a label with several comments keeps all of them."""
+    c = pd.read_csv(path_or_buf, names=COMMENT_COLUMNS, header=None, dtype={"reason": str, "comment": str})
+    c["label_uid"] = c.schema + ":" + c.label_id.astype(str)
+    return c
+
+
+def comments_per_label(comments):
+    """One row per commented label: its comments joined in time order (`` | ``), and how many there were."""
+    c = comments.sort_values("timestamp")
+    return c.groupby("label_uid").agg(comment=("comment", " | ".join), n_comments=("comment", "size")).reset_index()
+
+
+def hf_train_labels(filenames, label_type):
+    """``(label_type, schema, label_id, label_class)`` for the ``train/<class>/<prefix>_<label_id>.webp`` files of a
+    published training dataset; the prefix is the schema without ``sidewalk_`` (``HF_PREFIX_SCHEMA`` for the rest).
+
+    >>> hf_train_labels(["train/correct/sea_12.webp", "train/incorrect/new_taipei_3.webp", "val/correct/x_1.webp"],
+    ...                 "Obstacle").values.tolist()
+    [['Obstacle', 'sidewalk_seattle', 12, 'correct'], ['Obstacle', 'sidewalk_new_taipei', 3, 'incorrect']]
+    """
+    rows = []
+    for f in filenames:
+        parts = f.split("/")
+        if len(parts) != 3 or parts[0] != "train" or not parts[2].endswith(".webp"):
+            continue
+        prefix, label_id = parts[2][:-len(".webp")].rsplit("_", 1)
+        rows.append({"label_type": label_type, "schema": HF_PREFIX_SCHEMA.get(prefix, "sidewalk_" + prefix),
+                     "label_id": int(label_id), "label_class": parts[1]})
+    return pd.DataFrame(rows, columns=["label_type", "schema", "label_id", "label_class"])
+
+
+def label_attrs_script(labels):
+    """Read-only SQL printing ``schema,label_id,label_type,severity,tags`` (tags ``;``-joined) for ``labels``."""
+    lines = ["export PGOPTIONS='-c default_transaction_read_only=on'",
+             'P="psql -X -q -d sidewalk_prod -p 5434"', "echo schema,label_id,label_type,severity,tags"]
+    for schema, g in labels.groupby("schema"):
+        ids = ",".join(str(int(i)) for i in sorted(set(g.label_id)))
+        lines.append(f"$P -c \"COPY (SELECT '{schema}', label_id, label_type::text, severity, "
+                     f"array_to_string(tags, ';') FROM {schema}.label WHERE label_id IN ({ids})) TO STDOUT WITH CSV\"")
+    return "\n".join(lines) + "\n"
+
+
+def train_counts(train, by):
+    """Training rows per label type x ``by`` (``severity`` or ``tag``), as ``label_type, <by>, train_n``."""
+    if train is None or not len(train):
+        return pd.DataFrame(columns=["label_type", by, "train_n"])
+    return with_slice(train, by).groupby(["label_type", by]).size().rename("train_n").reset_index()
+
+
+def load_round_train(split_dir):
+    """The ``split == "train"`` rows of ``<split_dir>/<Type>/split.csv`` for every label type, and their sha256s."""
+    parts, shas = [], {}
+    for t in LABEL_TYPES:
+        p = os.path.join(split_dir, t, "split.csv")
+        d = pd.read_csv(p, usecols=["label_type", "severity", "tags", "split"], dtype={"tags": str})
+        parts.append(d[d.split == "train"])
+        shas[t] = sha256_file(p)
+    return pd.concat(parts, ignore_index=True), shas
+
+
+def disagree_decided(m):
+    """The AI Disagree items the expert decided (can't tell and blank dropped), with ``ai_right``."""
+    d = m[m.group.isin(["lone_disagree", "voted_disagree"]) & m.verdict.isin(["correct", "incorrect"])].copy()
+    d["ai_right"] = d.verdict == "incorrect"
+    return d
+
+
+def precision_slices(m, by, trains=None):
+    """AI Disagree precision against the expert per label type x ``by``, both Disagree groups pooled, with Wilson
+    intervals and, for each ``(name, train_df)`` in ``trains``, that training set's row count in the slice."""
+    d = with_slice(disagree_decided(m), by)
+    rows = [{"label_type": t, by: v, **_rate(int(g.ai_right.sum()), len(g))}
+            for (t, v), g in d.groupby(["label_type", by])]
+    out = pd.DataFrame(rows)
+    for name, train in (trains or []):
+        tc = train_counts(train, by).rename(columns={"train_n": name})
+        out = out.merge(tc, on=["label_type", by], how="left", validate="one_to_one")
+        out[name] = out[name].fillna(0).astype(int)
+    return out
+
+
+def confidence_table(m, bins=CONF_BINS):
+    """AI Disagree precision by the AI's served accuracy (``ai_accuracy``) band, and per label type the mean
+    accuracy on the items it got right and wrong."""
+    d = disagree_decided(m)
+    d["band"] = pd.cut(d.ai_accuracy, bins)
+    bands = pd.DataFrame([{"band": str(b), **_rate(int(g.ai_right.sum()), len(g))}
+                          for b, g in d.groupby("band", observed=True)])
+    means = pd.DataFrame([{"label_type": t, "right": g[g.ai_right].ai_accuracy.mean(),
+                           "wrong": g[~g.ai_right].ai_accuracy.mean(), "n": len(g)}
+                          for t, g in d.groupby("label_type")])
+    return bands, means
+
+
+def crowd_crosstab(m):
+    """On decided ``voted_disagree`` items: the crowd majority's verdict against the expert's (counts)."""
+    v = m[(m.group == "voted_disagree") & m.verdict.isin(["correct", "incorrect"])]
+    crowd = v.crowd.map({"Agree": "correct", "Disagree": "incorrect"})
+    return pd.crosstab(crowd.rename("crowd"), v.verdict.rename("expert"))
+
+
+def join_results(m, comments):
+    """The unmasked key with the rater's comments joined on ``label_uid`` (one row per item)."""
+    return m.merge(comments_per_label(comments), on="label_uid", how="left", validate="one_to_one")
+
+
+def _md_rate(r):
+    return _pct(r["rate"], r["lo"], r["hi"]) if r["n"] else ""
+
+
+def report_markdown(m, comments, trains, sources):
+    """Every aggregate behind the posted results, as Markdown: no label ids, no city names, no comment text."""
+    j = join_results(m, comments)
+    out = [score_markdown(score_table(m, sources.get("population")))]
+    d = disagree_decided(m)
+    both = _rate(int(d.ai_right.sum()), len(d))
+    out.append(f"\nBoth Disagree groups pooled: {_md_rate(both)} (n = {both['n']}). `decoy_unsure` rows are the share "
+               "the expert called correct (the AI abstained), not an AI precision.")
+    names = [n for n, _ in trains]
+    for by in ("severity", "tag"):
+        ps = precision_slices(m, by, trains)
+        out.append(f"\n### AI Disagree precision by type x {by} (both Disagree groups, decided items)\n")
+        out.append(f"| Type | {by.capitalize()} | Expert agrees with the AI | n | " + " | ".join(
+            f"training rows: {sources['train_labels'][n]}" for n in names) + " |")
+        out.append("|---|---|---:|---:|" + "---:|" * len(names))
+        for lt in LABEL_TYPES:
+            for _, r in ps[ps.label_type == lt].iterrows():
+                tr = " | ".join("" if (n == "prod_train_n" and lt not in PROD_DATASETS) else f"{r[n]:,}"
+                                for n in names)
+                out.append(f"| {lt} | {r[by]} | {_md_rate(r)} | {r.n} | {tr} |")
+    bands, means = confidence_table(m)
+    out.append("\n### AI Disagree precision by the AI's served accuracy\n")
+    out.append("| ai_accuracy | Expert agrees with the AI | n |\n|---|---:|---:|")
+    out += [f"| {r.band} | {_md_rate(r)} | {r.n} |" for _, r in bands.iterrows()]
+    out.append("\n| Type | mean ai_accuracy, AI right | mean ai_accuracy, AI wrong | n |\n|---|---:|---:|---:|")
+    out += [f"| {r.label_type} | {r.right:.3f} | {r.wrong:.3f} | {r.n} |" for _, r in means.iterrows()]
+    ct = crowd_crosstab(m)
+    out.append("\n### Crowd majority against the expert (`voted_disagree`, decided items)\n")
+    out.append("| Crowd says | Expert: correct | Expert: incorrect |\n|---|---:|---:|")
+    out += [f"| {c} | {ct.loc[c].get('correct', 0)} | {ct.loc[c].get('incorrect', 0)} |" for c in ct.index]
+    out.append("\n### Comments\n")
+    out.append("| Expert verdict | items | with a comment |\n|---|---:|---:|")
+    for v, g in j.groupby("verdict"):
+        out.append(f"| {v} | {len(g)} | {int(g.comment.notna().sum())} |")
+    return "\n".join(out) + "\n"
+
+
+def cmd_pin(args):
+    rows = sum(1 for _ in open(args.file)) - (0 if args.name == "comments" else 1)
+    pin(args.manifest or default_manifest(args.key), args.name, args.file, rows)
+    print(f"pinned {args.name}: {args.file} (sha256 {sha256_file(args.file)})")
+
+
+def cmd_comments(args):
+    if inside_git_checkout(args.out):
+        sys.exit(f"refusing to write comments inside a git checkout: {args.out}")
+    key = pd.read_csv(args.key)
+    with open(args.out, "w") as f:
+        f.write(remote(args.host, comments_script(key, args.rater_id)))
+    c = load_comments(args.out)
+    pin(args.manifest or default_manifest(args.key), "comments", args.out, len(c))
+    print(f"{len(c)} comments on {c.label_uid.nunique()} items -> {args.out} (pinned)")
+
+
+def cmd_prod_train(args):
+    """The 2025-08 production training rows with their severity and tags, from the published datasets."""
+    import urllib.request
+    if inside_git_checkout(args.out):
+        sys.exit(f"refusing to write inside a git checkout: {args.out}")
+    parts, revs = [], {}
+    for t, ds in PROD_DATASETS.items():
+        meta = json.load(urllib.request.urlopen(HF_DATASET_API.format(ds), timeout=120))
+        revs[t] = meta["sha"]
+        parts.append(hf_train_labels([x["rfilename"] for x in meta["siblings"]], t))
+    hf = pd.concat(parts, ignore_index=True)
+    attrs = pd.read_csv(io.StringIO(remote(args.host, label_attrs_script(hf))), dtype={"tags": str})
+    out = hf.merge(attrs.rename(columns={"label_type": "db_label_type"}), on=["schema", "label_id"], how="left",
+                   validate="many_to_one")
+    missing = int(out.db_label_type.isna().sum())
+    retyped = int((out.db_label_type.notna() & (out.db_label_type != out.label_type)).sum())
+    out.to_csv(args.out, index=False)
+    mpath = args.manifest or default_manifest(args.key)
+    pin(mpath, "prod_train", args.out, len(out))
+    man = json.load(open(mpath))
+    man["rating"]["prod_train"].update(dataset_revisions=revs, missing_in_db=missing, label_type_changed=retyped)
+    with open(mpath, "w") as f:
+        json.dump(man, f, indent=1)
+    print(f"{len(out):,} training rows ({missing} not in the database, {retyped} retyped since) -> {args.out}")
+
+
+def cmd_report(args):
+    mpath = args.manifest or default_manifest(args.key)
+    check_pin(mpath, "votes", args.sheet, args.allow_unpinned)
+    check_pin(mpath, "comments", args.comments, args.allow_unpinned)
+    key = pd.read_csv(args.key, dtype={"tags": str, "expert2": str})
+    m = unmask(key, pd.read_csv(args.sheet, dtype=str, keep_default_na=False))
+    comments = load_comments(args.comments)
+    trains, sources = [], {"train_labels": {}}
+    man = json.load(open(mpath)) if os.path.exists(mpath) else {}
+    sources["population"] = man.get("population")
+    if args.prod_train:
+        check_pin(mpath, "prod_train", args.prod_train, args.allow_unpinned)
+        pt = pd.read_csv(args.prod_train, dtype={"tags": str})
+        trains.append(("prod_train_n", pt[pt.db_label_type.notna()]))
+        sources["train_labels"]["prod_train_n"] = "2025-08 production"
+    if args.train_split:
+        rt, shas = load_round_train(args.train_split)
+        trains.append(("round3_train_n", rt))
+        sources["train_labels"]["round3_train_n"] = "round 3"
+        print("round-3 split.csv sha256: " + ", ".join(f"{t} {h[:12]}" for t, h in shas.items()), file=sys.stderr)
+    md = report_markdown(m, comments, trains, sources)
+    with open(args.out, "w") as f:
+        f.write(md)
+    if args.private_out:
+        if inside_git_checkout(args.private_out):
+            sys.exit(f"refusing to write the joined per-label file inside a git checkout: {args.private_out}")
+        join_results(m, comments).to_csv(args.private_out, index=False)
+        pin(mpath, "joined", args.private_out, len(m))
+    print(f"-> {args.out}")
 
 
 def build_parser():
@@ -811,6 +1131,7 @@ def build_parser():
     s.add_argument("--key", required=True)
     s.add_argument("--sheet", required=True)
     s.add_argument("--manifest", help="build's manifest.json (default: next to the key), for the population weights")
+    s.add_argument("--allow-unpinned", action="store_true", help="score a sheet that is not the pinned votes pull")
     s.set_defaults(func=cmd_score)
     g = sub.add_parser("gallery", help="per-deployment Gallery review lists (index.html) for rating on the live site")
     g.add_argument("--key", required=True)
@@ -824,7 +1145,39 @@ def build_parser():
     v.add_argument("--rater-id", required=True, help="the rater's user_id (pass it in; never commit it)")
     v.add_argument("--out", required=True)
     v.add_argument("--host", default="makelab1")
+    v.add_argument("--manifest", help="default: manifest.json next to the key")
     v.set_defaults(func=cmd_votes)
+    for name, fn, hlp in (("comments", cmd_comments, "the rater's prod comments on the key's labels (pinned)"),):
+        c = sub.add_parser(name, help=hlp)
+        c.add_argument("--key", required=True)
+        c.add_argument("--rater-id", required=True, help="the rater's user_id (pass it in; never commit it)")
+        c.add_argument("--out", required=True)
+        c.add_argument("--host", default="makelab1")
+        c.add_argument("--manifest", help="default: manifest.json next to the key")
+        c.set_defaults(func=fn)
+    pn = sub.add_parser("pin", help="pin a rating file's sha256 in the manifest (votes, comments, prod_train)")
+    pn.add_argument("--key", required=True)
+    pn.add_argument("--name", required=True, choices=["votes", "comments", "prod_train"])
+    pn.add_argument("--file", required=True)
+    pn.add_argument("--manifest")
+    pn.set_defaults(func=cmd_pin)
+    pt = sub.add_parser("prod-train", help="the 2025-08 production training rows with severity and tags (pinned)")
+    pt.add_argument("--key", required=True, help="locates the manifest")
+    pt.add_argument("--out", required=True)
+    pt.add_argument("--host", default="makelab1")
+    pt.add_argument("--manifest")
+    pt.set_defaults(func=cmd_prod_train)
+    rp = sub.add_parser("report", help="every aggregate behind the results, as Markdown, from pinned inputs")
+    rp.add_argument("--key", required=True)
+    rp.add_argument("--sheet", required=True)
+    rp.add_argument("--comments", required=True)
+    rp.add_argument("--prod-train", help="the prod-train output, for production training rows per slice")
+    rp.add_argument("--train-split", help="round-3 run dir with <Type>/split.csv, for its training rows per slice")
+    rp.add_argument("--out", required=True, help="the Markdown report (aggregates only)")
+    rp.add_argument("--private-out", help="the joined per-label file (key, verdict, comments); outside the repo")
+    rp.add_argument("--manifest")
+    rp.add_argument("--allow-unpinned", action="store_true")
+    rp.set_defaults(func=cmd_report)
     d = sub.add_parser("breakdown", help="AI confirmation rate by severity and by tag, from the pool")
     d.add_argument("--pool", required=True)
     d.add_argument("--min-n", type=int, default=100)
