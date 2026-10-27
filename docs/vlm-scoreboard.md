@@ -13,7 +13,7 @@ style of RampNet's `docs/model_scoreboard.md`. Everything below the headings is 
 the aggregate tables are in `vlm-scoreboard/*.csv` and `vlm-scoreboard/provenance.json` pins every input by sha256.
 `python analysis/vlm_scoreboard.py build --check` fails if this page drifts from those tables.
 
-The board has 15 legs, 12 of them scored all 13,144 held-out crops. Round 3 leads the best VLM (Gemma 4 31B, 8-shot) by
+The board has 16 legs, 12 of them scored all 13,144 held-out crops. Round 3 leads the best VLM (Gemma 4 31B, 8-shot) by
 0.139 macro-AUC on the crops both scored.
 
 ## Short answer
@@ -55,6 +55,7 @@ rows.
 | 12 | Qwen3-VL-8B | chat VLM | 0.679 [0.670, 0.688] | 0.737 | 0.540 | 0.515 | 0.692 | 0.912 | 0.686 | 0.654 | 0.669 | 0.609 | 0.094 | -0.235 [-0.246, -0.227] | 0.131 (NVIDIA A40, 16) | 13,144 / 13,144 |
 |  | *partial coverage, not ranked against the rows above* |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 |  | Gemma 4 12B (4-bit, Mac) | chat VLM | 0.722 [0.702, 0.745] | 0.790 | 0.634 | 0.508 | 0.735 | 0.944 | 0.724 | 0.718 | 0.696 | 0.625 | 0.185 | -0.183 [-0.206, -0.162] | 2.33 (Apple M1 Max (MLX), 1) | 1,988 / 13,144 |
+|  | Nemotron 3.5 Super VL 120B-A12B | chat VLM | 0.810 [0.791, 0.831] | 0.810 | — | — | — | — | 0.792 | 0.875 | 0.855 | 0.705 | 0.003 | -0.154 [-0.174, -0.135] | — | 1,792 / 13,144 |
 |  | Qwen3-VL-2B (4-bit, Mac) | chat VLM | 0.621 [0.578, 0.662] | 0.530 | 0.546 | 0.486 | 0.618 | 0.924 | 0.613 | 0.648 | 0.629 | 0.570 | 0.152 | -0.286 [-0.334, -0.236] | 0.717 (Apple M1 Max (MLX), 1) | 671 / 13,144 |
 |  | Qwen3-VL-8B (4-bit, Mac) | chat VLM | 0.657 [0.611, 0.701] | 0.761 | 0.457 | 0.515 | 0.656 | 0.895 | 0.655 | 0.658 | 0.633 | 0.614 | 0.100 | -0.248 [-0.298, -0.201] | 2.19 (Apple M1 Max (MLX), 1) | 500 / 13,144 |
 
@@ -135,6 +136,7 @@ rows.
 | Gemma 4 12B (4-bit, Mac) | NoCurbRamp | 400 | 200 | 0.634 [0.580, 0.689] | 0.616 | 0.673 | 0.607 (8) | 0.507 | 0.010 |
 | Gemma 4 12B (4-bit, Mac) | Obstacle | 400 | 200 | 0.508 [0.453, 0.562] | 0.500 | 0.518 | 0.471 (7) | 0.505 | 0.015 |
 | Gemma 4 12B (4-bit, Mac) | SurfaceProblem | 400 | 200 | 0.735 [0.689, 0.783] | 0.777 | 0.668 | 0.678 (9) | 0.665 | 0.000 |
+| Nemotron 3.5 Super VL 120B-A12B | CurbRamp | 1,792 | 766 | 0.810 [0.791, 0.831] | 0.792 | 0.875 | 0.855 (22) | 0.705 | 0.003 |
 | Qwen3-VL-2B (4-bit, Mac) | Crosswalk | 100 | 50 | 0.924 [0.863, 0.971] | 0.938 | 0.910 | 0.943 (4) | 0.850 | 0.680 |
 | Qwen3-VL-2B (4-bit, Mac) | CurbRamp | 271 | 126 | 0.530 [0.460, 0.597] | 0.504 | 0.682 | 0.565 (10) | 0.499 | 0.000 |
 | Qwen3-VL-2B (4-bit, Mac) | NoCurbRamp | 100 | 50 | 0.546 [0.432, 0.657] | 0.504 | 0.605 | 0.504 (2) | 0.500 | 0.000 |
@@ -201,6 +203,8 @@ draws (seed 20261021). A partial leg's comparison is on its own crops only.
 | Muse Glimmer 30B | SurfaceProblem | 3,102 | 0.746 | 0.855 | -0.110 [-0.127, -0.091] |
 | Muse Glimmer 30B | Crosswalk | 583 | 0.891 | 0.972 | -0.081 [-0.106, -0.058] |
 | Muse Glimmer 30B | macro (5 types) | 13,144 | 0.722 | 0.915 | -0.192 [-0.202, -0.184] |
+| Nemotron 3.5 Super VL 120B-A12B | CurbRamp | 1,792 | 0.810 | 0.965 | -0.154 [-0.174, -0.135] |
+| Nemotron 3.5 Super VL 120B-A12B | macro (1 types) | 1,792 | 0.810 | 0.965 | -0.154 [-0.174, -0.135] |
 | Phi-4-reasoning-vision-15B | CurbRamp | 2,025 | 0.709 | 0.953 | -0.245 [-0.268, -0.223] |
 | Phi-4-reasoning-vision-15B | NoCurbRamp | 3,356 | 0.569 | 0.920 | -0.351 [-0.372, -0.329] |
 | Phi-4-reasoning-vision-15B | Obstacle | 4,078 | 0.566 | 0.873 | -0.307 [-0.327, -0.287] |
@@ -339,6 +343,7 @@ Crops scored per (model, type) out of the held-out crops of that type, and why a
 | MiniCPM-V 4.7 35B-A3B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Molmo2-8B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Muse Glimmer 30B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
+| Nemotron 3.5 Super VL 120B-A12B | 1,792 / 2,025 | 0 / 3,356 | 0 / 4,078 | 0 / 3,102 | 0 / 583 | not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable |
 | Phi-4-reasoning-vision-15B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Production (DINOv2-L, 2025-08) | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Qwen3.8-27B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
@@ -347,7 +352,6 @@ Crops scored per (model, type) out of the held-out crops of that type, and why a
 | Qwen3-VL-8B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Qwen3-VL-8B (4-bit, Mac) | 100 / 2,025 | 100 / 3,356 | 100 / 4,078 | 100 / 3,102 | 100 / 583 | 4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset) |
 | Round 3 (DINOv2-L, 2026-10) | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
-| Nemotron 3.5 Super VL 120B-A12B | 0 / 2,025 | 0 / 3,356 | 0 / 4,078 | 0 / 3,102 | 0 / 583 | not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable |
 | GLM-5.3-Flash (FP8, vLLM) | 0 / 2,025 | 0 / 3,356 | 0 / 4,078 | 0 / 3,102 | 0 / 583 | not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009) |
 
 <!-- END GENERATED: coverage -->

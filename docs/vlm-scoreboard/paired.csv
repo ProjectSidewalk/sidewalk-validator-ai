@@ -41,6 +41,8 @@ muse-glimmer-30b,round3,Obstacle,4078,0.5683,0.8731,-0.3048,-0.3247,-0.2866
 muse-glimmer-30b,round3,SurfaceProblem,3102,0.7455,0.8551,-0.1096,-0.1270,-0.0914
 muse-glimmer-30b,round3,Crosswalk,583,0.8906,0.9716,-0.0811,-0.1061,-0.0577
 muse-glimmer-30b,round3,macro (5 types),13144,0.7223,0.9146,-0.1922,-0.2016,-0.1836
+nemotron3.5-super-vl-120b,round3,CurbRamp,1792,0.8105,0.9645,-0.1540,-0.1741,-0.1349
+nemotron3.5-super-vl-120b,round3,macro (1 types),1792,0.8105,0.9645,-0.1540,-0.1741,-0.1349
 phi4-rv-15b,round3,CurbRamp,2025,0.7088,0.9534,-0.2446,-0.2684,-0.2229
 phi4-rv-15b,round3,NoCurbRamp,3356,0.5690,0.9197,-0.3507,-0.3723,-0.3286
 phi4-rv-15b,round3,Obstacle,4078,0.5664,0.8731,-0.3067,-0.3268,-0.2870

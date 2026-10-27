@@ -34,6 +34,11 @@ muse-glimmer-30b,Muse Glimmer 30B,NoCurbRamp,3356,3356,True,
 muse-glimmer-30b,Muse Glimmer 30B,Obstacle,4078,4078,True,
 muse-glimmer-30b,Muse Glimmer 30B,SurfaceProblem,3102,3102,True,
 muse-glimmer-30b,Muse Glimmer 30B,Crosswalk,583,583,True,
+nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,CurbRamp,1792,2025,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
+nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,NoCurbRamp,0,3356,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
+nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,Obstacle,0,4078,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
+nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,SurfaceProblem,0,3102,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
+nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,Crosswalk,0,583,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
 phi4-rv-15b,Phi-4-reasoning-vision-15B,CurbRamp,2025,2025,True,
 phi4-rv-15b,Phi-4-reasoning-vision-15B,NoCurbRamp,3356,3356,True,
 phi4-rv-15b,Phi-4-reasoning-vision-15B,Obstacle,4078,4078,True,
@@ -74,11 +79,6 @@ round3,"Round 3 (DINOv2-L, 2026-10)",NoCurbRamp,3356,3356,True,
 round3,"Round 3 (DINOv2-L, 2026-10)",Obstacle,4078,4078,True,
 round3,"Round 3 (DINOv2-L, 2026-10)",SurfaceProblem,3102,3102,True,
 round3,"Round 3 (DINOv2-L, 2026-10)",Crosswalk,583,583,True,
-nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,CurbRamp,0,2025,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
-nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,NoCurbRamp,0,3356,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
-nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,Obstacle,0,4078,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
-nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,SurfaceProblem,0,3102,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
-nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,Crosswalk,0,583,False,"not scored yet: needs 2 H200 (249 GB bf16); preempted three times on klone's ckpt partition during its 25-minute weight load; job left queued, resumable"
 glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",CurbRamp,0,2025,False,"not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009)"
 glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",NoCurbRamp,0,3356,False,"not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009)"
 glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",Obstacle,0,4078,False,"not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009)"

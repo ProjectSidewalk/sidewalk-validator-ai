@@ -776,44 +776,100 @@ def fig_leaderboard(b, path):
     plt.close(fig)
 
 
+def heatmap_subtitle(b):
+    """One data-driven line for the heatmap: the gap to the best full-coverage VLM, and the VLM range on the
+    strongest and weakest type against round 3.
+
+    >>> import pandas as pd
+    >>> b = pd.DataFrame({"leg": ["round3", "v1", "v2"], "model_class": ["purpose-trained", "chat VLM", "chat VLM"],
+    ...                   "full": [True, True, True], "macro_auc": [0.9, 0.8, 0.7],
+    ...                   "auc_CurbRamp": [0.95, 0.8, 0.7], "auc_NoCurbRamp": [0.9, 0.6, 0.5],
+    ...                   "auc_Obstacle": [0.85, 0.55, 0.5], "auc_SurfaceProblem": [0.85, 0.7, 0.7],
+    ...                   "auc_Crosswalk": [0.97, 0.95, 0.9]})
+    >>> heatmap_subtitle(b)
+    'Round 3 leads the best VLM by 0.100 macro-AUC. VLMs: 0.90–0.95 on Crosswalk, 0.50–0.55 on Obstacle (round 3: 0.85).'
+    """
+    full = b[b.full.astype(bool)]
+    r3 = full[full.leg == "round3"]
+    vlm = full[full.model_class != "purpose-trained"]
+    if r3.empty or vlm.empty:
+        return "Macro = mean of the five type AUCs; test = trained deployments, held-out = unseen ones; — = not scored."
+    r3 = r3.iloc[0]
+    gap = float(r3.macro_auc) - float(vlm.macro_auc.max())
+    med = {t: float(vlm[f"auc_{t}"].median()) for t in LABEL_TYPES}
+    hi, lo = max(med, key=med.get), min(med, key=med.get)
+    rng = lambda t: f"{vlm[f'auc_{t}'].min():.2f}–{vlm[f'auc_{t}'].max():.2f}"
+    return (f"Round 3 leads the best VLM by {gap:.3f} macro-AUC. VLMs: {rng(hi)} on {hi}, {rng(lo)} on {lo} "
+            f"(round 3: {getattr(r3, f'auc_{lo}'):.2f}).")
+
+
 def fig_by_type(b, path):
+    """The RampNet-style heatmap: legs as rows (full-coverage rows ranked by macro-AUC above the rule, partial rows
+    below it), the five types as columns, the boxed macro column, then the test / held-out split columns."""
     plt = _plt()
     from matplotlib.colors import BoundaryNorm, ListedColormap
     cols = list(LABEL_TYPES) + ["macro", "test", "held-out"]
     keys = [f"auc_{t}" for t in LABEL_TYPES] + ["macro_auc", "auc_test", "auc_heldout"]
     n = len(b)
-    fig, ax = plt.subplots(figsize=(10, 1.6 + 0.42 * max(n, 1)), facecolor=SURFACE)
+    n_full = int(b.full.astype(bool).sum())
+    gap_rows = 0.9 if 0 < n_full < n else 0.0           # room for the caption between the two blocks
+    ypos = [i + (gap_rows if i >= n_full else 0.0) for i in range(n)]
+    height = (n + gap_rows) * 0.42 + 2.3
+    fig, ax = plt.subplots(figsize=(11, height), facecolor=SURFACE)
     ax.set_facecolor(SURFACE)
     cmap, norm = ListedColormap(SEQ), BoundaryNorm(np.linspace(0.5, 1.0, len(SEQ) + 1), len(SEQ))
-    xpos = [0, 1, 2, 3, 4, 5.4, 6.8, 7.8]
+    xpos = [0, 1, 2, 3, 4, 5.5, 7.0, 8.0]
     for i, r in enumerate(b.itertuples()):
-        for j, (x, k) in enumerate(zip(xpos, keys)):
+        y = ypos[i]
+        partial = not bool(r.full)
+        for x, k in zip(xpos, keys):
             v = getattr(r, k)
             ok = v is not None and not (isinstance(v, float) and np.isnan(v))
             c = cmap(norm(max(min(v, 0.999), 0.5))) if ok else EMPTY
-            ax.add_patch(plt.Rectangle((x - 0.46, i - 0.44), 0.92, 0.88, color=c, lw=0))
-            txt = (f"{v:.3f}" if k == "macro_auc" else f"{v:.2f}") if ok else "—"
+            ax.add_patch(plt.Rectangle((x - 0.46, y - 0.44), 0.92, 0.88, color=c, lw=0))
+            if ok and k == "macro_auc":
+                txt = f"{v:.3f}" + (f" ({int(r.n_types)}/{len(LABEL_TYPES)})" if partial and r.n_types < len(LABEL_TYPES)
+                                    else "")
+            else:
+                txt = f"{v:.2f}" if ok else "—"
             light = ok and norm(max(min(v, 0.999), 0.5)) >= 7
-            ax.text(x, i, txt, ha="center", va="center", fontsize=8, color="#ffffff" if light else INK,
-                    fontweight="bold" if k == "macro_auc" else None)
-    n_full = int(b.full.astype(bool).sum())
-    if 0 < n_full < n:
-        ax.axhline(n_full - 0.5, color=INK2, lw=0.8)
-    ax.set_xlim(-0.6, 8.4)
-    ax.set_ylim(n - 0.5, -0.5)
+            ax.text(x, y, txt, ha="center", va="center", fontsize=7.5 if len(txt) > 5 else 8,
+                    color="#ffffff" if light else INK, fontweight="bold" if k == "macro_auc" else None)
+    # the boxed macro column, one box per block
+    for lo_i, hi_i in ((0, n_full), (n_full, n)):
+        if hi_i > lo_i:
+            ax.add_patch(plt.Rectangle((xpos[5] - 0.52, ypos[lo_i] - 0.5), 1.04, ypos[hi_i - 1] - ypos[lo_i] + 1.0,
+                                       fill=False, ec=INK, lw=1.2))
+    # column-group headers with a rule under each
+    for x0, x1, label, bold in ((xpos[0], xpos[4], "label type (AUC on every held-out crop)", False),
+                                (xpos[5], xpos[5], "macro ▼", True), (xpos[6], xpos[7], "split", False)):
+        ax.text((x0 + x1) / 2, -0.95, label, ha="center", va="bottom", fontsize=8.5, color=INK if bold else INK2,
+                fontweight="bold" if bold else None)
+        ax.plot([x0 - 0.46, x1 + 0.46], [-0.72, -0.72], color=BASELINE, lw=1.0)
+    if gap_rows:
+        yr = ypos[n_full] - 0.5 - gap_rows
+        ax.plot([xpos[0] - 0.6, xpos[7] + 0.6], [yr, yr], color=INK2, lw=0.8)
+        ax.text(xpos[0] - 0.46, yr + gap_rows / 2, "Partial coverage: AUC on the crops each leg scored (count in "
+                "the row label); not ranked against the rows above.", fontsize=7.5, color=INK2, style="italic",
+                va="center")
+    ax.set_xlim(-0.6, 8.6)
+    ax.set_ylim(ypos[-1] + 0.5, -1.4)
     ax.set_xticks(xpos)
     ax.set_xticklabels(cols, fontsize=8.5, rotation=30, ha="right")
-    ax.set_yticks(range(n))
-    ax.set_yticklabels([("" if bool(r.full) else "(partial) ") + r.display for r in b.itertuples()], fontsize=8.5)
+    ax.set_yticks(ypos)
+    ax.set_yticklabels([r.display + ("" if bool(r.full) else f" ({int(r.n):,} crops)") for r in b.itertuples()],
+                       fontsize=8.5)
+    for lab, r in zip(ax.get_yticklabels(), b.itertuples()):
+        if r.leg == "round3":
+            lab.set_fontweight("bold")
     for s in ax.spines.values():
         s.set_visible(False)
     ax.tick_params(length=0, colors=INK2)
-    _titles(ax, "AUC by model and label type", "Macro = mean of the five type AUCs; test = trained deployments, "
-            "held-out = unseen ones; — = not scored.")
-    fig.text(0.01, 0.035, "Partial rows (below the rule) are on the crops they scored, not comparable row-for-row "
-             "with the full rows.", fontsize=7, color=MUTED)
+    _titles(ax, "AUC by model and label type", heatmap_subtitle(b))
+    fig.text(0.01, 0.035, "Macro = mean of the five type AUCs; test = trained deployments, held-out = unseen ones; "
+             "— = not scored.", fontsize=7, color=MUTED)
     fig.text(0.01, 0.005, FOOTNOTE, fontsize=7, color=MUTED)
-    fig.tight_layout(rect=(0, 0.08, 1, 1))
+    fig.tight_layout(rect=(0, 0.07, 1, 1))
     fig.savefig(path, dpi=150, facecolor=SURFACE)
     plt.close(fig)
 

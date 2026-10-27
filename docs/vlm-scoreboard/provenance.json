@@ -307,6 +307,13 @@
   "scores/muse-glimmer-30b/SurfaceProblem.meta.json": {
    "sha256": "020f5e017f68fda79f3639ca961f9310b72fb6c932a7e85879aee00e5b074ccc"
   },
+  "scores/nemotron3.5-super-vl-120b/CurbRamp.csv": {
+   "rows": 1792,
+   "sha256": "3ea2f0cd203b877adcd72b611ee0c4a1541ae6153ec0244f4d7b7a8d987f4097"
+  },
+  "scores/nemotron3.5-super-vl-120b/CurbRamp.meta.json": {
+   "sha256": "361dc3fabdf699bef083c4346db182924c40165e88616ffa13eddbb4b593636e"
+  },
   "scores/notes.json": {
    "sha256": "cb4dba8dd0d46528173009ed3b98001536c0cc992313a197bd264d833ee9f51e"
   },
