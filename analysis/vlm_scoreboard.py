@@ -467,7 +467,8 @@ def build_aggregates(scores_dir, public, n_boot=N_BOOT, seed=SEED, min_city_n=30
             per_dep += per_deployment_rows(leg, df, names, public, min_city_n)
     board = order_board(pd.DataFrame(board))
     out = {"board": board, "per_type": pd.DataFrame(per_type), "paired": pd.DataFrame(paired),
-           "per_deployment": pd.DataFrame(per_dep), "coverage": pd.DataFrame(coverage_rows(legs, splits, notes, unscored)),
+           "per_deployment": pd.DataFrame(per_dep),
+           "coverage": pd.DataFrame(coverage_rows(legs, splits, notes, unscored)),
            "timing": timing_rows(timing)}
     if len(out["per_type"]):
         out["per_type"] = out["per_type"].assign(order=out["per_type"].leg.map(
