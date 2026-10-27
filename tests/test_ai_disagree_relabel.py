@@ -14,7 +14,7 @@ def _pool(rows):
     """A pool DataFrame as ``load_pool`` returns it, from dicts with defaults for the columns a test does not set."""
     base = {"schema": "sidewalk_x", "label_type": "CurbRamp", "severity": 1, "tags": np.nan, "ai_vote": "Disagree",
             "ai_accuracy": 0.95, "h_agree": 0, "h_dis": 0, "h_unsure": 0, "expert1": np.nan, "expert2": np.nan,
-            "pano_id": "p", "heading": 0.0, "pitch": 0.0}
+            "expert1_labeled": "f", "pano_id": "p", "heading": 0.0, "pitch": 0.0}
     df = pd.DataFrame([{**base, "label_id": i + 1, **r} for i, r in enumerate(rows)])
     buf = io.StringIO()
     df.to_csv(buf, index=False)
@@ -38,13 +38,38 @@ def test_crowd_majority_and_ties():
     assert p.crowd[0] == "Agree" and pd.isna(p.crowd[1]) and p.crowd[2] == "Disagree"
 
 
-def test_candidates_exclude_rater_votes_and_rank_agree_before_unsure():
-    rows = ([{"ai_vote": "Agree"} for _ in range(3)] + [{"ai_vote": "Unsure"} for _ in range(3)]
-            + [{"ai_vote": "Agree", "expert1": "Agree"}])
+def test_groups_need_two_decisive_votes_and_lone_means_no_vote_at_all():
+    d = pd.DataFrame({"ai_vote": ["Disagree"] * 4, "h_agree": [1, 0, 0, 2], "h_dis": [0, 0, 0, 0],
+                      "h_unsure": [0, 1, 0, 3]})
+    assert list(rl.assign_group(d)) == [None, None, "lone_disagree", "voted_disagree"]
+
+
+def test_candidates_exclude_labels_the_rater_voted_on_or_placed():
+    rows = [{}, {"expert1": "Agree"}, {"expert1_labeled": "t"}, {"ai_vote": "Agree"},
+            {"ai_vote": "Agree", "expert1_labeled": "t"}]
     c = rl.candidates(_pool(rows), seed="s", per_cell=2, oversample=2)
-    assert len(c) == 4 and (c.cell == "decoy").all()
-    assert list(c.group) == ["decoy_agree"] * 3 + ["decoy_unsure"]
-    assert c.expert1.isna().all()
+    assert sorted(c.label_id) == [1, 4]
+
+
+def test_decoys_rank_agree_before_unsure_within_a_city():
+    rows = [{}] + [{"ai_vote": "Unsure"} for _ in range(6)] + [{"ai_vote": "Agree"}]
+    c = rl.candidates(_pool(rows), seed="s", per_cell=1, oversample=2)
+    dec = c[c.cell == "decoy"]
+    assert list(dec.group) == ["decoy_agree", "decoy_unsure"]
+    picked, _ = rl.pick(c, set(c.label_uid), "s", per_cell=1)
+    assert list(picked[picked.cell == "decoy"].ai_vote) == ["Agree"]
+
+
+def test_decoys_follow_the_disagree_items_cities():
+    rows = ([{"schema": "sidewalk_a"} for _ in range(3)] + [{"schema": "sidewalk_b", "h_agree": 2}]
+            + [{"schema": s, "ai_vote": "Agree"} for s in ("sidewalk_a", "sidewalk_b", "sidewalk_c")
+               for _ in range(5)])
+    c = rl.candidates(_pool(rows), seed="s", per_cell=4, oversample=5)
+    assert set(c[c.cell == "decoy"].schema) == {"sidewalk_a", "sidewalk_b"}   # no Disagree item in sidewalk_c
+    picked, short = rl.pick(c, set(c.label_uid), "s", per_cell=4)
+    dec = picked[picked.cell == "decoy"]
+    assert len(dec) == 4 and dec.schema.value_counts().to_dict() == {"sidewalk_a": 3, "sidewalk_b": 1}
+    assert dec.label_uid.is_unique
 
 
 def test_candidates_are_deterministic_in_the_seed():
@@ -57,7 +82,7 @@ def test_candidates_are_deterministic_in_the_seed():
 def test_pick_skips_unavailable_and_reports_shortfall():
     c = rl.candidates(_pool([{} for _ in range(4)]), "s", per_cell=3, oversample=2)
     avail = set(c.label_uid[:2])
-    picked, short = rl.pick(c, avail, per_cell=3)
+    picked, short = rl.pick(c, avail, "s", per_cell=3)
     assert set(picked.label_uid) == avail
     assert short["lone_disagree/CurbRamp"] == 1
     assert short["decoy/Obstacle"] == 3
@@ -73,11 +98,10 @@ def test_make_key_masks_with_unique_ids_and_is_seeded():
 
 
 def test_schema_dir_map_prefixes_and_ambiguity():
-    m = rl.schema_dir_map(["sidewalk_columbus", "sidewalk_new_taipei", "sidewalk_taipei", "sidewalk_x"],
-                          ["columbus-oh", "new-taipei-tw", "taipei", "x-a", "x-b"])
-    assert m == {"sidewalk_columbus": "columbus-oh", "sidewalk_new_taipei": "new-taipei-tw",
-                 "sidewalk_taipei": "taipei"}
-    assert rl.crop_path(m, "sidewalk_taipei", "Obstacle", 12) == "/www/sidewalk/prod/images/taipei/Obstacle/crop_12.png"
+    m = rl.schema_dir_map(["sidewalk_foo", "sidewalk_new_bar", "sidewalk_bar", "sidewalk_x"],
+                          ["foo-xx", "new-bar-yy", "bar", "x-a", "x-b"])
+    assert m == {"sidewalk_foo": "foo-xx", "sidewalk_new_bar": "new-bar-yy", "sidewalk_bar": "bar"}
+    assert rl.crop_path(m, "sidewalk_bar", "Obstacle", 12) == "/www/sidewalk/prod/images/bar/Obstacle/crop_12.png"
     assert rl.crop_path(m, "sidewalk_x", "Obstacle", 12) is None
 
 
@@ -87,7 +111,7 @@ def _key():
         "group": ["lone_disagree", "lone_disagree", "voted_disagree", "voted_disagree", "decoy_agree", "decoy_unsure"],
         "label_type": ["CurbRamp"] * 6,
         "ai_vote": ["Disagree", "Disagree", "Disagree", "Disagree", "Agree", "Unsure"],
-        "crowd": [None, None, "Disagree", "Agree", "Agree", None]})
+        "crowd": [None, None, "Agree", "Agree", "Agree", None]})
 
 
 def test_unmask_requires_exact_coverage_and_known_verdicts():
@@ -107,10 +131,46 @@ def test_score_table_precision_cant_tell_and_crowd():
     assert (lone.n, lone.k, lone.cant_tell) == (1, 1, 1)
     voted = t.loc[("voted_disagree", "all")]
     assert (voted.n, voted.k) == (2, 0)          # the expert called both correct: both AI Disagrees wrong
-    assert voted.crowd_rate == 0.5               # the crowd got r4 (Agree) right, r3 (Disagree) wrong
+    assert voted.crowd_rate == 1.0               # crowd said Agree on both and the expert called both correct
     assert t.loc[("decoy_agree", "all")].rate == 1.0
     assert t.loc[("decoy_unsure", "all")].k == 1
     assert ("lone_disagree", "Obstacle") not in t.index
+
+
+def test_score_table_population_weighting():
+    key = pd.DataFrame({"packet_id": [f"r{i}" for i in range(4)], "group": ["lone_disagree"] * 4,
+                        "label_type": ["CurbRamp", "CurbRamp", "Obstacle", "Obstacle"], "ai_vote": ["Disagree"] * 4,
+                        "crowd": [None] * 4})
+    sheet = pd.DataFrame({"packet_id": key.packet_id, "verdict": ["incorrect", "incorrect", "correct", "correct"]})
+    pop = {"lone_disagree": {"CurbRamp": 900, "Obstacle": 100}}
+    row = rl.score_table(rl.unmask(key, sheet), pop).set_index(["group", "label_type"]).loc[("lone_disagree", "all")]
+    assert row.rate == 0.5 and row.w_rate == pytest.approx(0.9)
+
+
+def test_wilson_interval_is_95_percent():
+    r = rl._rate(8, 10)
+    assert (round(r["lo"], 4), round(r["hi"], 4)) == (0.4902, 0.9433)
+
+
+def test_confirm_rows_need_two_decisive_votes_and_a_majority():
+    p = _pool([{"h_dis": 1}, {"h_agree": 1, "h_dis": 1}, {"h_dis": 2}, {"h_agree": 2, "h_dis": 1}])
+    c = rl.confirm_rows(p)
+    assert list(c.label_id) == [3, 4] and list(c.confirmed) == [True, False]
+
+
+def test_breakdown_keeps_missing_severity_and_lone_counts_respect_unsure():
+    rows = ([{"severity": np.nan, "h_dis": 2}] * 2 + [{"severity": np.nan}] * 3
+            + [{"severity": np.nan, "h_unsure": 1}])
+    p = _pool(rows)
+    b = rl.breakdown(p, "severity", min_n=1)
+    assert list(b.severity) == ["(none)"] and b.Disagree_n.iloc[0] == 2
+    assert rl.lone_counts(p, "severity").lone_disagree.tolist() == [3]
+
+
+def test_breakdown_markdown_keeps_lone_only_cells():
+    p = _pool([{"tags": "rare"}] * 3 + [{"tags": "common", "h_dis": 2}] * 3)
+    md = rl.breakdown_markdown(p, min_n=3)
+    assert "| CurbRamp | rare |" in md and "| CurbRamp | common |" in md
 
 
 def test_breakdown_explodes_tags_and_blanks_small_cells():

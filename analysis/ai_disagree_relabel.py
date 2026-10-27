@@ -17,11 +17,13 @@ asks an expert to re-label a random sample with the AI and crowd verdicts masked
     A type with too few Agree votes is topped up with labels the AI abstained on (Unsure): Obstacle, whose old map
     never let an Agree clear the gate, has 7. They mask the verdict as well; they are scored apart and give no AI precision.
 
-Labels the rater (``EXPERT1_ID`` in the pull) has already voted on are excluded, so the rater has not seen them.
-Within each (group, type) cell candidates are ranked by a seeded hash of ``city:label_id`` and the first ones with a
-crop on the server are taken. The rater sees the site's own crop of the label (what Validate shows) with a ring at
-the label's position, the label type, and a Street View link to the same pano; nothing about the AI, the crowd, the
-city or the labeler. Item ids are random and the order is shuffled with a secret seed.
+Labels the rater (``EXPERT1_ID`` in the pull) has voted on or placed are excluded. Within each Disagree cell
+candidates are ranked by a seeded hash of ``city:label_id`` and the first ones with a crop on the server are taken;
+the decoys are then drawn city by city in proportion to the Disagree items, so the place (which the imagery and the
+Street View link show) does not separate decoys from Disagree items. It can still hint lone from crowd-voted, which
+does not reveal the AI's verdict. The rater sees the site's own crop of the label (what Validate shows) with a ring at
+the label's position, the label type, and a Street View link to the same pano; nothing about the AI, the crowd or
+the labeler. Item ids are random and the order is shuffled with a secret seed.
 
 Subcommands (every file with label-level rows goes OUTSIDE the repo, under ``~/Data/...``):
 
@@ -51,6 +53,7 @@ import argparse
 import hashlib
 import io
 import json
+import math
 import os
 import shlex
 import subprocess
@@ -62,7 +65,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from analysis.rating_page import render_page  # noqa: E402
-from calibration.per_city import wilson_interval  # noqa: E402
+from calibration.per_city import Z95, wilson_interval  # noqa: E402
 
 LABEL_TYPES = ("CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk")
 GROUPS = ("lone_disagree", "voted_disagree", "decoy_agree", "decoy_unsure")
@@ -126,31 +129,71 @@ def seeded_rank(seed, label_uid):
     return int(hashlib.sha256(f"{seed}:{label_uid}".encode()).hexdigest()[:16], 16)
 
 
-def candidates(pool, seed, per_cell=PER_CELL, oversample=OVERSAMPLE):
-    """The ranked candidates: up to ``per_cell * oversample`` per (cell, label type), in ``rank`` order; in the
-    ``decoy`` cell every ``decoy_agree`` row comes before any ``decoy_unsure`` row.
+def eligible(pool):
+    """Rows of ``LABEL_TYPES`` that the rater has neither voted on (``expert1`` empty) nor placed
+    (``expert1_labeled``)."""
+    placed = pool.expert1_labeled.astype(str).str.lower().isin(["t", "true"]) if "expert1_labeled" in pool else False
+    return pool[pool.label_type.isin(LABEL_TYPES) & pool.expert1.isna() & ~placed]
 
-    Only rows with a group, one of ``LABEL_TYPES``, and no vote from the rater (``expert1`` empty).
+
+def candidates(pool, seed, per_cell=PER_CELL, oversample=OVERSAMPLE):
+    """The ranked candidates, ``rank`` ascending: up to ``per_cell * oversample`` per Disagree cell and label type,
+    and for the ``decoy`` cell up to ``oversample`` per label type and city, only in cities that have Disagree
+    candidates of that type (the decoys are matched to the Disagree items on city; :func:`pick`). Within a decoy
+    city every ``decoy_agree`` row comes before any ``decoy_unsure`` row. Only :func:`eligible` rows.
     """
-    d = pool[pool.label_type.isin(LABEL_TYPES) & pool.expert1.isna()].copy()
+    d = eligible(pool).copy()
     d["group"] = assign_group(d)
     d = d[d.group.notna()]
     d["cell"] = d.group.where(~d.group.str.startswith("decoy"), "decoy")
     d["rank"] = [seeded_rank(seed, u) for u in d.label_uid]
     d["fallback"] = d.group == "decoy_unsure"
     d = d.sort_values(["cell", "label_type", "fallback", "rank"])
-    return d.groupby(["cell", "label_type"], sort=False).head(per_cell * oversample).reset_index(drop=True)
+    dis = d[d.cell != "decoy"].groupby(["cell", "label_type"], sort=False).head(per_cell * oversample)
+    dec = d[d.cell == "decoy"].merge(dis[["label_type", "schema"]].drop_duplicates(), on=["label_type", "schema"],
+                                     validate="many_to_one")
+    dec = dec.sort_values(["label_type", "schema", "fallback", "rank"]).groupby(["label_type", "schema"],
+                                                                               sort=False).head(oversample)
+    return pd.concat([dis, dec], ignore_index=True)
 
 
-def pick(cands, available, per_cell=PER_CELL):
-    """``(picked, shortfall)``: the first ``per_cell`` candidates per cell, in rank order, whose ``label_uid`` is in
-    ``available``; ``shortfall`` maps each cell that came up short to how many it is missing."""
+def pick(cands, available, seed, per_cell=PER_CELL):
+    """``(picked, shortfall)``. Each Disagree cell takes its first ``per_cell`` candidates, in rank order, whose
+    ``label_uid`` is in ``available``. The decoys of a label type then follow the picked Disagree items' cities:
+    those items are put in a seeded order, and each in turn gives one decoy slot in its city, filled with the best
+    unused available decoy there (Agree before Unsure), until ``per_cell`` decoys are found. So a city's share of
+    the decoys tracks its share of the Disagree items, and the place does not tell the rater which is which.
+    ``shortfall`` maps each cell that came up short to how many it is missing."""
     ok = cands[cands.label_uid.isin(available)]
-    picked = ok.groupby(["cell", "label_type"], sort=False).head(per_cell).reset_index(drop=True)
+    dis = ok[ok.cell != "decoy"].groupby(["cell", "label_type"], sort=False).head(per_cell)
+    dec_pool = ok[ok.cell == "decoy"].sort_values(["fallback", "rank"])
+    decoys = []
+    for t in LABEL_TYPES:
+        slots = dis[dis.label_type == t]
+        slots = slots.iloc[np.argsort([seeded_rank(f"{seed}:slot", u) for u in slots.label_uid], kind="stable")]
+        used, n = set(), 0
+        for schema in slots.schema:
+            if n == per_cell:
+                break
+            c = dec_pool[(dec_pool.label_type == t) & (dec_pool.schema == schema) & ~dec_pool.label_uid.isin(used)]
+            if len(c):
+                used.add(c.label_uid.iloc[0])
+                decoys.append(c.iloc[0])
+                n += 1
+    picked = pd.concat([dis, pd.DataFrame(decoys)], ignore_index=True) if decoys else dis.reset_index(drop=True)
     counts = picked.groupby(["cell", "label_type"]).size()
     shortfall = {f"{g}/{t}": per_cell - int(counts.get((g, t), 0)) for g in CELLS for t in LABEL_TYPES
                  if counts.get((g, t), 0) < per_cell}
     return picked, shortfall
+
+
+def population(pool):
+    """``{group: {label_type: count}}`` of the eligible labels in each Disagree group: the strata weights that turn
+    the per-type precisions into a population estimate (:func:`weighted_rate`)."""
+    d = eligible(pool).copy()
+    d["group"] = assign_group(d)
+    return {g: {t: int(((d.group == g) & (d.label_type == t)).sum()) for t in LABEL_TYPES}
+            for g in ("lone_disagree", "voted_disagree")}
 
 
 def make_key(picked, seed):
@@ -172,9 +215,9 @@ def schema_dir_map(schemas, dirs):
     it plus ``_`` (``sidewalk_columbus`` -> ``columbus-oh``). A directory that exactly matches another schema is
     never a prefix match (``la-piedad`` is not ``sidewalk_la``'s). Ambiguous prefixes are left out.
 
-    >>> schema_dir_map(["sidewalk_la", "sidewalk_la_piedad", "sidewalk_dc", "sidewalk_zurich"],
-    ...                ["la-ca", "la-piedad", "washington-dc", "zurich", "zurich-infra3d"])
-    {'sidewalk_la': 'la-ca', 'sidewalk_la_piedad': 'la-piedad', 'sidewalk_dc': 'washington-dc', 'sidewalk_zurich': 'zurich'}
+    >>> schema_dir_map(["sidewalk_foo", "sidewalk_foo_bar", "sidewalk_dc", "sidewalk_baz"],
+    ...                ["foo-xx", "foo-bar", "washington-dc", "baz", "baz-qux"])
+    {'sidewalk_foo': 'foo-xx', 'sidewalk_foo_bar': 'foo-bar', 'sidewalk_dc': 'washington-dc', 'sidewalk_baz': 'baz'}
     """
     cities = {s: s[len("sidewalk_"):] for s in schemas}
     norm = {d: d.replace("-", "_") for d in dirs}
@@ -215,6 +258,27 @@ def _rate(k, n):
     return {"n": int(n), "k": int(k), "rate": k / n if n else np.nan, "lo": float(lo), "hi": float(hi)}
 
 
+def weighted_rate(per_type, weights):
+    """Population estimate from per-type rates of a stratified sample: ``(rate, lo, hi)``, the strata weighted by
+    ``weights`` (population counts), with a normal-approximation 95% interval from the stratified variance
+    ``sum(w^2 p (1 - p) / n)``. ``per_type``: ``{type: (k, n)}``; types with ``n == 0`` are left out and the
+    weights renormalised over the rest.
+
+    >>> r, lo, hi = weighted_rate({"A": (5, 10), "B": (9, 10)}, {"A": 300, "B": 100})
+    >>> round(r, 3), round(lo, 3), round(hi, 3)
+    (0.6, 0.363, 0.837)
+    """
+    ts = [t for t, (k, n) in per_type.items() if n and weights.get(t)]
+    if not ts:
+        return np.nan, np.nan, np.nan
+    tot = sum(weights[t] for t in ts)
+    w = {t: weights[t] / tot for t in ts}
+    p = {t: per_type[t][0] / per_type[t][1] for t in ts}
+    rate = sum(w[t] * p[t] for t in ts)
+    se = math.sqrt(sum(w[t] ** 2 * p[t] * (1 - p[t]) / per_type[t][1] for t in ts))
+    return float(rate), max(0.0, rate - Z95 * se), min(1.0, rate + Z95 * se)
+
+
 def unmask(key, sheet):
     """Key rows joined with the rater's verdicts; raises unless the sheet covers exactly the key's items."""
     sheet = sheet[["packet_id", "verdict"]].copy()
@@ -235,10 +299,12 @@ def ai_right(row_vote, verdict):
         (row_vote == "Disagree" and verdict == "incorrect")
 
 
-def score_table(m):
+def score_table(m, population=None):
     """Per group and per (group, type): AI precision against the expert (can't-tell and blank excluded), with the
     can't-tell count; for ``decoy_unsure`` the share the expert called correct. On ``voted_disagree`` also the crowd
-    majority's agreement with the expert. Cells with no items are dropped."""
+    majority's agreement with the expert. Cells with no items are dropped. With ``population`` (:func:`population`),
+    each Disagree group's ``all`` row also carries the population-weighted estimate (``w_rate``, ``w_lo``,
+    ``w_hi``); the plain ``rate`` there weights every type equally, as the sample does, and is not one."""
     rows = []
     decided = m[m.verdict.isin(["correct", "incorrect"])]
     for keys, g in [((grp, "all"), decided[decided.group == grp]) for grp in GROUPS] + \
@@ -255,7 +321,16 @@ def score_table(m):
             row.update(crowd_n=c["n"], crowd_rate=c["rate"], crowd_lo=c["lo"], crowd_hi=c["hi"])
         if len(sub):
             rows.append(row)
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    if population:
+        for grp, weights in population.items():
+            g = decided[decided.group == grp]
+            per_type = {t: (sum(ai_right(v, r) for v, r in zip(s.ai_vote, s.verdict)), len(s))
+                        for t, s in ((t, g[g.label_type == t]) for t in LABEL_TYPES)}
+            i = out.index[(out.group == grp) & (out.label_type == "all")]
+            if len(i):
+                out.loc[i, ["w_rate", "w_lo", "w_hi"]] = weighted_rate(per_type, weights)
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -279,7 +354,7 @@ def breakdown(pool, by, min_n=100):
         d = d.assign(tag=d.tags.fillna("").str.split(";")).explode("tag")
         d["tag"] = d.tag.replace("", "(none)")
     else:
-        d[by] = d[by].astype("Int64").astype(str).replace("<NA>", "(none)")
+        d[by] = d[by].astype("Int64").astype(str).fillna("(none)").replace("<NA>", "(none)")
     rows = []
     for (t, v), g in d.groupby(["label_type", by]):
         row = {"label_type": t, by: v}
@@ -302,22 +377,26 @@ def lone_counts(pool, by):
         d = d.assign(tag=d.tags.fillna("").str.split(";")).explode("tag")
         d["tag"] = d.tag.replace("", "(none)")
     else:
-        d[by] = d[by].astype("Int64").astype(str).replace("<NA>", "(none)")
+        d[by] = d[by].astype("Int64").astype(str).fillna("(none)").replace("<NA>", "(none)")
     return d.groupby(["label_type", by]).size().rename("lone_disagree").reset_index()
 
 
 def _pct(r, lo, hi):
-    return "" if pd.isna(r) else f"{100 * r:.1f}% [{100 * lo:.0f}, {100 * hi:.0f}]"
+    return "" if pd.isna(r) else f"{100 * r:.1f}% [{100 * lo:.1f}, {100 * hi:.1f}]"
 
 
 def breakdown_markdown(pool, min_n=100):
     """Both breakdowns as Markdown tables (aggregates only: no label ids, no city names)."""
     out = []
     for by in ("severity", "tag"):
-        b = breakdown(pool, by, min_n).merge(lone_counts(pool, by), on=["label_type", by], how="left",
+        b = breakdown(pool, by, min_n).merge(lone_counts(pool, by), on=["label_type", by], how="outer",
                                              validate="one_to_one")
         b["lone_disagree"] = b.lone_disagree.fillna(0).astype(int)
-        out.append(f"\n### By {by} (human majority of at least 2; cells under {min_n} votes left blank)\n")
+        for c in ("Agree_n", "Disagree_n"):
+            b[c] = b[c].fillna(0).astype(int)
+        b = b[(b.Agree_n >= min_n) | (b.Disagree_n >= min_n) | (b.lone_disagree >= min_n)]
+        out.append(f"\n### By {by} (human majority of at least 2; rates with under {min_n} votes left blank; rows "
+                   f"shown when any column reaches {min_n})\n")
         out.append(f"| Type | {by.capitalize()} | AI Agree confirmed | n | AI Disagree confirmed | n | "
                    "hidden by a lone AI Disagree |")
         out.append("|---|---|---:|---:|---:|---:|---:|")
@@ -418,9 +497,9 @@ def intro_html():
     hints = "".join(f"<li><strong>{t}</strong>: {h}</li>" for t, h in TYPE_HINTS.items())
     return ("<p>Each card shows one Project Sidewalk label: the image a validator sees, with a yellow ring at the "
             "label's position, and its label type. Is it a <strong>correct</strong> label of that type at that "
-            "spot? Use the Street View link when the image is not enough. Some of these labels the AI voted Agree "
-            "on and some Disagree; nothing on the card says which. Judge severity and tags as irrelevant: only "
-            "whether the label type is right.</p><ul>" + hints + "</ul>")
+            "spot? Use the Street View link when the image is not enough. The AI voted Disagree on some of these "
+            "labels and Agree on others, or abstained; nothing on the card says which. Ignore severity and tags: "
+            "judge only whether the label type is right.</p><ul>" + hints + "</ul>")
 
 
 def cmd_build(args):
@@ -431,7 +510,7 @@ def cmd_build(args):
     cands = candidates(pool, args.seed, args.per_cell, args.oversample)
     print(f"{len(cands):,} candidates over {cands.groupby(['cell', 'label_type']).ngroups} cells")
     dir_map, markers = crop_status(args.host, cands)
-    picked, shortfall = pick(cands, set(markers), args.per_cell)
+    picked, shortfall = pick(cands, set(markers), args.seed, args.per_cell)
     if shortfall:
         print(f"WARNING: cells short of {args.per_cell}: {shortfall}")
     picked["marker_x"] = [markers[u][0] for u in picked.label_uid]
@@ -467,7 +546,7 @@ def cmd_build(args):
     key[KEY_COLUMNS + ["crowd", "pano_id"]].to_csv(kpath, index=False)
     manifest = {"pool_sha256": sha256_file(args.pool), "key_sha256": sha256_file(kpath),
                 "seed_sha256": hashlib.sha256(str(args.seed).encode()).hexdigest(), "items": len(key),
-                "per_cell": args.per_cell, "shortfall": shortfall,
+                "per_cell": args.per_cell, "shortfall": shortfall, "population": population(pool),
                 "groups": {f"{g}/{t}": int(n) for (g, t), n in key.groupby(["group", "label_type"]).size().items()}}
     with open(os.path.join(args.key_dir, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=1)
@@ -476,12 +555,17 @@ def cmd_build(args):
 
 def cmd_score(args):
     key = pd.read_csv(args.key, dtype={"tags": str, "expert2": str})
-    t = score_table(unmask(key, pd.read_csv(args.sheet, dtype=str, keep_default_na=False)))
-    print("| Group | Type | AI right (expert) | n | can't tell | crowd majority right (expert) |")
-    print("|---|---|---:|---:|---:|---:|")
+    mpath = args.manifest or os.path.join(os.path.dirname(os.path.abspath(args.key)), "manifest.json")
+    pop = json.load(open(mpath)).get("population") if os.path.exists(mpath) else None
+    t = score_table(unmask(key, pd.read_csv(args.sheet, dtype=str, keep_default_na=False)), pop)
+    print("| Group | Type | Expert agrees with the AI (sample) | n | can't tell | population-weighted | "
+          "crowd majority agrees with the expert |")
+    print("|---|---|---:|---:|---:|---:|---:|")
     for _, r in t.iterrows():
         crowd = _pct(r.get("crowd_rate"), r.get("crowd_lo"), r.get("crowd_hi")) if "crowd_rate" in r else ""
-        print(f"| {r.group} | {r.label_type} | {_pct(r.rate, r.lo, r.hi)} | {r.n} | {r.cant_tell} | {crowd} |")
+        w = _pct(r.get("w_rate"), r.get("w_lo"), r.get("w_hi")) if "w_rate" in r else ""
+        print(f"| {r.group} | {r.label_type} | {_pct(r.rate, r.lo, r.hi)} | {r.n} | {r.cant_tell} | {w} | {crowd} |")
+    print("\ndecoy_unsure rows are the share the expert called correct (the AI abstained): not an AI precision.")
     if t.unanswered.sum():
         print(f"\nWARNING: {int(t[t.label_type == 'all'].unanswered.sum())} items unanswered")
 
@@ -511,6 +595,7 @@ def build_parser():
     s = sub.add_parser("score", help="unmask a filled sheet against the key")
     s.add_argument("--key", required=True)
     s.add_argument("--sheet", required=True)
+    s.add_argument("--manifest", help="build's manifest.json (default: next to the key), for the population weights")
     s.set_defaults(func=cmd_score)
     d = sub.add_parser("breakdown", help="AI confirmation rate by severity and by tag, from the pool")
     d.add_argument("--pool", required=True)
