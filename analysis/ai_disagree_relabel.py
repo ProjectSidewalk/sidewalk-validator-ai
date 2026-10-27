@@ -593,6 +593,14 @@ GALLERY_MASK_CSS = """\
 #ps-tooltip { display: none !important; }
 .ai-icon { display: none !important; }
 """
+def mask_console_js(css=GALLERY_MASK_CSS):
+    """The masking CSS as a one-line snippet for the browser console (re-run after every page load)."""
+    flat = " ".join(css.split())
+    return ("(()=>{const s=document.createElement('style');s.id='ps-mask';s.textContent=" + json.dumps(flat)
+            + ";document.getElementById('ps-mask')?.remove();document.head.appendChild(s);"
+            "console.log('votes masked');})();")
+
+
 VOTE_TO_VERDICT = {"Agree": "correct", "Disagree": "incorrect", "Unsure": "cant_tell"}
 
 
@@ -690,14 +698,18 @@ pre {{ background:var(--panel); padding:12px; overflow-x:auto; white-space:pre-w
 <h1>AI Disagree re-label: {total} labels in {len(lists)} deployments</h1>
 <ol>
 <li>Sign in on any Project Sidewalk site once; the sign-in carries over to every deployment.</li>
-<li><strong>Before opening a list</strong>, make the masking CSS below apply on <code>*.cs.washington.edu</code>
-(a user-stylesheet extension such as Stylus, so it applies before the page draws). Check it once on a label whose
-votes you know: no counts, no vote icons, no tooltips.</li>
+<li><strong>Before opening a list</strong>, mask the votes, in one of two ways:
+<ul><li><strong>Recommended:</strong> add the <em>CSS</em> below to a user-stylesheet extension such as Stylus for
+<code>*.cs.washington.edu</code>. It applies before the page draws and on every page.</li>
+<li><strong>Or</strong> paste the <em>console snippet</em> below into the browser's developer console on each page.
+The cards show unmasked until you do.</li></ul>
+Check it once on a label whose votes you know: no counts, no vote icons, no tooltips.</li>
 <li>For each label, open it, pan around as needed, and vote <strong>Agree</strong> (correct label),
 <strong>Disagree</strong> (incorrect) or <strong>Unsure</strong> (can't tell). Your vote is the record.</li>
 </ol>
 <h2>Review lists</h2><ul>{rows}</ul>
-<h2>Masking CSS</h2><pre>{h.escape(GALLERY_MASK_CSS)}</pre>
+<h2>Masking CSS (for Stylus; not for the console)</h2><pre>{h.escape(GALLERY_MASK_CSS)}</pre>
+<h2>Console snippet (JavaScript; paste into the developer console)</h2><pre>{h.escape(mask_console_js())}</pre>
 </body></html>
 """
 
