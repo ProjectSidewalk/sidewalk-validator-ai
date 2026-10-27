@@ -10,8 +10,10 @@ comparable with the MLX and transformers legs. The score is ``vlm_baseline.yes_n
 - ``top20_mass_outside`` = 1 - (sum of the 20 returned probabilities): the mass vLLM did not show. It bounds how much
   yes/no mass could have been missed; it is near 0 when the answer tokens dominate (#16 found ~0.98 on yes/no).
 - ``answer_floor``: empty when both answers appeared; ``yes``, ``no`` or ``both`` when a side had no spelling in the
-  top 20. A missing side is given the 20th token's log-prob (an upper bound on any one unseen token), so the score is
-  still defined and conservative; ``both`` leaves ``p_incorrect`` at 0.5 and the row should be read as unscored.
+  top 20. A missing side is given an upper bound on its unseen mass, ``min(top20_mass_outside, k * p_20)`` with
+  ``k`` its number of spellings and ``p_20`` the smallest returned probability, so the score is still defined (it
+  overstates the missing side); ``both`` leaves ``p_incorrect`` at 0.5, and the scoreboard drops those rows as
+  unscored.
 
 **Thinking.** GLM-5.3-Flash's chat template always opens a ``<think>`` block in the generation prompt and has no
 switch to turn it off (the vLLM recipe: "Thinking is always on"). The template renders an assistant turn as
@@ -78,6 +80,7 @@ TOP_K = 20
 SCORE_COLUMNS = ["label_uid", "model", "variant", "p_yes", "p_no", "answer_mass", "log_odds_incorrect", "p_incorrect",
                  "p_correct", "top_token", "prompt_tokens", "latency_s", "batch_size", "gpu", "top20_mass_outside",
                  "answer_floor"]
+MIN_BOUND = 1e-12
 TIMING_COLUMNS = ["model", "gpu", "batch_size", "n_crops", "median_s_per_crop", "p90_s_per_crop", "source"]
 
 
@@ -89,12 +92,18 @@ def score_top_logprobs(top, yes_variants=vb.YES_VARIANTS, no_variants=vb.NO_VARI
     """The yes/no score from a top-k list of ``(token_string, logprob)`` pairs (one generated position).
 
     Every entry is a distinct token id, so two entries that decode to the same spelling are both counted. A side with
-    no spelling in the list gets the smallest returned log-prob as a stand-in (``answer_floor`` names the side).
+    no spelling in the list (``answer_floor`` names it) gets an upper bound on its unseen mass: each of its ``k``
+    spellings is a separate token that ranked below the list, so each has at most ``exp(floor)`` (the smallest
+    returned probability), and together they cannot exceed the mass outside the list. The stand-in is
+    ``min(top20_mass_outside, k * exp(floor))``. Being an upper bound, it pulls the score toward the missing side,
+    so a floored score overstates that side; it is a bound, not an estimate. A spelling that the tokenizer splits
+    into several tokens cannot be the first generated token and adds nothing, so ``k`` may overcount (the bound
+    stays an upper bound).
 
     >>> import math
     >>> s = score_top_logprobs([("Yes", math.log(0.9)), (" yes", math.log(0.05)), ("Maybe", math.log(0.01))])
-    >>> s["answer_floor"], round(s["p_incorrect"], 4), round(s["top20_mass_outside"], 4)
-    ('no', 0.0104, 0.04)
+    >>> s["answer_floor"], round(s["p_no"], 4), round(s["top20_mass_outside"], 4)
+    ('no', 0.04, 0.04)
     """
     if not top:
         raise ValueError("empty top-logprobs list")
@@ -103,16 +112,19 @@ def score_top_logprobs(top, yes_variants=vb.YES_VARIANTS, no_variants=vb.NO_VARI
     yes_ids = [i for i, t in enumerate(toks) if t in yes_variants]
     no_ids = [i for i, t in enumerate(toks) if t in no_variants]
     floor = min(lp)
+    outside = max(0.0, 1.0 - sum(math.exp(x) for x in lp))
     missing = [side for side, ids in (("yes", yes_ids), ("no", no_ids)) if not ids]
-    if "yes" in missing:
-        lp.append(floor)
-        yes_ids = [len(lp) - 1]
-    if "no" in missing:
-        lp.append(floor)
-        no_ids = [len(lp) - 1]
+    for side, variants in (("yes", yes_variants), ("no", no_variants)):
+        if side in missing:
+            # the 1e-12 keeps the log finite when rounding leaves nothing outside the list (``outside`` == 0)
+            bound = max(min(outside, len(set(variants)) * math.exp(floor)), MIN_BOUND)
+            lp.append(math.log(bound))
+            if side == "yes":
+                yes_ids = [len(lp) - 1]
+            else:
+                no_ids = [len(lp) - 1]
     out = vb.yes_no_score(np.array(lp), yes_ids, no_ids)
-    seen = sum(math.exp(x) for x in lp[:len(top)])
-    out["top20_mass_outside"] = max(0.0, 1.0 - seen)
+    out["top20_mass_outside"] = outside
     out["answer_floor"] = "both" if len(missing) == 2 else (missing[0] if missing else "")
     out["top_token"] = toks[int(np.argmax(lp[:len(top)]))]
     return out
@@ -178,14 +190,9 @@ def build_request(served_name, image_url, question, prefill=None, template_kwarg
 
 
 def load_heldout(data_root, label_type):
-    """Held-out rows of one type's ``split.csv`` with an absolute ``image`` column; ``label_uid`` must be unique."""
-    df = pd.read_csv(os.path.join(data_root, label_type, "split.csv"), dtype={"label_id": str})
-    df = df[df.split.isin(HELDOUT_SPLITS)].copy()
-    if df.label_uid.duplicated().any():
-        raise ValueError(f"{label_type}: duplicate label_uid in held-out rows")
-    df["label_type"] = label_type
-    df["image"] = [os.path.join(data_root, label_type, p) for p in df.crop_path]
-    return df
+    """Held-out rows of one type's ``split.csv`` with an absolute ``image`` column: ``vlm_baseline.load_split_rows``
+    (``status == "ok"`` only, unique ``label_uid``), so this leg scores exactly the transformers legs' crops."""
+    return vb.load_split_rows(data_root, label_type, HELDOUT_SPLITS).assign(label_type=label_type)
 
 
 def limit_rows(df, limit):
@@ -204,7 +211,7 @@ def check_owned(path, meta_path):
 
     >>> check_owned("/nonexistent/a.csv", "/nonexistent/a.meta.json")
     """
-    if os.path.exists(path):
+    if os.path.exists(path) and os.path.getsize(path) > 0:
         header = list(pd.read_csv(path, nrows=0).columns)
         if header != SCORE_COLUMNS:
             raise SystemExit(f"{path} was not written by vlm_vllm (columns {header}); use another --out-dir or --model")
@@ -213,13 +220,19 @@ def check_owned(path, meta_path):
 
 
 def done_uids(path):
-    """``label_uid`` values already in a score CSV (empty set when it does not exist)."""
-    return set(pd.read_csv(path, usecols=["label_uid"]).label_uid) if os.path.exists(path) else set()
+    """``label_uid`` values already in a score CSV (empty set when it does not exist). A partial last line left by a
+    killed job is cut off first (``vlm_baseline.truncate_partial_line``), so the next append starts a fresh row."""
+    if vb.truncate_partial_line(path):
+        print(f"{path}: dropped a partial last line (killed mid-write)", flush=True)
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        return set()
+    return set(pd.read_csv(path, usecols=["label_uid"]).label_uid)
 
 
 def append_rows(path, rows):
-    """Append rows to a score CSV in ``SCORE_COLUMNS`` order, writing the header only for a new file."""
-    pd.DataFrame(rows, columns=SCORE_COLUMNS).to_csv(path, mode="a", header=not os.path.exists(path), index=False)
+    """Append rows to a score CSV in ``SCORE_COLUMNS`` order, writing the header only for a new (or empty) file."""
+    new_file = not os.path.exists(path) or os.path.getsize(path) == 0
+    pd.DataFrame(rows, columns=SCORE_COLUMNS).to_csv(path, mode="a", header=new_file, index=False)
 
 
 def timing_row(model, gpu, batch_size, s_per_crop, source):
@@ -356,6 +369,7 @@ def _base_meta(args, version):
                         "chat_template_kwargs": args.template_kwargs},
             "thinking": args.thinking_note, "serve_args": os.environ.get("VLLM_SERVE_ARGS"),
             "yes_variants": list(vb.YES_VARIANTS), "no_variants": list(vb.NO_VARIANTS),
+            "answer_floor_rule": "missing side = min(top20_mass_outside, n_spellings * min top-20 prob)",
             "slurm_job_id": os.environ.get("SLURM_JOB_ID")}
 
 

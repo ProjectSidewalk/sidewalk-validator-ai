@@ -68,6 +68,10 @@ The batch-1 timing crops against the full runs (`scores/batch_invariance.csv`, 5
 median |dp| 0.0024 (Molmo2) to 0.012 (Gemma 4 12B), max 0.019 to 0.22 (Gemma 4 31B); legs run at batch 1
 reproduce their batch-1 timing scores exactly (0.0), so batch-1 runs are deterministic on one GPU type.
 
+MiniCPM-V 4.7's batch-1 timing run (job 42382210, 0.964 s/crop on g3130) is 3.7× slower than its full run at the
+same batch size on g3127 (0.264 s/crop), on the same crops and software; the cause is unknown (probably a shared
+node), and the full-run row is the one to quote (the board picks it: `run_speed` prefers a full run on a tie).
+
 ## Jobs
 
 | job | name | leg / purpose | GPU | wall | outcome |

@@ -241,6 +241,61 @@ def test_score_torch_fewshot_records_examples_and_adds_example_images(tmp_path, 
     assert not set(meta["fewshot_examples"]) & held
 
 
+class _DriftVlm(_StubVlm):
+    """A stub whose batch-of-N scores differ from batch-of-1 by ``drift`` in p_incorrect (a padding bug)."""
+    drift = 0.1
+
+    def score_batch(self, convs):
+        out, dt = super().score_batch(convs)
+        if len(convs) > 1:
+            out = [{**o, "p_incorrect": o["p_incorrect"] + _DriftVlm.drift} for o in out]
+        return out, dt
+
+
+def test_failed_batch_check_is_rechecked_on_the_next_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(vb, "TorchVlm", _DriftVlm)
+    monkeypatch.setattr(vb, "hf_snapshot", lambda repo: (None, None))
+    root, out = _split_root(tmp_path), tmp_path / "out"
+    meta_path = out / "scores" / "qwen3vl-8b-bf16" / "CurbRamp.meta.json"
+    with pytest.raises(RuntimeError, match="differ by up to"):
+        vb.run_score_torch(_args(root, out))
+    meta = json.loads(meta_path.read_text())
+    assert "batch_check" not in meta and meta["batch_check_failed"]["max_abs_dp"] == pytest.approx(0.1)
+    assert not (out / "scores" / "qwen3vl-8b-bf16" / "CurbRamp.csv").exists()
+    _StubVlm.calls.clear()
+    monkeypatch.setattr(_DriftVlm, "drift", 0.0)                 # the padding bug fixed: the rerun checks again
+    vb.run_score_torch(_args(root, out))
+    meta = json.loads(meta_path.read_text())
+    assert meta["batch_check"]["within_1e-3"] and _StubVlm.calls[:4] == [3, 1, 1, 1]
+
+
+def test_score_torch_resumes_after_a_torn_last_line(tmp_path, monkeypatch):
+    monkeypatch.setattr(vb, "TorchVlm", _StubVlm)
+    monkeypatch.setattr(vb, "hf_snapshot", lambda repo: (None, None))
+    root, out = _split_root(tmp_path), tmp_path / "out"
+    vb.run_score_torch(_args(root, out, limit=4))
+    path = out / "scores" / "qwen3vl-8b-bf16" / "CurbRamp.csv"
+    lines = path.read_text().splitlines(keepends=True)
+    torn_uid = lines[-1].split(",")[0]
+    path.write_text("".join(lines[:-1]) + lines[-1][:len(torn_uid) + 5])   # SIGKILL mid-row
+    vb.run_score_torch(_args(root, out))
+    full = pd.read_csv(path)
+    assert len(full) == 8 and full.label_uid.is_unique and torn_uid in set(full.label_uid)
+    assert full.notna().all().all()
+
+
+def test_truncate_partial_line(tmp_path):
+    p = tmp_path / "s.csv"
+    assert vb.truncate_partial_line(str(p)) == 0                 # missing file
+    p.write_text("label_uid,p\nx:1,0.5\nx:2,0.")
+    assert vb.truncate_partial_line(str(p)) == len("x:2,0.") and p.read_text() == "label_uid,p\nx:1,0.5\n"
+    p.write_text("label_u")                                      # torn header: emptied, and todo_rows sees no rows
+    vb.truncate_partial_line(str(p))
+    assert p.read_text() == ""
+    df = pd.DataFrame({"label_uid": ["a"]})
+    assert vb.todo_rows(df, str(p)).equals(df)
+
+
 def test_todo_rows_and_pilot_rows(tmp_path):
     df = pd.DataFrame({"label_uid": ["a", "b", "c"], "label_class": ["correct", "incorrect", "correct"]})
     p = tmp_path / "s.csv"

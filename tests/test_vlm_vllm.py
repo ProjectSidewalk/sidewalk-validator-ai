@@ -61,14 +61,33 @@ def test_outside_mass_is_never_negative():
 
 
 def test_missing_side_is_floored_and_flagged():
-    pairs = [("Yes", 0.9)] + [(f"t{i}", 0.004) for i in range(19)]
+    # "no" absent: its six spellings each have at most the floor (0.001), 6 x 0.001 < the 0.011 outside the list
+    pairs = [("Yes", 0.97)] + [(f"t{i}", 0.001) for i in range(19)]
     s = vv.score_top_logprobs([(t, math.log(p)) for t, p in pairs])
-    assert s["answer_floor"] == "no"
-    assert s["p_no"] == pytest.approx(0.004)
-    assert s["p_incorrect"] == pytest.approx(0.004 / 0.904)
-    assert s["top20_mass_outside"] == pytest.approx(1 - 0.9 - 19 * 0.004)
+    k = len(set(vb.NO_VARIANTS))
+    assert k == 6 and s["answer_floor"] == "no"
+    assert s["top20_mass_outside"] == pytest.approx(1 - 0.97 - 19 * 0.001)
+    assert s["p_no"] == pytest.approx(k * 0.001)
+    assert s["p_incorrect"] == pytest.approx(k * 0.001 / (0.97 + k * 0.001))
     both = vv.score_top_logprobs([("The", math.log(0.5)), ("A", math.log(0.1))])
     assert both["answer_floor"] == "both" and both["p_incorrect"] == pytest.approx(0.5)
+
+
+def test_missing_side_bound_is_capped_by_the_mass_outside_the_list():
+    """"yes" absent while two "no" spellings are present: the bound is min(outside, k * floor), here the outside
+    mass (0.002) because six spellings at the 0.011 floor (0.066) would exceed what the list leaves unshown."""
+    pairs = [("No", 0.5), (" No", 0.3)] + [(f"t{i}", 0.011) for i in range(18)]
+    s = vv.score_top_logprobs([(t, math.log(p)) for t, p in pairs])
+    outside = 1 - 0.8 - 18 * 0.011
+    assert s["answer_floor"] == "yes"
+    assert s["top20_mass_outside"] == pytest.approx(outside)
+    assert s["p_yes"] == pytest.approx(min(outside, len(set(vb.YES_VARIANTS)) * 0.011)) == pytest.approx(outside)
+    assert s["p_no"] == pytest.approx(0.8)
+    assert s["p_incorrect"] == pytest.approx(0.8 / (0.8 + outside))
+    # nothing outside the list at all: the missing side gets (almost) zero mass, not the floor
+    full = vv.score_top_logprobs([("No", math.log(0.6)), ("Maybe", math.log(0.4))])
+    assert full["answer_floor"] == "yes" and full["p_yes"] == pytest.approx(vv.MIN_BOUND)
+    assert full["p_incorrect"] == pytest.approx(1.0) and np.isfinite(full["log_odds_incorrect"])
 
 
 def test_parse_rejects_response_without_logprobs():
@@ -236,3 +255,39 @@ def test_refuses_another_backends_files(tmp_path, monkeypatch):
     with pytest.raises(SystemExit):
         vv.main(_args(root, out))
     assert json.loads((d / "CurbRamp.meta.json").read_text()) == meta
+
+
+def test_heldout_loader_matches_the_transformers_loader(tmp_path):
+    """A non-ok row (failed crop) is dropped by both loaders, so the vLLM and transformers legs score the same rows."""
+    root = _data_root(tmp_path)
+    p = root / "CurbRamp" / "split.csv"
+    df = pd.read_csv(p).assign(status="ok")
+    held = df.split.isin(vv.HELDOUT_SPLITS)
+    df.loc[df.index[held][0], "status"] = "crop_failed"
+    df.to_csv(p, index=False)
+    a = vv.load_heldout(str(root), "CurbRamp")
+    b = vb.load_split_rows(str(root), "CurbRamp")
+    assert sorted(a.label_uid) == sorted(b.label_uid) and len(a) == int(held.sum()) - 1
+    assert (a.status == "ok").all() and set(a.label_type) == {"CurbRamp"}
+    assert a.image.str.startswith(str(root)).all()
+
+
+def test_resume_after_a_torn_last_line(tmp_path, monkeypatch):
+    """A job killed mid-append leaves half a row; the resume cuts it off, rescores that crop, and parses cleanly."""
+    root, out = _data_root(tmp_path), tmp_path / "out"
+    stub = _Stub()
+    monkeypatch.setattr(vv, "Client", lambda *a, **k: _orig_client(*a, **{**k, "post": stub}))
+    monkeypatch.setattr(vv, "_server_version", lambda server: "0.0-test")
+    vv.main(_args(root, out, label_types="CurbRamp"))
+    path = out / "stub" / "CurbRamp.csv"
+    text = path.read_text()
+    lines = text.splitlines(keepends=True)
+    torn_uid = lines[-1].split(",")[0]
+    path.write_text("".join(lines[:-1]) + lines[-1][:len(torn_uid) + 5])   # the uid and a few bytes of the row
+    # appending onto that half line would glue two rows into one with too many fields
+    assert vv.done_uids(str(path)) == set(pd.read_csv(path).label_uid)     # (the cut happens here)
+    assert torn_uid not in vv.done_uids(str(path)) and path.read_text().endswith("\n")
+    vv.main(_args(root, out, label_types="CurbRamp"))
+    cr = pd.read_csv(path, keep_default_na=False)
+    assert len(cr) == 4 and cr.label_uid.is_unique and list(cr.columns) == vv.SCORE_COLUMNS
+    assert cr.set_index("label_uid").loc[torn_uid, "gpu"] == "1xTEST"       # rescored as a whole row

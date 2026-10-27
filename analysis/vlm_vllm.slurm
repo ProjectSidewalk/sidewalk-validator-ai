@@ -29,6 +29,7 @@
 #SBATCH --time=8:00:00
 #SBATCH --requeue
 #SBATCH -o /gscratch/scrubbed/jfroehli/logs/vlm_vllm.%j.log
+#SBATCH --open-mode=append
 
 set -uo pipefail
 
@@ -58,6 +59,8 @@ export HF_HOME=$SCRUB/hf HF_HUB_OFFLINE=1
 # klone sets http_proxy for every login; its no_proxy lists localhost but not 127.0.0.1, so local calls hit the proxy
 export no_proxy="127.0.0.1,${no_proxy:-}" NO_PROXY="127.0.0.1,${NO_PROXY:-}"
 case "$OUT" in /tmp*) echo "refusing to write under /tmp"; exit 2 ;; esac
+# Slurm opens the -o log before this script runs, so /gscratch/scrubbed/jfroehli/logs must already exist (it does
+# on klone); a missing directory fails the job with no log at all. The mkdir below only covers later runs.
 mkdir -p "$OUT" "$SCRUB/vllm_home" "$SCRUB/logs"
 SHM=/dev/shm/vllm_${SLURM_JOB_ID:-$$}
 mkdir -p "$SHM"

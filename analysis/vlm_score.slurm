@@ -28,6 +28,7 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --constraint=l40s|a40
 #SBATCH --output=logs/vlm_score_%j.out
+#SBATCH --open-mode=append
 
 set -euo pipefail
 

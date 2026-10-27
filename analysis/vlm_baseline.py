@@ -772,9 +772,43 @@ def text_only_messages(messages, image_token):
     return out, images
 
 
-def todo_rows(df, path):
-    """Rows of ``df`` whose ``label_uid`` is not yet in the score CSV at ``path`` (resumability)."""
+def truncate_partial_line(path):
+    """Cut a CSV back to its last newline, dropping a half-written final row; returns the bytes dropped (0 if none).
+
+    A job killed mid-append (Slurm preemption is a SIGKILL after the grace period) can leave a partial last line.
+    The next append would continue that line, and the resume read then fails with "Expected N fields". Call this
+    before reading a score CSV to resume it. A file with no newline at all (a torn header) is emptied.
+
+    >>> import tempfile
+    >>> p = os.path.join(tempfile.mkdtemp(), "s.csv")
+    >>> _ = open(p, "w").write("label_uid,p\\nx:1,0.5\\nx:2,0.")
+    >>> truncate_partial_line(p), open(p).read()
+    (6, 'label_uid,p\\nx:1,0.5\\n')
+    >>> truncate_partial_line(p)
+    0
+    """
     if not os.path.exists(path):
+        return 0
+    with open(path, "rb+") as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        if size == 0:
+            return 0
+        f.seek(size - 1)
+        if f.read(1) == b"\n":
+            return 0
+        f.seek(0)
+        keep = f.read().rfind(b"\n") + 1     # 0 when the file has no newline at all
+        f.truncate(keep)
+    return size - keep
+
+
+def todo_rows(df, path):
+    """Rows of ``df`` whose ``label_uid`` is not yet in the score CSV at ``path`` (resumability). A torn last line
+    from a killed job is cut off first (``truncate_partial_line``)."""
+    if truncate_partial_line(path):
+        print(f"{path}: dropped a partial last line (killed mid-write)", flush=True)
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
         return df
     done = set(pd.read_csv(path, usecols=["label_uid"]).label_uid)
     return df[~df.label_uid.isin(done)]
@@ -1051,16 +1085,18 @@ def run_score_torch(args):
             scored, dt = vlm.score_batch(convs)
             if "batch_check" not in meta and len(chunk) > 1:
                 # every row of the first batch scored again alone: padding and batch-composition effects. A single
-                # row is not enough: near p = 0 or 1 a large log-odds change moves p by almost nothing.
+                # row is not enough: near p = 0 or 1 a large log-odds change moves p by almost nothing. A failed
+                # check is kept under ``batch_check_failed`` so that the next run checks again.
                 alone = [vlm.score_batch([c])[0][0] for c in convs]
-                meta["batch_check"] = batch_check(scored, alone, [r.label_uid for r in chunk])
-                bc = meta["batch_check"]
+                bc = batch_check(scored, alone, [r.label_uid for r in chunk])
                 print(f"batch check: max |batch - alone| p {bc['max_abs_dp']:.2e}, log-odds "
                       f"{bc['max_abs_dlogodds']:.2e} over {bc['n']} rows", flush=True)
                 if bc["max_abs_dp"] > args.max_batch_diff:
+                    meta["batch_check_failed"] = bc
                     _write_meta(meta_path, meta)
                     raise RuntimeError(f"batch-of-{len(chunk)} vs batch-of-1 differ by up to {bc['max_abs_dp']:.3g} "
                                        f"in p_incorrect, more than bf16 noise; check padding")
+                meta["batch_check"] = bc
             if i > 0:   # the first batch includes warm-up
                 lat.append(dt / len(chunk))
             for r, s in zip(chunk, scored):
@@ -1069,7 +1105,8 @@ def run_score_torch(args):
             if len(rows) >= args.chunk or i + args.batch >= len(recs):
                 cols = ["label_uid", "model", "variant", "p_yes", "p_no", "answer_mass", "log_odds_incorrect",
                         "p_incorrect", "p_correct", "top_token", "prompt_tokens", "latency_s", "batch_size", "gpu"]
-                pd.DataFrame(rows)[cols].to_csv(path, mode="a", header=not os.path.exists(path), index=False)
+                new_file = not os.path.exists(path) or os.path.getsize(path) == 0
+                pd.DataFrame(rows)[cols].to_csv(path, mode="a", header=new_file, index=False)
                 rows = []
                 run.update(n_scored=i + len(chunk), peak_memory_gb=_peak_memory_gb(),
                            s_per_crop_median=float(np.median(lat)) if lat else None, fewshot_swaps=int(swaps))

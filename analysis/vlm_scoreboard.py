@@ -33,7 +33,9 @@ sorted by coverage then macro-AUC, and are never ranked against the full ones (t
 **Drift check.** ``build --check`` has two modes. With the staging directory present it regenerates every aggregate
 CSV into a temporary directory and compares bytes with the committed ones, then checks the doc. Without it (CI) it
 renders the doc's generated blocks from the committed aggregate CSVs and checks them and the prose counts
-(``PROSE_RULES``, as RampNet's ``scoreboard_render.py``) against the doc.
+(``PROSE_RULES``, as RampNet's ``scoreboard_render.py``) against the doc. Both modes read the public-deployment list
+from the live API (10 s timeout) and fail if a deployment the committed ``per_deployment.csv`` names has gone
+private since the build; offline they fall back to the list frozen in ``provenance.json``.
 
 Usage::
 
@@ -64,7 +66,7 @@ sys.path.insert(0, REPO_DIR)
 sys.path.insert(0, os.path.join(REPO_DIR, "analysis"))
 import evaluate  # noqa: E402
 import vlm_baseline as vb  # noqa: E402
-from retrain_report import heldout_names, public_cities  # noqa: E402
+from retrain_report import CITIES_API, heldout_names, public_cities  # noqa: E402
 
 LABEL_TYPES = vb.LABEL_TYPES
 SPLITS = ("test", "test_heldout")
@@ -150,40 +152,54 @@ def load_splits(scores_dir):
     return s.assign(y=(s.label_class == "incorrect").astype(int)).reset_index(drop=True)
 
 
+UNSCORED_WHY = "{n} rows unscored: neither yes nor no in the top-20 log-probs"
+
+
 def load_leg(leg_dir):
-    """All ``<Type>.csv`` of one leg as ``label_uid, p_incorrect`` (definition variant only). Exact duplicate rows
-    (a resumed run that re-wrote a chunk) are dropped; conflicting duplicates raise."""
-    frames = []
+    """All ``<Type>.csv`` of one leg as ``(frame, unscored)``: the frame is ``label_uid, p_incorrect`` (definition
+    variant only); ``unscored`` is ``{Type: n}`` for rows dropped because the vLLM client found neither answer in the
+    top 20 (``answer_floor == "both"``, scored 0.5 as a placeholder; the column is absent for other backends). Exact
+    duplicate rows (a resumed run that re-wrote a chunk) are dropped; conflicting duplicates raise. ``(None, {})``
+    when the leg has no CSV."""
+    frames, unscored = [], {}
     for t in LABEL_TYPES:
         p = os.path.join(leg_dir, f"{t}.csv")
         if os.path.exists(p):
             d = pd.read_csv(p)
             if "variant" in d and d.variant.nunique() > 1:
                 raise ValueError(f"{p}: more than one prompt variant ({sorted(d.variant.unique())})")
+            if "answer_floor" in d:
+                both = d.answer_floor.astype(str).eq("both")
+                if both.any():
+                    unscored[t] = int(both.sum())
+                    d = d[~both]
             frames.append(d[["label_uid", "p_incorrect"]])
     if not frames:
-        return None
+        return None, {}
     d = pd.concat(frames, ignore_index=True).drop_duplicates()
     if d.label_uid.duplicated().any():
         raise ValueError(f"{leg_dir}: conflicting duplicate scores for one label")
-    return d
+    return d, unscored
 
 
 def load_scores(scores_dir, splits):
-    """``{leg: per-crop frame joined to the splits}``. A score for a crop that is not in the splits raises."""
+    """``({leg: per-crop frame joined to the splits}, {leg: {Type: n unscored}})``. A score for a crop that is not in
+    the splits raises."""
     root = os.path.join(scores_dir, "scores")
-    legs = {}
+    legs, unscored = {}, {}
     for leg in sorted(os.listdir(root)) if os.path.isdir(root) else []:
         if not os.path.isdir(os.path.join(root, leg)):
             continue
-        d = load_leg(os.path.join(root, leg))
+        d, u = load_leg(os.path.join(root, leg))
         if d is None:
             continue
         m = d.merge(splits, on="label_uid", how="left", validate="one_to_one")
         if m.label_type.isna().any():
             raise ValueError(f"{leg}: {int(m.label_type.isna().sum())} scores for crops not in the held-out splits")
         legs[leg] = m
-    return legs
+        if u:
+            unscored[leg] = u
+    return legs, unscored
 
 
 def load_timing(scores_dir):
@@ -371,17 +387,27 @@ def timing_rows(timing):
 
 
 def run_speed(timing, leg):
-    """``(s/crop, gpu, batch)`` at the largest batch timed for a leg, or Nones."""
+    """``(s/crop, gpu, batch)`` at the largest batch timed for a leg, or Nones. Among rows tied on the batch size, a
+    full-run row (``source == "full run"``) beats a timing run, then the row over more crops wins.
+
+    >>> t = pd.DataFrame({"model": "m", "gpu": ["A", "B", "C"], "batch_size": 1, "n_crops": [50, 900, 9000],
+    ...                   "median_s_per_crop": [0.9, 0.3, 0.2], "source": ["timing", "full run", "full run"]})
+    >>> run_speed(t.iloc[::-1], "m")
+    (0.2, 'C', 1)
+    """
     t = timing[timing.model == leg] if len(timing) else timing
     if t is None or t.empty:
         return None, None, None
-    r = t.sort_values("batch_size").iloc[-1]
+    full = t.source.astype(str).eq("full run") if "source" in t else pd.Series(False, index=t.index)
+    n = t.n_crops if "n_crops" in t else pd.Series(0, index=t.index)
+    r = t.assign(_full=full, _n=n).sort_values(["batch_size", "_full", "_n"], kind="mergesort").iloc[-1]
     return float(r.median_s_per_crop), str(r.gpu), int(r.batch_size)
 
 
-def coverage_rows(legs, splits, notes):
+def coverage_rows(legs, splits, notes, unscored=None):
     """One row per (leg, type), including roster legs that are not staged yet, each with the reason it is partial or
-    missing (``notes.json`` first, then ``DEFAULT_WHY``)."""
+    missing (rows the leg could not score, ``UNSCORED_WHY``, first; then ``notes.json``, then ``DEFAULT_WHY``)."""
+    unscored = unscored or {}
     totals = splits.groupby("label_type").size()
     names = list(legs) + [k for k in LEGS if k not in legs] + (["fewshot8"] if not any(
         k.endswith("-fewshot8") for k in legs) else [])
@@ -393,8 +419,11 @@ def coverage_rows(legs, splits, notes):
             n = 0 if df is None else int((df.label_type == t).sum())
             tot = int(totals.get(t, 0))
             why = note.get(t) or note.get("*") or ""
-            if n < tot and not why:
-                why = DEFAULT_WHY.get(leg, "not run yet" if n == 0 else f"partial: run incomplete ({n} of {tot})")
+            nu = unscored.get(leg, {}).get(t, 0)
+            if n + nu < tot and not why:
+                why = DEFAULT_WHY.get(leg, "not run yet" if n == 0 else f"partial: run incomplete ({n + nu} of {tot})")
+            if nu:
+                why = "; ".join(w for w in (UNSCORED_WHY.format(n=nu), why) if w)
             rows.append({"leg": leg, "display": "8-shot arm" if leg == "fewshot8" else leg_info(leg)[0],
                          "label_type": t, "n": n, "total": tot, "complete": n == tot, "why": "" if n == tot else why})
     return rows
@@ -403,7 +432,7 @@ def coverage_rows(legs, splits, notes):
 def build_aggregates(scores_dir, public, n_boot=N_BOOT, seed=SEED, min_city_n=30):
     """Every committed CSV, as ``{name: DataFrame}``, plus the per-crop frames the ROC figure needs."""
     splits = load_splits(scores_dir)
-    legs = load_scores(scores_dir, splits)
+    legs, unscored = load_scores(scores_dir, splits)
     timing = load_timing(scores_dir)
     notes = load_notes(scores_dir)
     names = deployment_names(splits, public)
@@ -438,7 +467,7 @@ def build_aggregates(scores_dir, public, n_boot=N_BOOT, seed=SEED, min_city_n=30
             per_dep += per_deployment_rows(leg, df, names, public, min_city_n)
     board = order_board(pd.DataFrame(board))
     out = {"board": board, "per_type": pd.DataFrame(per_type), "paired": pd.DataFrame(paired),
-           "per_deployment": pd.DataFrame(per_dep), "coverage": pd.DataFrame(coverage_rows(legs, splits, notes)),
+           "per_deployment": pd.DataFrame(per_dep), "coverage": pd.DataFrame(coverage_rows(legs, splits, notes, unscored)),
            "timing": timing_rows(timing)}
     if len(out["per_type"]):
         out["per_type"] = out["per_type"].assign(order=out["per_type"].leg.map(
@@ -978,8 +1007,7 @@ def run_stage(args):
     os.makedirs(os.path.join(args.scores_dir, "scores", REFERENCE), exist_ok=True)
     held = []
     for t in LABEL_TYPES:
-        s = pd.read_csv(os.path.join(args.run_dir, t, "split.csv"))
-        s = s[s.split.isin(SPLITS)].sort_values("label_uid")
+        s = vb.load_split_rows(args.run_dir, t, SPLITS)    # status == "ok" only, as the scoring legs select
         keep = [c for c in ("label_uid", "city", "label_type", "label_class", "split", "pano_id") if c in s]
         s[keep].to_csv(os.path.join(args.scores_dir, "splits", f"{t}.csv"), index=False)
         p = pd.read_csv(os.path.join(args.run_dir, t, "predictions.csv"))
@@ -1024,14 +1052,55 @@ def run_stage(args):
                                     float_format=FLOAT)
 
 
-def _public(args, out_dir, offline_ok):
+def _public(args):
     if args.public_cities:
         return public_cities(args.public_cities)
-    pp = os.path.join(out_dir, "provenance.json")
-    if offline_ok and os.path.exists(pp):
-        p = json.load(open(pp))
-        return set(p["public_cities"]), "committed provenance.json"
     return public_cities(None)
+
+
+LIVE_TIMEOUT_S = 10
+
+
+def _live_public():
+    """The public deployments in the live ``/v3/api/cities`` (short timeout: ``--check`` runs in CI)."""
+    return public_cities(None, timeout=LIVE_TIMEOUT_S)
+
+
+def _check_public(args, out_dir):
+    """``(public, frozen)`` for ``--check``: ``--public-cities`` if given, else the live API, else (offline) the list
+    frozen in the committed ``provenance.json``. ``frozen`` is that committed list either way."""
+    pp = os.path.join(out_dir, "provenance.json")
+    frozen = set(json.load(open(pp))["public_cities"]) if os.path.exists(pp) else set()
+    if args.public_cities:
+        return public_cities(args.public_cities)[0], frozen
+    try:
+        return _live_public()[0], frozen
+    except (OSError, ValueError, KeyError) as e:   # URLError and socket timeouts are OSErrors
+        print(f"{CITIES_API} unavailable ({type(e).__name__}): checking against the public list frozen in "
+              f"provenance.json")
+        return frozen, frozen
+
+
+def no_longer_public(out_dir, public, frozen):
+    """Deployments named in the committed ``per_deployment.csv`` as public (or public at build time, ``frozen``) that
+    are not in ``public`` now. [] when none.
+
+    >>> d = tempfile.mkdtemp()
+    >>> pd.DataFrame({"deployment": ["a-wa", "b-or", "other (2 private deployments)"], "public": [True, True, False]}
+    ...              ).to_csv(os.path.join(d, "per_deployment.csv"), index=False)
+    >>> no_longer_public(d, {"a-wa"}, {"a-wa", "b-or"})
+    ["per_deployment.csv: deployment 'b-or' is no longer public (re-run `build`)"]
+    """
+    p = os.path.join(out_dir, "per_deployment.csv")
+    if not os.path.exists(p) or os.path.getsize(p) == 0:
+        return []
+    dep = pd.read_csv(p)
+    if "deployment" not in dep:
+        return []
+    named = dep.deployment.astype(str)
+    was = dep.public.astype(str).str.lower().eq("true") if "public" in dep else named.isin(frozen)
+    return [f"per_deployment.csv: deployment {c!r} is no longer public (re-run `build`)"
+            for c in sorted(set(named[was | named.isin(frozen)]) - set(public))]
 
 
 def run_build(args):
@@ -1040,8 +1109,9 @@ def run_build(args):
     if args.check:
         problems = []
         committed = read_aggregates(out_dir)
+        public, frozen = _check_public(args, out_dir)
+        problems += no_longer_public(out_dir, public, frozen)
         if staged:
-            public, _src = _public(args, out_dir, offline_ok=True)
             aggs, *_ = build_aggregates(args.scores_dir, public, args.n_boot, args.seed, args.min_city_n)
             with tempfile.TemporaryDirectory() as tmp:
                 write_aggregates(aggs, tmp)
@@ -1051,8 +1121,6 @@ def run_build(args):
                         problems.append(f"{name}.csv: stale (re-run `build`)")
         else:
             print(f"{args.scores_dir} not found: checking the doc against the committed aggregates only")
-            public = set(json.load(open(os.path.join(out_dir, "provenance.json")))["public_cities"]) \
-                if os.path.exists(os.path.join(out_dir, "provenance.json")) else set()
         if not os.path.exists(doc):
             problems.append(f"{doc}: missing")
         else:
@@ -1071,7 +1139,7 @@ def run_build(args):
         return
     if not staged:
         raise SystemExit(f"no staging directory at {args.scores_dir}; run `stage` or pass --scores-dir")
-    public, src = _public(args, out_dir, offline_ok=False)
+    public, src = _public(args)
     aggs, legs, _splits, _names = build_aggregates(args.scores_dir, public, args.n_boot, args.seed, args.min_city_n)
     write_aggregates(aggs, out_dir)
     committed = read_aggregates(out_dir)        # render from what was written, exactly as --check will
@@ -1112,7 +1180,7 @@ def main(argv=None):
     b.add_argument("--doc", default=DOC)
     b.add_argument("--public-cities", default=None,
                    help="saved /v3/api/cities response or one city_id per line (default: the live API; --check "
-                        "uses the list in the committed provenance.json)")
+                        "falls back to the list in the committed provenance.json when offline)")
     b.add_argument("--n-boot", type=int, default=N_BOOT)
     b.add_argument("--seed", type=int, default=SEED)
     b.add_argument("--min-city-n", type=int, default=30)

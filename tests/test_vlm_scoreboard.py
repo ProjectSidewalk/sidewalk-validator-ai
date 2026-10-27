@@ -45,6 +45,7 @@ def _stage(root):
         d = root / "scores" / leg
         os.makedirs(d)
         sc = _scores(rows, signal, i).assign(label_type=rows.label_type.values)
+        sc = sc.sample(frac=1, random_state=100 + i)     # leg rows in their own order, never the splits' order
         for t, g in sc.groupby("label_type"):
             g.drop(columns="label_type").to_csv(d / f"{t}.csv", index=False)
     pd.DataFrame([{"model": "gemma4-31b", "gpu": "H200", "n_gpus": 1, "batch_size": 1, "n_crops": 50,
@@ -248,8 +249,73 @@ def test_stage_refuses_a_dir_inside_the_repo(tmp_path):
         sb.main(["stage", "--run-dir", str(tmp_path), "--scores-dir", os.path.join(sb.REPO_DIR, "docs", "x")])
 
 
-def test_committed_board_is_current_and_private_safe():
-    """The CI drift check: the committed doc against the committed aggregate CSVs (no staging dir needed)."""
+def test_committed_board_is_current_and_private_safe(monkeypatch):
+    """The CI drift check: the committed doc against the committed aggregate CSVs (no staging dir needed). Offline,
+    so the public list is the one frozen in provenance.json."""
     if not os.path.exists(os.path.join(sb.OUT_DIR, "board.csv")):
         pytest.skip("no committed board yet")
+    monkeypatch.setattr(sb, "_live_public", _offline)
     sb.main(["build", "--check", "--scores-dir", os.path.join(sb.REPO_DIR, "no-such-staging-dir")])
+
+
+def _offline():
+    raise OSError("no network in tests")
+
+
+def test_check_fails_when_a_named_deployment_goes_private(board, monkeypatch, capsys):
+    """--check without --public-cities asks the live API; a deployment shown by name that has since gone private
+    fails the check in both modes. Offline it falls back to provenance.json and passes."""
+    base = [a for a in board["base"] if a not in ("--public-cities", str(board["pub"]))]
+    ci = [a if a != str(board["stage"]) else str(board["stage"]) + "-absent" for a in base]
+    dep = sb.read_aggregates(str(board["out"]))["per_deployment"]
+    assert "seattle-wa" in set(dep.deployment)
+    monkeypatch.setattr(sb, "_live_public", lambda: (set(PUBLIC), "live"))
+    sb.main(ci + ["--check"])
+    sb.main(base + ["--check"])
+    monkeypatch.setattr(sb, "_live_public", lambda: (set(PUBLIC) - {"seattle-wa"}, "live"))
+    for argv in (ci, base):
+        with pytest.raises(SystemExit):
+            sb.main(argv + ["--check"])
+        assert "'seattle-wa' is no longer public" in capsys.readouterr().out
+    monkeypatch.setattr(sb, "_live_public", _offline)
+    sb.main(ci + ["--check"])
+    assert "frozen in provenance.json" in capsys.readouterr().out
+
+
+def test_unscored_vllm_rows_are_dropped_and_explained(board):
+    """answer_floor == "both" rows (neither answer in the top 20, a 0.5 placeholder) are not scores: the leg drops
+    them, shows as partial, and the coverage table says how many and why."""
+    d = board["stage"] / "scores" / "gemma4-31b"
+    for t in ("CurbRamp", "Obstacle"):
+        df = pd.read_csv(d / f"{t}.csv").assign(answer_floor="")
+        if t == "CurbRamp":
+            df.loc[df.index[:3], ["answer_floor", "p_incorrect"]] = ["both", 0.5]
+            df.loc[df.index[3], "answer_floor"] = "no"             # one side floored: still a score
+        df.to_csv(d / f"{t}.csv", index=False)
+    sb.main(board["base"] + ["--no-figures"])
+    a = sb.read_aggregates(str(board["out"]))
+    r = a["board"].set_index("leg").loc["gemma4-31b"]
+    assert not bool(r.full) and int(r.n) == int(r.n_total) - 3
+    c = a["coverage"].set_index(["leg", "label_type"])
+    assert c.loc[("gemma4-31b", "CurbRamp"), "why"] == "3 rows unscored: neither yes nor no in the top-20 log-probs"
+    assert not bool(c.loc[("gemma4-31b", "CurbRamp"), "complete"])
+    assert bool(c.loc[("gemma4-31b", "Obstacle"), "complete"])
+    legs, unscored = sb.load_scores(str(board["stage"]), sb.load_splits(str(board["stage"])))
+    assert unscored == {"gemma4-31b": {"CurbRamp": 3}} and len(legs["round3"]) == int(r.n_total)
+
+
+def test_run_speed_prefers_the_full_run_with_most_crops_on_a_tie():
+    t = pd.DataFrame([
+        {"model": "m", "gpu": "g-full-big", "batch_size": 1, "n_crops": 13144, "median_s_per_crop": 0.26,
+         "source": "full run"},
+        {"model": "m", "gpu": "g-timing", "batch_size": 1, "n_crops": 50, "median_s_per_crop": 0.96,
+         "source": "batch-1 timing run"},
+        {"model": "m", "gpu": "g-full-small", "batch_size": 1, "n_crops": 1988, "median_s_per_crop": 0.30,
+         "source": "full run"},
+        {"model": "other", "gpu": "x", "batch_size": 64, "n_crops": 9, "median_s_per_crop": 9.0, "source": "full run"},
+    ])
+    for order in (t, t.iloc[::-1], t.iloc[[1, 0, 3, 2]]):
+        assert sb.run_speed(order.reset_index(drop=True), "m") == (0.26, "g-full-big", 1)
+    bigger = pd.concat([t, pd.DataFrame([{"model": "m", "gpu": "g-b16", "batch_size": 16, "n_crops": 50,
+                                          "median_s_per_crop": 0.1, "source": "timing"}])])
+    assert sb.run_speed(bigger, "m") == (0.1, "g-b16", 16)            # the largest batch still comes first
