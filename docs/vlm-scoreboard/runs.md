@@ -139,11 +139,16 @@ Prompts are about 3,100 tokens (nine images), so 2.5 s/crop on 2×L40S and 4.2 s
 Nemotron: three preemptions in total (smoke once, full run twice), each during the 25-minute weight load on a
 ckpt H200 pair. It was left queued on ckpt rather than moved to the lab's `gpu-l40s` allocation, which has no H200
 and would need a whole 8×L40S node to hold the 249 GB of weights.
-| 42391323 | smoke GLM-5.3-Flash, 40/type, `OUT=smoke-vllm` | 4×H200 | submitted 10:22 | — | — | started 18:56 on g3127 and was **preempted at 18:58** while loading the tokenizer; requeued, estimated start 2026-10-27 14:22 |
-| 42413444 | **full GLM-5.3-Flash**, launcher defaults (timing at concurrency 1, then all 13,144 crops) | 4×H200 | submitted 18:40 | — | — | submitted alongside the smoke rather than after it, so the full run does not wait on a second 4×H200 queue cycle; whichever starts first confirms the `<think></think>` prefill from its meta's rendered prompt tail | Estimated start 2026-10-27 14:22. Writes to scrubbed, so it may hit the quota below |
-| 42454117 | **full GLM-5.3-Flash**, same defaults, `OUT=/gscratch/makelab/jfroehli/vlm-out/scores-vllm` | 4×H200 | submitted 2026-10-27 05:48 | — | — | hedge against the scrubbed quota: whichever of 42413444 and 42454117 starts first is kept and the other cancelled |
+| 42391323 | smoke GLM-5.3-Flash, 40/type, `OUT=smoke-vllm` | 4×H200 | submitted 10:22 | — | — | started 18:56 on g3127 and was **preempted at 18:58** while loading the tokenizer; requeued; cancelled 2026-10-27 06:05 once the full run 42413444 was running (the full run's meta answers the same prefill question) |
+| 42413444 | **full GLM-5.3-Flash**, launcher defaults (timing at concurrency 1, then all 13,144 crops) | 4×H200 | submitted 18:40, started 2026-10-27 05:57 on g3132 | 55:13 | 0.256 s/crop at concurrency 1; 0.031 s/crop at concurrency 32 | **done**, 0 preemptions: weights loaded in 30 min, first-use kernel JIT (TileLang, FlashInfer) another 17 min, healthy after 2,823 s, then all 13,144 crops in 7 min. Every rendered prompt ends `<\|assistant\|><think></think>`; no yes/no side fell outside the top-20 log-probs (`n_answer_floor` empty); `top20_mass_outside` ≤ 5.2e-4; the meta carries `answer_floor_rule`, so the corrected client ran. Wrote to scrubbed without hitting the quota |
+| 42454117 | **full GLM-5.3-Flash**, same defaults, `OUT=/gscratch/makelab/jfroehli/vlm-out/scores-vllm` | 4×H200 | submitted 2026-10-27 05:48 | — | — | hedge against the scrubbed quota; cancelled at 06:45 once 42413444 was writing rows cleanly |
 
-### Where it stands (2026-10-26 18:45; the 15:05 state is below for the record)
+### Where it stands (2026-10-27 07:05; the 15:05 state is below for the record)
+
+- GLM-5.3-Flash is done (job 42413444 above) and staged to the Mac; the board has it at 0.754 macro-AUC, level with
+  Gemma 4 31B zero-shot. Nemotron is still queued (42454116, output on makelab).
+
+#### 2026-10-26 15:05
 
 - Done: client, launcher, tests; container path working; Qwen3-VL-8B smoke through vLLM agrees with transformers
   (table above).
