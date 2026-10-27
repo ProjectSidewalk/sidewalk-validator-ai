@@ -23,6 +23,7 @@ Example::
     >>> list(zip(t.slice, t.n))
     [('(none)', 2), ('steep', 2), ('narrow', 1)]
 """
+import hashlib
 import json
 
 import numpy as np
@@ -71,29 +72,51 @@ def _auc(y, s):
     return float(roc_auc_score(y, s)) if 0 < y.sum() < len(y) else np.nan
 
 
+def slice_seed(seed, name):
+    """A per-slice seed, so a slice's interval does not change when another slice is added or removed."""
+    return int(hashlib.sha256(f"{seed}:{name}".encode()).hexdigest()[:16], 16)
+
+
+def boot_indices(y, groups, n_boot, rng, max_tries=20):
+    """``n_boot`` row-index arrays, each a resample of whole groups (panoramas) with replacement. A resample with only
+    one class is redrawn, up to ``max_tries`` times, as ``retrain_report.cluster_boot`` does."""
+    uniq, inv = np.unique(np.asarray(groups), return_inverse=True)
+    members = [np.flatnonzero(inv == g) for g in range(len(uniq))]
+    out = []
+    for _ in range(n_boot):
+        for _ in range(max_tries):
+            idx = np.concatenate([members[g] for g in rng.integers(0, len(uniq), len(uniq))])
+            if 0 < y[idx].sum() < len(idx):
+                out.append(idx)
+                break
+    return out
+
+
 def bootstrap_auc(y, score, groups, n_boot=N_BOOT, seed=0):
     """95% percentile interval of the AUC from ``n_boot`` resamples of whole groups (panoramas), or ``(nan, nan)``
     when the smaller class is under ``MIN_CLASS_FOR_CI`` or ``n_boot`` is 0."""
-    y, score, groups = np.asarray(y, bool), np.asarray(score, float), np.asarray(groups)
+    y, score = np.asarray(y, bool), np.asarray(score, float)
     if n_boot == 0 or min(y.sum(), (~y).sum()) < MIN_CLASS_FOR_CI:
         return np.nan, np.nan
-    rng = np.random.default_rng(seed)
-    uniq, inv = np.unique(groups, return_inverse=True)
-    members = [np.flatnonzero(inv == g) for g in range(len(uniq))]
-    vals = []
-    for _ in range(n_boot):
-        idx = np.concatenate([members[g] for g in rng.integers(0, len(uniq), len(uniq))])
-        a = _auc(y[idx], score[idx])
-        if not np.isnan(a):
-            vals.append(a)
+    vals = [_auc(y[i], score[i]) for i in boot_indices(y, groups, n_boot, np.random.default_rng(seed))]
     return (float(np.percentile(vals, 2.5)), float(np.percentile(vals, 97.5))) if vals else (np.nan, np.nan)
 
 
+def _order(out, by):
+    """Severity in its own order (1, 2, 3, ..., then ``(none)``); tags by descending n, then name."""
+    if by == "severity":
+        key = out.slice.map(lambda v: (1, 0) if v == NONE else (0, int(v)))
+        return out.assign(_k=key).sort_values("_k").drop(columns="_k").reset_index(drop=True)
+    return out.sort_values(["n", "slice"], ascending=[False, True]).reset_index(drop=True)
+
+
 def slice_table(pred, by, train=None, min_n=MIN_N, n_boot=N_BOOT, seed=0):
-    """One row per slice of ``pred`` (columns ``label_uid, true, p_incorrect, severity, tags`` and ``pano_id`` for
-    the panorama bootstrap): ``n``, ``n_correct``, ``n_incorrect``, ``auc`` [``auc_lo``, ``auc_hi``] of the
-    incorrect score, ``accuracy`` at 0.5 and, with ``train`` (the training rows, same columns), ``train_n`` and
-    ``needs_data`` (``train_n < THIN_TRAIN``). Rates are NaN on slices under ``min_n``. Sorted by descending n."""
+    """One row per slice of ``pred`` (columns ``label_uid, true, p_incorrect, severity, tags``, ``pano_id`` for the
+    panorama bootstrap and, if present, ``city``): ``n``, ``n_correct``, ``n_incorrect``, ``auc`` [``auc_lo``,
+    ``auc_hi``] of the incorrect score, ``accuracy`` at 0.5, ``max_city_share`` (the largest share of the slice from
+    one deployment: near 1 means the slice is one city's labels) and, with ``train`` (the training rows, same
+    columns), ``train_n`` and ``needs_data`` (``train_n < THIN_TRAIN``). Accuracy is NaN under ``min_n``; the AUC is
+    NaN under ``min_n`` or when the smaller class has fewer than ``MIN_CLASS_FOR_CI`` labels."""
     d = with_slice(pred, by)
     tr = with_slice(train, by).groupby("slice").size() if train is not None else None
     groups_col = "pano_id" if "pano_id" in d.columns else "label_uid"
@@ -102,68 +125,75 @@ def slice_table(pred, by, train=None, min_n=MIN_N, n_boot=N_BOOT, seed=0):
         y = (g["true"] == "incorrect").to_numpy()
         row = {"slice": name, "n": int(len(g)), "n_correct": int((~y).sum()), "n_incorrect": int(y.sum()),
                "auc": np.nan, "auc_lo": np.nan, "auc_hi": np.nan, "accuracy": np.nan}
+        if "city" in g.columns:
+            row["max_city_share"] = float(g.city.value_counts(normalize=True).iloc[0])
         if len(g) >= min_n:
-            row["auc"] = _auc(y, g.p_incorrect.to_numpy())
-            row["auc_lo"], row["auc_hi"] = bootstrap_auc(y, g.p_incorrect, g[groups_col], n_boot, seed)
             row["accuracy"] = float(((g.p_incorrect.to_numpy() >= 0.5) == y).mean())
+            if min(y.sum(), (~y).sum()) >= MIN_CLASS_FOR_CI:
+                row["auc"] = _auc(y, g.p_incorrect.to_numpy())
+                row["auc_lo"], row["auc_hi"] = bootstrap_auc(y, g.p_incorrect, g[groups_col], n_boot,
+                                                             slice_seed(seed, name))
         if tr is not None:
             row["train_n"] = int(tr.get(name, 0))
             row["needs_data"] = row["train_n"] < THIN_TRAIN
         rows.append(row)
-    out = pd.DataFrame(rows)
-    return out.sort_values(["n", "slice"], ascending=[False, True]).reset_index(drop=True)
+    return _order(pd.DataFrame(rows), by)
 
 
 def paired_delta_table(pred_a, pred_b, by, min_n=MIN_N, n_boot=N_BOOT, seed=0):
     """Model A against model B (e.g. a retrain against production) on the same rows, per slice: ``auc_a``,
     ``auc_b`` and ``delta`` (A - B) with a 95% interval from resampling whole panoramas, the same resample applied
-    to both models. ``pred_a`` carries the slice columns; ``pred_b`` needs only ``label_uid, p_incorrect``."""
-    m = pred_a.merge(pred_b[["label_uid", "p_incorrect"]], on="label_uid", suffixes=("", "_b"), validate="one_to_one")
+    to both models. ``pred_a`` carries the slice columns and decides the rows; ``pred_b`` needs only ``label_uid,
+    p_incorrect`` and must score every one of ``pred_a``'s labels (raises otherwise, so no slice silently loses
+    rows); its other rows, e.g. another split, are ignored. Blank under ``min_n`` or when
+    the smaller class has fewer than ``MIN_CLASS_FOR_CI`` labels. The intervals are not corrected for the number of
+    slices: at 95%, about one slice in twenty excludes zero by chance."""
+    missing = set(pred_a.label_uid) - set(pred_b.label_uid)
+    if missing:
+        raise ValueError(f"the baseline has no score for {len(missing)} of the model's labels (e.g. "
+                         f"{sorted(missing)[:3]}); score both on the same split")
+    m = pred_a.merge(pred_b[["label_uid", "p_incorrect"]], on="label_uid", how="left", suffixes=("", "_b"),
+                     validate="one_to_one")
     d = with_slice(m, by)
     groups_col = "pano_id" if "pano_id" in d.columns else "label_uid"
-    rng = np.random.default_rng(seed)
     rows = []
     for name, g in d.groupby("slice"):
         y = (g["true"] == "incorrect").to_numpy()
         row = {"slice": name, "n": int(len(g)), "n_incorrect": int(y.sum()), "auc_a": np.nan, "auc_b": np.nan,
                "delta": np.nan, "delta_lo": np.nan, "delta_hi": np.nan}
-        if len(g) >= min_n and 0 < y.sum() < len(y):
+        if "city" in g.columns:
+            row["max_city_share"] = float(g.city.value_counts(normalize=True).iloc[0])
+        if len(g) >= min_n and min(y.sum(), (~y).sum()) >= MIN_CLASS_FOR_CI:
             a, b = g.p_incorrect.to_numpy(), g.p_incorrect_b.to_numpy()
             row.update(auc_a=_auc(y, a), auc_b=_auc(y, b))
             row["delta"] = row["auc_a"] - row["auc_b"]
-            if n_boot and min(y.sum(), (~y).sum()) >= MIN_CLASS_FOR_CI:
-                uniq, inv = np.unique(g[groups_col].to_numpy(), return_inverse=True)
-                members = [np.flatnonzero(inv == k) for k in range(len(uniq))]
-                vals = []
-                for _ in range(n_boot):
-                    idx = np.concatenate([members[k] for k in rng.integers(0, len(uniq), len(uniq))])
-                    da, db = _auc(y[idx], a[idx]), _auc(y[idx], b[idx])
-                    if not (np.isnan(da) or np.isnan(db)):
-                        vals.append(da - db)
+            if n_boot:
+                idxs = boot_indices(y, g[groups_col], n_boot, np.random.default_rng(slice_seed(seed, name)))
+                vals = [_auc(y[i], a[i]) - _auc(y[i], b[i]) for i in idxs]
                 if vals:
                     row["delta_lo"], row["delta_hi"] = np.percentile(vals, [2.5, 97.5]).tolist()
         rows.append(row)
-    out = pd.DataFrame(rows)
-    return out.sort_values(["n", "slice"], ascending=[False, True]).reset_index(drop=True)
+    return _order(pd.DataFrame(rows), by)
 
 
-def slice_report(pred, train=None, splits=("test", "test_heldout"), min_n=MIN_N, n_boot=N_BOOT):
+def slice_report(pred, train=None, splits=("test", "test_heldout"), min_n=MIN_N, n_boot=N_BOOT, seed=0):
     """``{split: {by: [row, ...]}}`` for ``evaluate.py``'s ``metrics.json``: :func:`slice_table` per split and per
     ``by``, NaN written as None."""
     out = {}
     for split in splits:
         p = pred[pred.split == split]
         if len(p):
-            out[split] = {by: slice_table(p, by, train, min_n, n_boot).astype(object).where(lambda x: x.notna(), None)
+            out[split] = {by: slice_table(p, by, train, min_n, n_boot, seed).astype(object).where(lambda x: x.notna(), None)
                           .to_dict("records") for by in BY}
     return out
 
 
-def report_markdown(report, label_type):
+def report_markdown(report, label_type, min_n=MIN_N):
     """:func:`slice_report` output as Markdown, one table per split and ``by``."""
     parts = [f"# {label_type}: performance by severity and tag", "",
-             f"AUC of the incorrect score with 95% panorama-bootstrap intervals; rates blank under {MIN_N} labels "
-             f"(or the --min-slice-n used); ⚠ thin = fewer than {THIN_TRAIN} training rows in the slice.", ""]
+             f"AUC of the incorrect score with 95% panorama-bootstrap intervals; accuracy blank under {min_n} "
+             f"labels, AUC also blank when the smaller class has fewer than {MIN_CLASS_FOR_CI}; ⚠ thin = fewer than "
+             f"{THIN_TRAIN} training rows in the slice; intervals are not corrected for the number of slices.", ""]
     for split, tables in report.items():
         for by, rows in tables.items():
             parts.append(slice_markdown(pd.DataFrame(rows).astype({"auc": float, "auc_lo": float, "auc_hi": float,
@@ -183,8 +213,12 @@ def _ci(lo, hi):
 def slice_markdown(table, by, title):
     """``slice_table`` output as a Markdown table under a ``###`` heading."""
     has_train = "train_n" in table.columns
+    has_city = "max_city_share" in table.columns
     head = f"| {by.capitalize()} | n | correct / incorrect | AUC [95% CI] | accuracy at 0.5 |"
     sep = "|---|---:|---:|---:|---:|"
+    if has_city:
+        head += " largest one-deployment share |"
+        sep += "---:|"
     if has_train:
         head += " training rows |"
         sep += "---:|"
@@ -192,6 +226,8 @@ def slice_markdown(table, by, title):
     for r in table.itertuples():
         line = (f"| {r.slice} | {r.n:,} | {r.n_correct:,} / {r.n_incorrect:,} | {_f(r.auc)}{_ci(r.auc_lo, r.auc_hi)} | "
                 f"{_f(r.accuracy)} |")
+        if has_city:
+            line += f" {_f(r.max_city_share, '{:.0%}')} |"
         if has_train:
             line += f" {r.train_n:,}{' ⚠ thin' if r.needs_data else ''} |"
         lines.append(line)
@@ -200,10 +236,13 @@ def slice_markdown(table, by, title):
 
 def delta_markdown(table, by, title, a="model", b="baseline"):
     """``paired_delta_table`` output as a Markdown table under a ``###`` heading."""
-    lines = [f"### {title}", "", f"| {by.capitalize()} | n | incorrect | AUC, {a} | AUC, {b} | Δ [95% CI] |",
-             "|---|---:|---:|---:|---:|---:|"]
+    has_city = "max_city_share" in table.columns
+    lines = [f"### {title}", "", f"| {by.capitalize()} | n | incorrect | AUC, {a} | AUC, {b} | Δ [95% CI] |"
+             + (" largest one-deployment share |" if has_city else ""),
+             "|---|---:|---:|---:|---:|---:|" + ("---:|" if has_city else "")]
     for r in table.itertuples():
         d = "" if np.isnan(r.delta) else f"{r.delta:+.3f}" + (
             "" if np.isnan(r.delta_lo) else f" [{r.delta_lo:+.3f}, {r.delta_hi:+.3f}]")
-        lines.append(f"| {r.slice} | {r.n:,} | {r.n_incorrect:,} | {_f(r.auc_a)} | {_f(r.auc_b)} | {d} |")
+        line = f"| {r.slice} | {r.n:,} | {r.n_incorrect:,} | {_f(r.auc_a)} | {_f(r.auc_b)} | {d} |"
+        lines.append(line + (f" {_f(r.max_city_share, '{:.0%}')} |" if has_city else ""))
     return "\n".join(lines) + "\n"

@@ -334,38 +334,46 @@ every row, not the 1,988-crop sample. Full tables: [`retrain-2026-10/tables.md`]
 
 **How the comparison is computed.**
 
-- Slices need at least 30 labels.
-- Δ is round 3 minus production on the same rows.
-- Intervals come from 2,000 resamples of whole panoramas.
+- Slices need at least 30 labels, and an AUC needs at least 8 of each class.
+- Δ is round 3 minus production on the same rows, with an interval from 2,000 resamples of whole panoramas (seeded
+  per slice).
 - The same caveats as the production comparison above apply: production probably trained on many of the
   training-deployment crops, and it is scored on tilt-corrected crops it was not trained on.
 
-**Round 3 against production.** Of 105 slices scored, 13 differ with an interval that excludes zero:
+**Round 3 against production.** 99 slices have an interval, and 14 of them exclude zero.
 
-- **12 favour round 3, mostly Obstacle:**
+- **Read this as a screen, not as 14 findings.** At 95%, about 5 would exclude zero by chance, nothing is corrected
+  for the number of slices, and the slices overlap: each label is in one severity slice and in each of its tag
+  slices. Several of the 14 sit within 0.002 of zero, so a different bootstrap can move the count by one.
+- **13 favour round 3.** The clearest are Obstacle, all with intervals well clear of zero:
   - `parked scooter/motorcycle` +0.23 (0.90 vs 0.67)
   - `narrow` in the unseen deployments +0.20 (0.76 vs 0.57)
   - untagged +0.10
   - severity 3 +0.06
-- **SurfaceProblem `uneven/slanted`** in the unseen deployments, +0.11.
-- **CurbRamp severity 1 and untagged**, +0.01 to +0.03.
-- **One favours production: Obstacle `construction`** in the training deployments, 0.82 vs 0.95, Δ −0.14
-  [−0.24, −0.04], n = 99.
+- **The rest of the 13 are small:** CurbRamp severity 1 and untagged (+0.01 to +0.03), and SurfaceProblem
+  `uneven/slanted` in the unseen deployments (+0.11).
+- **One favours production:** Obstacle `construction` in the training deployments, −0.14 on 23 incorrect labels.
+  One of 99 against round 3 is what chance alone would give, so it is a slice to watch, not a regression.
 
-**Where round 3 is weakest.** All in the unseen deployments, where it is near or below chance:
+**Where round 3 is weakest.** All six are in the unseen deployments. "Largest share" is the most any one
+deployment contributes to the slice. The three unseen deployments are one public and two private, so a high
+share means the slice mostly reflects one deployment's labels and imagery, not the tag in general.
 
-| Type | Slice | n | AUC, round 3 | AUC, production |
-|---|---|---:|---:|---:|
-| Obstacle | `stairs` | 47 | 0.40 | 0.27 |
-| Obstacle | `parked bike` | 60 | 0.44 | 0.63 |
-| SurfaceProblem | `utility panel` | 68 | 0.46 | 0.51 |
-| SurfaceProblem | `brick/cobblestone` | 288 | 0.54 | 0.59 |
-| SurfaceProblem | `sand/gravel` | 80 | 0.62 | 0.54 |
-| Obstacle | `outdoor dining area` | 128 | 0.65 | 0.62 |
+| Type | Slice | n (correct / incorrect) | AUC, round 3 | AUC, production | Largest share |
+|---|---|---:|---:|---:|---:|
+| Obstacle | `stairs` | 47 (26 / 21) | 0.40 | 0.27 | 83% |
+| SurfaceProblem | `utility panel` | 68 (36 / 32) | 0.46 | 0.51 | 56% |
+| SurfaceProblem | `brick/cobblestone` | 288 (97 / 191) | 0.54 | 0.59 | 93% |
+| SurfaceProblem | `sand/gravel` | 80 (41 / 39) | 0.62 | 0.54 | 78% |
+| SurfaceProblem | `narrow sidewalk` | 148 (28 / 120) | 0.70 | 0.67 | 59% |
+| SurfaceProblem | severity 2 | 174 (95 / 79) | 0.67 | 0.63 | 40% |
 
-These are features that look different from city to city, so they are the clearest candidates for more training
-data from more deployments. Eighteen tags in the test split also have fewer than 100 training rows (`⚠ thin` in the
-tables), for example Crosswalk `brick/cobblestone` with 48.
+- **Both models are below 0.5 on `stairs`.** The crowd's correct / incorrect call on those labels may itself be the
+  issue, so it is a candidate for the expert re-label rather than evidence about either model.
+- **`brick/cobblestone` is 93% one deployment.** It says how SurfaceProblem transfers to that deployment's paving,
+  not to brick in general.
+- **Training data is thin for 18 tags** in the test split (fewer than 100 training rows, `⚠ thin` in the tables),
+  for example Crosswalk `brick/cobblestone` with 48. These are where more labels would help most directly.
 
 ## The fixed-crop ablation
 

@@ -682,7 +682,11 @@ def main():
                    "priors": os.path.basename(priors_path), "public_cities_source": public_source,
                    "public_cities": sorted(public), "n_boot": args.n_boot, "seed": args.seed,
                    "min_city_n": args.min_city_n, "min_minority": args.min_minority, "within_min_n": args.within_min_n,
-                   "alt_prior": alt, "heldout_display_names": sorted(names.values())}, f, indent=1)
+                   "alt_prior": alt, "heldout_display_names": sorted(names.values()),
+                   "slice_min_n": args.slice_min_n,
+                   "production_predictions": [t for t in TYPES
+                                              if os.path.exists(f"{args.run_dir}/{t}/predictions_prod.csv")]},
+                  f, indent=1)
     print(open(f"{args.out_dir}/tables.md").read())
 
 

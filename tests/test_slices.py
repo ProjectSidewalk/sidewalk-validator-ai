@@ -119,3 +119,101 @@ def test_retrain_report_slice_rows_and_section(tmp_path):
     assert "CurbRamp / test / by tag: round 3 vs production" in text
     a2, b2 = rr.slice_rows(str(tmp_path / "nowhere"), "CurbRamp", p, split_all, args)
     assert a2 and not b2                                    # no predictions_prod.csv: slices only, no comparison
+
+
+def test_min_n_boundary_and_accuracy_at_exactly_half():
+    p = _pred(n=30).assign(p_incorrect=0.5)
+    t = sl.slice_table(p, "severity", min_n=15, n_boot=0).set_index("slice")
+    assert t.loc["1", "accuracy"] == t.loc["1", "n_incorrect"] / t.loc["1", "n"]   # 0.5 counts as incorrect
+    assert np.isnan(sl.slice_table(p, "severity", min_n=16, n_boot=0).accuracy).all()
+
+
+def test_auc_blank_when_the_smaller_class_is_tiny():
+    p = _pred(n=60)
+    p.loc[p.index[:30], "true"] = "incorrect"
+    p.loc[p.index[0], "true"] = "correct"          # severity-1 slice: 1 correct, 29 incorrect
+    t = sl.slice_table(p, "severity", min_n=10, n_boot=0).set_index("slice")
+    assert np.isnan(t.loc["1", "auc"]) and not np.isnan(t.loc["1", "accuracy"])
+    d = sl.paired_delta_table(p, p, "severity", min_n=10, n_boot=0).set_index("slice")
+    assert np.isnan(d.loc["1", "delta"]) and not np.isnan(d.loc["3", "delta"])
+
+
+def test_bootstrap_groups_by_panorama(monkeypatch):
+    seen = []
+    real = sl.boot_indices
+    monkeypatch.setattr(sl, "boot_indices", lambda y, groups, *a, **k: seen.append(list(groups)) or real(y, groups, *a, **k))
+    p = _pred()
+    sl.slice_table(p, "severity", min_n=10, n_boot=5)
+    assert seen and set(seen[0]) <= set(p.pano_id)
+    idx = real(np.array([0, 1, 0, 1], bool), np.array(["a", "a", "b", "b"]), 20, np.random.default_rng(0))
+    assert all(sorted(i) in ([0, 1, 0, 1], [0, 0, 1, 1], [0, 1, 2, 3], [2, 2, 3, 3], [2, 3, 2, 3])
+               or (len(i) == 4 and all(np.sum(i == k) == np.sum(i == k ^ 1) for k in (0, 2))) for i in map(np.array, idx))
+
+
+def test_bootstrap_interval_is_the_2_5_and_97_5_percentiles():
+    p = _pred()
+    g = p[p.severity == 3]
+    y = (g["true"] == "incorrect").to_numpy()
+    lo, hi = sl.bootstrap_auc(y, g.p_incorrect, g.pano_id, 300, seed=7)
+    idxs = sl.boot_indices(y, g.pano_id, 300, np.random.default_rng(7))
+    vals = [sl._auc(y[i], g.p_incorrect.to_numpy()[i]) for i in idxs]
+    assert (lo, hi) == (pytest.approx(np.percentile(vals, 2.5)), pytest.approx(np.percentile(vals, 97.5)))
+
+
+def test_paired_delta_uses_the_same_resample_for_both_models():
+    a = _pred()
+    b = a.assign(p_incorrect=a.p_incorrect + np.random.default_rng(1).normal(0, 1e-4, len(a)))
+    t = sl.paired_delta_table(a, b, "severity", min_n=10, n_boot=300).set_index("slice")
+    assert (t.loc["3", "delta_hi"] - t.loc["3", "delta_lo"]) < 0.02   # unpaired resamples would give ~0.3 wide
+
+
+def test_paired_delta_refuses_different_label_sets():
+    a = _pred()
+    with pytest.raises(ValueError, match="no score for 1"):
+        sl.paired_delta_table(a, a.iloc[1:], "tag")
+    extra = pd.concat([a, a.assign(label_uid="x" + a.label_uid)])     # the baseline may score more rows
+    assert len(sl.paired_delta_table(a, extra, "tag", n_boot=0)) == 2
+
+
+def test_thin_flag_boundary():
+    p = _pred(n=2).iloc[:1]
+    train = pd.concat([p] * sl.THIN_TRAIN)
+    assert not sl.slice_table(p, "tag", train=train, n_boot=0).needs_data.iloc[0]
+    assert sl.slice_table(p, "tag", train=train.iloc[1:], n_boot=0).needs_data.iloc[0]
+
+
+def test_slice_report_strict_json_and_severity_order_and_city_share():
+    p = _pred().assign(city=["a"] * 50 + ["b"] * 10)
+    json.dumps(sl.slice_report(p, min_n=31, n_boot=0), allow_nan=False)   # every rate blank: None, not NaN
+    r = sl.slice_report(p, min_n=10, n_boot=10)
+    json.dumps(r, allow_nan=False)
+    sev = [row["slice"] for row in r["test"]["severity"]]
+    assert sev == ["1", "3"]
+    share = {row["slice"]: row["max_city_share"] for row in r["test"]["severity"]}
+    assert share == {"1": 1.0, "3": pytest.approx(20 / 30)}
+
+
+def test_retrain_report_wiring_train_split_boot_and_both_splits(tmp_path):
+    from types import SimpleNamespace
+    from analysis import retrain_report as rr
+    p = pd.concat([_pred(), _pred().assign(split="test_heldout", label_uid=lambda d: "h" + d.label_uid,
+                                            pano_id=lambda d: "h" + d.pano_id)])
+    split_all = pd.concat([p, _pred().iloc[:20].assign(split="train", label_uid=lambda d: "t" + d.label_uid)])
+    (tmp_path / "CurbRamp").mkdir()
+    p[["label_uid", "p_incorrect"]].to_csv(tmp_path / "CurbRamp" / "predictions_prod.csv", index=False)
+    a, b = rr.slice_rows(str(tmp_path), "CurbRamp", p, split_all, SimpleNamespace(slice_min_n=10, n_boot=30, seed=0))
+    sa = pd.DataFrame(a)
+    assert set(sa.split) == {"test", "test_heldout"}
+    assert sa[(sa.by == "tag") & (sa.slice == "steep")].train_n.unique().tolist() == [20]
+    assert sa.auc_lo.notna().any()
+    a0, _ = rr.slice_rows(str(tmp_path), "CurbRamp", p, split_all, SimpleNamespace(slice_min_n=10, n_boot=0, seed=0))
+    assert pd.DataFrame(a0).auc_lo.isna().all()
+
+
+def test_hf_card_and_publish_drop_slices():
+    import hf_cards
+    import publish_to_hf
+    m = {"test": {"n": 2, "n_by_class": {"correct": 1, "incorrect": 1}, "accuracy": 1.0, "balanced_accuracy": 1.0,
+                  "auc": 1.0, "per_class": {}}, "slices": {"test": {"tag": []}}}
+    assert "| slices |" not in hf_cards._metrics_section(m)
+    assert "slices" not in publish_to_hf.pool_private_city_metrics(m, ".", "CurbRamp", set())

@@ -442,8 +442,9 @@ def main(argv=None):
     parser.add_argument("--no-slices", action="store_true",
                         help="skip the label type x severity and x tag slices (on by default: metrics.json "
                              "'slices' and slices.md; analysis/slices.py)")
-    parser.add_argument("--min-slice-n", type=int, default=30,
-                        help="labels a severity or tag slice needs for its rates to be shown (default 30)")
+    parser.add_argument("--min-slice-n", type=int, default=None,
+                        help="labels a severity or tag slice needs for its rates to be shown (default: "
+                             "analysis/slices.py's MIN_N, 30)")
     parser.add_argument("--slice-boot", type=int, default=1000,
                         help="panorama-bootstrap resamples for the slice AUC intervals (default 1000; 0 = none)")
     parser.add_argument("--vote-weights", default=None,
@@ -502,12 +503,14 @@ def main(argv=None):
                       "skipping the severity and tag slices")
     elif not args.no_slices:
         from analysis.slices import report_markdown, slice_report
-        cols = ["label_uid", "pano_id", "severity", "tags"]
+        cols = ["label_uid", "pano_id", "city", "severity", "tags"]
         sliced = predictions.merge(manifest[cols], on="label_uid", how="left", validate="one_to_one")
+        from analysis.slices import MIN_N
+        min_slice_n = MIN_N if args.min_slice_n is None else args.min_slice_n
         metrics["slices"] = slice_report(sliced, train=manifest[manifest.split == "train"],
-                                         min_n=args.min_slice_n, n_boot=args.slice_boot)
+                                         min_n=min_slice_n, n_boot=args.slice_boot)
         with open(os.path.join(base, f"slices{suffix}.md"), "w") as f:
-            f.write(report_markdown(metrics["slices"], label_type))
+            f.write(report_markdown(metrics["slices"], label_type, min_slice_n))
     text = format_report(metrics)
     print(text)
     if args.per_city:
