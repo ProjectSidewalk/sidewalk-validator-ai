@@ -43,7 +43,7 @@ in the ``vllm/vllm-openai`` Apptainer image, waits for ``/health``, runs this, a
 
 Usage (on a GPU node, with a server on port 8000)::
 
-    D=/gscratch/makelab/jfroehli/sidewalk-validator-ai/retrain-2026-10; O=/gscratch/scrubbed/jfroehli/vlm-scoreboard/scores
+    D=/gscratch/makelab/$USER/sidewalk-validator-ai/retrain-2026-10; O=/gscratch/scrubbed/$USER/vlm-scoreboard-2026-10/scores
     python analysis/vlm_vllm.py score --server http://127.0.0.1:8000 --model glm5.3-flash --repo zai-org/GLM-5.3-Flash \\
         --data-root $D --out-dir $O --concurrency 32 --gpu 4xH200 --tp 4 --image-tag vllm/vllm-openai:v0.32.0-x86_64 \\
         --prefill '<think></think>' --template-kwargs '{"reasoning_effort": "low"}'

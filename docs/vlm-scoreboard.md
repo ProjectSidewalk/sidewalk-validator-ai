@@ -267,9 +267,10 @@ draws (seed 20261021). A partial leg's comparison is on its own crops only.
 ## Per deployment
 
 Mean within-type AUC per deployment (all five types, types with ≥ 10 rows and both classes), for round 3,
-production and the best VLM with full coverage. Public deployments with ≥ 30 held-out crops are named; the two
+production and the best VLM with full coverage. Public deployments with ≥ 30 crops are named; the two
 private held-out deployments are lettered as in [`retrain-2026-10.md`](retrain-2026-10.md); every other private
-deployment is pooled into one row.
+deployment is pooled into one row. The crops are the whole held-out split, the round-3 `test` + `test_heldout` rows,
+which is wider than the board's *held-out* column (`test_heldout` only).
 
 <!-- BEGIN GENERATED: per_deployment (analysis/vlm_scoreboard.py) -->
 
@@ -365,7 +366,7 @@ Crops scored per (model, type) out of the held-out crops of that type, and why a
 | Phi-4-reasoning-vision-15B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Production (DINOv2-L, 2025-08) | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Qwen3.8-27B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
-| Qwen3-VL-2B (4-bit, Mac) | 271 / 2,025 | 100 / 3,356 | 100 / 4,078 | 100 / 3,102 | 100 / 583 | 4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset) |
+| Qwen3-VL-2B (4-bit, Mac) | 271 / 2,025 | 100 / 3,356 | 100 / 4,078 | 100 / 3,102 | 100 / 583 | #16's 500-crop subset plus 171 CurbRamp crops of an interrupted run (671) |
 | Qwen3-VL-32B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Qwen3-VL-8B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Qwen3-VL-8B (4-bit, Mac) | 100 / 2,025 | 100 / 3,356 | 100 / 4,078 | 100 / 3,102 | 100 / 583 | 4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset) |
@@ -391,15 +392,15 @@ Crops scored per (model, type) out of the held-out crops of that type, and why a
   incorrect × correct pairs, deployments with ≥ 10 rows and both classes, then the mean over types.
 - **The 8-shot arm.** Gemma 4 31B, the best zero-shot leg when the arm was launched, with eight in-context `train`
   crops per type (four correct, four incorrect, seed 20261021, the same eight for every query of a type; no query
-  shared a panorama with its examples). Prompts run to about 3,100 tokens, hence the 10–20× latency.
-- **Thinking.** Off through the chat template where there is a switch (Qwen3.8, Gemma 4, MiniCPM-V). GLM-5.3-Flash
-  has none, so the client prefills an empty, closed `<think></think>` assistant turn (confirmed in every rendered
-  prompt); Muse Glimmer is forced to its final-answer channel by a prompt suffix; Phi-4 takes the `<nothink>` prefix.
+  shared a panorama with its examples). Prompts run to about 3,100 tokens, hence about 10× the latency.
+- **Thinking.** Off through the chat template where there is a switch (Qwen3.8, Gemma 4, MiniCPM-V, Nemotron 3.5).
+  GLM-5.3-Flash has none, so the client prefills an empty, closed `<think></think>` assistant turn (confirmed in
+  every rendered prompt); Muse Glimmer is forced to its final-answer channel by a prompt suffix; Phi-4 takes the `<nothink>` prefix.
 - **The vLLM leg.** GLM-5.3-Flash is the only model served by vLLM (FP8 weights, tensor parallel 4 on four H200s,
   the vllm/vllm-openai 0.32.0 image under Apptainer); it reads the first token's top-20 log-probs, and no crop had
   a yes/no spelling outside them. `docs/vlm-scoreboard/runs.md` is the job log for every klone leg.
-- **Timing.** Per leg, a batch-1 run and the run batch on a named GPU, median and p90 seconds per crop; the vLLM
-  leg's rows are concurrency 1 and 32; the Mac legs are #16's idle-machine batch-1 timings.
+- **Timing.** Per leg, a batch-1 timing run where one was made (not Nemotron, the 8-shot arm or production) and the
+  full run on a named GPU, median and p90 seconds per crop; the vLLM leg's rows are concurrency 1 and 32; the Mac legs are #16's idle-machine batch-1 timings.
 
 ## Caveats
 
@@ -413,10 +414,10 @@ Crops scored per (model, type) out of the held-out crops of that type, and why a
   the full ones.
 - **Thinking is off** for every model (switch, prefill, channel or prefix, see above); a reasoning pass might
   change some answers at many times the cost.
-- **Batch effects.** The transformers legs ran at batch 16 (batch 4 for the 8-shot arm, batch 1 for MiniCPM-V,
-  Qwen3.8 and Phi-4). In bf16 a crop's `p_incorrect` differs between batch 1 and batch 16 by up to 0.05 to 0.22
-  (median below 0.01); the fp32 difference is 2e-5, so this is kernel noise, not a bug. `runs.md` has the per-leg
-  numbers.
+- **Batch effects.** The transformers legs ran at batch 16 (batch 4 for the 8-shot arm and Nemotron, batch 1 for
+  MiniCPM-V, Qwen3.8 and Phi-4). In bf16 a crop's `p_incorrect` at the run batch differs from batch 1 by up to
+  0.02–0.22 per leg (median 0.0001–0.012); the fp32 difference is 2e-5, so this is kernel noise, not a bug.
+  `vlm-scoreboard/runs.md` has the per-leg numbers.
 
 ## Related
 

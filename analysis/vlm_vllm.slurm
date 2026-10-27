@@ -28,7 +28,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --time=8:00:00
 #SBATCH --requeue
-#SBATCH -o /gscratch/scrubbed/jfroehli/logs/vlm_vllm.%j.log
+#SBATCH -o /gscratch/scrubbed/%u/logs/vlm_vllm.%j.log
 #SBATCH --open-mode=append
 
 set -uo pipefail
@@ -46,10 +46,10 @@ THINKING_NOTE=${THINKING_NOTE:-"template has no off switch; closed by assistant 
 MAX_MODEL_LEN=${MAX_MODEL_LEN:-8192}
 EXTRA_SERVE_ARGS=${EXTRA_SERVE_ARGS:-}
 IMAGE_TAG=${IMAGE_TAG:-vllm/vllm-openai:v0.32.0-x86_64}   # CUDA 13.0; the -cu129 variant dies at import (torchcodec wants libnvrtc.so.13)
-SIF=${SIF:-/gscratch/scrubbed/jfroehli/containers/vllm-openai_v0.32.0-x86_64.sif}
-SCRUB=/gscratch/scrubbed/jfroehli
-CODE=${CODE:-/gscratch/makelab/jfroehli/sva-wt-vlm}
-DATA=${DATA:-/gscratch/makelab/jfroehli/sidewalk-validator-ai/retrain-2026-10}
+SIF=${SIF:-/gscratch/scrubbed/$USER/containers/vllm-openai_v0.32.0-x86_64.sif}
+SCRUB=/gscratch/scrubbed/$USER
+CODE=${CODE:-/gscratch/makelab/$USER/sidewalk-validator-ai}
+DATA=${DATA:-/gscratch/makelab/$USER/sidewalk-validator-ai/retrain-2026-10}
 OUT=${OUT:-$SCRUB/vlm-scoreboard-2026-10/scores}
 PY=${PY:-$SCRUB/envs/vllm-client/bin/python}
 PORT=${PORT:-$((18000 + ${SLURM_JOB_ID:-0} % 1000))}
@@ -59,8 +59,9 @@ export HF_HOME=$SCRUB/hf HF_HUB_OFFLINE=1
 # klone sets http_proxy for every login; its no_proxy lists localhost but not 127.0.0.1, so local calls hit the proxy
 export no_proxy="127.0.0.1,${no_proxy:-}" NO_PROXY="127.0.0.1,${NO_PROXY:-}"
 case "$OUT" in /tmp*) echo "refusing to write under /tmp"; exit 2 ;; esac
-# Slurm opens the -o log before this script runs, so /gscratch/scrubbed/jfroehli/logs must already exist (it does
-# on klone); a missing directory fails the job with no log at all. The mkdir below only covers later runs.
+# Slurm opens the -o log before this script runs, so /gscratch/scrubbed/$USER/logs (%u in the -o line) must already
+# exist (it does on klone); a missing directory fails the job with no log at all. The mkdir below only covers later
+# runs.
 mkdir -p "$OUT" "$SCRUB/vllm_home" "$SCRUB/logs"
 SHM=/dev/shm/vllm_${SLURM_JOB_ID:-$$}
 mkdir -p "$SHM"

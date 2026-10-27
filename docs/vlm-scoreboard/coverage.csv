@@ -59,11 +59,11 @@ qwen3.8-27b,Qwen3.8-27B,NoCurbRamp,3356,3356,True,
 qwen3.8-27b,Qwen3.8-27B,Obstacle,4078,4078,True,
 qwen3.8-27b,Qwen3.8-27B,SurfaceProblem,3102,3102,True,
 qwen3.8-27b,Qwen3.8-27B,Crosswalk,583,583,True,
-qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",CurbRamp,271,2025,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
-qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",NoCurbRamp,100,3356,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
-qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",Obstacle,100,4078,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
-qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",SurfaceProblem,100,3102,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
-qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",Crosswalk,100,583,False,"4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
+qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",CurbRamp,271,2025,False,#16's 500-crop subset plus 171 CurbRamp crops of an interrupted run (671)
+qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",NoCurbRamp,100,3356,False,#16's 500-crop subset plus 171 CurbRamp crops of an interrupted run (671)
+qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",Obstacle,100,4078,False,#16's 500-crop subset plus 171 CurbRamp crops of an interrupted run (671)
+qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",SurfaceProblem,100,3102,False,#16's 500-crop subset plus 171 CurbRamp crops of an interrupted run (671)
+qwen3vl-2b-mlx4,"Qwen3-VL-2B (4-bit, Mac)",Crosswalk,100,583,False,#16's 500-crop subset plus 171 CurbRamp crops of an interrupted run (671)
 qwen3vl-32b-bf16,Qwen3-VL-32B,CurbRamp,2025,2025,True,
 qwen3vl-32b-bf16,Qwen3-VL-32B,NoCurbRamp,3356,3356,True,
 qwen3vl-32b-bf16,Qwen3-VL-32B,Obstacle,4078,4078,True,

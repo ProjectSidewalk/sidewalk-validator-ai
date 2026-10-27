@@ -100,7 +100,6 @@ LEGS = {
 }
 MAC_LEGS = {"qwen3vl-2b": "qwen3vl-2b-mlx4", "qwen3vl-8b": "qwen3vl-8b-mlx4", "gemma4-12b": "gemma4-12b-mlx4"}
 DEFAULT_WHY = {
-    "phi4-rv-15b": "optional leg; not run",
     "production": "not staged yet (the full-split production run is on klone)",
     "fewshot8": "the 8-shot arm runs on the best zero-shot leg once the board names it",
 }
@@ -878,7 +877,7 @@ def fig_roc(legs, b, path):
     """ROC per type: round 3 (blue) and production (ink) solid, the best VLM orange dashed, other VLM legs muted."""
     plt = _plt()
     best, _ = best_vlm(b)
-    fig, axes = plt.subplots(1, len(LABEL_TYPES), figsize=(16, 4.0), sharey=True, facecolor=SURFACE)
+    fig, axes = plt.subplots(1, len(LABEL_TYPES), figsize=(16, 4.4), sharey=True, facecolor=SURFACE)
     order = [leg for leg in b.leg if leg in legs]
     for ax, t in zip(axes, LABEL_TYPES):
         _style(ax)
@@ -908,8 +907,8 @@ def fig_roc(legs, b, path):
     axes[0].set_ylabel("true positive rate (incorrect)", fontsize=8, color=INK2)
     fig.suptitle("ROC per label type on each leg's scored crops (AUC in the legend)", x=0.01, ha="left",
                  fontsize=11, color=INK)
-    fig.text(0.01, 0.01, FOOTNOTE, fontsize=7, color=MUTED)
-    fig.tight_layout(rect=(0, 0.05, 1, 0.95))
+    fig.text(0.01, 0.015, FOOTNOTE, fontsize=7, color=MUTED, va="bottom")
+    fig.tight_layout(rect=(0, 0.08, 1, 0.95))
     fig.savefig(path, dpi=150, facecolor=SURFACE)
     plt.close(fig)
 
@@ -946,11 +945,29 @@ def fig_per_deployment(dep, b, path):
     ax.set_axisbelow(True)
     ax.set_xlabel("mean within-type AUC (types with >= 10 rows and both classes)", fontsize=9, color=INK2)
     ax.legend(fontsize=8, frameon=False, loc="upper left", bbox_to_anchor=(1.0, 1.0))
-    _titles(ax, "Per deployment: round 3 vs the best VLM", "Public deployments with >= 30 crops named; private\n"
-            "held-out deployments lettered, all other private deployments pooled.")
+    _titles(ax, "Per deployment: round 3 vs the best VLM", "Public deployments (>= 30 crops) named; private held-out "
+            "ones lettered; other private ones pooled.")
     fig.tight_layout()
     fig.savefig(path, dpi=150, facecolor=SURFACE)
     plt.close(fig)
+
+
+def _gpu_label(gpu, n_gpus):
+    """GPU label for a timing row; appends `` xN`` only when the name does not already carry a count.
+
+    >>> _gpu_label("2xNVIDIA A40", 2), _gpu_label("NVIDIA A40", 2), _gpu_label("NVIDIA A40", 1)
+    ('2xNVIDIA A40', 'NVIDIA A40 x2', 'NVIDIA A40')
+    """
+    n = int(n_gpus)
+    if n == 1 or re.match(r"\d+x", str(gpu)):
+        return str(gpu)
+    return f"{gpu} x{n}"
+
+
+def _timing_kind(source):
+    """``"full run"`` for a row timed on a scoring run, ``"timing"`` for a dedicated timing run (``source`` column)."""
+    s = str(source)
+    return "full run" if s.startswith("full run") or s.startswith("vlm_vllm score") else "timing"
 
 
 def fig_latency(tm, path):
@@ -980,14 +997,14 @@ def fig_latency(tm, path):
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _p: f"{v:g}"))
     ax.xaxis.set_minor_formatter(NullFormatter())
     ax.set_yticks(ys)
-    ax.set_yticklabels([f"{r.display}  ({r.gpu}{'' if int(r.n_gpus) == 1 else f' x{int(r.n_gpus)}'}, batch "
+    ax.set_yticklabels([f"{r.display}, {_timing_kind(r.source)}  ({_gpu_label(r.gpu, r.n_gpus)}, batch "
                         f"{int(r.batch_size)})" for r in t.itertuples()], fontsize=8)
     ax.invert_yaxis()
     ax.xaxis.grid(True, color=GRID, lw=0.8, which="major")
     ax.set_axisbelow(True)
     ax.set_xlabel("median seconds per crop (log scale; line to p90)", fontsize=9, color=INK2)
-    _titles(ax, "Seconds per crop, GPU named", "Batch-1 and run-batch timings are separate rows; production and "
-            "round 3 in blue.")
+    _titles(ax, "Seconds per crop, GPU named", "Batch-1 timing runs and full runs are separate rows; production "
+            "in blue.")
     fig.tight_layout()
     fig.savefig(path, dpi=150, facecolor=SURFACE)
     plt.close(fig)

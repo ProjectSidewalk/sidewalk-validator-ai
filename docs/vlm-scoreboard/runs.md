@@ -1,7 +1,7 @@
 # VLM scoreboard: klone run log (issue #63)
 
-Every Slurm job behind the transformers legs and the production rows, written by the runner as the jobs ran (all on
-2026-10-26, account `makelab`, partition `ckpt-all`, `--requeue`). Wall times are Slurm `Elapsed`. The per-crop
+Every Slurm job behind the transformers, vLLM and production legs, written by the runner as the jobs ran (2026-10-26/27,
+account `makelab`, partition `ckpt-all`, `--requeue`). Wall times are Slurm `Elapsed`. The per-crop
 outputs carry label ids of private deployments, so they live outside the repo
 (`/gscratch/scrubbed/jfroehli/vlm-scoreboard-2026-10/` on klone, `~/Data/sidewalk-validator-ai-vlm-scoreboard-2026-10/`
 on the Mac); only this log, the code and the generated scoreboard are committed. No label ids or deployment names
@@ -61,11 +61,11 @@ bug. Early runs used a 0.02 threshold and a one-row check; the aborts below are 
 | `qwen3.8-27b` | 1 | 2×A40 | n/a (batch 1) | a batch-16 run (42380949) aborted on NoCurbRamp at 0.030 under the 0.02 threshold; rerun at batch 1, kept |
 | `phi4-rv-15b` | 1 | 1×A40 | n/a (batch 1; its smoke showed 0.011 at batch 8) | none |
 | `gemma4-31b-fewshot8` | 4 | 2×L40S / 2×A40 (one job per type) | ≤1e-16 on the first batches (about 3.1k-token prompts) | none |
-| `nemotron3.5-super-vl-120b` | 4 | 2×H200 | done | 0.106 s/crop full run; batch check on the first batch only (see the job table) |
+| `nemotron3.5-super-vl-120b` | 4 | 2×H200 | 0.007–0.111 max, 0.003–0.038 median (4 rows per type: the first batch only) | none |
 | `production` | 1 (unbatched) | 1×A40 | n/a | none |
 
 The batch-1 timing crops against the full runs (`scores/batch_invariance.csv`, 50 crops per leg, same GPU type):
-median |dp| 0.0024 (Molmo2) to 0.012 (Gemma 4 12B), max 0.019 to 0.22 (Gemma 4 31B); legs run at batch 1
+median |dp| 0.0001 (Gemma 4 31B) to 0.012 (Gemma 4 12B), max 0.019 (Molmo2) to 0.22 (Gemma 4 31B); legs run at batch 1
 reproduce their batch-1 timing scores exactly (0.0), so batch-1 runs are deterministic on one GPU type.
 
 MiniCPM-V 4.7's batch-1 timing run (job 42382210, 0.964 s/crop on g3130) is 3.7× slower than its full run at the
@@ -126,7 +126,76 @@ node), and the full-run row is the one to quote (the board picks it: `run_speed`
 | 42399869 | nemo | nemotron3.5-super-vl-120b full, batch 4 | 2×H200 | — | preempted while loading the weights; cancelled and resubmitted with parallel loading |
 | 42401600 | nemo | **nemotron3.5-super-vl-120b full**, batch 4, `HF_ENABLE_PARALLEL_LOADING` | 2×H200 | 31:23 (third start) | preempted while loading at 14:15, requeued, ran 17:25–17:56 on g3127 and scored 1,728 CurbRamp rows, then **FAILED with `Disk quota exceeded`** writing the meta file on `/gscratch/scrubbed` (the shared fileset was at 99%; writes succeeded again at 18:37, so the quota hit was transient) |
 | 42413443 | nemo | **nemotron3.5-super-vl-120b full**, resubmitted 18:40 after the quota failure; resumes from the 1,728 rows already in CurbRamp.csv | 2×H200 | 20:53 | ran 18:47–19:08 on g3128, loaded in 19 min, scored 64 more rows at 0.203 s/crop, then **FAILED again with `Disk quota exceeded`** on the CSV append |
-| 42454116 | nemo | **nemotron3.5-super-vl-120b full**, `OUT=/gscratch/makelab/jfroehli/vlm-out` (the 1,792 scored rows copied there); submitted 2026-10-27 05:48 | 2×H200 | ~45 min | **done**, 0 preemptions: started 06:53 on g3132 right after GLM released the node, loaded in 19 min, scored the remaining 11,352 crops at 0.105 s/crop (peak 248 GB). Five types from four job starts; `n_crops` 13,136 in timing.csv is the last partial batch excluded |
+| 42454116 | nemo | **nemotron3.5-super-vl-120b full**, `OUT=/gscratch/makelab/jfroehli/vlm-out` (the 1,792 scored rows copied there); submitted 2026-10-27 05:48 | 2×H200 | 41:16 | **done**, 0 preemptions: ran 06:55–07:36 on g3132 right after GLM released the node, loaded in 19 min, scored the remaining 11,352 crops at 0.105 s/crop (peak 248 GB). Five types from four job starts; `n_crops` 13,136 in timing.csv is the last partial batch excluded |
+
+## vLLM
+
+GLM-5.3-Flash (and a Qwen3-VL-8B smoke through the same path), served by vLLM in Apptainer and scored from the first
+generated token's top-20 log-probs: `analysis/vlm_vllm.py` (client) and `analysis/vlm_vllm.slurm` (launcher). Outputs
+on klone under `/gscratch/scrubbed/jfroehli/vlm-scoreboard-2026-10/` (`scores/glm5.3-flash/` for the full run,
+`smoke-vllm/` for smokes), staged on the Mac under `~/Data/sidewalk-validator-ai-vlm-scoreboard-2026-10/scores/`.
+
+### Setup (2026-10-26)
+
+- Image: `vllm/vllm-openai:v0.32.0-x86_64` (vLLM 0.32.0, CUDA 13.0, FlashInfer 0.7.0.post1), pulled to
+  `/gscratch/scrubbed/jfroehli/containers/` in a CPU job (`apptainer pull` on a login node risks the reaper). The
+  recipe (https://recipes.vllm.ai/zai-org/GLM-5.3-Flash) asks for vLLM ≥ 0.29.0 and FlashInfer ≥ 0.6.18. The
+  `-cu129` variant of the same release was tried first and dies at import: its torchcodec links `libnvrtc.so.13`.
+  klone's H200 driver is 580.178, which runs CUDA 13.0.
+- Weights: `zai-org/GLM-5.3-Flash` revision `46a050bec13002ad29ee795c16e61cf4fa3c4a9c`, 306 GiB FP8, 69 files, downloaded
+  on the login node in 2 h 10 min (`HF_HUB_DISABLE_XET=1`, safetensors/json/py/txt/jinja only).
+- Serve flags: TP 4, `--max-model-len 8192`, `--limit-mm-per-prompt {"image":1,"video":0}`, `--max-logprobs 20`, BF16 KV
+  cache (the recipe: Hopper cannot use FP8 KV for this model), no MTP speculative decoding (one token is generated).
+- Thinking: GLM-5.3-Flash's template always opens `<think>` and has no off switch (the recipe: "Thinking is always
+  on"). The client sends an assistant turn `<think></think>` with `continue_final_message=true`, which the template
+  renders as an empty, closed think block, plus `reasoning_effort=low`. The rendered prompt tail from vLLM's
+  `/tokenize` is recorded in each meta file.
+- Client env: `/gscratch/scrubbed/jfroehli/envs/vllm-client` (Python 3.12, numpy, pandas, scikit-learn, matplotlib,
+  pillow). The client runs on the host and posts each crop to the server as a base64 data URL.
+- Three klone traps, each fixed in the launcher: (1) klone exports `http_proxy`, and its `no_proxy` omits `127.0.0.1`,
+  so the `/health` probe went to the proxy and a healthy server timed out (job 42382723). (2) Apptainer's `--env`
+  splits on commas, so a 4-GPU `CUDA_VISIBLE_DEVICES=0,1,2,3` broke the 4×H200 launch (job 42390223). (3) The first
+  successful smoke used the transformers leg's `scores/` directory and model name. It appended nothing to that leg's
+  CSV, but it merged its keys into that leg's `qwen3vl-8b-bf16/CurbRamp.meta.json`. That file was restored by hand
+  (the added keys were removed; `gpu`/`batch_size` were reset to the CSV's `NVIDIA A40`/16). The client now refuses to
+  write into a CSV or meta file it did not create.
+
+### Smoke agreement: vLLM vs transformers, Qwen3-VL-8B-Instruct bf16, 40 CurbRamp crops
+
+The same 40 crops (`--limit 40`, first 20 per class by `label_uid`) scored by both paths. The transformers side is the
+runner's full CurbRamp run, on an A40 at batch 16; the vLLM side ran on 1×H200 at concurrency 8.
+
+| measure | value |
+|---|---|
+| mean / median / max \|Δ p_incorrect\| | 0.009 / 0.0007 / 0.060 |
+| crops with \|Δ\| > 0.02 | 8 of 40 |
+| mean / max \|Δ log-odds\| | 0.17 / 0.50 |
+| same verdict at 0.5 | 39 of 40 |
+| same top token, same prompt token count | 40 of 40, 40 of 40 |
+| top-20 mass outside (vLLM) | mean 1.1e-7, max 1.1e-6; no missing-side floors |
+
+The prompt and image token counts match exactly, so preprocessing agrees. The residual is bf16 kernel noise:
+FlashAttention 3 in vLLM against sdpa in transformers. In probability it is largest near 0.5. The mean is inside the
+~0.02 expectation; the tail is not.
+
+### Jobs
+
+Wait = Slurm `Start − Submit`. All on `ckpt-all`, account `makelab`.
+
+| job | what | GPU | wait | wall | preemptions | outcome |
+|---|---|---|---|---|---|---|
+| 42378643 | `apptainer pull` v0.32.0-cu129 | CPU, 16 cores | 0 min | 1:09:48 | 0 | image built; unusable (libnvrtc.so.13) |
+| 42379510 | smoke Qwen3-VL-8B, cu129 image | 1×H200 | 7 min | 0:01:11 | 0 | failed: torchcodec import |
+| 42380061 | `apptainer pull` v0.32.0 (CUDA 13) | CPU, 16 cores | 3 min | 0:44:22 | 0 | image built |
+| 42382723 | smoke Qwen3-VL-8B | 1×H200 | 37 min | 1:00:26 | 0 | timeout: health probe behind proxy |
+| 42390219 | smoke Qwen3-VL-8B | 1×H200 | 7 min | 0:03:39 | 0 | collided with the transformers leg's dir (above) |
+| 42390223 | smoke GLM-5.3-Flash, 40/type | 4×H200 | 9 min | 0:00:26 | 0 | failed: `--env` comma split |
+| 42391263 | smoke Qwen3-VL-8B, 40 CurbRamp | 1×H200 | 10 min | 0:07:21 | 0 | OK; server healthy in 180 s; 0.075 s/crop at concurrency 8 |
+| 42391323 | smoke GLM-5.3-Flash, 40/type, `OUT=smoke-vllm`; submitted 2026-10-26 10:22 | 4×H200 | 8 h 34 min (to the first start) | — | 1 | started 18:56 on g3127 and was **preempted at 18:58** while loading the tokenizer; requeued; cancelled 2026-10-27 06:05 once the full run 42413444 was running (the full run's meta answers the same prefill question) |
+| 42413444 | **full GLM-5.3-Flash**, launcher defaults (timing at concurrency 1, then all 13,144 crops); submitted 2026-10-26 18:40 | 4×H200 | about 11 h (started 2026-10-27 05:57 on g3132) | 0:55:13 | 0 | **done** (05:57:38–06:52:51): 0.256 s/crop at concurrency 1, 0.031 s/crop at concurrency 32. Weights loaded in 30 min, first-use kernel JIT (TileLang, FlashInfer) another 17 min, healthy after 2,823 s, then all 13,144 crops in 7 min. Every rendered prompt ends `<\|assistant\|><think></think>`; no yes/no side fell outside the top-20 log-probs (`n_answer_floor` empty); `top20_mass_outside` ≤ 5.2e-4; the meta carries `answer_floor_rule`, so the corrected client ran. Wrote to scrubbed without hitting the quota |
+| 42454117 | **full GLM-5.3-Flash**, same defaults, `OUT=/gscratch/makelab/jfroehli/vlm-out/scores-vllm`; submitted 2026-10-27 05:48 | 4×H200 | — | — | — | hedge against the scrubbed quota; cancelled at 06:45 once 42413444 was writing rows cleanly |
+
+## Notes
 
 8-shot arm: the leg with the best mean per-type AUC among the finished zero-shot legs when it was launched was
 `gemma4-31b`. Examples: 4 correct + 4 incorrect `train` crops per type, seed 20261021, interleaved correct/incorrect,
@@ -139,23 +208,12 @@ Prompts are about 3,100 tokens (nine images), so 2.5 s/crop on 2×L40S and 4.2 s
 Nemotron: three preemptions in total (smoke once, full run twice), each during the 25-minute weight load on a
 ckpt H200 pair. It was left queued on ckpt rather than moved to the lab's `gpu-l40s` allocation, which has no H200
 and would need a whole 8×L40S node to hold the 249 GB of weights.
-| 42391323 | smoke GLM-5.3-Flash, 40/type, `OUT=smoke-vllm` | 4×H200 | submitted 10:22 | — | — | started 18:56 on g3127 and was **preempted at 18:58** while loading the tokenizer; requeued; cancelled 2026-10-27 06:05 once the full run 42413444 was running (the full run's meta answers the same prefill question) |
-| 42413444 | **full GLM-5.3-Flash**, launcher defaults (timing at concurrency 1, then all 13,144 crops) | 4×H200 | submitted 18:40, started 2026-10-27 05:57 on g3132 | 55:13 | 0.256 s/crop at concurrency 1; 0.031 s/crop at concurrency 32 | **done**, 0 preemptions: weights loaded in 30 min, first-use kernel JIT (TileLang, FlashInfer) another 17 min, healthy after 2,823 s, then all 13,144 crops in 7 min. Every rendered prompt ends `<\|assistant\|><think></think>`; no yes/no side fell outside the top-20 log-probs (`n_answer_floor` empty); `top20_mass_outside` ≤ 5.2e-4; the meta carries `answer_floor_rule`, so the corrected client ran. Wrote to scrubbed without hitting the quota |
-| 42454117 | **full GLM-5.3-Flash**, same defaults, `OUT=/gscratch/makelab/jfroehli/vlm-out/scores-vllm` | 4×H200 | submitted 2026-10-27 05:48 | — | — | hedge against the scrubbed quota; cancelled at 06:45 once 42413444 was writing rows cleanly |
 
-### Where it stands (2026-10-27 07:50; earlier states below for the record)
+## Where it stands (2026-10-27 07:50)
 
 - Every leg is in: 14 klone legs on all 13,144 crops (GLM-5.3-Flash 0.754, Nemotron 3.5 Super VL 0.738). Both staged
   to the Mac, `timing.csv` regenerated with `timing-summary`.
 
-#### 2026-10-26 15:05
-
-- Done: client, launcher, tests; container path working; Qwen3-VL-8B smoke through vLLM agrees with transformers
-  (table above).
-- Not done: the GLM-5.3-Flash smoke result is unread, and the full 13,144-crop GLM run plus the concurrency-1 timing
-  run were not submitted. Both wait for the SSH master to be reopened (Duo).
-- Next: if 42391323 completed, check its rendered-prompt tail ends in `<think></think>` and `answer_floor` /
-  `top20_mass_outside` in the metas. Then run `sbatch analysis/vlm_vllm.slurm` from
-  `/gscratch/makelab/jfroehli/sva-wt-vlm`; the defaults are the full GLM run, with timing at concurrency 1 first.
-  Stage `scores/glm5.3-flash/` to `~/Data/sidewalk-validator-ai-vlm-scoreboard-2026-10/scores/glm5.3-flash/` and its
-  `timing.csv` as `scores/timing_glm5.3-flash.csv`.
+At the previous check (2026-10-26 15:05) the vLLM client, launcher, tests and container path were done and the
+Qwen3-VL-8B smoke through vLLM agreed with transformers; the GLM-5.3-Flash smoke was unread and the full GLM run
+waited on a reopened SSH master (Duo). Both were settled on 27 Oct by jobs 42391323 and 42413444 above.
