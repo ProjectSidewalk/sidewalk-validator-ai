@@ -146,6 +146,27 @@ muse-glimmer-30b,teaneck-nj,True,False,214,72,0.7242,0.7809,5
 muse-glimmer-30b,tucson-az,True,True,542,373,0.4812,0.6285,5
 muse-glimmer-30b,vancouver-wa,True,False,36,4,0.8906,0.8906,1
 muse-glimmer-30b,walla-walla-wa,True,False,134,51,0.4581,0.7165,4
+nemotron3.5-super-vl-120b,amsterdam,True,False,317,234,0.6317,0.6312,5
+nemotron3.5-super-vl-120b,burnaby,True,False,93,28,0.6390,0.7632,3
+nemotron3.5-super-vl-120b,cdmx,True,False,183,47,0.7093,0.4198,4
+nemotron3.5-super-vl-120b,chicago-il,True,False,1529,873,0.7125,0.7239,5
+nemotron3.5-super-vl-120b,columbus-oh,True,False,228,80,0.6090,0.6432,4
+nemotron3.5-super-vl-120b,knox-oh,True,False,33,10,0.7522,0.8095,1
+nemotron3.5-super-vl-120b,mendota-il,True,False,297,229,0.8301,0.7296,5
+nemotron3.5-super-vl-120b,newberg-or,True,False,208,78,0.6802,0.6867,4
+nemotron3.5-super-vl-120b,oradell-nj,True,False,163,28,0.8354,0.6812,4
+nemotron3.5-super-vl-120b,other (5 private deployments),False,False,2028,848,0.7144,0.7333,5
+nemotron3.5-super-vl-120b,paterson-nj,True,False,35,20,0.5033,0.5393,2
+nemotron3.5-super-vl-120b,pittsburgh-pa,True,False,216,64,0.6902,0.6529,4
+nemotron3.5-super-vl-120b,private city A (outside the US),False,True,1803,1429,0.4881,0.7074,5
+nemotron3.5-super-vl-120b,private city B (US),False,True,1741,584,0.6548,0.6970,5
+nemotron3.5-super-vl-120b,seattle-wa,True,False,2630,1109,0.6304,0.7657,5
+nemotron3.5-super-vl-120b,spgg,True,False,337,125,0.7075,0.6763,4
+nemotron3.5-super-vl-120b,st-louis-mo,True,False,156,24,0.5142,0.5652,4
+nemotron3.5-super-vl-120b,teaneck-nj,True,False,214,72,0.8529,0.8318,5
+nemotron3.5-super-vl-120b,tucson-az,True,True,542,373,0.5545,0.6837,5
+nemotron3.5-super-vl-120b,vancouver-wa,True,False,36,4,0.6797,0.6797,1
+nemotron3.5-super-vl-120b,walla-walla-wa,True,False,134,51,0.5542,0.7680,4
 phi4-rv-15b,amsterdam,True,False,317,234,0.5977,0.5617,5
 phi4-rv-15b,burnaby,True,False,93,28,0.6604,0.7891,3
 phi4-rv-15b,cdmx,True,False,183,47,0.6079,0.3893,4

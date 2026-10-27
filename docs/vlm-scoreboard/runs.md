@@ -61,7 +61,7 @@ bug. Early runs used a 0.02 threshold and a one-row check; the aborts below are 
 | `qwen3.8-27b` | 1 | 2×A40 | n/a (batch 1) | a batch-16 run (42380949) aborted on NoCurbRamp at 0.030 under the 0.02 threshold; rerun at batch 1, kept |
 | `phi4-rv-15b` | 1 | 1×A40 | n/a (batch 1; its smoke showed 0.011 at batch 8) | none |
 | `gemma4-31b-fewshot8` | 4 | 2×L40S / 2×A40 (one job per type) | ≤1e-16 on the first batches (about 3.1k-token prompts) | none |
-| `nemotron3.5-super-vl-120b` | 4 (planned) | 2×H200 | not run yet | see the job table |
+| `nemotron3.5-super-vl-120b` | 4 | 2×H200 | done | 0.106 s/crop full run; batch check on the first batch only (see the job table) |
 | `production` | 1 (unbatched) | 1×A40 | n/a | none |
 
 The batch-1 timing crops against the full runs (`scores/batch_invariance.csv`, 50 crops per leg, same GPU type):
@@ -126,7 +126,7 @@ node), and the full-run row is the one to quote (the board picks it: `run_speed`
 | 42399869 | nemo | nemotron3.5-super-vl-120b full, batch 4 | 2×H200 | — | preempted while loading the weights; cancelled and resubmitted with parallel loading |
 | 42401600 | nemo | **nemotron3.5-super-vl-120b full**, batch 4, `HF_ENABLE_PARALLEL_LOADING` | 2×H200 | 31:23 (third start) | preempted while loading at 14:15, requeued, ran 17:25–17:56 on g3127 and scored 1,728 CurbRamp rows, then **FAILED with `Disk quota exceeded`** writing the meta file on `/gscratch/scrubbed` (the shared fileset was at 99%; writes succeeded again at 18:37, so the quota hit was transient) |
 | 42413443 | nemo | **nemotron3.5-super-vl-120b full**, resubmitted 18:40 after the quota failure; resumes from the 1,728 rows already in CurbRamp.csv | 2×H200 | 20:53 | ran 18:47–19:08 on g3128, loaded in 19 min, scored 64 more rows at 0.203 s/crop, then **FAILED again with `Disk quota exceeded`** on the CSV append |
-| 42454116 | nemo | **nemotron3.5-super-vl-120b full**, `OUT=/gscratch/makelab/jfroehli/vlm-out` (the 1,792 scored rows copied there); submitted 2026-10-27 05:48 | 2×H200 | — | queued on ckpt |
+| 42454116 | nemo | **nemotron3.5-super-vl-120b full**, `OUT=/gscratch/makelab/jfroehli/vlm-out` (the 1,792 scored rows copied there); submitted 2026-10-27 05:48 | 2×H200 | ~45 min | **done**, 0 preemptions: started 06:53 on g3132 right after GLM released the node, loaded in 19 min, scored the remaining 11,352 crops at 0.105 s/crop (peak 248 GB). Five types from four job starts; `n_crops` 13,136 in timing.csv is the last partial batch excluded |
 
 8-shot arm: the leg with the best mean per-type AUC among the finished zero-shot legs when it was launched was
 `gemma4-31b`. Examples: 4 correct + 4 incorrect `train` crops per type, seed 20261021, interleaved correct/incorrect,
@@ -143,10 +143,10 @@ and would need a whole 8×L40S node to hold the 249 GB of weights.
 | 42413444 | **full GLM-5.3-Flash**, launcher defaults (timing at concurrency 1, then all 13,144 crops) | 4×H200 | submitted 18:40, started 2026-10-27 05:57 on g3132 | 55:13 | 0.256 s/crop at concurrency 1; 0.031 s/crop at concurrency 32 | **done**, 0 preemptions: weights loaded in 30 min, first-use kernel JIT (TileLang, FlashInfer) another 17 min, healthy after 2,823 s, then all 13,144 crops in 7 min. Every rendered prompt ends `<\|assistant\|><think></think>`; no yes/no side fell outside the top-20 log-probs (`n_answer_floor` empty); `top20_mass_outside` ≤ 5.2e-4; the meta carries `answer_floor_rule`, so the corrected client ran. Wrote to scrubbed without hitting the quota |
 | 42454117 | **full GLM-5.3-Flash**, same defaults, `OUT=/gscratch/makelab/jfroehli/vlm-out/scores-vllm` | 4×H200 | submitted 2026-10-27 05:48 | — | — | hedge against the scrubbed quota; cancelled at 06:45 once 42413444 was writing rows cleanly |
 
-### Where it stands (2026-10-27 07:05; the 15:05 state is below for the record)
+### Where it stands (2026-10-27 07:50; earlier states below for the record)
 
-- GLM-5.3-Flash is done (job 42413444 above) and staged to the Mac; the board has it at 0.754 macro-AUC, level with
-  Gemma 4 31B zero-shot. Nemotron is still queued (42454116, output on makelab).
+- Every leg is in: 14 klone legs on all 13,144 crops (GLM-5.3-Flash 0.754, Nemotron 3.5 Super VL 0.738). Both staged
+  to the Mac, `timing.csv` regenerated with `timing-summary`.
 
 #### 2026-10-26 15:05
 

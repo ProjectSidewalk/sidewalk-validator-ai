@@ -16,6 +16,7 @@ molmo2-8b,Molmo2-8B,NVIDIA L40S,1,1,50,0.1519,0.1564,0.0422,0.0338,batch-1 timin
 molmo2-8b,Molmo2-8B,NVIDIA A40,1,16,13088,0.2635,0.2653,0.0732,0.0586,full run
 muse-glimmer-30b,Muse Glimmer 30B,2xNVIDIA A40,2,1,50,0.6448,0.6462,0.3582,0.2866,batch-1 timing run
 muse-glimmer-30b,Muse Glimmer 30B,2xNVIDIA A40,2,16,13088,0.5506,0.5605,0.3059,0.2447,full run
+nemotron3.5-super-vl-120b,Nemotron 3.5 Super VL 120B-A12B,2xNVIDIA H200,2,4,13136,0.1058,0.1103,0.0588,0.0470,full run
 phi4-rv-15b,Phi-4-reasoning-vision-15B,NVIDIA A40,1,1,50,0.8331,0.8364,0.2314,0.1851,batch-1 timing run
 phi4-rv-15b,Phi-4-reasoning-vision-15B,NVIDIA A40,1,1,13144,0.8399,0.8439,0.2333,0.1866,full run
 production,"Production (DINOv2-L, 2025-08)",NVIDIA A40,1,1,13139,0.0499,0.0625,0.0139,0.0111,full run

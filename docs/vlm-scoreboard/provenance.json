@@ -350,15 +350,43 @@
   "scores/muse-glimmer-30b/SurfaceProblem.meta.json": {
    "sha256": "020f5e017f68fda79f3639ca961f9310b72fb6c932a7e85879aee00e5b074ccc"
   },
+  "scores/nemotron3.5-super-vl-120b/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "8770329090f2744dbf397397dba91671fa98afaa9b214efe4ae950bbc955530b"
+  },
+  "scores/nemotron3.5-super-vl-120b/Crosswalk.meta.json": {
+   "sha256": "8add762945c79af325f30027cbf6cd93d87319132e65da872a64208b8b61a49b"
+  },
   "scores/nemotron3.5-super-vl-120b/CurbRamp.csv": {
-   "rows": 1792,
-   "sha256": "3ea2f0cd203b877adcd72b611ee0c4a1541ae6153ec0244f4d7b7a8d987f4097"
+   "rows": 2025,
+   "sha256": "38922b0c60fb74fcdbbfee65cdb42d8bbcd312164f7c881ac57e84495543cb84"
   },
   "scores/nemotron3.5-super-vl-120b/CurbRamp.meta.json": {
-   "sha256": "361dc3fabdf699bef083c4346db182924c40165e88616ffa13eddbb4b593636e"
+   "sha256": "5ab7fa726f3ed14e5740dfaa17eec6a34dddec1912e22fadfcfe900ccfb104c5"
+  },
+  "scores/nemotron3.5-super-vl-120b/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "a795afc90497b0f1df6e1d8d3b998a53ae4cf2a4dbd0be6767edb38cc02f1a8d"
+  },
+  "scores/nemotron3.5-super-vl-120b/NoCurbRamp.meta.json": {
+   "sha256": "d31bac468c37463f7fd021f8dcc40edb1c72fd6be39018e92ad685b0962545a3"
+  },
+  "scores/nemotron3.5-super-vl-120b/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "28b9a2d4a32cf0d2a94432e5ea66b4c863ee44e89ba92946cc1319df9c4dbb76"
+  },
+  "scores/nemotron3.5-super-vl-120b/Obstacle.meta.json": {
+   "sha256": "e1725753e3fdc67533a9585f3c4777013153980ba10fe63ba4c562b1defc792b"
+  },
+  "scores/nemotron3.5-super-vl-120b/SurfaceProblem.csv": {
+   "rows": 3102,
+   "sha256": "57faf861978a4914a5edd9e3568c1480b95517ec9695d8304d1aafa2375cd233"
+  },
+  "scores/nemotron3.5-super-vl-120b/SurfaceProblem.meta.json": {
+   "sha256": "9447b1b7e4dfa07bcdbea4f3cfa95506d9b59563cae5adaac69954f1c2938a39"
   },
   "scores/notes.json": {
-   "sha256": "b8f51ca6d240ca5a9ffc0e9ad5b576f93b8b26dbef28095e9371968707a352f9"
+   "sha256": "4a4677e2a3ec9c5603f712d6423dc5cd217374037af1db2d41c63bd5503d6057"
   },
   "scores/phi4-rv-15b/Crosswalk.csv": {
    "rows": 583,
@@ -614,12 +642,8 @@
    "sha256": "e9b7fb1cda4a331c9d74a8e1b9b58f7fd2f27e829c0c3ac57fae795830246930"
   },
   "scores/timing.csv": {
-   "rows": 24,
-   "sha256": "e9110538e5e30f68d0cbd9c23dda873fbb3ffb2406071d4853d7bc55542cd4a3"
-  },
-  "scores/timing_glm5.3-flash.csv": {
-   "rows": 2,
-   "sha256": "7160581b4159d4eadc998bbb21c849057ea125398fdab20cbc389fabf4afe542"
+   "rows": 27,
+   "sha256": "0e859cefaae7d96accb96c40bf976e8b14a757ed03d8221738d64c68fe1aeee1"
   },
   "scores/timing_mac.csv": {
    "rows": 3,
