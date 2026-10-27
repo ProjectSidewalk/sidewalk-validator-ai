@@ -20,7 +20,10 @@ reports label type × severity and label type × tag next to its comparative bas
 
 - A label with several tags counts once per tag.
 - Missing severity and untagged labels are their own `(none)` slice, never dropped.
-- Rates on fewer than 30 labels are left blank; the count is still shown.
+- Rates on fewer than 30 labels are left blank; the count is still shown. An AUC also needs at least 8 labels of
+  each class.
+- Each slice reports its largest one-deployment share, so a slice that is mostly one city's labels is visible.
+- Intervals are not corrected for the number of slices: read a table of them as a screen.
 
 **Where we need more data.** Each slice carries its training-row count, and fewer than 100 is flagged `⚠ thin`.
 

@@ -217,3 +217,75 @@ def test_hf_card_and_publish_drop_slices():
                   "auc": 1.0, "per_class": {}}, "slices": {"test": {"tag": []}}}
     assert "| slices |" not in hf_cards._metrics_section(m)
     assert "slices" not in publish_to_hf.pool_private_city_metrics(m, ".", "CurbRamp", set())
+
+
+def test_auc_needs_eight_of_each_class():
+    base = _pred(n=40).iloc[:0]
+    rows = pd.DataFrame({"label_uid": [f"x:{i}" for i in range(40)], "pano_id": [f"p{i}" for i in range(40)],
+                         "true": ["incorrect"] * 8 + ["correct"] * 32, "p_incorrect": np.linspace(1, 0, 40),
+                         "severity": 1, "tags": "[]"})
+    assert sl.slice_table(rows, "severity", min_n=10, n_boot=0).auc.iloc[0] == 1.0
+    seven = rows.assign(true=["incorrect"] * 7 + ["correct"] * 33)
+    assert np.isnan(sl.slice_table(seven, "severity", min_n=10, n_boot=0).auc.iloc[0])
+    assert np.isnan(sl.bootstrap_auc((seven.true == "incorrect").to_numpy(), seven.p_incorrect, seven.pano_id, 10)[0])
+    assert not np.isnan(sl.bootstrap_auc((rows.true == "incorrect").to_numpy(), rows.p_incorrect, rows.pano_id, 10)[0])
+    assert np.isnan(sl.paired_delta_table(seven, seven, "severity", min_n=10, n_boot=0).delta.iloc[0])
+    assert not np.isnan(sl.paired_delta_table(rows, rows, "severity", min_n=10, n_boot=0).delta.iloc[0])
+
+
+def test_severity_none_sorts_last_and_paired_carries_city_share():
+    p = _pred().assign(city="a")
+    p.loc[p.index[:5], "severity"] = np.nan
+    assert sl.slice_table(p, "severity", min_n=1, n_boot=0).slice.tolist() == ["1", "3", "(none)"]
+    d = sl.paired_delta_table(p, p, "severity", min_n=1, n_boot=0)
+    assert d.slice.tolist() == ["1", "3", "(none)"] and (d.max_city_share == 1.0).all()
+
+
+def test_per_slice_seeds_keep_an_interval_stable_when_other_slices_change():
+    p = _pred()
+    t1 = sl.slice_table(p, "tag", min_n=10, n_boot=100).set_index("slice")
+    extra = p.iloc[:12].assign(label_uid=lambda d: "e" + d.label_uid, tags='["new"]')
+    t2 = sl.slice_table(pd.concat([p, extra]), "tag", min_n=10, n_boot=100).set_index("slice")
+    assert t1.loc["narrow", ["auc_lo", "auc_hi"]].tolist() == t2.loc["narrow", ["auc_lo", "auc_hi"]].tolist()
+    d1 = sl.paired_delta_table(p, p.assign(p_incorrect=1 - p.p_incorrect), "tag", min_n=10, n_boot=100)
+    d2 = sl.paired_delta_table(pd.concat([p, extra]), pd.concat([p, extra]).assign(p_incorrect=lambda d: 1 - d.p_incorrect),
+                               "tag", min_n=10, n_boot=100)
+    assert d1.set_index("slice").loc["narrow", "delta_lo"] == d2.set_index("slice").loc["narrow", "delta_lo"]
+
+
+def test_boot_indices_redraws_single_class_resamples():
+    y = np.array([True] + [False] * 9)
+    out = sl.boot_indices(y, np.arange(10), 50, np.random.default_rng(0), max_tries=50)
+    assert len(out) == 50 and all(0 < y[i].sum() < len(i) for i in out)
+    with pytest.warns(UserWarning, match="had one class"):
+        assert len(sl.boot_indices(y, np.arange(10), 50, np.random.default_rng(0), max_tries=1)) < 50
+
+
+def test_paired_delta_groups_by_panorama_and_checks_true(monkeypatch):
+    seen = []
+    real = sl.boot_indices
+    monkeypatch.setattr(sl, "boot_indices", lambda y, groups, *a, **k: seen.append(set(groups)) or real(y, groups, *a, **k))
+    p = _pred()
+    sl.paired_delta_table(p, p, "severity", min_n=10, n_boot=5)
+    assert seen and seen[0] <= set(p.pano_id)
+    with pytest.raises(ValueError, match="true class"):
+        sl.paired_delta_table(p, p.assign(true=p["true"][::-1].to_numpy()), "severity", n_boot=0)
+
+
+def test_evaluate_slices_carry_city_share_pano_bootstrap_and_default_min_n(tmp_path, monkeypatch):
+    import evaluate
+    seen = []
+    real = sl.boot_indices
+    monkeypatch.setattr(sl, "boot_indices", lambda y, groups, *a, **k: seen.append(set(groups)) or real(y, groups, *a, **k))
+    p = _pred()
+    lt = tmp_path / "CurbRamp"
+    lt.mkdir()
+    split = p.assign(city=["a"] * 40 + ["b"] * 20, label_id=range(len(p)), label_type="CurbRamp",
+                     label_class=p["true"], crop_path="x.webp", hard=0)
+    split.to_csv(lt / "split.csv", index=False)
+    p.assign(p_correct=1 - p.p_incorrect)[evaluate.PREDICTION_COLUMNS].to_csv(lt / "predictions.csv", index=False)
+    evaluate.main(["--label_type", "CurbRamp", "--data-dir", str(tmp_path), "--skip-inference", "--slice-boot", "5"])
+    rows = {r["slice"]: r for r in json.load(open(lt / "metrics.json"))["slices"]["test"]["severity"]}
+    assert rows["3"]["max_city_share"] == pytest.approx(20 / 30)
+    assert seen and all(g <= set(p.pano_id) for g in seen)
+    assert f"blank under {sl.MIN_N} " in (lt / "slices.md").read_text()

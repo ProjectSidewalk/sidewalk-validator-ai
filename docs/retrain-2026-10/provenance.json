@@ -2,7 +2,7 @@
  "generated": "2026-10-27",
  "run_dir": "round3",
  "priors": "deployment_priors.json",
- "public_cities_source": "/private/tmp/claude-501/-Users-jonfroehlich-Git-sidewalk-validator-ai/7745f056-3a27-4de3-99b1-47890b313dbf/scratchpad/rr.pub",
+ "public_cities_source": "the public_cities list below: the 2026-10-22 run's live /v3/api/cities answer, reused so deployment naming matches the rest of this report",
  "public_cities": [
   "amsterdam",
   "auckland",

@@ -25,6 +25,7 @@ Example::
 """
 import hashlib
 import json
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -89,6 +90,9 @@ def boot_indices(y, groups, n_boot, rng, max_tries=20):
             if 0 < y[idx].sum() < len(idx):
                 out.append(idx)
                 break
+    if len(out) < n_boot:
+        warnings.warn(f"{n_boot - len(out)} of {n_boot} resamples had one class after {max_tries} tries; the "
+                      "interval rests on the rest")
     return out
 
 
@@ -152,8 +156,10 @@ def paired_delta_table(pred_a, pred_b, by, min_n=MIN_N, n_boot=N_BOOT, seed=0):
     if missing:
         raise ValueError(f"the baseline has no score for {len(missing)} of the model's labels (e.g. "
                          f"{sorted(missing)[:3]}); score both on the same split")
-    m = pred_a.merge(pred_b[["label_uid", "p_incorrect"]], on="label_uid", how="left", suffixes=("", "_b"),
-                     validate="one_to_one")
+    cols = ["label_uid", "p_incorrect"] + (["true"] if "true" in pred_b.columns else [])
+    m = pred_a.merge(pred_b[cols], on="label_uid", how="left", suffixes=("", "_b"), validate="one_to_one")
+    if "true_b" in m.columns and (m["true"] != m["true_b"]).any():
+        raise ValueError("the two prediction files disagree on the true class of some labels")
     d = with_slice(m, by)
     groups_col = "pano_id" if "pano_id" in d.columns else "label_uid"
     rows = []
