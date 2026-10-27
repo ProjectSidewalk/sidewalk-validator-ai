@@ -201,6 +201,8 @@ def gate_metrics(true, verdict, served, gate=GATE):
     >>> r = gate_metrics(["correct", "incorrect", "incorrect"], ["correct", "incorrect", "correct"], [0.95, 0.93, 0.5])
     >>> (r["agree"]["n_pass"], r["agree"]["precision"], r["disagree"]["catch"], r["all"]["coverage"])
     (1, 1.0, 0.5, 0.6667)
+    >>> (r["disagree"]["raw_precision"], r["disagree"]["raw_recall"])
+    (1.0, 0.5)
     """
     true, verdict, served = np.asarray(true), np.asarray(verdict), np.asarray(served, dtype=float)
     passed = served >= gate
@@ -214,6 +216,12 @@ def gate_metrics(true, verdict, served, gate=GATE):
                      "precision": round(hits / n_pass, 4) if n_pass else float("nan"),
                      "precision_lo": round(lo, 4), "precision_hi": round(hi, 4)}
     n_incorrect = int((true == "incorrect").sum())
+    raw = verdict == "incorrect"
+    raw_hits = int((raw & (true == "incorrect")).sum())
+    lo, hi = wilson(raw_hits, int(raw.sum()))
+    out["disagree"]["raw_precision"] = round(raw_hits / int(raw.sum()), 4) if raw.any() else float("nan")
+    out["disagree"]["raw_precision_lo"], out["disagree"]["raw_precision_hi"] = round(lo, 4), round(hi, 4)
+    out["disagree"]["raw_recall"] = round(raw_hits / n_incorrect, 4) if n_incorrect else float("nan")
     out["disagree"]["catch"] = round(out["disagree"]["n_pass"] * out["disagree"]["precision"] / n_incorrect, 4) \
         if n_incorrect and out["disagree"]["n_pass"] else (0.0 if n_incorrect else float("nan"))
     return out
@@ -427,7 +435,8 @@ def cmd_crops(args):
     run = {"labels": args.labels, "labels_sha256": sha256_file(args.labels), "pano_store": os.path.abspath(args.pano_store),
            "pano_store_marker": open(os.path.join(args.pano_store, dg.PANO_STORE_MARKER)).readline().strip(),
            "tilt_beta": args.tilt_beta, "depth_encoder": "vitb", "renderer": "torch" if device else "numpy",
-           "package_source": dg.package_source(), "status_counts": dict(status_counts),
+           "package_source": dg.package_source(), "status_counts_this_run": dict(status_counts),
+           "status_counts": pd.read_csv(manifest_path, dtype=str, keep_default_na=False).status.value_counts().to_dict(),
            "finished": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     with open(os.path.join(args.out, "crops_run.json"), "w") as f:
         json.dump(run, f, indent=2)
@@ -562,12 +571,21 @@ def cmd_report(args):
              ("Agree verdicts", lambda r: r["agree"]["n"]), ("Agree pass", lambda r: r["agree"]["n_pass"]),
              ("Agree coverage", lambda r: fmt(r["agree"]["coverage"])),
              ("Agree precision [Wilson]", lambda r: fmt_ci(r["agree"]["precision"], r["agree"]["precision_lo"], r["agree"]["precision_hi"])),
-             ("Disagree verdicts", lambda r: r["disagree"]["n"]), ("Disagree pass (served map)", lambda r: r["disagree"]["n_pass"])]
-    if api_map_unc is not None:
+             ("Disagree verdicts", lambda r: r["disagree"]["n"]),
+             ("Disagree precision, ungated [Wilson]", lambda r: fmt_ci(r["disagree"]["raw_precision"], r["disagree"]["raw_precision_lo"], r["disagree"]["raw_precision_hi"])),
+             ("Disagree recall, ungated", lambda r: fmt(r["disagree"]["raw_recall"])),
+             ("Disagree pass (served map)", lambda r: r["disagree"]["n_pass"])]
+    if api_map_unc is not None and api_map_unc != api_map:
         gcols += [("Disagree pass (uncapped)", lambda r: r["disagree_unc"]["n_pass"]),
                   ("Disagree precision (uncapped)", lambda r: fmt_ci(r["disagree_unc"]["precision"], r["disagree_unc"]["precision_lo"], r["disagree_unc"]["precision_hi"])),
                   ("Disagree catch (uncapped)", lambda r: fmt(r["disagree_unc"]["catch"]))]
-    L += ["### At the deployed gate (served accuracy ≥ 0.92)", "", table(grows, gcols), ""]
+    map_max = {c: max(api_map[c].values()) for c in api_map}
+    L += ["### At the deployed gate (served accuracy ≥ 0.92)", "", table(grows, gcols), "",
+          f"The served CurbRamp map reaches at most {map_max['correct']:.4f} for Agree and {map_max['incorrect']:.4f} for "
+          f"Disagree, so no Disagree verdict can pass the gate with this map"
+          + (" (the uncapped map is identical: the incorrect class never reached 0.92 on the calibration split)"
+             if api_map_unc is not None and api_map_unc == api_map else "")
+          + "; the ungated columns say what the raw Disagree verdicts would be worth.", ""]
 
     # 4. slices
     def slice_rows(frame, key, name):
