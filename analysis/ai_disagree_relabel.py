@@ -1,8 +1,8 @@
-"""Blind expert re-label of the production AI validator's Disagree votes, and its severity / tag breakdown.
+"""Masked expert re-label of the production AI validator's Disagree votes, and its severity / tag breakdown.
 
 Production measured the AI's Disagree votes against human majorities only (SidewalkWebpage#5793): 56-71% agreement
 depending on how strict the human reference is, against 96-99.7% for its Agree votes. Human votes are noisy, so this
-asks an expert to re-label a random sample blind, which is the one measurement that does not rest on the crowd.
+asks an expert to re-label a random sample with the AI and crowd verdicts masked, which is the one measurement that does not rest on the crowd.
 
 **Design.** 300 labels, three groups of 100, each stratified 20 per label type:
 
@@ -15,7 +15,7 @@ asks an expert to re-label a random sample blind, which is the one measurement t
 ``decoy`` (``decoy_agree``, topped up with ``decoy_unsure``)
     The AI voted Agree. Without these every item would be an AI Disagree and the rater would know the AI's verdict.
     A type with too few Agree votes is topped up with labels the AI abstained on (Unsure): Obstacle, whose old map
-    never let an Agree clear the gate, has 7. They blind as well; they are scored apart and give no AI precision.
+    never let an Agree clear the gate, has 7. They mask the verdict as well; they are scored apart and give no AI precision.
 
 Labels the rater (``EXPERT1_ID`` in the pull) has already voted on are excluded, so the rater has not seen them.
 Within each (group, type) cell candidates are ranked by a seeded hash of ``city:label_id`` and the first ones with a
@@ -29,7 +29,7 @@ Subcommands (every file with label-level rows goes OUTSIDE the repo, under ``~/D
     Pool -> candidates -> crop check on the server -> packet (``rate.html``, ``sheet.csv``, ``items/``) and key
     (``key.csv`` plus its sha256 in ``manifest.json``). Needs a live SSH control master to the database host.
 ``score``
-    Unblinds a filled sheet against the key: AI precision per group with Wilson 95% intervals, per type, the
+    Unmasks a filled sheet against the key: AI precision per group with Wilson 95% intervals, per type, the
     can't-tell rate, and on ``voted_disagree`` how often the crowd majority matches the expert.
 ``breakdown``
     From the pool alone: how often humans confirm the AI's Agree and Disagree votes, by label type x severity and by
@@ -154,7 +154,7 @@ def pick(cands, available, per_cell=PER_CELL):
 
 
 def make_key(picked, seed):
-    """The blinding key: a random ``r<6 hex>`` id per item and a shuffled order, deterministic in ``seed`` and the
+    """The masking key: a random ``r<6 hex>`` id per item and a shuffled order, deterministic in ``seed`` and the
     item set (so the seed stays secret until the rating is done). Same scheme as ``vlm_baseline.packet_key``."""
     rng = np.random.default_rng(int(hashlib.sha256(str(seed).encode()).hexdigest()[:16], 16))
     s = picked.sort_values("label_uid").reset_index(drop=True)
@@ -215,7 +215,7 @@ def _rate(k, n):
     return {"n": int(n), "k": int(k), "rate": k / n if n else np.nan, "lo": float(lo), "hi": float(hi)}
 
 
-def unblind(key, sheet):
+def unmask(key, sheet):
     """Key rows joined with the rater's verdicts; raises unless the sheet covers exactly the key's items."""
     sheet = sheet[["packet_id", "verdict"]].copy()
     if set(sheet.packet_id) != set(key.packet_id):
@@ -456,7 +456,7 @@ def cmd_build(args):
         fixed[r.packet_id] = {"label_type": r.label_type}
     fields = [{"name": "verdict", "legend": "Is this label correct?", "kind": "radio", "options": VERDICTS},
               {"name": "notes", "legend": "Notes (optional)", "kind": "text"}]
-    page = render_page(title="AI Disagree re-label", heading="Blind re-label: is the label correct?",
+    page = render_page(title="AI Disagree re-label", heading="Re-label: is the label correct?",
                        intro_html=intro_html(), items=items, fields=fields, sheet_columns=SHEET_COLUMNS,
                        fixed=fixed, storage_key="ai_disagree_relabel_2026_10", export_name="relabel_sheet")
     with open(os.path.join(args.packet_dir, "rate.html"), "w") as f:
@@ -476,7 +476,7 @@ def cmd_build(args):
 
 def cmd_score(args):
     key = pd.read_csv(args.key, dtype={"tags": str, "expert2": str})
-    t = score_table(unblind(key, pd.read_csv(args.sheet, dtype=str, keep_default_na=False)))
+    t = score_table(unmask(key, pd.read_csv(args.sheet, dtype=str, keep_default_na=False)))
     print("| Group | Type | AI right (expert) | n | can't tell | crowd majority right (expert) |")
     print("|---|---|---:|---:|---:|---:|")
     for _, r in t.iterrows():
@@ -508,7 +508,7 @@ def build_parser():
     b.add_argument("--per-cell", type=int, default=PER_CELL)
     b.add_argument("--oversample", type=int, default=OVERSAMPLE)
     b.set_defaults(func=cmd_build)
-    s = sub.add_parser("score", help="unblind a filled sheet against the key")
+    s = sub.add_parser("score", help="unmask a filled sheet against the key")
     s.add_argument("--key", required=True)
     s.add_argument("--sheet", required=True)
     s.set_defaults(func=cmd_score)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # On the database host, read-only: one row per label the AI validator has voted on, across all city schemas, with
 # the label's severity, tags and pano view, the AI's vote and latest served accuracy, and the human votes (AI
-# excluded). Input to ai_disagree_relabel.py (the blind expert re-label) and its severity/tag breakdown.
+# excluded). Input to ai_disagree_relabel.py (the masked expert re-label) and its severity/tag breakdown.
 #
 #   ssh makelab1 'bash -s' < analysis/pull_relabel_pool.sh > ~/Data/.../relabel_pool.csv
 #

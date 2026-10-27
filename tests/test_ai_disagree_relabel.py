@@ -1,4 +1,4 @@
-"""Tests for analysis/ai_disagree_relabel.py: sampling, blinding, unblinding, scoring and the severity/tag breakdown
+"""Tests for analysis/ai_disagree_relabel.py: sampling, masking, unmasking, scoring and the severity/tag breakdown
 (the server calls are thin and run by hand)."""
 import doctest
 import io
@@ -63,7 +63,7 @@ def test_pick_skips_unavailable_and_reports_shortfall():
     assert short["decoy/Obstacle"] == 3
 
 
-def test_make_key_blinds_with_unique_ids_and_is_seeded():
+def test_make_key_masks_with_unique_ids_and_is_seeded():
     picked = rl.candidates(_pool([{} for _ in range(30)]), "s", per_cell=30, oversample=1)
     k1, k2 = rl.make_key(picked, "secret"), rl.make_key(picked, "secret")
     assert k1.packet_id.is_unique and k1.packet_id.str.match(r"^r[0-9a-f]{6}$").all()
@@ -90,19 +90,19 @@ def _key():
         "crowd": [None, None, "Disagree", "Agree", "Agree", None]})
 
 
-def test_unblind_requires_exact_coverage_and_known_verdicts():
+def test_unmask_requires_exact_coverage_and_known_verdicts():
     sheet = pd.DataFrame({"packet_id": ["r1", "r2", "r3", "r4", "r5", "r6"], "verdict": ["incorrect"] * 6})
-    assert len(rl.unblind(_key(), sheet)) == 6
+    assert len(rl.unmask(_key(), sheet)) == 6
     with pytest.raises(ValueError, match="do not match"):
-        rl.unblind(_key(), sheet.iloc[:5])
+        rl.unmask(_key(), sheet.iloc[:5])
     with pytest.raises(ValueError, match="unexpected"):
-        rl.unblind(_key(), sheet.assign(verdict=["maybe"] + ["incorrect"] * 5))
+        rl.unmask(_key(), sheet.assign(verdict=["maybe"] + ["incorrect"] * 5))
 
 
 def test_score_table_precision_cant_tell_and_crowd():
     sheet = pd.DataFrame({"packet_id": ["r1", "r2", "r3", "r4", "r5", "r6"],
                           "verdict": ["incorrect", "cant_tell", "correct", "correct", "correct", "correct"]})
-    t = rl.score_table(rl.unblind(_key(), sheet)).set_index(["group", "label_type"])
+    t = rl.score_table(rl.unmask(_key(), sheet)).set_index(["group", "label_type"])
     lone = t.loc[("lone_disagree", "all")]
     assert (lone.n, lone.k, lone.cant_tell) == (1, 1, 1)
     voted = t.loc[("voted_disagree", "all")]

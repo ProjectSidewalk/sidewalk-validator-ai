@@ -1,10 +1,10 @@
-# Blind expert re-label of the AI's Disagree votes, and its severity / tag breakdown (October 2026)
+# Masked expert re-label of the AI's Disagree votes, and its severity / tag breakdown (October 2026)
 
 Production's AI Disagree votes agree with human majorities only 56–71% of the time, depending on how strict the
 human reference is, against 96–99.7% for its Agree votes
 ([SidewalkWebpage#5793](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5793#issuecomment-6442681734)).
 Those figures rest on crowd votes, which are noisy. This note sets up the one measurement that does not: an expert
-re-labels a random sample blind. It also breaks the crowd comparison down by label severity and by tag.
+re-labels a random sample with the AI and crowd verdicts masked. It also breaks the crowd comparison down by label severity and by tag.
 
 Script: [`analysis/ai_disagree_relabel.py`](../analysis/ai_disagree_relabel.py) (design and usage in its
 docstring); pull: [`analysis/pull_relabel_pool.sh`](../analysis/pull_relabel_pool.sh). Inputs and outputs have
