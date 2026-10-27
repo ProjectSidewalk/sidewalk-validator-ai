@@ -202,6 +202,49 @@
   "scores/gemma4-31b/SurfaceProblem.meta.json": {
    "sha256": "251912215393d4ddd3a8da81d0895a3f3786880dca4c25652af1b5140f9b9b3d"
   },
+  "scores/glm5.3-flash/Crosswalk.csv": {
+   "rows": 583,
+   "sha256": "ad55b7a461b8b978aa7fe03c1f15b397427ba4f6c4640cfd0975b59d3fbd8a0f"
+  },
+  "scores/glm5.3-flash/Crosswalk.meta.json": {
+   "sha256": "ea513ab5a6e00d322d51a56f1e3e186d3e8df6ea8627ea4c07bf0e8e55afb79e"
+  },
+  "scores/glm5.3-flash/CurbRamp.csv": {
+   "rows": 2025,
+   "sha256": "892b9c905825cc1b9afc718f833c2a0dd3ce5a6f766ce26516991879184dc2eb"
+  },
+  "scores/glm5.3-flash/CurbRamp.meta.json": {
+   "sha256": "06390be1cbb4a492824ba4fad64da78fca35a33d5f6505c141d26b84540681bd"
+  },
+  "scores/glm5.3-flash/NoCurbRamp.csv": {
+   "rows": 3356,
+   "sha256": "d1d536775e2edb3c5310f5462ae734d7404a2bb916696bff0a7b4ba4ea08f221"
+  },
+  "scores/glm5.3-flash/NoCurbRamp.meta.json": {
+   "sha256": "51656ca1d8b226b6f7ef9ba5a07b6a4671d4b61fd6e7323502478208585d49b6"
+  },
+  "scores/glm5.3-flash/Obstacle.csv": {
+   "rows": 4078,
+   "sha256": "8e3e95585ab43062b7523a6b4108cdd08530d18c74060394fdb3cb7648f13acc"
+  },
+  "scores/glm5.3-flash/Obstacle.meta.json": {
+   "sha256": "7a61b8929493de50aaa93df470d309f71f83e8bc31aa9eba6bec49322eae1a65"
+  },
+  "scores/glm5.3-flash/SurfaceProblem.csv": {
+   "rows": 3102,
+   "sha256": "505100555665d93642bc22acb86851ec91c5df169b1963af45bbad3409f20201"
+  },
+  "scores/glm5.3-flash/SurfaceProblem.meta.json": {
+   "sha256": "c0f8dcd358a3ceb87e66a5dfe06c20c3fe54d7319ab72e711078eb90a1afb106"
+  },
+  "scores/glm5.3-flash/timing.csv": {
+   "rows": 2,
+   "sha256": "7160581b4159d4eadc998bbb21c849057ea125398fdab20cbc389fabf4afe542"
+  },
+  "scores/glm5.3-flash/timing_c1.csv": {
+   "rows": 50,
+   "sha256": "a9bd7fc81b52245d4bbbb67aa611ae1b390b027a0dc290e57dc6246e0207b65d"
+  },
   "scores/minicpm-v4.7-35b-a3b/Crosswalk.csv": {
    "rows": 583,
    "sha256": "1c457b3d86d4d11b4fd2dfa4f7e62aae5e75c7a5bbf82400b506abe6684bfcf0"
@@ -315,7 +358,7 @@
    "sha256": "361dc3fabdf699bef083c4346db182924c40165e88616ffa13eddbb4b593636e"
   },
   "scores/notes.json": {
-   "sha256": "cb4dba8dd0d46528173009ed3b98001536c0cc992313a197bd264d833ee9f51e"
+   "sha256": "b8f51ca6d240ca5a9ffc0e9ad5b576f93b8b26dbef28095e9371968707a352f9"
   },
   "scores/phi4-rv-15b/Crosswalk.csv": {
    "rows": 583,
@@ -573,6 +616,10 @@
   "scores/timing.csv": {
    "rows": 24,
    "sha256": "e9110538e5e30f68d0cbd9c23dda873fbb3ffb2406071d4853d7bc55542cd4a3"
+  },
+  "scores/timing_glm5.3-flash.csv": {
+   "rows": 2,
+   "sha256": "7160581b4159d4eadc998bbb21c849057ea125398fdab20cbc389fabf4afe542"
   },
   "scores/timing_mac.csv": {
    "rows": 3,

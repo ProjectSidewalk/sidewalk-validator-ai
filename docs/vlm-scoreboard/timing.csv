@@ -7,6 +7,8 @@ gemma4-31b,Gemma 4 31B,2xNVIDIA A40,2,1,50,0.4895,0.4912,0.2720,0.2176,batch-1 t
 gemma4-31b,Gemma 4 31B,2xNVIDIA A40,2,16,13088,0.4091,0.4111,0.2273,0.1818,full run
 gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",2xNVIDIA A40,2,4,1988,4.2219,4.2323,2.3455,1.8764,full run
 gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",2xNVIDIA L40S,2,4,11148,2.4628,2.5385,1.3682,1.0946,full run
+glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",4xH200,4,1,50,0.2562,0.2623,0.2847,0.2277,"vlm_vllm timing: 10 crops per type, concurrency 1, after one warm-up"
+glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",4xH200,4,32,13144,0.0314,0.0322,0.0349,0.0279,vlm_vllm score: chunk wall / chunk size at concurrency 32
 minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,NVIDIA H200,1,1,50,0.9643,0.9780,0.2678,0.2143,batch-1 timing run
 minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,NVIDIA H200,1,1,13144,0.2639,0.2757,0.0733,0.0586,full run
 molmo2-8b,Molmo2-8B,NVIDIA A40,1,1,50,0.2965,0.3040,0.0824,0.0659,batch-1 timing run

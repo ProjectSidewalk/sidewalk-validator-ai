@@ -23,6 +23,12 @@ gemma4-31b-fewshot8,round3,Obstacle,4078,0.5567,0.8731,-0.3164,-0.3354,-0.2984
 gemma4-31b-fewshot8,round3,SurfaceProblem,3102,0.7722,0.8551,-0.0829,-0.1004,-0.0654
 gemma4-31b-fewshot8,round3,Crosswalk,583,0.9378,0.9716,-0.0338,-0.0535,-0.0164
 gemma4-31b-fewshot8,round3,macro (5 types),13144,0.7754,0.9146,-0.1392,-0.1471,-0.1318
+glm5.3-flash,round3,CurbRamp,2025,0.8015,0.9534,-0.1519,-0.1709,-0.1351
+glm5.3-flash,round3,NoCurbRamp,3356,0.6737,0.9197,-0.2460,-0.2651,-0.2274
+glm5.3-flash,round3,Obstacle,4078,0.5744,0.8731,-0.2987,-0.3191,-0.2799
+glm5.3-flash,round3,SurfaceProblem,3102,0.7774,0.8551,-0.0777,-0.0954,-0.0611
+glm5.3-flash,round3,Crosswalk,583,0.9444,0.9716,-0.0272,-0.0434,-0.0128
+glm5.3-flash,round3,macro (5 types),13144,0.7543,0.9146,-0.1603,-0.1687,-0.1527
 minicpm-v4.7-35b-a3b,round3,CurbRamp,2025,0.7932,0.9534,-0.1601,-0.1796,-0.1429
 minicpm-v4.7-35b-a3b,round3,NoCurbRamp,3356,0.6520,0.9197,-0.2677,-0.2863,-0.2469
 minicpm-v4.7-35b-a3b,round3,Obstacle,4078,0.5799,0.8731,-0.2932,-0.3124,-0.2750

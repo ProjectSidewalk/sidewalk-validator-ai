@@ -62,6 +62,27 @@ gemma4-31b-fewshot8,teaneck-nj,True,False,214,72,0.8626,0.8475,5
 gemma4-31b-fewshot8,tucson-az,True,True,542,373,0.6696,0.6989,5
 gemma4-31b-fewshot8,vancouver-wa,True,False,36,4,0.7266,0.7266,1
 gemma4-31b-fewshot8,walla-walla-wa,True,False,134,51,0.6556,0.8015,4
+glm5.3-flash,amsterdam,True,False,317,234,0.5312,0.6264,5
+glm5.3-flash,burnaby,True,False,93,28,0.6830,0.8790,3
+glm5.3-flash,cdmx,True,False,183,47,0.7362,0.5368,4
+glm5.3-flash,chicago-il,True,False,1529,873,0.6899,0.7520,5
+glm5.3-flash,columbus-oh,True,False,228,80,0.5595,0.6326,4
+glm5.3-flash,knox-oh,True,False,33,10,0.8217,0.8571,1
+glm5.3-flash,mendota-il,True,False,297,229,0.7894,0.8548,5
+glm5.3-flash,newberg-or,True,False,208,78,0.7208,0.7436,4
+glm5.3-flash,oradell-nj,True,False,163,28,0.8212,0.7895,4
+glm5.3-flash,other (5 private deployments),False,False,2028,848,0.7357,0.7205,5
+glm5.3-flash,paterson-nj,True,False,35,20,0.4700,0.3867,2
+glm5.3-flash,pittsburgh-pa,True,False,216,64,0.6915,0.6720,4
+glm5.3-flash,private city A (outside the US),False,True,1803,1429,0.3620,0.6470,5
+glm5.3-flash,private city B (US),False,True,1741,584,0.6502,0.7262,5
+glm5.3-flash,seattle-wa,True,False,2630,1109,0.6955,0.7951,5
+glm5.3-flash,spgg,True,False,337,125,0.8294,0.7129,4
+glm5.3-flash,st-louis-mo,True,False,156,24,0.4965,0.5390,4
+glm5.3-flash,teaneck-nj,True,False,214,72,0.8145,0.8519,5
+glm5.3-flash,tucson-az,True,True,542,373,0.6222,0.7235,5
+glm5.3-flash,vancouver-wa,True,False,36,4,0.7969,0.7969,1
+glm5.3-flash,walla-walla-wa,True,False,134,51,0.5511,0.7486,4
 minicpm-v4.7-35b-a3b,amsterdam,True,False,317,234,0.5633,0.6394,5
 minicpm-v4.7-35b-a3b,burnaby,True,False,93,28,0.6236,0.8818,3
 minicpm-v4.7-35b-a3b,cdmx,True,False,183,47,0.6535,0.4903,4

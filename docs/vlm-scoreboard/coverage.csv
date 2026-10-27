@@ -19,6 +19,11 @@ gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",NoCurbRamp,3356,3356,True,
 gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",Obstacle,4078,4078,True,
 gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",SurfaceProblem,3102,3102,True,
 gemma4-31b-fewshot8,"Gemma 4 31B, 8-shot",Crosswalk,583,583,True,
+glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",CurbRamp,2025,2025,True,
+glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",NoCurbRamp,3356,3356,True,
+glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",Obstacle,4078,4078,True,
+glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",SurfaceProblem,3102,3102,True,
+glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",Crosswalk,583,583,True,
 minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,CurbRamp,2025,2025,True,
 minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,NoCurbRamp,3356,3356,True,
 minicpm-v4.7-35b-a3b,MiniCPM-V 4.7 35B-A3B,Obstacle,4078,4078,True,
@@ -79,8 +84,3 @@ round3,"Round 3 (DINOv2-L, 2026-10)",NoCurbRamp,3356,3356,True,
 round3,"Round 3 (DINOv2-L, 2026-10)",Obstacle,4078,4078,True,
 round3,"Round 3 (DINOv2-L, 2026-10)",SurfaceProblem,3102,3102,True,
 round3,"Round 3 (DINOv2-L, 2026-10)",Crosswalk,583,583,True,
-glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",CurbRamp,0,2025,False,"not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009)"
-glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",NoCurbRamp,0,3356,False,"not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009)"
-glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",Obstacle,0,4078,False,"not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009)"
-glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",SurfaceProblem,0,3102,False,"not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009)"
-glm5.3-flash,"GLM-5.3-Flash (FP8, vLLM)",Crosswalk,0,583,False,"not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009)"

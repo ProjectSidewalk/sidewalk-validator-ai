@@ -1,10 +1,9 @@
 # Open-weight VLM scoreboard (October 2026)
 
-> **Interim board, not for the PR as is.** Twelve klone legs of
+> **Interim board, not for the PR as is.** Thirteen klone legs of
 > [#63](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/63) have scored the full held-out split,
-> the 8-shot arm on Gemma 4 31B included. Nemotron 3.5 Super VL (2 H200, preempted during weight loading) and
-> GLM-5.3-Flash (4 H200 through vLLM, path validated but the full run not yet submitted) are still outstanding.
-> Remove this note when every leg is in or recorded as not run.
+> the 8-shot arm on Gemma 4 31B and GLM-5.3-Flash included. Only Nemotron 3.5 Super VL (2 H200; two runs killed by
+> the shared scratch quota, resubmitted) is still outstanding. Remove this note when it is in or recorded as not run.
 
 Issue [#63](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/63) puts current open-weight
 vision-language models (VLMs) next to the purpose-trained validators on the whole round-3 held-out split, in the
@@ -13,7 +12,7 @@ style of RampNet's `docs/model_scoreboard.md`. Everything below the headings is 
 the aggregate tables are in `vlm-scoreboard/*.csv` and `vlm-scoreboard/provenance.json` pins every input by sha256.
 `python analysis/vlm_scoreboard.py build --check` fails if this page drifts from those tables.
 
-The board has 16 legs, 12 of them scored all 13,144 held-out crops. Round 3 leads the best VLM (Gemma 4 31B, 8-shot) by
+The board has 17 legs, 13 of them scored all 13,144 held-out crops. Round 3 leads the best VLM (Gemma 4 31B, 8-shot) by
 0.139 macro-AUC on the crops both scored.
 
 ## Short answer
@@ -45,14 +44,15 @@ rows.
 | 2 | Production (DINOv2-L, 2025-08) | purpose-trained | 0.899 [0.894, 0.905] | 0.942 | 0.925 | 0.814 | 0.846 | 0.970 | 0.918 | 0.846 | 0.880 | 0.819 | 0.436 | -0.015 [-0.020, -0.011] | 0.0499 (NVIDIA A40, 1) | 13,144 / 13,144 |
 | 3 | Gemma 4 31B, 8-shot | chat VLM | 0.775 [0.768, 0.783] | 0.865 | 0.745 | 0.557 | 0.772 | 0.938 | 0.799 | 0.744 | 0.784 | 0.703 | 0.156 | -0.139 [-0.147, -0.132] | 2.46 (2xNVIDIA L40S, 4) | 13,144 / 13,144 |
 | 4 | Gemma 4 31B | chat VLM | 0.756 [0.748, 0.763] | 0.825 | 0.659 | 0.584 | 0.756 | 0.954 | 0.769 | 0.734 | 0.741 | 0.698 | 0.145 | -0.159 [-0.167, -0.151] | 0.409 (2xNVIDIA A40, 16) | 13,144 / 13,144 |
-| 5 | Qwen3-VL-32B | chat VLM | 0.748 [0.740, 0.756] | 0.785 | 0.645 | 0.613 | 0.752 | 0.946 | 0.744 | 0.746 | 0.741 | 0.665 | 0.147 | -0.166 [-0.174, -0.159] | 0.229 (2xNVIDIA L40S, 16) | 13,144 / 13,144 |
-| 6 | MiniCPM-V 4.7 35B-A3B | chat VLM | 0.742 [0.734, 0.749] | 0.793 | 0.652 | 0.580 | 0.743 | 0.941 | 0.751 | 0.728 | 0.728 | 0.641 | 0.132 | -0.173 [-0.181, -0.165] | 0.264 (NVIDIA H200, 1) | 13,144 / 13,144 |
-| 7 | Qwen3.8-27B | chat VLM | 0.736 [0.728, 0.744] | 0.779 | 0.619 | 0.589 | 0.746 | 0.948 | 0.736 | 0.738 | 0.726 | 0.672 | 0.142 | -0.179 [-0.187, -0.171] | 0.53 (2xNVIDIA A40, 1) | 13,144 / 13,144 |
-| 8 | Gemma 4 12B | chat VLM | 0.736 [0.727, 0.743] | 0.809 | 0.632 | 0.549 | 0.738 | 0.949 | 0.734 | 0.731 | 0.722 | 0.677 | 0.143 | -0.179 [-0.187, -0.171] | 0.129 (NVIDIA A40, 16) | 13,144 / 13,144 |
-| 9 | Muse Glimmer 30B | chat VLM | 0.722 [0.714, 0.731] | 0.802 | 0.605 | 0.568 | 0.746 | 0.891 | 0.742 | 0.672 | 0.693 | 0.501 | 0.010 | -0.192 [-0.202, -0.184] | 0.551 (2xNVIDIA A40, 16) | 13,144 / 13,144 |
-| 10 | Phi-4-reasoning-vision-15B | chat VLM | 0.700 [0.692, 0.709] | 0.709 | 0.569 | 0.566 | 0.721 | 0.934 | 0.697 | 0.694 | 0.692 | 0.615 | 0.124 | -0.215 [-0.224, -0.206] | 0.84 (NVIDIA A40, 1) | 13,144 / 13,144 |
-| 11 | Molmo2-8B | pointing model | 0.694 [0.685, 0.702] | 0.732 | 0.560 | 0.513 | 0.728 | 0.935 | 0.688 | 0.705 | 0.696 | 0.540 | 0.134 | -0.221 [-0.230, -0.212] | 0.264 (NVIDIA A40, 16) | 13,144 / 13,144 |
-| 12 | Qwen3-VL-8B | chat VLM | 0.679 [0.670, 0.688] | 0.737 | 0.540 | 0.515 | 0.692 | 0.912 | 0.686 | 0.654 | 0.669 | 0.609 | 0.094 | -0.235 [-0.246, -0.227] | 0.131 (NVIDIA A40, 16) | 13,144 / 13,144 |
+| 5 | GLM-5.3-Flash (FP8, vLLM) | chat VLM | 0.754 [0.746, 0.762] | 0.801 | 0.674 | 0.574 | 0.777 | 0.944 | 0.759 | 0.748 | 0.745 | 0.684 | 0.150 | -0.160 [-0.169, -0.153] | 0.0314 (4xH200, 32) | 13,144 / 13,144 |
+| 6 | Qwen3-VL-32B | chat VLM | 0.748 [0.740, 0.756] | 0.785 | 0.645 | 0.613 | 0.752 | 0.946 | 0.744 | 0.746 | 0.741 | 0.665 | 0.147 | -0.166 [-0.174, -0.159] | 0.229 (2xNVIDIA L40S, 16) | 13,144 / 13,144 |
+| 7 | MiniCPM-V 4.7 35B-A3B | chat VLM | 0.742 [0.734, 0.749] | 0.793 | 0.652 | 0.580 | 0.743 | 0.941 | 0.751 | 0.728 | 0.728 | 0.641 | 0.132 | -0.173 [-0.181, -0.165] | 0.264 (NVIDIA H200, 1) | 13,144 / 13,144 |
+| 8 | Qwen3.8-27B | chat VLM | 0.736 [0.728, 0.744] | 0.779 | 0.619 | 0.589 | 0.746 | 0.948 | 0.736 | 0.738 | 0.726 | 0.672 | 0.142 | -0.179 [-0.187, -0.171] | 0.53 (2xNVIDIA A40, 1) | 13,144 / 13,144 |
+| 9 | Gemma 4 12B | chat VLM | 0.736 [0.727, 0.743] | 0.809 | 0.632 | 0.549 | 0.738 | 0.949 | 0.734 | 0.731 | 0.722 | 0.677 | 0.143 | -0.179 [-0.187, -0.171] | 0.129 (NVIDIA A40, 16) | 13,144 / 13,144 |
+| 10 | Muse Glimmer 30B | chat VLM | 0.722 [0.714, 0.731] | 0.802 | 0.605 | 0.568 | 0.746 | 0.891 | 0.742 | 0.672 | 0.693 | 0.501 | 0.010 | -0.192 [-0.202, -0.184] | 0.551 (2xNVIDIA A40, 16) | 13,144 / 13,144 |
+| 11 | Phi-4-reasoning-vision-15B | chat VLM | 0.700 [0.692, 0.709] | 0.709 | 0.569 | 0.566 | 0.721 | 0.934 | 0.697 | 0.694 | 0.692 | 0.615 | 0.124 | -0.215 [-0.224, -0.206] | 0.84 (NVIDIA A40, 1) | 13,144 / 13,144 |
+| 12 | Molmo2-8B | pointing model | 0.694 [0.685, 0.702] | 0.732 | 0.560 | 0.513 | 0.728 | 0.935 | 0.688 | 0.705 | 0.696 | 0.540 | 0.134 | -0.221 [-0.230, -0.212] | 0.264 (NVIDIA A40, 16) | 13,144 / 13,144 |
+| 13 | Qwen3-VL-8B | chat VLM | 0.679 [0.670, 0.688] | 0.737 | 0.540 | 0.515 | 0.692 | 0.912 | 0.686 | 0.654 | 0.669 | 0.609 | 0.094 | -0.235 [-0.246, -0.227] | 0.131 (NVIDIA A40, 16) | 13,144 / 13,144 |
 |  | *partial coverage, not ranked against the rows above* |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
 |  | Gemma 4 12B (4-bit, Mac) | chat VLM | 0.722 [0.702, 0.745] | 0.790 | 0.634 | 0.508 | 0.735 | 0.944 | 0.724 | 0.718 | 0.696 | 0.625 | 0.185 | -0.183 [-0.206, -0.162] | 2.33 (Apple M1 Max (MLX), 1) | 1,988 / 13,144 |
 |  | Nemotron 3.5 Super VL 120B-A12B | chat VLM | 0.810 [0.791, 0.831] | 0.810 | — | — | — | — | 0.792 | 0.875 | 0.855 | 0.705 | 0.003 | -0.154 [-0.174, -0.135] | — | 1,792 / 13,144 |
@@ -91,6 +91,11 @@ rows.
 | Gemma 4 31B | NoCurbRamp | 3,356 | 1,554 | 0.659 [0.639, 0.678] | 0.658 | 0.683 | 0.626 (21) | 0.611 | 0.000 |
 | Gemma 4 31B | Obstacle | 4,078 | 2,186 | 0.584 [0.567, 0.600] | 0.626 | 0.571 | 0.576 (21) | 0.564 | 0.001 |
 | Gemma 4 31B | SurfaceProblem | 3,102 | 1,475 | 0.756 [0.739, 0.773] | 0.768 | 0.693 | 0.718 (24) | 0.695 | 0.001 |
+| GLM-5.3-Flash (FP8, vLLM) | Crosswalk | 583 | 271 | 0.944 [0.926, 0.960] | 0.961 | 0.876 | 0.920 (11) | 0.874 | 0.745 |
+| GLM-5.3-Flash (FP8, vLLM) | CurbRamp | 2,025 | 895 | 0.801 [0.783, 0.819] | 0.789 | 0.836 | 0.826 (22) | 0.683 | 0.003 |
+| GLM-5.3-Flash (FP8, vLLM) | NoCurbRamp | 3,356 | 1,554 | 0.674 [0.655, 0.692] | 0.656 | 0.735 | 0.674 (21) | 0.617 | 0.001 |
+| GLM-5.3-Flash (FP8, vLLM) | Obstacle | 4,078 | 2,186 | 0.574 [0.558, 0.591] | 0.602 | 0.570 | 0.548 (21) | 0.539 | 0.001 |
+| GLM-5.3-Flash (FP8, vLLM) | SurfaceProblem | 3,102 | 1,475 | 0.777 [0.761, 0.793] | 0.788 | 0.722 | 0.755 (24) | 0.706 | 0.000 |
 | Qwen3-VL-32B | Crosswalk | 583 | 271 | 0.946 [0.927, 0.961] | 0.962 | 0.879 | 0.936 (11) | 0.862 | 0.723 |
 | Qwen3-VL-32B | CurbRamp | 2,025 | 895 | 0.785 [0.766, 0.805] | 0.768 | 0.831 | 0.829 (22) | 0.615 | 0.006 |
 | Qwen3-VL-32B | NoCurbRamp | 3,356 | 1,554 | 0.645 [0.625, 0.664] | 0.641 | 0.684 | 0.636 (21) | 0.609 | 0.000 |
@@ -185,6 +190,12 @@ draws (seed 20261021). A partial leg's comparison is on its own crops only.
 | Gemma 4 31B, 8-shot | SurfaceProblem | 3,102 | 0.772 | 0.855 | -0.083 [-0.100, -0.065] |
 | Gemma 4 31B, 8-shot | Crosswalk | 583 | 0.938 | 0.972 | -0.034 [-0.053, -0.016] |
 | Gemma 4 31B, 8-shot | macro (5 types) | 13,144 | 0.775 | 0.915 | -0.139 [-0.147, -0.132] |
+| GLM-5.3-Flash (FP8, vLLM) | CurbRamp | 2,025 | 0.801 | 0.953 | -0.152 [-0.171, -0.135] |
+| GLM-5.3-Flash (FP8, vLLM) | NoCurbRamp | 3,356 | 0.674 | 0.920 | -0.246 [-0.265, -0.227] |
+| GLM-5.3-Flash (FP8, vLLM) | Obstacle | 4,078 | 0.574 | 0.873 | -0.299 [-0.319, -0.280] |
+| GLM-5.3-Flash (FP8, vLLM) | SurfaceProblem | 3,102 | 0.777 | 0.855 | -0.078 [-0.095, -0.061] |
+| GLM-5.3-Flash (FP8, vLLM) | Crosswalk | 583 | 0.944 | 0.972 | -0.027 [-0.043, -0.013] |
+| GLM-5.3-Flash (FP8, vLLM) | macro (5 types) | 13,144 | 0.754 | 0.915 | -0.160 [-0.169, -0.153] |
 | MiniCPM-V 4.7 35B-A3B | CurbRamp | 2,025 | 0.793 | 0.953 | -0.160 [-0.180, -0.143] |
 | MiniCPM-V 4.7 35B-A3B | NoCurbRamp | 3,356 | 0.652 | 0.920 | -0.268 [-0.286, -0.247] |
 | MiniCPM-V 4.7 35B-A3B | Obstacle | 4,078 | 0.580 | 0.873 | -0.293 [-0.312, -0.275] |
@@ -304,6 +315,8 @@ the median by the GPU count, for 1,000 labels and for a nightly 800-label city.
 | Gemma 4 31B | 2xNVIDIA A40 | 2 | 16 | 13,088 | 0.409 | 0.411 | 0.227 | 0.182 | full run |
 | Gemma 4 31B, 8-shot | 2xNVIDIA A40 | 2 | 4 | 1,988 | 4.22 | 4.23 | 2.35 | 1.88 | full run |
 | Gemma 4 31B, 8-shot | 2xNVIDIA L40S | 2 | 4 | 11,148 | 2.46 | 2.54 | 1.37 | 1.09 | full run |
+| GLM-5.3-Flash (FP8, vLLM) | 4xH200 | 4 | 1 | 50 | 0.256 | 0.262 | 0.285 | 0.228 | vlm_vllm timing: 10 crops per type, concurrency 1, after one warm-up |
+| GLM-5.3-Flash (FP8, vLLM) | 4xH200 | 4 | 32 | 13,144 | 0.0314 | 0.0322 | 0.0349 | 0.0279 | vlm_vllm score: chunk wall / chunk size at concurrency 32 |
 | MiniCPM-V 4.7 35B-A3B | NVIDIA H200 | 1 | 1 | 50 | 0.964 | 0.978 | 0.268 | 0.214 | batch-1 timing run |
 | MiniCPM-V 4.7 35B-A3B | NVIDIA H200 | 1 | 1 | 13,144 | 0.264 | 0.276 | 0.0733 | 0.0586 | full run |
 | Molmo2-8B | NVIDIA A40 | 1 | 1 | 50 | 0.296 | 0.304 | 0.0824 | 0.0659 | batch-1 timing run |
@@ -340,6 +353,7 @@ Crops scored per (model, type) out of the held-out crops of that type, and why a
 | Gemma 4 12B (4-bit, Mac) | 400 / 2,025 | 400 / 3,356 | 400 / 4,078 | 400 / 3,102 | 388 / 583 | 4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset) |
 | Gemma 4 31B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Gemma 4 31B, 8-shot | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
+| GLM-5.3-Flash (FP8, vLLM) | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | MiniCPM-V 4.7 35B-A3B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Molmo2-8B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Muse Glimmer 30B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
@@ -352,7 +366,6 @@ Crops scored per (model, type) out of the held-out crops of that type, and why a
 | Qwen3-VL-8B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Qwen3-VL-8B (4-bit, Mac) | 100 / 2,025 | 100 / 3,356 | 100 / 4,078 | 100 / 3,102 | 100 / 583 | 4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset) |
 | Round 3 (DINOv2-L, 2026-10) | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
-| GLM-5.3-Flash (FP8, vLLM) | 0 / 2,025 | 0 / 3,356 | 0 / 4,078 | 0 / 3,102 | 0 / 583 | not run: klone SSH master lost before the full run; vLLM path validated on Qwen3-VL-8B (same 40 crops, same verdict on 39 of 40, mean |dp| 0.009) |
 
 <!-- END GENERATED: coverage -->
 
