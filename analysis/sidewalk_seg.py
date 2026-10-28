@@ -505,7 +505,20 @@ LABEL_COLUMNS = ["label_uid", "city", "label_id", "pano_id", "label_type", "labe
 
 
 def select_labels(sample, label_types=LABEL_TYPES):
-    """The rows of ``sample.csv`` this experiment uses, with ``label_uid`` checked unique and ``store_tail`` added."""
+    """The rows of ``sample.csv`` this experiment uses, with ``label_uid`` checked unique and ``store_tail`` added.
+
+    GSV rows only: the render step re-renders each view from the DB ``camera_pitch``/``camera_roll`` and
+    ``tilt_beta``, which is GSV's convention. A Mapillary or Panoramax row (manifests since issue #72) would be
+    rendered with the wrong pitch sign and beta, so a sample that has any is refused; a sample without a
+    ``pano_source`` column predates non-GSV rows.
+    """
+    if "pano_source" in sample.columns:
+        src = sample["pano_source"].fillna("").astype(str).str.strip().str.lower()
+        other = sample[sample.label_type.isin(label_types) & (src != "gsv")]
+        if len(other):
+            raise ValueError(f"{len(other)} non-GSV rows in the sample ({other['pano_source'].value_counts().to_dict()}); "
+                             "this experiment re-renders with GSV's pose convention only (filter them out first, or "
+                             "render from pose_pitch/pose_roll and the per-row tilt_beta)")
     df = sample[sample.label_type.isin(label_types)][LABEL_COLUMNS].copy()
     if not df.label_uid.is_unique:
         raise ValueError("label_uid is not unique in the sample")
