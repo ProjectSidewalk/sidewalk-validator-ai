@@ -280,6 +280,9 @@ The retrain on the panorama-grouped split with tilt-corrected crops (round 3, Oc
 these production models, the calibration maps at the 0.92 gate and a per-type ship recommendation. The table
 above still describes the models in production.
 
+Open-weight vision-language models are compared with round 3 and production on the same held-out crops in
+[`docs/vlm-scoreboard.md`](docs/vlm-scoreboard.md), a generated, drift-checked scoreboard (issue #63).
+
 These are still the manual 2025-08-16 uploads: every model repo also holds `optimizer.pt`, `scheduler.pt`,
 `rng_state.pth` and `training_args.bin`, and none of the ten repos has a real card (`python publish_to_hf.py --audit`
 lists both problems). [`publish_to_hf.py`](#publishing-to-hugging-face) now builds the repos with cards, but nothing is

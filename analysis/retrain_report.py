@@ -93,11 +93,11 @@ POOLED_PRIVATE = "other (private deployments)"
 WILSON_Z = 1.959964   # the 95% bound calibration/per_city.py uses (Z95), not the map's MAP_Z
 
 
-def public_cities(path=None):
+def public_cities(path=None, timeout=60):
     """``(set_of_public_city_ids, source)``: from a saved ``/v3/api/cities`` response, a text file of ids, or the
-    live API when ``path`` is None."""
+    live API (``timeout`` seconds) when ``path`` is None."""
     if path is None:
-        with urllib.request.urlopen(CITIES_API, timeout=60) as r:
+        with urllib.request.urlopen(CITIES_API, timeout=timeout) as r:
             d = json.load(r)
         return {c["city_id"] for c in d["cities"] if c.get("visibility") == "public"}, CITIES_API
     with open(path) as f:
