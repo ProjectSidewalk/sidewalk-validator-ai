@@ -4,7 +4,7 @@ Does the 0.92 gate mean the same thing in every city? This note answers that for
 from the same production pull as [`calibration-2026-10.md`](calibration-2026-10.md) (2026-10-17, labels with at least
 two human votes, outcome `tie_half`). It is the production half of
 [#15](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/15). The held-out-city benchmark for the
-retrained models is the README's [Held-out-city benchmark](../README.md#held-out-city-benchmark) recipe, which has
+retrained models is the [Held-out-city benchmark](running-on-hyak.md#held-out-city-benchmark) recipe, which has
 not been run yet.
 
 **Reproduce.** Every table, count and figure below is the unedited output of `calibration/per_city.py`, run on the
@@ -433,7 +433,7 @@ What to do instead:
   and tucson-az SurfaceProblem. SidewalkWebpage would need a new setting for this, since today the gate is one
   number. Holding all four back would remove 4,615 of the 127,436 gated Agree votes in this sample (3.6%). This is a
   judgement call for SidewalkWebpage, not something this note settles.
-- **For the retrained models**, run the held-out-city benchmark (README) with Seattle, cdmx and spgg among the
+- **For the retrained models**, run the held-out-city benchmark ([`running-on-hyak.md`](running-on-hyak.md#held-out-city-benchmark)) with Seattle, cdmx and spgg among the
   held-out cities. All three are training cities today, so a per-city failure there points at the data as well as
   the gate. Then re-run `calibration.per_city` on the first production pull after the retrain.
 - **Before a retrained model's Disagree class votes again**, check it per city. As served, Disagree precision ranged
