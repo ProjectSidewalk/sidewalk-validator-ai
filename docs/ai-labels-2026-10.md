@@ -296,8 +296,8 @@ vote in the packet is another account's; the rater's vote is the record, read ba
 decoys (both Agree). 132 were voted, 3 of them Unsure.
 
 **Ordering flaw, disclosed.** The list was meant to be one seeded shuffle, but the build sorted the packet by the same
-hash it had used to pick the lowest-ranked decoys, so the 50 decoys came first (positions 1–55) and the 78 disputed
-labels after. The rater therefore saw an easy block and then a hard block. Contested, confirmed and missed are
+hash it had used to pick the lowest-ranked decoys, so positions 1–55 held all 50 decoys and 5 disputed labels, and
+positions 56–133 the other 78 disputed ones. The rater therefore saw an easy block and then a hard block. Contested, confirmed and missed are
 interleaved within the hard block, so the comparison that matters (contested against confirmed) stayed masked, and a
 late-list drift toward Disagree would work against the crowd's Agrees, so the headline below is if anything
 conservative. The code now orders by an independent hash (tested); the ratings were not redone.
@@ -314,13 +314,14 @@ conservative. The code now orders by an independent hash (tested); the ratings w
   contested labels left out say the same: 25 Agree, 1 Unsure.
 - **Disagree precision against the rater is the crowd's number.** Packet only, 31/59 = 53 % [40, 65], but the packet
   is enriched in confirmed Disagrees (the exclusion removed 26 of 57 contested and 2 of 32 confirmed). Folding in the
-  rater's prior votes on the 28 left out, the validator's Disagree is right on 33 of 86 decided labels, 38 % [29, 49],
+  rater's prior, unmasked votes on the 28 left out, the validator's Disagree is right on 33 of 86 decided labels, 38 % [29, 49],
   against 36 % for the crowd reference in the headline tables.
 - **Where the validator approved and a single crowd vote rejected, the crowd was mostly wrong:** on 15 of 21 the rater
-  sided with the validator. Where both rejected, the rater backed the crowd 27 of 29 times. So the crowd reference
-  understates the validator on its Agree side: some of the 56 Vancouver "rejections" in the headline tables are the
-  crowd's errors, and the 0.85 AUC against that reference is pessimistic. It does not change the Disagree verdicts,
-  which were wrong on the contested labels either way.
+  sided with the validator. Where both rejected, the rater backed the crowd 27 of 29 times. So some of the 56
+  Vancouver "rejections" in the headline tables are the crowd's errors. Whether the 0.85 AUC is high or low against a
+  lead reference is not decidable from this: it also depends on rejections hidden among the ~2,400 labels both the
+  crowd and the validator approved, which 49 decoys cannot estimate (1 found). It does not change the Disagree
+  verdicts, which were wrong on the contested labels either way.
 - Overall the rater agreed with the original human vote on 107 of 129 decided labels (83 %) and with the validator on
   94 (73 %).
 - **Confidence.** Within the validator's Disagrees the rater confirmed 23 of 32 above `p_incorrect` 0.999, 6 of 13
