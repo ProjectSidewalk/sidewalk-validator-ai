@@ -33,6 +33,7 @@ against the rater.
 """
 import argparse
 import hashlib
+from collections import Counter
 import json
 import os
 import sys
@@ -87,14 +88,26 @@ def pick(pool, seed=SEED, n_decoys=50):
     [('confirmed', 1), ('contested', 2), ('decoy', 2), ('missed', 1)]
     >>> p.packet_id.tolist() == list(range(1, 7)) and pick(pool, "s", n_decoys=2).label_uid.tolist() == p.label_uid.tolist()
     True
+
+    The decoys are spread through the list (an independent hash orders it); a 500-label pool makes that measurable:
+
+    >>> big = pd.DataFrame({"label_uid": [f"c:{i}" for i in range(500)], "verdict": ["incorrect"] * 50 + ["correct"] * 450,
+    ...                     "true": "correct"})
+    >>> pos = pick(big, "s", n_decoys=50).query("cell == 'decoy'").packet_id
+    >>> bool(30 < pos.median() < 70 and pos.min() < 10 and pos.max() > 90)
+    True
     """
     df = pool.copy()
     df["cell"] = [cell_of(v, t) for v, t in zip(df.verdict, df["true"])]
     df["rank"] = df.label_uid.map(lambda u: seeded_rank(seed, u))
     decoys = df[df.cell == "decoy"].sort_values("rank").head(n_decoys)
-    out = pd.concat([df[df.cell != "decoy"], decoys]).sort_values("rank").reset_index(drop=True)
+    out = pd.concat([df[df.cell != "decoy"], decoys])
+    # the list order is a second, independent hash: ordering by the pick rank would sort the chosen decoys (the lowest
+    # ranks) to the front, which the 2026-10-28 Vancouver packet did (see docs/ai-labels-2026-10.md)
+    out["order"] = out.label_uid.map(lambda u: seeded_rank(f"{seed}:order", u))
+    out = out.sort_values("order").reset_index(drop=True)
     out["packet_id"] = np.arange(1, len(out) + 1)
-    return out.drop(columns="rank")
+    return out.drop(columns=["rank", "order"])
 
 
 def prior_votes(validations_json, rater_id):
@@ -208,7 +221,7 @@ def cmd_build(args):
         f.write(GALLERY_MASK_CSS)
     man = {"built": datetime.now(timezone.utc).isoformat(timespec="seconds"), "city": args.city, "seed": args.seed,
            "n_decoys": args.n_decoys, "n": int(len(key)), "cells": key.cell.value_counts().to_dict(),
-           "excluded_rater_voted": n_rater, "rawlabels_before": os.path.abspath(before),
+           "excluded_rater_voted": n_rater, "rawlabels_before": os.path.relpath(before, args.run),
            "key_sha256": sha256_file(kpath), "labels_sha256": sha256_file(os.path.join(args.run, "labels.csv")),
            "predictions_sha256": sha256_file(os.path.join(args.run, "predictions.csv")),
            "rawlabels_before_sha256": sha256_file(before),
@@ -219,10 +232,67 @@ def cmd_build(args):
     print(f"\n{len(key)} labels -> {args.out}/index.html")
 
 
+def human_votes(validations_json):
+    """The human votes on a label as ``(user_id, validation)`` tuples, in API order."""
+    if not isinstance(validations_json, str) or not validations_json:
+        return []
+    return [(str(v.get("user_id")), v.get("validation")) for v in json.loads(validations_json)
+            if v.get("validator_type") == "Human"]
+
+
+def readback_check(key, before, after, rater):
+    """Every packet label's votes after rating must be its votes before rating plus at most one new vote by the rater.
+    Returns ``{"gained_rater_vote": n, "unchanged": n}``; raises on anything else (another account voted meanwhile,
+    a vote vanished, two new rater votes).
+
+    >>> import io
+    >>> key = pd.DataFrame({"label_id": ["1", "2"]})
+    >>> b = pd.DataFrame({"label_id": ["1", "2"], "validations": [json.dumps([vote_("x", "Agree")]), "[]"]})
+    >>> a = pd.DataFrame({"label_id": ["1", "2"], "validations": [json.dumps([vote_("x", "Agree"), vote_("r", "Disagree")]), "[]"]})
+    >>> readback_check(key, b, a, "r")
+    {'gained_rater_vote': 1, 'unchanged': 1}
+    >>> readback_check(key, a, b, "r")
+    Traceback (most recent call last):
+    ValueError: label 1: votes changed in a way that is not one new vote by the rater
+    """
+    for frame, name in ((before, "before"), (after, "after")):
+        if not frame.label_id.is_unique:
+            raise ValueError(f"duplicate label_id in the {name} pull")
+    bv = before.set_index("label_id").validations
+    av = after.set_index("label_id").validations
+    out = {"gained_rater_vote": 0, "unchanged": 0}
+    for lid in key.label_id.astype(str):
+        b, a = Counter(human_votes(bv.get(lid))), Counter(human_votes(av.get(lid)))
+        if a == b:
+            out["unchanged"] += 1
+            continue
+        added, removed = a - b, b - a
+        if not removed and sum(added.values()) == 1 and next(iter(added))[0] == rater:
+            out["gained_rater_vote"] += 1
+        else:
+            raise ValueError(f"label {lid}: votes changed in a way that is not one new vote by the rater")
+    return out
+
+
+def vote_(user, v, vt="Human"):
+    return {"user_id": user, "validation": v, "validator_type": vt}
+
+
+def prior_disagrees(pool, rater):
+    """The validator-Disagree labels of the pool the rater had already voted on (so they were left out of the packet),
+    with that vote: ``label_uid, p_incorrect, rater_vote``. ``pool`` needs ``validations`` from the before pull."""
+    d = pool[pool.verdict == "incorrect"].copy()
+    d["rater_vote"] = d.validations.map(lambda v: prior_votes(v, rater)[0])
+    d = d[d.rater_vote != ""]
+    return d[["label_uid", "p_incorrect", "rater_vote"]]
+
+
 def score_rows(key, after, rater):
     """``key`` joined with the rater's vote from the after-rating pull (``verdict_rater``: correct / incorrect /
     cant_tell / "" when unvoted). ``new_vote`` is False when the vote equals a prior vote by the rater (then the API
     cannot tell a re-vote from no vote)."""
+    if not after.label_id.is_unique:
+        raise ValueError("duplicate label_id in the after pull")
     av = after.set_index("label_id").validations
     votes = key.label_id.astype(str).map(lambda i: prior_votes(av.get(i), rater)[0])
     out = key.copy()
@@ -237,7 +307,19 @@ def _rate(k, n):
     return f"{k}/{n} = {k / n:.1%} [{lo:.0%}, {hi:.0%}]" if n else "—"
 
 
-def score_markdown(rows):
+BINS = [0, 0.99, 0.999, 1.0001]
+BIN_NAMES = ["< 0.99", "0.99–0.999", "> 0.999"]
+
+
+def _bins(p, right):
+    b = pd.cut(pd.Series(p, dtype=float), BINS, labels=BIN_NAMES)
+    r = pd.Series(right, dtype=bool)
+    return "; ".join(f"{n}: {int(r[b == n].sum())}/{int((b == n).sum())}" for n in BIN_NAMES)
+
+
+def score_markdown(rows, prior=None, readback=None):
+    """``rows`` from :func:`score_rows`; ``prior`` from :func:`prior_disagrees` (the Disagrees the packet left out
+    because the rater had voted on them, folded into a combined precision); ``readback`` from :func:`readback_check`."""
     L = [f"<!-- analysis/ai_labels_relabel.py score, {datetime.now(timezone.utc).date()} -->", "",
          "| cell | n | voted | Unsure | rater sides with validator | rater sides with original human vote |",
          "|---|---:|---:|---:|---|---|"]
@@ -249,9 +331,24 @@ def score_markdown(rows):
         L.append(f"| {cell} | {len(g)} | {len(v)} | {int((v.verdict_rater == 'cant_tell').sum())} | "
                  f"{_rate(int((dec.verdict_rater == dec.verdict).sum()), len(dec))} | "
                  f"{_rate(int((dec.verdict_rater == dec['true']).sum()), len(dec))} |")
-    dis = voted[(voted.verdict == "incorrect") & (voted.verdict_rater != "cant_tell")]
-    L += ["", f"Validator Disagree precision against the rater (contested + confirmed, Unsure excluded): "
-              f"{_rate(int((dis.verdict_rater == 'incorrect').sum()), len(dis))}."]
+    dec = voted[voted.verdict_rater != "cant_tell"]
+    dis = dec[dec.verdict == "incorrect"]
+    L += ["", f"Overall (Unsure excluded): rater sides with the original vote {_rate(int((dec.verdict_rater == dec['true']).sum()), len(dec))}, "
+              f"with the validator {_rate(int((dec.verdict_rater == dec.verdict).sum()), len(dec))}.",
+          f"Validator Disagree precision against the rater, packet only (contested + confirmed): "
+          f"{_rate(int((dis.verdict_rater == 'incorrect').sum()), len(dis))}; by p_incorrect bin: "
+          f"{_bins(dis.p_incorrect, dis.verdict_rater == 'incorrect')}."]
+    if prior is not None and len(prior):
+        pd_ = prior[prior.rater_vote.isin(["Agree", "Disagree"])]
+        k = int((dis.verdict_rater == "incorrect").sum()) + int((pd_.rater_vote == "Disagree").sum())
+        n = len(dis) + len(pd_)
+        L.append(f"Including the {len(prior)} validator Disagrees the packet left out because the rater had already voted "
+                 f"on them ({prior.rater_vote.value_counts().to_dict()}): Disagree precision against the rater over all "
+                 f"{int((rows.verdict == 'incorrect').sum()) + len(prior)} Disagrees ({n} decided) {_rate(k, n)}; by bin: "
+                 f"{_bins(pd.concat([dis.p_incorrect, pd_.p_incorrect]), pd.concat([dis.verdict_rater == 'incorrect', pd_.rater_vote == 'Disagree']))}.")
+    if readback:
+        L.append(f"Read-back check: {readback['gained_rater_vote']} labels gained exactly one vote by the rater, "
+                 f"{readback['unchanged']} unchanged, nothing else changed.")
     pr = voted[voted.prior_rater_vote.fillna("") != ""]
     if len(pr):
         L.append(f"{len(pr)} rated labels carried a prior vote by the rater; {int(pr.new_vote.sum())} changed. "
@@ -264,16 +361,24 @@ def cmd_score(args):
     if not rater:
         sys.exit("RATER must be set")
     key = pd.read_csv(os.path.join(args.out, "private-key-do-not-share", "key.csv"), dtype={"label_id": str})
-    after_path = os.path.join(args.out, "rawlabels_after", f"{key.city.iloc[0]}.csv")
+    man = json.load(open(os.path.join(args.out, "manifest.json")))
+    city = key.city.iloc[0]
+    after_path = os.path.join(args.out, "rawlabels_after", f"{city}.csv")
     after = pd.read_csv(after_path, dtype=str, usecols=["label_id", "validations"])
+    before_path = os.path.join(args.run, man["rawlabels_before"])
+    before = pd.read_csv(before_path, dtype=str, usecols=["label_id", "validations"])
+    readback = readback_check(key, before, after, rater)
     rows = score_rows(key, after, rater)
     rows.to_csv(os.path.join(args.out, "private-key-do-not-share", "scored.csv"), index=False)
-    md = score_markdown(rows)
+    df = load_run(args.run)
+    pool = df[(df.author == "ai") & df.scored & (df.clean == 1) & (df.city == city)]
+    pool = pool.merge(before, on="label_id", how="left", validate="one_to_one")
+    prior = prior_disagrees(pool, rater)
+    md = score_markdown(rows, prior, readback)
     with open(os.path.join(args.out, "results.md"), "w") as f:
         f.write(md)
-    man = json.load(open(os.path.join(args.out, "manifest.json")))
     man["scored"] = {"on": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                     "rawlabels_after_sha256": sha256_file(after_path),
+                     "rawlabels_after_sha256": sha256_file(after_path), "readback": readback,
                      "voted": int((rows.verdict_rater != "").sum()), "results_sha256": hashlib.sha256(md.encode()).hexdigest()}
     with open(os.path.join(args.out, "manifest.json"), "w") as f:
         json.dump(man, f, indent=2)
@@ -287,7 +392,7 @@ def build_parser():
     b.add_argument("--run", required=True)
     b.add_argument("--city", default="vancouver-wa")
     b.add_argument("--out", required=True)
-    b.add_argument("--seed", default=str(SEED))
+    b.add_argument("--seed", type=int, default=SEED)
     b.add_argument("--n-decoys", type=int, default=50)
     b.add_argument("--rawlabels-before", help="a rawLabels pull taken just before building (default: the run's pull)")
     b.add_argument("--force", action="store_true")

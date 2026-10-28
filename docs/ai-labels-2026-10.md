@@ -284,43 +284,58 @@ contradicted.
 
 ### Masked re-label of the contested Vancouver labels (2026-10-28)
 
-The question left open above was settled the same day: a project lead re-voted, on the live site with every existing
-vote masked, on the unseen Vancouver AI labels the validator and the one human vote disagreed about, plus decoys
-(`analysis/ai_labels_relabel.py`; results in [`ai-labels-2026-10/relabel_results.md`](ai-labels-2026-10/relabel_results.md),
-provenance in [`relabel_manifest.json`](ai-labels-2026-10/relabel_manifest.json)). Labels the lead had ever voted on were
-left out (1,284 of the unseen pool, including 26 of the 57 contested ones), so every original vote here is another
-account's, and the lead's vote is the record (read back from the rawLabels API, which carries votes within minutes). One
-list of 133 labels in one seeded shuffle: 31 contested (validator Disagree, human Agree), 30 confirmed (both Disagree),
-22 missed (validator Agree, human Disagree) and 50 decoys (both Agree). 132 were voted, 3 of them Unsure.
+The question left open above was settled the same day: a project lead (the rater) re-voted, on the live site with
+every existing vote masked, on the unseen Vancouver AI labels the validator and the one human vote disagreed about,
+plus decoys (`analysis/ai_labels_relabel.py`; results as the script emits them in
+[`ai-labels-2026-10/relabel_results.md`](ai-labels-2026-10/relabel_results.md), provenance in
+[`relabel_manifest.json`](ai-labels-2026-10/relabel_manifest.json)). Labels the rater had ever voted on were left out
+(1,284 of the unseen pool, including 26 of the 57 contested labels and 2 of the 32 confirmed ones), so every original
+vote in the packet is another account's; the rater's vote is the record, read back from the rawLabels API (each of the
+132 rated labels gained exactly one vote, the rater's, and nothing else changed). One list of 133 labels: 31 contested
+(validator Disagree, human Agree), 30 confirmed (both Disagree), 22 missed (validator Agree, human Disagree) and 50
+decoys (both Agree). 132 were voted, 3 of them Unsure.
 
-| cell | n | voted | Unsure | lead sides with the validator | lead sides with the original vote |
+**Ordering flaw, disclosed.** The list was meant to be one seeded shuffle, but the build sorted the packet by the same
+hash it had used to pick the lowest-ranked decoys, so the 50 decoys came first (positions 1–55) and the 78 disputed
+labels after. The rater therefore saw an easy block and then a hard block. Contested, confirmed and missed are
+interleaved within the hard block, so the comparison that matters (contested against confirmed) stayed masked, and a
+late-list drift toward Disagree would work against the crowd's Agrees, so the headline below is if anything
+conservative. The code now orders by an independent hash (tested); the ratings were not redone.
+
+| cell | n | voted | Unsure | rater sides with the validator | rater sides with the original vote |
 |---|---:|---:|---:|---|---|
 | contested | 31 | 31 | 1 | 4/30 = 13 % [5, 30] | 26/30 = 87 % [70, 95] |
 | confirmed | 30 | 30 | 1 | 27/29 = 93 % [78, 98] | 27/29 = 93 % [78, 98] |
 | missed | 22 | 22 | 1 | 15/21 = 71 % [50, 86] | 6/21 = 29 % [14, 50] |
 | decoy | 50 | 49 | 0 | 48/49 = 98 % [89, 100] | 48/49 = 98 % [89, 100] |
 
-- **The crowd was right about the contested labels.** On 26 of 30 the lead agreed with the original Agree vote; the
-  validator's contested Disagrees are wrong 87 % of the time. Its Disagree precision against the lead (contested plus
-  confirmed) is 31/59 = 53 % [40, 65], a little above the 36 % against the crowd because the two cells are not a
-  random sample of its Disagrees (every contested and confirmed label is in, no decoy is a Disagree), and far from the
-  0.92 gate either way.
-- **The crowd was mostly wrong about the labels the validator approved and a human rejected:** on 15 of 21 the lead
-  agreed with the validator. So the single crowd Disagree on an AI label is itself only about 30 % reliable here, and
-  some of the Vancouver "rejections" in the headline tables are the crowd's errors, which flatters nothing: the model's
-  contested Disagrees were still wrong.
-- Overall the lead agreed with the original human vote on 107 of 129 decided labels (83 %) and with the validator on
+- **The crowd was right about the contested labels.** On 26 of 30 the rater agreed with the original Agree vote; the
+  validator's contested Disagrees are wrong 87 % of the time. The rater's own earlier, unmasked votes on the 26
+  contested labels left out say the same: 25 Agree, 1 Unsure.
+- **Disagree precision against the rater is the crowd's number.** Packet only, 31/59 = 53 % [40, 65], but the packet
+  is enriched in confirmed Disagrees (the exclusion removed 26 of 57 contested and 2 of 32 confirmed). Folding in the
+  rater's prior votes on the 28 left out, the validator's Disagree is right on 33 of 86 decided labels, 38 % [29, 49],
+  against 36 % for the crowd reference in the headline tables.
+- **Where the validator approved and a single crowd vote rejected, the crowd was mostly wrong:** on 15 of 21 the rater
+  sided with the validator. Where both rejected, the rater backed the crowd 27 of 29 times. So the crowd reference
+  understates the validator on its Agree side: some of the 56 Vancouver "rejections" in the headline tables are the
+  crowd's errors, and the 0.85 AUC against that reference is pessimistic. It does not change the Disagree verdicts,
+  which were wrong on the contested labels either way.
+- Overall the rater agreed with the original human vote on 107 of 129 decided labels (83 %) and with the validator on
   94 (73 %).
-- **Confidence does separate the validator's Disagrees here**, unlike on the aggregate tables: of its Disagrees with
-  `p_incorrect` > 0.999 the lead confirmed 23 of 32 (72 %); between 0.99 and 0.999, 6 of 13; below 0.99, 2 of 14. The
-  served map was fitted on human-placed labels, where the Disagrees sit at 0.99993 median confidence; on AI labels a
-  contested Disagree sits at 0.994. That is a sample of 59, but it is the first sign that a confidence-aware Disagree on
-  AI labels could be made precise enough to route, if not to count.
+- **Confidence.** Within the validator's Disagrees the rater confirmed 23 of 32 above `p_incorrect` 0.999, 6 of 13
+  between 0.99 and 0.999 and 2 of 14 below; with the prior votes folded in, 24 of 43, 6 of 18 and 3 of 25. The crowd
+  reference shows the same gradient over all 89 Disagrees (23/45, 5/18, 4/26), so this is not new, and the top bin at
+  56 % [41, 70] is far from the 0.92 gate. For the record, a contested Disagree has median confidence 0.9956 and a
+  crowd-confirmed one 0.99993.
+
+Caveats: one rater, one city, 89 Disagrees in all; the rater is a project lead whose votes are part of the reference
+the round-3 model trained on; the ordering flaw above.
 
 **Limits.** One vote per label, 53–99 % of them from two accounts; a queue-selected 4–75 % of the AI labels; 2–9 %
 rejections, so the Disagree numbers rest on 56, 51 and 101 labels; no severity or tag slices; the Vancouver headline is
 a crowd-reference number because the round-3 selection took every lead-rejected label; the Mapillary crops are untilted
-rig-frame renders, as the 150 training AI crops are, but of imagery no training image resembles. The masked re-label above covers only the 31 contested labels another account approved, one city, one rater.
+rig-frame renders, as the 150 training AI crops are, but of imagery no training image resembles. The masked re-label above covers one city and one rater; in the other two deployments the lead who would rate cast nearly every original vote, so no masked re-label is possible there under the no-prior-votes rule.
 
 ## Reproduce
 
