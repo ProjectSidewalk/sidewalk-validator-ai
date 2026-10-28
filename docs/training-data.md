@@ -38,6 +38,13 @@ right one is [#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issu
 > 4,688 → 3,623, Crosswalk 1,974 → 1,034. With the 55:45 rule the `correct` class shrinks with them, so a retrain
 > has much less CurbRamp data than the counts in the API columns suggest.
 
+Whether the Disagree side of the margin rule should be as strict as the Agree side (net > 2), or require
+unanimity, and whether a model's own out-of-fold contradictions can find the wrong targets, is measured in
+[`confident-learning-2026-10.md`](confident-learning-2026-10.md)
+([#75](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/75),
+[#76](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/76)); the rule here is unchanged until that
+reports.
+
 ### Exclusions
 
 Labels from non-GSV imagery providers (Mapillary and Panoramax, so all of Richmond VA, Laurens IA and Bayonne FR;
