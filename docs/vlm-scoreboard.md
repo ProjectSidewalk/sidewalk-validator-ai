@@ -306,53 +306,65 @@ which is wider than the board's *held-out* column (`test_heldout` only).
 
 Every full leg, scored within label type × severity and label type × tag, so that a severity or tag a model handles
 badly shows up even when its type-level AUC looks fine, and thin training slices point at where more data would
-help. A crop with several tags counts once in each; `(none)` is an untagged crop, or one with no severity. The
-tables give round 3, production and the best full-coverage VLM with 95% label-bootstrap intervals; the heatmaps have
-every full leg. A tag gets a row when it has at least 100 held-out crops of its type and 20 of each class, and an AUC
-is blank below 30 crops or 10 of a class.
+help. A crop with several tags counts once in each; `(none)` is an untagged crop, or one with no severity. Crops are
+test + held-out pooled, as on the board. Each table row gives the slice's crops, its incorrect share, the share
+held by its largest deployment (unnamed) and its round-3 training crops, then, for round 3, production and the best
+full-coverage VLM, the pooled AUC with a 95% label-bootstrap interval and the within-city AUC. The CSVs add the AUC
+per split for every full leg; the heatmaps show the pooled AUC of every full leg. Every tag with at least 30 crops
+of its type has a row, and an AUC is blank below 30 crops or 10 of a class. Slice names follow
+`analysis/slices.py` ([#67](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/67)), which reports test
+and held-out separately with a panorama bootstrap; compare its numbers with this board's per-split columns, not the
+pooled ones.
 
-What the slices show at this build (read the numbers off the tables, which regenerate):
+**Read the largest-deployment and within-city columns before a pooled cell.** A slice drawn mostly from a few
+deployments with different incorrect shares can score near chance pooled while ranking well inside each deployment
+(the city–class confound), or the reverse. Obstacle parked scooter/motorcycle is the clearest case: production is
+near chance pooled but clearly above it on test deployments and within city. Obstacle parked bike goes the other way:
+round 3 looks strong pooled and is near chance within city.
 
-- **Severity is tied to the class**, so every model scores lower within a severity than across the type; some
-  slices (Crosswalk severity 3, almost all incorrect) have too few correct crops to score at all.
-- **Round 3 holds up in every scoreable severity slice.** The VLMs fall towards chance on CurbRamp severity 3 and
-  Obstacle severities 1 and 2.
-- **Round 3's weak tags are SurfaceProblem surface types** (brick/cobblestone, sand/gravel, narrow sidewalk) and
-  Obstacle construction. Brick/cobblestone has the fewest round-3 training crops of these, and it is the one slice
-  where several VLMs score above round 3.
-- **Production's outlier is Obstacle parked scooter/motorcycle**, a tag that barely existed in its 2025 training
-  data; round 3 handles it.
-- **The VLMs are weakest on the most common Obstacle tags** (pole, tree, vegetation, construction), and best on
-  trash can and parked bike.
-- **Untagged CurbRamp and Crosswalk crops are among the easiest slices for every model**; most tagged slices are
-  harder.
+What the slices show at this build (the numbers are in the tables, which regenerate):
+
+- **Round 3 is ahead of every VLM in every scoreable severity slice**, pooled. Production is behind it on Obstacle, close
+  to it elsewhere, and slightly ahead in a few CurbRamp, NoCurbRamp and Crosswalk slices. Crosswalk severity 3 (almost all incorrect) and Crosswalk with no severity are too
+  thin to score.
+- **The VLMs' weakest severity slices are Obstacle severities 1 and 2**, and NoCurbRamp severity 2 and no severity.
+- **Round 3's weakest tags transfer badly to new deployments.** Obstacle stairs is below chance for round 3 and
+  production alike (few crops, mostly one deployment, 35 training crops). SurfaceProblem brick/cobblestone,
+  sand/gravel and utility panel are strong on test deployments but fall on held-out ones, and the first two stay
+  low within city; for most SurfaceProblem tags (cracks is the exception), held-out AUC trails test AUC.
+- **Thin training slices:** Obstacle stairs, mailbox and outdoor dining area (one training crop; nearly all of
+  its crops are incorrect, all from one deployment, so it cannot be scored) have the fewest round-3 training crops.
+- **The VLMs are near chance on many Obstacle tags.** Their lowest medians are mailbox, stairs, parked
+  scooter/motorcycle and construction; trash/recycling can and litter/garbage are their best Obstacle tags and still well below round 3.
+  A VLM tops round 3's pooled AUC only on a few small or one-deployment slices (brick/cobblestone, stairs, debris).
+- **Untagged Crosswalk and CurbRamp crops are among the easiest slices for every model.**
 
 ### By severity
 
 <!-- BEGIN GENERATED: by_severity (analysis/vlm_scoreboard.py) -->
 
-| type | severity | held-out crops | incorrect | round-3 train | Round 3 (DINOv2-L, 2026-10) | Production (DINOv2-L, 2025-08) | Gemma 4 31B, 8-shot |
-|---|---|---|---|---|---|---|---|
-| CurbRamp | 1 | 1,524 | 39% | 5,083 | 0.955 [0.946, 0.966] | 0.941 [0.928, 0.953] | 0.868 [0.849, 0.886] |
-| CurbRamp | 2 | 251 | 59% | 837 | 0.930 [0.892, 0.963] | 0.918 [0.880, 0.950] | 0.854 [0.803, 0.897] |
-| CurbRamp | 3 | 125 | 67% | 551 | 0.912 [0.836, 0.968] | 0.944 [0.889, 0.980] | 0.764 [0.667, 0.848] |
-| CurbRamp | (none) | 125 | 56% | 454 | 0.966 [0.930, 0.995] | 0.975 [0.953, 0.993] | 0.932 [0.887, 0.969] |
-| NoCurbRamp | 1 | 489 | 75% | 1,839 | 0.859 [0.816, 0.897] | 0.884 [0.843, 0.919] | 0.711 [0.656, 0.765] |
-| NoCurbRamp | 2 | 901 | 47% | 3,595 | 0.898 [0.877, 0.917] | 0.915 [0.898, 0.932] | 0.750 [0.717, 0.782] |
-| NoCurbRamp | 3 | 1,809 | 36% | 6,074 | 0.934 [0.921, 0.946] | 0.928 [0.916, 0.939] | 0.739 [0.714, 0.763] |
-| NoCurbRamp | (none) | 157 | 69% | 691 | 0.919 [0.871, 0.957] | 0.922 [0.873, 0.961] | 0.669 [0.562, 0.769] |
-| Obstacle | 1 | 1,685 | 77% | 3,142 | 0.849 [0.824, 0.873] | 0.801 [0.774, 0.827] | 0.526 [0.495, 0.558] |
-| Obstacle | 2 | 976 | 41% | 2,844 | 0.855 [0.831, 0.878] | 0.797 [0.770, 0.822] | 0.575 [0.540, 0.612] |
-| Obstacle | 3 | 1,224 | 29% | 3,899 | 0.874 [0.854, 0.894] | 0.815 [0.791, 0.839] | 0.683 [0.646, 0.715] |
-| Obstacle | (none) | 193 | 68% | 669 | 0.869 [0.808, 0.922] | 0.817 [0.746, 0.881] | 0.685 [0.605, 0.761] |
-| SurfaceProblem | 1 | 1,681 | 51% | 5,050 | 0.847 [0.827, 0.866] | 0.841 [0.821, 0.859] | 0.757 [0.732, 0.778] |
-| SurfaceProblem | 2 | 821 | 42% | 2,959 | 0.847 [0.820, 0.876] | 0.846 [0.819, 0.872] | 0.779 [0.747, 0.809] |
-| SurfaceProblem | 3 | 452 | 42% | 1,833 | 0.888 [0.855, 0.919] | 0.869 [0.834, 0.899] | 0.786 [0.741, 0.827] |
-| SurfaceProblem | (none) | 148 | 61% | 658 | 0.840 [0.770, 0.899] | 0.808 [0.729, 0.871] | 0.808 [0.731, 0.873] |
-| Crosswalk | 1 | 356 | 20% | 1,394 | 0.943 [0.905, 0.975] | 0.941 [0.908, 0.971] | 0.876 [0.824, 0.924] |
-| Crosswalk | 2 | 96 | 84% | 187 | 0.970 [0.932, 1.000] | 0.979 [0.951, 0.999] | 0.957 [0.918, 0.988] |
-| Crosswalk | 3 | 96 | 95% | 369 | — | — | — |
-| Crosswalk | (none) | 35 | 77% | 139 | — | — | — |
+| type | severity | crops | incorrect | largest deployment | round-3 train | Round 3 (DINOv2-L, 2026-10) AUC [95% CI] | within-city | Production (DINOv2-L, 2025-08) AUC [95% CI] | within-city | Gemma 4 31B, 8-shot AUC [95% CI] | within-city |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| CurbRamp | 1 | 1,524 | 39% | 19% | 5,083 | 0.955 [0.946, 0.966] | 0.923 | 0.941 [0.928, 0.953] | 0.904 | 0.868 [0.849, 0.886] | 0.865 |
+| CurbRamp | 2 | 251 | 59% | 16% | 837 | 0.930 [0.892, 0.963] | 0.928 | 0.918 [0.880, 0.950] | 0.907 | 0.854 [0.803, 0.897] | 0.837 |
+| CurbRamp | 3 | 125 | 67% | 24% | 551 | 0.912 [0.836, 0.968] | 0.876 | 0.944 [0.889, 0.980] | 0.931 | 0.764 [0.667, 0.848] | 0.806 |
+| CurbRamp | (none) | 125 | 56% | 29% | 454 | 0.966 [0.930, 0.995] | 0.931 | 0.975 [0.953, 0.993] | 0.932 | 0.932 [0.887, 0.969] | 0.849 |
+| NoCurbRamp | 1 | 489 | 75% | 24% | 1,839 | 0.859 [0.816, 0.897] | 0.861 | 0.884 [0.843, 0.919] | 0.850 | 0.711 [0.656, 0.765] | 0.737 |
+| NoCurbRamp | 2 | 901 | 47% | 40% | 3,595 | 0.898 [0.877, 0.917] | 0.889 | 0.915 [0.898, 0.932] | 0.922 | 0.750 [0.717, 0.782] | 0.787 |
+| NoCurbRamp | 3 | 1,809 | 36% | 27% | 6,074 | 0.934 [0.921, 0.946] | 0.890 | 0.928 [0.916, 0.939] | 0.903 | 0.739 [0.714, 0.763] | 0.738 |
+| NoCurbRamp | (none) | 157 | 69% | 38% | 691 | 0.919 [0.871, 0.957] | 0.861 | 0.922 [0.873, 0.961] | 0.918 | 0.669 [0.562, 0.769] | 0.786 |
+| Obstacle | 1 | 1,685 | 77% | 42% | 3,142 | 0.849 [0.824, 0.873] | 0.804 | 0.801 [0.774, 0.827] | 0.778 | 0.526 [0.495, 0.558] | 0.551 |
+| Obstacle | 2 | 976 | 41% | 22% | 2,844 | 0.855 [0.831, 0.878] | 0.838 | 0.797 [0.770, 0.822] | 0.812 | 0.575 [0.540, 0.612] | 0.620 |
+| Obstacle | 3 | 1,224 | 29% | 19% | 3,899 | 0.874 [0.854, 0.894] | 0.833 | 0.815 [0.791, 0.839] | 0.797 | 0.683 [0.646, 0.715] | 0.686 |
+| Obstacle | (none) | 193 | 68% | 26% | 669 | 0.869 [0.808, 0.922] | 0.854 | 0.817 [0.746, 0.881] | 0.816 | 0.685 [0.605, 0.761] | 0.683 |
+| SurfaceProblem | 1 | 1,681 | 51% | 17% | 5,050 | 0.847 [0.827, 0.866] | 0.767 | 0.841 [0.821, 0.859] | 0.778 | 0.757 [0.732, 0.778] | 0.697 |
+| SurfaceProblem | 2 | 821 | 42% | 20% | 2,959 | 0.847 [0.820, 0.876] | 0.843 | 0.846 [0.819, 0.872] | 0.838 | 0.779 [0.747, 0.809] | 0.777 |
+| SurfaceProblem | 3 | 452 | 42% | 21% | 1,833 | 0.888 [0.855, 0.919] | 0.831 | 0.869 [0.834, 0.899] | 0.835 | 0.786 [0.741, 0.827] | 0.772 |
+| SurfaceProblem | (none) | 148 | 61% | 22% | 658 | 0.840 [0.770, 0.899] | 0.913 | 0.808 [0.729, 0.871] | 0.823 | 0.808 [0.731, 0.873] | 0.902 |
+| Crosswalk | 1 | 356 | 20% | 35% | 1,394 | 0.943 [0.905, 0.975] | 0.910 | 0.941 [0.908, 0.971] | 0.926 | 0.876 [0.824, 0.924] | 0.900 |
+| Crosswalk | 2 | 96 | 84% | 45% | 187 | 0.970 [0.932, 1.000] | 1.000 | 0.979 [0.951, 0.999] | 1.000 | 0.957 [0.918, 0.988] | 0.981 |
+| Crosswalk | 3 | 96 | 95% | 19% | 369 | — | — | — | — | — | — |
+| Crosswalk | (none) | 35 | 77% | 20% | 139 | — | — | — | — | — | — |
 
 <!-- END GENERATED: by_severity -->
 
@@ -362,42 +374,52 @@ What the slices show at this build (read the numbers off the tables, which regen
 
 <!-- BEGIN GENERATED: by_tag (analysis/vlm_scoreboard.py) -->
 
-| type | tag | held-out crops | incorrect | round-3 train | Round 3 (DINOv2-L, 2026-10) | Production (DINOv2-L, 2025-08) | Gemma 4 31B, 8-shot |
-|---|---|---|---|---|---|---|---|
-| CurbRamp | missing tactile warning | 444 | 43% | 1,482 | 0.916 [0.888, 0.942] | 0.899 [0.871, 0.924] | 0.772 [0.729, 0.813] |
-| CurbRamp | points into traffic | 229 | 38% | 770 | 0.974 [0.944, 0.994] | 0.952 [0.914, 0.979] | 0.888 [0.841, 0.927] |
-| CurbRamp | not level with street | 151 | 71% | 513 | 0.909 [0.850, 0.963] | 0.904 [0.848, 0.952] | 0.692 [0.598, 0.776] |
-| CurbRamp | narrow | 113 | 56% | 451 | 0.922 [0.862, 0.969] | 0.918 [0.866, 0.964] | 0.783 [0.700, 0.863] |
-| CurbRamp | (none) | 1,191 | 41% | 3,933 | 0.962 [0.951, 0.972] | 0.946 [0.933, 0.960] | 0.892 [0.872, 0.910] |
-| NoCurbRamp | no alternate route | 1,380 | 28% | 4,670 | 0.930 [0.911, 0.945] | 0.931 [0.916, 0.944] | 0.762 [0.733, 0.789] |
-| NoCurbRamp | alternate route present | 687 | 62% | 2,300 | 0.872 [0.844, 0.899] | 0.881 [0.852, 0.907] | 0.703 [0.665, 0.740] |
-| NoCurbRamp | unclear if needed | 254 | 70% | 860 | 0.836 [0.774, 0.887] | 0.846 [0.791, 0.899] | 0.667 [0.594, 0.741] |
-| NoCurbRamp | (none) | 1,104 | 55% | 4,631 | 0.932 [0.917, 0.947] | 0.937 [0.923, 0.950] | 0.748 [0.717, 0.776] |
-| Obstacle | pole | 907 | 63% | 2,087 | 0.889 [0.867, 0.912] | 0.841 [0.815, 0.866] | 0.487 [0.444, 0.525] |
-| Obstacle | trash/recycling can | 522 | 30% | 1,046 | 0.933 [0.910, 0.955] | 0.938 [0.915, 0.959] | 0.620 [0.563, 0.673] |
-| Obstacle | parked car | 450 | 48% | 1,293 | 0.820 [0.780, 0.856] | 0.790 [0.751, 0.829] | 0.658 [0.604, 0.705] |
-| Obstacle | vegetation | 386 | 43% | 1,136 | 0.833 [0.791, 0.871] | 0.792 [0.749, 0.833] | 0.580 [0.518, 0.637] |
-| Obstacle | narrow | 279 | 30% | 908 | 0.849 [0.802, 0.890] | 0.835 [0.783, 0.880] | 0.600 [0.525, 0.675] |
-| Obstacle | tree | 263 | 64% | 854 | 0.887 [0.841, 0.928] | 0.818 [0.765, 0.871] | 0.562 [0.495, 0.634] |
-| Obstacle | sign | 238 | 70% | 486 | 0.883 [0.835, 0.930] | 0.900 [0.853, 0.944] | 0.605 [0.525, 0.684] |
-| Obstacle | construction | 158 | 26% | 416 | 0.793 [0.713, 0.863] | 0.840 [0.765, 0.905] | 0.520 [0.411, 0.627] |
-| Obstacle | parked scooter/motorcycle | 142 | 44% | 527 | 0.866 [0.808, 0.924] | 0.518 [0.421, 0.611] | 0.490 [0.398, 0.589] |
-| Obstacle | fire hydrant | 119 | 66% | 354 | 0.867 [0.781, 0.940] | 0.874 [0.800, 0.936] | 0.628 [0.526, 0.727] |
-| Obstacle | parked bike | 101 | 72% | 191 | 0.873 [0.760, 0.967] | 0.892 [0.802, 0.962] | 0.643 [0.532, 0.757] |
-| Obstacle | (none) | 512 | 58% | 1,933 | 0.883 [0.855, 0.910] | 0.780 [0.737, 0.819] | 0.690 [0.646, 0.738] |
-| SurfaceProblem | cracks | 775 | 24% | 3,031 | 0.891 [0.862, 0.918] | 0.881 [0.854, 0.908] | 0.711 [0.667, 0.754] |
-| SurfaceProblem | grass | 585 | 29% | 2,636 | 0.874 [0.835, 0.906] | 0.863 [0.829, 0.893] | 0.778 [0.737, 0.817] |
-| SurfaceProblem | bumpy | 500 | 37% | 1,982 | 0.888 [0.859, 0.916] | 0.869 [0.837, 0.897] | 0.775 [0.733, 0.817] |
-| SurfaceProblem | uneven/slanted | 422 | 32% | 1,574 | 0.833 [0.793, 0.872] | 0.811 [0.767, 0.855] | 0.734 [0.686, 0.780] |
-| SurfaceProblem | brick/cobblestone | 365 | 66% | 337 | 0.633 [0.578, 0.692] | 0.683 [0.630, 0.736] | 0.669 [0.614, 0.723] |
-| SurfaceProblem | narrow sidewalk | 365 | 60% | 1,160 | 0.793 [0.743, 0.839] | 0.792 [0.743, 0.840] | 0.725 [0.670, 0.774] |
-| SurfaceProblem | utility panel | 230 | 57% | 904 | 0.813 [0.757, 0.869] | 0.830 [0.775, 0.877] | 0.728 [0.664, 0.788] |
-| SurfaceProblem | height difference | 194 | 25% | 770 | 0.947 [0.908, 0.977] | 0.924 [0.877, 0.966] | 0.790 [0.714, 0.858] |
-| SurfaceProblem | sand/gravel | 145 | 47% | 284 | 0.748 [0.663, 0.828] | 0.727 [0.642, 0.808] | 0.713 [0.625, 0.797] |
-| SurfaceProblem | very broken | 134 | 28% | 625 | 0.877 [0.803, 0.941] | 0.886 [0.814, 0.952] | 0.781 [0.684, 0.872] |
-| SurfaceProblem | (none) | 399 | 69% | 1,490 | 0.888 [0.853, 0.922] | 0.873 [0.835, 0.908] | 0.829 [0.789, 0.870] |
-| Crosswalk | paint fading | 144 | 65% | 339 | 0.965 [0.933, 0.994] | 0.956 [0.922, 0.985] | 0.888 [0.821, 0.947] |
-| Crosswalk | (none) | 379 | 37% | 1,557 | 0.975 [0.956, 0.991] | 0.967 [0.944, 0.985] | 0.947 [0.919, 0.971] |
+| type | tag | crops | incorrect | largest deployment | round-3 train | Round 3 (DINOv2-L, 2026-10) AUC [95% CI] | within-city | Production (DINOv2-L, 2025-08) AUC [95% CI] | within-city | Gemma 4 31B, 8-shot AUC [95% CI] | within-city |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| CurbRamp | missing tactile warning | 444 | 43% | 16% | 1,482 | 0.916 [0.888, 0.942] | 0.895 | 0.899 [0.871, 0.924] | 0.865 | 0.772 [0.729, 0.813] | 0.774 |
+| CurbRamp | points into traffic | 229 | 38% | 19% | 770 | 0.974 [0.944, 0.994] | 0.957 | 0.952 [0.914, 0.979] | 0.914 | 0.888 [0.841, 0.927] | 0.868 |
+| CurbRamp | not level with street | 151 | 71% | 17% | 513 | 0.909 [0.850, 0.963] | 0.923 | 0.904 [0.848, 0.952] | 0.872 | 0.692 [0.598, 0.776] | 0.795 |
+| CurbRamp | narrow | 113 | 56% | 19% | 451 | 0.922 [0.862, 0.969] | 0.927 | 0.918 [0.866, 0.964] | 0.886 | 0.783 [0.700, 0.863] | 0.886 |
+| CurbRamp | surface problem | 99 | 51% | 22% | 351 | 0.876 [0.798, 0.943] | 0.879 | 0.910 [0.848, 0.957] | 0.899 | 0.836 [0.749, 0.904] | 0.794 |
+| CurbRamp | not enough landing space | 91 | 35% | 19% | 348 | 0.955 [0.907, 0.993] | 1.000 | 0.964 [0.924, 0.993] | 0.900 | 0.887 [0.817, 0.945] | 0.950 |
+| CurbRamp | steep | 55 | 78% | 25% | 226 | 0.899 [0.756, 0.992] | — | 0.876 [0.764, 0.969] | — | 0.839 [0.688, 0.954] | — |
+| CurbRamp | (none) | 1,191 | 41% | 20% | 3,933 | 0.962 [0.951, 0.972] | 0.936 | 0.946 [0.933, 0.960] | 0.913 | 0.892 [0.872, 0.910] | 0.887 |
+| NoCurbRamp | no alternate route | 1,380 | 28% | 31% | 4,670 | 0.930 [0.911, 0.945] | 0.901 | 0.931 [0.916, 0.944] | 0.914 | 0.762 [0.733, 0.789] | 0.800 |
+| NoCurbRamp | alternate route present | 687 | 62% | 26% | 2,300 | 0.872 [0.844, 0.899] | 0.810 | 0.881 [0.852, 0.907] | 0.859 | 0.703 [0.665, 0.740] | 0.721 |
+| NoCurbRamp | unclear if needed | 254 | 70% | 22% | 860 | 0.836 [0.774, 0.887] | 0.843 | 0.846 [0.791, 0.899] | 0.840 | 0.667 [0.594, 0.741] | 0.665 |
+| NoCurbRamp | (none) | 1,104 | 55% | 31% | 4,631 | 0.932 [0.917, 0.947] | 0.917 | 0.937 [0.923, 0.950] | 0.930 | 0.748 [0.717, 0.776] | 0.764 |
+| Obstacle | pole | 907 | 63% | 24% | 2,087 | 0.889 [0.867, 0.912] | 0.864 | 0.841 [0.815, 0.866] | 0.825 | 0.487 [0.444, 0.525] | 0.504 |
+| Obstacle | trash/recycling can | 522 | 30% | 39% | 1,046 | 0.933 [0.910, 0.955] | 0.927 | 0.938 [0.915, 0.959] | 0.904 | 0.620 [0.563, 0.673] | 0.700 |
+| Obstacle | parked car | 450 | 48% | 27% | 1,293 | 0.820 [0.780, 0.856] | 0.810 | 0.790 [0.751, 0.829] | 0.807 | 0.658 [0.604, 0.705] | 0.721 |
+| Obstacle | vegetation | 386 | 43% | 23% | 1,136 | 0.833 [0.791, 0.871] | 0.811 | 0.792 [0.749, 0.833] | 0.805 | 0.580 [0.518, 0.637] | 0.665 |
+| Obstacle | narrow | 279 | 30% | 22% | 908 | 0.849 [0.802, 0.890] | 0.808 | 0.835 [0.783, 0.880] | 0.729 | 0.600 [0.525, 0.675] | 0.600 |
+| Obstacle | tree | 263 | 64% | 17% | 854 | 0.887 [0.841, 0.928] | 0.829 | 0.818 [0.765, 0.871] | 0.835 | 0.562 [0.495, 0.634] | 0.613 |
+| Obstacle | sign | 238 | 70% | 44% | 486 | 0.883 [0.835, 0.930] | 0.803 | 0.900 [0.853, 0.944] | 0.779 | 0.605 [0.525, 0.684] | 0.666 |
+| Obstacle | construction | 158 | 26% | 19% | 416 | 0.793 [0.713, 0.863] | 0.751 | 0.840 [0.765, 0.905] | 0.765 | 0.520 [0.411, 0.627] | 0.503 |
+| Obstacle | parked scooter/motorcycle | 142 | 44% | 56% | 527 | 0.866 [0.808, 0.924] | 0.921 | 0.518 [0.421, 0.611] | 0.724 | 0.490 [0.398, 0.589] | 0.541 |
+| Obstacle | outdoor dining area | 128 | 95% | 100% | 1 | — | — | — | — | — | — |
+| Obstacle | fire hydrant | 119 | 66% | 29% | 354 | 0.867 [0.781, 0.940] | 0.844 | 0.874 [0.800, 0.936] | 0.946 | 0.628 [0.526, 0.727] | 0.754 |
+| Obstacle | parked bike | 101 | 72% | 59% | 191 | 0.873 [0.760, 0.967] | 0.531 | 0.892 [0.802, 0.962] | 0.696 | 0.643 [0.532, 0.757] | 0.396 |
+| Obstacle | litter/garbage | 82 | 35% | 34% | 235 | 0.873 [0.785, 0.943] | 0.887 | 0.828 [0.727, 0.915] | 0.660 | 0.660 [0.522, 0.788] | 0.713 |
+| Obstacle | stairs | 57 | 47% | 68% | 35 | 0.437 [0.293, 0.585] | 0.416 | 0.374 [0.233, 0.517] | 0.253 | 0.582 [0.425, 0.726] | 0.560 |
+| Obstacle | utility cabinet | 45 | 7% | 100% | 223 | — | — | — | — | — | — |
+| Obstacle | mailbox | 36 | 53% | 42% | 36 | 0.870 [0.737, 0.981] | 0.577 | 0.765 [0.597, 0.913] | 0.500 | 0.409 [0.223, 0.598] | 0.385 |
+| Obstacle | garage entrance | 30 | 57% | 47% | 95 | 0.769 [0.579, 0.923] | 0.792 | 0.679 [0.484, 0.873] | 0.812 | 0.642 [0.412, 0.837] | 0.833 |
+| Obstacle | (none) | 512 | 58% | 23% | 1,933 | 0.883 [0.855, 0.910] | 0.869 | 0.780 [0.737, 0.819] | 0.775 | 0.690 [0.646, 0.738] | 0.721 |
+| SurfaceProblem | cracks | 775 | 24% | 23% | 3,031 | 0.891 [0.862, 0.918] | 0.879 | 0.881 [0.854, 0.908] | 0.882 | 0.711 [0.667, 0.754] | 0.715 |
+| SurfaceProblem | grass | 585 | 29% | 28% | 2,636 | 0.874 [0.835, 0.906] | 0.824 | 0.863 [0.829, 0.893] | 0.827 | 0.778 [0.737, 0.817] | 0.720 |
+| SurfaceProblem | bumpy | 500 | 37% | 26% | 1,982 | 0.888 [0.859, 0.916] | 0.888 | 0.869 [0.837, 0.897] | 0.866 | 0.775 [0.733, 0.817] | 0.760 |
+| SurfaceProblem | uneven/slanted | 422 | 32% | 22% | 1,574 | 0.833 [0.793, 0.872] | 0.834 | 0.811 [0.767, 0.855] | 0.852 | 0.734 [0.686, 0.780] | 0.749 |
+| SurfaceProblem | brick/cobblestone | 365 | 66% | 74% | 337 | 0.633 [0.578, 0.692] | 0.577 | 0.683 [0.630, 0.736] | 0.629 | 0.669 [0.614, 0.723] | 0.655 |
+| SurfaceProblem | narrow sidewalk | 365 | 60% | 24% | 1,160 | 0.793 [0.743, 0.839] | 0.778 | 0.792 [0.743, 0.840] | 0.757 | 0.725 [0.670, 0.774] | 0.721 |
+| SurfaceProblem | utility panel | 230 | 57% | 43% | 904 | 0.813 [0.757, 0.869] | 0.911 | 0.830 [0.775, 0.877] | 0.934 | 0.728 [0.664, 0.788] | 0.647 |
+| SurfaceProblem | height difference | 194 | 25% | 18% | 770 | 0.947 [0.908, 0.977] | 0.911 | 0.924 [0.877, 0.966] | 0.873 | 0.790 [0.714, 0.858] | 0.804 |
+| SurfaceProblem | sand/gravel | 145 | 47% | 43% | 284 | 0.748 [0.663, 0.828] | 0.670 | 0.727 [0.642, 0.808] | 0.567 | 0.713 [0.625, 0.797] | 0.737 |
+| SurfaceProblem | very broken | 134 | 28% | 21% | 625 | 0.877 [0.803, 0.941] | 0.881 | 0.886 [0.814, 0.952] | 0.903 | 0.781 [0.684, 0.872] | 0.775 |
+| SurfaceProblem | debris | 43 | 26% | 63% | 66 | 0.852 [0.719, 0.967] | 0.750 | 0.821 [0.667, 0.943] | 0.707 | 0.852 [0.724, 0.955] | 0.750 |
+| SurfaceProblem | (none) | 399 | 69% | 29% | 1,490 | 0.888 [0.853, 0.922] | 0.863 | 0.873 [0.835, 0.908] | 0.852 | 0.829 [0.789, 0.870] | 0.854 |
+| Crosswalk | paint fading | 144 | 65% | 35% | 339 | 0.965 [0.933, 0.994] | 0.971 | 0.956 [0.922, 0.985] | 0.964 | 0.888 [0.821, 0.947] | 0.950 |
+| Crosswalk | (none) | 379 | 37% | 32% | 1,557 | 0.975 [0.956, 0.991] | 0.953 | 0.967 [0.944, 0.985] | 0.950 | 0.947 [0.919, 0.971] | 0.951 |
 
 <!-- END GENERATED: by_tag -->
 

@@ -26,11 +26,16 @@ directory from what is on this Mac: the held-out rows of the round-3 ``split.csv
 ``predictions.csv`` (held-out rows), and the three 4-bit MLX legs of #16 (``<model>-mlx4``).
 
 **Slices.** Every full leg is also scored by label type x severity and label type x tag (``by_severity.csv``,
-``by_tag.csv``, two heatmaps), with the held-out count, the incorrect share and the round-3 training count of each
-slice, so a severity or tag a model handles badly shows up even when its type-level AUC looks fine. Naming follows
+``by_tag.csv``, two heatmaps), with the crop count (test + test_heldout), the incorrect share, the share of the
+largest deployment and the round-3 training count of each slice, so a severity or tag a model handles badly shows up
+even when its type-level AUC looks fine. Each slice has the pooled AUC with its interval, the AUC per split and the
+within-city AUC: a slice drawn mostly from a few deployments with very different incorrect shares can score near
+chance pooled while ranking well inside each deployment (the city-class confound). Naming follows
 ``analysis/slices.py`` of PR #67: a crop with several tags counts once in each, and an untagged crop, or one with no
-severity, is in ``(none)``. A tag gets a row when it has at least ``TAG_MIN_N`` held-out crops of the type and
-``TAG_MIN_CLASS`` of each class; an AUC is left blank below ``SLICE_MIN_N`` crops or ``SLICE_MIN_CLASS`` of a class.
+severity, is in ``(none)``. #67 reports test and held-out separately and bootstraps panoramas; here the headline is
+pooled with a label bootstrap (the per-split columns are the comparable ones). Every tag with at least
+``SLICE_MIN_N`` crops of the type gets a row; an AUC is blank below ``SLICE_MIN_N`` crops or ``SLICE_MIN_CLASS`` of a
+class.
 
 **Naming.** A deployment is named only if it is public in the live ``/v3/api/cities`` at build time
 (``retrain_report.public_cities``; ``--public-cities`` overrides with a saved response or a list). The two private
@@ -455,8 +460,7 @@ def coverage_rows(legs, splits, notes, unscored=None):
 
 SLICE_BY = ("severity", "tag")
 NONE = "(none)"
-SLICE_MIN_N, SLICE_MIN_CLASS = 30, 10     # below either, the slice's AUC is blank (its counts are still reported)
-TAG_MIN_N, TAG_MIN_CLASS = 100, 20        # a tag gets a row only with this many held-out crops of the type
+SLICE_MIN_N, SLICE_MIN_CLASS = 30, 10     # a slice needs SLICE_MIN_N crops for a row, and both for an AUC
 
 
 def parse_tags(value):
@@ -489,8 +493,13 @@ def with_slice(df, by):
 
 
 def slice_names(splits, by):
-    """``{Type: [slice, ...]}`` in row order: severities 1, 2, 3 then ``(none)`` (those present); tags with at least
-    ``TAG_MIN_N`` held-out crops and ``TAG_MIN_CLASS`` of each class, most common first, then ``(none)``."""
+    """``{Type: [slice, ...]}`` in row order: every severity present in ascending order, then ``(none)``; every tag
+    with at least ``SLICE_MIN_N`` crops, most common first, then ``(none)`` (selected on counts only, never scores).
+
+    >>> s = pd.DataFrame({"label_type": "CurbRamp", "y": 0, "severity": [5, 1, None], "tags": "[]"})
+    >>> slice_names(s, "severity")
+    {'CurbRamp': ['1', '5', '(none)']}
+    """
     out = {}
     d = with_slice(splits, by)
     for t in LABEL_TYPES:
@@ -498,13 +507,13 @@ def slice_names(splits, by):
         if g.empty:
             continue
         if by == "severity":
-            present = set(g.slice)
-            out[t] = [v for v in ("1", "2", "3", NONE) if v in present]
+            sev = sorted({x for x in g.slice if x != NONE}, key=int)
+            out[t] = sev + ([NONE] if (g.slice == NONE).any() else [])
             continue
-        c = g.groupby("slice").y.agg(n="size", inc="sum")
-        keep = c[(c.n >= TAG_MIN_N) & (c.inc >= TAG_MIN_CLASS) & (c.n - c.inc >= TAG_MIN_CLASS)]
-        keep = keep.drop(index=NONE, errors="ignore").reset_index().sort_values(["n", "slice"], ascending=[False, True])
-        out[t] = keep.slice.tolist() + ([NONE] if (g.slice == NONE).any() else [])
+        c = g.slice.value_counts()
+        c = c[(c >= SLICE_MIN_N) & (c.index != NONE)]
+        keep = sorted(c.index, key=lambda x: (-c[x], x))
+        out[t] = keep + ([NONE] if (g.slice == NONE).any() else [])
     return out
 
 
@@ -513,12 +522,15 @@ def _slice_rng(seed, by, t, name):
     return np.random.default_rng([seed, 2 + SLICE_BY.index(by), LABEL_TYPES.index(t), zlib.crc32(name.encode())])
 
 
-def slice_rows(legs, splits, train, by, n_boot=N_BOOT, seed=SEED):
-    """One row per (leg, type, slice) for the legs given (the full ones, in board order): held-out ``n``,
-    ``n_incorrect``, ``incorrect_share``, round-3 ``n_train`` (blank when the train rows are not staged), and the
-    AUC with its 95% class-stratified label-bootstrap interval (blank when the slice is too thin to score)."""
+def slice_rows(legs, splits, train, by, n_boot=N_BOOT, seed=SEED, within_min_n=10):
+    """One row per (leg, type, slice) for the legs given (the full ones, in board order): ``n`` (test +
+    test_heldout), ``n_incorrect``, ``incorrect_share``, ``top_deployment_share`` (the largest deployment's share of
+    the slice, unnamed), round-3 ``n_train`` (blank when that type's train rows are not staged), the pooled AUC with its
+    95% class-stratified label-bootstrap interval, the AUC per split and the within-city AUC (each blank when too thin
+    to score: ``SLICE_MIN_N`` crops and ``SLICE_MIN_CLASS`` of each class, per city ``within_min_n`` rows)."""
     names = slice_names(splits, by)
     tr = with_slice(train, by) if train is not None else None
+    trained = set(train.label_type) if train is not None else set()
     rows = []
     for leg, df in legs.items():
         d = with_slice(df, by)
@@ -528,14 +540,27 @@ def slice_rows(legs, splits, train, by, n_boot=N_BOOT, seed=SEED):
                 g = dt[dt.slice == name].sort_values("label_uid")    # same row order for every leg
                 n, ni = len(g), int(g.y.sum())
                 a = lo = hi = float("nan")
-                if n >= SLICE_MIN_N and min(ni, n - ni) >= SLICE_MIN_CLASS:
+                if _scoreable(g.y):
                     a = auc(g.y, g.p_incorrect)
                     lo, hi = ci(boot_auc(g.y, g.p_incorrect, n_boot, _slice_rng(seed, by, t, name))[:, 0])
-                n_train = int(((tr.label_type == t) & (tr.slice == name)).sum()) if tr is not None else float("nan")
-                rows.append({"leg": leg, "label_type": t, by: name, "n": n, "n_incorrect": ni,
-                             "incorrect_share": ni / n if n else float("nan"), "n_train": n_train, "auc": a,
-                             "auc_lo": lo, "auc_hi": hi})
+                n_train = int(((tr.label_type == t) & (tr.slice == name)).sum()) if t in trained else float("nan")
+                row = {"leg": leg, "label_type": t, by: name, "n": n, "n_incorrect": ni,
+                       "incorrect_share": ni / n if n else float("nan"),
+                       "top_deployment_share": float(g.city.value_counts(normalize=True).iloc[0]) if n else float("nan"),
+                       "n_train": n_train, "auc": a, "auc_lo": lo, "auc_hi": hi}
+                for sp in SPLITS:
+                    gs = g[g.split == sp]
+                    row[f"auc_{sp}"] = auc(gs.y, gs.p_incorrect) if _scoreable(gs.y) else float("nan")
+                    row[f"n_{sp}"] = len(gs)
+                wc, nc = vb.within_city_auc(g.y, g.p_incorrect, g.city, within_min_n) if n else (float("nan"), 0)
+                row.update(within_city_auc=wc if _scoreable(g.y) else float("nan"), n_cities=nc)
+                rows.append(row)
     return rows
+
+
+def _scoreable(y):
+    n, ni = len(y), int(np.sum(y))
+    return n >= SLICE_MIN_N and min(ni, n - ni) >= SLICE_MIN_CLASS
 
 
 def build_aggregates(scores_dir, public, n_boot=N_BOOT, seed=SEED, min_city_n=30):
@@ -808,8 +833,8 @@ def render_blocks(aggs):
 
 
 def slice_table(df, b, by):
-    """Markdown for one slice CSV: a row per (type, slice), AUC [95% CI] of round 3, production and the best
-    full-coverage VLM (the heatmap has every full leg)."""
+    """Markdown for one slice CSV: a row per (type, slice), pooled AUC [95% CI] and within-city AUC of round 3,
+    production and the best full-coverage VLM (the heatmap has every full leg)."""
     if df is None or df.empty:
         return "(no slices staged)"
     best, best_full = best_vlm(b)
@@ -822,10 +847,13 @@ def slice_table(df, b, by):
         cells = []
         for k in keep:
             x = df[(df.leg == k) & (df.label_type == r.label_type) & (df[by] == getattr(r, by))].iloc[0]
-            cells.append(f"{f3(x.auc)}{interval(x.auc_lo, x.auc_hi)}")
+            cells += [f"{f3(x.auc)}{interval(x.auc_lo, x.auc_hi)}", f3(x.within_city_auc)]
         rows.append([r.label_type, getattr(r, by), _int(r.n), f"{r.incorrect_share:.0%}",
-                     "—" if f3(r.n_train) == "—" else _int(r.n_train)] + cells)
-    return _table(["type", by, "held-out crops", "incorrect", "round-3 train"] + [disp.get(k, k) for k in keep], rows)
+                     f"{r.top_deployment_share:.0%}", "—" if f3(r.n_train) == "—" else _int(r.n_train)] + cells)
+    head = ["type", by, "crops", "incorrect", "largest deployment", "round-3 train"]
+    for k in keep:
+        head += [f"{disp.get(k, k)} AUC [95% CI]", "within-city"]
+    return _table(head, rows)
 
 
 def splice(text, blocks):
@@ -1170,7 +1198,8 @@ def fig_slices(df, b, by, path):
         m[i] = [piv.loc[(t, x, k), "auc"] for k in order]
         r = piv.loc[(t, x, order[0])]
         train = "—" if f3(r.n_train) == "—" else f"{int(r.n_train):,}"
-        labels.append(f"{x}   n={int(r.n):,} · {r.incorrect_share:.0%} inc · train {train}")
+        labels.append(f"{x}   n={int(r.n):,} · {r.incorrect_share:.0%} inc · top dep {r.top_deployment_share:.0%}"
+                      f" · train {train}")
     cmap, norm = ListedColormap(SEQ), BoundaryNorm(np.linspace(0.5, 1.0, len(SEQ) + 1), len(SEQ))
     fig, ax = plt.subplots(figsize=(0.78 * len(order) + 5.4, 0.30 * len(rows) + 3.4), facecolor=SURFACE)
     ax.set_facecolor(SURFACE)
@@ -1202,14 +1231,14 @@ def fig_slices(df, b, by, path):
     for s_ in ax.spines.values():
         s_.set_visible(False)
     ax.tick_params(length=0, colors=INK2)
-    what = {"severity": ("severity", "Severity is the labeler's (1 = least severe) and is tied to the class, so "
-                                     "within-slice AUC is lower than the type's for every model."),
-            "tag": ("tag", f"Tags with at least {TAG_MIN_N} held-out crops and {TAG_MIN_CLASS} of each class; "
-                           "a crop with two tags counts in both rows.")}[by]
+    what = {"severity": ("severity", "Severity is the labeler's (1 = least severe). Pooled over test and held-out "
+                                     "deployments; the CSV and doc tables add per-split and within-city AUC."),
+            "tag": ("tag", f"Every tag with at least {SLICE_MIN_N} crops of its type; a crop with two tags counts in "
+                           "both rows. Pooled over test and held-out deployments; see the CSV for within-city AUC.")}[by]
     fig.suptitle(f"AUC by model, label type and {what[0]}", x=0.01, ha="left", fontsize=12, color=INK, y=0.995)
     fig.text(0.01, 0.975, what[1], fontsize=8.5, color=INK2, va="top")
-    fig.text(0.01, 0.012, "AUC within the slice (incorrect = positive). Row label: held-out crops, share incorrect, "
-             f"round-3 training crops. — = fewer than {SLICE_MIN_N} crops or {SLICE_MIN_CLASS} of a class; "
+    fig.text(0.01, 0.012, "AUC within the slice (incorrect = positive). Row label: crops (test + held-out), share "
+             f"incorrect, largest deployment's share, round-3 training crops. — = fewer than {SLICE_MIN_N} crops or {SLICE_MIN_CLASS} of a class; "
              f"(none) = no {what[0]}.\n{FOOTNOTE}", fontsize=7, color=MUTED)
     w, h = fig.get_size_inches()                        # fixed-inch margins: room for the rotated column names
     fig.subplots_adjust(left=0.36, right=1 - 1.1 / w, top=1 - 2.0 / h, bottom=0.6 / h)
@@ -1392,6 +1421,35 @@ def no_longer_public(out_dir, public, frozen):
             for c in sorted(set(named[was | named.isin(frozen)]) - set(public))]
 
 
+def consistency_problems(aggs, tol=2e-4):
+    """Internal checks on the committed aggregates, so CI mode (no per-crop data) still catches a hand-edited cell
+    outside the doc tables: every AUC inside its own interval, ``incorrect_share = n_incorrect / n``, and the
+    per-split counts summing to ``n``. [] when consistent.
+
+    >>> consistency_problems({"by_tag": pd.DataFrame({"leg": ["a"], "auc": [0.9], "auc_lo": [0.5], "auc_hi": [0.6],
+    ...                                               "n": [10], "n_incorrect": [5], "incorrect_share": [0.5]})})
+    ['by_tag.csv: 1 AUC(s) outside their own interval (first: leg a)']
+    """
+    problems = []
+    for name in ("per_type", "by_severity", "by_tag"):
+        d = aggs.get(name)
+        if d is None or d.empty:
+            continue
+        a = d.dropna(subset=["auc", "auc_lo", "auc_hi"])
+        bad = a[(a.auc < a.auc_lo - tol) | (a.auc > a.auc_hi + tol)]
+        if len(bad):
+            problems.append(f"{name}.csv: {len(bad)} AUC(s) outside their own interval (first: leg {bad.leg.iloc[0]})")
+        if "incorrect_share" in d:
+            x = d[d.n > 0]
+            off = x[(x.n_incorrect / x.n - x.incorrect_share).abs() > tol]
+            if len(off):
+                problems.append(f"{name}.csv: {len(off)} incorrect_share value(s) disagree with n_incorrect / n")
+        parts = [f"n_{sp}" for sp in SPLITS]
+        if all(c in d for c in parts) and (d[parts].sum(axis=1) != d.n).any():
+            problems.append(f"{name}.csv: per-split counts do not sum to n")
+    return problems
+
+
 def run_build(args):
     out_dir, doc = args.out_dir, args.doc
     staged = os.path.isdir(os.path.join(args.scores_dir, "splits"))
@@ -1420,6 +1478,7 @@ def run_build(args):
             except ValueError as e:
                 problems.append(f"{os.path.basename(doc)}: {e}")
             problems += [f"{os.path.basename(doc)}: prose is stale -- {p}" for p in prose_problems(text, committed)]
+        problems += consistency_problems(committed)
         problems += privacy_problems(out_dir, doc, public)
         if problems:
             print("\n".join(problems))

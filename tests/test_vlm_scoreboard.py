@@ -42,7 +42,8 @@ def _stage(root):
     for t, g in s.groupby("label_type"):
         g.to_csv(root / "splits" / f"{t}.csv", index=False)
     os.makedirs(root / "train")
-    for t, g in s.groupby("label_type"):             # stand-in train rows: the same mix, no ids
+    for t, g in s.groupby("label_type"):             # stand-in train rows, no ids: a different mix from held-out
+        g = pd.concat([g, g[g.severity == 1]])                 # severity 1 twice, so n_train != n
         g[["label_type", "label_class", "severity", "tags"]].to_csv(root / "train" / f"{t}.csv", index=False)
     legs = {"round3": (0.8, s), "production": (0.6, s), "gemma4-31b": (0.4, s),
             "qwen3vl-8b-mlx4": (0.5, s.groupby("label_type").head(20))}
@@ -334,8 +335,9 @@ def test_slices_cover_full_legs_only_and_count_each_tag(board):
     assert set(sev.leg) == full and set(tag.leg) == full           # the partial Mac leg is not sliced
     r = sev[(sev.leg == "round3") & (sev.label_type == "CurbRamp")]
     assert r.severity.tolist() == ["1", "2", "3", "(none)"] and r.n.sum() == 60
-    assert (r.n_train == r.n).all()                                # train stand-in = the held-out mix
-    # thresholds of 100 crops / 20 per class keep no real tag in a 60-row type: only (none) is scored
+    assert r.n_train.tolist() == [30, 15, 15, 15]                 # counted from the train rows, not the held-out
+    assert np.allclose(r.incorrect_share, r.n_incorrect / r.n, atol=1e-4) and (r.n_test + r.n_test_heldout == r.n).all()
+    # every real tag has 24 of 60 crops, under the 30-crop row rule: only (none) gets a row
     assert set(tag.tag) == {"(none)"}
     assert tag[(tag.leg == "round3") & (tag.label_type == "CurbRamp")].n.iloc[0] == 24     # "[]" and missing
     text = board["doc"].read_text()
@@ -343,8 +345,6 @@ def test_slices_cover_full_legs_only_and_count_each_tag(board):
 
 
 def test_slice_names_and_rows_on_a_small_frame(monkeypatch):
-    monkeypatch.setattr(sb, "TAG_MIN_N", 4)
-    monkeypatch.setattr(sb, "TAG_MIN_CLASS", 2)
     monkeypatch.setattr(sb, "SLICE_MIN_N", 4)
     monkeypatch.setattr(sb, "SLICE_MIN_CLASS", 2)
     s = pd.DataFrame({"label_uid": [f"x:{i}" for i in range(8)], "label_type": "CurbRamp",
@@ -353,11 +353,87 @@ def test_slice_names_and_rows_on_a_small_frame(monkeypatch):
     assert sb.slice_names(s, "severity") == {"CurbRamp": ["1", "2", "(none)"]}
     assert sb.slice_names(s, "tag") == {"CurbRamp": ["b", "a", "(none)"]}    # most common first; "c" is too thin
     legs = {"good": s.assign(p_incorrect=s.y * 0.8 + 0.1), "bad": s.assign(p_incorrect=1 - (s.y * 0.8 + 0.1))}
-    rows = pd.DataFrame(sb.slice_rows(legs, s, None, "tag", n_boot=20, seed=1))
+    s = s.assign(city=["p", "p", "q", "q", "p", "q", "p", "q"], split=["test"] * 4 + ["test_heldout"] * 4)
+    assert sb.slice_names(s, "tag") == {"CurbRamp": ["b", "a", "(none)"]}    # most common first; "c" is too thin
+    legs = {"good": s.assign(p_incorrect=s.y * 0.8 + 0.1), "bad": s.assign(p_incorrect=1 - (s.y * 0.8 + 0.1))}
+    rows = pd.DataFrame(sb.slice_rows(legs, s, None, "tag", n_boot=20, seed=1, within_min_n=2))
     a = rows[rows.tag == "a"].set_index("leg")
     assert a.loc["good", "auc"] == 1.0 and a.loc["bad", "auc"] == 0.0 and a.loc["good", "n"] == 4
+    assert a.loc["good", "auc_lo"] == 1.0 and a.loc["bad", "auc_hi"] == 0.0
+    assert a.loc["good", "top_deployment_share"] == 0.5 and a.loc["good", "within_city_auc"] == 1.0
     assert rows.n_train.isna().all()                               # no train rows staged
     assert np.isnan(rows[rows.tag == "(none)"].auc).all()          # one crop: blank
+
+
+def test_slice_auc_needs_enough_of_each_class(monkeypatch):
+    monkeypatch.setattr(sb, "SLICE_MIN_N", 4)
+    monkeypatch.setattr(sb, "SLICE_MIN_CLASS", 2)
+    s = pd.DataFrame({"label_uid": [f"x:{i}" for i in range(6)], "label_type": "CurbRamp", "city": "p",
+                      "split": "test", "y": [1, 1, 1, 1, 1, 0], "severity": 1, "tags": "[]"})
+    r = sb.slice_rows({"m": s.assign(p_incorrect=np.linspace(0.9, 0.1, 6))}, s, None, "severity", n_boot=10)[0]
+    assert r["n"] == 6 and np.isnan(r["auc"]) and np.isnan(r["auc_test"])    # one correct crop: no AUC
+    tr = pd.DataFrame({"label_type": ["CurbRamp"], "label_class": ["correct"], "severity": [1], "tags": ["[]"]})
+    r = sb.slice_rows({"m": s.assign(p_incorrect=0.5)}, s, tr, "severity", n_boot=10)[0]
+    assert r["n_train"] == 1
+    other = tr.assign(label_type="Obstacle")                      # train rows of another type only: blank, not 0
+    assert np.isnan(sb.slice_rows({"m": s.assign(p_incorrect=0.5)}, s, other, "severity", n_boot=10)[0]["n_train"])
+
+
+def test_check_catches_an_edited_slice_cell_in_both_modes(board, monkeypatch):
+    base = board["base"]
+    monkeypatch.setattr(sb, "SLICE_MIN_N", 5)      # synthetic severity slices: 15 crops, ~10 per split
+    monkeypatch.setattr(sb, "SLICE_MIN_CLASS", 2)
+    sb.main(base)
+    ci = [a if a != str(board["stage"]) else str(board["stage"]) + "-absent" for a in base]
+    p = board["out"] / "by_severity.csv"
+    good = p.read_text()
+    df = pd.read_csv(p, dtype={"severity": str}, keep_default_na=False, na_values=[""])
+    i = df.index[(df.leg == "gemma4-31b") & df.auc.notna()][0]
+    df.loc[i, "auc"] = min(df.loc[i, "auc_hi"] + 0.05, 0.9999)
+    df.to_csv(p, index=False, float_format=sb.FLOAT)
+    with pytest.raises(SystemExit):
+        sb.main(base + ["--check"])                 # staged: byte comparison
+    with pytest.raises(SystemExit):
+        sb.main(ci + ["--check"])                   # CI: AUC outside its own interval
+    p.write_text(good)
+    df = pd.read_csv(p, dtype={"severity": str}, keep_default_na=False, na_values=[""])
+    j = df.index[df.auc_test.notna()][0]
+    df.loc[j, "auc_test"] = df.loc[j, "auc_test"] - 0.01   # a column the doc does not show: only staged mode sees it
+    df.to_csv(p, index=False, float_format=sb.FLOAT)
+    sb.main(ci + ["--check"])
+    with pytest.raises(SystemExit):
+        sb.main(base + ["--check"])
+    p.write_text(good)
+
+
+def test_paired_rows_use_the_same_draws_for_both_legs():
+    rng = np.random.default_rng(3)
+    y = np.r_[np.zeros(100), np.ones(100)].astype(int)
+    s = rng.random(200) + 0.3 * y
+    d = pd.DataFrame({"label_uid": [f"x:{i}" for i in range(200)], "label_type": "CurbRamp", "y": y, "p_incorrect": s})
+    r = sb.paired_rows("leg", d, d[["label_uid", "p_incorrect"]], 200, 1)
+    assert r[0]["diff"] == 0 and r[0]["diff_lo"] == 0 and r[0]["diff_hi"] == 0   # identical scores: zero width
+    noisy = d.assign(p_incorrect=d.p_incorrect + rng.normal(0, 0.05, 200))
+    r = sb.paired_rows("leg", noisy, d[["label_uid", "p_incorrect"]], 500, 1)[0]
+    lo, hi = sb.ci(sb.boot_auc(y, s, 500, np.random.default_rng(9))[:, 0])
+    assert r["diff_hi"] - r["diff_lo"] < (hi - lo) / 2           # pairing: far narrower than one leg's own interval
+
+
+def test_within_city_and_macro_interval_on_the_board(board):
+    a = sb.read_aggregates(str(board["out"]))
+    pt = a["per_type"]
+    stage = board["stage"]
+    sp = sb.load_splits(str(stage))
+    legs, _ = sb.load_scores(str(stage), sp)
+    g = legs["round3"][legs["round3"].label_type == "CurbRamp"]
+    rows, _ = sb.per_type_rows("round3", legs["round3"], 20, 1, within_min_n=3)   # synthetic cities hold ~8 rows
+    r = [x for x in rows if x["label_type"] == "CurbRamp"][0]
+    exp, nc = sb.vb.within_city_auc(g.y, g.p_incorrect, g.city, 3)
+    assert nc > 1 and r["within_city_auc"] == pytest.approx(exp) and r["n_cities"] == nc
+    b = a["board"].set_index("leg").loc["round3"]
+    assert b.macro_auc_lo < b.macro_auc < b.macro_auc_hi
+    width = (pt[pt.leg == "round3"].auc_hi - pt[pt.leg == "round3"].auc_lo).mean()
+    assert b.macro_auc_hi - b.macro_auc_lo < width                # averaging five types narrows the interval
 
 
 def test_old_staging_without_severity_builds_without_slices(tmp_path):
