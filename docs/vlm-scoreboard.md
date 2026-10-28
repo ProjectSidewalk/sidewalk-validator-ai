@@ -28,10 +28,11 @@ label bootstrap within each type. *test* is the training deployments' test share
 round-3 model was trained on (both macro over types). *within-city* is the pair-weighted within-deployment AUC
 (macro over types). *bal. acc.* is balanced accuracy at the argmax (`p_incorrect > 0.5`); *R@P95* is recall of
 `incorrect` at precision ≥ 0.95. *Δ vs round 3* is the paired difference on the crops both legs scored. The board is
-two tables (AUCs, then class, splits, operating points and cost) so that neither scrolls sideways on GitHub; **bold** is the
-best value in a column among the rows that scored every crop. Rows below the rule did not score every crop: their
-AUCs are on other (smaller) crop sets and are not ranked against the full rows. *Previous production* is the
-2025-08 models, served until round 3 replaced them on 2026-10-27.
+two tables (AUCs, then class, splits, operating points and cost) so that neither scrolls sideways on GitHub.
+**Bold** is the best value in a column among the rows that scored every crop; Δ, s/crop and coverage are never
+bold (the legs ran on different GPUs and batch sizes, so the lowest s/crop is not a winner). Rows below the rule did
+not score every crop: their AUCs are on other (smaller) crop sets and are not ranked against the full rows. *Previous
+production* is the 2025-08 models, served until round 3 replaced them on 2026-10-27.
 
 <!-- BEGIN GENERATED: board (analysis/vlm_scoreboard.py) -->
 
@@ -294,7 +295,8 @@ draws (seed 20261021). A partial leg's comparison is on its own crops only.
 Mean within-type AUC per deployment (all five types, types with ≥ 10 rows and both classes), for round 3,
 the 2025-08 models and the best VLM with full coverage, the best of the three per row in bold. Public
 deployments with ≥ 30 crops are named; the two private held-out deployments are lettered as in
-[`retrain-2026-10.md`](retrain-2026-10.md); every other private deployment is pooled into one row. The crops are the whole held-out split, the round-3 `test` + `test_heldout` rows,
+[`retrain-2026-10.md`](retrain-2026-10.md); every other private deployment is pooled into one row. The crops are
+the whole held-out split, the round-3 `test` + `test_heldout` rows,
 which is wider than the board's *held-out* column (`test_heldout` only).
 
 <!-- BEGIN GENERATED: per_deployment (analysis/vlm_scoreboard.py) -->
@@ -335,7 +337,8 @@ help. A crop with several tags counts once in each; `(none)` is an untagged crop
 test + held-out pooled, as on the board. Each table row gives the slice's crops, its incorrect share, the share
 held by its largest deployment (unnamed) and its round-3 training crops, then, for round 3, the 2025-08 models and
 the best full-coverage VLM, the pooled AUC with a 95% label-bootstrap interval and the within-city AUC (the best
-of each per row in bold). The CSVs add the AUC per split for every full leg; the heatmaps show the pooled AUC of every full leg. Every tag with at least 30 crops
+of each per row in bold). The CSVs add the AUC per split for every full leg; the heatmaps show the pooled AUC of
+every full leg. Every tag with at least 30 crops
 of its type has a row, and an AUC is blank below 30 crops or 10 of a class. Slice names follow
 `analysis/slices.py` ([#67](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/67)), which reports test
 and held-out separately with a panorama bootstrap; compare its numbers with this board's per-split columns, not the
@@ -343,28 +346,28 @@ pooled ones.
 
 **Read the largest-deployment and within-city columns before a pooled cell.** A slice drawn mostly from a few
 deployments with different incorrect shares can score near chance pooled while ranking well inside each deployment
-(the city–class confound), or the reverse. Obstacle parked scooter/motorcycle is the clearest case: the 2025-08 models are
-near chance pooled but above it on test deployments and within city (one deployment). Within-city AUC has its own
+(the city–class confound), or the reverse. Obstacle parked scooter/motorcycle is the clearest case: the 2025-08 models
+are near chance pooled but above it on test deployments and within city (one deployment). Within-city AUC has its own
 limit: for Obstacle parked bike, round 3's within-city value rests almost entirely on one held-out deployment with
 three correct crops, so it says little either way.
 
 What the slices show at this build (the numbers are in the tables, which regenerate):
 
 - **Round 3 is ahead of every VLM in every scoreable severity slice**, pooled. The 2025-08 models are behind it on
-  Obstacle, close to it elsewhere, and slightly ahead in a few CurbRamp, NoCurbRamp and Crosswalk slices. Crosswalk severity 3 (almost all incorrect) and Crosswalk with no severity are too
-  thin to score.
-- **The VLMs' weakest severity slices are Obstacle severities 1 and 2**, and NoCurbRamp severity 2 and no severity.
-- **Round 3's weakest tags are rare or transfer badly to new deployments.** Obstacle stairs is at or below chance
-  for round 3 and the 2025-08 models alike (intervals include 0.5; few crops, almost all from held-out deployments, 35
-  training crops). SurfaceProblem brick/cobblestone,
-  sand/gravel and utility panel are strong on test deployments but fall on held-out ones, and the first two stay
-  low within city; for most SurfaceProblem tags (cracks is the exception), held-out AUC trails test AUC.
-- **Thin training slices:** Obstacle stairs, mailbox and outdoor dining area (one training crop; nearly all of
-  its crops are incorrect, all from one deployment, so it cannot be scored) have the fewest round-3 training crops.
-- **The VLMs are near chance on many Obstacle tags.** Their lowest medians are mailbox, stairs, parked
-  scooter/motorcycle and construction; trash/recycling can and litter/garbage are their best Obstacle tags and still well below round 3.
-  A VLM tops round 3's pooled AUC only on a few small or one-deployment slices (brick/cobblestone, stairs, debris).
-- **Untagged Crosswalk and CurbRamp crops are among the easiest slices for every model.**
+  Obstacle, close to it elsewhere, and slightly ahead in a few CurbRamp, NoCurbRamp and Crosswalk slices. Crosswalk
+  severity 3 (almost all incorrect) and Crosswalk with no severity are too thin to score. - **The VLMs' weakest
+  severity slices are Obstacle severities 1 and 2**, and NoCurbRamp severity 2 and no severity. - **Round 3's weakest
+  tags are rare or transfer badly to new deployments.** Obstacle stairs is at or below chance for round 3 and the
+  2025-08 models alike (intervals include 0.5; few crops, almost all from held-out deployments, 35 training crops).
+  SurfaceProblem brick/cobblestone, sand/gravel and utility panel are strong on test deployments but fall on held-out
+  ones, and the first two stay low within city; for most SurfaceProblem tags (cracks is the exception), held-out AUC
+  trails test AUC. - **Thin training slices:** Obstacle stairs, mailbox and outdoor dining area (one training crop;
+  nearly all of its crops are incorrect, all from one deployment, so it cannot be scored) have the fewest round-3
+  training crops. - **The VLMs are near chance on many Obstacle tags.** Their lowest medians are mailbox, stairs,
+  parked scooter/motorcycle and construction; trash/recycling can and litter/garbage are their best Obstacle tags and
+  still well below round 3. A VLM tops round 3's pooled AUC only on a few small or one-deployment slices
+  (brick/cobblestone, stairs, debris). - **Untagged Crosswalk and CurbRamp crops are among the easiest slices for
+  every model.**
 
 ### By severity
 
@@ -550,8 +553,9 @@ Crops scored per (model, type) out of the held-out crops of that type, and why a
 - **The vLLM leg.** GLM-5.3-Flash is the only model served by vLLM (FP8 weights, tensor parallel 4 on four H200s,
   the vllm/vllm-openai 0.32.0 image under Apptainer); it reads the first token's top-20 log-probs, and no crop had
   a yes/no spelling outside them. `docs/vlm-scoreboard/runs.md` is the job log for every klone leg.
-- **Timing.** Per leg, a batch-1 timing run where one was made (not Nemotron, the 8-shot arm or the 2025-08 models) and the
-  full run on a named GPU, median and p90 seconds per crop; the vLLM leg's rows are concurrency 1 and 32; the Mac legs are #16's idle-machine batch-1 timings.
+- **Timing.** Per leg, a batch-1 timing run where one was made (not Nemotron, the 8-shot arm or the 2025-08 models)
+  and the full run on a named GPU, median and p90 seconds per crop; the vLLM leg's rows are concurrency 1 and 32; the
+  Mac legs are #16's idle-machine batch-1 timings.
 
 ## Caveats
 

@@ -120,7 +120,7 @@ LEGS = {
 SHORT = {REFERENCE: "round 3", "production": "2025-08 models"}   # column headers of the wide slice tables
 MAC_LEGS = {"qwen3vl-2b": "qwen3vl-2b-mlx4", "qwen3vl-8b": "qwen3vl-8b-mlx4", "gemma4-12b": "gemma4-12b-mlx4"}
 DEFAULT_WHY = {
-    "production": "not staged yet (the full-split production run is on klone)",
+    "production": "not staged yet (the full-split 2025-08 run is on klone)",
     "fewshot8": "the 8-shot arm runs on the best zero-shot leg once the board names it",
 }
 for _leg in MAC_LEGS.values():

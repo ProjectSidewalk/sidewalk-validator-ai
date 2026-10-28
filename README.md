@@ -40,7 +40,7 @@ Every leg with full coverage (14 of 17: the two validator rounds and 12 of the 1
 (VLM) legs) is scored on the same 13,144 held-out crops of the round-3 split (the training deployments' test share
 plus three deployments held out of training entirely). AUC is of the `incorrect` score; macro-AUC gives each label
 type equal weight; the interval is a 95% label bootstrap; Δ is the paired difference against round 3; bold is the
-best value in a column. The previous-production row is optimistic: those models were trained in 2025-08 on an
+best AUC in a column. The previous-production row is optimistic: those models were trained in 2025-08 on an
 unrecorded label set that may overlap the test-share crops. The block is generated from
 [`docs/vlm-scoreboard/board.csv`](docs/vlm-scoreboard/board.csv) and drift-checked in CI; the full board with
 seventeen legs, within-city AUC, latency and per-deployment rows is [`docs/vlm-scoreboard.md`](docs/vlm-scoreboard.md).

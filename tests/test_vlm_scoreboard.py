@@ -641,6 +641,12 @@ def test_bold_in_the_other_tables_and_the_rule(board):
     assert rows[0][9] == "**0.850**" and rows[0][7] == "0.800"                        # within-city: 2025-08 wins
     assert rows[1][8].startswith("**0.650") and rows[1][7] == "—" and rows[1][9] == "—"
     assert "| round 3 AUC [95% CI] | within-city |" in sb.slice_table(df, b, "severity").splitlines()[0]
+    # per deployment: no bold when the best VLM is a partial leg (its AUCs are on other crops)
+    partial = dict(aggs)
+    pb = b.copy()
+    pb.loc[pb.model_class != sb.PURPOSE, "full"] = False
+    partial["board"] = pb
+    assert "**" not in sb.render_blocks(partial)["per_deployment"]
     # the rule follows a full row only
     assert [r[1] for r in sb._with_rule([["", "a"], ["", "b"]], [False, False], 2)] == ["a", "b"]
     assert sb._with_rule([["", "a"], ["", "b"]], [True, False], 2)[1][1].startswith("*partial")
