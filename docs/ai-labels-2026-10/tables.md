@@ -10,24 +10,42 @@
 
 Not scored (no crop): {'no_pano': 20}. Ties (equal Agree and Disagree) dropped: 3.
 
+### Reference accounts (all voted AI labels)
+
+| city | lead votes / all votes | lead-decided | rejected by leads | other-decided | rejected by others | lead rejections in round-3 train / val / test |
+|---|---:|---:|---:|---:|---:|---|
+| laurens-ia | 1,179 / 1,185 (99%) | 1,177 | 101 (8.6%) | 3 | 0 (0.0%) | 0 / 0 / 0 |
+| richmond-va | 983 / 1,072 (92%) | 983 | 48 (4.9%) | 89 | 3 (3.4%) | 0 / 0 / 0 |
+| vancouver-wa | 1,499 / 2,818 (53%) | 1,499 | 29 (1.9%) | 1,295 | 52 (4.0%) | 21 / 4 / 4 |
+
 ### Headline: the round-3 CurbRamp validator on AI-placed curb ramps
 
 | slice | n | incorrect | panos | AUC(incorrect) [95% pano CI] | acc | bal. acc | recall(incorrect) @ P ≥ 0.92 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| unseen, all three | 4,842 | 208 | 4,004 | 0.926 [0.904, 0.947] | 0.950 | 0.832 | 0.000 |
-| unseen, laurens-ia | 1,180 | 101 | 621 | 0.930 [0.906, 0.953] | 0.891 | 0.855 | 0.000 |
-| unseen, richmond-va | 1,072 | 51 | 916 | 0.977 [0.965, 0.987] | 0.970 | 0.807 | 0.000 |
-| unseen, vancouver-wa | 2,590 | 56 | 2,467 | 0.851 [0.777, 0.915] | 0.969 | 0.774 | 0.000 |
-| all scored, all three | 5,026 | 233 | 4,172 | 0.932 [0.910, 0.951] | 0.951 | 0.844 | 0.000 |
-| all scored, laurens-ia | 1,180 | 101 | 621 | 0.930 [0.906, 0.953] | 0.891 | 0.855 | 0.000 |
-| all scored, richmond-va | 1,072 | 51 | 916 | 0.977 [0.965, 0.987] | 0.970 | 0.807 | 0.000 |
-| all scored, vancouver-wa | 2,774 | 81 | 2,635 | 0.891 [0.836, 0.938] | 0.970 | 0.829 | 0.000 |
+| unseen, all three | 4,842 | 208 | 4,004 | 0.926 [0.904, 0.947] | 0.950 | 0.832 | 0.077 |
+| unseen, laurens-ia | 1,180 | 101 | 621 | 0.930 [0.906, 0.953] | 0.891 | 0.855 | 0.059 |
+| unseen, richmond-va | 1,072 | 51 | 916 | 0.977 [0.965, 0.987] | 0.970 | 0.807 | 0.039 |
+| unseen, vancouver-wa | 2,590 | 56 | 2,467 | 0.851 [0.777, 0.916] | 0.969 | 0.774 | 0.089 |
+| all scored, all three | 5,026 | 233 | 4,172 | 0.932 [0.911, 0.951] | 0.951 | 0.844 | 0.120 |
+| all scored, laurens-ia | 1,180 | 101 | 621 | 0.930 [0.906, 0.953] | 0.891 | 0.855 | 0.059 |
+| all scored, richmond-va | 1,072 | 51 | 916 | 0.977 [0.965, 0.987] | 0.970 | 0.807 | 0.039 |
+| all scored, vancouver-wa | 2,774 | 81 | 2,635 | 0.891 [0.836, 0.938] | 0.970 | 0.829 | 0.222 |
 
 Baseline, same checkpoint, same metrics:
 
 | slice | n | incorrect | panos | AUC(incorrect) [95% pano CI] | acc | bal. acc | recall(incorrect) @ P ≥ 0.92 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| baseline: human-placed, round-3 test split (all training deployments) | 1,443 | 663 | 1,283 | 0.968 [0.959, 0.976] | 0.915 | 0.914 | 0.902 |
+| baseline: human-placed, round-3 test split (all training deployments) | 1,443 | 663 | 1,283 | 0.969 [0.960, 0.977] | 0.915 | 0.914 | 0.902 |
+
+Baseline at matched prevalence (negatives reweighted so the rejected share matches the AI slice; the AUC does not depend on it):
+
+| slice | rejected share | Disagree precision, ungated | Disagree recall, ungated | recall(incorrect) @ P ≥ 0.92 |
+|---|---:|---:|---:|---:|
+| baseline as is | 45.9% | 0.908 | 0.906 | 0.902 |
+| baseline reweighted to unseen, all three | 4.3% | 0.342 | 0.906 | 0.249 |
+| baseline reweighted to unseen, laurens-ia | 8.6% | 0.520 | 0.906 | 0.380 |
+| baseline reweighted to unseen, richmond-va | 4.8% | 0.367 | 0.906 | 0.249 |
+| baseline reweighted to unseen, vancouver-wa | 2.2% | 0.204 | 0.906 | 0.249 |
 
 ### At the deployed gate (served accuracy ≥ 0.92)
 
@@ -48,27 +66,27 @@ The served CurbRamp map reaches at most 0.9957 for Agree and 0.8023 for Disagree
 
 | slice | n | incorrect | human Agree share | AUC [95% pano CI] | recall(incorrect) @ P ≥ 0.92 | Agree coverage | Agree precision |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| city / tier = laurens-ia / band | 580 | 84 | 0.855 | 0.917 [0.880, 0.948] | 0.155 | 0.704 | 0.984 |
-| city / tier = laurens-ia / core | 600 | 17 | 0.972 | 0.925 [0.879, 0.966] | 0.000 | 0.800 | 0.996 |
+| city / tier = laurens-ia / band | 580 | 84 | 0.855 | 0.917 [0.880, 0.949] | 0.214 | 0.704 | 0.984 |
+| city / tier = laurens-ia / core | 600 | 17 | 0.972 | 0.925 [0.879, 0.966] | 0.059 | 0.800 | 0.996 |
 | city / tier = richmond-va / band | 114 | 29 | 0.746 | 0.886 [0.815, 0.948] | 0.103 | 0.733 | 0.939 |
 | city / tier = richmond-va / core | 948 | 22 | 0.977 | 0.990 [0.982, 0.996] | 0.000 | 0.955 | 0.999 |
-| city / tier = vancouver-wa / core | 2,590 | 56 | 0.978 | 0.851 [0.777, 0.915] | 0.000 | 0.937 | 0.993 |
-| votes = 1 | 4,814 | 207 | 0.957 | 0.926 [0.900, 0.948] | 0.000 | 0.898 | 0.993 |
-| reference = crowd only | 1,381 | 55 | 0.960 | 0.848 [0.769, 0.917] | 0.000 | 0.940 | 0.987 |
-| reference = expert-decided | 3,461 | 153 | 0.956 | 0.959 [0.948, 0.969] | 0.000 | 0.880 | 0.996 |
-| city / reference = laurens-ia / expert-decided | 1,177 | 101 | 0.914 | 0.930 [0.906, 0.951] | 0.000 | 0.759 | 0.991 |
+| city / tier = vancouver-wa / core | 2,590 | 56 | 0.978 | 0.851 [0.777, 0.916] | 0.089 | 0.937 | 0.993 |
+| votes = 1 | 4,814 | 207 | 0.957 | 0.926 [0.900, 0.948] | 0.077 | 0.898 | 0.993 |
+| reference = crowd only | 1,381 | 55 | 0.960 | 0.848 [0.769, 0.917] | 0.127 | 0.940 | 0.987 |
+| reference = expert-decided | 3,461 | 153 | 0.956 | 0.959 [0.948, 0.970] | 0.046 | 0.880 | 0.996 |
+| city / reference = laurens-ia / expert-decided | 1,177 | 101 | 0.914 | 0.930 [0.906, 0.951] | 0.059 | 0.759 | 0.991 |
 | city / reference = richmond-va / crowd only | 89 | 3 | 0.966 | 0.961 [0.899, 1.000] | 0.333 | 0.930 | 1.000 |
-| city / reference = richmond-va / expert-decided | 983 | 48 | 0.951 | 0.977 [0.964, 0.988] | 0.000 | 0.936 | 0.994 |
-| city / reference = vancouver-wa / crowd only | 1,289 | 52 | 0.960 | 0.841 [0.766, 0.914] | 0.000 | 0.942 | 0.986 |
+| city / reference = richmond-va / expert-decided | 983 | 48 | 0.951 | 0.977 [0.964, 0.988] | 0.042 | 0.936 | 0.994 |
+| city / reference = vancouver-wa / crowd only | 1,289 | 52 | 0.960 | 0.841 [0.766, 0.914] | 0.135 | 0.942 | 0.986 |
 | city / reference = vancouver-wa / expert-decided | 1,301 | 4 | 0.997 | 0.974 [0.948, 0.997] | 0.000 | 0.932 | 1.000 |
 | pano size = 11000×5500 | 677 | 33 | 0.951 | 0.976 [0.958, 0.990] | 0.091 | 0.933 | 0.993 |
-| pano size = 12288×6144 | 116 | 9 | 0.922 | 0.985 [0.960, 1.000] | 0.000 | 0.936 | 1.000 |
+| pano size = 12288×6144 | 116 | 9 | 0.922 | 0.986 [0.961, 1.000] | 0.111 | 0.936 | 1.000 |
 | pano size = 13312×6656 | 301 | 6 | 0.980 | 0.614 [0.383, 0.895] | 0.000 | 0.921 | 0.985 |
-| pano size = 16384×8192 | 2,289 | 50 | 0.978 | 0.874 [0.789, 0.936] | 0.000 | 0.939 | 0.994 |
+| pano size = 16384×8192 | 2,289 | 50 | 0.978 | 0.874 [0.789, 0.936] | 0.100 | 0.939 | 0.994 |
 | pano size = 4096×2048 | 149 | 6 | 0.960 | 0.963 [0.895, 1.000] | 0.667 | 0.916 | 0.992 |
-| pano size = 5760×2880 | 1,295 | 104 | 0.920 | 0.933 [0.910, 0.953] | 0.000 | 0.779 | 0.992 |
+| pano size = 5760×2880 | 1,295 | 104 | 0.920 | 0.933 [0.910, 0.953] | 0.058 | 0.779 | 0.992 |
 
-Against the expert verdict alone (labels an expert voted on with no contradicting human vote): n 3,461, incorrect 153, AUC 0.959 [0.948, 0.969], recall(incorrect) at P ≥ 0.92 0.000.
+Against the expert verdict alone (labels an expert voted on with no contradicting human vote): n 3,461, incorrect 153, AUC 0.959 [0.948, 0.970], recall(incorrect) at P ≥ 0.92 0.046.
 
 Severity and tags: AI-placed labels carry neither (RampNet submits none); 21 of 5,046 voted labels have a severity and 18 have tags (edited by a validator afterwards), too few to slice. The type × severity and type × tag slices of the standing rule apply to the human-placed baseline in `docs/retrain-2026-10.md`, not here.
 
@@ -89,11 +107,16 @@ Severity and tags: AI-placed labels carry neither (RampNet submits none); 21 of 
 | baseline Agree verdicts | 781 | 0.9834 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
 | baseline Disagree verdicts | 662 | 0.9635 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
 
-### Provenance
+### Provenance (sha256)
 
-- rawLabels pulls: vancouver-wa `6c48b5a1801f`; richmond-va `ce07e7cf74e3`; laurens-ia `a4fd1447aac7` (selected 2026-10-27T23:14:06+00:00)
-- labels.csv `cb3db7a20113`; 5,073 labels on 4,200 panos; round-3 split `f2ec89f8032c`
-- crops: store marker "Project Sidewalk pano store; see docs/ops.md#the-store-marker", https://github.com/ProjectSidewalk/sidewalk-panorama-tools@7ce25ffbddae23d85f9976ec0a925707a0d64a89, tilt beta 0.95, depth vitb, status {'ok': 5053, 'no_pano': 20}
-- checkpoint `checkpoint-4340` model.safetensors `e5f146e96a77`, 5,053 crops scored 2026-10-28T01:49:02+00:00
-- accuracy map `curbramp.json` `e097f568a71a`; uncapped `e097f568a71a`
-- bootstrap: 1000 panorama resamples, seed 20261027; slices need ≥ 30 rows
+- rawLabels pulls (selected 2026-10-27T23:14:06+00:00):
+  - vancouver-wa `6c48b5a1801f0b0cb9d417b943142816d71b764879031afc46e89e60deec9dd1`
+  - richmond-va `ce07e7cf74e3c56a4eab7ef3db5e22f3fbd752bc01197b2c69bfe69fd23e6c2d`
+  - laurens-ia `a4fd1447aac7394fbdbe4ca84030e24c088d788380ae23ef59339470a89afa3e`
+- labels.csv `cb3db7a201138d5ef79123d9dfca9a6063a934a325085131afaa53cf1cae7c30`; 5,073 labels on 4,200 panos
+- round-3 split.csv `f2ec89f8032c9b6b7c1533bea7ac82d82b7c139847b14286dd53d932a2195610`
+- crops: store marker "Project Sidewalk pano store; see docs/ops.md#the-store-marker", https://github.com/ProjectSidewalk/sidewalk-panorama-tools@7ce25ffbddae23d85f9976ec0a925707a0d64a89, tilt beta 0.95, depth vitb, status {'ok': 5053, 'no_pano': 20}; manifest.csv `9f93fbf363b3e930c5e8ab8267699d2355994620a91105d3ba403964b1f1c18d`
+- checkpoint `checkpoint-4340` model.safetensors `e5f146e96a7735ecbc7b39776a932bd09690b22efa3ce0917c2d7e3a8e9dc317`, 5,053 crops scored 2026-10-28T01:49:02+00:00; predictions.csv `704661f6ee4e353325d90012bd20d5c15ef3bb75e4c721a994c288ea64108c7a`
+- accuracy map `curbramp.json` `e097f568a71aae6be073629843031028c6d39b9342c396b4ab81827af0ca2ece`; uncapped `e097f568a71aae6be073629843031028c6d39b9342c396b4ab81827af0ca2ece`
+- ranking score: log-odds of the two softmax columns (`rank_score`), so float32-saturated Disagrees are not tied
+- bootstrap: 1000 panorama resamples, seed 20261027 for every slice, one-class draws redrawn (up to 20×, then dropped); slices need ≥ 30 rows

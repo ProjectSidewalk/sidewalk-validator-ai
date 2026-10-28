@@ -28,22 +28,33 @@ validator excluded as in `data_generation.human_vote_counts`).
 | vancouver-wa | gsv | 64,814 | 2,794 | 2,654 | 81 (2.9%) | 24 | 1,499 | 2794 / 0 / 0 | 150 / 34 / 36 | 2,774 | 20 |
 
 20 Vancouver labels sit on panoramas the lab's store no longer holds and were not scored; three labels with equal Agree
-and Disagree votes were dropped. "Expert-decided" is the share of voted labels one of the two project leads voted on with
-nobody contradicting; the rest were decided by other accounts ("crowd only" below), which in Vancouver means mostly one
-non-lead account. Vancouver and Richmond are 4 % and 8 % validated; Laurens 75 %.
+and Disagree votes were dropped. "Expert-decided" is the count of voted labels one of the two project leads voted on
+with nobody contradicting ("lead-decided" below); the rest were decided by other accounts ("crowd only"). Vancouver and
+Richmond are 4 % and 8 % validated; Laurens 75 %.
+
+| city | lead votes / all votes | lead-decided | rejected by leads | other-decided | rejected by others | lead rejections in round-3 train / val / test |
+|---|---:|---:|---:|---:|---:|---|
+| laurens-ia | 1,179 / 1,185 (99%) | 1,177 | 101 (8.6%) | 3 | 0 (0.0%) | 0 / 0 / 0 |
+| richmond-va | 983 / 1,072 (92%) | 983 | 48 (4.9%) | 89 | 3 (3.4%) | 0 / 0 / 0 |
+| vancouver-wa | 1,499 / 2,818 (53%) | 1,499 | 29 (1.9%) | 1,295 | 52 (4.0%) | 21 / 4 / 4 |
+
+The two leads cast 53 % of Vancouver's votes, 92 % of Richmond's and 99 % of Laurens's; the other Vancouver votes come
+from 17 accounts, the largest with 37 % of them. The leads rejected 1.9 % of the Vancouver labels they decided, the
+other accounts 4.0 %. The last column is the leakage mechanism explained under Method: every lead-rejected Vancouver
+label is in a round-3 split.
 
 Three things about this reference set:
 
-- **One vote each.** Almost no label has two votes, so the reference is one person's opinion; and one account cast most of
-  the votes in every deployment (sidewalk-auto-labeler's `docs/server-agree-check.md`). An "expert-decided" column
-  (labels one of two project leads voted on, nobody contradicting; the lead accounts are configured through `EXPERTS`,
-  never named here) is reported as a second reference.
+- **One vote each.** Almost no label has two votes, so the reference is one person's opinion, and a single human vote
+  on an AI label can lean toward Agree (sidewalk-auto-labeler's `docs/server-agree-check.md`). The lead-decided labels
+  (the lead accounts are configured through `EXPERTS`, never named here) are reported as a second reference.
 - **Not a random sample.** Labels reached their validator through the validation queue, so this is the validator's
   performance on the labels humans happened to see, not on all 79 k AI labels. Vancouver and Richmond are 4 % and 8 %
   validated.
-- **Few Disagrees.** Humans rejected 2.9 % (Vancouver), 4.8 % (Richmond) and 8.6 % (Laurens) of the voted labels. Agree
-  precision is therefore high almost by construction; the informative numbers are the AUC (can the model rank the
-  rejected ones?) and the Disagree catch.
+- **Few Disagrees.** Humans rejected 2.9 % (Vancouver), 4.8 % (Richmond) and 8.6 % (Laurens) of the voted labels,
+  against 46 % in the human-placed baseline. Agree precision is high almost by construction, and every precision-type
+  number (Disagree precision, recall at precision ≥ 0.92) depends on that share, so the baseline is also restated at
+  each slice's prevalence. The AUC does not depend on it.
 
 **Providers.** Vancouver is GSV, the imagery every validator was trained on, and is the primary result. Richmond and
 Laurens are Mapillary (an 11000 px rig and a GoPro Max), which `data_generation.py` excludes from training and which
@@ -72,13 +83,20 @@ be made here; the handful of AI labels a validator edited afterwards are counted
 4. `score`: `evaluate.run_inference` with the round-3 CurbRamp checkpoint (the weights published to Hugging Face on
    2026-10-26 and served by sidewalk-ai-api 1.2.0 since 2026-10-27).
 5. `report`: AUC(incorrect) with panorama-resampled 95 % intervals, accuracy, recall of incorrect at precision ≥ 0.92 on
-   the model's own ranking, and the deployed gate: each verdict's confidence served through the round-3 CurbRamp
-   accuracy map (`calibration/curbramp.json`, capped so Disagree is held back, as shipped) and through the uncapped map
-   (what Disagree would do if it were not held back).
+   the model's own ranking (the log-odds of the two softmax columns, so the Disagrees that saturate float32 at
+   `p_incorrect == 1.0` are not tied), and the deployed gate: each verdict's confidence served through the round-3
+   CurbRamp accuracy map (`calibration/curbramp.json`, as shipped) and through the uncapped map. For CurbRamp the two
+   maps are byte-identical: the `incorrect` class never reached 0.92 on the calibration split, so the cap does not bind.
 
-**Leakage.** The round-3 retrain selected with `--include-ai-labels`, so 150 Vancouver AI labels were in its train split
-and 34 in val (36 in test). The headline (`unseen`) excludes train and val; `all scored` includes them. Richmond and
-Laurens never entered training (non-GSV).
+**Leakage, and what it did to the reference.** The round-3 retrain selected with `--include-ai-labels`, so 150
+Vancouver AI labels were in its train split and 34 in val (36 in test). The headline (`unseen`) excludes train and val;
+`all scored` includes them. Richmond and Laurens never entered training (non-GSV). The selection was not random with
+respect to the reference: `data_generation.eligible_labels` admits a label on a crowd vote margin or on a lead verdict,
+so a one-vote crowd-decided AI label was never eligible, and the class balance keeps every `incorrect` label while
+downsampling `correct`. Hence all 29 lead-rejected Vancouver labels are in a round-3 split (21 train, 4 val, 4 test),
+and the 1,279 never-selected lead-decided labels are all approved. After the exclusion, the unseen Vancouver set holds
+52 crowd-decided rejections and 4 lead-decided ones: **its headline is a crowd-reference number**, and no clean
+lead-reference AUC exists for Vancouver.
 
 **Baseline.** The same checkpoint on the round-3 **test** split of human-placed CurbRamp labels (all training
 deployments; the held-out-city numbers are in `docs/retrain-2026-10.md`).
@@ -93,41 +111,55 @@ rejected labels the model's own ranking can flag at 92 % precision, the bar the 
 
 | slice | n | incorrect | panos | AUC(incorrect) [95% pano CI] | acc | bal. acc | recall(incorrect) @ P ≥ 0.92 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| unseen, all three | 4,842 | 208 | 4,004 | 0.926 [0.904, 0.947] | 0.950 | 0.832 | 0.000 |
-| unseen, laurens-ia | 1,180 | 101 | 621 | 0.930 [0.906, 0.953] | 0.891 | 0.855 | 0.000 |
-| unseen, richmond-va | 1,072 | 51 | 916 | 0.977 [0.965, 0.987] | 0.970 | 0.807 | 0.000 |
-| unseen, vancouver-wa | 2,590 | 56 | 2,467 | 0.851 [0.777, 0.915] | 0.969 | 0.774 | 0.000 |
-| all scored, all three | 5,026 | 233 | 4,172 | 0.932 [0.910, 0.951] | 0.951 | 0.844 | 0.000 |
-| all scored, laurens-ia | 1,180 | 101 | 621 | 0.930 [0.906, 0.953] | 0.891 | 0.855 | 0.000 |
-| all scored, richmond-va | 1,072 | 51 | 916 | 0.977 [0.965, 0.987] | 0.970 | 0.807 | 0.000 |
-| all scored, vancouver-wa | 2,774 | 81 | 2,635 | 0.891 [0.836, 0.938] | 0.970 | 0.829 | 0.000 |
+| unseen, all three | 4,842 | 208 | 4,004 | 0.926 [0.904, 0.947] | 0.950 | 0.832 | 0.077 |
+| unseen, laurens-ia | 1,180 | 101 | 621 | 0.930 [0.906, 0.953] | 0.891 | 0.855 | 0.059 |
+| unseen, richmond-va | 1,072 | 51 | 916 | 0.977 [0.965, 0.987] | 0.970 | 0.807 | 0.039 |
+| unseen, vancouver-wa | 2,590 | 56 | 2,467 | 0.851 [0.777, 0.916] | 0.969 | 0.774 | 0.089 |
+| all scored, all three | 5,026 | 233 | 4,172 | 0.932 [0.911, 0.951] | 0.951 | 0.844 | 0.120 |
+| all scored, laurens-ia | 1,180 | 101 | 621 | 0.930 [0.906, 0.953] | 0.891 | 0.855 | 0.059 |
+| all scored, richmond-va | 1,072 | 51 | 916 | 0.977 [0.965, 0.987] | 0.970 | 0.807 | 0.039 |
+| all scored, vancouver-wa | 2,774 | 81 | 2,635 | 0.891 [0.836, 0.938] | 0.970 | 0.829 | 0.222 |
 
 Baseline, same checkpoint, same metrics:
 
 | slice | n | incorrect | panos | AUC(incorrect) [95% pano CI] | acc | bal. acc | recall(incorrect) @ P ≥ 0.92 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| baseline: human-placed, round-3 test split (all training deployments) | 1,443 | 663 | 1,283 | 0.968 [0.959, 0.976] | 0.915 | 0.914 | 0.902 |
+| baseline: human-placed, round-3 test split (all training deployments) | 1,443 | 663 | 1,283 | 0.969 [0.960, 0.977] | 0.915 | 0.914 | 0.902 |
+
+Baseline at matched prevalence (its negatives reweighted so the rejected share matches the AI slice; the AUC does not
+depend on prevalence):
+
+| slice | rejected share | Disagree precision, ungated | Disagree recall, ungated | recall(incorrect) @ P ≥ 0.92 |
+|---|---:|---:|---:|---:|
+| baseline as is | 45.9% | 0.908 | 0.906 | 0.902 |
+| baseline reweighted to unseen, all three | 4.3% | 0.342 | 0.906 | 0.249 |
+| baseline reweighted to unseen, laurens-ia | 8.6% | 0.520 | 0.906 | 0.380 |
+| baseline reweighted to unseen, richmond-va | 4.8% | 0.367 | 0.906 | 0.249 |
+| baseline reweighted to unseen, vancouver-wa | 2.2% | 0.204 | 0.906 | 0.249 |
 
 **Vancouver (GSV, primary).** AUC 0.85 [0.78, 0.92] on the 2,590 unseen labels, against 0.97 for the same checkpoint on
-human-placed labels. The gap is entirely in the crowd-referenced half (next section): against the project leads' votes
-the AUC is 0.97 [0.95, 1.00], but those 1,301 labels contain only 4 rejections, so that number says little. On the 184
-train/val Vancouver labels the model scores AUC 0.98 and accuracy 0.984, which is why they are excluded.
+human-placed labels. As explained under Method, 52 of the 56 rejections are crowd-decided, so this is the validator
+against the non-lead accounts' votes. Against the leads' votes the model reaches 0.97 [0.95, 1.00] on the unseen
+labels, but with 4 rejections, and 0.98 on the 184 train/val labels it has seen (25 rejections, accuracy 0.984), which
+is why those are excluded. Whether the crowd or the model is right about the contested labels is not decidable from
+one vote each (see the discussion).
 
 **Richmond and Laurens (Mapillary, secondary).** AUC 0.98 [0.97, 0.99] and 0.93 [0.91, 0.95], both above Vancouver,
-and Richmond is at the human-placed baseline. The model has never trained on Mapillary imagery, and these are rig-frame
-crops without tilt correction; it rank-orders RampNet's mistakes in them anyway.
+with Richmond at the human-placed baseline. The model has never trained on Mapillary imagery, and these are rig-frame
+crops without tilt correction; it rank-orders RampNet's mistakes in them anyway. Both references are 92–99 % lead
+votes.
 
-**Nothing reaches 92 % precision on rejections.** With 2–9 % of the labels rejected, the model's ranking cannot flag
-rejected labels at 92 % precision in any city (0.000 in every headline row), while on the human-placed test split, where
-46 % are rejected, it flags 90 % of them. The Disagree side of the validator is a base-rate problem on AI labels,
-not only a model problem.
+**The top of the ranking is weaker on AI labels, and prevalence explains only part of it.** The baseline reweighted to
+the AI labels' 2–5 % rejected share still flags 25 % of its rejections at 92 % precision (38 % at Laurens's 8.6 %); on
+the AI labels the model flags 4–9 %. Low prevalence does make the bar harder, but the baseline clears it more often at
+the same prevalence.
 
 ### At the deployed gate
 
 Each verdict's confidence through the served round-3 CurbRamp accuracy map, gate at 0.92 (sidewalk-ai-api 1.2.0). The
-served map tops out at 0.80 for Disagree (the uncapped map is byte-identical; `incorrect` never reached 0.92 on the
-calibration split), so **no Disagree verdict on an AI label can pass the gate as deployed**. The "ungated" columns say
-what the raw Disagree verdicts are worth if that cap were lifted.
+map tops out at 0.80 for Disagree, so **no Disagree verdict on an AI label passes the gate as deployed**, and since the
+uncapped map is identical, lifting the cap would change nothing. The "ungated" columns say what the raw Disagree
+verdicts are worth with no gate at all.
 
 | slice | n | Agree verdicts | Agree pass | Agree coverage | Agree precision [Wilson] | Disagree verdicts | Disagree precision, ungated [Wilson] | Disagree recall, ungated | Disagree pass (served map) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -143,58 +175,62 @@ what the raw Disagree verdicts are worth if that cap were lifted.
 In words, for the unseen Vancouver labels:
 
 - The gate passes an Agree vote on 2,344 of 2,590 labels (90 %); 16 of those are labels a human rejected (precision
-  0.993, against a 0.978 human Agree share, so the gate removes about a third of the rejected labels from what it
-  auto-agrees with, not most of them).
-- The model calls 89 labels wrong. Humans agreed with 32 of those (36 %); on the human-placed test split the same
-  verdict is right 91 % of the time. Of the 56 human-rejected labels it names 32 (57 %); 24 get an Agree verdict and 16
-  of those pass the gate.
+  0.993 against a 0.978 human Agree share: the error rate among passed labels is 0.68 %, a third of the 2.2 % among all
+  of them).
+- Of the 56 human-rejected labels the gate auto-agrees with 16 and withholds 40 (71 %). It removes none of them, since
+  it casts no Disagree; its value is triage: the 246 withheld labels contain 40 rejections (16 %, against 2.2 % overall).
+- The model calls 89 labels wrong. Humans agreed with 32 of those (36 %). The baseline reweighted to Vancouver's 2.2 %
+  rejected share gives 0.20 for the same verdict, so the Disagree verdicts on AI labels are no worse than on human-placed
+  labels at matched prevalence; they are low-precision because rejections are rare. Of the 56 rejected labels the model
+  names 32 (57 %).
 - The 57 Disagree verdicts humans contradicted are not low-confidence: the median confidence of a contradicted Disagree
-  is 0.995, against 0.99999 for a confirmed one. The confidence table below shows the same: the verdicts on AI labels are
-  as saturated as on human-placed ones.
+  is 0.9956, against 0.99993 for a confirmed one. The confidence table below shows the same: the verdicts on AI labels
+  are as saturated as on human-placed ones, so a confidence map cannot separate them.
 
-Richmond's Disagree verdicts are better (precision 0.71, 32 of 45), Laurens's are like Vancouver's (0.43), and the
-0.30–0.55 `band` tier is where the Disagree verdicts earn their keep (precision 0.52, recall 0.80, against 0.36 / 0.59
-on `core`): the band is where RampNet itself is 75–85 % precise, so there are rejections to find.
+Richmond's Disagree verdicts are 0.71 precise (32 of 45; the reweighted baseline gives 0.37 at its prevalence),
+Laurens's 0.43 (0.52 for the baseline at 8.6 %). The `band` tier (0.30–0.55 RampNet confidence) has higher Disagree
+precision than `core` (0.52 vs 0.36) and recall (0.80 vs 0.59), but its AUC is no better (0.92 / 0.89 against
+0.93 / 0.99 / 0.85 per city): the band holds 16 % rejections against 2.3 % in `core`, and precision follows prevalence.
 
 ### Slices
 
 | slice | n | incorrect | human Agree share | AUC [95% pano CI] | recall(incorrect) @ P ≥ 0.92 | Agree coverage | Agree precision |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| city / tier = laurens-ia / band | 580 | 84 | 0.855 | 0.917 [0.880, 0.948] | 0.155 | 0.704 | 0.984 |
-| city / tier = laurens-ia / core | 600 | 17 | 0.972 | 0.925 [0.879, 0.966] | 0.000 | 0.800 | 0.996 |
+| city / tier = laurens-ia / band | 580 | 84 | 0.855 | 0.917 [0.880, 0.949] | 0.214 | 0.704 | 0.984 |
+| city / tier = laurens-ia / core | 600 | 17 | 0.972 | 0.925 [0.879, 0.966] | 0.059 | 0.800 | 0.996 |
 | city / tier = richmond-va / band | 114 | 29 | 0.746 | 0.886 [0.815, 0.948] | 0.103 | 0.733 | 0.939 |
 | city / tier = richmond-va / core | 948 | 22 | 0.977 | 0.990 [0.982, 0.996] | 0.000 | 0.955 | 0.999 |
-| city / tier = vancouver-wa / core | 2,590 | 56 | 0.978 | 0.851 [0.777, 0.915] | 0.000 | 0.937 | 0.993 |
-| votes = 1 | 4,814 | 207 | 0.957 | 0.926 [0.900, 0.948] | 0.000 | 0.898 | 0.993 |
-| reference = crowd only | 1,381 | 55 | 0.960 | 0.848 [0.769, 0.917] | 0.000 | 0.940 | 0.987 |
-| reference = expert-decided | 3,461 | 153 | 0.956 | 0.959 [0.948, 0.969] | 0.000 | 0.880 | 0.996 |
-| city / reference = laurens-ia / expert-decided | 1,177 | 101 | 0.914 | 0.930 [0.906, 0.951] | 0.000 | 0.759 | 0.991 |
+| city / tier = vancouver-wa / core | 2,590 | 56 | 0.978 | 0.851 [0.777, 0.916] | 0.089 | 0.937 | 0.993 |
+| votes = 1 | 4,814 | 207 | 0.957 | 0.926 [0.900, 0.948] | 0.077 | 0.898 | 0.993 |
+| reference = crowd only | 1,381 | 55 | 0.960 | 0.848 [0.769, 0.917] | 0.127 | 0.940 | 0.987 |
+| reference = expert-decided | 3,461 | 153 | 0.956 | 0.959 [0.948, 0.970] | 0.046 | 0.880 | 0.996 |
+| city / reference = laurens-ia / expert-decided | 1,177 | 101 | 0.914 | 0.930 [0.906, 0.951] | 0.059 | 0.759 | 0.991 |
 | city / reference = richmond-va / crowd only | 89 | 3 | 0.966 | 0.961 [0.899, 1.000] | 0.333 | 0.930 | 1.000 |
-| city / reference = richmond-va / expert-decided | 983 | 48 | 0.951 | 0.977 [0.964, 0.988] | 0.000 | 0.936 | 0.994 |
-| city / reference = vancouver-wa / crowd only | 1,289 | 52 | 0.960 | 0.841 [0.766, 0.914] | 0.000 | 0.942 | 0.986 |
+| city / reference = richmond-va / expert-decided | 983 | 48 | 0.951 | 0.977 [0.964, 0.988] | 0.042 | 0.936 | 0.994 |
+| city / reference = vancouver-wa / crowd only | 1,289 | 52 | 0.960 | 0.841 [0.766, 0.914] | 0.135 | 0.942 | 0.986 |
 | city / reference = vancouver-wa / expert-decided | 1,301 | 4 | 0.997 | 0.974 [0.948, 0.997] | 0.000 | 0.932 | 1.000 |
 | pano size = 11000×5500 | 677 | 33 | 0.951 | 0.976 [0.958, 0.990] | 0.091 | 0.933 | 0.993 |
-| pano size = 12288×6144 | 116 | 9 | 0.922 | 0.985 [0.960, 1.000] | 0.000 | 0.936 | 1.000 |
+| pano size = 12288×6144 | 116 | 9 | 0.922 | 0.986 [0.961, 1.000] | 0.111 | 0.936 | 1.000 |
 | pano size = 13312×6656 | 301 | 6 | 0.980 | 0.614 [0.383, 0.895] | 0.000 | 0.921 | 0.985 |
-| pano size = 16384×8192 | 2,289 | 50 | 0.978 | 0.874 [0.789, 0.936] | 0.000 | 0.939 | 0.994 |
+| pano size = 16384×8192 | 2,289 | 50 | 0.978 | 0.874 [0.789, 0.936] | 0.100 | 0.939 | 0.994 |
 | pano size = 4096×2048 | 149 | 6 | 0.960 | 0.963 [0.895, 1.000] | 0.667 | 0.916 | 0.992 |
-| pano size = 5760×2880 | 1,295 | 104 | 0.920 | 0.933 [0.910, 0.953] | 0.000 | 0.779 | 0.992 |
+| pano size = 5760×2880 | 1,295 | 104 | 0.920 | 0.933 [0.910, 0.953] | 0.058 | 0.779 | 0.992 |
 
-- **Reference.** Against the crowd-only reference the AUC is 0.85; against the expert-decided reference 0.96, at the
-  human-placed baseline. In Vancouver the two halves are the same size, and the leads rejected 4 of 1,301 labels while
-  the other accounts rejected 52 of 1,289. Either the two groups saw different labels (the queue decides that), or they
-  apply a different bar; this experiment cannot tell, and it is the reason the Vancouver headline is 0.85 and not 0.97.
-  Of the 89 Vancouver Disagree verdicts, 62 are on crowd-referenced labels, where the human agreed with the model on 30,
-  and 27 on expert-referenced labels, where the lead agreed on 2.
-- **Tier.** The `band` tier (0.30–0.55 RampNet confidence) holds 113 of the 208 unseen rejections in 694 labels; its AUC
-  is 0.92 (Laurens) and 0.89 (Richmond), the only slices where the ranking flags any rejections at 92 % precision
-  (16 % and 10 %). Richmond `core` is 0.99.
+- **Reference.** Against the crowd-only reference the AUC is 0.85; against the lead-decided reference 0.96, at the
+  human-placed baseline. The crowd-only slice is 93 % Vancouver (the leads decided nearly everything in the other two),
+  and in Vancouver the lead-decided slice has 4 rejections because the round-3 selection took the other 25. The
+  reference and city contrasts are therefore the same contrast seen twice, not two findings. Of the 89 Vancouver
+  Disagree verdicts, 62 are on crowd-decided labels, where the human agreed with the model on 30, and 27 on
+  lead-decided labels, where the lead agreed on 2 and had approved the other 25.
+- **Tier.** The `band` tier holds 113 of the 208 unseen rejections in 694 labels. Its AUC is 0.92 (Laurens) and 0.89
+  (Richmond); at 92 % precision the ranking flags 21 % and 10 % of its rejections, against 6 % and 0 % in the same
+  cities' `core`. Richmond `core` is AUC 0.99.
 - **Votes.** 4,814 of 4,842 unseen labels have exactly one Agree/Disagree vote; the ≥ 2 slice is too small to report.
 - **Panorama size.** The GSV sizes split Vancouver: 16384×8192 (2,289 labels) AUC 0.87, 13312×6656 (301 labels, 6
   rejections) 0.61 [0.38, 0.90]. The 11000×5500 Richmond rig is 0.98, the 5760×2880 GoPro (Laurens plus part of
   Richmond) 0.93.
 - **Human-placed labels in the same deployments** (27, none rejected) are listed in the tables for completeness and say
-  nothing.
+  nothing about the level-frame Mapillary case.
 
 | slice | n | p5 | p25 | p50 | p75 | p95 |
 |---|---:|---:|---:|---:|---:|---:|
@@ -209,31 +245,42 @@ contradicted.
 
 ### What this says, and what it cannot
 
-1. **The validator ranks RampNet's mistakes about as well as it ranks human mistakes** when the reference is a project
-   lead (AUC 0.96 vs 0.97), and worse when it is the crowd reference that Vancouver's Disagrees mostly come from (0.85).
-   Which of the two is right about the contested labels is not decidable from one vote each. A masked re-label of a
-   sample of the 57 contradicted Vancouver Disagrees would settle it; the same design as `docs/ai-disagree-relabel-2026-10.md`
-   ([PR #66](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/66), where a lead agreed with the production validator's Disagree on human-placed labels 58 % of the time) applies as is.
-2. **Agree is safe to automate on AI labels at the deployed gate, within the limits of this reference.** The gate
-   auto-agrees with 90 % of Vancouver's AI labels at 0.993 precision; the base rate is 0.978, so the labels it passes are
-   not much cleaner than the labels it sees. If the point of validating AI labels is to remove RampNet's false positives,
-   an Agree-only validator removes about a third of them at this operating point.
-3. **Disagree cannot fire as deployed and would be about 36–71 % precise if it could.** Sending AI labels to the
-   validator today therefore means: AI labels get AI Agree votes and nothing else, since the map holds every Disagree
-   back. That changes nothing about which AI labels humans see, and if an AI Agree counts toward a label's vote total it
-   removes AI labels from the human queue on the strength of a 0.993-precision vote on a 0.978 base rate. The decision
-   on vote counting ([SidewalkWebpage#5790](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5790), [#4763](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/4763)) matters more than the model numbers here.
-4. **The band is the place to look.** RampNet's 0.30–0.55 band is where its own precision drops to 75–85 % and where
-   the validator's Disagree is most precise (0.52) and most complete (0.80). If AI validation is to filter AI labels, the
-   band is where it would pay, and a band-only or tier-aware gate is a cheap experiment.
-5. **Mapillary works without retraining**, at least for rig-frame AI labels: Richmond matches the GSV baseline and
-   Laurens's GoPro imagery is at 0.93. Production does not AI-validate Mapillary deployments at all ([SidewalkWebpage#4764](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/4764));
-   for AI-placed labels there is no measured reason for that.
+1. **The validator ranks RampNet's mistakes about as well as it ranks human mistakes when a project lead is the
+   reference** (AUC 0.96 vs 0.97), and worse against the crowd reference that decides Vancouver's unseen rejections
+   (0.85). The two references cannot be compared on the same labels here (the round-3 selection consumed the
+   lead-rejected Vancouver labels), and one vote per label cannot say whether the crowd or the model is right about the
+   57 contested Vancouver Disagrees. A masked re-label of those 57 plus a matched sample of confirmed ones, the design of
+   `docs/ai-disagree-relabel-2026-10.md` ([PR #66](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/66),
+   where a lead agreed with the production validator's Disagree on human-placed labels 58 % of the time), would settle
+   it with about an hour of rating.
+2. **At the deployed gate, an Agree vote on an AI label is consistent with the single human vote 99.3 % of the time**,
+   on a 97.8 % base rate, with 90 % coverage. That is one human vote, cast on an AI label, with the Agree lean that
+   implies; it is not ground truth. The gate removes no false positive (it casts no Disagree on AI labels); what it does
+   is sort: the 10 % it withholds carry 16 % rejections against 2 % overall.
+3. **Disagree cannot fire as deployed.** The served map never reaches the gate for `incorrect`, and the uncapped map is
+   the same. Sending AI labels to the validator today therefore means AI Agree votes and nothing else. If an AI Agree
+   counts toward a label's vote total, that removes AI labels from the human queue on the strength of point 2; if it
+   does not, nothing changes for humans. The vote-counting decision
+   ([SidewalkWebpage#5790](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5790),
+   [#4763](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/4763)) matters more than the model numbers here.
+   With no gate, the Disagree verdicts would be 36–71 % precise by city, at or above the human-placed baseline at the
+   same prevalence (20–52 %), and would name 57–81 % of the rejected labels.
+4. **The 0.30–0.55 band is where a Disagree is worth most, because that is where the rejections are** (16 % of band
+   labels against 2 % of `core`), not because the model ranks better there. If AI validation is to filter AI labels, the
+   band is where it would pay, and a tier-aware gate (RampNet's confidence is known at submission time, even though it
+   is not stored on the label) is a cheap experiment.
+5. **Rig-frame AI labels on Mapillary imagery rank as well as GSV ones without retraining** (Richmond 0.98, Laurens
+   0.93), but the gate's coverage drops to 76 % on the GoPro imagery (the map was fitted on GSV confidences) and
+   human-placed, level-frame Mapillary labels, the case behind
+   [SidewalkWebpage#4764](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/4764), are untested here (26
+   labels, none rejected). This says AI-placed Mapillary labels could be AI-validated; it says nothing about human
+   ones.
 
-**Limits.** One vote per label, mostly from one account per deployment; a queue-selected 4–75 % of the AI labels;
-2–9 % rejections, so the Disagree numbers rest on 56, 51 and 101 labels; no severity or tag slices; the Vancouver AI
-labels were in the round-3 training pool until excluded here, and the Mapillary crops are untilted rig-frame renders
-that no training image resembles. Nothing here was re-labelled; see point 1.
+**Limits.** One vote per label, 53–99 % of them from two accounts; a queue-selected 4–75 % of the AI labels; 2–9 %
+rejections, so the Disagree numbers rest on 56, 51 and 101 labels; no severity or tag slices; the Vancouver headline is
+a crowd-reference number because the round-3 selection took every lead-rejected label; the Mapillary crops are untilted
+rig-frame renders, as the 150 training AI crops are, but of imagery no training image resembles. Nothing here was
+re-labelled; see point 1.
 
 ## Reproduce
 

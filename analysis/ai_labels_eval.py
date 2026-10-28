@@ -155,10 +155,20 @@ def tier_of(city, time_created, campaigns=CAMPAIGNS):
     ('core', 'band')
     >>> tier_of("richmond-va", "2026-09-30"), tier_of("laurens-ia", "2026-09-01"), tier_of("nowhere", "2026-09-05")
     ('mixed', '', '')
+
+    Campaign days are UTC dates; a timestamp with an offset is converted first, a naive one is taken as UTC (what the
+    rawLabels export writes):
+
+    >>> tier_of("laurens-ia", "2026-09-21T20:00:00-07:00"), tier_of("laurens-ia", "not a date")
+    ('band', '')
     """
-    if not isinstance(time_created, str) or len(time_created) < 10:
+    try:
+        ts = pd.to_datetime(time_created, utc=True)
+    except (ValueError, TypeError):
         return ""
-    day = time_created[:10]
+    if pd.isna(ts):
+        return ""
+    day = ts.strftime("%Y-%m-%d")
     tier = ""
     for first_day, name in campaigns.get(city, []):
         if day >= first_day:
@@ -207,10 +217,11 @@ def gate_metrics(true, verdict, served, gate=GATE):
     true, verdict, served = np.asarray(true), np.asarray(verdict), np.asarray(served, dtype=float)
     passed = served >= gate
     out = {}
+    pass_hits = {}
     for name, cls in (("agree", "correct"), ("disagree", "incorrect"), ("all", None)):
         m = np.ones(len(true), bool) if cls is None else verdict == cls
         n, n_pass = int(m.sum()), int((m & passed).sum())
-        hits = int((m & passed & (verdict == true)).sum())
+        hits = pass_hits[name] = int((m & passed & (verdict == true)).sum())
         lo, hi = wilson(hits, n_pass)
         out[name] = {"n": n, "n_pass": n_pass, "coverage": round(n_pass / n, 4) if n else float("nan"),
                      "precision": round(hits / n_pass, 4) if n_pass else float("nan"),
@@ -222,18 +233,75 @@ def gate_metrics(true, verdict, served, gate=GATE):
     out["disagree"]["raw_precision"] = round(raw_hits / int(raw.sum()), 4) if raw.any() else float("nan")
     out["disagree"]["raw_precision_lo"], out["disagree"]["raw_precision_hi"] = round(lo, 4), round(hi, 4)
     out["disagree"]["raw_recall"] = round(raw_hits / n_incorrect, 4) if n_incorrect else float("nan")
-    out["disagree"]["catch"] = round(out["disagree"]["n_pass"] * out["disagree"]["precision"] / n_incorrect, 4) \
-        if n_incorrect and out["disagree"]["n_pass"] else (0.0 if n_incorrect else float("nan"))
+    out["disagree"]["catch"] = round(pass_hits["disagree"] / n_incorrect, 4) if n_incorrect else float("nan")
     return out
 
 
+def rank_score(p_correct, p_incorrect):
+    """The model's ranking score for "incorrect": the log-odds ``log(p_incorrect) - log(p_correct)``.
+
+    The two softmax columns are float32, so ``p_incorrect`` saturates at exactly 1.0 for the most confident Disagrees
+    (44 of 5,053 in the October 2026 run) and ranks them as ties, while ``p_correct`` still has resolution there
+    (down to 1e-11); the log-odds keeps the order on both ends. Monotone in ``p_incorrect`` wherever it is not
+    saturated, so the AUC changes only through the ties.
+
+    >>> rank_score([0.5, 1e-6, 1e-3], [0.5, 1.0, 1.0]).round(1).tolist()
+    [0.0, 13.8, 6.9]
+    """
+    pc = np.clip(np.asarray(p_correct, dtype=float), 1e-45, 1.0)
+    pi = np.clip(np.asarray(p_incorrect, dtype=float), 1e-45, 1.0)
+    return np.log(pi) - np.log(pc)
+
+
+def recall_at_precision_weighted(y, score, weight, level=GATE):
+    """``evaluate.recall_at_precision`` with per-row weights: the largest weighted recall at weighted precision >= level.
+
+    Used to restate the human-placed baseline at another prevalence: weight the negatives so that the rejected share
+    matches, keep the scores. ``(0.0, None)`` when no threshold reaches ``level``.
+
+    >>> recall_at_precision_weighted([1, 1, 0, 0], [0.9, 0.8, 0.7, 0.6], [1, 1, 1, 1], 0.9)
+    (1.0, 0.8)
+    >>> recall_at_precision_weighted([1, 0, 1, 0], [0.9, 0.8, 0.7, 0.6], [1, 1, 1, 1], 0.9)
+    (0.5, 0.9)
+    """
+    y, score, weight = (np.asarray(a, dtype=float) for a in (y, score, weight))
+    order = np.argsort(-score, kind="stable")
+    y, score, weight = y[order], score[order], weight[order]
+    tp = np.cumsum(weight * y)
+    fp = np.cumsum(weight * (1 - y))
+    # one operating point per distinct score: the last row of each tied block
+    last = np.flatnonzero(np.r_[score[1:] != score[:-1], True])
+    prec = tp[last] / (tp[last] + fp[last])
+    rec = tp[last] / tp[-1] if tp[-1] else np.zeros(len(last))
+    ok = prec >= level
+    if not ok.any():
+        return 0.0, None
+    best = rec[ok].max()
+    i = last[ok][rec[ok] == best].min()  # the highest threshold reaching the best recall
+    return float(round(best, 4)), float(score[i])
+
+
+def baseline_at_prevalence(frame, prevalence, level=GATE):
+    """The baseline's Disagree-verdict precision and recall at precision >= level, with its negatives reweighted so the
+    rejected share is ``prevalence``. The AUC is prevalence-free and is not restated."""
+    y = (frame.true == "incorrect").astype(int).values
+    n_pos, n_neg = int(y.sum()), int((1 - y).sum())
+    w = np.where(y == 1, 1.0, (1 - prevalence) / prevalence * n_pos / n_neg)
+    d = (frame.verdict == "incorrect").values
+    tp, fp = float((w * d * y).sum()), float((w * d * (1 - y)).sum())
+    rec, _ = recall_at_precision_weighted(y, rank_score(frame.p_correct, frame.p_incorrect), w, level)
+    return {"prevalence": prevalence, "disagree_precision": round(tp / (tp + fp), 4) if tp + fp else float("nan"),
+            "disagree_recall": round(tp / n_pos, 4) if n_pos else float("nan"), "recall_incorrect_at_p92": rec}
+
+
 def auc_block(df, n_boot=1000, seed=SEED):
-    """AUC(incorrect) of ``p_incorrect`` against ``true`` with a panorama-resampled 95% interval, plus accuracy and
-    balanced accuracy of the raw verdict. NaN AUC with one class."""
+    """AUC(incorrect) of the model's ranking (``rank_score``) against ``true`` with a panorama-resampled 95% interval
+    (``retrain_report.cluster_boot``: panoramas drawn with replacement, a one-class draw redrawn up to 20 times, the
+    same seed for every slice), plus accuracy and balanced accuracy of the raw verdict. NaN AUC with one class."""
     from sklearn.metrics import balanced_accuracy_score, roc_auc_score
     from analysis.retrain_report import cluster_boot, ci
     y = (df.true == "incorrect").astype(int).values
-    s = df.p_incorrect.values.astype(float)
+    s = rank_score(df.p_correct.values, df.p_incorrect.values)
     verdict = np.where(df.p_incorrect > df.p_correct, "incorrect", "correct")
     out = {"n": int(len(df)), "n_incorrect": int(y.sum()), "n_panos": int(df.pano_id.nunique()),
            "acc": round(float((verdict == df.true.values).mean()), 4) if len(df) else float("nan")}
@@ -386,6 +454,7 @@ def cmd_crops(args):
     device = dg.resolve_device(args.allow_cpu)
     depth_model = dg.load_depth_model("vitb", device)
     last = (None, None, None)
+    last_counted, consecutive_missing = None, 0  # a stage that stopped early must not become a run of no_pano rows
     status_counts, t0 = Counter(), time.time()
     with open(manifest_path, "a", newline="") as f:
         import csv
@@ -428,6 +497,12 @@ def cmd_crops(args):
             w.writerow(rec)
             f.flush()
             status_counts[rec["status"]] += 1
+            if last[0] != last_counted:
+                last_counted = last[0]
+                consecutive_missing = consecutive_missing + 1 if rec["status"] == "no_pano" else 0
+                if consecutive_missing >= dg.MAX_CONSECUTIVE_MISSING_PANOS:
+                    sys.exit(f"STOP: {consecutive_missing} panoramas in a row missing from {args.pano_store}; "
+                             f"is the stage complete? (data_generation.MAX_CONSECUTIVE_MISSING_PANOS)")
             if i % 50 == 0 or i == len(todo):
                 el = time.time() - t0
                 print(f"{i}/{len(todo)} {rec['label_uid']} {rec['status']}; {el / i:.2f} s/label, "
@@ -551,6 +626,23 @@ def cmd_report(args):
     L.append(f"Not scored (no crop): {not_scored or 'none'}. Ties (equal Agree and Disagree) dropped: {sel['ties_dropped']}.")
     L.append("")
 
+    # 1b. who decided the reference, and where the lead-rejected labels went (the round-3 selection took them)
+    L += ["### Reference accounts (all voted AI labels)", "",
+          "| city | lead votes / all votes | lead-decided | rejected by leads | other-decided | rejected by others | "
+          "lead rejections in round-3 train / val / test |",
+          "|---|---:|---:|---:|---:|---:|---|"]
+    for city, g in ai.groupby("city"):
+        lead = g[g.expert_class != ""]
+        other = g[g.expert_class == ""]
+        lv = int((g.expert_agree + g.expert_disagree).sum())
+        hv = int((g.human_agree + g.human_disagree).sum())
+        lr = lead[lead.label_class == "incorrect"]
+        in_r3 = " / ".join(str(int((lr.round3_split == sp).sum())) for sp in ("train", "val", "test"))
+        L.append(f"| {city} | {lv:,} / {hv:,} ({lv / hv:.0%}) | {len(lead):,} | {len(lr)} ({len(lr) / max(len(lead), 1):.1%}) | "
+                 f"{len(other):,} | {int((other.label_class == 'incorrect').sum())} "
+                 f"({(other.label_class == 'incorrect').mean() if len(other) else float('nan'):.1%}) | {in_r3} |")
+    L.append("")
+
     # 2. headline
     def rows_for(frame, name):
         out = []
@@ -570,6 +662,21 @@ def cmd_report(args):
         b = auc_block(r3, args.n_boot)
         b["slice"] = "baseline: human-placed, round-3 test split (all training deployments)"
         L += ["Baseline, same checkpoint, same metrics:", "", table([b], cols), ""]
+        # the baseline has ~46% rejected labels; the AI labels 2-9%. Precision and recall-at-precision depend on that
+        # share, so restate the baseline with its negatives reweighted to each AI slice's prevalence.
+        prev = [("unseen, all three", (clean.true == "incorrect").mean())] + \
+               [(f"unseen, {c}", (g.true == "incorrect").mean()) for c, g in clean.groupby("city")]
+        prows = []
+        for name, pv in [("baseline as is", (r3.true == "incorrect").mean())] + prev:
+            r = baseline_at_prevalence(r3, float(pv))
+            r["slice"] = f"baseline reweighted to {name}" if name != "baseline as is" else name
+            prows.append(r)
+        pcols = [("slice", lambda r: r["slice"]), ("rejected share", lambda r: f"{r['prevalence']:.1%}"),
+                 ("Disagree precision, ungated", lambda r: fmt(r["disagree_precision"])),
+                 ("Disagree recall, ungated", lambda r: fmt(r["disagree_recall"])),
+                 ("recall(incorrect) @ P ≥ 0.92", lambda r: fmt(r["recall_incorrect_at_p92"]))]
+        L += ["Baseline at matched prevalence (negatives reweighted so the rejected share matches the AI slice; the AUC "
+              "does not depend on it):", "", table(prows, pcols), ""]
 
     # 3. gate
     def gate_rows(frame, name, m, mu):
@@ -678,14 +785,21 @@ def cmd_report(args):
     # 7. provenance
     crops_run = json.load(open(os.path.join(args.run, "crops_run.json")))
     prov = json.load(open(os.path.join(args.run, "predictions_provenance.json")))
-    L += ["### Provenance", "",
-          f"- rawLabels pulls: " + "; ".join(f"{c} `{v['sha256'][:12]}`" for c, v in sel["inputs"].items()) + f" (selected {sel['selected_on']})",
-          f"- labels.csv `{sel['labels_csv_sha256'][:12]}`; {sel['n_labels']:,} labels on {sel['n_panos']:,} panos; round-3 split `{(sel['round3_split'] or {}).get('sha256', '')[:12]}`",
-          f"- crops: store marker \"{crops_run['pano_store_marker']}\", {crops_run['package_source']}, tilt beta {crops_run['tilt_beta']}, depth {crops_run['depth_encoder']}, status {crops_run['status_counts']}",
-          f"- checkpoint `{os.path.basename(prov['checkpoint'])}` model.safetensors `{(prov['model_sha256'] or '')[:12]}`, {prov['n']:,} crops scored {prov['scored']}",
-          f"- accuracy map `{os.path.basename(args.map)}` `{sha256_file(args.map)[:12]}`"
-          + (f"; uncapped `{sha256_file(args.map_uncapped)[:12]}`" if args.map_uncapped else ""),
-          f"- bootstrap: {args.n_boot} panorama resamples, seed {SEED}; slices need ≥ {args.min_n} rows", ""]
+    L += ["### Provenance (sha256)", "",
+          f"- rawLabels pulls (selected {sel['selected_on']}):"]
+    L += [f"  - {c} `{v['sha256']}`" for c, v in sel["inputs"].items()]
+    L += [f"- labels.csv `{sel['labels_csv_sha256']}`; {sel['n_labels']:,} labels on {sel['n_panos']:,} panos",
+          f"- round-3 split.csv `{(sel['round3_split'] or {}).get('sha256', '')}`",
+          f"- crops: store marker \"{crops_run['pano_store_marker']}\", {crops_run['package_source']}, tilt beta "
+          f"{crops_run['tilt_beta']}, depth {crops_run['depth_encoder']}, status {crops_run['status_counts']}; "
+          f"manifest.csv `{sha256_file(os.path.join(args.run, 'manifest.csv'))}`",
+          f"- checkpoint `{os.path.basename(prov['checkpoint'])}` model.safetensors `{prov['model_sha256'] or ''}`, "
+          f"{prov['n']:,} crops scored {prov['scored']}; predictions.csv `{sha256_file(os.path.join(args.run, 'predictions.csv'))}`",
+          f"- accuracy map `{os.path.basename(args.map)}` `{sha256_file(args.map)}`"
+          + (f"; uncapped `{sha256_file(args.map_uncapped)}`" if args.map_uncapped else ""),
+          f"- ranking score: log-odds of the two softmax columns (`rank_score`), so float32-saturated Disagrees are not tied",
+          f"- bootstrap: {args.n_boot} panorama resamples, seed {SEED} for every slice, one-class draws redrawn (up to 20×, "
+          f"then dropped); slices need ≥ {args.min_n} rows", ""]
     with open(os.path.join(args.out, "tables.md"), "w") as f:
         f.write("\n".join(L))
 
@@ -695,7 +809,7 @@ def cmd_report(args):
     for name, g in [("baseline (human-placed, round-3 test)", r3)] + [(f"AI-placed, {c}", g) for c, g in clean.groupby("city")]:
         if g is None or g.true.nunique() < 2:
             continue
-        fpr, tpr, _ = roc_curve((g.true == "incorrect").astype(int), g.p_incorrect)
+        fpr, tpr, _ = roc_curve((g.true == "incorrect").astype(int), rank_score(g.p_correct, g.p_incorrect))
         ax.plot(fpr, tpr, label=f"{name} (n={len(g):,})")
     ax.plot([0, 1], [0, 1], "k:", lw=0.8)
     ax.set_xlabel("false positive rate (correct labels called incorrect)")

@@ -126,3 +126,61 @@ def test_read_labels_fills_empty_text_cells(tmp_path):
     assert df.expert_class.tolist() == ["", "correct"] and df.tier.tolist() == ["core", ""]
     assert (df.expert_class != "").sum() == 1  # the NaN would have counted as "decided"
     assert df.label_id.tolist() == ["1", "2"]
+
+
+def test_gate_catch_is_hits_over_incorrect_not_rounded_precision():
+    true = ["incorrect"] * 3 + ["correct"] * 4
+    r = ae.gate_metrics(true, ["incorrect"] * 7, [0.95] * 7)
+    assert r["disagree"]["catch"] == 1.0  # 3 / 3, not n_pass * round(precision) = 7 * 0.4286 / 3 = 1.0001
+    assert r["disagree"]["precision"] == pytest.approx(3 / 7, abs=1e-4)
+
+
+def test_tier_of_converts_offsets_to_utc():
+    assert ae.tier_of("laurens-ia", "2026-09-21T20:00:00-07:00") == "band"   # 03:00 UTC on the 22nd
+    assert ae.tier_of("laurens-ia", "2026-09-22T01:00:00+03:00") == "core"   # 22:00 UTC on the 21st
+    assert ae.tier_of("laurens-ia", "garbage") == "" and ae.tier_of("laurens-ia", float("nan")) == ""
+
+
+def test_served_accuracy_exact_key_and_below_first_key():
+    api_map = {"correct": {"0.5": 0.1, "0.9": 0.95}, "incorrect": {"0.5": 0.1, "0.9": 0.5}}
+    out = ae.served_accuracy(api_map, ["correct", "correct", "incorrect"], [0.9, 0.49, 0.5])
+    assert out[0] == 0.95 and out[1] == 0.0 and out[2] == 0.1
+
+
+def test_rank_score_breaks_saturated_ties():
+    s = ae.rank_score([1e-6, 1e-3, 0.5], [1.0, 1.0, 0.5])
+    assert s[0] > s[1] > s[2]
+    # monotone in p_incorrect where nothing saturates
+    s2 = ae.rank_score([0.9, 0.6, 0.2], [0.1, 0.4, 0.8])
+    assert s2[0] < s2[1] < s2[2]
+
+
+def test_auc_block_groups_the_bootstrap_by_pano():
+    df = pd.DataFrame({"true": ["correct", "incorrect"] * 20, "p_incorrect": np.r_[np.linspace(0.1, 0.4, 20), np.linspace(0.5, 0.9, 20)][
+        np.argsort(np.tile([0, 1], 20), kind="stable")], "pano_id": "p"})
+    df["p_correct"] = 1 - df.p_incorrect
+    one = ae.auc_block(df, n_boot=50)
+    assert one["n_panos"] == 1 and one["auc_lo"] == one["auc_hi"] == one["auc"]  # one pano: every resample is the set
+    many = ae.auc_block(df.assign(pano_id=[f"p{i}" for i in range(len(df))]), n_boot=50)
+    assert many["auc_lo"] < many["auc_hi"]
+
+
+def test_recall_at_precision_weighted_matches_unweighted_and_reweights():
+    from evaluate import recall_at_precision
+    y = [1, 1, 0, 1, 0, 0]
+    s = [0.9, 0.8, 0.7, 0.6, 0.55, 0.4]
+    assert ae.recall_at_precision_weighted(y, s, [1] * 6, 0.5) == recall_at_precision(y, s, 0.5)
+    # weighting negatives 100× makes the top-2 block the only one at precision >= 0.5
+    rec, thr = ae.recall_at_precision_weighted(y, s, [1, 1, 100, 1, 100, 100], 0.5)
+    assert rec == pytest.approx(2 / 3, abs=1e-4) and thr == 0.8
+
+
+def test_baseline_at_prevalence_identity_and_reweighting():
+    frame = pd.DataFrame({"true": ["incorrect"] * 5 + ["correct"] * 5, "p_incorrect": [0.99, 0.98, 0.97, 0.6, 0.3, 0.96, 0.4, 0.2, 0.1, 0.05]})
+    frame["p_correct"] = 1 - frame.p_incorrect
+    frame["verdict"] = np.where(frame.p_incorrect > 0.5, "incorrect", "correct")
+    r = ae.baseline_at_prevalence(frame, 0.5, 0.75)
+    assert r["disagree_precision"] == 0.8 and r["disagree_recall"] == 0.8 and r["recall_incorrect_at_p92"] == 0.8
+    r2 = ae.baseline_at_prevalence(frame, 0.05, 0.75)  # one wrong Disagree now weighs 19 right ones
+    assert r2["disagree_precision"] == pytest.approx(4 / (4 + 19), abs=1e-4) and r2["disagree_recall"] == 0.8
+    assert r2["recall_incorrect_at_p92"] == 0.6  # the top three are clean; the fourth Disagree is the heavy negative
