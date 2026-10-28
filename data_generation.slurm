@@ -78,7 +78,7 @@ git submodule status "$DEPTH" | grep -q '^ ' && [ -f "$DEPTH_DPT" ] || {
 if [ "$FRESH" != "1" ] && [ -f "$CACHE/.complete" ] && [ ! -f "$CACHE/cities.json" ]; then
     echo "$CACHE predates city discovery (issue 8): it has no cities.json, so its city list is the old hardcoded" \
          "one. FRESH=1 re-pulls every public deployment (a new selection); to resume a run made from that cache," \
-         "pass data_generation.py --cities with its old city list (docs/training-data.md) or use the commit that made it." >&2
+         "pass data_generation.py --cities with the ids in that run's generation_run.json, or use the commit that made it." >&2
     exit 1
 fi
 # A cache without its .complete marker (an interrupted pull from before the atomic move) counts as absent.

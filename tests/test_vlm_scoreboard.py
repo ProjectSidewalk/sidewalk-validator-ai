@@ -237,6 +237,14 @@ def test_check_passes_when_current_and_fails_on_drift(board, capsys):
 def test_readme_block_is_round3_production_and_best_full_vlms(board):
     aggs = sb.read_aggregates(str(board["out"]))
     b = aggs["board"]
+    # The fixture has one full VLM leg; add four more with distinct AUCs so the sort and the head cut are both tested.
+    template = b[b.full.astype(bool) & (b.model_class != sb.PURPOSE)].iloc[0]
+    extra = []
+    for i, auc in enumerate((0.61, 0.79, 0.70, 0.66)):
+        r = template.copy()
+        r["leg"], r["display"], r["macro_auc"], r["rank"] = f"extra{i}", f"Extra model {i}", auc, np.nan
+        extra.append(r)
+    b = pd.concat([b, pd.DataFrame(extra)], ignore_index=True)
     aggs["board"] = b.sample(frac=1, random_state=3)    # the block must sort itself, not rely on board order
     block = sb.render_readme_block(aggs)
     lines = [l for l in block.splitlines() if l.startswith("| ") and not l.startswith("| model")]

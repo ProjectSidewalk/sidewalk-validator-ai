@@ -214,7 +214,8 @@ python evaluate.py --label_type $LT --data-dir $RUN --per-city
 `test` table (`evaluate.py --per-city` on `$DATA`), where the city was trained on. That row covers only the city's
 test share (about 15% of its rows), while `test_heldout` holds all of its rows, so the two differ in sample as well
 as in training. `--min-city-n` applies to both splits. These per-city jobs are not in the SLURM files; on klone,
-wrap the three commands per city in a copy of `fine_tune.slurm`. For a first leave-one-city-out run the issue
-suggests one small US city, one large US city, Amsterdam, cdmx and a Taiwanese city, each its own training run. The production-side counterpart, whether the 0.92
+wrap the three commands per city in a copy of `fine_tune.slurm`. For a first leave-one-city-out run
+[#15](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/15) suggests one small US city, one large US
+city, Amsterdam, cdmx and one international city, each its own training run. The production-side counterpart, whether the 0.92
 gate holds per city for the deployed models, is [`per-city-calibration-2026-10.md`](per-city-calibration-2026-10.md)
 (`python -m calibration.per_city`).

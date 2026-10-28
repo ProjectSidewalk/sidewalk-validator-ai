@@ -82,7 +82,7 @@ training on 2026-10-20/21 on klone; the eval outputs are dated 2026-10-22.
 | Tilt | rig-tilt correction from `camera_pitch` / `camera_roll`, β = 0.95 (`sidewalk-panorama-tools` v1.0.0) | none |
 | Crop size | depth-sized (`6100 / depth`), Depth Anything V2 ViT-B metric (vKITTI) | depth-sized, ViT-L |
 | Split | by panorama, panoramas within 3 m merged, 70 / 15 / 15, seed 42, three deployments held out (`test_heldout`) | by file |
-| Targets | hard (the default; the published `training_run.json` records no `--target`) | hard |
+| Targets | hard (the default; the published `training_run.json` records no `target`) | hard |
 | Training | DINOv2-L, 25 epochs, best by val macro-F1, seed 42 | DINOv2-L |
 | Calibration | per-verdict isotonic map fitted on `val`, reweighted to the deployment prior, Disagree capped | map from the 55:45 test split |
 
@@ -477,7 +477,7 @@ of its Agree verdicts at 1.0 and 58% at or above 0.999999. CurbRamp is less brit
 0.999999, and it clears at 0.99992), NoCurbRamp and Crosswalk clear well below saturation. Production's Obstacle
 threshold was 0.999996, so round 3 is no less saturated than the model it replaces. Whether soft targets would
 spread the confidences at the top of the scale is untested: round 3 trained with the default hard targets (its
-published `training_run.json` records no `--target`), although an earlier version of this report said soft.
+published `training_run.json` records no `target`), although an earlier version of this report said soft.
 
 What this means for serving: the gate for Obstacle and SurfaceProblem is a test of whether a logit margin
 survives into a saturated softmax, and anything that perturbs the logits on the served stack moves verdicts

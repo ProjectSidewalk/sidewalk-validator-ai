@@ -1500,9 +1500,9 @@ def run_build(args):
     readme = args.readme or None
     staged = os.path.isdir(os.path.join(args.scores_dir, "splits"))
     if readme and os.path.exists(readme) and not args.check:
-        marker = BEGIN.format(name=README_BLOCK)
-        if marker not in open(readme, encoding="utf-8").read():
-            raise SystemExit(f"{readme} has no generated block {README_BLOCK!r}: add the markers before building "
+        text = open(readme, encoding="utf-8").read()
+        if BEGIN.format(name=README_BLOCK) not in text or END.format(name=README_BLOCK) not in text:
+            raise SystemExit(f"{readme} has no generated block {README_BLOCK!r}: add both markers before building "
                              f"(or pass --readme '' to leave the README alone)")
     if args.check:
         problems = []

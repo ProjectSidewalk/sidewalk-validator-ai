@@ -29,7 +29,8 @@ the Crosswalk one; republishing them is the open half of
 revisions ([sidewalk-ai-api#22](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/22)) and serves its own copy
 of each map, checked by sha256 against the hub file ([#25](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/25)).
 Updating the API after a publish is manual and all-or-nothing: `accuracy_mappings/<type>.json`, the revision and
-sha256 in `model_map.py`, `provenance.json` and `tests/hub_accuracy_maps.json` move together, or its build fails.
+sha256 in `sidewalk_ai_api/model_map.py`, `accuracy_mappings/provenance.json` and `tests/hub_accuracy_maps.json`
+move together, or its build, startup or tests fail.
 
 ## Private deployments
 

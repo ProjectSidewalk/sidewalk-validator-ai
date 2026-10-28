@@ -69,7 +69,7 @@ that already holds CSVs (a snapshot from before discovery), which needs ``--refr
 and ``generation_run.json`` record the list and where it came from; resuming with a different list stops like a changed
 selection, and ``--select-only`` against such a run writes ``deployment_priors.partial.json``. The pano store needs a
 directory only for cities with a selected label. The 19-city default from before discovery is reproduced with
-``--cities`` and those 19 ids (docs/training-data.md, Cities).
+``--cities`` and the ids recorded in that run's ``generation_run.json``.
 
 Usage::
 

@@ -24,7 +24,8 @@ tilt-corrected, depth-sized crop from the panorama, and fine-tunes a
 [DINOv2](https://arxiv.org/abs/2304.07193)-Large classifier to predict **correct** or **incorrect**. A calibration
 step maps model confidence to measured precision. [sidewalk-ai-api](https://github.com/ProjectSidewalk/sidewalk-ai-api)
 serves the models, and [SidewalkWebpage](https://github.com/ProjectSidewalk/SidewalkWebpage) calls it nightly for up
-to 800 labels per city with `{label_type, panorama_id, x, y, city}` and the camera pose; a verdict whose estimated
+to 800 labels per city with `{label_type, panorama_id, x, y, city}`, the camera pose and `coord_frame`; a verdict
+whose estimated
 accuracy is at least 0.92 (`ai-validation-min-accuracy`) is cast as a vote by the `SidewalkAI` account, anything
 below is recorded as Unsure, and every assessment is stored in `label_ai_assessment`
 ([`SidewalkWebpage/docs/ai-subsystems.md`](https://github.com/ProjectSidewalk/SidewalkWebpage/blob/develop/docs/ai-subsystems.md)).
@@ -35,12 +36,12 @@ tilt-corrected crops and human votes only, published to Hugging Face on 2026-10-
 
 ## Results
 
-All five validators and every open-weight vision-language model (VLM) leg with full coverage (14 of 17) are scored on
-the same 13,144 held-out crops of the round-3 split (the training deployments' test share plus three deployments
-held out of training entirely). AUC is of the `incorrect` score; macro-AUC gives each label type equal weight; the
-interval is a 95% label bootstrap; Δ is the paired difference against round 3. The production row is optimistic:
-those models were trained in 2025-08 on an unrecorded label set that overlaps the held-out crops. The block is
-generated from
+Every leg with full coverage (14 of 17: the two validator rounds and 12 of the 15 open-weight vision-language model
+(VLM) legs) is scored on the same 13,144 held-out crops of the round-3 split (the training deployments' test share
+plus three deployments held out of training entirely). AUC is of the `incorrect` score; macro-AUC gives each label
+type equal weight; the interval is a 95% label bootstrap; Δ is the paired difference against round 3. The
+production row is optimistic: those models were trained in 2025-08 on an unrecorded label set that may overlap the
+test-share crops. The block is generated from
 [`docs/vlm-scoreboard/board.csv`](docs/vlm-scoreboard/board.csv) and drift-checked in CI; the full board with
 seventeen legs, within-city AUC, latency and per-deployment rows is [`docs/vlm-scoreboard.md`](docs/vlm-scoreboard.md).
 
@@ -69,8 +70,8 @@ three unseen deployments, with the within-deployment AUC that cannot be raised b
 | Crosswalk | 0.980 [0.961, 0.993] | 0.941 [0.897, 0.980] | 0.946 | 445 / 138 |
 
 Every type ranks labels well where it was trained; on unseen deployments CurbRamp, NoCurbRamp and Crosswalk lose
-0.04 to 0.06 of AUC, Obstacle 0.02 and SurfaceProblem 0.19. The deployment outside the US is the weakest for every type but
-Crosswalk, so the report recommends gating AI votes per deployment before enabling them in a new one
+0.04 to 0.06 of AUC, Obstacle 0.02 and SurfaceProblem 0.19. The deployment outside the US is the weakest for every
+type but Crosswalk, so the report recommends gating AI votes per deployment before enabling them in a new one
 ([#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52)).
 
 **What is served.** Each model ships an isotonic confidence-to-accuracy map fitted on the validation split and

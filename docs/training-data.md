@@ -50,7 +50,8 @@ measured in [#69](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/
 
 ## Cities
 
-The default is every public deployment that `/v3/api/cities` lists with a `url` (41 on 2026-10-19), sorted by
+The default is every public deployment that `/v3/api/cities` lists with a `url` (41 at the 2026-10-14 audit; the
+list moves as deployments go public), sorted by
 city_id; `--cities a,b` overrides it. Private deployments are not in the default list (they carry no `url`); round
 3 passed them explicitly, 54 deployments in all, and every published number pools or letters them. The
 city_id is what `label_uid`, crop filenames and the pano-store directories use. With `--rawlabels-cache DIR` the
