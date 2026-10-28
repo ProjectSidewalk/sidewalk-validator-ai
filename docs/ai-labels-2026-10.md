@@ -253,10 +253,10 @@ contradicted.
    reference** (AUC 0.96 vs 0.97, though 149 of the 153 lead-rejected unseen labels are Mapillary), and worse against the crowd reference that decides Vancouver's unseen rejections
    (0.85). The two references cannot be compared on the same labels here (the round-3 selection consumed the
    lead-rejected Vancouver labels), and one vote per label cannot say whether the crowd or the model is right about the
-   57 contested Vancouver Disagrees. A masked re-label of those 57 plus a matched sample of confirmed ones, the design of
-   `docs/ai-disagree-relabel-2026-10.md` ([PR #66](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/66),
-   where a lead agreed with the production validator's Disagree on human-placed labels 58 % of the time), would settle
-   it with about an hour of rating.
+   57 contested Vancouver Disagrees. The masked re-label below (the design of `docs/ai-disagree-relabel-2026-10.md`,
+   [PR #66](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/66), where a lead agreed with the production
+   validator's Disagree on human-placed labels 58 % of the time) settled it for the 31 another account had approved: the
+   crowd was right on 26 of 30.
 2. **At the deployed gate, an Agree vote on an AI label is consistent with the single human vote 99.3 % of the time**,
    on a 97.8 % base rate, with 90 % coverage. That is one human vote, cast on an AI label, with the Agree lean that
    implies; it is not ground truth. The gate removes no false positive (it casts no Disagree on AI labels); what it does
@@ -282,11 +282,45 @@ contradicted.
    labels, none rejected). This says AI-placed Mapillary labels could be AI-validated; it says nothing about human
    ones.
 
+### Masked re-label of the contested Vancouver labels (2026-10-28)
+
+The question left open above was settled the same day: a project lead re-voted, on the live site with every existing
+vote masked, on the unseen Vancouver AI labels the validator and the one human vote disagreed about, plus decoys
+(`analysis/ai_labels_relabel.py`; results in [`ai-labels-2026-10/relabel_results.md`](ai-labels-2026-10/relabel_results.md),
+provenance in [`relabel_manifest.json`](ai-labels-2026-10/relabel_manifest.json)). Labels the lead had ever voted on were
+left out (1,284 of the unseen pool, including 26 of the 57 contested ones), so every original vote here is another
+account's, and the lead's vote is the record (read back from the rawLabels API, which carries votes within minutes). One
+list of 133 labels in one seeded shuffle: 31 contested (validator Disagree, human Agree), 30 confirmed (both Disagree),
+22 missed (validator Agree, human Disagree) and 50 decoys (both Agree). 132 were voted, 3 of them Unsure.
+
+| cell | n | voted | Unsure | lead sides with the validator | lead sides with the original vote |
+|---|---:|---:|---:|---|---|
+| contested | 31 | 31 | 1 | 4/30 = 13 % [5, 30] | 26/30 = 87 % [70, 95] |
+| confirmed | 30 | 30 | 1 | 27/29 = 93 % [78, 98] | 27/29 = 93 % [78, 98] |
+| missed | 22 | 22 | 1 | 15/21 = 71 % [50, 86] | 6/21 = 29 % [14, 50] |
+| decoy | 50 | 49 | 0 | 48/49 = 98 % [89, 100] | 48/49 = 98 % [89, 100] |
+
+- **The crowd was right about the contested labels.** On 26 of 30 the lead agreed with the original Agree vote; the
+  validator's contested Disagrees are wrong 87 % of the time. Its Disagree precision against the lead (contested plus
+  confirmed) is 31/59 = 53 % [40, 65], a little above the 36 % against the crowd because the two cells are not a
+  random sample of its Disagrees (every contested and confirmed label is in, no decoy is a Disagree), and far from the
+  0.92 gate either way.
+- **The crowd was mostly wrong about the labels the validator approved and a human rejected:** on 15 of 21 the lead
+  agreed with the validator. So the single crowd Disagree on an AI label is itself only about 30 % reliable here, and
+  some of the Vancouver "rejections" in the headline tables are the crowd's errors, which flatters nothing: the model's
+  contested Disagrees were still wrong.
+- Overall the lead agreed with the original human vote on 107 of 129 decided labels (83 %) and with the validator on
+  94 (73 %).
+- **Confidence does separate the validator's Disagrees here**, unlike on the aggregate tables: of its Disagrees with
+  `p_incorrect` > 0.999 the lead confirmed 23 of 32 (72 %); between 0.99 and 0.999, 6 of 13; below 0.99, 2 of 14. The
+  served map was fitted on human-placed labels, where the Disagrees sit at 0.99993 median confidence; on AI labels a
+  contested Disagree sits at 0.994. That is a sample of 59, but it is the first sign that a confidence-aware Disagree on
+  AI labels could be made precise enough to route, if not to count.
+
 **Limits.** One vote per label, 53–99 % of them from two accounts; a queue-selected 4–75 % of the AI labels; 2–9 %
 rejections, so the Disagree numbers rest on 56, 51 and 101 labels; no severity or tag slices; the Vancouver headline is
 a crowd-reference number because the round-3 selection took every lead-rejected label; the Mapillary crops are untilted
-rig-frame renders, as the 150 training AI crops are, but of imagery no training image resembles. Nothing here was
-re-labelled; see point 1.
+rig-frame renders, as the 150 training AI crops are, but of imagery no training image resembles. The masked re-label above covers only the 31 contested labels another account approved, one city, one rater.
 
 ## Reproduce
 
@@ -299,6 +333,10 @@ RUN=... CKPT=.../retrain-2026-10/CurbRamp/dinov2/checkpoint-4340 sbatch analysis
 # Mac:
 python analysis/ai_labels_eval.py report --run RUN --map ROUND3/CurbRamp/calibration/curbramp.json \
     --map-uncapped ROUND3/CurbRamp/calibration/uncapped/curbramp.json --round3 ROUND3/CurbRamp --out docs/ai-labels-2026-10
+# masked re-label (key stays outside the repo; pull rawLabels right before building and again after rating)
+RATER=<user_id> EXPERTS=... python analysis/ai_labels_relabel.py build --run RUN --city vancouver-wa \
+    --out RUN/relabel --rawlabels-before RUN/relabel/rawlabels_before/vancouver-wa.csv
+RATER=<user_id> python analysis/ai_labels_relabel.py score --run RUN --out RUN/relabel
 ```
 
-Unit tests: `pytest -q tests/test_ai_labels_eval.py`.
+Unit tests: `pytest -q tests/test_ai_labels_eval.py tests/test_ai_labels_relabel.py`.
