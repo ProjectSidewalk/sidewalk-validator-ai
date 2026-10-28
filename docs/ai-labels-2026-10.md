@@ -263,8 +263,11 @@ contradicted.
    is sort: the 10 % it withholds carry 16 % rejections against 2 % overall.
 3. **Disagree cannot fire as deployed.** The served map never reaches the gate for `incorrect`, and the uncapped map is
    the same. Sending AI labels to the validator today therefore means AI Agree votes and nothing else. If an AI Agree
-   counts toward a label's vote total, that removes AI labels from the human queue on the strength of point 2; if it
-   does not, nothing changes for humans. The vote-counting decision
+   counts as a vote, the label stays in the human queue (`ValidationQueuePolicy.needsVotes` keeps a lone AI vote at
+   margin 1), but it is marked `correct`, so the map, API and Gallery show it as validated, its queue priority halves
+   (`consensusNeed`), and since the labeler and the validator are the same account it is self-validation that inflates
+   the AI labeler's accuracy ([SidewalkWebpage#5721](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5721));
+   if it does not count, nothing changes for humans. The vote-counting decision
    ([SidewalkWebpage#5790](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5790),
    [#4763](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/4763)) matters more than the model numbers here.
    With no gate, the Disagree verdicts would be 36–71 % precise by city: above the human-placed baseline at the same
