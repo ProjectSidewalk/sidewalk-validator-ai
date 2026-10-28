@@ -253,18 +253,21 @@ contradicted.
    reference** (AUC 0.96 vs 0.97, though 149 of the 153 lead-rejected unseen labels are Mapillary), and worse against the crowd reference that decides Vancouver's unseen rejections
    (0.85). The two references cannot be compared on the same labels here (the round-3 selection consumed the
    lead-rejected Vancouver labels), and one vote per label cannot say whether the crowd or the model is right about the
-   57 contested Vancouver Disagrees. A masked re-label of those 57 plus a matched sample of confirmed ones, the design of
-   `docs/ai-disagree-relabel-2026-10.md` ([PR #66](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/66),
-   where a lead agreed with the production validator's Disagree on human-placed labels 58 % of the time), would settle
-   it with about an hour of rating.
+   57 contested Vancouver Disagrees. The masked re-label below (the design of `docs/ai-disagree-relabel-2026-10.md`,
+   [PR #66](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/66), where a lead agreed with the production
+   validator's Disagree on human-placed labels 58 % of the time) settled it for the 31 another account had approved: the
+   crowd was right on 26 of 30.
 2. **At the deployed gate, an Agree vote on an AI label is consistent with the single human vote 99.3 % of the time**,
    on a 97.8 % base rate, with 90 % coverage. That is one human vote, cast on an AI label, with the Agree lean that
    implies; it is not ground truth. The gate removes no false positive (it casts no Disagree on AI labels); what it does
    is sort: the 10 % it withholds carry 16 % rejections against 2 % overall.
 3. **Disagree cannot fire as deployed.** The served map never reaches the gate for `incorrect`, and the uncapped map is
    the same. Sending AI labels to the validator today therefore means AI Agree votes and nothing else. If an AI Agree
-   counts toward a label's vote total, that removes AI labels from the human queue on the strength of point 2; if it
-   does not, nothing changes for humans. The vote-counting decision
+   counts as a vote, the label stays in the human queue (`ValidationQueuePolicy.needsVotes` keeps a lone AI vote at
+   margin 1), but it is marked `correct`, so the map, API and Gallery show it as validated, its queue priority halves
+   (`consensusNeed`), and since the labeler and the validator are the same account it is self-validation that inflates
+   the AI labeler's accuracy ([SidewalkWebpage#5721](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5721));
+   if it does not count, nothing changes for humans. The vote-counting decision
    ([SidewalkWebpage#5790](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5790),
    [#4763](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/4763)) matters more than the model numbers here.
    With no gate, the Disagree verdicts would be 36–71 % precise by city: above the human-placed baseline at the same
@@ -282,11 +285,61 @@ contradicted.
    labels, none rejected). This says AI-placed Mapillary labels could be AI-validated; it says nothing about human
    ones.
 
+### Masked re-label of the contested Vancouver labels (2026-10-28)
+
+The question left open above was settled the same day: a project lead (the rater) re-voted, on the live site with
+every existing vote masked, on the unseen Vancouver AI labels the validator and the one human vote disagreed about,
+plus decoys (`analysis/ai_labels_relabel.py`; results as the script emits them in
+[`ai-labels-2026-10/relabel_results.md`](ai-labels-2026-10/relabel_results.md), provenance in
+[`relabel_manifest.json`](ai-labels-2026-10/relabel_manifest.json)). Labels the rater had ever voted on were left out
+(1,284 of the unseen pool, including 26 of the 57 contested labels and 2 of the 32 confirmed ones), so every original
+vote in the packet is another account's; the rater's vote is the record, read back from the rawLabels API (each of the
+132 rated labels gained exactly one vote, the rater's, and nothing else changed). One list of 133 labels: 31 contested
+(validator Disagree, human Agree), 30 confirmed (both Disagree), 22 missed (validator Agree, human Disagree) and 50
+decoys (both Agree). 132 were voted, 3 of them Unsure.
+
+**Ordering flaw, disclosed.** The list was meant to be one seeded shuffle, but the build sorted the packet by the same
+hash it had used to pick the lowest-ranked decoys, so positions 1–55 held all 50 decoys and 5 disputed labels, and
+positions 56–133 the other 78 disputed ones. The rater therefore saw an easy block and then a hard block. Contested, confirmed and missed are
+interleaved within the hard block, so the comparison that matters (contested against confirmed) stayed masked, and a
+late-list drift toward Disagree would work against the crowd's Agrees, so the headline below is if anything
+conservative. The code now orders by an independent hash (tested); the ratings were not redone.
+
+| cell | n | voted | Unsure | rater sides with the validator | rater sides with the original vote |
+|---|---:|---:|---:|---|---|
+| contested | 31 | 31 | 1 | 4/30 = 13 % [5, 30] | 26/30 = 87 % [70, 95] |
+| confirmed | 30 | 30 | 1 | 27/29 = 93 % [78, 98] | 27/29 = 93 % [78, 98] |
+| missed | 22 | 22 | 1 | 15/21 = 71 % [50, 86] | 6/21 = 29 % [14, 50] |
+| decoy | 50 | 49 | 0 | 48/49 = 98 % [89, 100] | 48/49 = 98 % [89, 100] |
+
+- **The crowd was right about the contested labels.** On 26 of 30 the rater agreed with the original Agree vote; the
+  validator's contested Disagrees are wrong 87 % of the time. The rater's own earlier, unmasked votes on the 26
+  contested labels left out say the same: 25 Agree, 1 Unsure.
+- **Disagree precision against the rater is the crowd's number.** Packet only, 31/59 = 53 % [40, 65], but the packet
+  is enriched in confirmed Disagrees (the exclusion removed 26 of 57 contested and 2 of 32 confirmed). Folding in the
+  rater's prior, unmasked votes on the 28 left out, the validator's Disagree is right on 33 of 86 decided labels, 38 % [29, 49],
+  against 36 % for the crowd reference in the headline tables.
+- **Where the validator approved and a single crowd vote rejected, the crowd was mostly wrong:** on 15 of 21 the rater
+  sided with the validator. Where both rejected, the rater backed the crowd 27 of 29 times. So some of the 56
+  Vancouver "rejections" in the headline tables are the crowd's errors. Whether the 0.85 AUC is high or low against a
+  lead reference is not decidable from this: it also depends on rejections hidden among the ~2,400 labels both the
+  crowd and the validator approved, which 49 decoys cannot estimate (1 found). It does not change the Disagree
+  verdicts, which were wrong on the contested labels either way.
+- Overall the rater agreed with the original human vote on 107 of 129 decided labels (83 %) and with the validator on
+  94 (73 %).
+- **Confidence.** Within the validator's Disagrees the rater confirmed 23 of 32 above `p_incorrect` 0.999, 6 of 13
+  between 0.99 and 0.999 and 2 of 14 below; with the prior votes folded in, 24 of 43, 6 of 18 and 3 of 25. The crowd
+  reference shows the same gradient over all 89 Disagrees (23/45, 5/18, 4/26), so this is not new, and the top bin at
+  56 % [41, 70] is far from the 0.92 gate. For the record, a contested Disagree has median confidence 0.9956 and a
+  crowd-confirmed one 0.99993.
+
+Caveats: one rater, one city, 89 Disagrees in all; the rater is a project lead whose votes are part of the reference
+the round-3 model trained on; the ordering flaw above.
+
 **Limits.** One vote per label, 53–99 % of them from two accounts; a queue-selected 4–75 % of the AI labels; 2–9 %
 rejections, so the Disagree numbers rest on 56, 51 and 101 labels; no severity or tag slices; the Vancouver headline is
 a crowd-reference number because the round-3 selection took every lead-rejected label; the Mapillary crops are untilted
-rig-frame renders, as the 150 training AI crops are, but of imagery no training image resembles. Nothing here was
-re-labelled; see point 1.
+rig-frame renders, as the 150 training AI crops are, but of imagery no training image resembles. The masked re-label above covers one city and one rater; in the other two deployments the lead who would rate cast nearly every original vote, so no masked re-label is possible there under the no-prior-votes rule.
 
 ## Reproduce
 
@@ -299,6 +352,10 @@ RUN=... CKPT=.../retrain-2026-10/CurbRamp/dinov2/checkpoint-4340 sbatch analysis
 # Mac:
 python analysis/ai_labels_eval.py report --run RUN --map ROUND3/CurbRamp/calibration/curbramp.json \
     --map-uncapped ROUND3/CurbRamp/calibration/uncapped/curbramp.json --round3 ROUND3/CurbRamp --out docs/ai-labels-2026-10
+# masked re-label (key stays outside the repo; pull rawLabels right before building and again after rating)
+RATER=<user_id> EXPERTS=... python analysis/ai_labels_relabel.py build --run RUN --city vancouver-wa \
+    --out RUN/relabel --rawlabels-before RUN/relabel/rawlabels_before/vancouver-wa.csv
+RATER=<user_id> python analysis/ai_labels_relabel.py score --run RUN --out RUN/relabel
 ```
 
-Unit tests: `pytest -q tests/test_ai_labels_eval.py`.
+Unit tests: `pytest -q tests/test_ai_labels_eval.py tests/test_ai_labels_relabel.py`.
