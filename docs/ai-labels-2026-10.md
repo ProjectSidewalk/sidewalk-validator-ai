@@ -47,12 +47,12 @@ Three things about this reference set:
 
 **Providers.** Vancouver is GSV, the imagery every validator was trained on, and is the primary result. Richmond and
 Laurens are Mapillary (an 11000 px rig and a GoPro Max), which `data_generation.py` excludes from training and which
-production does not AI-validate at all (SidewalkWebpage#4764).
+production does not AI-validate at all ([SidewalkWebpage#4764](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/4764)).
 
 **Confidence tier.** RampNet's confidence is not stored with the label, and the run files with the detections live on
 another machine, so each label's tier comes from the campaign that submitted it (the `send_to_ps.py` submission records,
 `CAMPAIGNS` in the script): `core` = the 0.55 operating point, `band` = the 0.30–0.55 band added after
-sidewalk-auto-labeler#20, `mixed` = Richmond's 2026-09-24 re-submission of 14 repositioned sequences at 0.30. Vancouver was
+[sidewalk-auto-labeler#20](https://github.com/ProjectSidewalk/sidewalk-auto-labeler/issues/20), `mixed` = Richmond's 2026-09-24 re-submission of 14 repositioned sequences at 0.30. Vancouver was
 labelled in September 2025 at 0.55 and has no band.
 
 **Severity and tags.** RampNet submits neither, so the type × severity and type × tag slices of the standing rule cannot
@@ -213,7 +213,7 @@ contradicted.
    lead (AUC 0.96 vs 0.97), and worse when it is the crowd reference that Vancouver's Disagrees mostly come from (0.85).
    Which of the two is right about the contested labels is not decidable from one vote each. A masked re-label of a
    sample of the 57 contradicted Vancouver Disagrees would settle it; the same design as `docs/ai-disagree-relabel-2026-10.md`
-   (where a lead agreed with the production validator's Disagree on human-placed labels 58 % of the time) applies as is.
+   ([PR #66](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/66), where a lead agreed with the production validator's Disagree on human-placed labels 58 % of the time) applies as is.
 2. **Agree is safe to automate on AI labels at the deployed gate, within the limits of this reference.** The gate
    auto-agrees with 90 % of Vancouver's AI labels at 0.993 precision; the base rate is 0.978, so the labels it passes are
    not much cleaner than the labels it sees. If the point of validating AI labels is to remove RampNet's false positives,
@@ -222,12 +222,12 @@ contradicted.
    validator today therefore means: AI labels get AI Agree votes and nothing else, since the map holds every Disagree
    back. That changes nothing about which AI labels humans see, and if an AI Agree counts toward a label's vote total it
    removes AI labels from the human queue on the strength of a 0.993-precision vote on a 0.978 base rate. The decision
-   on vote counting (SidewalkWebpage#5790, #4763) matters more than the model numbers here.
+   on vote counting ([SidewalkWebpage#5790](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5790), [#4763](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/4763)) matters more than the model numbers here.
 4. **The band is the place to look.** RampNet's 0.30–0.55 band is where its own precision drops to 75–85 % and where
    the validator's Disagree is most precise (0.52) and most complete (0.80). If AI validation is to filter AI labels, the
    band is where it would pay, and a band-only or tier-aware gate is a cheap experiment.
 5. **Mapillary works without retraining**, at least for rig-frame AI labels: Richmond matches the GSV baseline and
-   Laurens's GoPro imagery is at 0.93. Production does not AI-validate Mapillary deployments at all (SidewalkWebpage#4764);
+   Laurens's GoPro imagery is at 0.93. Production does not AI-validate Mapillary deployments at all ([SidewalkWebpage#4764](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/4764));
    for AI-placed labels there is no measured reason for that.
 
 **Limits.** One vote per label, mostly from one account per deployment; a queue-selected 4–75 % of the AI labels;
