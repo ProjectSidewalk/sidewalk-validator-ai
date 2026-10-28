@@ -56,7 +56,7 @@ DATA=/gscratch/makelab/$USER/sidewalk-validator-ai/retrain-2026-10 RUNS=/gscratc
     analysis/cl_submit.sh CurbRamp Crosswalk NoCurbRamp Obstacle SurfaceProblem
 # when every job is done:
 python analysis/confident_learning.py report --data-dir $DATA --out docs/confident-learning-2026-10 \
-    --public-cities "$(curl -sL https://sidewalk-sea.cs.washington.edu/v3/api/cities | python -c 'import json,sys; print(",".join(c["cityId"] for c in json.load(sys.stdin) if c.get("visibility") == "public"))')"
+    --public-cities "$(curl -sL https://sidewalk-sea.cs.washington.edu/v3/api/cities | python -c 'import json,sys; print(",".join(c["city_id"] for c in json.load(sys.stdin)["cities"] if c.get("visibility") == "public"))')"
 ```
 
 ## Train-row accounting
