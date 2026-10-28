@@ -17,7 +17,7 @@ The board has 17 legs, 14 of them scored all 13,144 held-out crops. Round 3 lead
 - **Round 3 (DINOv2-L, 2026-10)**: macro-AUC 0.915 [0.910, 0.919] on all 13,144 held-out crops.
 - **Gemma 4 31B, 8-shot**, the best VLM with full coverage: macro-AUC 0.775 [0.768, 0.783] on 13,144 crops.
 - Paired on the crops both scored, Gemma 4 31B, 8-shot minus round 3: -0.139 [-0.147, -0.132] macro-AUC.
-- Production (optimistic, see caveats): macro-AUC 0.899 [0.894, 0.905] on 13,144 crops.
+- Previous production (DINOv2-L, 2025-08), optimistic (see caveats): macro-AUC 0.899 [0.894, 0.905] on 13,144 crops.
 
 <!-- END GENERATED: short_answer -->
 
@@ -27,32 +27,57 @@ Macro-AUC is the mean of the five per-type AUCs (each type equal weight), with a
 label bootstrap within each type. *test* is the training deployments' test share, *held-out* the deployments no
 round-3 model was trained on (both macro over types). *within-city* is the pair-weighted within-deployment AUC
 (macro over types). *bal. acc.* is balanced accuracy at the argmax (`p_incorrect > 0.5`); *R@P95* is recall of
-`incorrect` at precision ≥ 0.95. *Δ vs round 3* is the paired difference on the crops both legs scored. Rows below
-the rule did not score every crop: their AUCs are on other (smaller) crop sets and are not ranked against the full
-rows.
+`incorrect` at precision ≥ 0.95. *Δ vs round 3* is the paired difference on the crops both legs scored. The board is
+two tables (AUCs, then splits, operating points and cost) so that neither scrolls sideways on GitHub; **bold** is the
+best value in a column among the rows that scored every crop. Rows below the rule did not score every crop: their
+AUCs are on other (smaller) crop sets and are not ranked against the full rows. *Previous production* is the
+2025-08 models, served until round 3 replaced them on 2026-10-27.
 
 <!-- BEGIN GENERATED: board (analysis/vlm_scoreboard.py) -->
 
-| # | model | class | macro-AUC [95% CI] | CurbRamp | NoCurbRamp | Obstacle | SurfaceProblem | Crosswalk | test | held-out | within-city | bal. acc. | R@P95 | Δ vs round 3 [95% CI] | s/crop (GPU, batch) | coverage |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | **Round 3 (DINOv2-L, 2026-10)** | purpose-trained | 0.915 [0.910, 0.919] | 0.953 | 0.920 | 0.873 | 0.855 | 0.972 | 0.932 | 0.862 | 0.886 | 0.850 | 0.407 | — | — | 13,144 / 13,144 |
-| 2 | Production (DINOv2-L, 2025-08) | purpose-trained | 0.899 [0.894, 0.905] | 0.942 | 0.925 | 0.814 | 0.846 | 0.970 | 0.918 | 0.846 | 0.880 | 0.819 | 0.436 | -0.015 [-0.020, -0.011] | 0.0499 (NVIDIA A40, 1) | 13,144 / 13,144 |
-| 3 | Gemma 4 31B, 8-shot | chat VLM | 0.775 [0.768, 0.783] | 0.865 | 0.745 | 0.557 | 0.772 | 0.938 | 0.799 | 0.744 | 0.784 | 0.703 | 0.156 | -0.139 [-0.147, -0.132] | 2.46 (2xNVIDIA L40S, 4) | 13,144 / 13,144 |
-| 4 | Gemma 4 31B | chat VLM | 0.756 [0.748, 0.763] | 0.825 | 0.659 | 0.584 | 0.756 | 0.954 | 0.769 | 0.734 | 0.741 | 0.698 | 0.145 | -0.159 [-0.167, -0.151] | 0.409 (2xNVIDIA A40, 16) | 13,144 / 13,144 |
-| 5 | GLM-5.3-Flash (FP8, vLLM) | chat VLM | 0.754 [0.746, 0.762] | 0.801 | 0.674 | 0.574 | 0.777 | 0.944 | 0.759 | 0.748 | 0.745 | 0.684 | 0.150 | -0.160 [-0.169, -0.153] | 0.0314 (4xH200, 32) | 13,144 / 13,144 |
-| 6 | Qwen3-VL-32B | chat VLM | 0.748 [0.740, 0.756] | 0.785 | 0.645 | 0.613 | 0.752 | 0.946 | 0.744 | 0.746 | 0.741 | 0.665 | 0.147 | -0.166 [-0.174, -0.159] | 0.229 (2xNVIDIA L40S, 16) | 13,144 / 13,144 |
-| 7 | MiniCPM-V 4.7 35B-A3B | chat VLM | 0.742 [0.734, 0.749] | 0.793 | 0.652 | 0.580 | 0.743 | 0.941 | 0.751 | 0.728 | 0.728 | 0.641 | 0.132 | -0.173 [-0.181, -0.165] | 0.264 (NVIDIA H200, 1) | 13,144 / 13,144 |
-| 8 | Nemotron 3.5 Super VL 120B-A12B | chat VLM | 0.738 [0.730, 0.746] | 0.797 | 0.650 | 0.553 | 0.748 | 0.942 | 0.738 | 0.732 | 0.718 | 0.652 | 0.147 | -0.177 [-0.185, -0.169] | 0.106 (2xNVIDIA H200, 4) | 13,144 / 13,144 |
-| 9 | Qwen3.8-27B | chat VLM | 0.736 [0.728, 0.744] | 0.779 | 0.619 | 0.589 | 0.746 | 0.948 | 0.736 | 0.738 | 0.726 | 0.672 | 0.142 | -0.179 [-0.187, -0.171] | 0.53 (2xNVIDIA A40, 1) | 13,144 / 13,144 |
-| 10 | Gemma 4 12B | chat VLM | 0.736 [0.727, 0.743] | 0.809 | 0.632 | 0.549 | 0.738 | 0.949 | 0.734 | 0.731 | 0.722 | 0.677 | 0.143 | -0.179 [-0.187, -0.171] | 0.129 (NVIDIA A40, 16) | 13,144 / 13,144 |
-| 11 | Muse Glimmer 30B | chat VLM | 0.722 [0.714, 0.731] | 0.802 | 0.605 | 0.568 | 0.746 | 0.891 | 0.742 | 0.672 | 0.693 | 0.501 | 0.010 | -0.192 [-0.202, -0.184] | 0.551 (2xNVIDIA A40, 16) | 13,144 / 13,144 |
-| 12 | Phi-4-reasoning-vision-15B | chat VLM | 0.700 [0.692, 0.709] | 0.709 | 0.569 | 0.566 | 0.721 | 0.934 | 0.697 | 0.694 | 0.692 | 0.615 | 0.124 | -0.215 [-0.224, -0.206] | 0.84 (NVIDIA A40, 1) | 13,144 / 13,144 |
-| 13 | Molmo2-8B | pointing model | 0.694 [0.685, 0.702] | 0.732 | 0.560 | 0.513 | 0.728 | 0.935 | 0.688 | 0.705 | 0.696 | 0.540 | 0.134 | -0.221 [-0.230, -0.212] | 0.264 (NVIDIA A40, 16) | 13,144 / 13,144 |
-| 14 | Qwen3-VL-8B | chat VLM | 0.679 [0.670, 0.688] | 0.737 | 0.540 | 0.515 | 0.692 | 0.912 | 0.686 | 0.654 | 0.669 | 0.609 | 0.094 | -0.235 [-0.246, -0.227] | 0.131 (NVIDIA A40, 16) | 13,144 / 13,144 |
-|  | *partial coverage, not ranked against the rows above* |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-|  | Gemma 4 12B (4-bit, Mac) | chat VLM | 0.722 [0.702, 0.745] | 0.790 | 0.634 | 0.508 | 0.735 | 0.944 | 0.724 | 0.718 | 0.696 | 0.625 | 0.185 | -0.183 [-0.206, -0.162] | 2.33 (Apple M1 Max (MLX), 1) | 1,988 / 13,144 |
-|  | Qwen3-VL-2B (4-bit, Mac) | chat VLM | 0.621 [0.578, 0.662] | 0.530 | 0.546 | 0.486 | 0.618 | 0.924 | 0.613 | 0.648 | 0.629 | 0.570 | 0.152 | -0.286 [-0.334, -0.236] | 0.717 (Apple M1 Max (MLX), 1) | 671 / 13,144 |
-|  | Qwen3-VL-8B (4-bit, Mac) | chat VLM | 0.657 [0.611, 0.701] | 0.761 | 0.457 | 0.515 | 0.656 | 0.895 | 0.655 | 0.658 | 0.633 | 0.614 | 0.100 | -0.248 [-0.298, -0.201] | 2.19 (Apple M1 Max (MLX), 1) | 500 / 13,144 |
+| # | model | class | macro-AUC [95% CI] | CurbRamp | NoCurbRamp | Obstacle | SurfaceProblem | Crosswalk | Δ vs round 3 [95% CI] |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | Round 3 (DINOv2-L, 2026-10) | purpose-trained | **0.915 [0.910, 0.919]** | **0.953** | 0.920 | **0.873** | **0.855** | **0.972** | — |
+| 2 | Previous production (DINOv2-L, 2025-08) | purpose-trained | 0.899 [0.894, 0.905] | 0.942 | **0.925** | 0.814 | 0.846 | 0.970 | -0.015 [-0.020, -0.011] |
+| 3 | Gemma 4 31B, 8-shot | chat VLM | 0.775 [0.768, 0.783] | 0.865 | 0.745 | 0.557 | 0.772 | 0.938 | -0.139 [-0.147, -0.132] |
+| 4 | Gemma 4 31B | chat VLM | 0.756 [0.748, 0.763] | 0.825 | 0.659 | 0.584 | 0.756 | 0.954 | -0.159 [-0.167, -0.151] |
+| 5 | GLM-5.3-Flash (FP8, vLLM) | chat VLM | 0.754 [0.746, 0.762] | 0.801 | 0.674 | 0.574 | 0.777 | 0.944 | -0.160 [-0.169, -0.153] |
+| 6 | Qwen3-VL-32B | chat VLM | 0.748 [0.740, 0.756] | 0.785 | 0.645 | 0.613 | 0.752 | 0.946 | -0.166 [-0.174, -0.159] |
+| 7 | MiniCPM-V 4.7 35B-A3B | chat VLM | 0.742 [0.734, 0.749] | 0.793 | 0.652 | 0.580 | 0.743 | 0.941 | -0.173 [-0.181, -0.165] |
+| 8 | Nemotron 3.5 Super VL 120B-A12B | chat VLM | 0.738 [0.730, 0.746] | 0.797 | 0.650 | 0.553 | 0.748 | 0.942 | -0.177 [-0.185, -0.169] |
+| 9 | Qwen3.8-27B | chat VLM | 0.736 [0.728, 0.744] | 0.779 | 0.619 | 0.589 | 0.746 | 0.948 | -0.179 [-0.187, -0.171] |
+| 10 | Gemma 4 12B | chat VLM | 0.736 [0.727, 0.743] | 0.809 | 0.632 | 0.549 | 0.738 | 0.949 | -0.179 [-0.187, -0.171] |
+| 11 | Muse Glimmer 30B | chat VLM | 0.722 [0.714, 0.731] | 0.802 | 0.605 | 0.568 | 0.746 | 0.891 | -0.192 [-0.202, -0.184] |
+| 12 | Phi-4-reasoning-vision-15B | chat VLM | 0.700 [0.692, 0.709] | 0.709 | 0.569 | 0.566 | 0.721 | 0.934 | -0.215 [-0.224, -0.206] |
+| 13 | Molmo2-8B | pointing model | 0.694 [0.685, 0.702] | 0.732 | 0.560 | 0.513 | 0.728 | 0.935 | -0.221 [-0.230, -0.212] |
+| 14 | Qwen3-VL-8B | chat VLM | 0.679 [0.670, 0.688] | 0.737 | 0.540 | 0.515 | 0.692 | 0.912 | -0.235 [-0.246, -0.227] |
+|  | *partial coverage, not ranked against the rows above* |  |  |  |  |  |  |  |  |
+|  | Gemma 4 12B (4-bit, Mac) | chat VLM | 0.722 [0.702, 0.745] | 0.790 | 0.634 | 0.508 | 0.735 | 0.944 | -0.183 [-0.206, -0.162] |
+|  | Qwen3-VL-2B (4-bit, Mac) | chat VLM | 0.621 [0.578, 0.662] | 0.530 | 0.546 | 0.486 | 0.618 | 0.924 | -0.286 [-0.334, -0.236] |
+|  | Qwen3-VL-8B (4-bit, Mac) | chat VLM | 0.657 [0.611, 0.701] | 0.761 | 0.457 | 0.515 | 0.656 | 0.895 | -0.248 [-0.298, -0.201] |
+
+Splits, operating points and cost of the same legs:
+
+| model | test | held-out | within-city | bal. acc. | R@P95 | s/crop (GPU, batch) | coverage |
+|---|---|---|---|---|---|---|---|
+| Round 3 (DINOv2-L, 2026-10) | **0.932** | **0.862** | **0.886** | **0.850** | 0.407 | — | 13,144 / 13,144 |
+| Previous production (DINOv2-L, 2025-08) | 0.918 | 0.846 | 0.880 | 0.819 | **0.436** | 0.0499 (NVIDIA A40, 1) | 13,144 / 13,144 |
+| Gemma 4 31B, 8-shot | 0.799 | 0.744 | 0.784 | 0.703 | 0.156 | 2.46 (2xNVIDIA L40S, 4) | 13,144 / 13,144 |
+| Gemma 4 31B | 0.769 | 0.734 | 0.741 | 0.698 | 0.145 | 0.409 (2xNVIDIA A40, 16) | 13,144 / 13,144 |
+| GLM-5.3-Flash (FP8, vLLM) | 0.759 | 0.748 | 0.745 | 0.684 | 0.150 | **0.0314 (4xH200, 32)** | 13,144 / 13,144 |
+| Qwen3-VL-32B | 0.744 | 0.746 | 0.741 | 0.665 | 0.147 | 0.229 (2xNVIDIA L40S, 16) | 13,144 / 13,144 |
+| MiniCPM-V 4.7 35B-A3B | 0.751 | 0.728 | 0.728 | 0.641 | 0.132 | 0.264 (NVIDIA H200, 1) | 13,144 / 13,144 |
+| Nemotron 3.5 Super VL 120B-A12B | 0.738 | 0.732 | 0.718 | 0.652 | 0.147 | 0.106 (2xNVIDIA H200, 4) | 13,144 / 13,144 |
+| Qwen3.8-27B | 0.736 | 0.738 | 0.726 | 0.672 | 0.142 | 0.53 (2xNVIDIA A40, 1) | 13,144 / 13,144 |
+| Gemma 4 12B | 0.734 | 0.731 | 0.722 | 0.677 | 0.143 | 0.129 (NVIDIA A40, 16) | 13,144 / 13,144 |
+| Muse Glimmer 30B | 0.742 | 0.672 | 0.693 | 0.501 | 0.010 | 0.551 (2xNVIDIA A40, 16) | 13,144 / 13,144 |
+| Phi-4-reasoning-vision-15B | 0.697 | 0.694 | 0.692 | 0.615 | 0.124 | 0.84 (NVIDIA A40, 1) | 13,144 / 13,144 |
+| Molmo2-8B | 0.688 | 0.705 | 0.696 | 0.540 | 0.134 | 0.264 (NVIDIA A40, 16) | 13,144 / 13,144 |
+| Qwen3-VL-8B | 0.686 | 0.654 | 0.669 | 0.609 | 0.094 | 0.131 (NVIDIA A40, 16) | 13,144 / 13,144 |
+|  | *partial coverage, not ranked against the rows above* |  |  |  |  |  |  |
+| Gemma 4 12B (4-bit, Mac) | 0.724 | 0.718 | 0.696 | 0.625 | 0.185 | 2.33 (Apple M1 Max (MLX), 1) | 1,988 / 13,144 |
+| Qwen3-VL-2B (4-bit, Mac) | 0.613 | 0.648 | 0.629 | 0.570 | 0.152 | 0.717 (Apple M1 Max (MLX), 1) | 671 / 13,144 |
+| Qwen3-VL-8B (4-bit, Mac) | 0.655 | 0.658 | 0.633 | 0.614 | 0.100 | 2.19 (Apple M1 Max (MLX), 1) | 500 / 13,144 |
 
 <!-- END GENERATED: board -->
 
@@ -66,16 +91,16 @@ rows.
 
 | model | type | n | incorrect | AUC [95% CI] | test | held-out | within-city (cities) | bal. acc. | R@P95 |
 |---|---|---|---|---|---|---|---|---|---|
-| Round 3 (DINOv2-L, 2026-10) | Crosswalk | 583 | 271 | 0.972 [0.956, 0.985] | 0.980 | 0.941 | 0.968 (11) | 0.943 | 0.926 |
-| Round 3 (DINOv2-L, 2026-10) | CurbRamp | 2,025 | 895 | 0.953 [0.944, 0.962] | 0.968 | 0.907 | 0.930 (22) | 0.892 | 0.692 |
-| Round 3 (DINOv2-L, 2026-10) | NoCurbRamp | 3,356 | 1,554 | 0.920 [0.910, 0.929] | 0.934 | 0.881 | 0.891 (21) | 0.852 | 0.418 |
-| Round 3 (DINOv2-L, 2026-10) | Obstacle | 4,078 | 2,186 | 0.873 [0.862, 0.884] | 0.883 | 0.868 | 0.833 (21) | 0.780 | 0.000 |
-| Round 3 (DINOv2-L, 2026-10) | SurfaceProblem | 3,102 | 1,475 | 0.855 [0.842, 0.868] | 0.896 | 0.710 | 0.808 (24) | 0.784 | 0.000 |
-| Production (DINOv2-L, 2025-08) | Crosswalk | 583 | 271 | 0.970 [0.955, 0.983] | 0.978 | 0.919 | 0.965 (11) | 0.916 | 0.867 |
-| Production (DINOv2-L, 2025-08) | CurbRamp | 2,025 | 895 | 0.942 [0.932, 0.951] | 0.958 | 0.884 | 0.913 (22) | 0.874 | 0.630 |
-| Production (DINOv2-L, 2025-08) | NoCurbRamp | 3,356 | 1,554 | 0.925 [0.916, 0.933] | 0.932 | 0.910 | 0.918 (21) | 0.845 | 0.438 |
-| Production (DINOv2-L, 2025-08) | Obstacle | 4,078 | 2,186 | 0.814 [0.801, 0.827] | 0.837 | 0.824 | 0.792 (21) | 0.711 | 0.100 |
-| Production (DINOv2-L, 2025-08) | SurfaceProblem | 3,102 | 1,475 | 0.846 [0.833, 0.859] | 0.886 | 0.693 | 0.812 (24) | 0.749 | 0.144 |
+| Round 3 (DINOv2-L, 2026-10) | Crosswalk | 583 | 271 | **0.972 [0.956, 0.985]** | **0.980** | **0.941** | **0.968 (11)** | **0.943** | **0.926** |
+| Round 3 (DINOv2-L, 2026-10) | CurbRamp | 2,025 | 895 | **0.953 [0.944, 0.962]** | **0.968** | **0.907** | **0.930 (22)** | **0.892** | **0.692** |
+| Round 3 (DINOv2-L, 2026-10) | NoCurbRamp | 3,356 | 1,554 | 0.920 [0.910, 0.929] | **0.934** | 0.881 | 0.891 (21) | **0.852** | 0.418 |
+| Round 3 (DINOv2-L, 2026-10) | Obstacle | 4,078 | 2,186 | **0.873 [0.862, 0.884]** | **0.883** | **0.868** | **0.833 (21)** | **0.780** | 0.000 |
+| Round 3 (DINOv2-L, 2026-10) | SurfaceProblem | 3,102 | 1,475 | **0.855 [0.842, 0.868]** | **0.896** | 0.710 | 0.808 (24) | **0.784** | 0.000 |
+| Previous production (DINOv2-L, 2025-08) | Crosswalk | 583 | 271 | 0.970 [0.955, 0.983] | 0.978 | 0.919 | 0.965 (11) | 0.916 | 0.867 |
+| Previous production (DINOv2-L, 2025-08) | CurbRamp | 2,025 | 895 | 0.942 [0.932, 0.951] | 0.958 | 0.884 | 0.913 (22) | 0.874 | 0.630 |
+| Previous production (DINOv2-L, 2025-08) | NoCurbRamp | 3,356 | 1,554 | **0.925 [0.916, 0.933]** | 0.932 | **0.910** | **0.918 (21)** | 0.845 | **0.438** |
+| Previous production (DINOv2-L, 2025-08) | Obstacle | 4,078 | 2,186 | 0.814 [0.801, 0.827] | 0.837 | 0.824 | 0.792 (21) | 0.711 | **0.100** |
+| Previous production (DINOv2-L, 2025-08) | SurfaceProblem | 3,102 | 1,475 | 0.846 [0.833, 0.859] | 0.886 | 0.693 | **0.812 (24)** | 0.749 | **0.144** |
 | Gemma 4 31B, 8-shot | Crosswalk | 583 | 271 | 0.938 [0.917, 0.956] | 0.945 | 0.914 | 0.958 (11) | 0.815 | 0.756 |
 | Gemma 4 31B, 8-shot | CurbRamp | 2,025 | 895 | 0.865 [0.849, 0.880] | 0.872 | 0.849 | 0.871 (22) | 0.786 | 0.007 |
 | Gemma 4 31B, 8-shot | NoCurbRamp | 3,356 | 1,554 | 0.745 [0.728, 0.762] | 0.741 | 0.762 | 0.769 (21) | 0.674 | 0.013 |
@@ -130,7 +155,7 @@ rows.
 | Molmo2-8B | CurbRamp | 2,025 | 895 | 0.732 [0.710, 0.754] | 0.724 | 0.757 | 0.771 (22) | 0.500 | 0.000 |
 | Molmo2-8B | NoCurbRamp | 3,356 | 1,554 | 0.560 [0.540, 0.580] | 0.544 | 0.628 | 0.581 (21) | 0.537 | 0.001 |
 | Molmo2-8B | Obstacle | 4,078 | 2,186 | 0.513 [0.496, 0.531] | 0.496 | 0.548 | 0.486 (21) | 0.516 | 0.001 |
-| Molmo2-8B | SurfaceProblem | 3,102 | 1,475 | 0.728 [0.711, 0.745] | 0.722 | 0.729 | 0.722 (24) | 0.590 | 0.002 |
+| Molmo2-8B | SurfaceProblem | 3,102 | 1,475 | 0.728 [0.711, 0.745] | 0.722 | **0.729** | 0.722 (24) | 0.590 | 0.002 |
 | Qwen3-VL-8B | Crosswalk | 583 | 271 | 0.912 [0.890, 0.933] | 0.949 | 0.753 | 0.853 (11) | 0.814 | 0.454 |
 | Qwen3-VL-8B | CurbRamp | 2,025 | 895 | 0.737 [0.717, 0.758] | 0.730 | 0.758 | 0.773 (22) | 0.577 | 0.002 |
 | Qwen3-VL-8B | NoCurbRamp | 3,356 | 1,554 | 0.540 [0.520, 0.560] | 0.523 | 0.595 | 0.522 (21) | 0.498 | 0.000 |
@@ -165,138 +190,138 @@ draws (seed 20261021). A partial leg's comparison is on its own crops only.
 
 | model | type | shared crops | AUC (model) | AUC (round 3) | difference [95% CI] |
 |---|---|---|---|---|---|
-| Gemma 4 12B | CurbRamp | 2,025 | 0.809 | 0.953 | -0.144 [-0.162, -0.127] |
-| Gemma 4 12B | NoCurbRamp | 3,356 | 0.632 | 0.920 | -0.287 [-0.307, -0.268] |
-| Gemma 4 12B | Obstacle | 4,078 | 0.549 | 0.873 | -0.324 [-0.344, -0.304] |
-| Gemma 4 12B | SurfaceProblem | 3,102 | 0.738 | 0.855 | -0.117 [-0.134, -0.099] |
-| Gemma 4 12B | Crosswalk | 583 | 0.949 | 0.972 | -0.023 [-0.038, -0.010] |
-| Gemma 4 12B | macro (5 types) | 13,144 | 0.736 | 0.915 | -0.179 [-0.187, -0.171] |
-| Gemma 4 12B (4-bit, Mac) | CurbRamp | 400 | 0.790 | 0.936 | -0.147 [-0.193, -0.106] |
-| Gemma 4 12B (4-bit, Mac) | NoCurbRamp | 400 | 0.634 | 0.910 | -0.276 [-0.338, -0.222] |
-| Gemma 4 12B (4-bit, Mac) | Obstacle | 400 | 0.508 | 0.881 | -0.372 [-0.432, -0.311] |
-| Gemma 4 12B (4-bit, Mac) | SurfaceProblem | 400 | 0.735 | 0.831 | -0.096 [-0.147, -0.049] |
-| Gemma 4 12B (4-bit, Mac) | Crosswalk | 388 | 0.944 | 0.968 | -0.024 [-0.045, -0.006] |
-| Gemma 4 12B (4-bit, Mac) | macro (5 types) | 1,988 | 0.722 | 0.905 | -0.183 [-0.206, -0.162] |
-| Gemma 4 31B | CurbRamp | 2,025 | 0.825 | 0.953 | -0.128 [-0.147, -0.112] |
-| Gemma 4 31B | NoCurbRamp | 3,356 | 0.659 | 0.920 | -0.260 [-0.279, -0.240] |
-| Gemma 4 31B | Obstacle | 4,078 | 0.584 | 0.873 | -0.289 [-0.309, -0.271] |
-| Gemma 4 31B | SurfaceProblem | 3,102 | 0.756 | 0.855 | -0.099 [-0.117, -0.081] |
-| Gemma 4 31B | Crosswalk | 583 | 0.954 | 0.972 | -0.017 [-0.031, -0.005] |
-| Gemma 4 31B | macro (5 types) | 13,144 | 0.756 | 0.915 | -0.159 [-0.167, -0.151] |
-| Gemma 4 31B, 8-shot | CurbRamp | 2,025 | 0.865 | 0.953 | -0.088 [-0.103, -0.074] |
-| Gemma 4 31B, 8-shot | NoCurbRamp | 3,356 | 0.745 | 0.920 | -0.175 [-0.193, -0.158] |
-| Gemma 4 31B, 8-shot | Obstacle | 4,078 | 0.557 | 0.873 | -0.316 [-0.335, -0.298] |
-| Gemma 4 31B, 8-shot | SurfaceProblem | 3,102 | 0.772 | 0.855 | -0.083 [-0.100, -0.065] |
-| Gemma 4 31B, 8-shot | Crosswalk | 583 | 0.938 | 0.972 | -0.034 [-0.053, -0.016] |
-| Gemma 4 31B, 8-shot | macro (5 types) | 13,144 | 0.775 | 0.915 | -0.139 [-0.147, -0.132] |
-| GLM-5.3-Flash (FP8, vLLM) | CurbRamp | 2,025 | 0.801 | 0.953 | -0.152 [-0.171, -0.135] |
-| GLM-5.3-Flash (FP8, vLLM) | NoCurbRamp | 3,356 | 0.674 | 0.920 | -0.246 [-0.265, -0.227] |
-| GLM-5.3-Flash (FP8, vLLM) | Obstacle | 4,078 | 0.574 | 0.873 | -0.299 [-0.319, -0.280] |
-| GLM-5.3-Flash (FP8, vLLM) | SurfaceProblem | 3,102 | 0.777 | 0.855 | -0.078 [-0.095, -0.061] |
-| GLM-5.3-Flash (FP8, vLLM) | Crosswalk | 583 | 0.944 | 0.972 | -0.027 [-0.043, -0.013] |
-| GLM-5.3-Flash (FP8, vLLM) | macro (5 types) | 13,144 | 0.754 | 0.915 | -0.160 [-0.169, -0.153] |
-| MiniCPM-V 4.7 35B-A3B | CurbRamp | 2,025 | 0.793 | 0.953 | -0.160 [-0.180, -0.143] |
-| MiniCPM-V 4.7 35B-A3B | NoCurbRamp | 3,356 | 0.652 | 0.920 | -0.268 [-0.286, -0.247] |
-| MiniCPM-V 4.7 35B-A3B | Obstacle | 4,078 | 0.580 | 0.873 | -0.293 [-0.312, -0.275] |
-| MiniCPM-V 4.7 35B-A3B | SurfaceProblem | 3,102 | 0.743 | 0.855 | -0.113 [-0.129, -0.095] |
-| MiniCPM-V 4.7 35B-A3B | Crosswalk | 583 | 0.941 | 0.972 | -0.031 [-0.047, -0.015] |
-| MiniCPM-V 4.7 35B-A3B | macro (5 types) | 13,144 | 0.742 | 0.915 | -0.173 [-0.181, -0.165] |
-| Molmo2-8B | CurbRamp | 2,025 | 0.732 | 0.953 | -0.222 [-0.247, -0.199] |
-| Molmo2-8B | NoCurbRamp | 3,356 | 0.560 | 0.920 | -0.359 [-0.381, -0.338] |
-| Molmo2-8B | Obstacle | 4,078 | 0.513 | 0.873 | -0.360 [-0.381, -0.341] |
-| Molmo2-8B | SurfaceProblem | 3,102 | 0.728 | 0.855 | -0.127 [-0.147, -0.108] |
-| Molmo2-8B | Crosswalk | 583 | 0.935 | 0.972 | -0.037 [-0.056, -0.021] |
-| Molmo2-8B | macro (5 types) | 13,144 | 0.694 | 0.915 | -0.221 [-0.230, -0.212] |
-| Muse Glimmer 30B | CurbRamp | 2,025 | 0.802 | 0.953 | -0.151 [-0.170, -0.134] |
-| Muse Glimmer 30B | NoCurbRamp | 3,356 | 0.605 | 0.920 | -0.315 [-0.335, -0.295] |
-| Muse Glimmer 30B | Obstacle | 4,078 | 0.568 | 0.873 | -0.305 [-0.325, -0.287] |
-| Muse Glimmer 30B | SurfaceProblem | 3,102 | 0.746 | 0.855 | -0.110 [-0.127, -0.091] |
-| Muse Glimmer 30B | Crosswalk | 583 | 0.891 | 0.972 | -0.081 [-0.106, -0.058] |
-| Muse Glimmer 30B | macro (5 types) | 13,144 | 0.722 | 0.915 | -0.192 [-0.202, -0.184] |
-| Nemotron 3.5 Super VL 120B-A12B | CurbRamp | 2,025 | 0.797 | 0.953 | -0.156 [-0.176, -0.139] |
-| Nemotron 3.5 Super VL 120B-A12B | NoCurbRamp | 3,356 | 0.650 | 0.920 | -0.270 [-0.290, -0.248] |
-| Nemotron 3.5 Super VL 120B-A12B | Obstacle | 4,078 | 0.553 | 0.873 | -0.320 [-0.340, -0.301] |
-| Nemotron 3.5 Super VL 120B-A12B | SurfaceProblem | 3,102 | 0.748 | 0.855 | -0.107 [-0.125, -0.089] |
-| Nemotron 3.5 Super VL 120B-A12B | Crosswalk | 583 | 0.942 | 0.972 | -0.029 [-0.046, -0.015] |
-| Nemotron 3.5 Super VL 120B-A12B | macro (5 types) | 13,144 | 0.738 | 0.915 | -0.177 [-0.185, -0.169] |
-| Phi-4-reasoning-vision-15B | CurbRamp | 2,025 | 0.709 | 0.953 | -0.245 [-0.268, -0.223] |
-| Phi-4-reasoning-vision-15B | NoCurbRamp | 3,356 | 0.569 | 0.920 | -0.351 [-0.372, -0.329] |
-| Phi-4-reasoning-vision-15B | Obstacle | 4,078 | 0.566 | 0.873 | -0.307 [-0.327, -0.287] |
-| Phi-4-reasoning-vision-15B | SurfaceProblem | 3,102 | 0.721 | 0.855 | -0.134 [-0.152, -0.115] |
-| Phi-4-reasoning-vision-15B | Crosswalk | 583 | 0.934 | 0.972 | -0.037 [-0.055, -0.021] |
-| Phi-4-reasoning-vision-15B | macro (5 types) | 13,144 | 0.700 | 0.915 | -0.215 [-0.224, -0.206] |
-| Production (DINOv2-L, 2025-08) | CurbRamp | 2,025 | 0.942 | 0.953 | -0.012 [-0.019, -0.004] |
-| Production (DINOv2-L, 2025-08) | NoCurbRamp | 3,356 | 0.925 | 0.920 | 0.005 [-0.005, 0.014] |
-| Production (DINOv2-L, 2025-08) | Obstacle | 4,078 | 0.814 | 0.873 | -0.059 [-0.072, -0.046] |
-| Production (DINOv2-L, 2025-08) | SurfaceProblem | 3,102 | 0.846 | 0.855 | -0.009 [-0.020, 0.003] |
-| Production (DINOv2-L, 2025-08) | Crosswalk | 583 | 0.970 | 0.972 | -0.002 [-0.014, 0.011] |
-| Production (DINOv2-L, 2025-08) | macro (5 types) | 13,144 | 0.899 | 0.915 | -0.015 [-0.020, -0.011] |
-| Qwen3.8-27B | CurbRamp | 2,025 | 0.779 | 0.953 | -0.175 [-0.195, -0.155] |
-| Qwen3.8-27B | NoCurbRamp | 3,356 | 0.619 | 0.920 | -0.301 [-0.322, -0.281] |
-| Qwen3.8-27B | Obstacle | 4,078 | 0.589 | 0.873 | -0.284 [-0.305, -0.266] |
-| Qwen3.8-27B | SurfaceProblem | 3,102 | 0.746 | 0.855 | -0.109 [-0.127, -0.092] |
-| Qwen3.8-27B | Crosswalk | 583 | 0.948 | 0.972 | -0.024 [-0.041, -0.010] |
-| Qwen3.8-27B | macro (5 types) | 13,144 | 0.736 | 0.915 | -0.179 [-0.187, -0.171] |
-| Qwen3-VL-2B (4-bit, Mac) | CurbRamp | 271 | 0.530 | 0.958 | -0.428 [-0.501, -0.351] |
-| Qwen3-VL-2B (4-bit, Mac) | NoCurbRamp | 100 | 0.546 | 0.930 | -0.384 [-0.513, -0.258] |
-| Qwen3-VL-2B (4-bit, Mac) | Obstacle | 100 | 0.486 | 0.894 | -0.409 [-0.538, -0.284] |
-| Qwen3-VL-2B (4-bit, Mac) | SurfaceProblem | 100 | 0.618 | 0.777 | -0.160 [-0.283, -0.033] |
-| Qwen3-VL-2B (4-bit, Mac) | Crosswalk | 100 | 0.924 | 0.973 | -0.048 [-0.101, -0.003] |
-| Qwen3-VL-2B (4-bit, Mac) | macro (5 types) | 671 | 0.621 | 0.906 | -0.286 [-0.334, -0.236] |
-| Qwen3-VL-32B | CurbRamp | 2,025 | 0.785 | 0.953 | -0.168 [-0.189, -0.150] |
-| Qwen3-VL-32B | NoCurbRamp | 3,356 | 0.645 | 0.920 | -0.275 [-0.294, -0.255] |
-| Qwen3-VL-32B | Obstacle | 4,078 | 0.613 | 0.873 | -0.260 [-0.279, -0.242] |
-| Qwen3-VL-32B | SurfaceProblem | 3,102 | 0.752 | 0.855 | -0.103 [-0.119, -0.086] |
-| Qwen3-VL-32B | Crosswalk | 583 | 0.946 | 0.972 | -0.026 [-0.042, -0.011] |
-| Qwen3-VL-32B | macro (5 types) | 13,144 | 0.748 | 0.915 | -0.166 [-0.174, -0.159] |
-| Qwen3-VL-8B | CurbRamp | 2,025 | 0.737 | 0.953 | -0.216 [-0.239, -0.195] |
-| Qwen3-VL-8B | NoCurbRamp | 3,356 | 0.540 | 0.920 | -0.380 [-0.401, -0.359] |
-| Qwen3-VL-8B | Obstacle | 4,078 | 0.515 | 0.873 | -0.358 [-0.379, -0.340] |
-| Qwen3-VL-8B | SurfaceProblem | 3,102 | 0.692 | 0.855 | -0.163 [-0.182, -0.143] |
-| Qwen3-VL-8B | Crosswalk | 583 | 0.912 | 0.972 | -0.060 [-0.081, -0.040] |
-| Qwen3-VL-8B | macro (5 types) | 13,144 | 0.679 | 0.915 | -0.235 [-0.246, -0.227] |
-| Qwen3-VL-8B (4-bit, Mac) | CurbRamp | 100 | 0.761 | 0.952 | -0.191 [-0.295, -0.090] |
-| Qwen3-VL-8B (4-bit, Mac) | NoCurbRamp | 100 | 0.457 | 0.930 | -0.472 [-0.582, -0.360] |
-| Qwen3-VL-8B (4-bit, Mac) | Obstacle | 100 | 0.515 | 0.894 | -0.380 [-0.510, -0.257] |
-| Qwen3-VL-8B (4-bit, Mac) | SurfaceProblem | 100 | 0.656 | 0.777 | -0.122 [-0.241, 0.000] |
-| Qwen3-VL-8B (4-bit, Mac) | Crosswalk | 100 | 0.895 | 0.973 | -0.078 [-0.144, -0.021] |
-| Qwen3-VL-8B (4-bit, Mac) | macro (5 types) | 500 | 0.657 | 0.905 | -0.248 [-0.298, -0.201] |
+| Gemma 4 12B | CurbRamp | 2,025 | 0.809 | **0.953** | -0.144 [-0.162, -0.127] |
+| Gemma 4 12B | NoCurbRamp | 3,356 | 0.632 | **0.920** | -0.287 [-0.307, -0.268] |
+| Gemma 4 12B | Obstacle | 4,078 | 0.549 | **0.873** | -0.324 [-0.344, -0.304] |
+| Gemma 4 12B | SurfaceProblem | 3,102 | 0.738 | **0.855** | -0.117 [-0.134, -0.099] |
+| Gemma 4 12B | Crosswalk | 583 | 0.949 | **0.972** | -0.023 [-0.038, -0.010] |
+| Gemma 4 12B | macro (5 types) | 13,144 | 0.736 | **0.915** | -0.179 [-0.187, -0.171] |
+| Gemma 4 12B (4-bit, Mac) | CurbRamp | 400 | 0.790 | **0.936** | -0.147 [-0.193, -0.106] |
+| Gemma 4 12B (4-bit, Mac) | NoCurbRamp | 400 | 0.634 | **0.910** | -0.276 [-0.338, -0.222] |
+| Gemma 4 12B (4-bit, Mac) | Obstacle | 400 | 0.508 | **0.881** | -0.372 [-0.432, -0.311] |
+| Gemma 4 12B (4-bit, Mac) | SurfaceProblem | 400 | 0.735 | **0.831** | -0.096 [-0.147, -0.049] |
+| Gemma 4 12B (4-bit, Mac) | Crosswalk | 388 | 0.944 | **0.968** | -0.024 [-0.045, -0.006] |
+| Gemma 4 12B (4-bit, Mac) | macro (5 types) | 1,988 | 0.722 | **0.905** | -0.183 [-0.206, -0.162] |
+| Gemma 4 31B | CurbRamp | 2,025 | 0.825 | **0.953** | -0.128 [-0.147, -0.112] |
+| Gemma 4 31B | NoCurbRamp | 3,356 | 0.659 | **0.920** | -0.260 [-0.279, -0.240] |
+| Gemma 4 31B | Obstacle | 4,078 | 0.584 | **0.873** | -0.289 [-0.309, -0.271] |
+| Gemma 4 31B | SurfaceProblem | 3,102 | 0.756 | **0.855** | -0.099 [-0.117, -0.081] |
+| Gemma 4 31B | Crosswalk | 583 | 0.954 | **0.972** | -0.017 [-0.031, -0.005] |
+| Gemma 4 31B | macro (5 types) | 13,144 | 0.756 | **0.915** | -0.159 [-0.167, -0.151] |
+| Gemma 4 31B, 8-shot | CurbRamp | 2,025 | 0.865 | **0.953** | -0.088 [-0.103, -0.074] |
+| Gemma 4 31B, 8-shot | NoCurbRamp | 3,356 | 0.745 | **0.920** | -0.175 [-0.193, -0.158] |
+| Gemma 4 31B, 8-shot | Obstacle | 4,078 | 0.557 | **0.873** | -0.316 [-0.335, -0.298] |
+| Gemma 4 31B, 8-shot | SurfaceProblem | 3,102 | 0.772 | **0.855** | -0.083 [-0.100, -0.065] |
+| Gemma 4 31B, 8-shot | Crosswalk | 583 | 0.938 | **0.972** | -0.034 [-0.053, -0.016] |
+| Gemma 4 31B, 8-shot | macro (5 types) | 13,144 | 0.775 | **0.915** | -0.139 [-0.147, -0.132] |
+| GLM-5.3-Flash (FP8, vLLM) | CurbRamp | 2,025 | 0.801 | **0.953** | -0.152 [-0.171, -0.135] |
+| GLM-5.3-Flash (FP8, vLLM) | NoCurbRamp | 3,356 | 0.674 | **0.920** | -0.246 [-0.265, -0.227] |
+| GLM-5.3-Flash (FP8, vLLM) | Obstacle | 4,078 | 0.574 | **0.873** | -0.299 [-0.319, -0.280] |
+| GLM-5.3-Flash (FP8, vLLM) | SurfaceProblem | 3,102 | 0.777 | **0.855** | -0.078 [-0.095, -0.061] |
+| GLM-5.3-Flash (FP8, vLLM) | Crosswalk | 583 | 0.944 | **0.972** | -0.027 [-0.043, -0.013] |
+| GLM-5.3-Flash (FP8, vLLM) | macro (5 types) | 13,144 | 0.754 | **0.915** | -0.160 [-0.169, -0.153] |
+| MiniCPM-V 4.7 35B-A3B | CurbRamp | 2,025 | 0.793 | **0.953** | -0.160 [-0.180, -0.143] |
+| MiniCPM-V 4.7 35B-A3B | NoCurbRamp | 3,356 | 0.652 | **0.920** | -0.268 [-0.286, -0.247] |
+| MiniCPM-V 4.7 35B-A3B | Obstacle | 4,078 | 0.580 | **0.873** | -0.293 [-0.312, -0.275] |
+| MiniCPM-V 4.7 35B-A3B | SurfaceProblem | 3,102 | 0.743 | **0.855** | -0.113 [-0.129, -0.095] |
+| MiniCPM-V 4.7 35B-A3B | Crosswalk | 583 | 0.941 | **0.972** | -0.031 [-0.047, -0.015] |
+| MiniCPM-V 4.7 35B-A3B | macro (5 types) | 13,144 | 0.742 | **0.915** | -0.173 [-0.181, -0.165] |
+| Molmo2-8B | CurbRamp | 2,025 | 0.732 | **0.953** | -0.222 [-0.247, -0.199] |
+| Molmo2-8B | NoCurbRamp | 3,356 | 0.560 | **0.920** | -0.359 [-0.381, -0.338] |
+| Molmo2-8B | Obstacle | 4,078 | 0.513 | **0.873** | -0.360 [-0.381, -0.341] |
+| Molmo2-8B | SurfaceProblem | 3,102 | 0.728 | **0.855** | -0.127 [-0.147, -0.108] |
+| Molmo2-8B | Crosswalk | 583 | 0.935 | **0.972** | -0.037 [-0.056, -0.021] |
+| Molmo2-8B | macro (5 types) | 13,144 | 0.694 | **0.915** | -0.221 [-0.230, -0.212] |
+| Muse Glimmer 30B | CurbRamp | 2,025 | 0.802 | **0.953** | -0.151 [-0.170, -0.134] |
+| Muse Glimmer 30B | NoCurbRamp | 3,356 | 0.605 | **0.920** | -0.315 [-0.335, -0.295] |
+| Muse Glimmer 30B | Obstacle | 4,078 | 0.568 | **0.873** | -0.305 [-0.325, -0.287] |
+| Muse Glimmer 30B | SurfaceProblem | 3,102 | 0.746 | **0.855** | -0.110 [-0.127, -0.091] |
+| Muse Glimmer 30B | Crosswalk | 583 | 0.891 | **0.972** | -0.081 [-0.106, -0.058] |
+| Muse Glimmer 30B | macro (5 types) | 13,144 | 0.722 | **0.915** | -0.192 [-0.202, -0.184] |
+| Nemotron 3.5 Super VL 120B-A12B | CurbRamp | 2,025 | 0.797 | **0.953** | -0.156 [-0.176, -0.139] |
+| Nemotron 3.5 Super VL 120B-A12B | NoCurbRamp | 3,356 | 0.650 | **0.920** | -0.270 [-0.290, -0.248] |
+| Nemotron 3.5 Super VL 120B-A12B | Obstacle | 4,078 | 0.553 | **0.873** | -0.320 [-0.340, -0.301] |
+| Nemotron 3.5 Super VL 120B-A12B | SurfaceProblem | 3,102 | 0.748 | **0.855** | -0.107 [-0.125, -0.089] |
+| Nemotron 3.5 Super VL 120B-A12B | Crosswalk | 583 | 0.942 | **0.972** | -0.029 [-0.046, -0.015] |
+| Nemotron 3.5 Super VL 120B-A12B | macro (5 types) | 13,144 | 0.738 | **0.915** | -0.177 [-0.185, -0.169] |
+| Phi-4-reasoning-vision-15B | CurbRamp | 2,025 | 0.709 | **0.953** | -0.245 [-0.268, -0.223] |
+| Phi-4-reasoning-vision-15B | NoCurbRamp | 3,356 | 0.569 | **0.920** | -0.351 [-0.372, -0.329] |
+| Phi-4-reasoning-vision-15B | Obstacle | 4,078 | 0.566 | **0.873** | -0.307 [-0.327, -0.287] |
+| Phi-4-reasoning-vision-15B | SurfaceProblem | 3,102 | 0.721 | **0.855** | -0.134 [-0.152, -0.115] |
+| Phi-4-reasoning-vision-15B | Crosswalk | 583 | 0.934 | **0.972** | -0.037 [-0.055, -0.021] |
+| Phi-4-reasoning-vision-15B | macro (5 types) | 13,144 | 0.700 | **0.915** | -0.215 [-0.224, -0.206] |
+| Previous production (DINOv2-L, 2025-08) | CurbRamp | 2,025 | 0.942 | **0.953** | -0.012 [-0.019, -0.004] |
+| Previous production (DINOv2-L, 2025-08) | NoCurbRamp | 3,356 | **0.925** | 0.920 | 0.005 [-0.005, 0.014] |
+| Previous production (DINOv2-L, 2025-08) | Obstacle | 4,078 | 0.814 | **0.873** | -0.059 [-0.072, -0.046] |
+| Previous production (DINOv2-L, 2025-08) | SurfaceProblem | 3,102 | 0.846 | **0.855** | -0.009 [-0.020, 0.003] |
+| Previous production (DINOv2-L, 2025-08) | Crosswalk | 583 | 0.970 | **0.972** | -0.002 [-0.014, 0.011] |
+| Previous production (DINOv2-L, 2025-08) | macro (5 types) | 13,144 | 0.899 | **0.915** | -0.015 [-0.020, -0.011] |
+| Qwen3.8-27B | CurbRamp | 2,025 | 0.779 | **0.953** | -0.175 [-0.195, -0.155] |
+| Qwen3.8-27B | NoCurbRamp | 3,356 | 0.619 | **0.920** | -0.301 [-0.322, -0.281] |
+| Qwen3.8-27B | Obstacle | 4,078 | 0.589 | **0.873** | -0.284 [-0.305, -0.266] |
+| Qwen3.8-27B | SurfaceProblem | 3,102 | 0.746 | **0.855** | -0.109 [-0.127, -0.092] |
+| Qwen3.8-27B | Crosswalk | 583 | 0.948 | **0.972** | -0.024 [-0.041, -0.010] |
+| Qwen3.8-27B | macro (5 types) | 13,144 | 0.736 | **0.915** | -0.179 [-0.187, -0.171] |
+| Qwen3-VL-2B (4-bit, Mac) | CurbRamp | 271 | 0.530 | **0.958** | -0.428 [-0.501, -0.351] |
+| Qwen3-VL-2B (4-bit, Mac) | NoCurbRamp | 100 | 0.546 | **0.930** | -0.384 [-0.513, -0.258] |
+| Qwen3-VL-2B (4-bit, Mac) | Obstacle | 100 | 0.486 | **0.894** | -0.409 [-0.538, -0.284] |
+| Qwen3-VL-2B (4-bit, Mac) | SurfaceProblem | 100 | 0.618 | **0.777** | -0.160 [-0.283, -0.033] |
+| Qwen3-VL-2B (4-bit, Mac) | Crosswalk | 100 | 0.924 | **0.973** | -0.048 [-0.101, -0.003] |
+| Qwen3-VL-2B (4-bit, Mac) | macro (5 types) | 671 | 0.621 | **0.906** | -0.286 [-0.334, -0.236] |
+| Qwen3-VL-32B | CurbRamp | 2,025 | 0.785 | **0.953** | -0.168 [-0.189, -0.150] |
+| Qwen3-VL-32B | NoCurbRamp | 3,356 | 0.645 | **0.920** | -0.275 [-0.294, -0.255] |
+| Qwen3-VL-32B | Obstacle | 4,078 | 0.613 | **0.873** | -0.260 [-0.279, -0.242] |
+| Qwen3-VL-32B | SurfaceProblem | 3,102 | 0.752 | **0.855** | -0.103 [-0.119, -0.086] |
+| Qwen3-VL-32B | Crosswalk | 583 | 0.946 | **0.972** | -0.026 [-0.042, -0.011] |
+| Qwen3-VL-32B | macro (5 types) | 13,144 | 0.748 | **0.915** | -0.166 [-0.174, -0.159] |
+| Qwen3-VL-8B | CurbRamp | 2,025 | 0.737 | **0.953** | -0.216 [-0.239, -0.195] |
+| Qwen3-VL-8B | NoCurbRamp | 3,356 | 0.540 | **0.920** | -0.380 [-0.401, -0.359] |
+| Qwen3-VL-8B | Obstacle | 4,078 | 0.515 | **0.873** | -0.358 [-0.379, -0.340] |
+| Qwen3-VL-8B | SurfaceProblem | 3,102 | 0.692 | **0.855** | -0.163 [-0.182, -0.143] |
+| Qwen3-VL-8B | Crosswalk | 583 | 0.912 | **0.972** | -0.060 [-0.081, -0.040] |
+| Qwen3-VL-8B | macro (5 types) | 13,144 | 0.679 | **0.915** | -0.235 [-0.246, -0.227] |
+| Qwen3-VL-8B (4-bit, Mac) | CurbRamp | 100 | 0.761 | **0.952** | -0.191 [-0.295, -0.090] |
+| Qwen3-VL-8B (4-bit, Mac) | NoCurbRamp | 100 | 0.457 | **0.930** | -0.472 [-0.582, -0.360] |
+| Qwen3-VL-8B (4-bit, Mac) | Obstacle | 100 | 0.515 | **0.894** | -0.380 [-0.510, -0.257] |
+| Qwen3-VL-8B (4-bit, Mac) | SurfaceProblem | 100 | 0.656 | **0.777** | -0.122 [-0.241, 0.000] |
+| Qwen3-VL-8B (4-bit, Mac) | Crosswalk | 100 | 0.895 | **0.973** | -0.078 [-0.144, -0.021] |
+| Qwen3-VL-8B (4-bit, Mac) | macro (5 types) | 500 | 0.657 | **0.905** | -0.248 [-0.298, -0.201] |
 
 <!-- END GENERATED: paired -->
 
 ## Per deployment
 
 Mean within-type AUC per deployment (all five types, types with ≥ 10 rows and both classes), for round 3,
-production and the best VLM with full coverage. Public deployments with ≥ 30 crops are named; the two
+the 2025-08 models and the best VLM with full coverage, the best of the three per row in bold. Public deployments with ≥ 30 crops are named; the two
 private held-out deployments are lettered as in [`retrain-2026-10.md`](retrain-2026-10.md); every other private
 deployment is pooled into one row. The crops are the whole held-out split, the round-3 `test` + `test_heldout` rows,
 which is wider than the board's *held-out* column (`test_heldout` only).
 
 <!-- BEGIN GENERATED: per_deployment (analysis/vlm_scoreboard.py) -->
 
-| deployment | split | n | Round 3 (DINOv2-L, 2026-10) | Production (DINOv2-L, 2025-08) | Gemma 4 31B, 8-shot |
+| deployment | split | n | Round 3 (DINOv2-L, 2026-10) | Previous production (DINOv2-L, 2025-08) | Gemma 4 31B, 8-shot |
 |---|---|---|---|---|---|
-| amsterdam | test | 317 | 0.882 | 0.947 | 0.676 |
-| burnaby | test | 93 | 0.921 | 0.835 | 0.841 |
-| cdmx | test | 183 | 0.711 | 0.771 | 0.546 |
-| chicago-il | test | 1,529 | 0.910 | 0.907 | 0.774 |
-| columbus-oh | test | 228 | 0.828 | 0.790 | 0.685 |
-| knox-oh | test | 33 | 0.762 | 0.667 | 1.000 |
-| mendota-il | test | 297 | 0.948 | 0.972 | 0.929 |
-| newberg-or | test | 208 | 0.916 | 0.916 | 0.834 |
-| oradell-nj | test | 163 | 0.874 | 0.923 | 0.835 |
-| other (5 private deployments) | test | 2,028 | 0.922 | 0.888 | 0.780 |
-| paterson-nj | test | 35 | 0.689 | 0.780 | 0.521 |
-| pittsburgh-pa | test | 216 | 0.831 | 0.828 | 0.681 |
-| seattle-wa | test | 2,630 | 0.918 | 0.931 | 0.841 |
-| spgg | test | 337 | 0.762 | 0.755 | 0.681 |
-| st-louis-mo | test | 156 | 0.827 | 0.914 | 0.537 |
-| teaneck-nj | test | 214 | 0.940 | 0.956 | 0.848 |
-| vancouver-wa | test | 36 | 0.961 | 0.945 | 0.727 |
-| walla-walla-wa | test | 134 | 0.933 | 0.789 | 0.801 |
-| private city A (outside the US) | held-out | 1,803 | 0.757 | 0.763 | 0.701 |
-| private city B (US) | held-out | 1,741 | 0.882 | 0.856 | 0.751 |
-| tucson-az | held-out | 542 | 0.843 | 0.800 | 0.699 |
+| amsterdam | test | 317 | 0.882 | **0.947** | 0.676 |
+| burnaby | test | 93 | **0.921** | 0.835 | 0.841 |
+| cdmx | test | 183 | 0.711 | **0.771** | 0.546 |
+| chicago-il | test | 1,529 | **0.910** | 0.907 | 0.774 |
+| columbus-oh | test | 228 | **0.828** | 0.790 | 0.685 |
+| knox-oh | test | 33 | 0.762 | 0.667 | **1.000** |
+| mendota-il | test | 297 | 0.948 | **0.972** | 0.929 |
+| newberg-or | test | 208 | **0.916** | **0.916** | 0.834 |
+| oradell-nj | test | 163 | 0.874 | **0.923** | 0.835 |
+| other (5 private deployments) | test | 2,028 | **0.922** | 0.888 | 0.780 |
+| paterson-nj | test | 35 | 0.689 | **0.780** | 0.521 |
+| pittsburgh-pa | test | 216 | **0.831** | 0.828 | 0.681 |
+| seattle-wa | test | 2,630 | 0.918 | **0.931** | 0.841 |
+| spgg | test | 337 | **0.762** | 0.755 | 0.681 |
+| st-louis-mo | test | 156 | 0.827 | **0.914** | 0.537 |
+| teaneck-nj | test | 214 | 0.940 | **0.956** | 0.848 |
+| vancouver-wa | test | 36 | **0.961** | 0.945 | 0.727 |
+| walla-walla-wa | test | 134 | **0.933** | 0.789 | 0.801 |
+| private city A (outside the US) | held-out | 1,803 | 0.757 | **0.763** | 0.701 |
+| private city B (US) | held-out | 1,741 | **0.882** | 0.856 | 0.751 |
+| tucson-az | held-out | 542 | **0.843** | 0.800 | 0.699 |
 
 <!-- END GENERATED: per_deployment -->
 
@@ -308,8 +333,9 @@ Every full leg, scored within label type × severity and label type × tag, so t
 badly shows up even when its type-level AUC looks fine, and thin training slices point at where more data would
 help. A crop with several tags counts once in each; `(none)` is an untagged crop, or one with no severity. Crops are
 test + held-out pooled, as on the board. Each table row gives the slice's crops, its incorrect share, the share
-held by its largest deployment (unnamed) and its round-3 training crops, then, for round 3, production and the best
-full-coverage VLM, the pooled AUC with a 95% label-bootstrap interval and the within-city AUC. The CSVs add the AUC
+held by its largest deployment (unnamed) and its round-3 training crops, then, for round 3, the 2025-08 models and
+the best full-coverage VLM, the pooled AUC with a 95% label-bootstrap interval and the within-city AUC (the best
+of each per row in bold). The CSVs add the AUC
 per split for every full leg; the heatmaps show the pooled AUC of every full leg. Every tag with at least 30 crops
 of its type has a row, and an AUC is blank below 30 crops or 10 of a class. Slice names follow
 `analysis/slices.py` ([#67](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/67)), which reports test
@@ -318,19 +344,19 @@ pooled ones.
 
 **Read the largest-deployment and within-city columns before a pooled cell.** A slice drawn mostly from a few
 deployments with different incorrect shares can score near chance pooled while ranking well inside each deployment
-(the city–class confound), or the reverse. Obstacle parked scooter/motorcycle is the clearest case: production is
+(the city–class confound), or the reverse. Obstacle parked scooter/motorcycle is the clearest case: the 2025-08 models are
 near chance pooled but above it on test deployments and within city (one deployment). Within-city AUC has its own
 limit: for Obstacle parked bike, round 3's within-city value rests almost entirely on one held-out deployment with
 three correct crops, so it says little either way.
 
 What the slices show at this build (the numbers are in the tables, which regenerate):
 
-- **Round 3 is ahead of every VLM in every scoreable severity slice**, pooled. Production is behind it on Obstacle, close
-  to it elsewhere, and slightly ahead in a few CurbRamp, NoCurbRamp and Crosswalk slices. Crosswalk severity 3 (almost all incorrect) and Crosswalk with no severity are too
+- **Round 3 is ahead of every VLM in every scoreable severity slice**, pooled. The 2025-08 models are behind it on
+  Obstacle, close to it elsewhere, and slightly ahead in a few CurbRamp, NoCurbRamp and Crosswalk slices. Crosswalk severity 3 (almost all incorrect) and Crosswalk with no severity are too
   thin to score.
 - **The VLMs' weakest severity slices are Obstacle severities 1 and 2**, and NoCurbRamp severity 2 and no severity.
 - **Round 3's weakest tags are rare or transfer badly to new deployments.** Obstacle stairs is at or below chance
-  for round 3 and production alike (intervals include 0.5; few crops, almost all from held-out deployments, 35
+  for round 3 and the 2025-08 models alike (intervals include 0.5; few crops, almost all from held-out deployments, 35
   training crops). SurfaceProblem brick/cobblestone,
   sand/gravel and utility panel are strong on test deployments but fall on held-out ones, and the first two stay
   low within city; for most SurfaceProblem tags (cracks is the exception), held-out AUC trails test AUC.
@@ -345,26 +371,26 @@ What the slices show at this build (the numbers are in the tables, which regener
 
 <!-- BEGIN GENERATED: by_severity (analysis/vlm_scoreboard.py) -->
 
-| type | severity | crops | incorrect | largest deployment | round-3 train | Round 3 (DINOv2-L, 2026-10) AUC [95% CI] | within-city | Production (DINOv2-L, 2025-08) AUC [95% CI] | within-city | Gemma 4 31B, 8-shot AUC [95% CI] | within-city |
+| type | severity | crops | incorrect | largest deployment | round-3 train | round 3 AUC [95% CI] | within-city | 2025-08 models AUC [95% CI] | within-city | Gemma 4 31B, 8-shot AUC [95% CI] | within-city |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| CurbRamp | 1 | 1,524 | 39% | 19% | 5,083 | 0.955 [0.946, 0.966] | 0.923 | 0.941 [0.928, 0.953] | 0.904 | 0.868 [0.849, 0.886] | 0.865 |
-| CurbRamp | 2 | 251 | 59% | 16% | 837 | 0.930 [0.892, 0.963] | 0.928 | 0.918 [0.880, 0.950] | 0.907 | 0.854 [0.803, 0.897] | 0.837 |
-| CurbRamp | 3 | 125 | 67% | 24% | 551 | 0.912 [0.836, 0.968] | 0.876 | 0.944 [0.889, 0.980] | 0.931 | 0.764 [0.667, 0.848] | 0.806 |
-| CurbRamp | (none) | 125 | 56% | 29% | 454 | 0.966 [0.930, 0.995] | 0.931 | 0.975 [0.953, 0.993] | 0.932 | 0.932 [0.887, 0.969] | 0.849 |
-| NoCurbRamp | 1 | 489 | 75% | 24% | 1,839 | 0.859 [0.816, 0.897] | 0.861 | 0.884 [0.843, 0.919] | 0.850 | 0.711 [0.656, 0.765] | 0.737 |
-| NoCurbRamp | 2 | 901 | 47% | 40% | 3,595 | 0.898 [0.877, 0.917] | 0.889 | 0.915 [0.898, 0.932] | 0.922 | 0.750 [0.717, 0.782] | 0.787 |
-| NoCurbRamp | 3 | 1,809 | 36% | 27% | 6,074 | 0.934 [0.921, 0.946] | 0.890 | 0.928 [0.916, 0.939] | 0.903 | 0.739 [0.714, 0.763] | 0.738 |
-| NoCurbRamp | (none) | 157 | 69% | 38% | 691 | 0.919 [0.871, 0.957] | 0.861 | 0.922 [0.873, 0.961] | 0.918 | 0.669 [0.562, 0.769] | 0.786 |
-| Obstacle | 1 | 1,685 | 77% | 42% | 3,142 | 0.849 [0.824, 0.873] | 0.804 | 0.801 [0.774, 0.827] | 0.778 | 0.526 [0.495, 0.558] | 0.551 |
-| Obstacle | 2 | 976 | 41% | 22% | 2,844 | 0.855 [0.831, 0.878] | 0.838 | 0.797 [0.770, 0.822] | 0.812 | 0.575 [0.540, 0.612] | 0.620 |
-| Obstacle | 3 | 1,224 | 29% | 19% | 3,899 | 0.874 [0.854, 0.894] | 0.833 | 0.815 [0.791, 0.839] | 0.797 | 0.683 [0.646, 0.715] | 0.686 |
-| Obstacle | (none) | 193 | 68% | 26% | 669 | 0.869 [0.808, 0.922] | 0.854 | 0.817 [0.746, 0.881] | 0.816 | 0.685 [0.605, 0.761] | 0.683 |
-| SurfaceProblem | 1 | 1,681 | 51% | 17% | 5,050 | 0.847 [0.827, 0.866] | 0.767 | 0.841 [0.821, 0.859] | 0.778 | 0.757 [0.732, 0.778] | 0.697 |
-| SurfaceProblem | 2 | 821 | 42% | 20% | 2,959 | 0.847 [0.820, 0.876] | 0.843 | 0.846 [0.819, 0.872] | 0.838 | 0.779 [0.747, 0.809] | 0.777 |
-| SurfaceProblem | 3 | 452 | 42% | 21% | 1,833 | 0.888 [0.855, 0.919] | 0.831 | 0.869 [0.834, 0.899] | 0.835 | 0.786 [0.741, 0.827] | 0.772 |
-| SurfaceProblem | (none) | 148 | 61% | 22% | 658 | 0.840 [0.770, 0.899] | 0.913 | 0.808 [0.729, 0.871] | 0.823 | 0.808 [0.731, 0.873] | 0.902 |
-| Crosswalk | 1 | 356 | 20% | 35% | 1,394 | 0.943 [0.905, 0.975] | 0.910 | 0.941 [0.908, 0.971] | 0.926 | 0.876 [0.824, 0.924] | 0.900 |
-| Crosswalk | 2 | 96 | 84% | 45% | 187 | 0.970 [0.932, 1.000] | 1.000 | 0.979 [0.951, 0.999] | 1.000 | 0.957 [0.918, 0.988] | 0.981 |
+| CurbRamp | 1 | 1,524 | 39% | 19% | 5,083 | **0.955 [0.946, 0.966]** | **0.923** | 0.941 [0.928, 0.953] | 0.904 | 0.868 [0.849, 0.886] | 0.865 |
+| CurbRamp | 2 | 251 | 59% | 16% | 837 | **0.930 [0.892, 0.963]** | **0.928** | 0.918 [0.880, 0.950] | 0.907 | 0.854 [0.803, 0.897] | 0.837 |
+| CurbRamp | 3 | 125 | 67% | 24% | 551 | 0.912 [0.836, 0.968] | 0.876 | **0.944 [0.889, 0.980]** | **0.931** | 0.764 [0.667, 0.848] | 0.806 |
+| CurbRamp | (none) | 125 | 56% | 29% | 454 | 0.966 [0.930, 0.995] | 0.931 | **0.975 [0.953, 0.993]** | **0.932** | 0.932 [0.887, 0.969] | 0.849 |
+| NoCurbRamp | 1 | 489 | 75% | 24% | 1,839 | 0.859 [0.816, 0.897] | **0.861** | **0.884 [0.843, 0.919]** | 0.850 | 0.711 [0.656, 0.765] | 0.737 |
+| NoCurbRamp | 2 | 901 | 47% | 40% | 3,595 | 0.898 [0.877, 0.917] | 0.889 | **0.915 [0.898, 0.932]** | **0.922** | 0.750 [0.717, 0.782] | 0.787 |
+| NoCurbRamp | 3 | 1,809 | 36% | 27% | 6,074 | **0.934 [0.921, 0.946]** | 0.890 | 0.928 [0.916, 0.939] | **0.903** | 0.739 [0.714, 0.763] | 0.738 |
+| NoCurbRamp | (none) | 157 | 69% | 38% | 691 | 0.919 [0.871, 0.957] | 0.861 | **0.922 [0.873, 0.961]** | **0.918** | 0.669 [0.562, 0.769] | 0.786 |
+| Obstacle | 1 | 1,685 | 77% | 42% | 3,142 | **0.849 [0.824, 0.873]** | **0.804** | 0.801 [0.774, 0.827] | 0.778 | 0.526 [0.495, 0.558] | 0.551 |
+| Obstacle | 2 | 976 | 41% | 22% | 2,844 | **0.855 [0.831, 0.878]** | **0.838** | 0.797 [0.770, 0.822] | 0.812 | 0.575 [0.540, 0.612] | 0.620 |
+| Obstacle | 3 | 1,224 | 29% | 19% | 3,899 | **0.874 [0.854, 0.894]** | **0.833** | 0.815 [0.791, 0.839] | 0.797 | 0.683 [0.646, 0.715] | 0.686 |
+| Obstacle | (none) | 193 | 68% | 26% | 669 | **0.869 [0.808, 0.922]** | **0.854** | 0.817 [0.746, 0.881] | 0.816 | 0.685 [0.605, 0.761] | 0.683 |
+| SurfaceProblem | 1 | 1,681 | 51% | 17% | 5,050 | **0.847 [0.827, 0.866]** | 0.767 | 0.841 [0.821, 0.859] | **0.778** | 0.757 [0.732, 0.778] | 0.697 |
+| SurfaceProblem | 2 | 821 | 42% | 20% | 2,959 | **0.847 [0.820, 0.876]** | **0.843** | 0.846 [0.819, 0.872] | 0.838 | 0.779 [0.747, 0.809] | 0.777 |
+| SurfaceProblem | 3 | 452 | 42% | 21% | 1,833 | **0.888 [0.855, 0.919]** | 0.831 | 0.869 [0.834, 0.899] | **0.835** | 0.786 [0.741, 0.827] | 0.772 |
+| SurfaceProblem | (none) | 148 | 61% | 22% | 658 | **0.840 [0.770, 0.899]** | **0.913** | 0.808 [0.729, 0.871] | 0.823 | 0.808 [0.731, 0.873] | 0.902 |
+| Crosswalk | 1 | 356 | 20% | 35% | 1,394 | **0.943 [0.905, 0.975]** | 0.910 | 0.941 [0.908, 0.971] | **0.926** | 0.876 [0.824, 0.924] | 0.900 |
+| Crosswalk | 2 | 96 | 84% | 45% | 187 | 0.970 [0.932, 1.000] | **1.000** | **0.979 [0.951, 0.999]** | **1.000** | 0.957 [0.918, 0.988] | 0.981 |
 | Crosswalk | 3 | 96 | 95% | 19% | 369 | — | — | — | — | — | — |
 | Crosswalk | (none) | 35 | 77% | 20% | 139 | — | — | — | — | — | — |
 
@@ -376,52 +402,52 @@ What the slices show at this build (the numbers are in the tables, which regener
 
 <!-- BEGIN GENERATED: by_tag (analysis/vlm_scoreboard.py) -->
 
-| type | tag | crops | incorrect | largest deployment | round-3 train | Round 3 (DINOv2-L, 2026-10) AUC [95% CI] | within-city | Production (DINOv2-L, 2025-08) AUC [95% CI] | within-city | Gemma 4 31B, 8-shot AUC [95% CI] | within-city |
+| type | tag | crops | incorrect | largest deployment | round-3 train | round 3 AUC [95% CI] | within-city | 2025-08 models AUC [95% CI] | within-city | Gemma 4 31B, 8-shot AUC [95% CI] | within-city |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| CurbRamp | missing tactile warning | 444 | 43% | 16% | 1,482 | 0.916 [0.888, 0.942] | 0.895 | 0.899 [0.871, 0.924] | 0.865 | 0.772 [0.729, 0.813] | 0.774 |
-| CurbRamp | points into traffic | 229 | 38% | 19% | 770 | 0.974 [0.944, 0.994] | 0.957 | 0.952 [0.914, 0.979] | 0.914 | 0.888 [0.841, 0.927] | 0.868 |
-| CurbRamp | not level with street | 151 | 71% | 17% | 513 | 0.909 [0.850, 0.963] | 0.923 | 0.904 [0.848, 0.952] | 0.872 | 0.692 [0.598, 0.776] | 0.795 |
-| CurbRamp | narrow | 113 | 56% | 19% | 451 | 0.922 [0.862, 0.969] | 0.927 | 0.918 [0.866, 0.964] | 0.886 | 0.783 [0.700, 0.863] | 0.886 |
-| CurbRamp | surface problem | 99 | 51% | 22% | 351 | 0.876 [0.798, 0.943] | 0.879 | 0.910 [0.848, 0.957] | 0.899 | 0.836 [0.749, 0.904] | 0.794 |
-| CurbRamp | not enough landing space | 91 | 35% | 19% | 348 | 0.955 [0.907, 0.993] | 1.000 | 0.964 [0.924, 0.993] | 0.900 | 0.887 [0.817, 0.945] | 0.950 |
-| CurbRamp | steep | 55 | 78% | 25% | 226 | 0.899 [0.756, 0.992] | — | 0.876 [0.764, 0.969] | — | 0.839 [0.688, 0.954] | — |
-| CurbRamp | (none) | 1,191 | 41% | 20% | 3,933 | 0.962 [0.951, 0.972] | 0.936 | 0.946 [0.933, 0.960] | 0.913 | 0.892 [0.872, 0.910] | 0.887 |
-| NoCurbRamp | no alternate route | 1,380 | 28% | 31% | 4,670 | 0.930 [0.911, 0.945] | 0.901 | 0.931 [0.916, 0.944] | 0.914 | 0.762 [0.733, 0.789] | 0.800 |
-| NoCurbRamp | alternate route present | 687 | 62% | 26% | 2,300 | 0.872 [0.844, 0.899] | 0.810 | 0.881 [0.852, 0.907] | 0.859 | 0.703 [0.665, 0.740] | 0.721 |
-| NoCurbRamp | unclear if needed | 254 | 70% | 22% | 860 | 0.836 [0.774, 0.887] | 0.843 | 0.846 [0.791, 0.899] | 0.840 | 0.667 [0.594, 0.741] | 0.665 |
-| NoCurbRamp | (none) | 1,104 | 55% | 31% | 4,631 | 0.932 [0.917, 0.947] | 0.917 | 0.937 [0.923, 0.950] | 0.930 | 0.748 [0.717, 0.776] | 0.764 |
-| Obstacle | pole | 907 | 63% | 24% | 2,087 | 0.889 [0.867, 0.912] | 0.864 | 0.841 [0.815, 0.866] | 0.825 | 0.487 [0.444, 0.525] | 0.504 |
-| Obstacle | trash/recycling can | 522 | 30% | 39% | 1,046 | 0.933 [0.910, 0.955] | 0.927 | 0.938 [0.915, 0.959] | 0.904 | 0.620 [0.563, 0.673] | 0.700 |
-| Obstacle | parked car | 450 | 48% | 27% | 1,293 | 0.820 [0.780, 0.856] | 0.810 | 0.790 [0.751, 0.829] | 0.807 | 0.658 [0.604, 0.705] | 0.721 |
-| Obstacle | vegetation | 386 | 43% | 23% | 1,136 | 0.833 [0.791, 0.871] | 0.811 | 0.792 [0.749, 0.833] | 0.805 | 0.580 [0.518, 0.637] | 0.665 |
-| Obstacle | narrow | 279 | 30% | 22% | 908 | 0.849 [0.802, 0.890] | 0.808 | 0.835 [0.783, 0.880] | 0.729 | 0.600 [0.525, 0.675] | 0.600 |
-| Obstacle | tree | 263 | 64% | 17% | 854 | 0.887 [0.841, 0.928] | 0.829 | 0.818 [0.765, 0.871] | 0.835 | 0.562 [0.495, 0.634] | 0.613 |
-| Obstacle | sign | 238 | 70% | 44% | 486 | 0.883 [0.835, 0.930] | 0.803 | 0.900 [0.853, 0.944] | 0.779 | 0.605 [0.525, 0.684] | 0.666 |
-| Obstacle | construction | 158 | 26% | 19% | 416 | 0.793 [0.713, 0.863] | 0.751 | 0.840 [0.765, 0.905] | 0.765 | 0.520 [0.411, 0.627] | 0.503 |
-| Obstacle | parked scooter/motorcycle | 142 | 44% | 56% | 527 | 0.866 [0.808, 0.924] | 0.921 | 0.518 [0.421, 0.611] | 0.724 | 0.490 [0.398, 0.589] | 0.541 |
+| CurbRamp | missing tactile warning | 444 | 43% | 16% | 1,482 | **0.916 [0.888, 0.942]** | **0.895** | 0.899 [0.871, 0.924] | 0.865 | 0.772 [0.729, 0.813] | 0.774 |
+| CurbRamp | points into traffic | 229 | 38% | 19% | 770 | **0.974 [0.944, 0.994]** | **0.957** | 0.952 [0.914, 0.979] | 0.914 | 0.888 [0.841, 0.927] | 0.868 |
+| CurbRamp | not level with street | 151 | 71% | 17% | 513 | **0.909 [0.850, 0.963]** | **0.923** | 0.904 [0.848, 0.952] | 0.872 | 0.692 [0.598, 0.776] | 0.795 |
+| CurbRamp | narrow | 113 | 56% | 19% | 451 | **0.922 [0.862, 0.969]** | **0.927** | 0.918 [0.866, 0.964] | 0.886 | 0.783 [0.700, 0.863] | 0.886 |
+| CurbRamp | surface problem | 99 | 51% | 22% | 351 | 0.876 [0.798, 0.943] | 0.879 | **0.910 [0.848, 0.957]** | **0.899** | 0.836 [0.749, 0.904] | 0.794 |
+| CurbRamp | not enough landing space | 91 | 35% | 19% | 348 | 0.955 [0.907, 0.993] | **1.000** | **0.964 [0.924, 0.993]** | 0.900 | 0.887 [0.817, 0.945] | 0.950 |
+| CurbRamp | steep | 55 | 78% | 25% | 226 | **0.899 [0.756, 0.992]** | — | 0.876 [0.764, 0.969] | — | 0.839 [0.688, 0.954] | — |
+| CurbRamp | (none) | 1,191 | 41% | 20% | 3,933 | **0.962 [0.951, 0.972]** | **0.936** | 0.946 [0.933, 0.960] | 0.913 | 0.892 [0.872, 0.910] | 0.887 |
+| NoCurbRamp | no alternate route | 1,380 | 28% | 31% | 4,670 | 0.930 [0.911, 0.945] | 0.901 | **0.931 [0.916, 0.944]** | **0.914** | 0.762 [0.733, 0.789] | 0.800 |
+| NoCurbRamp | alternate route present | 687 | 62% | 26% | 2,300 | 0.872 [0.844, 0.899] | 0.810 | **0.881 [0.852, 0.907]** | **0.859** | 0.703 [0.665, 0.740] | 0.721 |
+| NoCurbRamp | unclear if needed | 254 | 70% | 22% | 860 | 0.836 [0.774, 0.887] | **0.843** | **0.846 [0.791, 0.899]** | 0.840 | 0.667 [0.594, 0.741] | 0.665 |
+| NoCurbRamp | (none) | 1,104 | 55% | 31% | 4,631 | 0.932 [0.917, 0.947] | 0.917 | **0.937 [0.923, 0.950]** | **0.930** | 0.748 [0.717, 0.776] | 0.764 |
+| Obstacle | pole | 907 | 63% | 24% | 2,087 | **0.889 [0.867, 0.912]** | **0.864** | 0.841 [0.815, 0.866] | 0.825 | 0.487 [0.444, 0.525] | 0.504 |
+| Obstacle | trash/recycling can | 522 | 30% | 39% | 1,046 | 0.933 [0.910, 0.955] | **0.927** | **0.938 [0.915, 0.959]** | 0.904 | 0.620 [0.563, 0.673] | 0.700 |
+| Obstacle | parked car | 450 | 48% | 27% | 1,293 | **0.820 [0.780, 0.856]** | **0.810** | 0.790 [0.751, 0.829] | 0.807 | 0.658 [0.604, 0.705] | 0.721 |
+| Obstacle | vegetation | 386 | 43% | 23% | 1,136 | **0.833 [0.791, 0.871]** | **0.811** | 0.792 [0.749, 0.833] | 0.805 | 0.580 [0.518, 0.637] | 0.665 |
+| Obstacle | narrow | 279 | 30% | 22% | 908 | **0.849 [0.802, 0.890]** | **0.808** | 0.835 [0.783, 0.880] | 0.729 | 0.600 [0.525, 0.675] | 0.600 |
+| Obstacle | tree | 263 | 64% | 17% | 854 | **0.887 [0.841, 0.928]** | 0.829 | 0.818 [0.765, 0.871] | **0.835** | 0.562 [0.495, 0.634] | 0.613 |
+| Obstacle | sign | 238 | 70% | 44% | 486 | 0.883 [0.835, 0.930] | **0.803** | **0.900 [0.853, 0.944]** | 0.779 | 0.605 [0.525, 0.684] | 0.666 |
+| Obstacle | construction | 158 | 26% | 19% | 416 | 0.793 [0.713, 0.863] | 0.751 | **0.840 [0.765, 0.905]** | **0.765** | 0.520 [0.411, 0.627] | 0.503 |
+| Obstacle | parked scooter/motorcycle | 142 | 44% | 56% | 527 | **0.866 [0.808, 0.924]** | **0.921** | 0.518 [0.421, 0.611] | 0.724 | 0.490 [0.398, 0.589] | 0.541 |
 | Obstacle | outdoor dining area | 128 | 95% | 100% | 1 | — | — | — | — | — | — |
-| Obstacle | fire hydrant | 119 | 66% | 29% | 354 | 0.867 [0.781, 0.940] | 0.844 | 0.874 [0.800, 0.936] | 0.946 | 0.628 [0.526, 0.727] | 0.754 |
-| Obstacle | parked bike | 101 | 72% | 59% | 191 | 0.873 [0.760, 0.967] | 0.531 | 0.892 [0.802, 0.962] | 0.696 | 0.643 [0.532, 0.757] | 0.396 |
-| Obstacle | litter/garbage | 82 | 35% | 34% | 235 | 0.873 [0.785, 0.943] | 0.887 | 0.828 [0.727, 0.915] | 0.660 | 0.660 [0.522, 0.788] | 0.713 |
-| Obstacle | stairs | 57 | 47% | 68% | 35 | 0.437 [0.293, 0.585] | 0.416 | 0.374 [0.233, 0.517] | 0.253 | 0.582 [0.425, 0.726] | 0.560 |
+| Obstacle | fire hydrant | 119 | 66% | 29% | 354 | 0.867 [0.781, 0.940] | 0.844 | **0.874 [0.800, 0.936]** | **0.946** | 0.628 [0.526, 0.727] | 0.754 |
+| Obstacle | parked bike | 101 | 72% | 59% | 191 | 0.873 [0.760, 0.967] | 0.531 | **0.892 [0.802, 0.962]** | **0.696** | 0.643 [0.532, 0.757] | 0.396 |
+| Obstacle | litter/garbage | 82 | 35% | 34% | 235 | **0.873 [0.785, 0.943]** | **0.887** | 0.828 [0.727, 0.915] | 0.660 | 0.660 [0.522, 0.788] | 0.713 |
+| Obstacle | stairs | 57 | 47% | 68% | 35 | 0.437 [0.293, 0.585] | 0.416 | 0.374 [0.233, 0.517] | 0.253 | **0.582 [0.425, 0.726]** | **0.560** |
 | Obstacle | utility cabinet | 45 | 7% | 100% | 223 | — | — | — | — | — | — |
-| Obstacle | mailbox | 36 | 53% | 42% | 36 | 0.870 [0.737, 0.981] | 0.577 | 0.765 [0.597, 0.913] | 0.500 | 0.409 [0.223, 0.598] | 0.385 |
-| Obstacle | garage entrance | 30 | 57% | 47% | 95 | 0.769 [0.579, 0.923] | 0.792 | 0.679 [0.484, 0.873] | 0.812 | 0.642 [0.412, 0.837] | 0.833 |
-| Obstacle | (none) | 512 | 58% | 23% | 1,933 | 0.883 [0.855, 0.910] | 0.869 | 0.780 [0.737, 0.819] | 0.775 | 0.690 [0.646, 0.738] | 0.721 |
-| SurfaceProblem | cracks | 775 | 24% | 23% | 3,031 | 0.891 [0.862, 0.918] | 0.879 | 0.881 [0.854, 0.908] | 0.882 | 0.711 [0.667, 0.754] | 0.715 |
-| SurfaceProblem | grass | 585 | 29% | 28% | 2,636 | 0.874 [0.835, 0.906] | 0.824 | 0.863 [0.829, 0.893] | 0.827 | 0.778 [0.737, 0.817] | 0.720 |
-| SurfaceProblem | bumpy | 500 | 37% | 26% | 1,982 | 0.888 [0.859, 0.916] | 0.888 | 0.869 [0.837, 0.897] | 0.866 | 0.775 [0.733, 0.817] | 0.760 |
-| SurfaceProblem | uneven/slanted | 422 | 32% | 22% | 1,574 | 0.833 [0.793, 0.872] | 0.834 | 0.811 [0.767, 0.855] | 0.852 | 0.734 [0.686, 0.780] | 0.749 |
-| SurfaceProblem | brick/cobblestone | 365 | 66% | 74% | 337 | 0.633 [0.578, 0.692] | 0.577 | 0.683 [0.630, 0.736] | 0.629 | 0.669 [0.614, 0.723] | 0.655 |
-| SurfaceProblem | narrow sidewalk | 365 | 60% | 24% | 1,160 | 0.793 [0.743, 0.839] | 0.778 | 0.792 [0.743, 0.840] | 0.757 | 0.725 [0.670, 0.774] | 0.721 |
-| SurfaceProblem | utility panel | 230 | 57% | 43% | 904 | 0.813 [0.757, 0.869] | 0.911 | 0.830 [0.775, 0.877] | 0.934 | 0.728 [0.664, 0.788] | 0.647 |
-| SurfaceProblem | height difference | 194 | 25% | 18% | 770 | 0.947 [0.908, 0.977] | 0.911 | 0.924 [0.877, 0.966] | 0.873 | 0.790 [0.714, 0.858] | 0.804 |
-| SurfaceProblem | sand/gravel | 145 | 47% | 43% | 284 | 0.748 [0.663, 0.828] | 0.670 | 0.727 [0.642, 0.808] | 0.567 | 0.713 [0.625, 0.797] | 0.737 |
-| SurfaceProblem | very broken | 134 | 28% | 21% | 625 | 0.877 [0.803, 0.941] | 0.881 | 0.886 [0.814, 0.952] | 0.903 | 0.781 [0.684, 0.872] | 0.775 |
-| SurfaceProblem | debris | 43 | 26% | 63% | 66 | 0.852 [0.719, 0.967] | 0.750 | 0.821 [0.667, 0.943] | 0.707 | 0.852 [0.724, 0.955] | 0.750 |
-| SurfaceProblem | (none) | 399 | 69% | 29% | 1,490 | 0.888 [0.853, 0.922] | 0.863 | 0.873 [0.835, 0.908] | 0.852 | 0.829 [0.789, 0.870] | 0.854 |
-| Crosswalk | paint fading | 144 | 65% | 35% | 339 | 0.965 [0.933, 0.994] | 0.971 | 0.956 [0.922, 0.985] | 0.964 | 0.888 [0.821, 0.947] | 0.950 |
-| Crosswalk | (none) | 379 | 37% | 32% | 1,557 | 0.975 [0.956, 0.991] | 0.953 | 0.967 [0.944, 0.985] | 0.950 | 0.947 [0.919, 0.971] | 0.951 |
+| Obstacle | mailbox | 36 | 53% | 42% | 36 | **0.870 [0.737, 0.981]** | **0.577** | 0.765 [0.597, 0.913] | 0.500 | 0.409 [0.223, 0.598] | 0.385 |
+| Obstacle | garage entrance | 30 | 57% | 47% | 95 | **0.769 [0.579, 0.923]** | 0.792 | 0.679 [0.484, 0.873] | 0.812 | 0.642 [0.412, 0.837] | **0.833** |
+| Obstacle | (none) | 512 | 58% | 23% | 1,933 | **0.883 [0.855, 0.910]** | **0.869** | 0.780 [0.737, 0.819] | 0.775 | 0.690 [0.646, 0.738] | 0.721 |
+| SurfaceProblem | cracks | 775 | 24% | 23% | 3,031 | **0.891 [0.862, 0.918]** | 0.879 | 0.881 [0.854, 0.908] | **0.882** | 0.711 [0.667, 0.754] | 0.715 |
+| SurfaceProblem | grass | 585 | 29% | 28% | 2,636 | **0.874 [0.835, 0.906]** | 0.824 | 0.863 [0.829, 0.893] | **0.827** | 0.778 [0.737, 0.817] | 0.720 |
+| SurfaceProblem | bumpy | 500 | 37% | 26% | 1,982 | **0.888 [0.859, 0.916]** | **0.888** | 0.869 [0.837, 0.897] | 0.866 | 0.775 [0.733, 0.817] | 0.760 |
+| SurfaceProblem | uneven/slanted | 422 | 32% | 22% | 1,574 | **0.833 [0.793, 0.872]** | 0.834 | 0.811 [0.767, 0.855] | **0.852** | 0.734 [0.686, 0.780] | 0.749 |
+| SurfaceProblem | brick/cobblestone | 365 | 66% | 74% | 337 | 0.633 [0.578, 0.692] | 0.577 | **0.683 [0.630, 0.736]** | 0.629 | 0.669 [0.614, 0.723] | **0.655** |
+| SurfaceProblem | narrow sidewalk | 365 | 60% | 24% | 1,160 | **0.793 [0.743, 0.839]** | **0.778** | 0.792 [0.743, 0.840] | 0.757 | 0.725 [0.670, 0.774] | 0.721 |
+| SurfaceProblem | utility panel | 230 | 57% | 43% | 904 | 0.813 [0.757, 0.869] | 0.911 | **0.830 [0.775, 0.877]** | **0.934** | 0.728 [0.664, 0.788] | 0.647 |
+| SurfaceProblem | height difference | 194 | 25% | 18% | 770 | **0.947 [0.908, 0.977]** | **0.911** | 0.924 [0.877, 0.966] | 0.873 | 0.790 [0.714, 0.858] | 0.804 |
+| SurfaceProblem | sand/gravel | 145 | 47% | 43% | 284 | **0.748 [0.663, 0.828]** | 0.670 | 0.727 [0.642, 0.808] | 0.567 | 0.713 [0.625, 0.797] | **0.737** |
+| SurfaceProblem | very broken | 134 | 28% | 21% | 625 | 0.877 [0.803, 0.941] | 0.881 | **0.886 [0.814, 0.952]** | **0.903** | 0.781 [0.684, 0.872] | 0.775 |
+| SurfaceProblem | debris | 43 | 26% | 63% | 66 | **0.852 [0.719, 0.967]** | **0.750** | 0.821 [0.667, 0.943] | 0.707 | **0.852 [0.724, 0.955]** | **0.750** |
+| SurfaceProblem | (none) | 399 | 69% | 29% | 1,490 | **0.888 [0.853, 0.922]** | **0.863** | 0.873 [0.835, 0.908] | 0.852 | 0.829 [0.789, 0.870] | 0.854 |
+| Crosswalk | paint fading | 144 | 65% | 35% | 339 | **0.965 [0.933, 0.994]** | **0.971** | 0.956 [0.922, 0.985] | 0.964 | 0.888 [0.821, 0.947] | 0.950 |
+| Crosswalk | (none) | 379 | 37% | 32% | 1,557 | **0.975 [0.956, 0.991]** | **0.953** | 0.967 [0.944, 0.985] | 0.950 | 0.947 [0.919, 0.971] | 0.951 |
 
 <!-- END GENERATED: by_tag -->
 
@@ -456,7 +482,7 @@ the median by the GPU count, for 1,000 labels and for a nightly 800-label city.
 | Nemotron 3.5 Super VL 120B-A12B | 2xNVIDIA H200 | 2 | 4 | 13,136 | 0.106 | 0.11 | 0.0588 | 0.047 | full run |
 | Phi-4-reasoning-vision-15B | NVIDIA A40 | 1 | 1 | 50 | 0.833 | 0.836 | 0.231 | 0.185 | batch-1 timing run |
 | Phi-4-reasoning-vision-15B | NVIDIA A40 | 1 | 1 | 13,144 | 0.84 | 0.844 | 0.233 | 0.187 | full run |
-| Production (DINOv2-L, 2025-08) | NVIDIA A40 | 1 | 1 | 13,139 | 0.0499 | 0.0625 | 0.0139 | 0.0111 | full run |
+| Previous production (DINOv2-L, 2025-08) | NVIDIA A40 | 1 | 1 | 13,139 | 0.0499 | 0.0625 | 0.0139 | 0.0111 | full run |
 | Qwen3.8-27B | 2xNVIDIA A40 | 2 | 1 | 50 | 0.527 | 0.555 | 0.293 | 0.234 | batch-1 timing run |
 | Qwen3.8-27B | 2xNVIDIA A40 | 2 | 1 | 13,144 | 0.53 | 0.534 | 0.294 | 0.235 | full run |
 | Qwen3-VL-2B (4-bit, Mac) | Apple M1 Max (MLX) | 1 | 1 | 50 | 0.717 | 0.727 | 0.199 | 0.159 | vlm_baseline timing (#16), idle Mac |
@@ -489,7 +515,7 @@ Crops scored per (model, type) out of the held-out crops of that type, and why a
 | Muse Glimmer 30B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Nemotron 3.5 Super VL 120B-A12B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Phi-4-reasoning-vision-15B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
-| Production (DINOv2-L, 2025-08) | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
+| Previous production (DINOv2-L, 2025-08) | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Qwen3.8-27B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
 | Qwen3-VL-2B (4-bit, Mac) | 271 / 2,025 | 100 / 3,356 | 100 / 4,078 | 100 / 3,102 | 100 / 583 | #16's 500-crop subset; #16's 500-crop subset plus 171 crops of an interrupted run |
 | Qwen3-VL-32B | 2,025 / 2,025 | 3,356 / 3,356 | 4,078 / 4,078 | 3,102 / 3,102 | 583 / 583 |  |
@@ -509,8 +535,9 @@ Crops scored per (model, type) out of the held-out crops of that type, and why a
   the per-type definitions of [`vlm-baseline-2026-10.md`](vlm-baseline-2026-10.md) (`analysis/vlm_baseline.py
   build_prompt`); the transformers and vLLM paths reuse that scorer (the vLLM leg reads the first token's top-20
   log-probs and records the yes/no mass that fell outside them).
-- **Reference rows.** Round 3 is `predictions.csv` of each type's round-3 checkpoint, held-out rows. Production is
-  the five DINOv2-L revisions pinned in `analysis/vlm_baseline.py` (`PRODUCTION`), run on the same crops.
+- **Reference rows.** Round 3 is `predictions.csv` of each type's round-3 checkpoint, held-out rows. Previous
+  production is the five 2025-08 DINOv2-L revisions pinned in `analysis/vlm_baseline.py` (`PRODUCTION`), run on
+  the same crops; they were the deployed validators until round 3 replaced them on 2026-10-27.
 - **Intervals.** 1,000 class-stratified label bootstrap draws per type, seed 20261021; macro intervals average
   the per-type draws. Paired comparisons use the same draws for both legs.
 - **Within-city AUC.** `vlm_baseline.within_city_auc`: per-deployment AUCs weighted by the number of
@@ -524,12 +551,12 @@ Crops scored per (model, type) out of the held-out crops of that type, and why a
 - **The vLLM leg.** GLM-5.3-Flash is the only model served by vLLM (FP8 weights, tensor parallel 4 on four H200s,
   the vllm/vllm-openai 0.32.0 image under Apptainer); it reads the first token's top-20 log-probs, and no crop had
   a yes/no spelling outside them. `docs/vlm-scoreboard/runs.md` is the job log for every klone leg.
-- **Timing.** Per leg, a batch-1 timing run where one was made (not Nemotron, the 8-shot arm or production) and the
+- **Timing.** Per leg, a batch-1 timing run where one was made (not Nemotron, the 8-shot arm or the 2025-08 models) and the
   full run on a named GPU, median and p90 seconds per crop; the vLLM leg's rows are concurrency 1 and 32; the Mac legs are #16's idle-machine batch-1 timings.
 
 ## Caveats
 
-- **Production is optimistic.** The 2025-08 production models were trained on an unrecorded label set that may
+- **Previous production is optimistic.** The 2025-08 models were trained on an unrecorded label set that may
   include some of these held-out labels.
 - **One run per model.** No seeds to average over; the intervals are over labels, not runs.
 - **Prompt wording is not parallel across types** (NoCurbRamp and Crosswalk say when the label is wrong, CurbRamp

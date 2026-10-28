@@ -203,7 +203,7 @@ def test_check_passes_when_current_and_fails_on_drift(board, capsys):
     # the README block: hand-edited -> both modes fail; rebuilt -> current; missing marker -> fails; no file -> skipped
     readme = board["readme"]
     rtext = readme.read_text()
-    assert "**Round 3" in rtext and "Production" in rtext
+    assert "Round 3" in rtext and "Previous production" in rtext
     readme.write_text(rtext.replace("0.", "9.", 1))
     with pytest.raises(SystemExit):
         sb.main(ci + ["--check"])
@@ -575,3 +575,31 @@ def test_old_staging_without_severity_builds_without_slices(tmp_path):
     aggs, *_ = sb.build_aggregates(str(root), set(PUBLIC), n_boot=10)
     assert aggs["by_severity"].empty and aggs["by_tag"].empty
     assert sb.slice_table(aggs["by_tag"], aggs["board"], "tag") == "(no slices staged)"
+
+
+def test_bold_marks_the_best_cell_and_the_board_is_two_tables(board):
+    assert sb.bold_best(["0.915 [0.910, 0.919]", "0.915", "0.899", "—"]) == \
+        ["**0.915 [0.910, 0.919]**", "**0.915**", "0.899", "—"]          # ties at the shown precision are all bold
+    assert sb.bold_best(["0.05 (A40, 1)", "0.5 (H200, 16)"], higher=False) == ["**0.05 (A40, 1)**", "0.5 (H200, 16)"]
+    assert sb.bold_best(["0.9", "—"]) == ["0.9", "—"]                      # nothing to beat
+    aggs = sb.read_aggregates(str(board["out"]))
+    b = aggs["board"]
+    full = b[b.full.astype(bool)]
+    top = full.sort_values("macro_auc", ascending=False).iloc[0]
+    # README block: no class column, the model name plain, the best macro-AUC and per-type AUCs bold
+    block = sb.render_readme_block(aggs)
+    assert "| class |" not in block
+    row = next(l for l in block.splitlines() if l.startswith(f"| {top.display} |"))
+    cells = [c.strip() for c in row.split("|")[1:-1]]
+    assert cells[1].startswith("**") and cells[1].endswith("**")
+    assert sum(c.startswith("**") for c in cells[2:7]) >= 1
+    assert not cells[-2].startswith("**") and not cells[-1].startswith("**")     # Δ and crops are never bold
+    # the doc's board: two tables, bold among the full rows only, partial rows after the rule in both
+    doc = sb.render_blocks(aggs)["board"]
+    assert doc.count("\n|---|") == 2 and doc.count("partial coverage, not ranked") == 2
+    for l in doc.splitlines():
+        if "(4-bit, Mac)" in l:
+            assert "**" not in l
+    first = doc.split("\n\n")[0]
+    top_row = next(l for l in first.splitlines() if f"| {top.display} |" in l)
+    assert "**" in top_row
