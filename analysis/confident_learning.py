@@ -1,0 +1,662 @@
+"""Wrong crowd targets by out-of-fold contradiction (confident learning), and the stricter-target rules, as split
+variants of one label type's ``split.csv``.
+
+Why
+---
+The crowd margin rule that sets a training target (``incorrect`` at net Disagree > 1, ``correct`` at net Agree > 2,
+``data_generation.eligible_labels``) matches an expert only about three times in four on contested labels
+(https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/66), so the models learn the crowd's Disagree habits.
+This module makes variants of a split that change only its **train** rows (val, test and test_heldout stay byte for
+byte the same, so every variant is scored on the same rows as the round-3 baseline):
+
+- ``folds``: k panorama-grouped folds over the train rows, one split file per fold with that fold held out
+  (``split = fold_out``), so k models trained on them give every train row an **out-of-fold** score from a model
+  that never saw it (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/76).
+- ``predict``: score one fold's held-out train rows with the model trained on the other folds.
+- ``flag``: the confident joint of Northcutt, Jiang and Chuang (JAIR 2021, doi:10.1613/jair.1.12125) over the
+  out-of-fold scores, in NumPy: per class ``c`` a threshold ``t_c`` = the mean out-of-fold ``p(c)`` over rows whose
+  target is ``c``; a row counts for class ``j`` when ``p(j) >= t_j`` (the largest such ``p`` if both classes
+  qualify); the off-diagonal cells of that 2x2 count are the estimated number of wrong targets per (given, likely)
+  pair, and the rows flagged are, per cell, the ``count`` rows with that given target and the highest ``p(likely)``
+  (cleanlab's ``prune_by_noise_rate`` filter). Writes ``noisy_targets.csv`` and two more variants: ``cl-drop``
+  (flagged train rows left out) and ``cl-flip`` (their target flipped).
+- ``rules``: the stricter crowd rules of https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/75 applied
+  to the train rows: ``symmetric`` (``incorrect`` needs net Disagree > 2, as ``correct`` needs net Agree > 2) and
+  ``unanimous3`` (at least three votes, none the other way; Unsure votes are not counted in the manifest, so they
+  are ignored). Rows that fail the rule are kept in the file as ``split = train_dropped`` so the counts are
+  auditable; ``fine_tune_classifier.py`` trains on ``split == train`` only. Expert-sourced targets
+  (``class_source == expert``) are not touched by either rule.
+- ``report``: one table per label type from the ``evaluate.py`` outputs of the baseline (``metrics.json``) and of
+  each variant (``metrics_<variant>.json``), plus the train-row accounting of every variant, and, when a private
+  expert-rated file is given, how the dropped or flagged rows agree with the expert (aggregates only; the per-row
+  file is never written into the repo).
+
+Every variant split is written by the same writer, keeps the manifest columns as strings exactly as read, and is
+deterministic (sorted by ``label_uid``; the fold shuffle is seeded). Crop paths are left relative, so a variant
+file under ``<label_type>/cl/<variant>/`` shares the crops with the production split (``fine_tune_classifier.py
+--split`` resolves them under ``<data-dir>/<label_type>/``).
+
+Usage (paths as on the October 2026 retrain, ``DATA=retrain-2026-10``)::
+
+    python analysis/confident_learning.py folds --split $DATA/CurbRamp/split.csv --rawlabels rawlabels \\
+        --folds 5 --seed 42 --merge-radius-m 3 --out $DATA/CurbRamp/cl
+    python analysis/confident_learning.py rules --split $DATA/CurbRamp/split.csv --rule symmetric \\
+        --out $DATA/CurbRamp/cl
+    # on a GPU, once fold k's model has trained with --split $DATA/CurbRamp/cl/fold<k>/split.csv:
+    python analysis/confident_learning.py predict --split $DATA/CurbRamp/split.csv --folds-file \\
+        $DATA/CurbRamp/cl/folds.csv --fold 0 --run-dir $SCRATCH/CurbRamp/fold0 --out $DATA/CurbRamp/cl/oof_fold0.csv
+    python analysis/confident_learning.py flag --split $DATA/CurbRamp/split.csv \\
+        --oof $DATA/CurbRamp/cl/oof_fold*.csv --out $DATA/CurbRamp/cl
+    python analysis/confident_learning.py report --data-dir $DATA --label-types CurbRamp,Crosswalk \\
+        --variants symmetric,unanimous3,cl-drop,cl-flip --out docs/confident-learning-2026-10
+"""
+import argparse
+import glob
+import hashlib
+import json
+import os
+import sys
+
+import numpy as np
+import pandas as pd
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import split_data  # noqa: E402
+
+CLASSES = ("correct", "incorrect")
+FOLD_OUT = "fold_out"          # the split value of a fold's held-out train rows in that fold's split file
+TRAIN_DROPPED = "train_dropped"  # train rows a rule or the flag left out (kept in the file, never trained on)
+RULES = ("symmetric", "unanimous3")
+CL_VARIANTS = ("cl-drop", "cl-flip")
+DEFAULT_VARIANTS = RULES + CL_VARIANTS
+OOF_COLUMNS = ["label_uid", "fold", "label_class", "p_correct", "p_incorrect"]
+NOISY_COLUMNS = ["label_uid", "city", "label_class", "class_source", "author", "human_agree", "human_disagree",
+                 "fold", "p_incorrect", "likely_class", "flagged"]
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Split files
+# ---------------------------------------------------------------------------------------------------------------------
+
+def read_split(path):
+    """``split.csv`` as strings, exactly as written (every cell is written back unchanged)."""
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    for col in ("label_uid", "pano_id", "city", "label_class", "split", "crop_path"):
+        if col not in df.columns:
+            raise ValueError(f"{path} has no {col} column")
+    if not df["label_uid"].is_unique:
+        raise ValueError(f"{path}: label_uid is not unique")
+    return df
+
+
+def write_split(df, path):
+    """Write a variant split: sorted by ``label_uid``, LF line ends, via a temporary file."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    out = df.sort_values("label_uid", kind="mergesort").reset_index(drop=True)
+    tmp = path + ".tmp"
+    out.to_csv(tmp, index=False, lineterminator="\n")
+    os.replace(tmp, path)
+    return path
+
+
+def check_eval_rows_unchanged(base, variant):
+    """Raise unless every non-train row of ``base`` is in ``variant`` unchanged (the whole point of a variant)."""
+    keep = ~base["split"].isin(["train"])
+    a = base[keep].sort_values("label_uid").reset_index(drop=True)
+    b = variant[variant["label_uid"].isin(a["label_uid"])].sort_values("label_uid").reset_index(drop=True)
+    if len(a) != len(b) or not a.equals(b[a.columns]):
+        raise AssertionError("a variant must leave every val/test/test_heldout row exactly as it was")
+
+
+def sha256_of(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# folds
+# ---------------------------------------------------------------------------------------------------------------------
+
+def train_groups(df, rawlabels=None, merge_radius_m=0.0):
+    """Group key per row of ``df`` (train rows), the way ``split_data.assign_splits`` groups: by ``pano_id`` (a row
+    without one is its own group), then merged within ``merge_radius_m`` metres using the coordinates
+    ``split_data.load_coordinates`` finds (the manifest's own columns or the rawLabels cache)."""
+    pano = df["pano_id"].astype(str)
+    group = pano.where(pano.str.len() > 0, "uid:" + df["label_uid"])
+    if merge_radius_m > 0:
+        coords = split_data.load_coordinates(df.assign(status="ok"), rawlabels)
+        xy = coords.loc[df["label_uid"]]
+        group, _ = split_data.merge_nearby_groups(group, xy["latitude"].to_numpy(), xy["longitude"].to_numpy(),
+                                                  merge_radius_m)
+    return pd.Series(np.asarray(group), index=df.index)
+
+
+def assign_folds(train, group, k, seed):
+    """Fold (0..k-1) per train row: groups never straddle folds; within each class-ratio bin
+    (``round(4 * share_incorrect)``, as the split does) groups are shuffled with the seed and each goes to the fold
+    with the largest deficit against an equal share of that bin's rows. Returns a Series aligned with ``train``.
+
+    >>> t = pd.DataFrame({"label_uid": list("abcdef"), "label_class": ["correct"] * 3 + ["incorrect"] * 3})
+    >>> g = pd.Series(["p1", "p1", "p2", "p3", "p3", "p4"], index=t.index)
+    >>> f = assign_folds(t, g, 2, 0)
+    >>> (f[g == "p1"].nunique(), f[g == "p3"].nunique(), sorted(int(x) for x in f.unique()))
+    (1, 1, [0, 1])
+    """
+    if k < 2:
+        raise ValueError("--folds must be at least 2")
+    g = pd.DataFrame({"group": group.to_numpy(), "incorrect": (train["label_class"] == "incorrect").astype(int)})
+    groups = g.groupby("group", sort=True).agg(n=("incorrect", "size"), inc=("incorrect", "sum"))
+    groups["bin"] = np.rint(split_data.N_BINS * groups["inc"] / groups["n"]).astype(int)
+    rng = np.random.default_rng(seed)
+    assignment = {}
+    for _, members in groups.groupby("bin", sort=True):
+        order = members.index.to_numpy()[rng.permutation(len(members))]
+        total = members["n"].sum()
+        filled = np.zeros(k, dtype=int)
+        for gid in order:
+            fold = int(np.argmax(total / k - filled))  # the first fold on ties, so the run is deterministic
+            assignment[gid] = fold
+            filled[fold] += members.at[gid, "n"]
+    return pd.Series([assignment[x] for x in g["group"]], index=train.index, dtype=int)
+
+
+def fold_split(base, folds, k):
+    """The split file for fold ``k``: train rows of that fold become ``fold_out``; everything else is unchanged."""
+    df = base.copy()
+    out = df["label_uid"].map(folds).eq(k) & (df["split"] == "train")
+    df.loc[out, "split"] = FOLD_OUT
+    return df
+
+
+def cmd_folds(args):
+    base = read_split(args.split)
+    train = base[base["split"] == "train"]
+    if train.empty:
+        raise SystemExit(f"{args.split} has no train rows")
+    group = train_groups(train, args.rawlabels, args.merge_radius_m)
+    fold = assign_folds(train, group, args.folds, args.seed)
+    folds = pd.DataFrame({"label_uid": train["label_uid"].to_numpy(), "fold": fold.to_numpy()})
+    folds = folds.sort_values("label_uid", kind="mergesort").reset_index(drop=True)
+    os.makedirs(args.out, exist_ok=True)
+    path = os.path.join(args.out, "folds.csv")
+    folds.to_csv(path, index=False, lineterminator="\n")
+    by_fold = train.assign(fold=fold.to_numpy()).groupby("fold")["label_class"].value_counts().unstack(fill_value=0)
+    # No panorama (or merged group) may straddle folds.
+    straddle = train.assign(fold=fold.to_numpy(), group=group.to_numpy()).groupby("group")["fold"].nunique()
+    assert (straddle == 1).all(), "a group straddles folds"
+    mapping = folds.set_index("label_uid")["fold"]
+    written = []
+    for k in range(args.folds):
+        variant = fold_split(base, mapping, k)
+        check_eval_rows_unchanged(base, variant)
+        written.append(write_split(variant, os.path.join(args.out, f"fold{k}", "split.csv")))
+    meta = {"source_split": os.path.abspath(args.split), "source_sha256": sha256_of(args.split),
+            "folds": args.folds, "seed": args.seed, "merge_radius_m": args.merge_radius_m,
+            "rows_per_fold": {int(k): {c: int(v) for c, v in row.items()} for k, row in by_fold.iterrows()},
+            "groups": int(group.nunique()), "folds_csv_sha256": sha256_of(path)}
+    with open(os.path.join(args.out, "folds.json"), "w") as f:
+        json.dump(meta, f, indent=2)
+        f.write("\n")
+    print(f"Wrote {path} ({len(folds)} train rows, {meta['groups']} groups, {args.folds} folds) and "
+          f"{len(written)} fold split files under {args.out}/")
+    print(by_fold.to_string())
+    return 0
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# predict (GPU)
+# ---------------------------------------------------------------------------------------------------------------------
+
+def cmd_predict(args):
+    import evaluate  # torch/transformers only when a model is loaded
+
+    base = read_split(args.split)
+    folds = pd.read_csv(args.folds_file, dtype={"label_uid": str})
+    uids = set(folds.loc[folds["fold"] == args.fold, "label_uid"])
+    rows = base[(base["split"] == "train") & base["label_uid"].isin(uids)].copy()
+    if rows.empty:
+        raise SystemExit(f"no train rows in fold {args.fold}")
+    base_dir = os.path.dirname(os.path.abspath(args.split))
+    rows["crop_path"] = [p if os.path.isabs(p) else os.path.join(base_dir, p) for p in rows["crop_path"]]
+    checkpoint = args.checkpoint or evaluate.best_checkpoint_in(args.run_dir)
+    print(f"fold {args.fold}: {len(rows)} rows, checkpoint {checkpoint}")
+    pred = evaluate.run_inference(rows, checkpoint, splits=("train",))
+    out = pd.DataFrame({"label_uid": pred["label_uid"], "fold": args.fold, "label_class": pred["true"],
+                        "p_correct": pred["p_correct"], "p_incorrect": pred["p_incorrect"]}, columns=OOF_COLUMNS)
+    out = out.sort_values("label_uid", kind="mergesort").reset_index(drop=True)
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+    out.to_csv(args.out, index=False, lineterminator="\n")
+    print(f"wrote {args.out} ({len(out)} rows)")
+    return 0
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# flag: the confident joint
+# ---------------------------------------------------------------------------------------------------------------------
+
+def confident_joint(y, p, classes=CLASSES):
+    """``(joint, thresholds)``: the confident joint (a ``len(classes)`` square array, rows = given class, columns =
+    likely class) and the per-class thresholds ``t_c = mean(p[:, c] | y == c)``.
+
+    A row counts for class ``j`` when ``p[i, j] >= t_j``; with several qualifying classes, the one with the largest
+    ``p``; with none, the row is not counted at all.
+
+    >>> y = np.array(["correct", "correct", "correct", "incorrect"])
+    >>> p = np.array([[0.9, 0.1], [0.8, 0.2], [0.2, 0.8], [0.3, 0.7]])
+    >>> joint, t = confident_joint(y, p)
+    >>> joint.tolist(), [round(float(x), 4) for x in t]
+    ([[2, 1], [0, 1]], [0.6333, 0.7])
+    """
+    y = np.asarray(y)
+    p = np.asarray(p, dtype=float)
+    thresholds = np.array([p[y == c, i].mean() if (y == c).any() else np.inf for i, c in enumerate(classes)])
+    qualifies = p >= thresholds[None, :]
+    masked = np.where(qualifies, p, -np.inf)
+    likely = masked.argmax(axis=1)
+    counted = qualifies.any(axis=1)
+    joint = np.zeros((len(classes), len(classes)), dtype=int)
+    given = np.array([classes.index(c) for c in y])
+    for g, l in zip(given[counted], likely[counted]):
+        joint[g, l] += 1
+    return joint, thresholds
+
+
+def flag_rows(y, p, classes=CLASSES):
+    """``(flagged, likely)``: per row, whether it is a label issue and the class it most likely belongs to.
+
+    For every off-diagonal cell ``(given, likely)`` of the confident joint with count ``n``, the ``n`` rows with that
+    given class and the highest ``p[:, likely]`` are flagged (ties broken by row order, so the result is
+    deterministic). ``likely`` is ``classes[argmax p]`` for flagged rows and the given class otherwise.
+
+    >>> y = np.array(["correct", "correct", "correct", "incorrect"])
+    >>> p = np.array([[0.9, 0.1], [0.8, 0.2], [0.2, 0.8], [0.3, 0.7]])
+    >>> f, l = flag_rows(y, p)
+    >>> f.tolist(), l.tolist()
+    ([False, False, True, False], ['correct', 'correct', 'incorrect', 'incorrect'])
+    """
+    y = np.asarray(y)
+    p = np.asarray(p, dtype=float)
+    joint, _ = confident_joint(y, p, classes)
+    flagged = np.zeros(len(y), dtype=bool)
+    likely = y.astype(object).copy()
+    for g, given in enumerate(classes):
+        for l, other in enumerate(classes):
+            if g == l or joint[g, l] == 0:
+                continue
+            idx = np.flatnonzero(y == given)
+            order = idx[np.argsort(-p[idx, l], kind="stable")][: joint[g, l]]
+            flagged[order] = True
+            likely[order] = other
+    return flagged, np.asarray(likely, dtype=object)
+
+
+def cl_variants(base, flagged_uids):
+    """``{"cl-drop": df, "cl-flip": df}``: train rows in ``flagged_uids`` left out (``train_dropped``) or with their
+    ``label_class`` flipped (``class_source`` becomes ``cl_flip``); crop paths are unchanged."""
+    hit = (base["split"] == "train") & base["label_uid"].isin(flagged_uids)
+    drop = base.copy()
+    drop.loc[hit, "split"] = TRAIN_DROPPED
+    flip = base.copy()
+    flip.loc[hit, "label_class"] = flip.loc[hit, "label_class"].map({"correct": "incorrect", "incorrect": "correct"})
+    if "class_source" in flip.columns:
+        flip.loc[hit, "class_source"] = "cl_flip"
+    return {"cl-drop": drop, "cl-flip": flip}
+
+
+def _shares(df, by):
+    """Flagged count and share per value of ``by`` (a DataFrame with ``n``, ``flagged``, ``share``)."""
+    g = df.groupby(by)["flagged"].agg(n="size", flagged="sum")
+    g["share"] = (g["flagged"] / g["n"]).round(4)
+    return g.reset_index()
+
+
+def cmd_flag(args):
+    base = read_split(args.split)
+    paths = sorted(p for pattern in args.oof for p in glob.glob(pattern))
+    if not paths:
+        raise SystemExit(f"no out-of-fold files match {args.oof}")
+    oof = pd.concat([pd.read_csv(p, dtype={"label_uid": str}) for p in paths], ignore_index=True)
+    if not oof["label_uid"].is_unique:
+        raise SystemExit("a label_uid appears in more than one out-of-fold file")
+    train = base[base["split"] == "train"]
+    missing = set(train["label_uid"]) - set(oof["label_uid"])
+    extra = set(oof["label_uid"]) - set(train["label_uid"])
+    if missing or extra:
+        raise SystemExit(f"out-of-fold rows do not match the train rows: {len(missing)} train rows unscored, "
+                         f"{len(extra)} scored rows not in train")
+    df = train.merge(oof[["label_uid", "fold", "p_correct", "p_incorrect"]], on="label_uid", validate="one_to_one")
+    y = df["label_class"].to_numpy()
+    p = df[["p_correct", "p_incorrect"]].to_numpy(dtype=float)
+    joint, thresholds = confident_joint(y, p)
+    flagged, likely = flag_rows(y, p)
+    df["likely_class"] = likely
+    df["flagged"] = flagged.astype(int)
+    df["p_incorrect"] = df["p_incorrect"].astype(float).round(6)
+    for col in ("class_source", "author", "human_agree", "human_disagree"):
+        if col not in df.columns:
+            df[col] = ""
+    os.makedirs(args.out, exist_ok=True)
+    noisy = df[NOISY_COLUMNS].sort_values("label_uid", kind="mergesort").reset_index(drop=True)
+    noisy_path = os.path.join(args.out, "noisy_targets.csv")
+    noisy.to_csv(noisy_path, index=False, lineterminator="\n")
+
+    # Accounting that the report reads: by class, deployment, target source, author, vote margin, hard flag.
+    df["net_disagree"] = pd.to_numeric(df["human_disagree"], errors="coerce").fillna(0).astype(int) \
+        - pd.to_numeric(df["human_agree"], errors="coerce").fillna(0).astype(int)
+    df["margin_bucket"] = np.where(df["label_class"] == "incorrect",
+                                   np.where(df["net_disagree"] <= 2, "net Disagree 2", "net Disagree >= 3"),
+                                   np.where(-df["net_disagree"] <= 3, "net Agree 3", "net Agree >= 4"))
+    df.loc[df["class_source"] == "expert", "margin_bucket"] = "expert"
+    summary = {
+        "source_split": os.path.abspath(args.split), "source_sha256": sha256_of(args.split),
+        "oof_files": [os.path.abspath(p) for p in paths], "n_train": int(len(df)),
+        "thresholds": {c: float(t) for c, t in zip(CLASSES, thresholds)},
+        "confident_joint": {g: {l: int(joint[i, j]) for j, l in enumerate(CLASSES)} for i, g in enumerate(CLASSES)},
+        "flagged": int(flagged.sum()), "flagged_share": float(flagged.mean()),
+        "argmax_disagrees": int((np.argmax(p, axis=1) != np.array([CLASSES.index(c) for c in y])).sum()),
+        "by_class": _shares(df, "label_class").to_dict("records"),
+        "by_city": _shares(df, "city").sort_values("share", ascending=False).to_dict("records"),
+        "by_class_source": _shares(df, "class_source").to_dict("records"),
+        "by_author": _shares(df, "author").to_dict("records"),
+        "by_margin": _shares(df, ["label_class", "margin_bucket"]).to_dict("records"),
+        "by_hard": _shares(df, "hard").to_dict("records") if "hard" in df.columns else [],
+        "noisy_targets_sha256": sha256_of(noisy_path),
+    }
+    variants = cl_variants(base, set(noisy.loc[noisy["flagged"] == 1, "label_uid"]))
+    for name, variant in variants.items():
+        check_eval_rows_unchanged(base, variant)
+        path = write_split(variant, os.path.join(args.out, name, "split.csv"))
+        summary[f"{name}_sha256"] = sha256_of(path)
+    with open(os.path.join(args.out, "flag_summary.json"), "w") as f:
+        json.dump(summary, f, indent=2)
+        f.write("\n")
+    print(f"{len(df)} train rows; thresholds {summary['thresholds']}; confident joint {joint.tolist()}; "
+          f"flagged {int(flagged.sum())} ({flagged.mean():.1%}); argmax disagrees {summary['argmax_disagrees']}")
+    print(pd.DataFrame(summary["by_class"]).to_string(index=False))
+    print(pd.DataFrame(summary["by_margin"]).to_string(index=False))
+    print(f"wrote {noisy_path} and variants {', '.join(variants)} under {args.out}/")
+    return 0
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# rules (issue #75)
+# ---------------------------------------------------------------------------------------------------------------------
+
+def passes_rule(df, rule):
+    """Boolean Series: which rows keep their target under ``rule`` (``symmetric`` or ``unanimous3``). Expert-sourced
+    targets always pass; the rules read the manifest's ``human_agree`` / ``human_disagree`` counts.
+
+    >>> d = pd.DataFrame({"label_class": ["incorrect", "incorrect", "correct", "correct", "incorrect"],
+    ...                   "class_source": ["margin", "margin", "margin", "margin", "expert"],
+    ...                   "human_agree": ["0", "1", "3", "4", "0"], "human_disagree": ["2", "4", "0", "1", "0"]})
+    >>> passes_rule(d, "symmetric").tolist(), passes_rule(d, "unanimous3").tolist()
+    ([False, True, True, True, True], [False, False, True, False, True])
+    """
+    if rule not in RULES:
+        raise ValueError(f"unknown rule {rule!r}; choose from {RULES}")
+    agree = pd.to_numeric(df["human_agree"], errors="coerce").fillna(0).astype(int)
+    disagree = pd.to_numeric(df["human_disagree"], errors="coerce").fillna(0).astype(int)
+    incorrect = df["label_class"] == "incorrect"
+    if rule == "symmetric":
+        ok = np.where(incorrect, disagree - agree > 2, agree - disagree > 2)
+    else:
+        ok = np.where(incorrect, (disagree >= 3) & (agree == 0), (agree >= 3) & (disagree == 0))
+    expert = df["class_source"].eq("expert") if "class_source" in df.columns else pd.Series(False, index=df.index)
+    return pd.Series(ok, index=df.index) | expert
+
+
+def rule_variant(base, rule):
+    """``base`` with the train rows that fail ``rule`` set to ``train_dropped``."""
+    df = base.copy()
+    train = df["split"] == "train"
+    df.loc[train & ~passes_rule(df, rule), "split"] = TRAIN_DROPPED
+    return df
+
+
+def cmd_rules(args):
+    base = read_split(args.split)
+    for col in ("human_agree", "human_disagree"):
+        if col not in base.columns:
+            raise SystemExit(f"{args.split} has no {col} column; the rules need the manifest's vote counts")
+    rules = [r.strip() for r in args.rule.split(",") if r.strip()]
+    for rule in rules:
+        variant = rule_variant(base, rule)
+        check_eval_rows_unchanged(base, variant)
+        path = write_split(variant, os.path.join(args.out, rule, "split.csv"))
+        train = base["split"] == "train"
+        kept = variant["split"] == "train"
+        before = base.loc[train, "label_class"].value_counts()
+        after = variant.loc[kept, "label_class"].value_counts()
+        by_city = (base.loc[train].assign(kept=kept[train].to_numpy())
+                   .groupby(["city", "label_class"])["kept"].agg(n="size", kept="sum").reset_index())
+        meta = {"rule": rule, "source_split": os.path.abspath(args.split), "source_sha256": sha256_of(args.split),
+                "train_before": {c: int(before.get(c, 0)) for c in CLASSES},
+                "train_after": {c: int(after.get(c, 0)) for c in CLASSES},
+                "dropped": int(train.sum() - kept.sum()),
+                "by_city": by_city.to_dict("records"), "split_sha256": sha256_of(path)}
+        with open(os.path.join(args.out, rule, "rule.json"), "w") as f:
+            json.dump(meta, f, indent=2)
+            f.write("\n")
+        print(f"{rule}: train {meta['train_before']} -> {meta['train_after']} ({meta['dropped']} dropped); "
+              f"wrote {path}")
+    return 0
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# report
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _metric(m, split, key):
+    s = m.get(split) or {}
+    if key == "auc":
+        return s.get("auc")
+    if key.startswith("recall_at_precision"):
+        _, cls, level = key.split(":")
+        return ((s.get("recall_at_precision") or {}).get(cls) or {}).get(level, {}).get("recall")
+    return s.get(key)
+
+
+def within_city_auc(m, split):
+    """Median per-city AUC of ``split`` from evaluate.py's ``--per-city`` block, and the number of cities."""
+    cities = (m.get("per_city") or {}).get(split) or {}
+    aucs = [v["auc"] for v in cities.values() if isinstance(v, dict) and v.get("auc") is not None]
+    return (float(np.median(aucs)) if aucs else None), len(aucs)
+
+
+def variant_rows(data_dir, label_type, variants):
+    """Rows of the comparison table for one label type: the baseline and each variant with a metrics file."""
+    rows = []
+    for name in ("baseline", *variants):
+        suffix = "" if name == "baseline" else f"_{name}"
+        path = os.path.join(data_dir, label_type, f"metrics{suffix}.json")
+        if not os.path.exists(path):
+            rows.append({"variant": name, "missing": path})
+            continue
+        with open(path) as f:
+            m = json.load(f)
+        wc_t, n_t = within_city_auc(m, "test")
+        wc_h, n_h = within_city_auc(m, "test_heldout")
+        rows.append({"variant": name, "test_auc": _metric(m, "test", "auc"),
+                     "heldout_auc": _metric(m, "test_heldout", "auc"),
+                     "within_city_test": wc_t, "within_city_heldout": wc_h, "cities_test": n_t, "cities_heldout": n_h,
+                     "hard_auc": _metric(m, "hard", "auc"), "hard_n": (m.get("hard") or {}).get("n"),
+                     "incorrect_recall_p92_test": _metric(m, "test", "recall_at_precision:incorrect:0.92"),
+                     "incorrect_recall_p92_heldout": _metric(m, "test_heldout", "recall_at_precision:incorrect:0.92"),
+                     "correct_recall_p92_test": _metric(m, "test", "recall_at_precision:correct:0.92")})
+    return rows
+
+
+def train_accounting(data_dir, label_type, variants):
+    """Train rows kept / dropped / flipped per variant, from the variant split files under ``<label_type>/cl/``."""
+    base_path = os.path.join(data_dir, label_type, "split.csv")
+    base = read_split(base_path)
+    n_train = int((base["split"] == "train").sum())
+    rows = [{"variant": "baseline", "train": n_train, "dropped": 0, "flipped": 0}]
+    for name in variants:
+        path = os.path.join(data_dir, label_type, "cl", name, "split.csv")
+        if not os.path.exists(path):
+            rows.append({"variant": name, "missing": path})
+            continue
+        v = read_split(path)
+        merged = base[["label_uid", "label_class", "split"]].merge(
+            v[["label_uid", "label_class", "split"]], on="label_uid", suffixes=("", "_v"), validate="one_to_one")
+        was_train = merged["split"] == "train"
+        rows.append({"variant": name, "train": int((merged["split_v"] == "train").sum()),
+                     "dropped": int((was_train & (merged["split_v"] == TRAIN_DROPPED)).sum()),
+                     "flipped": int((was_train & (merged["label_class"] != merged["label_class_v"])).sum())})
+    return rows
+
+
+def expert_agreement(data_dir, label_type, variants, gold):
+    """How the rows a variant dropped or flipped agree with an expert verdict (``gold``: ``label_uid``, ``verdict``
+    in ``correct``/``incorrect``). Returns one record per variant with counts only (no ids), so it can be published:
+    ``n_rated_train`` rated rows among the train rows, ``target_matches_expert`` of those, and for the rows the
+    variant touched, how many the expert overturned (target != verdict), against the untouched rows."""
+    base = read_split(os.path.join(data_dir, label_type, "split.csv"))
+    train = base[base["split"] == "train"][["label_uid", "label_class"]]
+    rated = train.merge(gold[["label_uid", "verdict"]], on="label_uid", validate="one_to_one")
+    rated = rated[rated["verdict"].isin(CLASSES)]
+    out = []
+    for name in variants:
+        path = os.path.join(data_dir, label_type, "cl", name, "split.csv")
+        if not os.path.exists(path) or rated.empty:
+            continue
+        v = read_split(path)[["label_uid", "label_class", "split"]].rename(
+            columns={"label_class": "label_class_v", "split": "split_v"})
+        m = rated.merge(v, on="label_uid", validate="one_to_one")
+        touched = (m["split_v"] == TRAIN_DROPPED) | (m["label_class"] != m["label_class_v"])
+        overturned = m["label_class"] != m["verdict"]
+        out.append({"variant": name, "n_rated_train": int(len(m)),
+                    "target_matches_expert": int((~overturned).sum()),
+                    "touched": int(touched.sum()), "touched_overturned": int((touched & overturned).sum()),
+                    "untouched": int((~touched).sum()), "untouched_overturned": int((~touched & overturned).sum())})
+    return out
+
+
+def _fmt(v):
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return "—"
+    return f"{v:.3f}" if isinstance(v, float) else str(v)
+
+
+def report_markdown(label_type, metric_rows, train_rows, agreement_rows=None):
+    lines = [f"### {label_type}", "",
+             "| variant | train rows | dropped | flipped | test AUC | within-city test | held-out AUC | "
+             "within-city held-out | hard AUC (n) | incorrect R@P0.92 test | incorrect R@P0.92 held-out | "
+             "correct R@P0.92 test |",
+             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    train_by = {r["variant"]: r for r in train_rows}
+    for r in metric_rows:
+        t = train_by.get(r["variant"], {})
+        if "missing" in r:
+            lines.append(f"| {r['variant']} | {_fmt(t.get('train'))} | {_fmt(t.get('dropped'))} | "
+                         f"{_fmt(t.get('flipped'))} | not run | | | | | | | |")
+            continue
+        hard = f"{_fmt(r['hard_auc'])} ({r['hard_n']})" if r.get("hard_n") else "—"
+        lines.append("| " + " | ".join([
+            r["variant"], _fmt(t.get("train")), _fmt(t.get("dropped")), _fmt(t.get("flipped")),
+            _fmt(r["test_auc"]), f"{_fmt(r['within_city_test'])} ({r['cities_test']})",
+            _fmt(r["heldout_auc"]), f"{_fmt(r['within_city_heldout'])} ({r['cities_heldout']})", hard,
+            _fmt(r["incorrect_recall_p92_test"]), _fmt(r["incorrect_recall_p92_heldout"]),
+            _fmt(r["correct_recall_p92_test"])]) + " |")
+    if agreement_rows:
+        lines += ["", "Expert-rated train rows (aggregates; the rated file stays private):", "",
+                  "| variant | rated train rows | target = expert | rows touched | of which expert overturns | "
+                  "rows untouched | of which expert overturns |", "|---|---:|---:|---:|---:|---:|---:|"]
+        for a in agreement_rows:
+            lines.append(f"| {a['variant']} | {a['n_rated_train']} | {a['target_matches_expert']} | {a['touched']} | "
+                         f"{a['touched_overturned']} | {a['untouched']} | {a['untouched_overturned']} |")
+    return "\n".join(lines) + "\n"
+
+
+def cmd_report(args):
+    label_types = [t.strip() for t in args.label_types.split(",") if t.strip()]
+    variants = [v.strip() for v in args.variants.split(",") if v.strip()]
+    gold = None
+    if args.gold:
+        gold = pd.read_csv(args.gold, dtype=str)
+        if not {"label_uid", "verdict"} <= set(gold.columns):
+            raise SystemExit("--gold needs label_uid and verdict columns")
+    os.makedirs(args.out, exist_ok=True)
+    tables, everything = [], {}
+    for lt in label_types:
+        metric_rows = variant_rows(args.data_dir, lt, variants)
+        train_rows = train_accounting(args.data_dir, lt, variants)
+        agreement = expert_agreement(args.data_dir, lt, variants, gold) if gold is not None else None
+        everything[lt] = {"metrics": metric_rows, "train": train_rows, "expert": agreement}
+        tables.append(report_markdown(lt, metric_rows, train_rows, agreement))
+        flag_path = os.path.join(args.data_dir, lt, "cl", "flag_summary.json")
+        if os.path.exists(flag_path):
+            with open(flag_path) as f:
+                everything[lt]["flag_summary"] = json.load(f)
+    text = "\n".join(tables)
+    with open(os.path.join(args.out, "variants.md"), "w") as f:
+        f.write(text)
+    with open(os.path.join(args.out, "variants.json"), "w") as f:
+        json.dump(everything, f, indent=2, default=float)
+        f.write("\n")
+    print(text)
+    return 0
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------------------------------------------------
+
+def build_parser():
+    p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    sub = p.add_subparsers(dest="command", required=True)
+
+    f = sub.add_parser("folds", help="k panorama-grouped folds over the train rows, one split file per fold")
+    f.add_argument("--split", required=True, help="the production split.csv (split_data.py output)")
+    f.add_argument("--rawlabels", default=None, help="cached rawLabels exports for coordinates (--merge-radius-m)")
+    f.add_argument("--folds", type=int, default=5)
+    f.add_argument("--seed", type=int, default=42)
+    f.add_argument("--merge-radius-m", type=float, default=3.0,
+                   help="merge groups within this distance, as split_data.py did (default 3; 0 = panoramas only)")
+    f.add_argument("--out", required=True, help="directory for folds.csv, folds.json and fold<k>/split.csv")
+    f.set_defaults(func=cmd_folds)
+
+    r = sub.add_parser("predict", help="out-of-fold scores for one fold's held-out train rows (GPU)")
+    r.add_argument("--split", required=True)
+    r.add_argument("--folds-file", required=True, help="folds.csv from the folds command")
+    r.add_argument("--fold", type=int, required=True)
+    r.add_argument("--run-dir", default=None, help="fine_tune_classifier.py --output-dir of this fold's model")
+    r.add_argument("--checkpoint", default=None, help="a checkpoint directory instead of --run-dir's best")
+    r.add_argument("--out", required=True, help="oof_fold<k>.csv")
+    r.set_defaults(func=cmd_predict)
+
+    g = sub.add_parser("flag", help="confident joint over the out-of-fold scores; noisy_targets.csv and cl-* variants")
+    g.add_argument("--split", required=True)
+    g.add_argument("--oof", nargs="+", required=True, help="oof_fold*.csv files or globs, one row per train row")
+    g.add_argument("--out", required=True, help="the cl/ directory: noisy_targets.csv, flag_summary.json, cl-*/")
+    g.set_defaults(func=cmd_flag)
+
+    s = sub.add_parser("rules", help="stricter crowd rules (issue #75) as split variants")
+    s.add_argument("--split", required=True)
+    s.add_argument("--rule", default=",".join(RULES), help=f"comma list from {RULES} (default all)")
+    s.add_argument("--out", required=True, help="the cl/ directory: <rule>/split.csv and <rule>/rule.json")
+    s.set_defaults(func=cmd_rules)
+
+    t = sub.add_parser("report", help="comparison tables from evaluate.py outputs")
+    t.add_argument("--data-dir", required=True)
+    t.add_argument("--label-types", default="CurbRamp,Crosswalk,NoCurbRamp,Obstacle,SurfaceProblem")
+    t.add_argument("--variants", default=",".join(DEFAULT_VARIANTS))
+    t.add_argument("--gold", default=None,
+                   help="PRIVATE csv with label_uid (city:label_id) and verdict (correct/incorrect) from an expert "
+                        "re-label; only counts are written")
+    t.add_argument("--out", required=True, help="directory for variants.md and variants.json")
+    t.set_defaults(func=cmd_report)
+    return p
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    if getattr(args, "run_dir", None) is None and getattr(args, "checkpoint", None) is None \
+            and args.command == "predict":
+        raise SystemExit("predict needs --run-dir or --checkpoint")
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
