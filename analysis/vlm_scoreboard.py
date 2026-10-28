@@ -867,7 +867,10 @@ def render_readme_block(aggs):
     if b.empty:
         return "(no legs staged)"
     full = b[b.full.astype(bool)]
-    keep = [r for r in full.itertuples() if r.model_class == PURPOSE]
+    purpose = full[full.model_class == PURPOSE]
+    purpose = purpose.assign(_ref=(purpose.leg != REFERENCE)).sort_values(["_ref", "macro_auc", "leg"],
+                                                                         ascending=[True, False, True])
+    keep = list(purpose.drop(columns="_ref").itertuples())    # round 3 first, then production
     vlms = full[full.model_class != PURPOSE].sort_values(["macro_auc", "leg"], ascending=[False, True])
     keep += list(vlms.head(README_VLMS).itertuples())
     head = ["model", "class", "macro-AUC [95% CI]"] + list(LABEL_TYPES) + ["Δ vs round 3 [95% CI]", "crops"]
@@ -1476,9 +1479,13 @@ def consistency_problems(aggs, tol=2e-4):
 
 
 def readme_problems(readme, committed):
-    """The README's generated block against the committed board; [] when current or when there is no README."""
-    if not os.path.exists(readme):
+    """The README's generated block against the committed board; [] when current. ``readme`` empty or None means
+    no README is checked (``--readme ""``); a path that does not exist is a problem, since the repo README must carry
+    the block."""
+    if not readme:
         return []
+    if not os.path.exists(readme):
+        return [f"{os.path.basename(readme)}: missing (pass --readme '' to check no README)"]
     text = open(readme, encoding="utf-8").read()
     try:
         if splice(text, {README_BLOCK: render_readme_block(committed)}) != text:
@@ -1490,7 +1497,13 @@ def readme_problems(readme, committed):
 
 def run_build(args):
     out_dir, doc = args.out_dir, args.doc
+    readme = args.readme or None
     staged = os.path.isdir(os.path.join(args.scores_dir, "splits"))
+    if readme and os.path.exists(readme) and not args.check:
+        marker = BEGIN.format(name=README_BLOCK)
+        if marker not in open(readme, encoding="utf-8").read():
+            raise SystemExit(f"{readme} has no generated block {README_BLOCK!r}: add the markers before building "
+                             f"(or pass --readme '' to leave the README alone)")
     if args.check:
         problems = []
         committed = read_aggregates(out_dir)
@@ -1516,9 +1529,9 @@ def run_build(args):
             except ValueError as e:
                 problems.append(f"{os.path.basename(doc)}: {e}")
             problems += [f"{os.path.basename(doc)}: prose is stale -- {p}" for p in prose_problems(text, committed)]
-        problems += readme_problems(args.readme, committed)
+        problems += readme_problems(readme, committed)
         problems += consistency_problems(committed)
-        problems += privacy_problems(out_dir, doc, public, args.readme)
+        problems += privacy_problems(out_dir, doc, public, readme)
         if problems:
             print("\n".join(problems))
             raise SystemExit(1)
@@ -1541,19 +1554,19 @@ def run_build(args):
             print(f"prose needs an edit: {p}")
     else:
         print(f"{doc} not found: write the prose with the generated-block markers first")
-    if os.path.exists(args.readme):
-        text = open(args.readme, encoding="utf-8").read()
+    if readme and os.path.exists(readme):
+        text = open(readme, encoding="utf-8").read()
         new = splice(text, {README_BLOCK: render_readme_block(committed)})
         if new != text:
-            with open(args.readme, "w", encoding="utf-8") as f:
+            with open(readme, "w", encoding="utf-8") as f:
                 f.write(new)
-            print(f"updated {args.readme}")
+            print(f"updated {readme}")
     if not args.no_figures:
         render_figures(committed, legs, out_dir)
     with open(os.path.join(out_dir, "provenance.json"), "w") as f:
         json.dump(provenance(args.scores_dir, public, src, args), f, indent=1, sort_keys=True)
         f.write("\n")
-    problems = privacy_problems(out_dir, doc, public, args.readme)
+    problems = privacy_problems(out_dir, doc, public, readme)
     if problems:
         print("\n".join(problems))
         raise SystemExit("privacy check failed: fix before committing")
@@ -1573,7 +1586,8 @@ def main(argv=None):
     b.add_argument("--out-dir", default=OUT_DIR)
     b.add_argument("--doc", default=DOC)
     b.add_argument("--readme", default=README,
-                   help="file carrying the readme_scoreboard block (spliced on build, checked on --check)")
+                   help="file carrying the readme_scoreboard block (spliced on build, checked on --check); "
+                        "'' for none")
     b.add_argument("--public-cities", default=None,
                    help="saved /v3/api/cities response or one city_id per line (default: the live API; --check "
                         "falls back to the list in the committed provenance.json when offline)")

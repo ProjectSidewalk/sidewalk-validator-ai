@@ -230,7 +230,7 @@ Preconditions, all verifiable before anything is built:
 2. [ ] `publish_to_hf.py --label_type <T> --out <root>` for each type; read the generated cards; fill
        `card_overrides.json` (no `TODO:` left). `--push` for the dry run, then `--push --yes` (Jon). Record the five
        model-repo commit shas. The old revisions remain addressable; nothing is rewritten.
-3. [ ] README "Published artifacts" table and the retrain report point at the new revisions.
+3. [ ] README "Published models and datasets" table and the retrain report point at the new revisions.
 
 **sidewalk-ai-api** (#19 on top of #17; #19 already carries the opencv pin, the WebP round trip, the float64 crop
 half-size, `API_VERSION` 1.2.0, the smoke test and the placeholder guard)

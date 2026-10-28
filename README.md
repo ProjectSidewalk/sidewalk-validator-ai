@@ -24,19 +24,23 @@ tilt-corrected, depth-sized crop from the panorama, and fine-tunes a
 [DINOv2](https://arxiv.org/abs/2304.07193)-Large classifier to predict **correct** or **incorrect**. A calibration
 step maps model confidence to measured precision. [sidewalk-ai-api](https://github.com/ProjectSidewalk/sidewalk-ai-api)
 serves the models, and [SidewalkWebpage](https://github.com/ProjectSidewalk/SidewalkWebpage) calls it nightly for up
-to 800 labels per city; a verdict whose estimated accuracy is at least 0.92 is cast as a vote by the `SidewalkAI`
-account, anything below is recorded as Unsure.
+to 800 labels per city with `{label_type, panorama_id, x, y, city}` and the camera pose; a verdict whose estimated
+accuracy is at least 0.92 (`ai-validation-min-accuracy`) is cast as a vote by the `SidewalkAI` account, anything
+below is recorded as Unsure, and every assessment is stored in `label_ai_assessment`
+([`SidewalkWebpage/docs/ai-subsystems.md`](https://github.com/ProjectSidewalk/SidewalkWebpage/blob/develop/docs/ai-subsystems.md)).
 
 **Since 2026-10-27 production runs the October 2026 models ("round 3")**, trained on a panorama-grouped split with
 tilt-corrected crops and human votes only, published to Hugging Face on 2026-10-26 and served by sidewalk-ai-api
-1.2.0. The models before them (2025-08) are the "production" row in the tables below.
+1.2.0. The models before them (2025-08) are the "production" row in the first table below.
 
 ## Results
 
-All five validators and every open-weight vision-language model (VLM) tried so far are scored on the same 13,144
-held-out crops of the round-3 split (the training deployments' test share plus three deployments held out of
-training entirely). AUC is of the `incorrect` score; macro-AUC gives each label type equal weight; the interval is a
-95% label bootstrap; Δ is the paired difference against round 3. The block is generated from
+All five validators and every open-weight vision-language model (VLM) leg with full coverage (14 of 17) are scored on
+the same 13,144 held-out crops of the round-3 split (the training deployments' test share plus three deployments
+held out of training entirely). AUC is of the `incorrect` score; macro-AUC gives each label type equal weight; the
+interval is a 95% label bootstrap; Δ is the paired difference against round 3. The production row is optimistic:
+those models were trained in 2025-08 on an unrecorded label set that overlaps the held-out crops. The block is
+generated from
 [`docs/vlm-scoreboard/board.csv`](docs/vlm-scoreboard/board.csv) and drift-checked in CI; the full board with
 seventeen legs, within-city AUC, latency and per-deployment rows is [`docs/vlm-scoreboard.md`](docs/vlm-scoreboard.md).
 
@@ -65,21 +69,24 @@ three unseen deployments, with the within-deployment AUC that cannot be raised b
 | Crosswalk | 0.980 [0.961, 0.993] | 0.941 [0.897, 0.980] | 0.946 | 445 / 138 |
 
 Every type ranks labels well where it was trained; on unseen deployments CurbRamp, NoCurbRamp and Crosswalk lose
-0.04 to 0.06 of AUC and SurfaceProblem 0.19. The deployment outside the US is the weakest for every type but
+0.04 to 0.06 of AUC, Obstacle 0.02 and SurfaceProblem 0.19. The deployment outside the US is the weakest for every type but
 Crosswalk, so the report recommends gating AI votes per deployment before enabling them in a new one
 ([#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52)).
 
 **What is served.** Each model ships an isotonic confidence-to-accuracy map fitted on the validation split and
-reweighted to the deployment class prior. The served maps hold every Disagree verdict below the 0.92 gate (no
-type reaches 0.92 precision on Disagree in production, and the prior is under review,
-[#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56)), so the AI casts Agree votes only;
-the retrain report recommended shadow mode for SurfaceProblem and per-deployment checks for unseen deployments,
-neither of which exists in SidewalkWebpage yet. Where the 2025-08 models stood against production outcomes, per
-type and per city, is in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md) and
-[`docs/per-city-calibration-2026-10.md`](docs/per-city-calibration-2026-10.md); the pre-deploy red team of the
+reweighted to the deployment class prior. The shipped maps hold every Disagree verdict below the 0.92 gate by
+policy ([#57](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/57)) until the prior is settled
+([#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56)) and production outcomes exist, so the
+AI casts Agree votes only, for all five types. That includes SurfaceProblem, whose Agree map went live although the
+retrain report recommended holding both of its verdicts back (shadow by map cap is this repo's call; the only
+shadow SidewalkWebpage offers today is switching AI validation off per city). The per-deployment check the report
+wants before Agree votes in an unseen deployment does not exist in SidewalkWebpage yet
+([#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52)). Where the 2025-08 models stood
+against production outcomes, per type and per city, is in [`docs/calibration-2026-10.md`](docs/calibration-2026-10.md)
+and [`docs/per-city-calibration-2026-10.md`](docs/per-city-calibration-2026-10.md); the pre-deploy red team of the
 round-3 chain is [`docs/deploy-checklist-2026-10.md`](docs/deploy-checklist-2026-10.md). Every other study (VLM
-explanations, routing, distillation, road and segmentation priors, the AI Disagree re-label) is indexed in
-[`docs/README.md`](docs/README.md).
+explanations, routing, distillation, road and segmentation priors, the AI Disagree reversal and re-label) is
+indexed in [`docs/README.md`](docs/README.md).
 
 ## How it works
 
@@ -134,8 +141,9 @@ sit in the API's `agree_count` / `disagree_count` like anyone else's, so trainin
 
 Everything lives under the [`projectsidewalk`](https://huggingface.co/projectsidewalk) organisation on Hugging
 Face. Each model repo holds the inference files, `confidence_precision_map.json` with its calibration report,
-`metrics.json`, `training_run.json` and a generated card; sidewalk-ai-api pins these revisions and reads the maps
-from them.
+`metrics.json`, `training_run.json` and a generated card. sidewalk-ai-api pins these revisions and serves its own
+copy of each map, checked by sha256 against the hub file at startup
+([sidewalk-ai-api#25](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/25)).
 
 | label type | model (revision of 2026-10-26) | dataset |
 |---|---|---|
@@ -148,7 +156,8 @@ from them.
 Each model is `Dinov2ForImageClassification` with `id2label = {0: correct, 1: incorrect}` and ships its
 `preprocessor_config.json`. The dataset repos are still the 2025-08 uploads: the round-3 crops have not been
 published (they include private deployments, which the publisher strips, and the crops live on the cluster), so the
-datasets do not match the models until the dataset half of #7 is done.
+datasets do not match the models until the dataset half of
+[#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7) is done.
 
 ## Quick start
 
@@ -160,7 +169,7 @@ wget https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-VKITTI-Base/
 PANO_STORE=/path/to/Panoramas sbatch data_generation.slurm   # steps 1–5, all five label types
 sbatch fine_tune.slurm                                        # step 6
 sbatch get_stats.slurm                                        # steps 7 and 7b
-python publish_to_hf.py --label_type CurbRamp --out ROOT      # step 8: stage only; --push to upload
+python publish_to_hf.py --label_type CurbRamp --out ROOT      # step 8: stage only; --push for a dry run, --push --yes to upload
 ```
 
 Panoramas are read from the lab's pano store, never downloaded. Job files are written for klone's `gpu-l40s`
@@ -172,11 +181,12 @@ pytest -q`.
 
 The October 2026 audit ([`docs/audit-2026-10-14.md`](docs/audit-2026-10-14.md)) found that the published metrics
 rested on a split that leaked across panoramas, a confidence map fitted under the wrong class prior, and a crop
-pipeline that differed between training and serving. The round-3 retrain closed those: the split is by panorama
-([#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3)), training and serving share one geometry
-package and depth checkpoint ([#5](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5)), and the
-maps are reweighted to the deployment prior ([#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4)).
-What is still open:
+pipeline that differed between training and serving. The round-3 retrain addressed those: the split is by panorama
+([#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3), open for the re-measurement items),
+training and serving share one geometry package and depth checkpoint
+([#5](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5), closed), and the maps are reweighted to
+the deployment prior ([#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4), open until the
+prior itself is settled). What is still open:
 
 - **The deployment prior** the maps are reweighted to comes from an asymmetric training rule and is 15–17 points off
   the production estimate for three types; the Disagree hold-back stays until it is settled
@@ -196,12 +206,17 @@ What is still open:
   [#62](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/62),
   [#66](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/66)).
 - **Experiments** with a first run spelled out: re-typing ([#13](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/13)),
-  more context ([#14](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/14)), temporal validation
-  ([#17](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/17)), region-specific models
+  more context ([#14](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/14)), leave-one-city-out
+  runs ([#15](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/15)), temporal validation
+  ([#17](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/17)), rating the saliency overlays
+  ([#19](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/19)), the depth-source ablation
+  ([#21](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/21)), region-specific models
   ([#33](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/33)), frontier-model baselines
   ([#47](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/47)) and merging the tagger pipeline
   into this repo ([#26](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/26)). Earlier ideas are
-  in [#1](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/1).
+  in [#1](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/1); the history purge of the old
+  vendored tree stays opt-in ([#11](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/11),
+  [`docs/repo-hygiene.md`](docs/repo-hygiene.md)).
 
 ## Lineage and related work
 

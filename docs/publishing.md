@@ -17,14 +17,19 @@ python publish_to_hf.py --label_type CurbRamp --out /path/to/output   # writes C
 
 ## The October 2026 publish
 
-The round-3 models were published on 2026-10-26 with `--push-staged --what model --yes`, one commit per model repo,
+The round-3 models were published on 2026-10-26 with `--push-staged --what model --allow-todo --yes` (the cards
+keep their DOI and dataset-hash `TODO:` markers), one commit per model repo,
 from a machine without the crops (they live on klone). `--what model` stages and pushes the model repo alone; the
 card's dataset content hash becomes a `TODO` until the dataset is published from the crop machine
 (`--what dataset` stages both and uploads the dataset). The five dataset repos are therefore still the 2025-08-16
-uploads, and the CurbRamp dataset is still a copy of the Crosswalk one; republishing them is the open half of #7.
-sidewalk-ai-api pins the five model revisions and reads the maps from the hub
-([sidewalk-ai-api#22](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/22),
-[#25](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/25)).
+uploads (train / val / test: Crosswalk 1,108 / 237 / 240, NoCurbRamp 6,404 / 1,372 / 1,374, Obstacle 3,576 / 765 /
+769, SurfaceProblem 4,766 / 1,021 / 1,024, CurbRamp the Crosswalk files), and the CurbRamp dataset is still a copy of
+the Crosswalk one; republishing them is the open half of
+[#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7). sidewalk-ai-api pins the five model
+revisions ([sidewalk-ai-api#22](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/22)) and serves its own copy
+of each map, checked by sha256 against the hub file ([#25](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/25)).
+Updating the API after a publish is manual and all-or-nothing: `accuracy_mappings/<type>.json`, the revision and
+sha256 in `model_map.py`, `provenance.json` and `tests/hub_accuracy_maps.json` move together, or its build fails.
 
 ## Private deployments
 
@@ -105,5 +110,4 @@ the error names it and prints the `--push-staged --what model --yes` (or `datase
 Two practical points for a dataset upload. Make it a private test round with the full CurbRamp set
 (`--push --yes --create-repo --repo-prefix <user>/test-validator`), since a commit of ~5,000 additions and
 deletions is not exercised offline. Then push CurbRamp before Crosswalk: while the CurbRamp repo still holds the
-Crosswalk crops, an unchanged Crosswalk set is refused at 100% overlap against it, as it should be. Updating
-sidewalk-ai-api's pinned revisions remains manual.
+Crosswalk crops, an unchanged Crosswalk set is refused at 100% overlap against it, as it should be.

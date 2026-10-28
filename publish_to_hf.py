@@ -912,7 +912,7 @@ def check_train_size(trainer_state, n_train, grad_accum=hf_cards.GRAD_ACCUM):
 
 
 def default_map_path(root, label_type):
-    """Where ``calibration/calibrate.py`` writes the map in the README's and evaluate.py's commands."""
+    """Where ``calibration/calibrate.py`` writes the map in docs/running-on-hyak.md's and evaluate.py's commands."""
     return os.path.join(root, label_type, "calibration", label_type.lower() + ".json")
 
 

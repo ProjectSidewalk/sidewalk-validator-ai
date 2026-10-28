@@ -45,13 +45,14 @@ why, and what would change it: [`decisions.md`](decisions.md)), rows with unusab
 with unconverted coordinates (negative `pano_y`: Seattle 193, CDMX 14, Pittsburgh 8, SPGG 1) are excluded, and so
 are labels placed by the `SidewalkAI` account (RampNet curb ramps in Vancouver WA, Richmond VA and Laurens IA),
 because production never sends those to the validator; `--include-ai-labels` keeps them, tagged `author = ai` in
-the manifest. (The round-3 CurbRamp run did include them; what the validator makes of AI-placed labels is measured
-in [#69](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/69).)
+the manifest. (The round-3 CurbRamp run did include them; what the validator makes of AI-placed labels is being
+measured in [#69](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/69).)
 
 ## Cities
 
-The default is every deployment that `/v3/api/cities` lists with a `url` (private deployments included since round
-3; they are pooled or lettered in every published number), sorted by city_id; `--cities a,b` overrides it. The
+The default is every public deployment that `/v3/api/cities` lists with a `url` (41 on 2026-10-19), sorted by
+city_id; `--cities a,b` overrides it. Private deployments are not in the default list (they carry no `url`); round
+3 passed them explicitly, 54 deployments in all, and every published number pools or letters them. The
 city_id is what `label_uid`, crop filenames and the pano-store directories use. With `--rawlabels-cache DIR` the
 listing is read from `DIR/cities.json`, and every listed city must have its `DIR/<city_id>.csv` (a missing one
 stops the run and names it; nothing is downloaded into a snapshot). A missing `cities.json` is fetched and saved
@@ -62,13 +63,10 @@ different list stops, like a changed selection, and `--select-only` against such
 `deployment_priors.partial.json`. A deployment the API lists without a `url` is reached with `--cities
 <city_id>=<subdomain>` (the subdomain is the `sidewalk-<subdomain>.cs.washington.edu` host part).
 
-Before [#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8) the list was 19 hardcoded cities.
-To reproduce or resume a dataset made with them, pass them explicitly (this needs no API call when their CSVs are
-cached, and writes `deployment_priors.partial.json`, so copy the prior from the original run):
-
-```
---cities cdmx,la-piedad,spgg,amsterdam,blackhawk-hills-il,chicago-il,cliffside-park-nj,columbus-oh,knox-oh,mendota-il,newberg-or,oradell-nj,pittsburgh-pa,seattle-wa,st-louis-mo,teaneck-nj,keelung-tw,new-taipei-tw,taipei
-```
+Before [#8](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8) the list was 19 hardcoded cities,
+three of them private today. To reproduce or resume a dataset made with them, pass the ids recorded in that run's
+`generation_run.json` (or `data_generation.py`'s history) with `--cities`; this needs no API call when their CSVs
+are cached, and writes `deployment_priors.partial.json`, so copy the prior from the original run.
 
 ## Training targets
 
@@ -82,7 +80,8 @@ which labels are used and their `label_class`. What the model is trained *agains
 | `soft` | `(human_agree + 1) / (human_agree + human_disagree + 2)`, from `split.csv` (a 10–0 label → 0.92, a 3–0 label → 0.8) |
 | `weighted` | the same formula on reliability-weighted counts `w_agree`/`w_disagree` from `--vote-weights` |
 
-Round 3 trained with `soft` targets. Soft targets use soft-label cross-entropy against the two logits. Validation
+Round 3 trained with the default hard targets (its published `training_run.json` records no `target`). Soft
+targets use soft-label cross-entropy against the two logits. Validation
 stays hard (`eval_loss` and `macro_f1` on `label_class`), so checkpoint selection means the same thing for every
 target. A non-default target, and the vote-weights file's hash, go into `run_key.json` (a resume never mixes
 targets) and `training_run.json`. A non-hard target writes to `<label_type>/dinov2-<target>` by default, never to

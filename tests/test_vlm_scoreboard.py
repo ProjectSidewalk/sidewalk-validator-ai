@@ -213,8 +213,23 @@ def test_check_passes_when_current_and_fails_on_drift(board, capsys):
     readme.write_text("# no block here\n")
     with pytest.raises(SystemExit):
         sb.main(ci + ["--check"])
+    prov = (board["out"] / "provenance.json").read_text()
+    with pytest.raises(SystemExit, match="no generated block"):   # build refuses before writing anything
+        sb.main(base)
+    assert (board["out"] / "provenance.json").read_text() == prov
     readme.unlink()
-    sb.main(ci + ["--check"])
+    with pytest.raises(SystemExit):                 # a missing README is a problem, not a skip
+        sb.main(ci + ["--check"])
+    none = [a if a != str(readme) else "" for a in ci]
+    sb.main(none + ["--check"])                     # --readme '' opts out
+    _readme(readme)
+    sb.main(base)
+    # the privacy scan covers the README, through main
+    readme.write_text(readme.read_text() + "\nleak faraway:123\n")
+    with pytest.raises(SystemExit):
+        sb.main(ci + ["--check"])
+    with pytest.raises(SystemExit):
+        sb.main(base)
     _readme(readme)
     sb.main(base)
 
@@ -222,6 +237,7 @@ def test_check_passes_when_current_and_fails_on_drift(board, capsys):
 def test_readme_block_is_round3_production_and_best_full_vlms(board):
     aggs = sb.read_aggregates(str(board["out"]))
     b = aggs["board"]
+    aggs["board"] = b.sample(frac=1, random_state=3)    # the block must sort itself, not rely on board order
     block = sb.render_readme_block(aggs)
     lines = [l for l in block.splitlines() if l.startswith("| ") and not l.startswith("| model")]
     full = b[b.full.astype(bool)]

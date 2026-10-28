@@ -433,7 +433,7 @@ What to do instead:
   and tucson-az SurfaceProblem. SidewalkWebpage would need a new setting for this, since today the gate is one
   number. Holding all four back would remove 4,615 of the 127,436 gated Agree votes in this sample (3.6%). This is a
   judgement call for SidewalkWebpage, not something this note settles.
-- **For the retrained models**, run the held-out-city benchmark (README) with Seattle, cdmx and spgg among the
+- **For the retrained models**, run the held-out-city benchmark ([`running-on-hyak.md`](running-on-hyak.md#held-out-city-benchmark)) with Seattle, cdmx and spgg among the
   held-out cities. All three are training cities today, so a per-city failure there points at the data as well as
   the gate. Then re-run `calibration.per_city` on the first production pull after the retrain.
 - **Before a retrained model's Disagree class votes again**, check it per city. As served, Disagree precision ranged

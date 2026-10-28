@@ -53,7 +53,7 @@ the CPU subset in `.github/workflows/tests.yml`), then `pytest -q`.
 ## The three jobs
 
 Each job file processes all five label types. They are written for the `makelab` account on klone's `gpu-l40s`
-partition; edit the `#SBATCH` lines for anything else.
+partition (one GPU, 100 GB); edit the `#SBATCH` lines for anything else.
 
 ### 1. Generate datasets
 
@@ -131,8 +131,10 @@ Several hours per label type; three run concurrently, then two.
 sbatch fine_tune.slurm
 ```
 
-Trains on the `train` rows of `split.csv` and selects on `val`. Writes `<label_type>/dinov2/checkpoint-*/`;
-`save_total_limit = 2` keeps the best and the latest. The best is named in the latest checkpoint's
+Trains on the `train` rows of `split.csv` and selects on `val` (lr 1e-5, batch 8 × 4 accumulation, `--epochs 25`,
+warm-up 10%, `--seed`, best checkpoint by macro-F1 or `--best-metric loss`, `--num-workers`; a resubmitted job
+resumes from its last checkpoint). Writes `<label_type>/dinov2/checkpoint-*/`; `save_total_limit = 2` keeps the
+best and the latest. The best is named in the latest checkpoint's
 `trainer_state.json` under `best_model_checkpoint` and in `training_run.json`, which sits next to copies of
 `split.csv` and `deployment_priors.json` in `<label_type>/dinov2/`. Training targets other than the default hard
 labels (`--target soft|weighted`) write to `<label_type>/dinov2-<target>` instead
@@ -161,8 +163,9 @@ python -m calibration.calibrate --predictions CurbRamp/predictions.csv --priors 
     --label-type CurbRamp --out CurbRamp/calibration/curbramp.json
 ```
 
-This writes the map (drop-in for `sidewalk-ai-api/accuracy_mappings/`), `calibration_report.json` (ECE, coverage
-and precision at the 0.92 gate on the test split) and `reliability.png`. `--hold-back incorrect
+This writes the map (drop-in for `sidewalk-ai-api/accuracy_mappings/`; a grid from 0.5 to 1.0 at 0.0025, plus 1e-6
+steps from 0.99998 to 1.0), `calibration_report.json` (ECE, coverage and precision at the 0.92 gate on the test
+split) and `reliability.png`. `--hold-back incorrect
 --hold-back-reason "..."` (either verdict or both; the reason is required and goes on the model card) caps that
 verdict's map at 0.9199, the same hold-back `calibrate_from_production.py` applies to a class whose gate precision
 is not established: thresholds above the cap serve 0.9199, so the verdict never clears the gate and never becomes a
@@ -211,6 +214,7 @@ python evaluate.py --label_type $LT --data-dir $RUN --per-city
 `test` table (`evaluate.py --per-city` on `$DATA`), where the city was trained on. That row covers only the city's
 test share (about 15% of its rows), while `test_heldout` holds all of its rows, so the two differ in sample as well
 as in training. `--min-city-n` applies to both splits. These per-city jobs are not in the SLURM files; on klone,
-wrap the three commands per city in a copy of `fine_tune.slurm`. The production-side counterpart, whether the 0.92
+wrap the three commands per city in a copy of `fine_tune.slurm`. For a first leave-one-city-out run the issue
+suggests one small US city, one large US city, Amsterdam, cdmx and a Taiwanese city, each its own training run. The production-side counterpart, whether the 0.92
 gate holds per city for the deployed models, is [`per-city-calibration-2026-10.md`](per-city-calibration-2026-10.md)
 (`python -m calibration.per_city`).
