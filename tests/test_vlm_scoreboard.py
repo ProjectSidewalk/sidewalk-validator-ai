@@ -71,6 +71,10 @@ def _doc(path, prose=""):
     path.write_text(f"# Test board\n\n{prose}\n\n{blocks}\n")
 
 
+def _readme(path):
+    path.write_text(f"# Test readme\n\nScores:\n\n{sb.BEGIN.format(name=sb.README_BLOCK)}\n{sb.END.format(name=sb.README_BLOCK)}\n")
+
+
 def _prose(aggs):
     f = sb.facts(aggs)
     return (f"The board has {f['legs']} legs, {f['full_legs']} of them scored all {f['n_total']:,} held-out crops. "
@@ -79,17 +83,18 @@ def _prose(aggs):
 
 @pytest.fixture
 def board(tmp_path):
-    stage, out, doc = tmp_path / "stage", tmp_path / "out", tmp_path / "doc.md"
+    stage, out, doc, readme = tmp_path / "stage", tmp_path / "out", tmp_path / "doc.md", tmp_path / "README.md"
     _stage(stage)
     pub = tmp_path / "public.txt"
     pub.write_text("\n".join(PUBLIC))
-    base = ["build", "--scores-dir", str(stage), "--out-dir", str(out), "--doc", str(doc), "--public-cities",
-            str(pub), "--n-boot", "50"]
+    base = ["build", "--scores-dir", str(stage), "--out-dir", str(out), "--doc", str(doc), "--readme", str(readme),
+            "--public-cities", str(pub), "--n-boot", "50"]
     _doc(doc)
+    _readme(readme)
     sb.main(base)                                   # aggregates, figures (prose not yet written)
     _doc(doc, _prose(sb.read_aggregates(str(out))))
     sb.main(base)                                   # fills the blocks
-    return {"stage": stage, "out": out, "doc": doc, "base": base, "pub": pub}
+    return {"stage": stage, "out": out, "doc": doc, "readme": readme, "base": base, "pub": pub}
 
 
 def test_doctests():
@@ -195,6 +200,41 @@ def test_check_passes_when_current_and_fails_on_drift(board, capsys):
     doc.write_text(text.replace("| 1 |", "| 9 |", 1))
     sb.main(base)
     sb.main(base + ["--check"])
+    # the README block: hand-edited -> both modes fail; rebuilt -> current; missing marker -> fails; no file -> skipped
+    readme = board["readme"]
+    rtext = readme.read_text()
+    assert "**Round 3" in rtext and "Production" in rtext
+    readme.write_text(rtext.replace("0.", "9.", 1))
+    with pytest.raises(SystemExit):
+        sb.main(ci + ["--check"])
+    sb.main(base)
+    assert readme.read_text() == rtext
+    sb.main(ci + ["--check"])
+    readme.write_text("# no block here\n")
+    with pytest.raises(SystemExit):
+        sb.main(ci + ["--check"])
+    readme.unlink()
+    sb.main(ci + ["--check"])
+    _readme(readme)
+    sb.main(base)
+
+
+def test_readme_block_is_round3_production_and_best_full_vlms(board):
+    aggs = sb.read_aggregates(str(board["out"]))
+    b = aggs["board"]
+    block = sb.render_readme_block(aggs)
+    lines = [l for l in block.splitlines() if l.startswith("| ") and not l.startswith("| model")]
+    full = b[b.full.astype(bool)]
+    purpose = full[full.model_class == sb.PURPOSE].display.tolist()
+    vlms = full[full.model_class != sb.PURPOSE].sort_values("macro_auc", ascending=False).display.tolist()
+    want = purpose + vlms[:sb.README_VLMS]
+    assert [l.split("|")[1].strip().strip("*") for l in lines] == want
+    assert all(b[~b.full.astype(bool)].display.map(lambda d: d not in block))     # partial legs never shown
+    assert lines[0].split("|")[-3].strip() == "—"                                # round 3 has no Δ
+    # the privacy scan covers the README too
+    board["readme"].write_text(board["readme"].read_text() + "\nleak faraway:123\n")
+    assert any("faraway:123" in p for p in sb.privacy_problems(str(board["out"]), str(board["doc"]), set(PUBLIC),
+                                                                 str(board["readme"])))
 
 
 def test_prose_counts_are_checked(board):

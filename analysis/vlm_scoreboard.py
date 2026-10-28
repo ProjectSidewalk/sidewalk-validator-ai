@@ -4,7 +4,7 @@ Rows are models (the round-3 checkpoints, production, every open-weight VLM leg,
 of #16); columns are macro-AUC over the five label types (each type equal weight), per-type AUC with a 95% label
 bootstrap interval, test vs held-out-deployment AUC, within-city AUC, balanced accuracy at the argmax, recall of
 ``incorrect`` at precision 0.95, s/crop with the GPU, and coverage. ``incorrect`` is the positive class and the
-score is ``p_incorrect`` everywhere. Writes ``docs/vlm-scoreboard.md`` (generated blocks only; the prose around them
+score is ``p_incorrect`` everywhere. Writes ``docs/vlm-scoreboard.md`` and the ``readme_scoreboard`` block of ``README.md`` (generated blocks only; the prose around them
 is hand-written) and ``docs/vlm-scoreboard/*.{csv,png,json}``.
 
 **Per-crop data never enters the repo.** Score CSVs and splits carry ``label_uid`` (``city:label_id``), which names
@@ -87,6 +87,9 @@ LABEL_TYPES = vb.LABEL_TYPES
 SPLITS = ("test", "test_heldout")
 DEFAULT_SCORES_DIR = os.path.expanduser("~/Data/sidewalk-validator-ai-vlm-scoreboard-2026-10")
 DOC = os.path.join(REPO_DIR, "docs", "vlm-scoreboard.md")
+README = os.path.join(REPO_DIR, "README.md")        # carries one generated block, readme_scoreboard
+README_BLOCK = "readme_scoreboard"
+README_VLMS = 3                                      # best full-coverage VLM legs shown in the README
 OUT_DIR = os.path.join(REPO_DIR, "docs", "vlm-scoreboard")
 N_BOOT, SEED = 1000, 20261021
 REFERENCE = "round3"
@@ -856,6 +859,27 @@ def slice_table(df, b, by):
     return _table(head, rows)
 
 
+def render_readme_block(aggs):
+    """The README's summary of the board: round 3, production and the ``README_VLMS`` best full-coverage VLM legs,
+    with macro-AUC, per-type AUC and the paired difference against round 3. Rendered from the committed ``board.csv``
+    like every other block, and checked for drift the same way."""
+    b = aggs["board"]
+    if b.empty:
+        return "(no legs staged)"
+    full = b[b.full.astype(bool)]
+    keep = [r for r in full.itertuples() if r.model_class == PURPOSE]
+    vlms = full[full.model_class != PURPOSE].sort_values(["macro_auc", "leg"], ascending=[False, True])
+    keep += list(vlms.head(README_VLMS).itertuples())
+    head = ["model", "class", "macro-AUC [95% CI]"] + list(LABEL_TYPES) + ["Δ vs round 3 [95% CI]", "crops"]
+    rows = []
+    for r in keep:
+        d = "—" if r.leg == REFERENCE else f"{f3(r.diff_vs_round3)}{interval(r.diff_lo, r.diff_hi)}"
+        name = f"**{r.display}**" if r.leg == REFERENCE else r.display
+        rows.append([name, r.model_class, f"{f3(r.macro_auc)}{interval(r.macro_auc_lo, r.macro_auc_hi)}"]
+                    + [f3(getattr(r, f"auc_{t}")) for t in LABEL_TYPES] + [d, _int(r.n)])
+    return _table(head, rows)
+
+
 def splice(text, blocks):
     """Replace each generated block in ``text``; everything else stays byte-identical. A missing block raises."""
     for name, body in blocks.items():
@@ -1266,13 +1290,14 @@ UID_PATTERN = re.compile(r"\b[a-z][a-z0-9]*(?:-[a-z0-9]+)*:\d+\b")
 DEPLOYMENT_COLUMNS = ("deployment", "city")
 
 
-def privacy_problems(out_dir, doc, public):
+def privacy_problems(out_dir, doc, public, readme=None):
     """Committed-artifact scan: any ``<city>:<id>`` string, and any deployment column value that is neither public
-    nor a lettered / pooled private label. [] when clean."""
+    nor a lettered / pooled private label. [] when clean. ``readme`` (the file that carries the README block) is
+    scanned like the doc when given."""
     problems = []
     paths = [os.path.join(out_dir, f) for f in sorted(os.listdir(out_dir)) if f.endswith((".csv", ".json", ".md"))] \
         if os.path.isdir(out_dir) else []
-    for p in paths + ([doc] if os.path.exists(doc) else []):
+    for p in paths + [d for d in (doc, readme) if d and os.path.exists(d)]:
         text = open(p, encoding="utf-8").read()
         for m in UID_PATTERN.finditer(text):
             if not m.group(0).startswith(("http:", "https:")):
@@ -1450,6 +1475,19 @@ def consistency_problems(aggs, tol=2e-4):
     return problems
 
 
+def readme_problems(readme, committed):
+    """The README's generated block against the committed board; [] when current or when there is no README."""
+    if not os.path.exists(readme):
+        return []
+    text = open(readme, encoding="utf-8").read()
+    try:
+        if splice(text, {README_BLOCK: render_readme_block(committed)}) != text:
+            return [f"{os.path.basename(readme)}: generated block {README_BLOCK!r} is stale (re-run `build`)"]
+    except ValueError as e:
+        return [f"{os.path.basename(readme)}: {e}"]
+    return []
+
+
 def run_build(args):
     out_dir, doc = args.out_dir, args.doc
     staged = os.path.isdir(os.path.join(args.scores_dir, "splits"))
@@ -1478,8 +1516,9 @@ def run_build(args):
             except ValueError as e:
                 problems.append(f"{os.path.basename(doc)}: {e}")
             problems += [f"{os.path.basename(doc)}: prose is stale -- {p}" for p in prose_problems(text, committed)]
+        problems += readme_problems(args.readme, committed)
         problems += consistency_problems(committed)
-        problems += privacy_problems(out_dir, doc, public)
+        problems += privacy_problems(out_dir, doc, public, args.readme)
         if problems:
             print("\n".join(problems))
             raise SystemExit(1)
@@ -1502,12 +1541,19 @@ def run_build(args):
             print(f"prose needs an edit: {p}")
     else:
         print(f"{doc} not found: write the prose with the generated-block markers first")
+    if os.path.exists(args.readme):
+        text = open(args.readme, encoding="utf-8").read()
+        new = splice(text, {README_BLOCK: render_readme_block(committed)})
+        if new != text:
+            with open(args.readme, "w", encoding="utf-8") as f:
+                f.write(new)
+            print(f"updated {args.readme}")
     if not args.no_figures:
         render_figures(committed, legs, out_dir)
     with open(os.path.join(out_dir, "provenance.json"), "w") as f:
         json.dump(provenance(args.scores_dir, public, src, args), f, indent=1, sort_keys=True)
         f.write("\n")
-    problems = privacy_problems(out_dir, doc, public)
+    problems = privacy_problems(out_dir, doc, public, args.readme)
     if problems:
         print("\n".join(problems))
         raise SystemExit("privacy check failed: fix before committing")
@@ -1526,6 +1572,8 @@ def main(argv=None):
     b.add_argument("--scores-dir", default=DEFAULT_SCORES_DIR, help="staging dir, outside the repo")
     b.add_argument("--out-dir", default=OUT_DIR)
     b.add_argument("--doc", default=DOC)
+    b.add_argument("--readme", default=README,
+                   help="file carrying the readme_scoreboard block (spliced on build, checked on --check)")
     b.add_argument("--public-cities", default=None,
                    help="saved /v3/api/cities response or one city_id per line (default: the live API; --check "
                         "falls back to the list in the committed provenance.json when offline)")
