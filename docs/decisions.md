@@ -3,6 +3,33 @@
 Choices about the training data that are deliberate, not oversights, with the evidence behind each one and
 what would change it. One section per decision, newest first.
 
+## Every performance study is sliced by severity and tag (October 2026)
+
+The seven label types are coarse. The severity a labeler picks and the tags they add carry far more of what is in
+the crop: a CurbRamp tagged `missing tactile warning` or `surface problem`, a Crosswalk tagged `paint fading` or
+`brick/cobblestone`. A model can do well on a type overall and badly on one of these. So every performance study
+reports label type × severity and label type × tag next to its comparative baseline:
+
+- **Model evaluations.** `evaluate.py` writes the slices by default (`metrics.json` `slices`, `slices.md`).
+- **Retrain reports.** `analysis/retrain_report.py` gives them for the new model and, from `predictions_prod.csv`
+  (`evaluate.py --checkpoint <served model> --tag prod`), round 3 against production on the same rows, with a
+  panorama-resampled interval on the difference.
+- **Production measurements.** They report the same slices against human votes.
+
+**How the slices are counted.**
+
+- A label with several tags counts once per tag.
+- Missing severity and untagged labels are their own `(none)` slice, never dropped.
+- Rates on fewer than 30 labels are left blank; the count is still shown. An AUC also needs at least 8 labels of
+  each class.
+- Each slice reports its largest one-deployment share, so a slice that is mostly one city's labels is visible.
+- Intervals are not corrected for the number of slices: read a table of them as a screen.
+
+**Where we need more data.** Each slice carries its training-row count, and fewer than 100 is flagged `⚠ thin`.
+
+The implementation is [`analysis/slices.py`](../analysis/slices.py). New experiments should carry `severity` and
+`tags` through to their outputs so the slices can be computed. `split.csv` has them since round 3.
+
 ## Labels on non-GSV imagery stay out of training (October 2026)
 
 Issue [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9), item 4.
