@@ -15,7 +15,8 @@ prod votes are the record), and scores the result against the validator and the 
 
 **Cells.** Every unseen (not in a round-3 train/val split), scored AI label of the city falls in one of four cells by
 the validator's verdict and the human majority; the packet takes all of the first three and a seeded sample of the
-fourth so the rater cannot tell which labels are contested:
+fourth so the rater cannot tell which labels are contested; labels the rater already voted on are left out (the
+rater would be re-rating their own vote, and the API carries no vote timestamps, so a repeated vote is invisible):
 
 - ``contested``: validator Disagree, human Agree (the question);
 - ``confirmed``: validator Disagree, human Disagree;
@@ -23,8 +24,7 @@ fourth so the rater cannot tell which labels are contested:
 - ``decoy``: validator Agree, human Agree (sampled).
 
 The list is one seeded shuffle of all cells. The key (``private-key-do-not-share/key.csv``) records each label's cell,
-the validator's probabilities, who cast the original vote (``prior_rater_vote``: the rater already voted on this label,
-so a re-vote that repeats it is invisible in the API, which carries no vote timestamps; scored separately).
+the validator's probabilities and whether a lead or another account cast the original vote (``prior_voters``).
 
 **Scoring** reads the rater's vote per label from a rawLabels pull taken after rating (``validations[].user_id``; the
 public API carries them within minutes). ``cant_tell`` is Unsure. The report gives, per cell, how often the rater sided
@@ -177,15 +177,16 @@ def cmd_build(args):
     experts = dg.parse_experts(os.environ.get("EXPERTS"))
     df = load_run(args.run)
     pool = df[(df.author == "ai") & df.scored & (df.clean == 1) & (df.city == args.city)].copy()
-    raw = pd.read_csv(os.path.join(args.run, "rawlabels", f"{args.city}.csv"), dtype=str,
-                      usecols=["label_id", "validations"])
+    before = args.rawlabels_before or os.path.join(args.run, "rawlabels", f"{args.city}.csv")
+    raw = pd.read_csv(before, dtype=str, usecols=["label_id", "validations"])
     pool = pool.merge(raw, on="label_id", how="left", validate="one_to_one")
     pv = pool.validations.map(lambda v: prior_votes(v, rater))
     pool["prior_rater_vote"] = [a for a, _ in pv]
     pool["prior_voters"] = [" ".join("lead" if u in experts else "other" for u in b) for _, b in pv]
-    # decoys come from labels the rater never voted on: a re-vote that repeats a prior vote is invisible in the API,
-    # and nothing requires a decoy to carry the rater's vote (the contested cell keeps its prior votes; they are the point)
-    pool = pool[~((pool.verdict == "correct") & (pool["true"] == "correct") & (pool.prior_rater_vote != ""))]
+    # labels the rater already voted on are left out: the rater would be re-rating their own vote, and a repeated vote
+    # is invisible in the API (no timestamps). Pull rawLabels right before building so recent votes count.
+    n_rater = int((pool.prior_rater_vote != "").sum())
+    pool = pool[pool.prior_rater_vote == ""]
     picked = pick(pool, args.seed, args.n_decoys)
     key = picked[["packet_id", "label_uid", "city", "label_id", "pano_id", "cell", "verdict", "true", "expert_class",
                   "p_correct", "p_incorrect", "confidence", "round3_split", "prior_rater_vote", "prior_voters",
@@ -207,10 +208,10 @@ def cmd_build(args):
         f.write(GALLERY_MASK_CSS)
     man = {"built": datetime.now(timezone.utc).isoformat(timespec="seconds"), "city": args.city, "seed": args.seed,
            "n_decoys": args.n_decoys, "n": int(len(key)), "cells": key.cell.value_counts().to_dict(),
-           "prior_rater_votes": int((key.prior_rater_vote != "").sum()),
+           "excluded_rater_voted": n_rater, "rawlabels_before": os.path.abspath(before),
            "key_sha256": sha256_file(kpath), "labels_sha256": sha256_file(os.path.join(args.run, "labels.csv")),
            "predictions_sha256": sha256_file(os.path.join(args.run, "predictions.csv")),
-           "rawlabels_before_sha256": sha256_file(os.path.join(args.run, "rawlabels", f"{args.city}.csv")),
+           "rawlabels_before_sha256": sha256_file(before),
            "css_sha256": hashlib.sha256(GALLERY_MASK_CSS.encode()).hexdigest(), "gallery_url": url}
     with open(os.path.join(args.out, "manifest.json"), "w") as f:
         json.dump(man, f, indent=2)
@@ -288,6 +289,7 @@ def build_parser():
     b.add_argument("--out", required=True)
     b.add_argument("--seed", default=str(SEED))
     b.add_argument("--n-decoys", type=int, default=50)
+    b.add_argument("--rawlabels-before", help="a rawLabels pull taken just before building (default: the run's pull)")
     b.add_argument("--force", action="store_true")
     b.set_defaults(func=cmd_build)
     s = sub.add_parser("score")
