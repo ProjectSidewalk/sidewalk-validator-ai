@@ -437,7 +437,8 @@ def cmd_crops(args):
     present = [c for c in labels.city.unique() if os.path.isdir(os.path.join(args.pano_store, c))]
     missing_cities = sorted(set(labels.city.unique()) - set(present))
     if missing_cities:
-        print(f"no pano-store directory for {missing_cities}: their labels are written as no_pano")
+        print(f"no pano-store directory for {missing_cities}: their labels are written as no_pano (not counted toward "
+              f"the consecutive-missing stop)")
     manifest_path = os.path.join(args.out, "manifest.csv")
     crops_dir = os.path.join(args.out, "crops")
     os.makedirs(crops_dir, exist_ok=True)
@@ -446,15 +447,21 @@ def cmd_crops(args):
         old = pd.read_csv(manifest_path, dtype=str, keep_default_na=False)
         ok = old[(old.status == "ok") & old.crop_path.map(lambda p: os.path.exists(os.path.join(args.out, p)))]
         done = set(ok.label_uid)
+        # panoramas already recorded missing: retried, but not counted toward the consecutive-missing stop (a resume
+        # puts all the failed rows back to back), as data_generation.py does
+        known_missing = set(zip(old[old.status.isin(dg.MISSING_STATUSES)].city, old[old.status.isin(dg.MISSING_STATUSES)].pano_id))
         old[old.label_uid.isin(done)].to_csv(manifest_path, index=False)  # drop failed rows: they are retried
         print(f"resuming: {len(done)} crops already ok, {len(old) - len(done)} rows retried")
     else:
+        known_missing = set()
         pd.DataFrame(columns=MANIFEST_COLUMNS).to_csv(manifest_path, index=False)
     todo = labels[~labels.label_uid.isin(done)].sort_values(["city", "pano_id"], kind="mergesort")
     device = dg.resolve_device(args.allow_cpu)
     depth_model = dg.load_depth_model("vitb", device)
     last = (None, None, None)
-    last_counted, consecutive_missing = None, 0  # a stage that stopped early must not become a run of no_pano rows
+    # a stage that stopped early must not become a run of no_pano rows: stop after MAX_CONSECUTIVE_MISSING_PANOS
+    # panoramas in a row with a status in MISSING_STATUSES, ignoring panoramas known to be missing before this run
+    last_counted, consecutive_missing = None, 0
     status_counts, t0 = Counter(), time.time()
     with open(manifest_path, "a", newline="") as f:
         import csv
@@ -497,9 +504,9 @@ def cmd_crops(args):
             w.writerow(rec)
             f.flush()
             status_counts[rec["status"]] += 1
-            if last[0] != last_counted:
+            if last[0] != last_counted and last[0] not in known_missing and row.city not in missing_cities:
                 last_counted = last[0]
-                consecutive_missing = consecutive_missing + 1 if rec["status"] == "no_pano" else 0
+                consecutive_missing = consecutive_missing + 1 if rec["status"] in dg.MISSING_STATUSES else 0
                 if consecutive_missing >= dg.MAX_CONSECUTIVE_MISSING_PANOS:
                     sys.exit(f"STOP: {consecutive_missing} panoramas in a row missing from {args.pano_store}; "
                              f"is the stage complete? (data_generation.MAX_CONSECUTIVE_MISSING_PANOS)")

@@ -149,10 +149,14 @@ with Richmond at the human-placed baseline. The model has never trained on Mapil
 crops without tilt correction; it rank-orders RampNet's mistakes in them anyway. Both references are 92–99 % lead
 votes.
 
-**The top of the ranking is weaker on AI labels, and prevalence explains only part of it.** The baseline reweighted to
-the AI labels' 2–5 % rejected share still flags 25 % of its rejections at 92 % precision (38 % at Laurens's 8.6 %); on
-the AI labels the model flags 4–9 %. Low prevalence does make the bar harder, but the baseline clears it more often at
-the same prevalence.
+**The top of the ranking is weaker against this reference, and prevalence explains only part of it.** The baseline
+reweighted to the AI labels' 2–5 % rejected share still flags 25 % of its rejections at 92 % precision (38 % at
+Laurens's 8.6 %); on the AI labels the model flags 4–9 %. Low prevalence does make the bar harder, but the baseline
+clears it more often at the same prevalence. Two caveats: neither number has an interval (the reweighted 25 % is the
+baseline's first 165 rejections ranked above its first approved label; Vancouver's 9 % is 5 of 56), and the references
+differ in quality (baseline rejections are vote margins or lead verdicts, AI-label rejections mostly single crowd votes
+with an Agree lean), so a few wrong approvals among the reference labels would lower precision at the top even for a
+perfect ranking.
 
 ### At the deployed gate
 
@@ -246,7 +250,7 @@ contradicted.
 ### What this says, and what it cannot
 
 1. **The validator ranks RampNet's mistakes about as well as it ranks human mistakes when a project lead is the
-   reference** (AUC 0.96 vs 0.97), and worse against the crowd reference that decides Vancouver's unseen rejections
+   reference** (AUC 0.96 vs 0.97, though 149 of the 153 lead-rejected unseen labels are Mapillary), and worse against the crowd reference that decides Vancouver's unseen rejections
    (0.85). The two references cannot be compared on the same labels here (the round-3 selection consumed the
    lead-rejected Vancouver labels), and one vote per label cannot say whether the crowd or the model is right about the
    57 contested Vancouver Disagrees. A masked re-label of those 57 plus a matched sample of confirmed ones, the design of
@@ -263,14 +267,16 @@ contradicted.
    does not, nothing changes for humans. The vote-counting decision
    ([SidewalkWebpage#5790](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5790),
    [#4763](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/4763)) matters more than the model numbers here.
-   With no gate, the Disagree verdicts would be 36–71 % precise by city, at or above the human-placed baseline at the
-   same prevalence (20–52 %), and would name 57–81 % of the rejected labels.
+   With no gate, the Disagree verdicts would be 36–71 % precise by city: above the human-placed baseline at the same
+   prevalence in Vancouver (0.36 vs 0.20) and Richmond (0.71 vs 0.37), below it in Laurens (0.43 vs 0.52); they would
+   name 57–81 % of the rejected labels.
 4. **The 0.30–0.55 band is where a Disagree is worth most, because that is where the rejections are** (16 % of band
    labels against 2 % of `core`), not because the model ranks better there. If AI validation is to filter AI labels, the
    band is where it would pay, and a tier-aware gate (RampNet's confidence is known at submission time, even though it
    is not stored on the label) is a cheap experiment.
 5. **Rig-frame AI labels on Mapillary imagery rank as well as GSV ones without retraining** (Richmond 0.98, Laurens
-   0.93), but the gate's coverage drops to 76 % on the GoPro imagery (the map was fitted on GSV confidences) and
+   0.93), but the gate's coverage drops to 76 % on the GoPro imagery (possibly because the map was fitted on GSV
+   confidences, possibly because Laurens has 3–4× the rejected share; Richmond's rig keeps 94 %) and
    human-placed, level-frame Mapillary labels, the case behind
    [SidewalkWebpage#4764](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/4764), are untested here (26
    labels, none rejected). This says AI-placed Mapillary labels could be AI-validated; it says nothing about human
