@@ -32,30 +32,51 @@ below is recorded as Unsure, and every assessment is stored in `label_ai_assessm
 
 **Since 2026-10-27 production runs the October 2026 models ("round 3")**, trained on a panorama-grouped split with
 tilt-corrected crops and human votes only, published to Hugging Face on 2026-10-26 and served by sidewalk-ai-api
-1.2.0. The models before them (2025-08) are the "production" row in the first table below.
+1.2.0. The models they replaced (2025-08) are the "previous production" row in the first table below.
 
 ## Results
 
 Every leg with full coverage (14 of 17: the two validator rounds and 12 of the 15 open-weight vision-language model
 (VLM) legs) is scored on the same 13,144 held-out crops of the round-3 split (the training deployments' test share
 plus three deployments held out of training entirely). AUC is of the `incorrect` score; macro-AUC gives each label
-type equal weight; the interval is a 95% label bootstrap; Δ is the paired difference against round 3. The
-production row is optimistic: those models were trained in 2025-08 on an unrecorded label set that may overlap the
-test-share crops. The block is generated from
+type equal weight; the interval is a 95% label bootstrap; Δ is the paired difference against round 3; bold is the
+best AUC in a column. The previous-production row is optimistic: those models were trained in 2025-08 on an
+unrecorded label set that may overlap the test-share crops. The block is generated from
 [`docs/vlm-scoreboard/board.csv`](docs/vlm-scoreboard/board.csv) and drift-checked in CI; the full board with
 seventeen legs, within-city AUC, latency and per-deployment rows is [`docs/vlm-scoreboard.md`](docs/vlm-scoreboard.md).
 
 <!-- BEGIN GENERATED: readme_scoreboard (analysis/vlm_scoreboard.py) -->
 
-| model | class | macro-AUC [95% CI] | CurbRamp | NoCurbRamp | Obstacle | SurfaceProblem | Crosswalk | Δ vs round 3 [95% CI] | crops |
-|---|---|---|---|---|---|---|---|---|---|
-| **Round 3 (DINOv2-L, 2026-10)** | purpose-trained | 0.915 [0.910, 0.919] | 0.953 | 0.920 | 0.873 | 0.855 | 0.972 | — | 13,144 |
-| Production (DINOv2-L, 2025-08) | purpose-trained | 0.899 [0.894, 0.905] | 0.942 | 0.925 | 0.814 | 0.846 | 0.970 | -0.015 [-0.020, -0.011] | 13,144 |
-| Gemma 4 31B, 8-shot | chat VLM | 0.775 [0.768, 0.783] | 0.865 | 0.745 | 0.557 | 0.772 | 0.938 | -0.139 [-0.147, -0.132] | 13,144 |
-| Gemma 4 31B | chat VLM | 0.756 [0.748, 0.763] | 0.825 | 0.659 | 0.584 | 0.756 | 0.954 | -0.159 [-0.167, -0.151] | 13,144 |
-| GLM-5.3-Flash (FP8, vLLM) | chat VLM | 0.754 [0.746, 0.762] | 0.801 | 0.674 | 0.574 | 0.777 | 0.944 | -0.160 [-0.169, -0.153] | 13,144 |
+| model | macro-AUC [95% CI] | CurbRamp | NoCurbRamp | Obstacle | SurfaceProblem | Crosswalk | Δ vs round 3 [95% CI] |
+|---|---|---|---|---|---|---|---|
+| Round 3 (DINOv2-L, 2026-10) | **0.915 [0.910, 0.919]** | **0.953** | 0.920 | **0.873** | **0.855** | **0.972** | — |
+| Previous production (DINOv2-L, 2025-08) | 0.899 [0.894, 0.905] | 0.942 | **0.925** | 0.814 | 0.846 | 0.970 | -0.015 [-0.020, -0.011] |
+| Gemma 4 31B, 8-shot | 0.775 [0.768, 0.783] | 0.865 | 0.745 | 0.557 | 0.772 | 0.938 | -0.139 [-0.147, -0.132] |
+| Gemma 4 31B | 0.756 [0.748, 0.763] | 0.825 | 0.659 | 0.584 | 0.756 | 0.954 | -0.159 [-0.167, -0.151] |
+| GLM-5.3-Flash (FP8, vLLM) | 0.754 [0.746, 0.762] | 0.801 | 0.674 | 0.574 | 0.777 | 0.944 | -0.160 [-0.169, -0.153] |
 
 <!-- END GENERATED: readme_scoreboard -->
+
+The heatmaps below are built with the board (every full-coverage leg, pooled AUC; the CSVs behind them are in
+[`docs/vlm-scoreboard/`](docs/vlm-scoreboard)). Round 3 leads every VLM on every label type (the 2025-08 models
+edge it on NoCurbRamp, 0.925 against 0.920). The VLMs come closest on Crosswalk, where their AUCs run 0.89–0.95
+against 0.97, and are near chance on Obstacle, 0.51–0.61 against 0.87.
+
+![Heatmap: AUC by model and label type](docs/vlm-scoreboard/by_type.png)
+
+Round 3 is ahead of every VLM in every scoreable severity slice. The VLMs lose ground as severity rises on
+CurbRamp (the 8-shot Gemma leg falls from 0.87 at severity 1 to 0.76 at severity 3, where round 3 stays above
+0.91) and are near chance on Obstacle at every severity (0.50–0.70). Crosswalk severity 3 and Crosswalk with no
+severity are too thin to score.
+
+![Heatmap: AUC by model, label type and severity](docs/vlm-scoreboard/by_severity.png)
+
+By tag, round 3's weak spots are rare or badly transferring slices: Obstacle stairs (0.44 on 57 crops, 35 training
+crops), SurfaceProblem brick/cobblestone (0.63) and sand/gravel (0.75). Its largest gain over the 2025-08 models is
+Obstacle parked scooter/motorcycle, 0.87 against 0.52. Per deployment, the best VLM beats round 3 in one deployment
+only, a 33-crop single-type one ([`per_deployment.png`](docs/vlm-scoreboard/per_deployment.png)).
+
+![Heatmap: AUC by model, label type and tag](docs/vlm-scoreboard/by_tag.png)
 
 The pooled AUC hides what a new deployment would see. Round 3 on the training deployments' test share against the
 three unseen deployments, with the within-deployment AUC that cannot be raised by telling deployments apart
