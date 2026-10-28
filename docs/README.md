@@ -17,7 +17,7 @@ because each reports one measurement at one point in time; the pipeline pages ar
 | page | question |
 |---|---|
 | [`retrain-2026-10.md`](retrain-2026-10.md) | **The round-3 retrain report**: test and unseen-deployment results per type, the comparison with the 2025-08 models, calibration at the 0.92 gate, the ship recommendation |
-| [`vlm-scoreboard.md`](vlm-scoreboard.md) | **The scoreboard**: round 3, production and every open-weight VLM leg on the round-3 held-out crops, 14 of 17 legs with full coverage (generated, drift-checked, [#63](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/63)) |
+| [`vlm-scoreboard.md`](vlm-scoreboard.md) | **The scoreboard**: round 3, the 2025-08 models and every open-weight VLM leg on the round-3 held-out crops, 14 of 17 legs with full coverage (generated, drift-checked, [#63](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/63)) |
 | [`vlm-baseline-2026-10.md`](vlm-baseline-2026-10.md) | The first VLM baseline: three MLX models on a Mac, zero-shot, and whether their explanations are worth showing ([#16](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/16)) |
 | [`calibration-2026-10.md`](calibration-2026-10.md) | How the 2025-08 models' served accuracy compared with production outcomes, and the production-fitted maps proposed to replace theirs ([#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4)) |
 | [`per-city-calibration-2026-10.md`](per-city-calibration-2026-10.md) | Does the 0.92 gate mean the same thing in every city? ([#15](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/15), [#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52)) |

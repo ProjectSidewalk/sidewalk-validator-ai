@@ -781,11 +781,20 @@ def bold_columns(rows, cols, higher=True):
 
 
 def _with_rule(rows, full, n_cols):
-    """``rows`` with the "partial coverage" rule inserted before the first row whose ``full`` flag is False."""
-    out = []
+    """``rows`` with the "partial coverage" rule inserted before the first partial row that follows a full one (no
+    rule when no row is full: there is nothing above to rank against).
+
+    >>> [r[1] for r in _with_rule([["", "a"], ["", "b"], ["", "c"]], [True, False, False], 2)]
+    ['a', '*partial coverage, not ranked against the rows above*', 'b', 'c']
+    >>> [r[1] for r in _with_rule([["", "a"], ["", "b"]], [False, False], 2)]
+    ['a', 'b']
+    """
+    out, seen_full, ruled = [], False, False
     for r, f in zip(rows, full):
-        if not f and out and not any(x[1].startswith("*partial") for x in out):
+        if not f and seen_full and not ruled:
             out.append(["", "*partial coverage, not ranked against the rows above*"] + [""] * (n_cols - 2))
+            ruled = True
+        seen_full = seen_full or f
         out.append(r)
     return out
 
@@ -818,25 +827,26 @@ def render_blocks(aggs):
                          f"{interval(p.macro_auc_lo, p.macro_auc_hi)} on {_int(p.n)} crops.")
     blocks["short_answer"] = "\n".join(lines) if lines else "(no legs staged)"
 
-    # Two tables so that neither needs horizontal scrolling on GitHub: AUCs, then splits, operating points and cost.
-    head = ["#", "model", "class", "macro-AUC [95% CI]"] + list(LABEL_TYPES) + ["Δ vs round 3 [95% CI]"]
-    head2 = ["model", "test", "held-out", "within-city", "bal. acc.", "R@P95", "s/crop (GPU, batch)", "coverage"]
+    # Two tables so that neither needs horizontal scrolling on GitHub: AUCs, then class, splits, operating points
+    # and cost. s/crop is not bolded: the legs ran on different GPUs and batch sizes, so the minimum is not a winner.
+    head = ["#", "model", "macro-AUC [95% CI]"] + list(LABEL_TYPES) + ["Δ vs round 3 [95% CI]"]
+    head2 = ["model", "class", "test", "held-out", "within-city", "bal. acc.", "R@P95", "s/crop (GPU, batch)",
+             "coverage"]
     rows, rows2, full = [], [], []
     for r in b.itertuples():
         speed = "—" if f3(r.s_per_crop) == "—" else f"{float(r.s_per_crop):.3g} ({r.gpu}, {int(r.batch_size)})"
         d = "—" if r.leg == REFERENCE else f"{f3(r.diff_vs_round3)}{interval(r.diff_lo, r.diff_hi)}"
-        rows.append(["" if f3(r.rank) == "—" else int(float(r.rank)), r.display, r.model_class,
+        rows.append(["" if f3(r.rank) == "—" else int(float(r.rank)), r.display,
                      f"{f3(r.macro_auc)}{interval(r.macro_auc_lo, r.macro_auc_hi)}"]
                     + [f3(getattr(r, f"auc_{t}")) for t in LABEL_TYPES] + [d])
-        rows2.append([r.display, f3(r.auc_test), f3(r.auc_heldout), f3(r.within_city_auc), f3(r.balanced_accuracy),
-                      f3(r.r_incorrect_p95), speed, f"{_int(r.n)} / {_int(r.n_total)}"])
+        rows2.append([r.display, r.model_class, f3(r.auc_test), f3(r.auc_heldout), f3(r.within_city_auc),
+                      f3(r.balanced_accuracy), f3(r.r_incorrect_p95), speed, f"{_int(r.n)} / {_int(r.n_total)}"])
         full.append(bool(r.full))
     ranked = [i for i, f in enumerate(full) if f]            # bold is among the full-coverage rows only
-    bold_columns([rows[i] for i in ranked], range(3, 4 + len(LABEL_TYPES)))
-    bold_columns([rows2[i] for i in ranked], range(1, 6))
-    bold_columns([rows2[i] for i in ranked], [6], higher=False)
-    blocks["board"] = (_table(head, _with_rule(rows, full, len(head))) + "\n\nSplits, operating points and cost of "
-                       "the same legs:\n\n" + _table(head2, _with_rule(rows2, full, len(head2)))) if rows \
+    bold_columns([rows[i] for i in ranked], range(2, 3 + len(LABEL_TYPES)))
+    bold_columns([rows2[i] for i in ranked], range(2, 7))
+    blocks["board"] = (_table(head, _with_rule(rows, full, len(head))) + "\n\nClass, splits, operating points and "
+                       "cost of the same legs:\n\n" + _table(head2, _with_rule(rows2, full, len(head2)))) if rows \
         else "(no legs staged)"
 
     rows, by_type = [], {}
@@ -874,8 +884,9 @@ def render_blocks(aggs):
                             aggfunc="first")
         ns = d.groupby(["deployment", "held_out"]).n.max()
         for (dname, ho), r in piv.sort_index(level=[1, 0]).iterrows():
+            cells = [f3(r.get(k)) for k in keep if k in piv.columns]
             rows.append([dname, "held-out" if bool(ho) else "test", _int(ns.loc[(dname, ho)])]
-                        + bold_best([f3(r.get(k)) for k in keep if k in piv.columns]))
+                        + (bold_best(cells) if best_full else cells))      # a partial VLM is on other crops
         hdr = ["deployment", "split", "n"] + [disp.get(k, k) for k in keep if k in piv.columns]
     blocks["per_deployment"] = _table(hdr, rows) if rows else "(none)"
 
@@ -920,7 +931,7 @@ def slice_table(df, b, by):
 def render_readme_block(aggs):
     """The README's summary of the board: round 3, the 2025-08 models and the ``README_VLMS`` best full-coverage
     VLM legs, with macro-AUC, per-type AUC (the best of each column in bold) and the paired difference against
-    round 3. No class column, so that the table fits GitHub's README column without scrolling. Rendered from the
+    round 3. No class or crops column, so that the table fits GitHub's README column without scrolling. Rendered from the
     committed ``board.csv`` like every other block, and checked for drift the same way."""
     b = aggs["board"]
     if b.empty:
@@ -929,15 +940,15 @@ def render_readme_block(aggs):
     purpose = full[full.model_class == PURPOSE]
     purpose = purpose.assign(_ref=(purpose.leg != REFERENCE)).sort_values(["_ref", "macro_auc", "leg"],
                                                                          ascending=[True, False, True])
-    keep = list(purpose.drop(columns="_ref").itertuples())    # round 3 first, then production
+    keep = list(purpose.drop(columns="_ref").itertuples())    # round 3 first, then the 2025-08 models
     vlms = full[full.model_class != PURPOSE].sort_values(["macro_auc", "leg"], ascending=[False, True])
     keep += list(vlms.head(README_VLMS).itertuples())
-    head = ["model", "macro-AUC [95% CI]"] + list(LABEL_TYPES) + ["Δ vs round 3 [95% CI]", "crops"]
+    head = ["model", "macro-AUC [95% CI]"] + list(LABEL_TYPES) + ["Δ vs round 3 [95% CI]"]
     rows = []
-    for r in keep:
+    for r in keep:          # full legs only, so every row scored n_total crops and no crops column is needed
         d = "—" if r.leg == REFERENCE else f"{f3(r.diff_vs_round3)}{interval(r.diff_lo, r.diff_hi)}"
         rows.append([r.display, f"{f3(r.macro_auc)}{interval(r.macro_auc_lo, r.macro_auc_hi)}"]
-                    + [f3(getattr(r, f"auc_{t}")) for t in LABEL_TYPES] + [d, _int(r.n)])
+                    + [f3(getattr(r, f"auc_{t}")) for t in LABEL_TYPES] + [d])
     bold_columns(rows, range(1, 2 + len(LABEL_TYPES)))
     return _table(head, rows)
 

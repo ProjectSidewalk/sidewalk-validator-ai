@@ -28,56 +28,56 @@ label bootstrap within each type. *test* is the training deployments' test share
 round-3 model was trained on (both macro over types). *within-city* is the pair-weighted within-deployment AUC
 (macro over types). *bal. acc.* is balanced accuracy at the argmax (`p_incorrect > 0.5`); *R@P95* is recall of
 `incorrect` at precision ≥ 0.95. *Δ vs round 3* is the paired difference on the crops both legs scored. The board is
-two tables (AUCs, then splits, operating points and cost) so that neither scrolls sideways on GitHub; **bold** is the
+two tables (AUCs, then class, splits, operating points and cost) so that neither scrolls sideways on GitHub; **bold** is the
 best value in a column among the rows that scored every crop. Rows below the rule did not score every crop: their
 AUCs are on other (smaller) crop sets and are not ranked against the full rows. *Previous production* is the
 2025-08 models, served until round 3 replaced them on 2026-10-27.
 
 <!-- BEGIN GENERATED: board (analysis/vlm_scoreboard.py) -->
 
-| # | model | class | macro-AUC [95% CI] | CurbRamp | NoCurbRamp | Obstacle | SurfaceProblem | Crosswalk | Δ vs round 3 [95% CI] |
-|---|---|---|---|---|---|---|---|---|---|
-| 1 | Round 3 (DINOv2-L, 2026-10) | purpose-trained | **0.915 [0.910, 0.919]** | **0.953** | 0.920 | **0.873** | **0.855** | **0.972** | — |
-| 2 | Previous production (DINOv2-L, 2025-08) | purpose-trained | 0.899 [0.894, 0.905] | 0.942 | **0.925** | 0.814 | 0.846 | 0.970 | -0.015 [-0.020, -0.011] |
-| 3 | Gemma 4 31B, 8-shot | chat VLM | 0.775 [0.768, 0.783] | 0.865 | 0.745 | 0.557 | 0.772 | 0.938 | -0.139 [-0.147, -0.132] |
-| 4 | Gemma 4 31B | chat VLM | 0.756 [0.748, 0.763] | 0.825 | 0.659 | 0.584 | 0.756 | 0.954 | -0.159 [-0.167, -0.151] |
-| 5 | GLM-5.3-Flash (FP8, vLLM) | chat VLM | 0.754 [0.746, 0.762] | 0.801 | 0.674 | 0.574 | 0.777 | 0.944 | -0.160 [-0.169, -0.153] |
-| 6 | Qwen3-VL-32B | chat VLM | 0.748 [0.740, 0.756] | 0.785 | 0.645 | 0.613 | 0.752 | 0.946 | -0.166 [-0.174, -0.159] |
-| 7 | MiniCPM-V 4.7 35B-A3B | chat VLM | 0.742 [0.734, 0.749] | 0.793 | 0.652 | 0.580 | 0.743 | 0.941 | -0.173 [-0.181, -0.165] |
-| 8 | Nemotron 3.5 Super VL 120B-A12B | chat VLM | 0.738 [0.730, 0.746] | 0.797 | 0.650 | 0.553 | 0.748 | 0.942 | -0.177 [-0.185, -0.169] |
-| 9 | Qwen3.8-27B | chat VLM | 0.736 [0.728, 0.744] | 0.779 | 0.619 | 0.589 | 0.746 | 0.948 | -0.179 [-0.187, -0.171] |
-| 10 | Gemma 4 12B | chat VLM | 0.736 [0.727, 0.743] | 0.809 | 0.632 | 0.549 | 0.738 | 0.949 | -0.179 [-0.187, -0.171] |
-| 11 | Muse Glimmer 30B | chat VLM | 0.722 [0.714, 0.731] | 0.802 | 0.605 | 0.568 | 0.746 | 0.891 | -0.192 [-0.202, -0.184] |
-| 12 | Phi-4-reasoning-vision-15B | chat VLM | 0.700 [0.692, 0.709] | 0.709 | 0.569 | 0.566 | 0.721 | 0.934 | -0.215 [-0.224, -0.206] |
-| 13 | Molmo2-8B | pointing model | 0.694 [0.685, 0.702] | 0.732 | 0.560 | 0.513 | 0.728 | 0.935 | -0.221 [-0.230, -0.212] |
-| 14 | Qwen3-VL-8B | chat VLM | 0.679 [0.670, 0.688] | 0.737 | 0.540 | 0.515 | 0.692 | 0.912 | -0.235 [-0.246, -0.227] |
-|  | *partial coverage, not ranked against the rows above* |  |  |  |  |  |  |  |  |
-|  | Gemma 4 12B (4-bit, Mac) | chat VLM | 0.722 [0.702, 0.745] | 0.790 | 0.634 | 0.508 | 0.735 | 0.944 | -0.183 [-0.206, -0.162] |
-|  | Qwen3-VL-2B (4-bit, Mac) | chat VLM | 0.621 [0.578, 0.662] | 0.530 | 0.546 | 0.486 | 0.618 | 0.924 | -0.286 [-0.334, -0.236] |
-|  | Qwen3-VL-8B (4-bit, Mac) | chat VLM | 0.657 [0.611, 0.701] | 0.761 | 0.457 | 0.515 | 0.656 | 0.895 | -0.248 [-0.298, -0.201] |
+| # | model | macro-AUC [95% CI] | CurbRamp | NoCurbRamp | Obstacle | SurfaceProblem | Crosswalk | Δ vs round 3 [95% CI] |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Round 3 (DINOv2-L, 2026-10) | **0.915 [0.910, 0.919]** | **0.953** | 0.920 | **0.873** | **0.855** | **0.972** | — |
+| 2 | Previous production (DINOv2-L, 2025-08) | 0.899 [0.894, 0.905] | 0.942 | **0.925** | 0.814 | 0.846 | 0.970 | -0.015 [-0.020, -0.011] |
+| 3 | Gemma 4 31B, 8-shot | 0.775 [0.768, 0.783] | 0.865 | 0.745 | 0.557 | 0.772 | 0.938 | -0.139 [-0.147, -0.132] |
+| 4 | Gemma 4 31B | 0.756 [0.748, 0.763] | 0.825 | 0.659 | 0.584 | 0.756 | 0.954 | -0.159 [-0.167, -0.151] |
+| 5 | GLM-5.3-Flash (FP8, vLLM) | 0.754 [0.746, 0.762] | 0.801 | 0.674 | 0.574 | 0.777 | 0.944 | -0.160 [-0.169, -0.153] |
+| 6 | Qwen3-VL-32B | 0.748 [0.740, 0.756] | 0.785 | 0.645 | 0.613 | 0.752 | 0.946 | -0.166 [-0.174, -0.159] |
+| 7 | MiniCPM-V 4.7 35B-A3B | 0.742 [0.734, 0.749] | 0.793 | 0.652 | 0.580 | 0.743 | 0.941 | -0.173 [-0.181, -0.165] |
+| 8 | Nemotron 3.5 Super VL 120B-A12B | 0.738 [0.730, 0.746] | 0.797 | 0.650 | 0.553 | 0.748 | 0.942 | -0.177 [-0.185, -0.169] |
+| 9 | Qwen3.8-27B | 0.736 [0.728, 0.744] | 0.779 | 0.619 | 0.589 | 0.746 | 0.948 | -0.179 [-0.187, -0.171] |
+| 10 | Gemma 4 12B | 0.736 [0.727, 0.743] | 0.809 | 0.632 | 0.549 | 0.738 | 0.949 | -0.179 [-0.187, -0.171] |
+| 11 | Muse Glimmer 30B | 0.722 [0.714, 0.731] | 0.802 | 0.605 | 0.568 | 0.746 | 0.891 | -0.192 [-0.202, -0.184] |
+| 12 | Phi-4-reasoning-vision-15B | 0.700 [0.692, 0.709] | 0.709 | 0.569 | 0.566 | 0.721 | 0.934 | -0.215 [-0.224, -0.206] |
+| 13 | Molmo2-8B | 0.694 [0.685, 0.702] | 0.732 | 0.560 | 0.513 | 0.728 | 0.935 | -0.221 [-0.230, -0.212] |
+| 14 | Qwen3-VL-8B | 0.679 [0.670, 0.688] | 0.737 | 0.540 | 0.515 | 0.692 | 0.912 | -0.235 [-0.246, -0.227] |
+|  | *partial coverage, not ranked against the rows above* |  |  |  |  |  |  |  |
+|  | Gemma 4 12B (4-bit, Mac) | 0.722 [0.702, 0.745] | 0.790 | 0.634 | 0.508 | 0.735 | 0.944 | -0.183 [-0.206, -0.162] |
+|  | Qwen3-VL-2B (4-bit, Mac) | 0.621 [0.578, 0.662] | 0.530 | 0.546 | 0.486 | 0.618 | 0.924 | -0.286 [-0.334, -0.236] |
+|  | Qwen3-VL-8B (4-bit, Mac) | 0.657 [0.611, 0.701] | 0.761 | 0.457 | 0.515 | 0.656 | 0.895 | -0.248 [-0.298, -0.201] |
 
-Splits, operating points and cost of the same legs:
+Class, splits, operating points and cost of the same legs:
 
-| model | test | held-out | within-city | bal. acc. | R@P95 | s/crop (GPU, batch) | coverage |
-|---|---|---|---|---|---|---|---|
-| Round 3 (DINOv2-L, 2026-10) | **0.932** | **0.862** | **0.886** | **0.850** | 0.407 | — | 13,144 / 13,144 |
-| Previous production (DINOv2-L, 2025-08) | 0.918 | 0.846 | 0.880 | 0.819 | **0.436** | 0.0499 (NVIDIA A40, 1) | 13,144 / 13,144 |
-| Gemma 4 31B, 8-shot | 0.799 | 0.744 | 0.784 | 0.703 | 0.156 | 2.46 (2xNVIDIA L40S, 4) | 13,144 / 13,144 |
-| Gemma 4 31B | 0.769 | 0.734 | 0.741 | 0.698 | 0.145 | 0.409 (2xNVIDIA A40, 16) | 13,144 / 13,144 |
-| GLM-5.3-Flash (FP8, vLLM) | 0.759 | 0.748 | 0.745 | 0.684 | 0.150 | **0.0314 (4xH200, 32)** | 13,144 / 13,144 |
-| Qwen3-VL-32B | 0.744 | 0.746 | 0.741 | 0.665 | 0.147 | 0.229 (2xNVIDIA L40S, 16) | 13,144 / 13,144 |
-| MiniCPM-V 4.7 35B-A3B | 0.751 | 0.728 | 0.728 | 0.641 | 0.132 | 0.264 (NVIDIA H200, 1) | 13,144 / 13,144 |
-| Nemotron 3.5 Super VL 120B-A12B | 0.738 | 0.732 | 0.718 | 0.652 | 0.147 | 0.106 (2xNVIDIA H200, 4) | 13,144 / 13,144 |
-| Qwen3.8-27B | 0.736 | 0.738 | 0.726 | 0.672 | 0.142 | 0.53 (2xNVIDIA A40, 1) | 13,144 / 13,144 |
-| Gemma 4 12B | 0.734 | 0.731 | 0.722 | 0.677 | 0.143 | 0.129 (NVIDIA A40, 16) | 13,144 / 13,144 |
-| Muse Glimmer 30B | 0.742 | 0.672 | 0.693 | 0.501 | 0.010 | 0.551 (2xNVIDIA A40, 16) | 13,144 / 13,144 |
-| Phi-4-reasoning-vision-15B | 0.697 | 0.694 | 0.692 | 0.615 | 0.124 | 0.84 (NVIDIA A40, 1) | 13,144 / 13,144 |
-| Molmo2-8B | 0.688 | 0.705 | 0.696 | 0.540 | 0.134 | 0.264 (NVIDIA A40, 16) | 13,144 / 13,144 |
-| Qwen3-VL-8B | 0.686 | 0.654 | 0.669 | 0.609 | 0.094 | 0.131 (NVIDIA A40, 16) | 13,144 / 13,144 |
-|  | *partial coverage, not ranked against the rows above* |  |  |  |  |  |  |
-| Gemma 4 12B (4-bit, Mac) | 0.724 | 0.718 | 0.696 | 0.625 | 0.185 | 2.33 (Apple M1 Max (MLX), 1) | 1,988 / 13,144 |
-| Qwen3-VL-2B (4-bit, Mac) | 0.613 | 0.648 | 0.629 | 0.570 | 0.152 | 0.717 (Apple M1 Max (MLX), 1) | 671 / 13,144 |
-| Qwen3-VL-8B (4-bit, Mac) | 0.655 | 0.658 | 0.633 | 0.614 | 0.100 | 2.19 (Apple M1 Max (MLX), 1) | 500 / 13,144 |
+| model | class | test | held-out | within-city | bal. acc. | R@P95 | s/crop (GPU, batch) | coverage |
+|---|---|---|---|---|---|---|---|---|
+| Round 3 (DINOv2-L, 2026-10) | purpose-trained | **0.932** | **0.862** | **0.886** | **0.850** | 0.407 | — | 13,144 / 13,144 |
+| Previous production (DINOv2-L, 2025-08) | purpose-trained | 0.918 | 0.846 | 0.880 | 0.819 | **0.436** | 0.0499 (NVIDIA A40, 1) | 13,144 / 13,144 |
+| Gemma 4 31B, 8-shot | chat VLM | 0.799 | 0.744 | 0.784 | 0.703 | 0.156 | 2.46 (2xNVIDIA L40S, 4) | 13,144 / 13,144 |
+| Gemma 4 31B | chat VLM | 0.769 | 0.734 | 0.741 | 0.698 | 0.145 | 0.409 (2xNVIDIA A40, 16) | 13,144 / 13,144 |
+| GLM-5.3-Flash (FP8, vLLM) | chat VLM | 0.759 | 0.748 | 0.745 | 0.684 | 0.150 | 0.0314 (4xH200, 32) | 13,144 / 13,144 |
+| Qwen3-VL-32B | chat VLM | 0.744 | 0.746 | 0.741 | 0.665 | 0.147 | 0.229 (2xNVIDIA L40S, 16) | 13,144 / 13,144 |
+| MiniCPM-V 4.7 35B-A3B | chat VLM | 0.751 | 0.728 | 0.728 | 0.641 | 0.132 | 0.264 (NVIDIA H200, 1) | 13,144 / 13,144 |
+| Nemotron 3.5 Super VL 120B-A12B | chat VLM | 0.738 | 0.732 | 0.718 | 0.652 | 0.147 | 0.106 (2xNVIDIA H200, 4) | 13,144 / 13,144 |
+| Qwen3.8-27B | chat VLM | 0.736 | 0.738 | 0.726 | 0.672 | 0.142 | 0.53 (2xNVIDIA A40, 1) | 13,144 / 13,144 |
+| Gemma 4 12B | chat VLM | 0.734 | 0.731 | 0.722 | 0.677 | 0.143 | 0.129 (NVIDIA A40, 16) | 13,144 / 13,144 |
+| Muse Glimmer 30B | chat VLM | 0.742 | 0.672 | 0.693 | 0.501 | 0.010 | 0.551 (2xNVIDIA A40, 16) | 13,144 / 13,144 |
+| Phi-4-reasoning-vision-15B | chat VLM | 0.697 | 0.694 | 0.692 | 0.615 | 0.124 | 0.84 (NVIDIA A40, 1) | 13,144 / 13,144 |
+| Molmo2-8B | pointing model | 0.688 | 0.705 | 0.696 | 0.540 | 0.134 | 0.264 (NVIDIA A40, 16) | 13,144 / 13,144 |
+| Qwen3-VL-8B | chat VLM | 0.686 | 0.654 | 0.669 | 0.609 | 0.094 | 0.131 (NVIDIA A40, 16) | 13,144 / 13,144 |
+|  | *partial coverage, not ranked against the rows above* |  |  |  |  |  |  |  |
+| Gemma 4 12B (4-bit, Mac) | chat VLM | 0.724 | 0.718 | 0.696 | 0.625 | 0.185 | 2.33 (Apple M1 Max (MLX), 1) | 1,988 / 13,144 |
+| Qwen3-VL-2B (4-bit, Mac) | chat VLM | 0.613 | 0.648 | 0.629 | 0.570 | 0.152 | 0.717 (Apple M1 Max (MLX), 1) | 671 / 13,144 |
+| Qwen3-VL-8B (4-bit, Mac) | chat VLM | 0.655 | 0.658 | 0.633 | 0.614 | 0.100 | 2.19 (Apple M1 Max (MLX), 1) | 500 / 13,144 |
 
 <!-- END GENERATED: board -->
 
@@ -292,9 +292,9 @@ draws (seed 20261021). A partial leg's comparison is on its own crops only.
 ## Per deployment
 
 Mean within-type AUC per deployment (all five types, types with ≥ 10 rows and both classes), for round 3,
-the 2025-08 models and the best VLM with full coverage, the best of the three per row in bold. Public deployments with ≥ 30 crops are named; the two
-private held-out deployments are lettered as in [`retrain-2026-10.md`](retrain-2026-10.md); every other private
-deployment is pooled into one row. The crops are the whole held-out split, the round-3 `test` + `test_heldout` rows,
+the 2025-08 models and the best VLM with full coverage, the best of the three per row in bold. Public
+deployments with ≥ 30 crops are named; the two private held-out deployments are lettered as in
+[`retrain-2026-10.md`](retrain-2026-10.md); every other private deployment is pooled into one row. The crops are the whole held-out split, the round-3 `test` + `test_heldout` rows,
 which is wider than the board's *held-out* column (`test_heldout` only).
 
 <!-- BEGIN GENERATED: per_deployment (analysis/vlm_scoreboard.py) -->
@@ -335,8 +335,7 @@ help. A crop with several tags counts once in each; `(none)` is an untagged crop
 test + held-out pooled, as on the board. Each table row gives the slice's crops, its incorrect share, the share
 held by its largest deployment (unnamed) and its round-3 training crops, then, for round 3, the 2025-08 models and
 the best full-coverage VLM, the pooled AUC with a 95% label-bootstrap interval and the within-city AUC (the best
-of each per row in bold). The CSVs add the AUC
-per split for every full leg; the heatmaps show the pooled AUC of every full leg. Every tag with at least 30 crops
+of each per row in bold). The CSVs add the AUC per split for every full leg; the heatmaps show the pooled AUC of every full leg. Every tag with at least 30 crops
 of its type has a row, and an AUC is blank below 30 crops or 10 of a class. Slice names follow
 `analysis/slices.py` ([#67](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/67)), which reports test
 and held-out separately with a panorama bootstrap; compare its numbers with this board's per-split columns, not the

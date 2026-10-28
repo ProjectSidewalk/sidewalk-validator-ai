@@ -254,7 +254,7 @@ def test_readme_block_is_round3_production_and_best_full_vlms(board):
     want = purpose + vlms[:sb.README_VLMS]
     assert [l.split("|")[1].strip().strip("*") for l in lines] == want
     assert all(b[~b.full.astype(bool)].display.map(lambda d: d not in block))     # partial legs never shown
-    assert lines[0].split("|")[-3].strip() == "—"                                # round 3 has no Δ
+    assert lines[0].split("|")[-2].strip() == "—"                                # round 3 has no Δ
     # the privacy scan covers the README too
     board["readme"].write_text(board["readme"].read_text() + "\nleak faraway:123\n")
     assert any("faraway:123" in p for p in sb.privacy_problems(str(board["out"]), str(board["doc"]), set(PUBLIC),
@@ -593,7 +593,7 @@ def test_bold_marks_the_best_cell_and_the_board_is_two_tables(board):
     cells = [c.strip() for c in row.split("|")[1:-1]]
     assert cells[1].startswith("**") and cells[1].endswith("**")
     assert sum(c.startswith("**") for c in cells[2:7]) >= 1
-    assert not cells[-2].startswith("**") and not cells[-1].startswith("**")     # Δ and crops are never bold
+    assert not cells[-1].startswith("**") and "| crops |" not in block         # Δ is never bold; no crops column
     # the doc's board: two tables, bold among the full rows only, partial rows after the rule in both
     doc = sb.render_blocks(aggs)["board"]
     assert doc.count("\n|---|") == 2 and doc.count("partial coverage, not ranked") == 2
@@ -603,3 +603,46 @@ def test_bold_marks_the_best_cell_and_the_board_is_two_tables(board):
     first = doc.split("\n\n")[0]
     top_row = next(l for l in first.splitlines() if f"| {top.display} |" in l)
     assert "**" in top_row
+
+
+def test_bold_in_the_other_tables_and_the_rule(board):
+    aggs = sb.read_aggregates(str(board["out"]))
+    b = aggs["board"]
+    full_names = set(b[b.full.astype(bool)].display)
+    blocks = sb.render_blocks(aggs)
+
+    def body(block):
+        return [[c.strip() for c in l.split("|")[1:-1]] for l in block.splitlines()[2:] if l.startswith("| ")]
+
+    # paired: the larger of the two AUCs is bold, the difference never
+    for cells in body(blocks["paired"]):
+        assert sum(c.startswith("**") for c in cells[3:5]) >= 1 and not cells[5].startswith("**")
+    # per deployment: one winner per row among the leg columns
+    for cells in body(blocks["per_deployment"]):
+        assert sum(c.startswith("**") for c in cells[3:]) >= 1
+    # per type: every numeric column has a winner within each type, and only full legs carry bold
+    rows = body(blocks["per_type"])
+    for t in sb.LABEL_TYPES:
+        group = [r for r in rows if r[1] == t and r[0] in full_names]
+        for j in range(4, 10):
+            if sum(sb._value(r[j]) is not None for r in group) >= 2:      # a column of "—" has no winner
+                assert any(r[j].startswith("**") for r in group), (t, j)
+    assert not any(c.startswith("**") for r in rows if r[0] not in full_names for c in r)
+    # slices: the AUC pair and the within-city pair are bolded separately; a slice without within-city values has
+    # no bold there but still a bold AUC (the fixture's own slices are all too thin to score, so build two rows)
+    def srow(leg, sev, auc, within):
+        return dict(leg=leg, label_type="CurbRamp", severity=sev, n=40, incorrect_share=0.5,
+                    top_deployment_share=0.6, n_train=np.nan, auc=auc, auc_lo=auc - 0.05, auc_hi=auc + 0.05,
+                    within_city_auc=within)
+    df = pd.DataFrame([srow(sb.REFERENCE, 1, 0.9, 0.8), srow("production", 1, 0.7, 0.85),
+                       srow(sb.REFERENCE, 2, 0.6, np.nan), srow("production", 2, 0.65, np.nan)])
+    rows = body(sb.slice_table(df, b, "severity"))
+    assert rows[0][6].startswith("**0.900") and not rows[0][8].startswith("**")      # AUC: round 3 wins
+    assert rows[0][9] == "**0.850**" and rows[0][7] == "0.800"                        # within-city: 2025-08 wins
+    assert rows[1][8].startswith("**0.650") and rows[1][7] == "—" and rows[1][9] == "—"
+    assert "| round 3 AUC [95% CI] | within-city |" in sb.slice_table(df, b, "severity").splitlines()[0]
+    # the rule follows a full row only
+    assert [r[1] for r in sb._with_rule([["", "a"], ["", "b"]], [False, False], 2)] == ["a", "b"]
+    assert sb._with_rule([["", "a"], ["", "b"]], [True, False], 2)[1][1].startswith("*partial")
+    assert [r[1] for r in sb._with_rule([["", "a"], ["", "b"], ["", "c"]], [True, False, False], 2)].count(
+        "*partial coverage, not ranked against the rows above*") == 1
