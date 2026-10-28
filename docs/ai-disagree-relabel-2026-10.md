@@ -332,6 +332,63 @@ dataset revisions the production training rows were read from:
 The joined per-label file (`packet/joined_scored.csv`: key, verdict and comments) is pinned in the manifest; it
 holds comment text and label ids from private deployments and stays out of the repo.
 
+## Round 2 (built 2026-10-28; issue #78): Seattle and Chicago, two raters, 100 shared items
+
+Round 1 spent one expert's afternoon on 300 labels across 28 cities. [#74](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/74) needs the expert
+verdicts as a **gold set** that scores automatic target-cleaning methods on the rows they touch, and only 65 of
+round 1's 300 items are rows of the round-3 training set (most are lone or lightly voted Disagrees that never met
+the margin rule). Round 2 therefore changes the design, in [`analysis/gt_rounds.py`](../analysis/gt_rounds.py)
+with the design file [`analysis/gt_rounds/round2.json`](../analysis/gt_rounds/round2.json):
+
+- **One city per rater, with overlap.** Jon rates 250 Seattle items plus 50 of Mikey's Chicago items; Mikey
+  rates 250 Chicago items plus 50 of Jon's Seattle items. The 100 items rated by both give inter-rater agreement per
+  type (`agreement`), so rater and city are not confounded. Both are training cities, so this round measures target
+  quality, not transfer ([#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52)).
+- **Strata.** Per city, 170 AI Disagrees and 80 decoys (AI Agree; Unsure where a type had too few Agree votes). The
+  Disagrees split into `margin_incorrect` (net human Disagree ≥ 2: the training target sides with the AI),
+  `margin_correct` (net Agree ≥ 3: the AI contradicts its training target), `lone` (no human vote) and
+  `light_voted` (votes short of the margin rule), half of them margin rows. `margin_correct` is capped at 40% of
+  the margin cell and topped up with `margin_incorrect`.
+- **Quotas per type** (AI Disagrees per city): CurbRamp 42, Crosswalk 36, NoCurbRamp 34, Obstacle 30,
+  SurfaceProblem 28, each filled over severity buckets (1–2 / 3–5 / none) in proportion to the eligible pool.
+- **Exclusions.** Labels either rater voted on or placed are out of every list, both cities.
+- **The key** carries `stratum`, `margin_class`, `round3_split` (joined to the pinned round-3 `split.csv` files),
+  `shared`, `rater`, `sev_bucket`, and the label in both id forms (`schema:label_id` and the API `city_id:label_id`
+  that the training manifests use).
+- **The rule given to both raters**, a three-item list on the rating page and the Gallery index: Agree when the
+  feature is really there, even in poor condition (faded crosswalk, steep or broken ramp, cobbles), with condition
+  in severity and tags; Disagree when it is absent, misplaced, or another type; Unsure only when the imagery cannot
+  show it.
+
+Built from a fresh two-city pull (`SCHEMAS="sidewalk_seattle sidewalk_chicago"`, both raters' votes and
+placements as `expert1` / `expert2` columns), 500 items, no cell short of its quota:
+
+| Rater | City | Items | Shared with the other rater | Disagree strata: margin_incorrect / margin_correct / lone / light_voted | Decoys (Agree / Unsure) | In the round-3 train split | Severity 1–2 / 3–5 / none (Disagrees) |
+|---|---|---:|---:|---|---|---:|---|
+| Jon | Seattle | 250 | 50 | 53 / 32 / 61 / 24 | 80 / 0 | 40 | 122 / 27 / 21 |
+| Mikey | Chicago | 250 | 50 | 53 / 32 / 61 / 24 | 69 / 11 | 55 | 117 / 29 / 24 |
+
+Fewer margin rows are in the round-3 train split than meet the margin rule today because round 3 downsampled the
+`correct` class globally, kept only labels with a stored panorama, and used votes as of 2026-10-19; `margin_class`
+is the current target, `round3_split` the subset round 3 actually trained on.
+
+Rating is on the live site through each rater's Gallery lists (`gallery_jon/index.html`, `gallery_mikey/index.html`:
+own city first, then the shared list), with the masking CSS of round 1 and the rule above; the per-rater offline
+pages (`packet/rater_jon/rate.html`, `packet/rater_mikey/rate.html`) are the fallback. Votes come back with
+`votes --rater jon --rater-id <uuid>` (pinned as `votes_jon`), then `score --rater jon` and
+`agreement --sheets jon=... mikey=...`.
+
+| File (in `~/Data/sidewalk-validator-ai-relabel-2026-10/round2/`) | sha256 |
+|---|---|
+| `pool.csv` (two schemas, pulled 2026-10-28) | `a85a573c303fe6538dba5821cbb7f3dc4667e244aa0c548354aa0e3bdcc23720` |
+| `analysis/gt_rounds/round2.json` | `499fb9dfe5d976651f08d932d9a0c47477386e119080ae2107c91fc5c7404e57` |
+| the build seed (hash of the seed string) | `4e73e4bf5bc4c34a604ab5b983dc4723f62ac8c09b6f1107b7862467804ee66d` |
+| `private-key-do-not-share/key.csv` | `57116bdfa129b66f6944e5520be772e314a046cec9189f22fdee56659e790aed` |
+| `gallery_jon/gallery_urls.csv` | `1b28f58715eee89a1d5d7db56dc9266815513a0d0e1c5a76a1a32dc98f172ba9` |
+| `gallery_mikey/gallery_urls.csv` | `8aaa04b8c89da2a16507c955f877ecbcb2473e820665fece0fba145539749ec9` |
+
+Results go in a "Round 2 results" section here once both raters are done; the raw sheets stay in `~/Data`.
+
 ## Severity and tags, against the crowd
 
 How often a human majority of at least two decisive votes confirms the AI's Agree and Disagree votes:
