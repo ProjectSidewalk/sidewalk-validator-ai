@@ -428,6 +428,22 @@ def test_dataset_card_states_the_expert_rule_only_when_used(tmp_path, staged):
     assert "met the `correct` margin rule" in card
 
 
+def test_dataset_card_states_non_gsv_imagery_by_run_record(tmp_path, staged):
+    """A run from before #72 says non-GSV labels are excluded; one that recorded per-source betas says they are in."""
+    old = _read(os.path.join(staged["dataset"], "README.md"))
+    assert "non-GSV imagery" in old and "Mapillary and Panoramax imagery are included" not in old
+    root, *_ = make_root(tmp_path / "with-sources")
+    path = os.path.join(root, T, "generation_run.json")
+    run = json.loads(_read(path))
+    run.setdefault("settings", {})["source_beta"] = {"mapillary": 1.0, "panoramax": 1.0}
+    with open(path, "w") as f:
+        json.dump(run, f)
+    _, d = pub.stage(root, T)
+    card = _read(os.path.join(d, "README.md"))
+    assert "Mapillary and Panoramax imagery are included" in card and "non-GSV imagery" not in card
+    assert "`pose_source`" in card and "for GSV)" in card
+
+
 def test_dataset_license_flag(tmp_path):
     root, *_ = make_root(tmp_path)
     _, d = pub.stage(root, T, dataset_license="cc-by-4.0")

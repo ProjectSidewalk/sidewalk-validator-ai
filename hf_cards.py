@@ -632,15 +632,21 @@ def dataset_card(ctx, license_id=None):
              + "| (dropped) | unvalidated, unsure, or contested |\n"
              + (expert_text if n_experts else ""),
              f"Labels placed by the `SidewalkAI` account are "
-             f"{'included (tagged `author = ai` in the manifest)' if include_ai else 'excluded'}; labels from "
-             "non-GSV imagery, with unusable panorama geometry, or with legacy unconverted coordinates are excluded. "
-             f"The `correct` class is then downsampled to {dg.CORRECT_PROPORTION:.0%} of the dataset by a seeded hash "
+             f"{'included (tagged `author = ai` in the manifest)' if include_ai else 'excluded'}; "
+             + ("labels with unusable panorama geometry or with legacy unconverted coordinates are excluded. Labels on "
+                "Mapillary and Panoramax imagery are included, cropped with their provider's own camera pose "
+                f"(beta {settings['source_beta']}; `pose_source` in the manifest says which pose each crop used). "
+                if settings.get("source_beta") is not None else
+                "labels from non-GSV imagery, with unusable panorama geometry, or with legacy unconverted coordinates "
+                "are excluded. ")
+             + f"The `correct` class is then downsampled to {dg.CORRECT_PROPORTION:.0%} of the dataset by a seeded hash "
              f"of `label_uid` (seed {gen.get('seed', dg.SEED)}), a training-balance choice, not the real class mix. "
              + prior_text + "\n",
              "## How a crop is made\n",
              f"The panorama is read from the lab's panorama store and resized to 8192×4096. A {dg.VIEW_SIZE}² "
              f"perspective view with a {dg.VIEW_FOV_DEG:g}° field of view is rendered centred on the label with "
-             f"rig-tilt correction (beta = {settings.get('tilt_beta', gen.get('tilt_beta', TODO + ' tilt beta'))}). "
+             f"rig-tilt correction (beta = {settings.get('tilt_beta', gen.get('tilt_beta', TODO + ' tilt beta'))}"
+             f"{' for GSV' if settings.get('source_beta') is not None else ''}). "
              f"Depth Anything V2 (metric, "
              f"{str(settings.get('depth_dataset', dg.DEPTH_DATASET)).upper()}, "
              f"{ENCODER_NAMES.get(settings.get('depth_encoder', gen.get('depth_encoder')), TODO + ' encoder')}) estimates "
