@@ -1,0 +1,477 @@
+leg,label_type,tag,n,n_incorrect,incorrect_share,n_train,auc,auc_lo,auc_hi
+round3,CurbRamp,missing tactile warning,444,192,0.4324,1482,0.9164,0.8878,0.9423
+round3,CurbRamp,points into traffic,229,86,0.3755,770,0.9737,0.9438,0.9943
+round3,CurbRamp,not level with street,151,107,0.7086,513,0.9092,0.8498,0.9634
+round3,CurbRamp,narrow,113,63,0.5575,451,0.9222,0.8621,0.9692
+round3,CurbRamp,(none),1191,491,0.4123,3933,0.9615,0.9508,0.9716
+round3,NoCurbRamp,no alternate route,1380,392,0.2841,4670,0.9296,0.9114,0.9448
+round3,NoCurbRamp,alternate route present,687,425,0.6186,2300,0.8723,0.8443,0.8987
+round3,NoCurbRamp,unclear if needed,254,177,0.6969,860,0.8356,0.7740,0.8870
+round3,NoCurbRamp,(none),1104,607,0.5498,4631,0.9324,0.9167,0.9468
+round3,Obstacle,pole,907,574,0.6329,2087,0.8893,0.8669,0.9121
+round3,Obstacle,trash/recycling can,522,155,0.2969,1046,0.9335,0.9105,0.9550
+round3,Obstacle,parked car,450,218,0.4844,1293,0.8203,0.7796,0.8563
+round3,Obstacle,vegetation,386,165,0.4275,1136,0.8329,0.7914,0.8707
+round3,Obstacle,narrow,279,83,0.2975,908,0.8490,0.8017,0.8898
+round3,Obstacle,tree,263,168,0.6388,854,0.8873,0.8407,0.9280
+round3,Obstacle,sign,238,167,0.7017,486,0.8832,0.8352,0.9303
+round3,Obstacle,construction,158,41,0.2595,416,0.7932,0.7129,0.8625
+round3,Obstacle,parked scooter/motorcycle,142,62,0.4366,527,0.8656,0.8085,0.9236
+round3,Obstacle,fire hydrant,119,79,0.6639,354,0.8668,0.7809,0.9396
+round3,Obstacle,parked bike,101,73,0.7228,191,0.8733,0.7598,0.9667
+round3,Obstacle,(none),512,297,0.5801,1933,0.8827,0.8545,0.9096
+round3,SurfaceProblem,cracks,775,189,0.2439,3031,0.8909,0.8620,0.9178
+round3,SurfaceProblem,grass,585,170,0.2906,2636,0.8737,0.8348,0.9061
+round3,SurfaceProblem,bumpy,500,187,0.3740,1982,0.8885,0.8592,0.9159
+round3,SurfaceProblem,uneven/slanted,422,135,0.3199,1574,0.8332,0.7935,0.8717
+round3,SurfaceProblem,brick/cobblestone,365,242,0.6630,337,0.6326,0.5783,0.6915
+round3,SurfaceProblem,narrow sidewalk,365,220,0.6027,1160,0.7930,0.7425,0.8392
+round3,SurfaceProblem,utility panel,230,130,0.5652,904,0.8128,0.7574,0.8689
+round3,SurfaceProblem,height difference,194,48,0.2474,770,0.9465,0.9080,0.9768
+round3,SurfaceProblem,sand/gravel,145,68,0.4690,284,0.7480,0.6627,0.8282
+round3,SurfaceProblem,very broken,134,38,0.2836,625,0.8772,0.8033,0.9411
+round3,SurfaceProblem,(none),399,275,0.6892,1490,0.8878,0.8533,0.9224
+round3,Crosswalk,paint fading,144,94,0.6528,339,0.9653,0.9332,0.9940
+round3,Crosswalk,(none),379,140,0.3694,1557,0.9754,0.9564,0.9909
+production,CurbRamp,missing tactile warning,444,192,0.4324,1482,0.8994,0.8706,0.9244
+production,CurbRamp,points into traffic,229,86,0.3755,770,0.9518,0.9144,0.9792
+production,CurbRamp,not level with street,151,107,0.7086,513,0.9040,0.8479,0.9522
+production,CurbRamp,narrow,113,63,0.5575,451,0.9181,0.8663,0.9638
+production,CurbRamp,(none),1191,491,0.4123,3933,0.9464,0.9328,0.9598
+production,NoCurbRamp,no alternate route,1380,392,0.2841,4670,0.9311,0.9164,0.9437
+production,NoCurbRamp,alternate route present,687,425,0.6186,2300,0.8814,0.8516,0.9073
+production,NoCurbRamp,unclear if needed,254,177,0.6969,860,0.8461,0.7909,0.8991
+production,NoCurbRamp,(none),1104,607,0.5498,4631,0.9366,0.9226,0.9497
+production,Obstacle,pole,907,574,0.6329,2087,0.8407,0.8147,0.8656
+production,Obstacle,trash/recycling can,522,155,0.2969,1046,0.9384,0.9152,0.9588
+production,Obstacle,parked car,450,218,0.4844,1293,0.7903,0.7506,0.8290
+production,Obstacle,vegetation,386,165,0.4275,1136,0.7925,0.7492,0.8329
+production,Obstacle,narrow,279,83,0.2975,908,0.8354,0.7833,0.8800
+production,Obstacle,tree,263,168,0.6388,854,0.8182,0.7654,0.8708
+production,Obstacle,sign,238,167,0.7017,486,0.8997,0.8531,0.9438
+production,Obstacle,construction,158,41,0.2595,416,0.8401,0.7655,0.9049
+production,Obstacle,parked scooter/motorcycle,142,62,0.4366,527,0.5177,0.4215,0.6110
+production,Obstacle,fire hydrant,119,79,0.6639,354,0.8744,0.8003,0.9358
+production,Obstacle,parked bike,101,73,0.7228,191,0.8924,0.8023,0.9619
+production,Obstacle,(none),512,297,0.5801,1933,0.7801,0.7368,0.8193
+production,SurfaceProblem,cracks,775,189,0.2439,3031,0.8813,0.8538,0.9085
+production,SurfaceProblem,grass,585,170,0.2906,2636,0.8629,0.8288,0.8931
+production,SurfaceProblem,bumpy,500,187,0.3740,1982,0.8688,0.8366,0.8972
+production,SurfaceProblem,uneven/slanted,422,135,0.3199,1574,0.8115,0.7670,0.8546
+production,SurfaceProblem,brick/cobblestone,365,242,0.6630,337,0.6829,0.6298,0.7355
+production,SurfaceProblem,narrow sidewalk,365,220,0.6027,1160,0.7925,0.7429,0.8396
+production,SurfaceProblem,utility panel,230,130,0.5652,904,0.8295,0.7746,0.8774
+production,SurfaceProblem,height difference,194,48,0.2474,770,0.9238,0.8770,0.9660
+production,SurfaceProblem,sand/gravel,145,68,0.4690,284,0.7271,0.6423,0.8083
+production,SurfaceProblem,very broken,134,38,0.2836,625,0.8862,0.8136,0.9523
+production,SurfaceProblem,(none),399,275,0.6892,1490,0.8726,0.8354,0.9080
+production,Crosswalk,paint fading,144,94,0.6528,339,0.9564,0.9219,0.9849
+production,Crosswalk,(none),379,140,0.3694,1557,0.9669,0.9439,0.9849
+gemma4-31b-fewshot8,CurbRamp,missing tactile warning,444,192,0.4324,1482,0.7721,0.7292,0.8133
+gemma4-31b-fewshot8,CurbRamp,points into traffic,229,86,0.3755,770,0.8880,0.8406,0.9270
+gemma4-31b-fewshot8,CurbRamp,not level with street,151,107,0.7086,513,0.6922,0.5981,0.7759
+gemma4-31b-fewshot8,CurbRamp,narrow,113,63,0.5575,451,0.7832,0.7003,0.8625
+gemma4-31b-fewshot8,CurbRamp,(none),1191,491,0.4123,3933,0.8920,0.8718,0.9101
+gemma4-31b-fewshot8,NoCurbRamp,no alternate route,1380,392,0.2841,4670,0.7621,0.7334,0.7886
+gemma4-31b-fewshot8,NoCurbRamp,alternate route present,687,425,0.6186,2300,0.7025,0.6653,0.7401
+gemma4-31b-fewshot8,NoCurbRamp,unclear if needed,254,177,0.6969,860,0.6675,0.5939,0.7413
+gemma4-31b-fewshot8,NoCurbRamp,(none),1104,607,0.5498,4631,0.7479,0.7174,0.7760
+gemma4-31b-fewshot8,Obstacle,pole,907,574,0.6329,2087,0.4869,0.4443,0.5254
+gemma4-31b-fewshot8,Obstacle,trash/recycling can,522,155,0.2969,1046,0.6195,0.5632,0.6734
+gemma4-31b-fewshot8,Obstacle,parked car,450,218,0.4844,1293,0.6581,0.6040,0.7051
+gemma4-31b-fewshot8,Obstacle,vegetation,386,165,0.4275,1136,0.5799,0.5176,0.6375
+gemma4-31b-fewshot8,Obstacle,narrow,279,83,0.2975,908,0.5996,0.5254,0.6749
+gemma4-31b-fewshot8,Obstacle,tree,263,168,0.6388,854,0.5616,0.4949,0.6337
+gemma4-31b-fewshot8,Obstacle,sign,238,167,0.7017,486,0.6054,0.5253,0.6836
+gemma4-31b-fewshot8,Obstacle,construction,158,41,0.2595,416,0.5199,0.4113,0.6273
+gemma4-31b-fewshot8,Obstacle,parked scooter/motorcycle,142,62,0.4366,527,0.4899,0.3976,0.5890
+gemma4-31b-fewshot8,Obstacle,fire hydrant,119,79,0.6639,354,0.6285,0.5262,0.7269
+gemma4-31b-fewshot8,Obstacle,parked bike,101,73,0.7228,191,0.6429,0.5318,0.7569
+gemma4-31b-fewshot8,Obstacle,(none),512,297,0.5801,1933,0.6904,0.6459,0.7382
+gemma4-31b-fewshot8,SurfaceProblem,cracks,775,189,0.2439,3031,0.7111,0.6675,0.7545
+gemma4-31b-fewshot8,SurfaceProblem,grass,585,170,0.2906,2636,0.7777,0.7366,0.8167
+gemma4-31b-fewshot8,SurfaceProblem,bumpy,500,187,0.3740,1982,0.7752,0.7333,0.8165
+gemma4-31b-fewshot8,SurfaceProblem,uneven/slanted,422,135,0.3199,1574,0.7343,0.6864,0.7796
+gemma4-31b-fewshot8,SurfaceProblem,brick/cobblestone,365,242,0.6630,337,0.6690,0.6141,0.7234
+gemma4-31b-fewshot8,SurfaceProblem,narrow sidewalk,365,220,0.6027,1160,0.7251,0.6703,0.7737
+gemma4-31b-fewshot8,SurfaceProblem,utility panel,230,130,0.5652,904,0.7275,0.6645,0.7879
+gemma4-31b-fewshot8,SurfaceProblem,height difference,194,48,0.2474,770,0.7897,0.7143,0.8575
+gemma4-31b-fewshot8,SurfaceProblem,sand/gravel,145,68,0.4690,284,0.7129,0.6253,0.7972
+gemma4-31b-fewshot8,SurfaceProblem,very broken,134,38,0.2836,625,0.7815,0.6836,0.8720
+gemma4-31b-fewshot8,SurfaceProblem,(none),399,275,0.6892,1490,0.8293,0.7888,0.8695
+gemma4-31b-fewshot8,Crosswalk,paint fading,144,94,0.6528,339,0.8877,0.8212,0.9468
+gemma4-31b-fewshot8,Crosswalk,(none),379,140,0.3694,1557,0.9469,0.9186,0.9713
+gemma4-31b,CurbRamp,missing tactile warning,444,192,0.4324,1482,0.7137,0.6664,0.7610
+gemma4-31b,CurbRamp,points into traffic,229,86,0.3755,770,0.8300,0.7745,0.8791
+gemma4-31b,CurbRamp,not level with street,151,107,0.7086,513,0.6680,0.5781,0.7557
+gemma4-31b,CurbRamp,narrow,113,63,0.5575,451,0.7527,0.6571,0.8347
+gemma4-31b,CurbRamp,(none),1191,491,0.4123,3933,0.8638,0.8418,0.8835
+gemma4-31b,NoCurbRamp,no alternate route,1380,392,0.2841,4670,0.6698,0.6354,0.7010
+gemma4-31b,NoCurbRamp,alternate route present,687,425,0.6186,2300,0.6492,0.6063,0.6905
+gemma4-31b,NoCurbRamp,unclear if needed,254,177,0.6969,860,0.6615,0.5869,0.7309
+gemma4-31b,NoCurbRamp,(none),1104,607,0.5498,4631,0.6648,0.6305,0.6997
+gemma4-31b,Obstacle,pole,907,574,0.6329,2087,0.5454,0.5039,0.5813
+gemma4-31b,Obstacle,trash/recycling can,522,155,0.2969,1046,0.6170,0.5645,0.6644
+gemma4-31b,Obstacle,parked car,450,218,0.4844,1293,0.6062,0.5513,0.6566
+gemma4-31b,Obstacle,vegetation,386,165,0.4275,1136,0.5998,0.5419,0.6543
+gemma4-31b,Obstacle,narrow,279,83,0.2975,908,0.6454,0.5700,0.7178
+gemma4-31b,Obstacle,tree,263,168,0.6388,854,0.5994,0.5290,0.6680
+gemma4-31b,Obstacle,sign,238,167,0.7017,486,0.6099,0.5399,0.6879
+gemma4-31b,Obstacle,construction,158,41,0.2595,416,0.5879,0.4792,0.6907
+gemma4-31b,Obstacle,parked scooter/motorcycle,142,62,0.4366,527,0.5444,0.4472,0.6389
+gemma4-31b,Obstacle,fire hydrant,119,79,0.6639,354,0.6028,0.4908,0.7000
+gemma4-31b,Obstacle,parked bike,101,73,0.7228,191,0.5587,0.4270,0.6850
+gemma4-31b,Obstacle,(none),512,297,0.5801,1933,0.7093,0.6683,0.7524
+gemma4-31b,SurfaceProblem,cracks,775,189,0.2439,3031,0.7026,0.6546,0.7501
+gemma4-31b,SurfaceProblem,grass,585,170,0.2906,2636,0.6963,0.6453,0.7421
+gemma4-31b,SurfaceProblem,bumpy,500,187,0.3740,1982,0.7677,0.7235,0.8081
+gemma4-31b,SurfaceProblem,uneven/slanted,422,135,0.3199,1574,0.7282,0.6777,0.7750
+gemma4-31b,SurfaceProblem,brick/cobblestone,365,242,0.6630,337,0.6192,0.5549,0.6788
+gemma4-31b,SurfaceProblem,narrow sidewalk,365,220,0.6027,1160,0.7317,0.6787,0.7858
+gemma4-31b,SurfaceProblem,utility panel,230,130,0.5652,904,0.7418,0.6807,0.8026
+gemma4-31b,SurfaceProblem,height difference,194,48,0.2474,770,0.7838,0.7032,0.8576
+gemma4-31b,SurfaceProblem,sand/gravel,145,68,0.4690,284,0.6998,0.6064,0.7851
+gemma4-31b,SurfaceProblem,very broken,134,38,0.2836,625,0.7135,0.6055,0.8161
+gemma4-31b,SurfaceProblem,(none),399,275,0.6892,1490,0.7961,0.7519,0.8400
+gemma4-31b,Crosswalk,paint fading,144,94,0.6528,339,0.9096,0.8587,0.9564
+gemma4-31b,Crosswalk,(none),379,140,0.3694,1557,0.9646,0.9456,0.9800
+glm5.3-flash,CurbRamp,missing tactile warning,444,192,0.4324,1482,0.6789,0.6294,0.7296
+glm5.3-flash,CurbRamp,points into traffic,229,86,0.3755,770,0.8005,0.7378,0.8541
+glm5.3-flash,CurbRamp,not level with street,151,107,0.7086,513,0.6667,0.5667,0.7589
+glm5.3-flash,CurbRamp,narrow,113,63,0.5575,451,0.7689,0.6736,0.8524
+glm5.3-flash,CurbRamp,(none),1191,491,0.4123,3933,0.8397,0.8176,0.8600
+glm5.3-flash,NoCurbRamp,no alternate route,1380,392,0.2841,4670,0.6994,0.6670,0.7303
+glm5.3-flash,NoCurbRamp,alternate route present,687,425,0.6186,2300,0.6508,0.6058,0.6918
+glm5.3-flash,NoCurbRamp,unclear if needed,254,177,0.6969,860,0.6721,0.6028,0.7380
+glm5.3-flash,NoCurbRamp,(none),1104,607,0.5498,4631,0.6688,0.6370,0.6968
+glm5.3-flash,Obstacle,pole,907,574,0.6329,2087,0.6206,0.5830,0.6575
+glm5.3-flash,Obstacle,trash/recycling can,522,155,0.2969,1046,0.6916,0.6411,0.7346
+glm5.3-flash,Obstacle,parked car,450,218,0.4844,1293,0.6289,0.5731,0.6790
+glm5.3-flash,Obstacle,vegetation,386,165,0.4275,1136,0.5382,0.4813,0.5971
+glm5.3-flash,Obstacle,narrow,279,83,0.2975,908,0.6058,0.5328,0.6761
+glm5.3-flash,Obstacle,tree,263,168,0.6388,854,0.5548,0.4784,0.6250
+glm5.3-flash,Obstacle,sign,238,167,0.7017,486,0.5105,0.4316,0.5875
+glm5.3-flash,Obstacle,construction,158,41,0.2595,416,0.5220,0.4209,0.6216
+glm5.3-flash,Obstacle,parked scooter/motorcycle,142,62,0.4366,527,0.5228,0.4318,0.6129
+glm5.3-flash,Obstacle,fire hydrant,119,79,0.6639,354,0.6146,0.5117,0.7082
+glm5.3-flash,Obstacle,parked bike,101,73,0.7228,191,0.5514,0.4339,0.6756
+glm5.3-flash,Obstacle,(none),512,297,0.5801,1933,0.6840,0.6411,0.7272
+glm5.3-flash,SurfaceProblem,cracks,775,189,0.2439,3031,0.7394,0.6956,0.7849
+glm5.3-flash,SurfaceProblem,grass,585,170,0.2906,2636,0.7673,0.7269,0.8065
+glm5.3-flash,SurfaceProblem,bumpy,500,187,0.3740,1982,0.7857,0.7426,0.8247
+glm5.3-flash,SurfaceProblem,uneven/slanted,422,135,0.3199,1574,0.7598,0.7139,0.8046
+glm5.3-flash,SurfaceProblem,brick/cobblestone,365,242,0.6630,337,0.7279,0.6726,0.7830
+glm5.3-flash,SurfaceProblem,narrow sidewalk,365,220,0.6027,1160,0.7467,0.6961,0.7993
+glm5.3-flash,SurfaceProblem,utility panel,230,130,0.5652,904,0.6678,0.5986,0.7346
+glm5.3-flash,SurfaceProblem,height difference,194,48,0.2474,770,0.7591,0.6805,0.8315
+glm5.3-flash,SurfaceProblem,sand/gravel,145,68,0.4690,284,0.7252,0.6409,0.8123
+glm5.3-flash,SurfaceProblem,very broken,134,38,0.2836,625,0.7766,0.6735,0.8698
+glm5.3-flash,SurfaceProblem,(none),399,275,0.6892,1490,0.8236,0.7818,0.8636
+glm5.3-flash,Crosswalk,paint fading,144,94,0.6528,339,0.9015,0.8421,0.9515
+glm5.3-flash,Crosswalk,(none),379,140,0.3694,1557,0.9539,0.9314,0.9729
+qwen3vl-32b-bf16,CurbRamp,missing tactile warning,444,192,0.4324,1482,0.6922,0.6444,0.7401
+qwen3vl-32b-bf16,CurbRamp,points into traffic,229,86,0.3755,770,0.7691,0.7053,0.8309
+qwen3vl-32b-bf16,CurbRamp,not level with street,151,107,0.7086,513,0.6710,0.5641,0.7670
+qwen3vl-32b-bf16,CurbRamp,narrow,113,63,0.5575,451,0.7463,0.6549,0.8337
+qwen3vl-32b-bf16,CurbRamp,(none),1191,491,0.4123,3933,0.8244,0.8005,0.8479
+qwen3vl-32b-bf16,NoCurbRamp,no alternate route,1380,392,0.2841,4670,0.6434,0.6087,0.6766
+qwen3vl-32b-bf16,NoCurbRamp,alternate route present,687,425,0.6186,2300,0.6142,0.5729,0.6544
+qwen3vl-32b-bf16,NoCurbRamp,unclear if needed,254,177,0.6969,860,0.6261,0.5494,0.6986
+qwen3vl-32b-bf16,NoCurbRamp,(none),1104,607,0.5498,4631,0.6518,0.6184,0.6828
+qwen3vl-32b-bf16,Obstacle,pole,907,574,0.6329,2087,0.6050,0.5665,0.6406
+qwen3vl-32b-bf16,Obstacle,trash/recycling can,522,155,0.2969,1046,0.7116,0.6633,0.7600
+qwen3vl-32b-bf16,Obstacle,parked car,450,218,0.4844,1293,0.6486,0.5945,0.6981
+qwen3vl-32b-bf16,Obstacle,vegetation,386,165,0.4275,1136,0.5873,0.5339,0.6463
+qwen3vl-32b-bf16,Obstacle,narrow,279,83,0.2975,908,0.6316,0.5592,0.6980
+qwen3vl-32b-bf16,Obstacle,tree,263,168,0.6388,854,0.5690,0.4968,0.6394
+qwen3vl-32b-bf16,Obstacle,sign,238,167,0.7017,486,0.6212,0.5452,0.6944
+qwen3vl-32b-bf16,Obstacle,construction,158,41,0.2595,416,0.5862,0.4763,0.6881
+qwen3vl-32b-bf16,Obstacle,parked scooter/motorcycle,142,62,0.4366,527,0.6879,0.5903,0.7671
+qwen3vl-32b-bf16,Obstacle,fire hydrant,119,79,0.6639,354,0.6035,0.4895,0.7063
+qwen3vl-32b-bf16,Obstacle,parked bike,101,73,0.7228,191,0.5274,0.3973,0.6551
+qwen3vl-32b-bf16,Obstacle,(none),512,297,0.5801,1933,0.6987,0.6546,0.7437
+qwen3vl-32b-bf16,SurfaceProblem,cracks,775,189,0.2439,3031,0.7005,0.6541,0.7440
+qwen3vl-32b-bf16,SurfaceProblem,grass,585,170,0.2906,2636,0.7550,0.7100,0.7975
+qwen3vl-32b-bf16,SurfaceProblem,bumpy,500,187,0.3740,1982,0.7218,0.6718,0.7699
+qwen3vl-32b-bf16,SurfaceProblem,uneven/slanted,422,135,0.3199,1574,0.7288,0.6772,0.7779
+qwen3vl-32b-bf16,SurfaceProblem,brick/cobblestone,365,242,0.6630,337,0.6097,0.5515,0.6682
+qwen3vl-32b-bf16,SurfaceProblem,narrow sidewalk,365,220,0.6027,1160,0.6943,0.6389,0.7458
+qwen3vl-32b-bf16,SurfaceProblem,utility panel,230,130,0.5652,904,0.7622,0.6960,0.8224
+qwen3vl-32b-bf16,SurfaceProblem,height difference,194,48,0.2474,770,0.7443,0.6654,0.8176
+qwen3vl-32b-bf16,SurfaceProblem,sand/gravel,145,68,0.4690,284,0.6700,0.5844,0.7550
+qwen3vl-32b-bf16,SurfaceProblem,very broken,134,38,0.2836,625,0.6806,0.5641,0.7939
+qwen3vl-32b-bf16,SurfaceProblem,(none),399,275,0.6892,1490,0.8014,0.7572,0.8439
+qwen3vl-32b-bf16,Crosswalk,paint fading,144,94,0.6528,339,0.8823,0.8174,0.9345
+qwen3vl-32b-bf16,Crosswalk,(none),379,140,0.3694,1557,0.9616,0.9384,0.9806
+minicpm-v4.7-35b-a3b,CurbRamp,missing tactile warning,444,192,0.4324,1482,0.6715,0.6216,0.7260
+minicpm-v4.7-35b-a3b,CurbRamp,points into traffic,229,86,0.3755,770,0.8189,0.7561,0.8688
+minicpm-v4.7-35b-a3b,CurbRamp,not level with street,151,107,0.7086,513,0.6684,0.5726,0.7589
+minicpm-v4.7-35b-a3b,CurbRamp,narrow,113,63,0.5575,451,0.7400,0.6394,0.8264
+minicpm-v4.7-35b-a3b,CurbRamp,(none),1191,491,0.4123,3933,0.8261,0.8034,0.8501
+minicpm-v4.7-35b-a3b,NoCurbRamp,no alternate route,1380,392,0.2841,4670,0.6790,0.6450,0.7110
+minicpm-v4.7-35b-a3b,NoCurbRamp,alternate route present,687,425,0.6186,2300,0.6252,0.5857,0.6700
+minicpm-v4.7-35b-a3b,NoCurbRamp,unclear if needed,254,177,0.6969,860,0.6652,0.5874,0.7404
+minicpm-v4.7-35b-a3b,NoCurbRamp,(none),1104,607,0.5498,4631,0.6394,0.6044,0.6712
+minicpm-v4.7-35b-a3b,Obstacle,pole,907,574,0.6329,2087,0.5913,0.5509,0.6307
+minicpm-v4.7-35b-a3b,Obstacle,trash/recycling can,522,155,0.2969,1046,0.6590,0.6063,0.7044
+minicpm-v4.7-35b-a3b,Obstacle,parked car,450,218,0.4844,1293,0.6871,0.6322,0.7323
+minicpm-v4.7-35b-a3b,Obstacle,vegetation,386,165,0.4275,1136,0.5594,0.5018,0.6200
+minicpm-v4.7-35b-a3b,Obstacle,narrow,279,83,0.2975,908,0.6501,0.5795,0.7198
+minicpm-v4.7-35b-a3b,Obstacle,tree,263,168,0.6388,854,0.5962,0.5269,0.6651
+minicpm-v4.7-35b-a3b,Obstacle,sign,238,167,0.7017,486,0.5759,0.5004,0.6574
+minicpm-v4.7-35b-a3b,Obstacle,construction,158,41,0.2595,416,0.5332,0.4332,0.6267
+minicpm-v4.7-35b-a3b,Obstacle,parked scooter/motorcycle,142,62,0.4366,527,0.5411,0.4500,0.6345
+minicpm-v4.7-35b-a3b,Obstacle,fire hydrant,119,79,0.6639,354,0.6579,0.5519,0.7522
+minicpm-v4.7-35b-a3b,Obstacle,parked bike,101,73,0.7228,191,0.5577,0.4305,0.6884
+minicpm-v4.7-35b-a3b,Obstacle,(none),512,297,0.5801,1933,0.6784,0.6318,0.7261
+minicpm-v4.7-35b-a3b,SurfaceProblem,cracks,775,189,0.2439,3031,0.6907,0.6425,0.7335
+minicpm-v4.7-35b-a3b,SurfaceProblem,grass,585,170,0.2906,2636,0.7200,0.6753,0.7645
+minicpm-v4.7-35b-a3b,SurfaceProblem,bumpy,500,187,0.3740,1982,0.7377,0.6881,0.7834
+minicpm-v4.7-35b-a3b,SurfaceProblem,uneven/slanted,422,135,0.3199,1574,0.7020,0.6447,0.7523
+minicpm-v4.7-35b-a3b,SurfaceProblem,brick/cobblestone,365,242,0.6630,337,0.6248,0.5651,0.6820
+minicpm-v4.7-35b-a3b,SurfaceProblem,narrow sidewalk,365,220,0.6027,1160,0.6723,0.6167,0.7294
+minicpm-v4.7-35b-a3b,SurfaceProblem,utility panel,230,130,0.5652,904,0.7345,0.6680,0.7982
+minicpm-v4.7-35b-a3b,SurfaceProblem,height difference,194,48,0.2474,770,0.7049,0.6228,0.7864
+minicpm-v4.7-35b-a3b,SurfaceProblem,sand/gravel,145,68,0.4690,284,0.7086,0.6163,0.7939
+minicpm-v4.7-35b-a3b,SurfaceProblem,very broken,134,38,0.2836,625,0.6730,0.5639,0.7791
+minicpm-v4.7-35b-a3b,SurfaceProblem,(none),399,275,0.6892,1490,0.8047,0.7580,0.8466
+minicpm-v4.7-35b-a3b,Crosswalk,paint fading,144,94,0.6528,339,0.8617,0.7923,0.9198
+minicpm-v4.7-35b-a3b,Crosswalk,(none),379,140,0.3694,1557,0.9588,0.9372,0.9778
+nemotron3.5-super-vl-120b,CurbRamp,missing tactile warning,444,192,0.4324,1482,0.7024,0.6545,0.7499
+nemotron3.5-super-vl-120b,CurbRamp,points into traffic,229,86,0.3755,770,0.8495,0.7957,0.8950
+nemotron3.5-super-vl-120b,CurbRamp,not level with street,151,107,0.7086,513,0.6820,0.5831,0.7787
+nemotron3.5-super-vl-120b,CurbRamp,narrow,113,63,0.5575,451,0.7695,0.6727,0.8489
+nemotron3.5-super-vl-120b,CurbRamp,(none),1191,491,0.4123,3933,0.8237,0.7988,0.8465
+nemotron3.5-super-vl-120b,NoCurbRamp,no alternate route,1380,392,0.2841,4670,0.6874,0.6533,0.7207
+nemotron3.5-super-vl-120b,NoCurbRamp,alternate route present,687,425,0.6186,2300,0.6288,0.5879,0.6676
+nemotron3.5-super-vl-120b,NoCurbRamp,unclear if needed,254,177,0.6969,860,0.6255,0.5544,0.6918
+nemotron3.5-super-vl-120b,NoCurbRamp,(none),1104,607,0.5498,4631,0.6345,0.5987,0.6660
+nemotron3.5-super-vl-120b,Obstacle,pole,907,574,0.6329,2087,0.6051,0.5681,0.6417
+nemotron3.5-super-vl-120b,Obstacle,trash/recycling can,522,155,0.2969,1046,0.6446,0.5932,0.6951
+nemotron3.5-super-vl-120b,Obstacle,parked car,450,218,0.4844,1293,0.6075,0.5530,0.6573
+nemotron3.5-super-vl-120b,Obstacle,vegetation,386,165,0.4275,1136,0.5493,0.4905,0.6050
+nemotron3.5-super-vl-120b,Obstacle,narrow,279,83,0.2975,908,0.6252,0.5523,0.6940
+nemotron3.5-super-vl-120b,Obstacle,tree,263,168,0.6388,854,0.5378,0.4643,0.6133
+nemotron3.5-super-vl-120b,Obstacle,sign,238,167,0.7017,486,0.5582,0.4855,0.6331
+nemotron3.5-super-vl-120b,Obstacle,construction,158,41,0.2595,416,0.5522,0.4463,0.6517
+nemotron3.5-super-vl-120b,Obstacle,parked scooter/motorcycle,142,62,0.4366,527,0.4044,0.3087,0.5012
+nemotron3.5-super-vl-120b,Obstacle,fire hydrant,119,79,0.6639,354,0.6158,0.5027,0.7206
+nemotron3.5-super-vl-120b,Obstacle,parked bike,101,73,0.7228,191,0.5509,0.4325,0.6796
+nemotron3.5-super-vl-120b,Obstacle,(none),512,297,0.5801,1933,0.6243,0.5770,0.6711
+nemotron3.5-super-vl-120b,SurfaceProblem,cracks,775,189,0.2439,3031,0.6516,0.6024,0.7002
+nemotron3.5-super-vl-120b,SurfaceProblem,grass,585,170,0.2906,2636,0.7176,0.6743,0.7613
+nemotron3.5-super-vl-120b,SurfaceProblem,bumpy,500,187,0.3740,1982,0.7239,0.6732,0.7699
+nemotron3.5-super-vl-120b,SurfaceProblem,uneven/slanted,422,135,0.3199,1574,0.7231,0.6724,0.7700
+nemotron3.5-super-vl-120b,SurfaceProblem,brick/cobblestone,365,242,0.6630,337,0.6546,0.5936,0.7131
+nemotron3.5-super-vl-120b,SurfaceProblem,narrow sidewalk,365,220,0.6027,1160,0.6850,0.6274,0.7404
+nemotron3.5-super-vl-120b,SurfaceProblem,utility panel,230,130,0.5652,904,0.7093,0.6399,0.7729
+nemotron3.5-super-vl-120b,SurfaceProblem,height difference,194,48,0.2474,770,0.7745,0.6993,0.8493
+nemotron3.5-super-vl-120b,SurfaceProblem,sand/gravel,145,68,0.4690,284,0.6650,0.5676,0.7588
+nemotron3.5-super-vl-120b,SurfaceProblem,very broken,134,38,0.2836,625,0.6713,0.5553,0.7815
+nemotron3.5-super-vl-120b,SurfaceProblem,(none),399,275,0.6892,1490,0.7869,0.7368,0.8323
+nemotron3.5-super-vl-120b,Crosswalk,paint fading,144,94,0.6528,339,0.8711,0.8040,0.9289
+nemotron3.5-super-vl-120b,Crosswalk,(none),379,140,0.3694,1557,0.9617,0.9404,0.9789
+qwen3.8-27b,CurbRamp,missing tactile warning,444,192,0.4324,1482,0.7014,0.6524,0.7500
+qwen3.8-27b,CurbRamp,points into traffic,229,86,0.3755,770,0.8268,0.7678,0.8758
+qwen3.8-27b,CurbRamp,not level with street,151,107,0.7086,513,0.6580,0.5592,0.7555
+qwen3.8-27b,CurbRamp,narrow,113,63,0.5575,451,0.7914,0.7066,0.8689
+qwen3.8-27b,CurbRamp,(none),1191,491,0.4123,3933,0.8023,0.7761,0.8266
+qwen3.8-27b,NoCurbRamp,no alternate route,1380,392,0.2841,4670,0.6137,0.5791,0.6465
+qwen3.8-27b,NoCurbRamp,alternate route present,687,425,0.6186,2300,0.6001,0.5559,0.6470
+qwen3.8-27b,NoCurbRamp,unclear if needed,254,177,0.6969,860,0.6085,0.5342,0.6808
+qwen3.8-27b,NoCurbRamp,(none),1104,607,0.5498,4631,0.6118,0.5769,0.6422
+qwen3.8-27b,Obstacle,pole,907,574,0.6329,2087,0.5702,0.5295,0.6080
+qwen3.8-27b,Obstacle,trash/recycling can,522,155,0.2969,1046,0.7273,0.6770,0.7725
+qwen3.8-27b,Obstacle,parked car,450,218,0.4844,1293,0.6501,0.6000,0.7022
+qwen3.8-27b,Obstacle,vegetation,386,165,0.4275,1136,0.5599,0.5000,0.6202
+qwen3.8-27b,Obstacle,narrow,279,83,0.2975,908,0.6816,0.6100,0.7502
+qwen3.8-27b,Obstacle,tree,263,168,0.6388,854,0.5904,0.5185,0.6634
+qwen3.8-27b,Obstacle,sign,238,167,0.7017,486,0.6544,0.5791,0.7279
+qwen3.8-27b,Obstacle,construction,158,41,0.2595,416,0.6014,0.5089,0.7015
+qwen3.8-27b,Obstacle,parked scooter/motorcycle,142,62,0.4366,527,0.4790,0.3887,0.5738
+qwen3.8-27b,Obstacle,fire hydrant,119,79,0.6639,354,0.6763,0.5734,0.7674
+qwen3.8-27b,Obstacle,parked bike,101,73,0.7228,191,0.7246,0.5915,0.8439
+qwen3.8-27b,Obstacle,(none),512,297,0.5801,1933,0.6595,0.6151,0.7065
+qwen3.8-27b,SurfaceProblem,cracks,775,189,0.2439,3031,0.6730,0.6270,0.7182
+qwen3.8-27b,SurfaceProblem,grass,585,170,0.2906,2636,0.7500,0.7047,0.7907
+qwen3.8-27b,SurfaceProblem,bumpy,500,187,0.3740,1982,0.7150,0.6667,0.7598
+qwen3.8-27b,SurfaceProblem,uneven/slanted,422,135,0.3199,1574,0.6732,0.6219,0.7234
+qwen3.8-27b,SurfaceProblem,brick/cobblestone,365,242,0.6630,337,0.6804,0.6234,0.7347
+qwen3.8-27b,SurfaceProblem,narrow sidewalk,365,220,0.6027,1160,0.6775,0.6180,0.7331
+qwen3.8-27b,SurfaceProblem,utility panel,230,130,0.5652,904,0.7456,0.6791,0.8056
+qwen3.8-27b,SurfaceProblem,height difference,194,48,0.2474,770,0.7705,0.6962,0.8438
+qwen3.8-27b,SurfaceProblem,sand/gravel,145,68,0.4690,284,0.7072,0.6142,0.7886
+qwen3.8-27b,SurfaceProblem,very broken,134,38,0.2836,625,0.7119,0.5995,0.8150
+qwen3.8-27b,SurfaceProblem,(none),399,275,0.6892,1490,0.7997,0.7542,0.8406
+qwen3.8-27b,Crosswalk,paint fading,144,94,0.6528,339,0.9013,0.8442,0.9487
+qwen3.8-27b,Crosswalk,(none),379,140,0.3694,1557,0.9572,0.9337,0.9761
+gemma4-12b-bf16,CurbRamp,missing tactile warning,444,192,0.4324,1482,0.7107,0.6636,0.7584
+gemma4-12b-bf16,CurbRamp,points into traffic,229,86,0.3755,770,0.7952,0.7353,0.8494
+gemma4-12b-bf16,CurbRamp,not level with street,151,107,0.7086,513,0.6831,0.5796,0.7851
+gemma4-12b-bf16,CurbRamp,narrow,113,63,0.5575,451,0.7622,0.6676,0.8483
+gemma4-12b-bf16,CurbRamp,(none),1191,491,0.4123,3933,0.8464,0.8242,0.8674
+gemma4-12b-bf16,NoCurbRamp,no alternate route,1380,392,0.2841,4670,0.6591,0.6292,0.6920
+gemma4-12b-bf16,NoCurbRamp,alternate route present,687,425,0.6186,2300,0.5732,0.5302,0.6169
+gemma4-12b-bf16,NoCurbRamp,unclear if needed,254,177,0.6969,860,0.6751,0.6050,0.7379
+gemma4-12b-bf16,NoCurbRamp,(none),1104,607,0.5498,4631,0.6262,0.5930,0.6602
+gemma4-12b-bf16,Obstacle,pole,907,574,0.6329,2087,0.5315,0.4913,0.5703
+gemma4-12b-bf16,Obstacle,trash/recycling can,522,155,0.2969,1046,0.6361,0.5837,0.6877
+gemma4-12b-bf16,Obstacle,parked car,450,218,0.4844,1293,0.6159,0.5616,0.6668
+gemma4-12b-bf16,Obstacle,vegetation,386,165,0.4275,1136,0.5818,0.5249,0.6371
+gemma4-12b-bf16,Obstacle,narrow,279,83,0.2975,908,0.6291,0.5537,0.7019
+gemma4-12b-bf16,Obstacle,tree,263,168,0.6388,854,0.5263,0.4542,0.5996
+gemma4-12b-bf16,Obstacle,sign,238,167,0.7017,486,0.5909,0.5197,0.6632
+gemma4-12b-bf16,Obstacle,construction,158,41,0.2595,416,0.5247,0.4242,0.6283
+gemma4-12b-bf16,Obstacle,parked scooter/motorcycle,142,62,0.4366,527,0.4974,0.3961,0.5994
+gemma4-12b-bf16,Obstacle,fire hydrant,119,79,0.6639,354,0.6462,0.5291,0.7453
+gemma4-12b-bf16,Obstacle,parked bike,101,73,0.7228,191,0.4824,0.3400,0.6268
+gemma4-12b-bf16,Obstacle,(none),512,297,0.5801,1933,0.5974,0.5518,0.6429
+gemma4-12b-bf16,SurfaceProblem,cracks,775,189,0.2439,3031,0.6431,0.5967,0.6887
+gemma4-12b-bf16,SurfaceProblem,grass,585,170,0.2906,2636,0.7246,0.6761,0.7699
+gemma4-12b-bf16,SurfaceProblem,bumpy,500,187,0.3740,1982,0.7345,0.6888,0.7822
+gemma4-12b-bf16,SurfaceProblem,uneven/slanted,422,135,0.3199,1574,0.6875,0.6353,0.7380
+gemma4-12b-bf16,SurfaceProblem,brick/cobblestone,365,242,0.6630,337,0.5992,0.5388,0.6595
+gemma4-12b-bf16,SurfaceProblem,narrow sidewalk,365,220,0.6027,1160,0.6977,0.6387,0.7525
+gemma4-12b-bf16,SurfaceProblem,utility panel,230,130,0.5652,904,0.7538,0.6974,0.8130
+gemma4-12b-bf16,SurfaceProblem,height difference,194,48,0.2474,770,0.7999,0.7216,0.8692
+gemma4-12b-bf16,SurfaceProblem,sand/gravel,145,68,0.4690,284,0.6283,0.5336,0.7172
+gemma4-12b-bf16,SurfaceProblem,very broken,134,38,0.2836,625,0.6927,0.5795,0.7977
+gemma4-12b-bf16,SurfaceProblem,(none),399,275,0.6892,1490,0.7854,0.7362,0.8279
+gemma4-12b-bf16,Crosswalk,paint fading,144,94,0.6528,339,0.8862,0.8200,0.9409
+gemma4-12b-bf16,Crosswalk,(none),379,140,0.3694,1557,0.9615,0.9403,0.9776
+muse-glimmer-30b,CurbRamp,missing tactile warning,444,192,0.4324,1482,0.7091,0.6594,0.7587
+muse-glimmer-30b,CurbRamp,points into traffic,229,86,0.3755,770,0.8141,0.7600,0.8654
+muse-glimmer-30b,CurbRamp,not level with street,151,107,0.7086,513,0.6676,0.5705,0.7642
+muse-glimmer-30b,CurbRamp,narrow,113,63,0.5575,451,0.7533,0.6613,0.8324
+muse-glimmer-30b,CurbRamp,(none),1191,491,0.4123,3933,0.8323,0.8112,0.8552
+muse-glimmer-30b,NoCurbRamp,no alternate route,1380,392,0.2841,4670,0.6328,0.5993,0.6643
+muse-glimmer-30b,NoCurbRamp,alternate route present,687,425,0.6186,2300,0.5724,0.5310,0.6163
+muse-glimmer-30b,NoCurbRamp,unclear if needed,254,177,0.6969,860,0.6210,0.5503,0.6964
+muse-glimmer-30b,NoCurbRamp,(none),1104,607,0.5498,4631,0.6129,0.5790,0.6451
+muse-glimmer-30b,Obstacle,pole,907,574,0.6329,2087,0.5948,0.5544,0.6343
+muse-glimmer-30b,Obstacle,trash/recycling can,522,155,0.2969,1046,0.5065,0.4463,0.5682
+muse-glimmer-30b,Obstacle,parked car,450,218,0.4844,1293,0.5621,0.5084,0.6146
+muse-glimmer-30b,Obstacle,vegetation,386,165,0.4275,1136,0.5538,0.4984,0.6082
+muse-glimmer-30b,Obstacle,narrow,279,83,0.2975,908,0.5786,0.5060,0.6500
+muse-glimmer-30b,Obstacle,tree,263,168,0.6388,854,0.6556,0.5893,0.7250
+muse-glimmer-30b,Obstacle,sign,238,167,0.7017,486,0.5501,0.4760,0.6261
+muse-glimmer-30b,Obstacle,construction,158,41,0.2595,416,0.5159,0.3983,0.6317
+muse-glimmer-30b,Obstacle,parked scooter/motorcycle,142,62,0.4366,527,0.7260,0.6399,0.8079
+muse-glimmer-30b,Obstacle,fire hydrant,119,79,0.6639,354,0.5377,0.4323,0.6446
+muse-glimmer-30b,Obstacle,parked bike,101,73,0.7228,191,0.4090,0.2906,0.5313
+muse-glimmer-30b,Obstacle,(none),512,297,0.5801,1933,0.7091,0.6661,0.7530
+muse-glimmer-30b,SurfaceProblem,cracks,775,189,0.2439,3031,0.7579,0.7175,0.7957
+muse-glimmer-30b,SurfaceProblem,grass,585,170,0.2906,2636,0.7122,0.6658,0.7574
+muse-glimmer-30b,SurfaceProblem,bumpy,500,187,0.3740,1982,0.7594,0.7164,0.8009
+muse-glimmer-30b,SurfaceProblem,uneven/slanted,422,135,0.3199,1574,0.7431,0.6944,0.7911
+muse-glimmer-30b,SurfaceProblem,brick/cobblestone,365,242,0.6630,337,0.5298,0.4693,0.5919
+muse-glimmer-30b,SurfaceProblem,narrow sidewalk,365,220,0.6027,1160,0.6099,0.5484,0.6704
+muse-glimmer-30b,SurfaceProblem,utility panel,230,130,0.5652,904,0.7702,0.7108,0.8292
+muse-glimmer-30b,SurfaceProblem,height difference,194,48,0.2474,770,0.8042,0.7302,0.8696
+muse-glimmer-30b,SurfaceProblem,sand/gravel,145,68,0.4690,284,0.6706,0.5792,0.7584
+muse-glimmer-30b,SurfaceProblem,very broken,134,38,0.2836,625,0.8443,0.7519,0.9225
+muse-glimmer-30b,SurfaceProblem,(none),399,275,0.6892,1490,0.7501,0.6944,0.8027
+muse-glimmer-30b,Crosswalk,paint fading,144,94,0.6528,339,0.8496,0.7791,0.9068
+muse-glimmer-30b,Crosswalk,(none),379,140,0.3694,1557,0.8986,0.8659,0.9306
+phi4-rv-15b,CurbRamp,missing tactile warning,444,192,0.4324,1482,0.5971,0.5443,0.6522
+phi4-rv-15b,CurbRamp,points into traffic,229,86,0.3755,770,0.7102,0.6421,0.7810
+phi4-rv-15b,CurbRamp,not level with street,151,107,0.7086,513,0.5603,0.4567,0.6608
+phi4-rv-15b,CurbRamp,narrow,113,63,0.5575,451,0.6403,0.5428,0.7406
+phi4-rv-15b,CurbRamp,(none),1191,491,0.4123,3933,0.7608,0.7315,0.7875
+phi4-rv-15b,NoCurbRamp,no alternate route,1380,392,0.2841,4670,0.5863,0.5512,0.6189
+phi4-rv-15b,NoCurbRamp,alternate route present,687,425,0.6186,2300,0.5495,0.5060,0.5953
+phi4-rv-15b,NoCurbRamp,unclear if needed,254,177,0.6969,860,0.6057,0.5316,0.6753
+phi4-rv-15b,NoCurbRamp,(none),1104,607,0.5498,4631,0.5524,0.5195,0.5866
+phi4-rv-15b,Obstacle,pole,907,574,0.6329,2087,0.5623,0.5208,0.6036
+phi4-rv-15b,Obstacle,trash/recycling can,522,155,0.2969,1046,0.6559,0.6047,0.7044
+phi4-rv-15b,Obstacle,parked car,450,218,0.4844,1293,0.6415,0.5874,0.6894
+phi4-rv-15b,Obstacle,vegetation,386,165,0.4275,1136,0.5970,0.5401,0.6545
+phi4-rv-15b,Obstacle,narrow,279,83,0.2975,908,0.6255,0.5504,0.6934
+phi4-rv-15b,Obstacle,tree,263,168,0.6388,854,0.5379,0.4652,0.6070
+phi4-rv-15b,Obstacle,sign,238,167,0.7017,486,0.6858,0.6164,0.7499
+phi4-rv-15b,Obstacle,construction,158,41,0.2595,416,0.5449,0.4346,0.6581
+phi4-rv-15b,Obstacle,parked scooter/motorcycle,142,62,0.4366,527,0.4764,0.3800,0.5708
+phi4-rv-15b,Obstacle,fire hydrant,119,79,0.6639,354,0.6456,0.5326,0.7389
+phi4-rv-15b,Obstacle,parked bike,101,73,0.7228,191,0.5871,0.4706,0.7094
+phi4-rv-15b,Obstacle,(none),512,297,0.5801,1933,0.6195,0.5730,0.6665
+phi4-rv-15b,SurfaceProblem,cracks,775,189,0.2439,3031,0.6591,0.6105,0.7029
+phi4-rv-15b,SurfaceProblem,grass,585,170,0.2906,2636,0.6731,0.6230,0.7171
+phi4-rv-15b,SurfaceProblem,bumpy,500,187,0.3740,1982,0.7058,0.6569,0.7539
+phi4-rv-15b,SurfaceProblem,uneven/slanted,422,135,0.3199,1574,0.6596,0.6022,0.7134
+phi4-rv-15b,SurfaceProblem,brick/cobblestone,365,242,0.6630,337,0.6395,0.5753,0.6989
+phi4-rv-15b,SurfaceProblem,narrow sidewalk,365,220,0.6027,1160,0.6712,0.6144,0.7282
+phi4-rv-15b,SurfaceProblem,utility panel,230,130,0.5652,904,0.7330,0.6705,0.7955
+phi4-rv-15b,SurfaceProblem,height difference,194,48,0.2474,770,0.7096,0.6283,0.7937
+phi4-rv-15b,SurfaceProblem,sand/gravel,145,68,0.4690,284,0.6243,0.5292,0.7168
+phi4-rv-15b,SurfaceProblem,very broken,134,38,0.2836,625,0.6661,0.5532,0.7747
+phi4-rv-15b,SurfaceProblem,(none),399,275,0.6892,1490,0.7703,0.7214,0.8180
+phi4-rv-15b,Crosswalk,paint fading,144,94,0.6528,339,0.8611,0.7902,0.9200
+phi4-rv-15b,Crosswalk,(none),379,140,0.3694,1557,0.9532,0.9313,0.9717
+molmo2-8b,CurbRamp,missing tactile warning,444,192,0.4324,1482,0.6482,0.5987,0.6996
+molmo2-8b,CurbRamp,points into traffic,229,86,0.3755,770,0.7443,0.6756,0.8117
+molmo2-8b,CurbRamp,not level with street,151,107,0.7086,513,0.6812,0.5896,0.7634
+molmo2-8b,CurbRamp,narrow,113,63,0.5575,451,0.6552,0.5454,0.7479
+molmo2-8b,CurbRamp,(none),1191,491,0.4123,3933,0.7541,0.7249,0.7819
+molmo2-8b,NoCurbRamp,no alternate route,1380,392,0.2841,4670,0.5780,0.5443,0.6118
+molmo2-8b,NoCurbRamp,alternate route present,687,425,0.6186,2300,0.5764,0.5309,0.6190
+molmo2-8b,NoCurbRamp,unclear if needed,254,177,0.6969,860,0.5701,0.4997,0.6467
+molmo2-8b,NoCurbRamp,(none),1104,607,0.5498,4631,0.5394,0.5045,0.5748
+molmo2-8b,Obstacle,pole,907,574,0.6329,2087,0.6066,0.5681,0.6451
+molmo2-8b,Obstacle,trash/recycling can,522,155,0.2969,1046,0.5897,0.5336,0.6459
+molmo2-8b,Obstacle,parked car,450,218,0.4844,1293,0.6321,0.5790,0.6787
+molmo2-8b,Obstacle,vegetation,386,165,0.4275,1136,0.4997,0.4445,0.5568
+molmo2-8b,Obstacle,narrow,279,83,0.2975,908,0.6082,0.5353,0.6776
+molmo2-8b,Obstacle,tree,263,168,0.6388,854,0.5541,0.4818,0.6303
+molmo2-8b,Obstacle,sign,238,167,0.7017,486,0.5005,0.4192,0.5797
+molmo2-8b,Obstacle,construction,158,41,0.2595,416,0.4993,0.3911,0.5993
+molmo2-8b,Obstacle,parked scooter/motorcycle,142,62,0.4366,527,0.4210,0.3280,0.5161
+molmo2-8b,Obstacle,fire hydrant,119,79,0.6639,354,0.6623,0.5585,0.7522
+molmo2-8b,Obstacle,parked bike,101,73,0.7228,191,0.5504,0.4285,0.6703
+molmo2-8b,Obstacle,(none),512,297,0.5801,1933,0.5481,0.4999,0.5977
+molmo2-8b,SurfaceProblem,cracks,775,189,0.2439,3031,0.6689,0.6210,0.7135
+molmo2-8b,SurfaceProblem,grass,585,170,0.2906,2636,0.6590,0.6117,0.7059
+molmo2-8b,SurfaceProblem,bumpy,500,187,0.3740,1982,0.7202,0.6728,0.7648
+molmo2-8b,SurfaceProblem,uneven/slanted,422,135,0.3199,1574,0.6836,0.6302,0.7354
+molmo2-8b,SurfaceProblem,brick/cobblestone,365,242,0.6630,337,0.6334,0.5717,0.6960
+molmo2-8b,SurfaceProblem,narrow sidewalk,365,220,0.6027,1160,0.7185,0.6680,0.7733
+molmo2-8b,SurfaceProblem,utility panel,230,130,0.5652,904,0.7261,0.6581,0.7932
+molmo2-8b,SurfaceProblem,height difference,194,48,0.2474,770,0.7219,0.6465,0.8017
+molmo2-8b,SurfaceProblem,sand/gravel,145,68,0.4690,284,0.6511,0.5559,0.7399
+molmo2-8b,SurfaceProblem,very broken,134,38,0.2836,625,0.6911,0.5866,0.7983
+molmo2-8b,SurfaceProblem,(none),399,275,0.6892,1490,0.7996,0.7515,0.8431
+molmo2-8b,Crosswalk,paint fading,144,94,0.6528,339,0.8879,0.8236,0.9434
+molmo2-8b,Crosswalk,(none),379,140,0.3694,1557,0.9446,0.9213,0.9667
+qwen3vl-8b-bf16,CurbRamp,missing tactile warning,444,192,0.4324,1482,0.6154,0.5580,0.6677
+qwen3vl-8b-bf16,CurbRamp,points into traffic,229,86,0.3755,770,0.6978,0.6284,0.7643
+qwen3vl-8b-bf16,CurbRamp,not level with street,151,107,0.7086,513,0.6366,0.5335,0.7315
+qwen3vl-8b-bf16,CurbRamp,narrow,113,63,0.5575,451,0.6213,0.5133,0.7165
+qwen3vl-8b-bf16,CurbRamp,(none),1191,491,0.4123,3933,0.7859,0.7584,0.8120
+qwen3vl-8b-bf16,NoCurbRamp,no alternate route,1380,392,0.2841,4670,0.4822,0.4449,0.5155
+qwen3vl-8b-bf16,NoCurbRamp,alternate route present,687,425,0.6186,2300,0.5527,0.5087,0.5986
+qwen3vl-8b-bf16,NoCurbRamp,unclear if needed,254,177,0.6969,860,0.5143,0.4392,0.5988
+qwen3vl-8b-bf16,NoCurbRamp,(none),1104,607,0.5498,4631,0.5422,0.5099,0.5754
+qwen3vl-8b-bf16,Obstacle,pole,907,574,0.6329,2087,0.5221,0.4846,0.5593
+qwen3vl-8b-bf16,Obstacle,trash/recycling can,522,155,0.2969,1046,0.4896,0.4325,0.5421
+qwen3vl-8b-bf16,Obstacle,parked car,450,218,0.4844,1293,0.5689,0.5195,0.6211
+qwen3vl-8b-bf16,Obstacle,vegetation,386,165,0.4275,1136,0.5536,0.4974,0.6070
+qwen3vl-8b-bf16,Obstacle,narrow,279,83,0.2975,908,0.5885,0.5124,0.6604
+qwen3vl-8b-bf16,Obstacle,tree,263,168,0.6388,854,0.5130,0.4412,0.5861
+qwen3vl-8b-bf16,Obstacle,sign,238,167,0.7017,486,0.5549,0.4815,0.6315
+qwen3vl-8b-bf16,Obstacle,construction,158,41,0.2595,416,0.4909,0.3844,0.6059
+qwen3vl-8b-bf16,Obstacle,parked scooter/motorcycle,142,62,0.4366,527,0.4938,0.4018,0.5954
+qwen3vl-8b-bf16,Obstacle,fire hydrant,119,79,0.6639,354,0.6085,0.5041,0.7032
+qwen3vl-8b-bf16,Obstacle,parked bike,101,73,0.7228,191,0.5142,0.3845,0.6493
+qwen3vl-8b-bf16,Obstacle,(none),512,297,0.5801,1933,0.6171,0.5707,0.6639
+qwen3vl-8b-bf16,SurfaceProblem,cracks,775,189,0.2439,3031,0.6217,0.5748,0.6703
+qwen3vl-8b-bf16,SurfaceProblem,grass,585,170,0.2906,2636,0.6471,0.6003,0.6905
+qwen3vl-8b-bf16,SurfaceProblem,bumpy,500,187,0.3740,1982,0.6778,0.6267,0.7250
+qwen3vl-8b-bf16,SurfaceProblem,uneven/slanted,422,135,0.3199,1574,0.6229,0.5679,0.6758
+qwen3vl-8b-bf16,SurfaceProblem,brick/cobblestone,365,242,0.6630,337,0.6048,0.5414,0.6659
+qwen3vl-8b-bf16,SurfaceProblem,narrow sidewalk,365,220,0.6027,1160,0.5652,0.5122,0.6243
+qwen3vl-8b-bf16,SurfaceProblem,utility panel,230,130,0.5652,904,0.7145,0.6451,0.7812
+qwen3vl-8b-bf16,SurfaceProblem,height difference,194,48,0.2474,770,0.6588,0.5797,0.7419
+qwen3vl-8b-bf16,SurfaceProblem,sand/gravel,145,68,0.4690,284,0.6423,0.5484,0.7282
+qwen3vl-8b-bf16,SurfaceProblem,very broken,134,38,0.2836,625,0.6584,0.5477,0.7678
+qwen3vl-8b-bf16,SurfaceProblem,(none),399,275,0.6892,1490,0.7904,0.7415,0.8322
+qwen3vl-8b-bf16,Crosswalk,paint fading,144,94,0.6528,339,0.8132,0.7308,0.8781
+qwen3vl-8b-bf16,Crosswalk,(none),379,140,0.3694,1557,0.9324,0.9042,0.9581

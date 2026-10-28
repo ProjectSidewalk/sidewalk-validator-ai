@@ -302,6 +302,107 @@ which is wider than the board's *held-out* column (`test_heldout` only).
 
 ![Per deployment: round 3 vs the best VLM](vlm-scoreboard/per_deployment.png)
 
+## By severity and tag
+
+Every full leg, scored within label type × severity and label type × tag, so that a severity or tag a model handles
+badly shows up even when its type-level AUC looks fine, and thin training slices point at where more data would
+help. A crop with several tags counts once in each; `(none)` is an untagged crop, or one with no severity. The
+tables give round 3, production and the best full-coverage VLM with 95% label-bootstrap intervals; the heatmaps have
+every full leg. A tag gets a row when it has at least 100 held-out crops of its type and 20 of each class, and an AUC
+is blank below 30 crops or 10 of a class.
+
+What the slices show at this build (read the numbers off the tables, which regenerate):
+
+- **Severity is tied to the class**, so every model scores lower within a severity than across the type; some
+  slices (Crosswalk severity 3, almost all incorrect) have too few correct crops to score at all.
+- **Round 3 holds up in every scoreable severity slice.** The VLMs fall towards chance on CurbRamp severity 3 and
+  Obstacle severities 1 and 2.
+- **Round 3's weak tags are SurfaceProblem surface types** (brick/cobblestone, sand/gravel, narrow sidewalk) and
+  Obstacle construction. Brick/cobblestone has the fewest round-3 training crops of these, and it is the one slice
+  where several VLMs score above round 3.
+- **Production's outlier is Obstacle parked scooter/motorcycle**, a tag that barely existed in its 2025 training
+  data; round 3 handles it.
+- **The VLMs are weakest on the most common Obstacle tags** (pole, tree, vegetation, construction), and best on
+  trash can and parked bike.
+- **Untagged CurbRamp and Crosswalk crops are among the easiest slices for every model**; most tagged slices are
+  harder.
+
+### By severity
+
+<!-- BEGIN GENERATED: by_severity (analysis/vlm_scoreboard.py) -->
+
+| type | severity | held-out crops | incorrect | round-3 train | Round 3 (DINOv2-L, 2026-10) | Production (DINOv2-L, 2025-08) | Gemma 4 31B, 8-shot |
+|---|---|---|---|---|---|---|---|
+| CurbRamp | 1 | 1,524 | 39% | 5,083 | 0.955 [0.946, 0.966] | 0.941 [0.928, 0.953] | 0.868 [0.849, 0.886] |
+| CurbRamp | 2 | 251 | 59% | 837 | 0.930 [0.892, 0.963] | 0.918 [0.880, 0.950] | 0.854 [0.803, 0.897] |
+| CurbRamp | 3 | 125 | 67% | 551 | 0.912 [0.836, 0.968] | 0.944 [0.889, 0.980] | 0.764 [0.667, 0.848] |
+| CurbRamp | (none) | 125 | 56% | 454 | 0.966 [0.930, 0.995] | 0.975 [0.953, 0.993] | 0.932 [0.887, 0.969] |
+| NoCurbRamp | 1 | 489 | 75% | 1,839 | 0.859 [0.816, 0.897] | 0.884 [0.843, 0.919] | 0.711 [0.656, 0.765] |
+| NoCurbRamp | 2 | 901 | 47% | 3,595 | 0.898 [0.877, 0.917] | 0.915 [0.898, 0.932] | 0.750 [0.717, 0.782] |
+| NoCurbRamp | 3 | 1,809 | 36% | 6,074 | 0.934 [0.921, 0.946] | 0.928 [0.916, 0.939] | 0.739 [0.714, 0.763] |
+| NoCurbRamp | (none) | 157 | 69% | 691 | 0.919 [0.871, 0.957] | 0.922 [0.873, 0.961] | 0.669 [0.562, 0.769] |
+| Obstacle | 1 | 1,685 | 77% | 3,142 | 0.849 [0.824, 0.873] | 0.801 [0.774, 0.827] | 0.526 [0.495, 0.558] |
+| Obstacle | 2 | 976 | 41% | 2,844 | 0.855 [0.831, 0.878] | 0.797 [0.770, 0.822] | 0.575 [0.540, 0.612] |
+| Obstacle | 3 | 1,224 | 29% | 3,899 | 0.874 [0.854, 0.894] | 0.815 [0.791, 0.839] | 0.683 [0.646, 0.715] |
+| Obstacle | (none) | 193 | 68% | 669 | 0.869 [0.808, 0.922] | 0.817 [0.746, 0.881] | 0.685 [0.605, 0.761] |
+| SurfaceProblem | 1 | 1,681 | 51% | 5,050 | 0.847 [0.827, 0.866] | 0.841 [0.821, 0.859] | 0.757 [0.732, 0.778] |
+| SurfaceProblem | 2 | 821 | 42% | 2,959 | 0.847 [0.820, 0.876] | 0.846 [0.819, 0.872] | 0.779 [0.747, 0.809] |
+| SurfaceProblem | 3 | 452 | 42% | 1,833 | 0.888 [0.855, 0.919] | 0.869 [0.834, 0.899] | 0.786 [0.741, 0.827] |
+| SurfaceProblem | (none) | 148 | 61% | 658 | 0.840 [0.770, 0.899] | 0.808 [0.729, 0.871] | 0.808 [0.731, 0.873] |
+| Crosswalk | 1 | 356 | 20% | 1,394 | 0.943 [0.905, 0.975] | 0.941 [0.908, 0.971] | 0.876 [0.824, 0.924] |
+| Crosswalk | 2 | 96 | 84% | 187 | 0.970 [0.932, 1.000] | 0.979 [0.951, 0.999] | 0.957 [0.918, 0.988] |
+| Crosswalk | 3 | 96 | 95% | 369 | — | — | — |
+| Crosswalk | (none) | 35 | 77% | 139 | — | — | — |
+
+<!-- END GENERATED: by_severity -->
+
+![Heatmap: AUC by model, label type and severity](vlm-scoreboard/by_severity.png)
+
+### By tag
+
+<!-- BEGIN GENERATED: by_tag (analysis/vlm_scoreboard.py) -->
+
+| type | tag | held-out crops | incorrect | round-3 train | Round 3 (DINOv2-L, 2026-10) | Production (DINOv2-L, 2025-08) | Gemma 4 31B, 8-shot |
+|---|---|---|---|---|---|---|---|
+| CurbRamp | missing tactile warning | 444 | 43% | 1,482 | 0.916 [0.888, 0.942] | 0.899 [0.871, 0.924] | 0.772 [0.729, 0.813] |
+| CurbRamp | points into traffic | 229 | 38% | 770 | 0.974 [0.944, 0.994] | 0.952 [0.914, 0.979] | 0.888 [0.841, 0.927] |
+| CurbRamp | not level with street | 151 | 71% | 513 | 0.909 [0.850, 0.963] | 0.904 [0.848, 0.952] | 0.692 [0.598, 0.776] |
+| CurbRamp | narrow | 113 | 56% | 451 | 0.922 [0.862, 0.969] | 0.918 [0.866, 0.964] | 0.783 [0.700, 0.863] |
+| CurbRamp | (none) | 1,191 | 41% | 3,933 | 0.962 [0.951, 0.972] | 0.946 [0.933, 0.960] | 0.892 [0.872, 0.910] |
+| NoCurbRamp | no alternate route | 1,380 | 28% | 4,670 | 0.930 [0.911, 0.945] | 0.931 [0.916, 0.944] | 0.762 [0.733, 0.789] |
+| NoCurbRamp | alternate route present | 687 | 62% | 2,300 | 0.872 [0.844, 0.899] | 0.881 [0.852, 0.907] | 0.703 [0.665, 0.740] |
+| NoCurbRamp | unclear if needed | 254 | 70% | 860 | 0.836 [0.774, 0.887] | 0.846 [0.791, 0.899] | 0.667 [0.594, 0.741] |
+| NoCurbRamp | (none) | 1,104 | 55% | 4,631 | 0.932 [0.917, 0.947] | 0.937 [0.923, 0.950] | 0.748 [0.717, 0.776] |
+| Obstacle | pole | 907 | 63% | 2,087 | 0.889 [0.867, 0.912] | 0.841 [0.815, 0.866] | 0.487 [0.444, 0.525] |
+| Obstacle | trash/recycling can | 522 | 30% | 1,046 | 0.933 [0.910, 0.955] | 0.938 [0.915, 0.959] | 0.620 [0.563, 0.673] |
+| Obstacle | parked car | 450 | 48% | 1,293 | 0.820 [0.780, 0.856] | 0.790 [0.751, 0.829] | 0.658 [0.604, 0.705] |
+| Obstacle | vegetation | 386 | 43% | 1,136 | 0.833 [0.791, 0.871] | 0.792 [0.749, 0.833] | 0.580 [0.518, 0.637] |
+| Obstacle | narrow | 279 | 30% | 908 | 0.849 [0.802, 0.890] | 0.835 [0.783, 0.880] | 0.600 [0.525, 0.675] |
+| Obstacle | tree | 263 | 64% | 854 | 0.887 [0.841, 0.928] | 0.818 [0.765, 0.871] | 0.562 [0.495, 0.634] |
+| Obstacle | sign | 238 | 70% | 486 | 0.883 [0.835, 0.930] | 0.900 [0.853, 0.944] | 0.605 [0.525, 0.684] |
+| Obstacle | construction | 158 | 26% | 416 | 0.793 [0.713, 0.863] | 0.840 [0.765, 0.905] | 0.520 [0.411, 0.627] |
+| Obstacle | parked scooter/motorcycle | 142 | 44% | 527 | 0.866 [0.808, 0.924] | 0.518 [0.421, 0.611] | 0.490 [0.398, 0.589] |
+| Obstacle | fire hydrant | 119 | 66% | 354 | 0.867 [0.781, 0.940] | 0.874 [0.800, 0.936] | 0.628 [0.526, 0.727] |
+| Obstacle | parked bike | 101 | 72% | 191 | 0.873 [0.760, 0.967] | 0.892 [0.802, 0.962] | 0.643 [0.532, 0.757] |
+| Obstacle | (none) | 512 | 58% | 1,933 | 0.883 [0.855, 0.910] | 0.780 [0.737, 0.819] | 0.690 [0.646, 0.738] |
+| SurfaceProblem | cracks | 775 | 24% | 3,031 | 0.891 [0.862, 0.918] | 0.881 [0.854, 0.908] | 0.711 [0.667, 0.754] |
+| SurfaceProblem | grass | 585 | 29% | 2,636 | 0.874 [0.835, 0.906] | 0.863 [0.829, 0.893] | 0.778 [0.737, 0.817] |
+| SurfaceProblem | bumpy | 500 | 37% | 1,982 | 0.888 [0.859, 0.916] | 0.869 [0.837, 0.897] | 0.775 [0.733, 0.817] |
+| SurfaceProblem | uneven/slanted | 422 | 32% | 1,574 | 0.833 [0.793, 0.872] | 0.811 [0.767, 0.855] | 0.734 [0.686, 0.780] |
+| SurfaceProblem | brick/cobblestone | 365 | 66% | 337 | 0.633 [0.578, 0.692] | 0.683 [0.630, 0.736] | 0.669 [0.614, 0.723] |
+| SurfaceProblem | narrow sidewalk | 365 | 60% | 1,160 | 0.793 [0.743, 0.839] | 0.792 [0.743, 0.840] | 0.725 [0.670, 0.774] |
+| SurfaceProblem | utility panel | 230 | 57% | 904 | 0.813 [0.757, 0.869] | 0.830 [0.775, 0.877] | 0.728 [0.664, 0.788] |
+| SurfaceProblem | height difference | 194 | 25% | 770 | 0.947 [0.908, 0.977] | 0.924 [0.877, 0.966] | 0.790 [0.714, 0.858] |
+| SurfaceProblem | sand/gravel | 145 | 47% | 284 | 0.748 [0.663, 0.828] | 0.727 [0.642, 0.808] | 0.713 [0.625, 0.797] |
+| SurfaceProblem | very broken | 134 | 28% | 625 | 0.877 [0.803, 0.941] | 0.886 [0.814, 0.952] | 0.781 [0.684, 0.872] |
+| SurfaceProblem | (none) | 399 | 69% | 1,490 | 0.888 [0.853, 0.922] | 0.873 [0.835, 0.908] | 0.829 [0.789, 0.870] |
+| Crosswalk | paint fading | 144 | 65% | 339 | 0.965 [0.933, 0.994] | 0.956 [0.922, 0.985] | 0.888 [0.821, 0.947] |
+| Crosswalk | (none) | 379 | 37% | 1,557 | 0.975 [0.956, 0.991] | 0.967 [0.944, 0.985] | 0.947 [0.919, 0.971] |
+
+<!-- END GENERATED: by_tag -->
+
+![Heatmap: AUC by model, label type and tag](vlm-scoreboard/by_tag.png)
+
 ## Latency and cost
 
 Median seconds per crop with the hardware named; batch-1 and run-batch timings are separate rows. GPU-hours scale

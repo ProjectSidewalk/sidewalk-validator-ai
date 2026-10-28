@@ -12,7 +12,9 @@ private deployments, so they live in a staging directory outside the checkout (`
 ``~/Data/sidewalk-validator-ai-vlm-scoreboard-2026-10``)::
 
     <scores-dir>/
-      splits/<Type>.csv                # label_uid, city, label_type, label_class, split (test + test_heldout rows)
+      splits/<Type>.csv                # label_uid, city, label_type, label_class, split, severity, tags
+                                       #   (test + test_heldout rows)
+      train/<Type>.csv                 # label_type, label_class, severity, tags of the round-3 train rows (no ids)
       scores/<leg>/<Type>.csv          # label_uid, p_incorrect, ... (vlm_baseline score CSV, or round3/production)
       scores/<leg>/<Type>.meta.json    # optional: repo, revision, gpu, batch_size, ...
       scores/timing*.csv               # model, gpu, batch_size, n_crops, median_s_per_crop, p90_s_per_crop, source
@@ -22,6 +24,13 @@ The repo gets only aggregates (no ``label_uid``, no private deployment id), figu
 sha256 and row count of every staged file and the resolved public-deployment list. ``stage`` fills the staging
 directory from what is on this Mac: the held-out rows of the round-3 ``split.csv`` files, the round-3
 ``predictions.csv`` (held-out rows), and the three 4-bit MLX legs of #16 (``<model>-mlx4``).
+
+**Slices.** Every full leg is also scored by label type x severity and label type x tag (``by_severity.csv``,
+``by_tag.csv``, two heatmaps), with the held-out count, the incorrect share and the round-3 training count of each
+slice, so a severity or tag a model handles badly shows up even when its type-level AUC looks fine. Naming follows
+``analysis/slices.py`` of PR #67: a crop with several tags counts once in each, and an untagged crop, or one with no
+severity, is in ``(none)``. A tag gets a row when it has at least ``TAG_MIN_N`` held-out crops of the type and
+``TAG_MIN_CLASS`` of each class; an AUC is left blank below ``SLICE_MIN_N`` crops or ``SLICE_MIN_CLASS`` of a class.
 
 **Naming.** A deployment is named only if it is public in the live ``/v3/api/cities`` at build time
 (``retrain_report.public_cities``; ``--public-cities`` overrides with a saved response or a list). The two private
@@ -57,6 +66,7 @@ import re
 import shutil
 import sys
 import tempfile
+import zlib
 
 import numpy as np
 import pandas as pd
@@ -135,13 +145,17 @@ def sha256_of(path):
         return hashlib.sha256(f.read()).hexdigest()
 
 
+SPLIT_COLUMNS = ("label_uid", "city", "label_type", "label_class", "split", "severity", "tags")
+
+
 def load_splits(scores_dir):
-    """The held-out rows of every type, one frame; ``y`` = 1 for ``incorrect``. Unique ``label_uid``."""
+    """The held-out rows of every type, one frame; ``y`` = 1 for ``incorrect``. Unique ``label_uid``. ``severity``
+    and ``tags`` come along when staged (the slices need them)."""
     frames = []
     for t in LABEL_TYPES:
         p = os.path.join(scores_dir, "splits", f"{t}.csv")
         if os.path.exists(p):
-            frames.append(pd.read_csv(p, usecols=["label_uid", "city", "label_type", "label_class", "split"]))
+            frames.append(pd.read_csv(p, usecols=lambda c: c in SPLIT_COLUMNS))
     if not frames:
         raise SystemExit(f"no splits under {scores_dir}/splits; run `stage` first")
     s = pd.concat(frames, ignore_index=True)
@@ -199,6 +213,13 @@ def load_scores(scores_dir, splits):
         if u:
             unscored[leg] = u
     return legs, unscored
+
+
+def load_train(scores_dir):
+    """The round-3 train rows (``label_type, label_class, severity, tags``; no ids), or None when not staged."""
+    frames = [pd.read_csv(os.path.join(scores_dir, "train", f"{t}.csv")) for t in LABEL_TYPES
+              if os.path.exists(os.path.join(scores_dir, "train", f"{t}.csv"))]
+    return pd.concat(frames, ignore_index=True) if frames else None
 
 
 def load_timing(scores_dir):
@@ -428,6 +449,95 @@ def coverage_rows(legs, splits, notes, unscored=None):
     return rows
 
 
+# --------------------------------------------------------------------------------------------------------------------
+# Slices: label type x severity and label type x tag (the standing rule; conventions of analysis/slices.py, PR #67)
+# --------------------------------------------------------------------------------------------------------------------
+
+SLICE_BY = ("severity", "tag")
+NONE = "(none)"
+SLICE_MIN_N, SLICE_MIN_CLASS = 30, 10     # below either, the slice's AUC is blank (its counts are still reported)
+TAG_MIN_N, TAG_MIN_CLASS = 100, 20        # a tag gets a row only with this many held-out crops of the type
+
+
+def parse_tags(value):
+    """A label's tags: a JSON array (``split.csv``), a ``;``-joined string, a list, or missing (as ``slices.py``).
+
+    >>> parse_tags('["narrow","pole"]'), parse_tags("narrow;pole"), parse_tags("[]"), parse_tags(float("nan"))
+    (['narrow', 'pole'], ['narrow', 'pole'], [], [])
+    """
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(t) for t in value if str(t)]
+    v = str(value).strip()
+    if v.startswith("["):
+        return [str(t) for t in json.loads(v) if str(t)]
+    return [t for t in v.split(";") if t]
+
+
+def with_slice(df, by):
+    """``df`` with a ``slice`` column for ``by``; tags explode to one row per tag, untagged rows are ``(none)``.
+
+    >>> d = pd.DataFrame({"severity": [1.0, None], "tags": ['["a","b"]', "[]"]})
+    >>> with_slice(d, "severity").slice.tolist(), with_slice(d, "tag").slice.tolist()
+    (['1', '(none)'], ['a', 'b', '(none)'])
+    """
+    if by == "severity":
+        sev = pd.to_numeric(df["severity"], errors="coerce")
+        return df.assign(slice=[NONE if pd.isna(v) else str(int(v)) for v in sev])
+    return df.assign(slice=[parse_tags(v) or [NONE] for v in df["tags"]]).explode("slice").reset_index(drop=True)
+
+
+def slice_names(splits, by):
+    """``{Type: [slice, ...]}`` in row order: severities 1, 2, 3 then ``(none)`` (those present); tags with at least
+    ``TAG_MIN_N`` held-out crops and ``TAG_MIN_CLASS`` of each class, most common first, then ``(none)``."""
+    out = {}
+    d = with_slice(splits, by)
+    for t in LABEL_TYPES:
+        g = d[d.label_type == t]
+        if g.empty:
+            continue
+        if by == "severity":
+            present = set(g.slice)
+            out[t] = [v for v in ("1", "2", "3", NONE) if v in present]
+            continue
+        c = g.groupby("slice").y.agg(n="size", inc="sum")
+        keep = c[(c.n >= TAG_MIN_N) & (c.inc >= TAG_MIN_CLASS) & (c.n - c.inc >= TAG_MIN_CLASS)]
+        keep = keep.drop(index=NONE, errors="ignore").reset_index().sort_values(["n", "slice"], ascending=[False, True])
+        out[t] = keep.slice.tolist() + ([NONE] if (g.slice == NONE).any() else [])
+    return out
+
+
+def _slice_rng(seed, by, t, name):
+    """The same bootstrap draws for every leg on one slice (the full legs share the crops), so cells compare."""
+    return np.random.default_rng([seed, 2 + SLICE_BY.index(by), LABEL_TYPES.index(t), zlib.crc32(name.encode())])
+
+
+def slice_rows(legs, splits, train, by, n_boot=N_BOOT, seed=SEED):
+    """One row per (leg, type, slice) for the legs given (the full ones, in board order): held-out ``n``,
+    ``n_incorrect``, ``incorrect_share``, round-3 ``n_train`` (blank when the train rows are not staged), and the
+    AUC with its 95% class-stratified label-bootstrap interval (blank when the slice is too thin to score)."""
+    names = slice_names(splits, by)
+    tr = with_slice(train, by) if train is not None else None
+    rows = []
+    for leg, df in legs.items():
+        d = with_slice(df, by)
+        for t, slices in names.items():
+            dt = d[d.label_type == t]
+            for name in slices:
+                g = dt[dt.slice == name].sort_values("label_uid")    # same row order for every leg
+                n, ni = len(g), int(g.y.sum())
+                a = lo = hi = float("nan")
+                if n >= SLICE_MIN_N and min(ni, n - ni) >= SLICE_MIN_CLASS:
+                    a = auc(g.y, g.p_incorrect)
+                    lo, hi = ci(boot_auc(g.y, g.p_incorrect, n_boot, _slice_rng(seed, by, t, name))[:, 0])
+                n_train = int(((tr.label_type == t) & (tr.slice == name)).sum()) if tr is not None else float("nan")
+                rows.append({"leg": leg, "label_type": t, by: name, "n": n, "n_incorrect": ni,
+                             "incorrect_share": ni / n if n else float("nan"), "n_train": n_train, "auc": a,
+                             "auc_lo": lo, "auc_hi": hi})
+    return rows
+
+
 def build_aggregates(scores_dir, public, n_boot=N_BOOT, seed=SEED, min_city_n=30):
     """Every committed CSV, as ``{name: DataFrame}``, plus the per-crop frames the ROC figure needs."""
     splits = load_splits(scores_dir)
@@ -472,6 +582,11 @@ def build_aggregates(scores_dir, public, n_boot=N_BOOT, seed=SEED, min_city_n=30
     if len(out["per_type"]):
         out["per_type"] = out["per_type"].assign(order=out["per_type"].leg.map(
             {k: i for i, k in enumerate(board.leg)})).sort_values(["order", "label_type"]).drop(columns="order")
+    full_legs = {leg: legs[leg] for leg in board[board.full.astype(bool)].leg} if len(board) else {}
+    sliced = {"severity", "tags"} <= set(splits.columns)
+    train = load_train(scores_dir)
+    for by in SLICE_BY:
+        out[f"by_{by}"] = pd.DataFrame(slice_rows(full_legs, splits, train, by, n_boot, seed) if sliced else [])
     return out, legs, splits, names
 
 
@@ -500,10 +615,10 @@ def write_aggregates(aggs, out_dir):
 
 def read_aggregates(out_dir):
     out = {}
-    for name in ("board", "per_type", "paired", "per_deployment", "coverage", "timing"):
+    for name in ("board", "per_type", "paired", "per_deployment", "coverage", "timing", "by_severity", "by_tag"):
         p = os.path.join(out_dir, f"{name}.csv")
         try:
-            out[name] = pd.read_csv(p, keep_default_na=False, na_values=[""])
+            out[name] = pd.read_csv(p, keep_default_na=False, na_values=[""], dtype={"severity": str, "tag": str})
         except (FileNotFoundError, pd.errors.EmptyDataError):
             out[name] = pd.DataFrame()
     return out
@@ -687,7 +802,30 @@ def render_blocks(aggs):
     blocks["timing"] = _table(["model", "GPU", "GPUs", "batch", "crops timed", "median s/crop", "p90 s/crop",
                                "GPU-h / 1,000 labels", "GPU-h / 800-label night", "source"], rows) if rows else \
         "(no timing staged yet)"
+    for by in SLICE_BY:
+        blocks[f"by_{by}"] = slice_table(aggs.get(f"by_{by}", pd.DataFrame()), b, by)
     return blocks
+
+
+def slice_table(df, b, by):
+    """Markdown for one slice CSV: a row per (type, slice), AUC [95% CI] of round 3, production and the best
+    full-coverage VLM (the heatmap has every full leg)."""
+    if df is None or df.empty:
+        return "(no slices staged)"
+    best, best_full = best_vlm(b)
+    keep = [k for k in (REFERENCE, "production", best.leg if best is not None and best_full else None)
+            if k is not None and (df.leg == k).any()]
+    disp = dict(zip(b.leg, b.display))
+    first = df[df.leg == keep[0]]
+    rows = []
+    for r in first.itertuples():
+        cells = []
+        for k in keep:
+            x = df[(df.leg == k) & (df.label_type == r.label_type) & (df[by] == getattr(r, by))].iloc[0]
+            cells.append(f"{f3(x.auc)}{interval(x.auc_lo, x.auc_hi)}")
+        rows.append([r.label_type, getattr(r, by), _int(r.n), f"{r.incorrect_share:.0%}",
+                     "—" if f3(r.n_train) == "—" else _int(r.n_train)] + cells)
+    return _table(["type", by, "held-out crops", "incorrect", "round-3 train"] + [disp.get(k, k) for k in keep], rows)
 
 
 def splice(text, blocks):
@@ -1010,8 +1148,80 @@ def fig_latency(tm, path):
     plt.close(fig)
 
 
+def fig_slices(df, b, by, path):
+    """Slices as rows (grouped by label type), every full leg as a column, ranked as on the board. The row label
+    carries the held-out count, the incorrect share and the round-3 training count."""
+    plt = _plt()
+    from matplotlib.colors import BoundaryNorm, ListedColormap
+    order = [k for k in b[b.full.astype(bool)].leg if (df.leg == k).any()]
+    disp = dict(zip(b.leg, b.display))
+    rows = []                                           # (type, slice) or (type, None) for a group header
+    for t in LABEL_TYPES:
+        names = df[(df.leg == order[0]) & (df.label_type == t)][by].tolist()
+        if names:
+            rows += [(t, None)] + [(t, x) for x in names]
+    m = np.full((len(rows), len(order)), np.nan)
+    piv = df.set_index(["label_type", by, "leg"])
+    labels = []
+    for i, (t, x) in enumerate(rows):
+        if x is None:
+            labels.append(t)
+            continue
+        m[i] = [piv.loc[(t, x, k), "auc"] for k in order]
+        r = piv.loc[(t, x, order[0])]
+        train = "—" if f3(r.n_train) == "—" else f"{int(r.n_train):,}"
+        labels.append(f"{x}   n={int(r.n):,} · {r.incorrect_share:.0%} inc · train {train}")
+    cmap, norm = ListedColormap(SEQ), BoundaryNorm(np.linspace(0.5, 1.0, len(SEQ) + 1), len(SEQ))
+    fig, ax = plt.subplots(figsize=(0.78 * len(order) + 5.4, 0.30 * len(rows) + 3.4), facecolor=SURFACE)
+    ax.set_facecolor(SURFACE)
+    for i, (t, x) in enumerate(rows):
+        if x is None:
+            ax.add_patch(plt.Rectangle((-0.5, i - 0.5), len(order), 1.0, color=EMPTY, lw=0))
+            continue
+        for j in range(len(order)):
+            v = m[i, j]
+            ok = not np.isnan(v)
+            ax.add_patch(plt.Rectangle((j - 0.46, i - 0.44), 0.92, 0.88, color=cmap(norm(max(min(v, 0.999), 0.5)))
+                                       if ok else EMPTY, lw=0))
+            light = ok and norm(max(min(v, 0.999), 0.5)) >= 7
+            ax.text(j, i, f"{v:.2f}" if ok else "—", ha="center", va="center", fontsize=7.5,
+                    color="#ffffff" if light else (INK if ok else MUTED),
+                    fontweight="bold" if order[j] == REFERENCE else None)
+    ax.set_xlim(-0.5, len(order) - 0.5)
+    ax.set_ylim(len(rows) - 0.5, -0.5)
+    ax.set_xticks(range(len(order)))
+    ax.set_xticklabels([disp.get(k, k).replace(" (DINOv2-L, ", "\n(DINOv2-L, ") for k in order], fontsize=8,
+                       rotation=40, ha="left", rotation_mode="anchor")
+    ax.xaxis.tick_top()
+    ax.set_yticks(range(len(rows)))
+    ax.set_yticklabels(labels, fontsize=8)
+    for lab, (t, x) in zip(ax.get_yticklabels(), rows):
+        if x is None:
+            lab.set_fontweight("bold")
+            lab.set_color(INK)
+    for s_ in ax.spines.values():
+        s_.set_visible(False)
+    ax.tick_params(length=0, colors=INK2)
+    what = {"severity": ("severity", "Severity is the labeler's (1 = least severe) and is tied to the class, so "
+                                     "within-slice AUC is lower than the type's for every model."),
+            "tag": ("tag", f"Tags with at least {TAG_MIN_N} held-out crops and {TAG_MIN_CLASS} of each class; "
+                           "a crop with two tags counts in both rows.")}[by]
+    fig.suptitle(f"AUC by model, label type and {what[0]}", x=0.01, ha="left", fontsize=12, color=INK, y=0.995)
+    fig.text(0.01, 0.975, what[1], fontsize=8.5, color=INK2, va="top")
+    fig.text(0.01, 0.012, "AUC within the slice (incorrect = positive). Row label: held-out crops, share incorrect, "
+             f"round-3 training crops. — = fewer than {SLICE_MIN_N} crops or {SLICE_MIN_CLASS} of a class; "
+             f"(none) = no {what[0]}.\n{FOOTNOTE}", fontsize=7, color=MUTED)
+    w, h = fig.get_size_inches()                        # fixed-inch margins: room for the rotated column names
+    fig.subplots_adjust(left=0.36, right=1 - 1.1 / w, top=1 - 2.0 / h, bottom=0.6 / h)
+    fig.savefig(path, dpi=150, facecolor=SURFACE)
+    plt.close(fig)
+
+
 def render_figures(aggs, legs, out_dir):
     b = aggs["board"]
+    for by in SLICE_BY:
+        if len(aggs.get(f"by_{by}", ())):
+            fig_slices(aggs[f"by_{by}"], b, by, os.path.join(out_dir, f"by_{by}.png"))
     fig_leaderboard(b, os.path.join(out_dir, "leaderboard.png"))
     fig_by_type(b, os.path.join(out_dir, "by_type.png"))
     fig_roc(legs, b, os.path.join(out_dir, "roc.png"))
@@ -1078,12 +1288,17 @@ def run_stage(args):
     if vb.inside_this_repo(os.path.join(args.scores_dir, "x")):
         raise SystemExit("--scores-dir must be outside the repo (it holds per-label data)")
     os.makedirs(os.path.join(args.scores_dir, "splits"), exist_ok=True)
+    os.makedirs(os.path.join(args.scores_dir, "train"), exist_ok=True)
     os.makedirs(os.path.join(args.scores_dir, "scores", REFERENCE), exist_ok=True)
     held = []
     for t in LABEL_TYPES:
         s = vb.load_split_rows(args.run_dir, t, SPLITS)    # status == "ok" only, as the scoring legs select
-        keep = [c for c in ("label_uid", "city", "label_type", "label_class", "split", "pano_id") if c in s]
+        keep = [c for c in ("label_uid", "city", "label_type", "label_class", "split", "pano_id", "severity", "tags")
+                if c in s]
         s[keep].to_csv(os.path.join(args.scores_dir, "splits", f"{t}.csv"), index=False)
+        tr = vb.load_split_rows(args.run_dir, t, ("train",))
+        tr[[c for c in ("label_type", "label_class", "severity", "tags") if c in tr]].to_csv(
+            os.path.join(args.scores_dir, "train", f"{t}.csv"), index=False)
         p = pd.read_csv(os.path.join(args.run_dir, t, "predictions.csv"))
         p = p[p.label_uid.isin(set(s.label_uid))].sort_values("label_uid")
         if len(p) != len(s):

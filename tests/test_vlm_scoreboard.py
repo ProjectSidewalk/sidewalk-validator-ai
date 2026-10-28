@@ -14,6 +14,7 @@ from analysis import vlm_scoreboard as sb
 PUBLIC = ["seattle-wa", "chicago-il", "tucson-az"]
 PRIVATE_TEST, PRIVATE_HELDOUT = ["secretville", "hiddenburg-tx"], ["faraway", "nearby-ok"]
 CITIES = PUBLIC[:2] + PRIVATE_TEST + ["tucson-az"] + PRIVATE_HELDOUT
+TAGS = ['["narrow"]', '["narrow","pole"]', "[]", None, '["pole"]']
 
 
 def _splits(n_per=60):
@@ -23,7 +24,8 @@ def _splits(n_per=60):
             c = CITIES[i % len(CITIES)]
             rows.append({"label_uid": f"{c}:{sb.LABEL_TYPES.index(t)}{i:04d}", "city": c, "label_type": t,
                          "label_class": "incorrect" if (i // len(CITIES)) % 2 else "correct",
-                         "split": "test_heldout" if c in ("tucson-az", *PRIVATE_HELDOUT) else "test"})
+                         "split": "test_heldout" if c in ("tucson-az", *PRIVATE_HELDOUT) else "test",
+                         "severity": [1.0, 2.0, 3.0, None][i % 4], "tags": TAGS[i % len(TAGS)]})
     return pd.DataFrame(rows)
 
 
@@ -39,6 +41,9 @@ def _stage(root):
     os.makedirs(root / "splits")
     for t, g in s.groupby("label_type"):
         g.to_csv(root / "splits" / f"{t}.csv", index=False)
+    os.makedirs(root / "train")
+    for t, g in s.groupby("label_type"):             # stand-in train rows: the same mix, no ids
+        g[["label_type", "label_class", "severity", "tags"]].to_csv(root / "train" / f"{t}.csv", index=False)
     legs = {"round3": (0.8, s), "production": (0.6, s), "gemma4-31b": (0.4, s),
             "qwen3vl-8b-mlx4": (0.5, s.groupby("label_type").head(20))}
     for i, (leg, (signal, rows)) in enumerate(legs.items()):
@@ -60,7 +65,8 @@ def _stage(root):
 
 def _doc(path, prose=""):
     blocks = "\n\n".join(f"{sb.BEGIN.format(name=n)}\n{sb.END.format(name=n)}" for n in
-                         ("short_answer", "board", "per_type", "paired", "per_deployment", "timing", "coverage"))
+                         ("short_answer", "board", "per_type", "paired", "per_deployment", "timing", "coverage",
+                          "by_severity", "by_tag"))
     path.write_text(f"# Test board\n\n{prose}\n\n{blocks}\n")
 
 
@@ -215,7 +221,7 @@ def test_headline_gap_is_round3_minus_best_full_vlm(board):
 
 
 def test_figures_render_on_agg(board):
-    for f in ("leaderboard", "by_type", "roc", "per_deployment", "latency"):
+    for f in ("leaderboard", "by_type", "roc", "per_deployment", "latency", "by_severity", "by_tag"):
         p = board["out"] / f"{f}.png"
         assert p.exists() and p.stat().st_size > 5000
 
@@ -319,3 +325,46 @@ def test_run_speed_prefers_the_full_run_with_most_crops_on_a_tie():
     bigger = pd.concat([t, pd.DataFrame([{"model": "m", "gpu": "g-b16", "batch_size": 16, "n_crops": 50,
                                           "median_s_per_crop": 0.1, "source": "timing"}])])
     assert sb.run_speed(bigger, "m") == (0.1, "g-b16", 16)            # the largest batch still comes first
+
+
+def test_slices_cover_full_legs_only_and_count_each_tag(board):
+    a = sb.read_aggregates(str(board["out"]))
+    sev, tag = a["by_severity"], a["by_tag"]
+    full = set(a["board"][a["board"].full.astype(bool)].leg)
+    assert set(sev.leg) == full and set(tag.leg) == full           # the partial Mac leg is not sliced
+    r = sev[(sev.leg == "round3") & (sev.label_type == "CurbRamp")]
+    assert r.severity.tolist() == ["1", "2", "3", "(none)"] and r.n.sum() == 60
+    assert (r.n_train == r.n).all()                                # train stand-in = the held-out mix
+    # thresholds of 100 crops / 20 per class keep no real tag in a 60-row type: only (none) is scored
+    assert set(tag.tag) == {"(none)"}
+    assert tag[(tag.leg == "round3") & (tag.label_type == "CurbRamp")].n.iloc[0] == 24     # "[]" and missing
+    text = board["doc"].read_text()
+    assert "| CurbRamp | (none) |" in text
+
+
+def test_slice_names_and_rows_on_a_small_frame(monkeypatch):
+    monkeypatch.setattr(sb, "TAG_MIN_N", 4)
+    monkeypatch.setattr(sb, "TAG_MIN_CLASS", 2)
+    monkeypatch.setattr(sb, "SLICE_MIN_N", 4)
+    monkeypatch.setattr(sb, "SLICE_MIN_CLASS", 2)
+    s = pd.DataFrame({"label_uid": [f"x:{i}" for i in range(8)], "label_type": "CurbRamp",
+                      "y": [0, 1, 0, 1, 0, 1, 0, 1], "severity": [1, 1, 1, 1, 2, None, 2, 2],
+                      "tags": ['["a","b"]', '["a"]', '["a","b"]', '["a","b"]', '["b"]', "[]", '["c"]', '["b"]']})
+    assert sb.slice_names(s, "severity") == {"CurbRamp": ["1", "2", "(none)"]}
+    assert sb.slice_names(s, "tag") == {"CurbRamp": ["b", "a", "(none)"]}    # most common first; "c" is too thin
+    legs = {"good": s.assign(p_incorrect=s.y * 0.8 + 0.1), "bad": s.assign(p_incorrect=1 - (s.y * 0.8 + 0.1))}
+    rows = pd.DataFrame(sb.slice_rows(legs, s, None, "tag", n_boot=20, seed=1))
+    a = rows[rows.tag == "a"].set_index("leg")
+    assert a.loc["good", "auc"] == 1.0 and a.loc["bad", "auc"] == 0.0 and a.loc["good", "n"] == 4
+    assert rows.n_train.isna().all()                               # no train rows staged
+    assert np.isnan(rows[rows.tag == "(none)"].auc).all()          # one crop: blank
+
+
+def test_old_staging_without_severity_builds_without_slices(tmp_path):
+    root = tmp_path / "stage"
+    s = _stage(root)
+    for t, g in s.groupby("label_type"):
+        g.drop(columns=["severity", "tags"]).to_csv(root / "splits" / f"{t}.csv", index=False)
+    aggs, *_ = sb.build_aggregates(str(root), set(PUBLIC), n_boot=10)
+    assert aggs["by_severity"].empty and aggs["by_tag"].empty
+    assert sb.slice_table(aggs["by_tag"], aggs["board"], "tag") == "(no slices staged)"
