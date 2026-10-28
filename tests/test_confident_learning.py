@@ -268,8 +268,9 @@ def test_report_tables_and_expert_aggregates(toy, tmp_path):
                                                                        "correct": {"0.92": {"recall": 0.9}}}},
                 "test_heldout": {"auc": heldout, "recall_at_precision": {"incorrect": {"0.92": {"recall": 0.1}}}},
                 "hard": {"auc": 0.5, "n": 7},
-                "per_city": {"test": {"alpha": {"auc": 0.8}, "beta": {"auc": 0.9}},
-                             "test_heldout": {"gamma": {"auc": 0.7}}}}
+                "per_city": {"test": {"alpha": {"auc": 0.8, "n_by_class": {"correct": 10, "incorrect": 10}},
+                                      "beta": {"auc": 0.9, "n_by_class": {"correct": 30, "incorrect": 10}}},
+                             "test_heldout": {"gamma": {"auc": 0.7, "n_by_class": {"correct": 5, "incorrect": 5}}}}}
     json.dump(metrics(0.95, 0.9, 0.3), open(path.parent / "metrics.json", "w"))
     json.dump(metrics(0.96, 0.91, 0.35), open(path.parent / "metrics_symmetric.json", "w"))
     train = df[df.split == "train"]
@@ -277,13 +278,18 @@ def test_report_tables_and_expert_aggregates(toy, tmp_path):
                          "verdict": ["correct", "incorrect", "correct", "incorrect", "cant_tell", "correct"]})
     gold_path = tmp_path / "gold.csv"
     gold.to_csv(gold_path, index=False)
+    json.dump({"by_city": [{"city": "alpha", "n": 10, "flagged": 1, "share": 0.1},
+                           {"city": "beta", "n": 20, "flagged": 4, "share": 0.2},
+                           {"city": "delta", "n": 10, "flagged": 5, "share": 0.5}],
+               "source_split": "/private/path", "flagged": 10}, open(out / "flag_summary.json", "w"))
     doc = tmp_path / "doc"
     assert cl.main(["report", "--data-dir", str(tmp_path), "--label-types", "Toy", "--variants",
-                    "symmetric,unanimous3", "--gold", str(gold_path), "--out", str(doc)]) == 0
+                    "symmetric,unanimous3", "--gold", str(gold_path), "--public-cities", "alpha",
+                    "--out", str(doc)]) == 0
     text = (doc / "variants.md").read_text()
     assert "| baseline |" in text and "| symmetric |" in text and "| unanimous3 |" in text
     assert "not run" in text  # unanimous3 has no metrics file
-    assert "0.850 (2)" in text  # within-city test median for the baseline
+    assert "0.875 (2)" in text  # within-city test AUC: (0.8*100 + 0.9*300) / 400, weights n_inc x n_cor
     data = json.load(open(doc / "variants.json"))
     rows = {r["variant"]: r for r in data["Toy"]["metrics"]}
     assert rows["symmetric"]["incorrect_recall_p92_test"] == 0.35
@@ -293,3 +299,31 @@ def test_report_tables_and_expert_aggregates(toy, tmp_path):
     assert exp["symmetric"]["n_rated_train"] == 5  # the cant_tell row is not rated
     assert exp["symmetric"]["touched"] + exp["symmetric"]["untouched"] == 5
     assert "label_uid" not in text  # no ids in the published table
+    flags = data["Toy"]["flag_summary"]
+    assert "source_split" not in flags
+    assert [r["city"] for r in flags["by_city"]] == ["other (private deployments)", "alpha"]
+    assert flags["by_city"][0] == {"city": "other (private deployments)", "n": 30, "flagged": 9, "share": 0.3}
+    assert data["_public_cities"] == ["alpha"]
+
+
+def test_rule_priors_count_human_margin_labels_under_each_rule(tmp_path):
+    import data_generation as dg
+
+    def votes(agree, disagree, user="u1"):
+        return json.dumps([{"user_id": user, "validation": "Agree", "validator_type": "Human"}] * agree
+                          + [{"user_id": user, "validation": "Disagree", "validator_type": "Human"}] * disagree)
+
+    labels = pd.DataFrame({
+        "label_type": ["CurbRamp"] * 6, "label_id": [1, 2, 3, 4, 5, 6], "city": ["a"] * 6,
+        "validations": [votes(3, 0), votes(4, 1), votes(0, 2), votes(0, 3), votes(1, 4), votes(1, 1)],
+        "pano_source": ["gsv"] * 6,
+        "pano_x": [10] * 6, "pano_y": [10] * 6, "pano_width": [100] * 6, "pano_height": [50] * 6,
+        "user_id": ["h"] * 6})
+    eligible, _ = dg.eligible_labels(labels, "CurbRamp")
+    assert len(eligible) == 5  # the 1:1 label is contested
+    out = cl.rule_priors(labels, ("CurbRamp",))
+    assert out["margin"]["CurbRamp"] == {"correct": 2, "incorrect": 3, "share_incorrect": 0.6}
+    # symmetric: incorrect needs net Disagree > 2 -> (0,3) and (1,4) only
+    assert out["symmetric"]["CurbRamp"]["incorrect"] == 2 and out["symmetric"]["CurbRamp"]["correct"] == 2
+    # unanimous3: (3,0) and (0,3) only
+    assert out["unanimous3"]["CurbRamp"] == {"correct": 1, "incorrect": 1, "share_incorrect": 0.5}

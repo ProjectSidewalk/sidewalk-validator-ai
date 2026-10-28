@@ -26,6 +26,9 @@ byte the same, so every variant is scored on the same rows as the round-3 baseli
   are ignored). Rows that fail the rule are kept in the file as ``split = train_dropped`` so the counts are
   auditable; ``fine_tune_classifier.py`` trains on ``split == train`` only. Expert-sourced targets
   (``class_source == expert``) are not touched by either rule.
+- ``prior``: what each rule does to the deployment prior (``data_generation.deployment_prior_entry``: the
+  pre-downsampling class counts of human-authored labels meeting the rule, from the cached rawLabels), for the
+  second question of https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56.
 - ``report``: one table per label type from the ``evaluate.py`` outputs of the baseline (``metrics.json``) and of
   each variant (``metrics_<variant>.json``), plus the train-row accounting of every variant, and, when a private
   expert-rated file is given, how the dropped or flagged rows agree with the expert (aggregates only; the per-row
@@ -49,6 +52,8 @@ Usage (paths as on the October 2026 retrain, ``DATA=retrain-2026-10``)::
         --oof $DATA/CurbRamp/cl/oof_fold*.csv --out $DATA/CurbRamp/cl
     python analysis/confident_learning.py report --data-dir $DATA --label-types CurbRamp,Crosswalk \\
         --variants symmetric,unanimous3,cl-drop,cl-flip --out docs/confident-learning-2026-10
+    python analysis/confident_learning.py prior --rawlabels-cache rawlabels --cities "$(cat rawlabels/cities.txt)" \\
+        --out $DATA/cl_priors.json
 """
 import argparse
 import glob
@@ -457,10 +462,36 @@ def _metric(m, split, key):
 
 
 def within_city_auc(m, split):
-    """Median per-city AUC of ``split`` from evaluate.py's ``--per-city`` block, and the number of cities."""
+    """Within-city AUC of ``split`` from evaluate.py's ``--per-city`` block (cities with at least ``--min-city-n``
+    rows), and the number of cities: the per-city AUCs averaged with weights n_incorrect x n_correct, the
+    definition of docs/retrain-2026-10.md, which a score that only separates deployments cannot raise."""
     cities = (m.get("per_city") or {}).get(split) or {}
-    aucs = [v["auc"] for v in cities.values() if isinstance(v, dict) and v.get("auc") is not None]
-    return (float(np.median(aucs)) if aucs else None), len(aucs)
+    aucs, weights = [], []
+    for v in cities.values():
+        if not isinstance(v, dict) or v.get("auc") is None:
+            continue
+        n = v.get("n_by_class") or {}
+        w = n.get("incorrect", 0) * n.get("correct", 0)
+        if w > 0:
+            aucs.append(v["auc"])
+            weights.append(w)
+    return (float(np.average(aucs, weights=weights)) if aucs else None), len(aucs)
+
+
+def redact_cities(records, public, key="city", other="other (private deployments)"):
+    """Pool the ``records`` (dicts with ``key``, ``n``, ``flagged``) of cities not in ``public`` into one row, so a
+    published table names only deployments the live /v3/api/cities listed as public when the report ran."""
+    kept, pooled = [], {key: other, "n": 0, "flagged": 0}
+    for r in records:
+        if r[key] in public:
+            kept.append(dict(r))
+        else:
+            pooled["n"] += int(r["n"])
+            pooled["flagged"] += int(r["flagged"])
+    if pooled["n"]:
+        pooled["share"] = round(pooled["flagged"] / pooled["n"], 4)
+        kept.append(pooled)
+    return sorted(kept, key=lambda r: -r["share"])
 
 
 def variant_rows(data_dir, label_type, variants):
@@ -577,8 +608,9 @@ def cmd_report(args):
         gold = pd.read_csv(args.gold, dtype=str)
         if not {"label_uid", "verdict"} <= set(gold.columns):
             raise SystemExit("--gold needs label_uid and verdict columns")
+    public = set(c.strip() for c in (args.public_cities or "").split(",") if c.strip())
     os.makedirs(args.out, exist_ok=True)
-    tables, everything = [], {}
+    tables, everything = [], {"_public_cities": sorted(public)}
     for lt in label_types:
         metric_rows = variant_rows(args.data_dir, lt, variants)
         train_rows = train_accounting(args.data_dir, lt, variants)
@@ -588,7 +620,11 @@ def cmd_report(args):
         flag_path = os.path.join(args.data_dir, lt, "cl", "flag_summary.json")
         if os.path.exists(flag_path):
             with open(flag_path) as f:
-                everything[lt]["flag_summary"] = json.load(f)
+                flags = json.load(f)
+            flags["by_city"] = redact_cities(flags.get("by_city", []), public)
+            for k in ("source_split", "oof_files"):  # paths, not needed in the published copy
+                flags.pop(k, None)
+            everything[lt]["flag_summary"] = flags
     text = "\n".join(tables)
     with open(os.path.join(args.out, "variants.md"), "w") as f:
         f.write(text)
@@ -596,6 +632,52 @@ def cmd_report(args):
         json.dump(everything, f, indent=2, default=float)
         f.write("\n")
     print(text)
+    return 0
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# prior (issue #56, second box)
+# ---------------------------------------------------------------------------------------------------------------------
+
+LABEL_TYPES = ("CurbRamp", "Crosswalk", "NoCurbRamp", "Obstacle", "SurfaceProblem")
+
+
+def rule_priors(all_labels, label_types=LABEL_TYPES, rules=("margin",) + RULES):
+    """``{rule: {label_type: {"correct": n, "incorrect": n, "share_incorrect": p}}}``: the deployment prior counts
+    under the margin rule (what ``data_generation.py`` records) and under each stricter rule. Human-authored,
+    margin-sourced labels only, as ``deployment_prior_entry`` counts them; a stricter rule keeps a subset.
+
+    See ``tests/test_confident_learning.py`` for a worked example."""
+    import data_generation as dg
+    out = {rule: {} for rule in rules}
+    for lt in label_types:
+        eligible, _ = dg.eligible_labels(all_labels, lt)
+        human = eligible[(eligible["author"] == "human") & (eligible["class_source"] == "margin")]
+        for rule in rules:
+            keep = human if rule == "margin" else human[passes_rule(human, rule)]
+            counts = keep["label_class"].value_counts()
+            c, i = int(counts.get("correct", 0)), int(counts.get("incorrect", 0))
+            out[rule][lt] = {"correct": c, "incorrect": i, "share_incorrect": (i / (c + i)) if c + i else None}
+    return out
+
+
+def cmd_prior(args):
+    import data_generation as dg
+    cities = dg.parse_cities(args.cities)
+    frames = [dg.load_city(c, s, args.rawlabels_cache) for c, s in cities.items()]
+    all_labels = pd.concat(frames, ignore_index=True)
+    label_types = [t.strip() for t in args.label_types.split(",") if t.strip()]
+    priors = rule_priors(all_labels, label_types)
+    priors["_source"] = {"cities": list(cities), "rawlabels_cache": os.path.abspath(args.rawlabels_cache),
+                         "rows": int(len(all_labels))}
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+    with open(args.out, "w") as f:
+        json.dump(priors, f, indent=2)
+        f.write("\n")
+    for rule in ("margin",) + RULES:
+        print(rule, {lt: (v["correct"], v["incorrect"], round(v["share_incorrect"] or 0, 4))
+                     for lt, v in priors[rule].items()})
+    print(f"wrote {args.out}")
     return 0
 
 
@@ -645,8 +727,18 @@ def build_parser():
     t.add_argument("--gold", default=None,
                    help="PRIVATE csv with label_uid (city:label_id) and verdict (correct/incorrect) from an expert "
                         "re-label; only counts are written")
+    t.add_argument("--public-cities", default="",
+                   help="comma list of the deployments the live /v3/api/cities lists as public at run time; every "
+                        "other deployment is pooled as 'other (private deployments)' in the published flag shares")
     t.add_argument("--out", required=True, help="directory for variants.md and variants.json")
     t.set_defaults(func=cmd_report)
+
+    q = sub.add_parser("prior", help="deployment prior counts under the margin rule and each stricter rule (#56)")
+    q.add_argument("--rawlabels-cache", required=True, help="directory of cached <city_id>.csv rawLabels exports")
+    q.add_argument("--cities", required=True, help="comma list of city_id or city_id=subdomain (data_generation.py)")
+    q.add_argument("--label-types", default=",".join(LABEL_TYPES))
+    q.add_argument("--out", required=True, help="JSON path")
+    q.set_defaults(func=cmd_prior)
     return p
 
 
