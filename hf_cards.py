@@ -279,7 +279,7 @@ def _calibration_section(ctx):
     api_map, rep = ctx.get("api_map"), ctx.get("calibration_report")
     if not api_map:
         return (f"{TODO} no calibrated map found; run `python -m calibration.calibrate` (see the training repo's "
-                f"README) before publishing.\n")
+                f"docs/running-on-hyak.md) before publishing.\n")
     th = gate_thresholds(api_map)
     lines = [f"`confidence_precision_map.json` maps the model's softmax confidence for its verdict to the estimated "
              f"probability that the verdict is right. It is fitted by `calibration/calibrate.py` with isotonic "
