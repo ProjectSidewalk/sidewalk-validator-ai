@@ -83,6 +83,7 @@ from sklearn.metrics import roc_auc_score
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from calibration import _isotonic_map as im  # noqa: E402
 from calibration import calibrate as cal  # noqa: E402
+from analysis import slices as sl  # noqa: E402
 
 TYPES = ["CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk"]
 SPLITS = ["test", "test_heldout"]
@@ -125,7 +126,7 @@ def heldout_names(heldout_cities, public, us_cities):
 def load_type(run_dir, label_type):
     pred = pd.read_csv(f"{run_dir}/{label_type}/predictions.csv")
     split = pd.read_csv(f"{run_dir}/{label_type}/split.csv", usecols=[
-        "label_uid", "city", "pano_id", "label_class", "class_source", "author", "hard", "split"])
+        "label_uid", "city", "pano_id", "label_class", "class_source", "author", "hard", "split", "severity", "tags"])
     assert pred.label_uid.is_unique and split.label_uid.is_unique
     df = pred.merge(split.drop(columns=["split"]), on="label_uid", how="left", validate="one_to_one")
     assert df.city.notna().all(), f"{label_type}: predictions without a split row"
@@ -526,7 +527,47 @@ def figures(headline, per_city, out_dir):
     plt.close(fig)
 
 
-def write_tables(out_dir, headline, per_city, share, rp, hard, prod, calib, alt, gate, sat):
+def slice_rows(run_dir, label_type, df, split_all, args):
+    """``(slices, vs_production)``: :func:`analysis.slices.slice_table` per split and by severity / tag (training
+    counts from the ``train`` split), and, when ``<run_dir>/<type>/predictions_prod.csv`` exists (``evaluate.py
+    --checkpoint <served model> --tag prod``), :func:`analysis.slices.paired_delta_table` of round 3 against it on the
+    same rows. Both as lists of row dicts with ``label_type``, ``split`` and ``by``."""
+    train = split_all[split_all.split == "train"]
+    prod_path = f"{run_dir}/{label_type}/predictions_prod.csv"
+    prod = pd.read_csv(prod_path) if os.path.exists(prod_path) else None
+    a, b = [], []
+    for s in SPLITS:
+        part = df[df.split == s]
+        if not len(part):
+            continue
+        for by in sl.BY:
+            keys = {"label_type": label_type, "split": s, "by": by}
+            t = sl.slice_table(part, by, train, args.slice_min_n, args.n_boot, args.seed)
+            a += [{**keys, **r} for r in t.to_dict("records")]
+            if prod is not None:
+                d = sl.paired_delta_table(part, prod, by, args.slice_min_n, args.n_boot, args.seed)
+                b += [{**keys, **r} for r in d.to_dict("records")]
+    return a, b
+
+
+def slice_section(slices, vs_prod):
+    """The "by severity and tag" part of tables.md."""
+    out = ["## by severity and tag", ""]
+    for t in TYPES:
+        for s in SPLITS:
+            for by in sl.BY:
+                q = slices[(slices.label_type == t) & (slices.split == s) & (slices.by == by)] if len(slices) else slices
+                if len(q):
+                    out.append(sl.slice_markdown(q, by, f"{t} / {s} / by {by}"))
+                if vs_prod is not None and len(vs_prod):
+                    d = vs_prod[(vs_prod.label_type == t) & (vs_prod.split == s) & (vs_prod.by == by)]
+                    if len(d):
+                        out.append(sl.delta_markdown(d, by, f"{t} / {s} / by {by}: round 3 vs production",
+                                                     "round 3", "production"))
+    return out
+
+
+def write_tables(out_dir, headline, per_city, share, rp, hard, prod, calib, alt, gate, sat, slices=None, vs_prod=None):
     out = ["## headline", ""]
     h = headline.assign(**{"AUC [95% CI]": [f"{r.auc:.3f} {fmt_ci(r.auc_lo, r.auc_hi)}" for r in headline.itertuples()],
                            "test − held-out [95% CI]": [f"{r.diff_test_minus_heldout:+.3f} {fmt_ci(r.diff_lo, r.diff_hi)}"
@@ -558,6 +599,8 @@ def write_tables(out_dir, headline, per_city, share, rp, hard, prod, calib, alt,
         out += ["## alternative prior", "", md(alt, list(alt.columns), "{:.4g}"), ""]
     out += ["## gate per deployment", "", md(gate, list(gate.columns)), ""]
     out += ["## saturation", "", md(sat, list(sat.columns)), ""]
+    if slices is not None:
+        out += slice_section(slices, vs_prod)
     with open(f"{out_dir}/tables.md", "w") as f:
         f.write("\n".join(out))
 
@@ -576,6 +619,8 @@ def main():
     ap.add_argument("--min-city-n", type=int, default=50, help="rows a named test deployment needs for its own row")
     ap.add_argument("--min-minority", type=int, default=8, help="labels of the smaller class a row needs for an interval")
     ap.add_argument("--within-min-n", type=int, default=10)
+    ap.add_argument("--slice-min-n", type=int, default=sl.MIN_N,
+                    help="labels a severity or tag slice needs for its rates (default %(default)s)")
     args = ap.parse_args()
     os.makedirs(args.out_dir, exist_ok=True)
     priors_path = args.priors or os.path.join(args.run_dir, "deployment_priors.json")
@@ -592,6 +637,7 @@ def main():
     alt = parse_prior(args.alt_prior) if args.alt_prior else None
 
     headline, per_city, share, rp, hard, calib, altrows, gate, sat = [], [], [], [], [], [], [], [], []
+    slice_list, vs_prod_list = [], []
     for t in TYPES:
         df, split_all = preds[t], splits[t]
         pi, entry = cal.load_prior(priors_path, t)
@@ -606,6 +652,9 @@ def main():
         calib.append(calibration_rows(args.run_dir, t, df, k_correct))
         gate += gate_rows(df, k_correct, amap, pi, "file", t, public, names, args.min_city_n)
         sat.append(saturation_row(df, t, amap))
+        a, b = slice_rows(args.run_dir, t, df, split_all, args)
+        slice_list += a
+        vs_prod_list += b
         if alt:
             rows, amap_alt = alt_prior_rows(df, t, alt[t])
             altrows += rows
@@ -613,6 +662,9 @@ def main():
     frames = {"headline": pd.DataFrame(headline), "per_city": pd.DataFrame(per_city), "class_share": pd.DataFrame(share),
               "recall_at_precision": pd.DataFrame(rp), "hard": pd.DataFrame(hard), "calibration": pd.DataFrame(calib),
               "gate_per_city": pd.DataFrame(gate), "saturation": pd.DataFrame(sat)}
+    frames["slices"] = pd.DataFrame(slice_list)
+    if vs_prod_list:
+        frames["slices_vs_production"] = pd.DataFrame(vs_prod_list)
     if alt:
         frames["alt_prior"] = pd.DataFrame(altrows)
     prod = None
@@ -623,13 +675,18 @@ def main():
         df.to_csv(f"{args.out_dir}/{name}.csv", index=False)
     figures(frames["headline"], frames["per_city"], args.out_dir)
     write_tables(args.out_dir, frames["headline"], frames["per_city"], frames["class_share"], frames["recall_at_precision"],
-                 frames["hard"], prod, frames["calibration"], frames.get("alt_prior"), frames["gate_per_city"], frames["saturation"])
+                 frames["hard"], prod, frames["calibration"], frames.get("alt_prior"), frames["gate_per_city"], frames["saturation"],
+                 frames["slices"], frames.get("slices_vs_production"))
     with open(f"{args.out_dir}/provenance.json", "w") as f:
         json.dump({"generated": datetime.date.today().isoformat(), "run_dir": os.path.basename(args.run_dir.rstrip("/")),
                    "priors": os.path.basename(priors_path), "public_cities_source": public_source,
                    "public_cities": sorted(public), "n_boot": args.n_boot, "seed": args.seed,
                    "min_city_n": args.min_city_n, "min_minority": args.min_minority, "within_min_n": args.within_min_n,
-                   "alt_prior": alt, "heldout_display_names": sorted(names.values())}, f, indent=1)
+                   "alt_prior": alt, "heldout_display_names": sorted(names.values()),
+                   "slice_min_n": args.slice_min_n,
+                   "production_predictions": [t for t in TYPES
+                                              if os.path.exists(f"{args.run_dir}/{t}/predictions_prod.csv")]},
+                  f, indent=1)
     print(open(f"{args.out_dir}/tables.md").read())
 
 
