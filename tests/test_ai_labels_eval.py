@@ -117,3 +117,12 @@ def test_auc_block_perfect_ranking():
                        "p_correct": [0.9, 0.8, 0.2, 0.1], "pano_id": ["a", "b", "c", "d"]})
     b = ae.auc_block(df, n_boot=20)
     assert b["auc"] == 1.0 and b["auc_lo"] == 1.0 and b["recall_incorrect_at_p92"] == 1.0
+
+
+def test_read_labels_fills_empty_text_cells(tmp_path):
+    p = tmp_path / "labels.csv"
+    p.write_text("label_uid,label_id,expert_class,tier,severity,tags\nx:1,1,,core,,[]\nx:2,2,correct,,2,[]\n")
+    df = ae.read_labels(str(p))
+    assert df.expert_class.tolist() == ["", "correct"] and df.tier.tolist() == ["core", ""]
+    assert (df.expert_class != "").sum() == 1  # the NaN would have counted as "decided"
+    assert df.label_id.tolist() == ["1", "2"]

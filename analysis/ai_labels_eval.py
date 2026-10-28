@@ -360,7 +360,7 @@ def _num_or_none(v):
 def cmd_crops(args):
     """Cut one crop per label from the staged store copy, exactly as data_generation.py cuts a training crop
     (``read_store_panorama`` -> ``create_perspective_crop`` -> ``save_webp``), resumable on ``manifest.csv``."""
-    labels = pd.read_csv(args.labels, dtype={"label_id": str}, low_memory=False)
+    labels = read_labels(args.labels)
     if args.cities:
         labels = labels[labels.city.isin(args.cities.split(","))]
     if args.limit:
@@ -466,8 +466,27 @@ def cmd_score(args):
 # report
 # ---------------------------------------------------------------------------------------------------------------------
 
+TEXT_COLS = ("tier", "expert_class", "round3_split", "severity", "tags", "pano_source", "time_created")
+
+
+def read_labels(path):
+    """``labels.csv`` as ``select`` wrote it. The text columns that are empty for some rows (``expert_class`` for labels no
+    expert voted on, ``tier`` for human-placed labels, ...) come back as the empty string, never NaN, so a ``!= ""`` test
+    means what it says.
+
+    >>> import io
+    >>> read_labels(io.StringIO("label_uid,label_id,expert_class,tier\\nx:1,1,,core\\nx:2,2,correct,")).expert_class.tolist()
+    ['', 'correct']
+    """
+    df = pd.read_csv(path, dtype={"label_id": str}, low_memory=False)
+    for c in TEXT_COLS:
+        if c in df:
+            df[c] = df[c].fillna("").astype(str)
+    return df
+
+
 def load_run(run_dir):
-    labels = pd.read_csv(os.path.join(run_dir, "labels.csv"), dtype={"label_id": str}, low_memory=False)
+    labels = read_labels(os.path.join(run_dir, "labels.csv"))
     manifest = pd.read_csv(os.path.join(run_dir, "manifest.csv"), dtype=str, keep_default_na=False)
     pred = pd.read_csv(os.path.join(run_dir, "predictions.csv"))
     df = labels.merge(manifest[["label_uid", "status", "depth_m", "crop_half_px", "tilt_applied", "pose_unhandled"]],
@@ -612,8 +631,10 @@ def cmd_report(args):
     clean2["reference"] = np.where(clean2.expert_class != "", "expert-decided", "crowd only")
     clean2["pano_px"] = clean2.pano_width.astype(int).astype(str) + "×" + clean2.pano_height.astype(int).astype(str)
     clean2["vote_dir_expert"] = np.where(clean2.expert_class != "", clean2.expert_class, "")
+    clean2["city_ref"] = clean2.city + " / " + clean2.reference
     srows = (slice_rows(clean2, "city_tier", "city / tier") + slice_rows(clean2, "votes", "votes")
-             + slice_rows(clean2, "reference", "reference") + slice_rows(clean2, "pano_px", "pano size"))
+             + slice_rows(clean2, "reference", "reference") + slice_rows(clean2, "city_ref", "city / reference")
+             + slice_rows(clean2, "pano_px", "pano size"))
     L += ["### Slices (unseen labels)", "", table(srows, scols), ""]
     exp = clean2[clean2.expert_class != ""].copy()
     if len(exp):
@@ -662,7 +683,7 @@ def cmd_report(args):
           f"- labels.csv `{sel['labels_csv_sha256'][:12]}`; {sel['n_labels']:,} labels on {sel['n_panos']:,} panos; round-3 split `{(sel['round3_split'] or {}).get('sha256', '')[:12]}`",
           f"- crops: store marker \"{crops_run['pano_store_marker']}\", {crops_run['package_source']}, tilt beta {crops_run['tilt_beta']}, depth {crops_run['depth_encoder']}, status {crops_run['status_counts']}",
           f"- checkpoint `{os.path.basename(prov['checkpoint'])}` model.safetensors `{(prov['model_sha256'] or '')[:12]}`, {prov['n']:,} crops scored {prov['scored']}",
-          f"- accuracy map `{os.path.relpath(args.map)}` `{sha256_file(args.map)[:12]}`"
+          f"- accuracy map `{os.path.basename(args.map)}` `{sha256_file(args.map)[:12]}`"
           + (f"; uncapped `{sha256_file(args.map_uncapped)[:12]}`" if args.map_uncapped else ""),
           f"- bootstrap: {args.n_boot} panorama resamples, seed {SEED}; slices need ≥ {args.min_n} rows", ""]
     with open(os.path.join(args.out, "tables.md"), "w") as f:
