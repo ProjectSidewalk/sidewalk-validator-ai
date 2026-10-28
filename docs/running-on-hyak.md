@@ -72,14 +72,15 @@ with `cv2.imread` and resized to 8192×4096 (`INTER_LINEAR`), the same method as
 pixels also need the same opencv build (see [`serving-parity-2026-10.md`](serving-parity-2026-10.md)). Nothing is
 downloaded. The job and the script check at startup that the store and its marker exist, and the script, once
 labels are selected, that every city with a selected label has a directory (`--allow-missing-cities` to run
-without some; a listed city with no selected label, such as one whose labels are all non-GSV, needs none). A missing
+without some; a listed city with no selected label needs none). A missing
 file is believed only while the marker and the city directory are still there, and any other I/O error stops the
 run, so a dropped mount cannot turn into silent `no_pano` rows.
 
 **Outputs.** Per label type: `<label_type>/{correct,incorrect}/<city>_<label_id>.webp`, `<label_type>/manifest.csv`
 (one row per attempted label: `label_uid` = `<city>:<label_id>`, class, `class_source`, author, human votes, the
 provider (`pano_source`), the store file read (`pano_path`, absolute) and its size before the resize
-(`pano_native_w`/`pano_native_h`), pose, `tilt_applied`, `depth_m`, `crop_half_px`, `clipped`, `crop_path`, `status`)
+(`pano_native_w`/`pano_native_h`), the stored pose, `tilt_applied`, `tilt_beta`, `pose_source`, the pose in the
+geometry package's sign (`pose_pitch`/`pose_roll`), `click_lat_offset_deg`, `depth_m`, `crop_half_px`, `clipped`, `crop_path`, `status`)
 and `generation_run.json` (settings, the store path, and a hash of the selection), plus the shared
 `deployment_priors.json` in the output root. Views are rendered on the GPU with the geometry package's torch recipe
 and depth runs on the same device; the script stops if there is no CUDA device (`--allow-cpu` is for smoke tests).
