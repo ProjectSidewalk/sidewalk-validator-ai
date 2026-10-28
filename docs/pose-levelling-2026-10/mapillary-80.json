@@ -1,0 +1,1690 @@
+{
+ "what": "Mapillary pixel sign test, issue #72: lean amplitude (degrees) of each 2048-wide thumbnail before and after levelling with its stored pose under the four sign readings (pitch sign, roll sign) of the DB columns",
+ "measured": "2026-10-28",
+ "selection": "per city (richmond-va, laurens-ia): the 20 panoramas with the largest stored tilt below 25 degrees and 20 at random (numpy default_rng(72)) among panoramas with a DB pose in the rawLabels pull of 2026-10-27",
+ "pose_columns": "camera_pitch/camera_roll as the Project Sidewalk DB stores them (website sign: pitch positive nose up)",
+ "reproduce": "python analysis/pose_levelling.py fetch|analyze --images DIR",
+ "imagery": "not committed; Mapillary, CC BY-SA 4.0",
+ "panoramas": [
+  {
+   "pano_id": "1103162338563583",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 2.8686365238836915,
+   "camera_roll": 4.636323497202979,
+   "computed_rotation": [
+    -0.15379800000347,
+    -2.1501971344954,
+    2.2663121831655
+   ],
+   "sha256": "083115083e2f93910b5294431a54f0ff7638ce469c5a8e65961dbd876796c7ca",
+   "amp_before": 1.4599,
+   "amp_after": {
+    "+1,+1": 2.3361,
+    "+1,-1": 2.3818,
+    "-1,+1": 0.7691,
+    "-1,-1": 1.7027
+   }
+  },
+  {
+   "pano_id": "1113811853948614",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -0.12581547211101676,
+   "camera_roll": 2.9120596273545583,
+   "computed_rotation": [
+    1.5708408127751,
+    -0.082250619747909,
+    0.0023356131703388
+   ],
+   "sha256": "0e59147bf5a4c9b881632d627c40ff43f870ffe7085740cd8799def7907ba07e",
+   "amp_before": 1.7994,
+   "amp_after": {
+    "+1,+1": 1.6395,
+    "+1,-1": 2.1611,
+    "-1,+1": 1.8271,
+    "-1,-1": 1.9789
+   }
+  },
+  {
+   "pano_id": "1144124261258529",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -3.0405197625860456,
+   "camera_roll": 6.563799801938203,
+   "computed_rotation": [
+    1.1295633814487,
+    -1.3426990389126,
+    1.1424823203847
+   ],
+   "sha256": "b90282923420eff1a47868eb7b1a95a9fccbe296298b638b521c15ded20fe314",
+   "amp_before": 1.489,
+   "amp_after": {
+    "+1,+1": 1.095,
+    "+1,-1": 2.6491,
+    "-1,+1": 0.2428,
+    "-1,-1": 3.9218
+   }
+  },
+  {
+   "pano_id": "1245323594088459",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -2.420088110994195,
+   "camera_roll": 3.1965630048215385,
+   "computed_rotation": [
+    1.6115471849968,
+    -0.070030441300903,
+    -0.019116009188634
+   ],
+   "sha256": "598383b03fe992dbba220d0af36277071c873ddfe5d547ff00618e758ffec5b1",
+   "amp_before": 1.4493,
+   "amp_after": {
+    "+1,+1": 1.6553,
+    "+1,-1": 3.1263,
+    "-1,+1": 1.0434,
+    "-1,-1": 2.0337
+   }
+  },
+  {
+   "pano_id": "1342591690210612",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 2.2115604486032794,
+   "camera_roll": 6.469429455714085,
+   "computed_rotation": [
+    1.2878629033759,
+    1.0769124114198,
+    -1.2629953805102
+   ],
+   "sha256": "962dae9262f9748dae4035b82e6f333ee046dd5d087e949dfda4acf3f698637c",
+   "amp_before": 0.4365,
+   "amp_after": {
+    "+1,+1": 0.5683,
+    "+1,-1": 1.4893,
+    "-1,+1": 0.2836,
+    "-1,-1": 0.7583
+   }
+  },
+  {
+   "pano_id": "1363153475513767",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 0.5674724169340047,
+   "camera_roll": 1.992896833737906,
+   "computed_rotation": [
+    1.5599245491635,
+    -0.054950537773102,
+    0.00067666003881905
+   ],
+   "sha256": "56da59e3eaf1a5aa89e809499abd9dfaa877d3d4e2340eb014e10655d52c5ccb",
+   "amp_before": 1.0775,
+   "amp_after": {
+    "+1,+1": 1.0323,
+    "+1,-1": 1.5324,
+    "-1,+1": 1.0875,
+    "-1,-1": 1.6446
+   }
+  },
+  {
+   "pano_id": "1496478694911820",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -5.817042767297562,
+   "camera_roll": 5.871622613597021,
+   "computed_rotation": [
+    -0.052776229402932,
+    -2.2552175632384,
+    2.0313255642198
+   ],
+   "sha256": "1438c0cebac95c8e685d63146f74e883a05b71ae41bd23a97992db189b72a19f",
+   "amp_before": 1.058,
+   "amp_after": {
+    "+1,+1": 1.9833,
+    "+1,-1": 1.4697,
+    "-1,+1": 0.4595,
+    "-1,-1": 1.3518
+   }
+  },
+  {
+   "pano_id": "1518788286020997",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 1.4263397204472164,
+   "camera_roll": 7.0288573513937385,
+   "computed_rotation": [
+    -0.16468533253668,
+    -2.1425218815831,
+    2.2006863175904
+   ],
+   "sha256": "c80f3e9c837317992e53359f9998e1f6642427f07762650160d97e32503ea9f4",
+   "amp_before": 0.3873,
+   "amp_after": {
+    "+1,+1": 1.6346,
+    "+1,-1": 2.2863,
+    "-1,+1": 1.1572,
+    "-1,-1": 1.6694
+   }
+  },
+  {
+   "pano_id": "1537692247436785",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -0.15455860952089906,
+   "camera_roll": 3.6005299915356774,
+   "computed_rotation": [
+    -0.078163424552996,
+    -2.1961886079444,
+    2.1908443870183
+   ],
+   "sha256": "4d958b666e8d6e4849c46c2c85fd41aab97895790a70a2acb5fc306bc69c6a35",
+   "amp_before": 0.2188,
+   "amp_after": {
+    "+1,+1": 0.535,
+    "+1,-1": 0.8057,
+    "-1,+1": 0.7553,
+    "-1,-1": 0.7842
+   }
+  },
+  {
+   "pano_id": "1545453500214262",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -3.10462047237923,
+   "camera_roll": 7.026064954329208,
+   "computed_rotation": [
+    1.1171867883008,
+    -1.3554509951048,
+    1.1448395057929
+   ],
+   "sha256": "1a6f00ad371cbd5b6c7e0dd38560d123c7e4e3a00b3e4fb463bc6867afe8a817",
+   "amp_before": 2.0929,
+   "amp_after": {
+    "+1,+1": 2.0704,
+    "+1,-1": 2.8371,
+    "-1,+1": 0.2545,
+    "-1,-1": 2.8286
+   }
+  },
+  {
+   "pano_id": "1547972359960880",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 1.0770106509265136,
+   "camera_roll": 6.719515523910491,
+   "computed_rotation": [
+    -0.21455606972304,
+    -2.171306918338,
+    2.2228936096073
+   ],
+   "sha256": "fb7e1bdda25c9a3d919019462ca9b7e5a88b1595c5843854bd3e5c1ad5146bb1",
+   "amp_before": 1.972,
+   "amp_after": {
+    "+1,+1": 1.7564,
+    "+1,-1": 2.4047,
+    "-1,+1": 1.8923,
+    "-1,-1": 2.444
+   }
+  },
+  {
+   "pano_id": "1550352169435830",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 1.2627183632386756,
+   "camera_roll": 7.116832334275484,
+   "computed_rotation": [
+    1.3208318630846,
+    1.058166675295,
+    -1.2407023344708
+   ],
+   "sha256": "54bbf88f26fc3ef42c148424b440893040418c1127dfe270253aec3fe9235de7",
+   "amp_before": 2.0444,
+   "amp_after": {
+    "+1,+1": 3.6597,
+    "+1,-1": 3.5595,
+    "-1,+1": 3.3309,
+    "-1,-1": 2.8068
+   }
+  },
+  {
+   "pano_id": "1565240737816287",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -2.0128268451974107,
+   "camera_roll": 6.6990809305492,
+   "computed_rotation": [
+    1.0348698409822,
+    -1.4266448846328,
+    1.2514280038327
+   ],
+   "sha256": "f2b6684230aeadecfe3f5b8b43d81fcd2a6ea3ee1e3e8c43fe394eca49668360",
+   "amp_before": 1.7444,
+   "amp_after": {
+    "+1,+1": 0.8297,
+    "+1,-1": 3.4737,
+    "-1,+1": 2.1252,
+    "-1,-1": 4.0404
+   }
+  },
+  {
+   "pano_id": "1574838986875072",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -2.794272696732687,
+   "camera_roll": 6.18724090360929,
+   "computed_rotation": [
+    1.1263227965436,
+    -1.3435569942461,
+    1.1565141669028
+   ],
+   "sha256": "41d8ec633a0f91c3c07187512b42629128c5ff2d01dd192b6a2eb78ce1fbcdd4",
+   "amp_before": 1.5733,
+   "amp_after": {
+    "+1,+1": 1.4609,
+    "+1,-1": 2.1049,
+    "-1,+1": 0.2722,
+    "-1,-1": 2.835
+   }
+  },
+  {
+   "pano_id": "1596695304650837",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 1.9384579831675128,
+   "camera_roll": 2.763020323147196,
+   "computed_rotation": [
+    0.42711624149283,
+    -1.9051367563973,
+    1.9471188593159
+   ],
+   "sha256": "a46bbd0f616601c9900393ff221b2059b9d5c8219225c64d5824c80ebece7431",
+   "amp_before": 2.1541,
+   "amp_after": {
+    "+1,+1": 2.4891,
+    "+1,-1": 1.6398,
+    "-1,+1": 2.519,
+    "-1,-1": 1.5039
+   }
+  },
+  {
+   "pano_id": "1636798873996850",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -1.7930553166083978,
+   "camera_roll": 4.658692484361766,
+   "computed_rotation": [
+    1.3107783924688,
+    1.1600480656436,
+    -1.2237674056726
+   ],
+   "sha256": "31d9ca65e7503e95a5f5ace6a0bae0193a0cecfddfd1a5a2dbb8d51401d5ead0",
+   "amp_before": 0.3103,
+   "amp_after": {
+    "+1,+1": 0.8313,
+    "+1,-1": 0.2785,
+    "-1,+1": 0.7411,
+    "-1,-1": 1.1732
+   }
+  },
+  {
+   "pano_id": "1820989778613540",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -2.798810526048914,
+   "camera_roll": 7.0014982934559615,
+   "computed_rotation": [
+    1.1132756639819,
+    -1.3519331264884,
+    1.1486237043648
+   ],
+   "sha256": "834c6bf03ec61def6e7f70be81880cd00dcb832b32cc40dcecfd7a14fa91d6c1",
+   "amp_before": 2.0743,
+   "amp_after": {
+    "+1,+1": 1.944,
+    "+1,-1": 3.1465,
+    "-1,+1": 0.5309,
+    "-1,-1": 3.832
+   }
+  },
+  {
+   "pano_id": "1905223067091296",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -0.482393971238075,
+   "camera_roll": 5.246715744429584,
+   "computed_rotation": [
+    1.5767892696057,
+    -0.091751657963562,
+    -0.052378669971718
+   ],
+   "sha256": "3f2ad1b5284a86b2b6d93e681350f0216867db54374ae09f6a7158a81599606e",
+   "amp_before": 1.445,
+   "amp_after": {
+    "+1,+1": 0.3525,
+    "+1,-1": 2.5033,
+    "-1,+1": 0.9853,
+    "-1,-1": 2.4663
+   }
+  },
+  {
+   "pano_id": "1942287923020341",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -1.913989149412215,
+   "camera_roll": 7.132651376044222,
+   "computed_rotation": [
+    0.9872476791326,
+    -1.4722616360298,
+    1.2943092256166
+   ],
+   "sha256": "0dbb7d9d32cb01f899e537cfdcbd5bc57d78109981e705bdb67a5bd727254485",
+   "amp_before": 3.4718,
+   "amp_after": {
+    "+1,+1": 1.0233,
+    "+1,-1": 6.3569,
+    "-1,+1": 1.5413,
+    "-1,-1": 6.0487
+   }
+  },
+  {
+   "pano_id": "2180726279083957",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 0.8189131643279367,
+   "camera_roll": 2.5716444807928616,
+   "computed_rotation": [
+    1.5541587763331,
+    -0.0858146616019,
+    0.016225583165444
+   ],
+   "sha256": "85b0bbdc5f8f786a72810b07139aca36518aa986cbaa8a271da00a916a9ebd29",
+   "amp_before": 1.5543,
+   "amp_after": {
+    "+1,+1": 1.3132,
+    "+1,-1": 2.3581,
+    "-1,+1": 0.9801,
+    "-1,-1": 2.3641
+   }
+  },
+  {
+   "pano_id": "2249682278865437",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -1.1838424379503998,
+   "camera_roll": 0.90971274566401,
+   "computed_rotation": [
+    1.1894050512218,
+    -1.2664997320984,
+    1.2219439162578
+   ],
+   "sha256": "f0542aba032ef71fbeea45595ff713fc2e2ee69bd878cb01e71123ab281502f0",
+   "amp_before": 0.9209,
+   "amp_after": {
+    "+1,+1": 1.4239,
+    "+1,-1": 1.0872,
+    "-1,+1": 0.7761,
+    "-1,-1": 0.7332
+   }
+  },
+  {
+   "pano_id": "2295117834338849",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 0.7730777857026546,
+   "camera_roll": 6.739059304445581,
+   "computed_rotation": [
+    0.97462354949027,
+    -1.4194153140059,
+    1.3128338136827
+   ],
+   "sha256": "028b8e1ca37994285494c7d0ba18b03924711c96149972ba687c0794285d2ff6",
+   "amp_before": 1.1263,
+   "amp_after": {
+    "+1,+1": 0.7734,
+    "+1,-1": 3.6187,
+    "-1,+1": 0.2957,
+    "-1,-1": 3.6703
+   }
+  },
+  {
+   "pano_id": "2308281332977688",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -2.3422928753704046,
+   "camera_roll": 6.324675571706894,
+   "computed_rotation": [
+    1.0705857826182,
+    -1.39790520169,
+    1.2205147954375
+   ],
+   "sha256": "ad022e45afb8be38c8fa851108d78f8e447234b9c2bd031c7d980d3887a38133",
+   "amp_before": 2.652,
+   "amp_after": {
+    "+1,+1": 2.6036,
+    "+1,-1": 4.5858,
+    "-1,+1": 0.8664,
+    "-1,-1": 3.3551
+   }
+  },
+  {
+   "pano_id": "2331968517245004",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -1.513005876468205,
+   "camera_roll": 2.0692290328606817,
+   "computed_rotation": [
+    1.3209163513223,
+    1.097583324769,
+    -1.1147297448112
+   ],
+   "sha256": "a73cc9e0f0777d0a363171bb1f11e31654b1fede926b4b7198d7b39c86ccceb5",
+   "amp_before": 0.6072,
+   "amp_after": {
+    "+1,+1": 0.2754,
+    "+1,-1": 0.2355,
+    "-1,+1": 0.4964,
+    "-1,-1": 0.6651
+   }
+  },
+  {
+   "pano_id": "25115328691450708",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -0.5884234516532262,
+   "camera_roll": 2.127009077676967,
+   "computed_rotation": [
+    0.1230483356766,
+    2.2111171954041,
+    -2.1915373714757
+   ],
+   "sha256": "cd1218b857e126706c0ab23ba010354e0b0635573f18bd207382c878629c6108",
+   "amp_before": 0.1772,
+   "amp_after": {
+    "+1,+1": 0.8242,
+    "+1,-1": 0.4008,
+    "-1,+1": 0.9913,
+    "-1,-1": 0.3371
+   }
+  },
+  {
+   "pano_id": "2614916578862775",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 2.2929980335692557,
+   "camera_roll": 6.533282227584429,
+   "computed_rotation": [
+    -0.21324249017292,
+    -2.1509354519875,
+    2.2495012494844
+   ],
+   "sha256": "27e1ab4b2bf8a326ccbc1fbe5bb0cf6537501908ea2509a7f49170586a9d4559",
+   "amp_before": 2.1371,
+   "amp_after": {
+    "+1,+1": 2.1695,
+    "+1,-1": 3.0036,
+    "-1,+1": 1.6048,
+    "-1,-1": 2.2789
+   }
+  },
+  {
+   "pano_id": "26248955411358968",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -1.1395840709661957,
+   "camera_roll": 4.4222733216437105,
+   "computed_rotation": [
+    1.5886678849647,
+    -0.08276374076244,
+    -0.039192101816914
+   ],
+   "sha256": "4432595218a800aafc704ce2db94fc487c1eab20c329cc808ca26516f0b1f6d1",
+   "amp_before": 1.0458,
+   "amp_after": {
+    "+1,+1": 1.1995,
+    "+1,-1": 1.9036,
+    "-1,+1": 0.7913,
+    "-1,-1": 1.7318
+   }
+  },
+  {
+   "pano_id": "2958568934530906",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 0.37704227542669727,
+   "camera_roll": 2.0754446282020713,
+   "computed_rotation": [
+    0.97841826483841,
+    1.5306995603836,
+    -1.5754628340497
+   ],
+   "sha256": "2fc70d4dc87202d7f0ea1866b465fe0d912cbc9e2064d685df039e51774f4d1a",
+   "amp_before": 3.0308,
+   "amp_after": {
+    "+1,+1": 2.9224,
+    "+1,-1": 2.5895,
+    "-1,+1": 2.2917,
+    "-1,-1": 2.5256
+   }
+  },
+  {
+   "pano_id": "3253035404869838",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 1.6368805188074356,
+   "camera_roll": 2.148760891266515,
+   "computed_rotation": [
+    1.5421035321815,
+    -0.025789009634098,
+    -0.032977942564042
+   ],
+   "sha256": "26484308255e22870b00fdc9c19a0219994ae67b972019d7d49176b709f8d5fd",
+   "amp_before": 1.6793,
+   "amp_after": {
+    "+1,+1": 1.9706,
+    "+1,-1": 1.8576,
+    "-1,+1": 1.5394,
+    "-1,-1": 1.3565
+   }
+  },
+  {
+   "pano_id": "4063498833961723",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 4.400022386528313,
+   "camera_roll": 6.008163359322315,
+   "computed_rotation": [
+    -0.18231178838213,
+    -2.1083081937914,
+    2.2848676835163
+   ],
+   "sha256": "d746fc158a958119417e2c74bdd95d7888312a4520bccdc20380146282c95390",
+   "amp_before": 1.8355,
+   "amp_after": {
+    "+1,+1": 2.4635,
+    "+1,-1": 2.8897,
+    "-1,+1": 0.7327,
+    "-1,-1": 2.1989
+   }
+  },
+  {
+   "pano_id": "4100269950226962",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 2.131419371014857,
+   "camera_roll": 2.9975982546361,
+   "computed_rotation": [
+    -0.065173172416797,
+    -2.1569342725045,
+    2.2391774069034
+   ],
+   "sha256": "d8b715033153a6307ed7f68f94c9897d498af6d5fcfdaee4856328711d6c3469",
+   "amp_before": 0.9493,
+   "amp_after": {
+    "+1,+1": 1.254,
+    "+1,-1": 1.655,
+    "-1,+1": 0.391,
+    "-1,-1": 0.4778
+   }
+  },
+  {
+   "pano_id": "4369795339917939",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -2.8972818515990157,
+   "camera_roll": 6.922744484504846,
+   "computed_rotation": [
+    1.1184176976718,
+    -1.349086632562,
+    1.1450314669219
+   ],
+   "sha256": "19b7d2728b7e5e11a2b27dceca01075326653612c0bff0fcad002432e2ac72b2",
+   "amp_before": 2.2478,
+   "amp_after": {
+    "+1,+1": 2.351,
+    "+1,-1": 3.5473,
+    "-1,+1": 0.5803,
+    "-1,-1": 3.8937
+   }
+  },
+  {
+   "pano_id": "815897614591874",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -1.7032723928669178,
+   "camera_roll": 7.695522973088849,
+   "computed_rotation": [
+    1.0977981679509,
+    -1.3334825130378,
+    1.1400625620715
+   ],
+   "sha256": "aca8a3076aa5a858485fb750eb6a7410ee08006dcc1975d3d38ef4fd752516ef",
+   "amp_before": 1.6688,
+   "amp_after": {
+    "+1,+1": 1.9422,
+    "+1,-1": 2.5869,
+    "-1,+1": 1.5552,
+    "-1,-1": 3.517
+   }
+  },
+  {
+   "pano_id": "819720784190852",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -2.745489754266095,
+   "camera_roll": 6.599729918478783,
+   "computed_rotation": [
+    1.1356978475707,
+    -1.3260682376238,
+    1.1312058385938
+   ],
+   "sha256": "7b2ee93216ea2d674cab073582ae5edd3470c2dd008aae9d69ab7955e52f8b8e",
+   "amp_before": 1.9847,
+   "amp_after": {
+    "+1,+1": 1.7967,
+    "+1,-1": 2.8077,
+    "-1,+1": 0.3731,
+    "-1,-1": 4.2285
+   }
+  },
+  {
+   "pano_id": "822346197177828",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -1.0670939398572574,
+   "camera_roll": 3.4133184320533165,
+   "computed_rotation": [
+    1.1424463076392,
+    -1.3009981095404,
+    1.2079611526934
+   ],
+   "sha256": "ec7f6511b767e82b2af8b0007d23795c5e5f04189dd54ad57d18625b48f4d95e",
+   "amp_before": 0.0524,
+   "amp_after": {
+    "+1,+1": 0.6624,
+    "+1,-1": 0.4834,
+    "-1,+1": 0.6812,
+    "-1,-1": 0.4991
+   }
+  },
+  {
+   "pano_id": "835752385770327",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 0.7384720352346401,
+   "camera_roll": 2.624106376832899,
+   "computed_rotation": [
+    1.5540296458241,
+    -0.11189603965173,
+    0.041157196449635
+   ],
+   "sha256": "c47a9954fd6ea9bb6ea82623100da7ff267848d07c8287c0932bc340b5a0b77f",
+   "amp_before": 1.7849,
+   "amp_after": {
+    "+1,+1": 1.106,
+    "+1,-1": 2.0883,
+    "-1,+1": 1.1705,
+    "-1,-1": 1.8144
+   }
+  },
+  {
+   "pano_id": "840103385653715",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 0.8519305049274497,
+   "camera_roll": 7.370025288570745,
+   "computed_rotation": [
+    1.0697232272835,
+    -1.2992526880968,
+    1.1685453264724
+   ],
+   "sha256": "64dd8545344dbc9b6627ea679e74f9dc1bf88d3284e3053fd45496829bc734b2",
+   "amp_before": 1.5259,
+   "amp_after": {
+    "+1,+1": 1.2019,
+    "+1,-1": 2.4315,
+    "-1,+1": 1.1965,
+    "-1,-1": 2.7867
+   }
+  },
+  {
+   "pano_id": "857665973616644",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -3.203101953477939,
+   "camera_roll": 6.792198232595027,
+   "computed_rotation": [
+    1.1099477826994,
+    -1.3694869788646,
+    1.1617693451476
+   ],
+   "sha256": "1ecaf6c867f9122545ba15755d36fc83d93b0e45dbea2885caf77dc24f1f46f8",
+   "amp_before": 0.3798,
+   "amp_after": {
+    "+1,+1": 2.0144,
+    "+1,-1": 0.6077,
+    "-1,+1": 0.5809,
+    "-1,-1": 1.4576
+   }
+  },
+  {
+   "pano_id": "868456299175660",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": 1.631613326727115,
+   "camera_roll": 6.293442747410527,
+   "computed_rotation": [
+    -0.20621764685312,
+    -2.1650397128964,
+    2.2374226641256
+   ],
+   "sha256": "84c640dac263b01fb04da3059e5424a703e356b2a57b4f4c4200af930d19d9d1",
+   "amp_before": 1.6784,
+   "amp_after": {
+    "+1,+1": 1.564,
+    "+1,-1": 1.8132,
+    "-1,+1": 1.7991,
+    "-1,-1": 2.6673
+   }
+  },
+  {
+   "pano_id": "872929675070513",
+   "city": "laurens-ia",
+   "contributor": "GIS_ISG",
+   "width": 5760,
+   "camera_pitch": -1.300271160718074,
+   "camera_roll": 3.3726318444672216,
+   "computed_rotation": [
+    1.5922575305661,
+    -0.064498947736611,
+    -0.028627389537597
+   ],
+   "sha256": "d1ce4f8c3ffd48885221f033f25949312c9b4ac97afaef6985d741c1aadbd28f",
+   "amp_before": 1.2615,
+   "amp_after": {
+    "+1,+1": 0.7825,
+    "+1,-1": 1.9231,
+    "-1,+1": 0.9581,
+    "-1,-1": 1.9868
+   }
+  },
+  {
+   "pano_id": "1034918112146178",
+   "city": "richmond-va",
+   "contributor": "echostorm",
+   "width": 11000,
+   "camera_pitch": -3.5370539049345235,
+   "camera_roll": -3.5663841888249848,
+   "computed_rotation": [
+    1.4459111229868,
+    0.86068427955563,
+    -0.72300456094062
+   ],
+   "sha256": "249d04d9e8a5694fee192cab924be3d1f97a687f81094f11de49c7ac7448043f",
+   "amp_before": 3.1937,
+   "amp_after": {
+    "+1,+1": 3.2843,
+    "+1,-1": 5.6399,
+    "-1,+1": 0.8896,
+    "-1,-1": 4.4609
+   }
+  },
+  {
+   "pano_id": "1050859256685844",
+   "city": "richmond-va",
+   "contributor": "HKocen",
+   "width": 11000,
+   "camera_pitch": 2.9712443964874025,
+   "camera_roll": 2.10982137066022,
+   "computed_rotation": [
+    1.4535426774657,
+    -0.50085695465318,
+    0.47080856451433
+   ],
+   "sha256": "9e2e46fb9bb3dd7cd3a7ec6e62b77a4166fc94ebb7460ed2f1bda99ef46a0331",
+   "amp_before": 1.649,
+   "amp_after": {
+    "+1,+1": 1.1659,
+    "+1,-1": 0.7643,
+    "-1,+1": 1.8424,
+    "-1,-1": 1.0571
+   }
+  },
+  {
+   "pano_id": "1065203879101102",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": -8.904215998036877,
+   "camera_roll": -9.771385591733846,
+   "computed_rotation": [
+    1.4476136015921,
+    1.0198881105571,
+    -0.64969363090248
+   ],
+   "sha256": "43dc01600d4030ca35808fe12894bdf2591a5740dd75257d55e6788f8d2ee910",
+   "amp_before": 8.3184,
+   "amp_after": {
+    "+1,+1": 11.3449,
+    "+1,-1": 14.0086,
+    "-1,+1": 0.3592,
+    "-1,-1": 11.745
+   }
+  },
+  {
+   "pano_id": "1068189107848559",
+   "city": "richmond-va",
+   "contributor": "RichmondVA",
+   "width": 11000,
+   "camera_pitch": -1.5388837126539487,
+   "camera_roll": 1.083112848623473,
+   "computed_rotation": [
+    0.90613516412095,
+    -1.6173838632635,
+    1.5575605188918
+   ],
+   "sha256": "1e3f88ff0fcfb35d739911772d9a1df1a4889ca28aea68daf6c286d889b11447",
+   "amp_before": 2.4917,
+   "amp_after": {
+    "+1,+1": 3.0395,
+    "+1,-1": 2.5683,
+    "-1,+1": 1.9101,
+    "-1,-1": 1.9461
+   }
+  },
+  {
+   "pano_id": "1072588038361651",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": -8.304508032849304,
+   "camera_roll": 10.675624453123815,
+   "computed_rotation": [
+    1.6799418536345,
+    -0.34901675941168,
+    0.0274685479578
+   ],
+   "sha256": "13b596cb8925fb1325dede049be8d940313a409b48091663d06f65da61bdaeb7",
+   "amp_before": 6.389,
+   "amp_after": {
+    "+1,+1": 6.4818,
+    "+1,-1": 9.2085,
+    "-1,+1": 1.8142,
+    "-1,-1": 8.9133
+   }
+  },
+  {
+   "pano_id": "1083859396631143",
+   "city": "richmond-va",
+   "contributor": "RichmondVA",
+   "width": 11000,
+   "camera_pitch": 1.060008255208397,
+   "camera_roll": -0.687384791410543,
+   "computed_rotation": [
+    0.68771667685368,
+    1.760637663652,
+    -1.784982082043
+   ],
+   "sha256": "0ab10b2cc2e97cb2642d7169c499b7b612e694325899232a839a1a84cfa33894",
+   "amp_before": 2.1784,
+   "amp_after": {
+    "+1,+1": 2.1142,
+    "+1,-1": 2.3301,
+    "-1,+1": 1.6355,
+    "-1,-1": 1.6274
+   }
+  },
+  {
+   "pano_id": "1097582862483584",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": 5.280457839717024,
+   "camera_roll": 11.91055095223532,
+   "computed_rotation": [
+    1.4142391105644,
+    0.6879246259822,
+    -1.058291448043
+   ],
+   "sha256": "481a635d8b71efc6f0fa4f6da99bfafdafe9bf7c1fd8a26f68a2b0278112cfd6",
+   "amp_before": 1.9344,
+   "amp_after": {
+    "+1,+1": 3.9008,
+    "+1,-1": 5.4494,
+    "-1,+1": 1.174,
+    "-1,-1": 3.4061
+   }
+  },
+  {
+   "pano_id": "1097847111766657",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": -14.595591334029795,
+   "camera_roll": 3.1077454085677787,
+   "computed_rotation": [
+    1.7545742147657,
+    -0.55420455303593,
+    0.35421744584578
+   ],
+   "sha256": "7de22414746af6c951001675f745fbbdb337dfb487655d61e69ad4bd99857270",
+   "amp_before": 3.0483,
+   "amp_after": {
+    "+1,+1": 4.9346,
+    "+1,-1": 6.4464,
+    "-1,+1": 1.6925,
+    "-1,-1": 1.0327
+   }
+  },
+  {
+   "pano_id": "1210604426739037",
+   "city": "richmond-va",
+   "contributor": "yo_scottie_oh",
+   "width": 5760,
+   "camera_pitch": -0.39032154623563076,
+   "camera_roll": -2.4659070114904695,
+   "computed_rotation": [
+    0.18737891926028,
+    2.0978132944097,
+    -2.0736340043886
+   ],
+   "sha256": "6a356343341a953925364bd04a0cbbca89784cb3e98683163699d29482fffa33",
+   "amp_before": 0.9195,
+   "amp_after": {
+    "+1,+1": 1.3657,
+    "+1,-1": 1.4343,
+    "-1,+1": 1.5712,
+    "-1,-1": 1.2688
+   }
+  },
+  {
+   "pano_id": "1287246493113404",
+   "city": "richmond-va",
+   "contributor": "HKocen",
+   "width": 11000,
+   "camera_pitch": -0.8712118114823899,
+   "camera_roll": -2.8989138742624623,
+   "computed_rotation": [
+    0.50397700505102,
+    -1.9994887686321,
+    1.9918977342576
+   ],
+   "sha256": "73124afdd4d8a1d2e0d5bb7a8147b95757c5e534df707603eb67599aed7409a7",
+   "amp_before": 0.7011,
+   "amp_after": {
+    "+1,+1": 1.7171,
+    "+1,-1": 2.5495,
+    "-1,+1": 1.0733,
+    "-1,-1": 2.4534
+   }
+  },
+  {
+   "pano_id": "1310908710312852",
+   "city": "richmond-va",
+   "contributor": "mhpob",
+   "width": 4096,
+   "camera_pitch": 2.321827200278476,
+   "camera_roll": -11.748337190981344,
+   "computed_rotation": [
+    0.058226803699812,
+    1.9696468253288,
+    -1.9958114784382
+   ],
+   "sha256": "26621678c603e3d20c96198947027f1096f5c83f559caf6ee5f8508547f57ed1",
+   "amp_before": 4.9063,
+   "amp_after": {
+    "+1,+1": 0.8733,
+    "+1,-1": 7.273,
+    "-1,+1": 3.1084,
+    "-1,-1": 7.4194
+   }
+  },
+  {
+   "pano_id": "1336381484401785",
+   "city": "richmond-va",
+   "contributor": "HKocen",
+   "width": 11000,
+   "camera_pitch": -1.0110334095087392,
+   "camera_roll": -4.774000652652568,
+   "computed_rotation": [
+    1.5457196658728,
+    -0.49100579779584,
+    0.6071367914725
+   ],
+   "sha256": "237a521fdbf6607b637eb1c815bc401c22eda0ef7933e70848623d84190affb8",
+   "amp_before": 3.4981,
+   "amp_after": {
+    "+1,+1": 1.5919,
+    "+1,-1": 6.3808,
+    "-1,+1": 0.5591,
+    "-1,-1": 6.3281
+   }
+  },
+  {
+   "pano_id": "1416913142890466",
+   "city": "richmond-va",
+   "contributor": "HKocen",
+   "width": 11000,
+   "camera_pitch": 2.413469233465003,
+   "camera_roll": -2.910992633822752,
+   "computed_rotation": [
+    1.4863264079614,
+    -0.45558945349094,
+    0.55331376889714
+   ],
+   "sha256": "078517e608e4e5c70bcbb351c5164e8e5132db69d13a9617584a127a17a01a80",
+   "amp_before": 2.7212,
+   "amp_after": {
+    "+1,+1": 2.7054,
+    "+1,-1": 5.045,
+    "-1,+1": 0.1754,
+    "-1,-1": 3.8483
+   }
+  },
+  {
+   "pano_id": "1460509464895251",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": -16.455669287324742,
+   "camera_roll": -6.238516459174943,
+   "computed_rotation": [
+    1.6686280810484,
+    -1.0302207017475,
+    0.90087561819481
+   ],
+   "sha256": "29dc65cd17f45e15f96824423be98fc6f82914941d3214bfe32a4241a3b75980",
+   "amp_before": 4.2406,
+   "amp_after": {
+    "+1,+1": 9.1794,
+    "+1,-1": 4.4718,
+    "-1,+1": 1.9945,
+    "-1,-1": 3.6699
+   }
+  },
+  {
+   "pano_id": "1472386263717669",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": -20.350935704854322,
+   "camera_roll": -2.9109539967800697,
+   "computed_rotation": [
+    0.72797282680083,
+    -2.2456408920726,
+    1.5858895290199
+   ],
+   "sha256": "65caaca0511c57c0222ac52ad032fdf18aa7a77c920feb9ed0a58a832d2d1e2a",
+   "amp_before": 5.7203,
+   "amp_after": {
+    "+1,+1": 4.2546,
+    "+1,-1": 5.3352,
+    "-1,+1": 0.3662,
+    "-1,-1": 1.8285
+   }
+  },
+  {
+   "pano_id": "1519362818985486",
+   "city": "richmond-va",
+   "contributor": "yo_scottie_oh",
+   "width": 5760,
+   "camera_pitch": 1.8199621355230717,
+   "camera_roll": 0.8191136917344467,
+   "computed_rotation": [
+    0.78004464703006,
+    -1.6591915518135,
+    1.701063481673
+   ],
+   "sha256": "176c4a26dadbda419479358d6da9e3ef377387c711861173da4dc342a3543bef",
+   "amp_before": 0.4251,
+   "amp_after": {
+    "+1,+1": 1.0367,
+    "+1,-1": 1.4116,
+    "-1,+1": 1.0444,
+    "-1,-1": 1.0527
+   }
+  },
+  {
+   "pano_id": "1552156699493843",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": -7.20712653815328,
+   "camera_roll": 8.895795106063673,
+   "computed_rotation": [
+    0.78331343073956,
+    2.0195871680893,
+    -1.8656447655936
+   ],
+   "sha256": "1075674fb60b9fa6bb634b4a8eebde0c4b1f578343d908ad91dfe644db7bd2bf",
+   "amp_before": 6.6346,
+   "amp_after": {
+    "+1,+1": 7.6187,
+    "+1,-1": 11.8496,
+    "-1,+1": 1.6395,
+    "-1,-1": 10.2479
+   }
+  },
+  {
+   "pano_id": "1725939704722738",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": -1.858643353900015,
+   "camera_roll": 11.975124134416244,
+   "computed_rotation": [
+    1.1007162904145,
+    1.5959181781521,
+    -1.7324406869441
+   ],
+   "sha256": "8eca7cdcb96f2a0f3318d6ed39f941a9a9a1d38710692f8dfe5b4284ceb5377e",
+   "amp_before": 7.1237,
+   "amp_after": {
+    "+1,+1": 3.1338,
+    "+1,-1": 11.4494,
+    "-1,+1": 1.636,
+    "-1,-1": 11.0862
+   }
+  },
+  {
+   "pano_id": "1735585990655811",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": -14.630206073171967,
+   "camera_roll": -0.9789335274263045,
+   "computed_rotation": [
+    0.51942960234425,
+    2.2137577699213,
+    -1.7029497809857
+   ],
+   "sha256": "752eebbc37639bc23378bdeb7023073e456f76185920eac7494712c3dc2c21d0",
+   "amp_before": 7.8494,
+   "amp_after": {
+    "+1,+1": 13.1815,
+    "+1,-1": 13.0253,
+    "-1,+1": 0.8454,
+    "-1,-1": 2.1078
+   }
+  },
+  {
+   "pano_id": "1792391791667719",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": 17.749558591199087,
+   "camera_roll": 9.210170581182789,
+   "computed_rotation": [
+    0.61679220800347,
+    1.5533609981347,
+    -2.2360398068194
+   ],
+   "sha256": "7b48aad8151b95b47a2bd0d77dad4f75ebe92db6c2b0ed3bed420b7d58cc59c0",
+   "amp_before": 10.893,
+   "amp_after": {
+    "+1,+1": 9.5295,
+    "+1,-1": 4.3274,
+    "-1,+1": 0.2094,
+    "-1,-1": 5.8496
+   }
+  },
+  {
+   "pano_id": "1822106021680175",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": -17.901446530876562,
+   "camera_roll": -0.8160674818396834,
+   "computed_rotation": [
+    1.8372275921574,
+    -0.48570986761858,
+    0.37253739786169
+   ],
+   "sha256": "f8c906210b1961331afd01950938b0e5d45112e88f6293fbc32557923aa06fa0",
+   "amp_before": 3.0306,
+   "amp_after": {
+    "+1,+1": 1.497,
+    "+1,-1": 2.3162,
+    "-1,+1": 0.7465,
+    "-1,-1": 1.0502
+   }
+  },
+  {
+   "pano_id": "2001774006895864",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": 1.7092471995071732,
+   "camera_roll": 13.960283692081815,
+   "computed_rotation": [
+    1.496201960112,
+    0.66572471808829,
+    -1.0375174880867
+   ],
+   "sha256": "f817848e39c208fb9a772f711f96d7863977beae5e07a54982b5b5ded2a5ab7d",
+   "amp_before": 4.2051,
+   "amp_after": {
+    "+1,+1": 1.4786,
+    "+1,-1": 8.724,
+    "-1,+1": 0.6561,
+    "-1,-1": 8.0839
+   }
+  },
+  {
+   "pano_id": "24311155338572235",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": 20.491547647731164,
+   "camera_roll": 1.8640773325671416,
+   "computed_rotation": [
+    1.1937648787962,
+    -0.24334728689064,
+    0.29457634897768
+   ],
+   "sha256": "120b6b2d1c3177780b2a9cb77105b5cb1a402ab474049ff66111bb9e21c53b31",
+   "amp_before": 4.9583,
+   "amp_after": {
+    "+1,+1": 1.0906,
+    "+1,-1": 0.7817,
+    "-1,+1": 1.2121,
+    "-1,-1": 1.22
+   }
+  },
+  {
+   "pano_id": "2490197824703986",
+   "city": "richmond-va",
+   "contributor": "HKocen",
+   "width": 11000,
+   "camera_pitch": -1.6967198545291347,
+   "camera_roll": -2.727397104189482,
+   "computed_rotation": [
+    1.5885836755748,
+    0.20562194551544,
+    -0.12600978976009
+   ],
+   "sha256": "9a4273e38282b36635751a3727a8bbd29ed292ae20cbe8c9ca5240394b68b85a",
+   "amp_before": 1.5769,
+   "amp_after": {
+    "+1,+1": 2.5946,
+    "+1,-1": 2.4778,
+    "-1,+1": 0.9377,
+    "-1,-1": 1.3067
+   }
+  },
+  {
+   "pano_id": "2513837942284782",
+   "city": "richmond-va",
+   "contributor": "HKocen",
+   "width": 11000,
+   "camera_pitch": -3.5134167188939407,
+   "camera_roll": 0.7942264201838847,
+   "computed_rotation": [
+    1.6289017438218,
+    0.12906215094928,
+    -0.14260452758691
+   ],
+   "sha256": "c86152bfbbe5cf4c00ba0771c15ddd9fe0cd30d384debfb27f94f9bb9ddcfec2",
+   "amp_before": 1.4417,
+   "amp_after": {
+    "+1,+1": 3.3792,
+    "+1,-1": 3.4037,
+    "-1,+1": 0.4436,
+    "-1,-1": 1.3301
+   }
+  },
+  {
+   "pano_id": "26291425290506295",
+   "city": "richmond-va",
+   "contributor": "yo_scottie_oh",
+   "width": 5760,
+   "camera_pitch": 4.44106264733075,
+   "camera_roll": -1.9608162526838113,
+   "computed_rotation": [
+    0.8136997373275,
+    -1.5983671303456,
+    1.756397030087
+   ],
+   "sha256": "a5cc979001de97b2226bda61a3fe80e70518bc549e9db364cf91436d5f3100d5",
+   "amp_before": 2.087,
+   "amp_after": {
+    "+1,+1": 3.5813,
+    "+1,-1": 4.8022,
+    "-1,+1": 1.5491,
+    "-1,-1": 3.3737
+   }
+  },
+  {
+   "pano_id": "2671710353182473",
+   "city": "richmond-va",
+   "contributor": "echostorm",
+   "width": 11000,
+   "camera_pitch": -6.085363009953902,
+   "camera_roll": -1.1068085435279582,
+   "computed_rotation": [
+    0.66738093216955,
+    1.9336637832942,
+    -1.7265578195459
+   ],
+   "sha256": "1f6d2be109dbbf17a23392b6734d9653bea391df24afb9dcbdee74aaa919e201",
+   "amp_before": 2.9767,
+   "amp_after": {
+    "+1,+1": 6.2083,
+    "+1,-1": 6.3867,
+    "-1,+1": 0.5017,
+    "-1,-1": 1.7193
+   }
+  },
+  {
+   "pano_id": "3446004685562388",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": -18.828147611124468,
+   "camera_roll": -5.332609941418295,
+   "computed_rotation": [
+    1.6733203462289,
+    -1.1103092079766,
+    0.9023315062723
+   ],
+   "sha256": "6b97f2dc50b09a9220f4f3bdd1074ae68871eb4fe4e2ec619841bc8228007e44",
+   "amp_before": 7.7117,
+   "amp_after": {
+    "+1,+1": 4.2543,
+    "+1,-1": 4.9965,
+    "-1,+1": 0.8495,
+    "-1,-1": 3.7672
+   }
+  },
+  {
+   "pano_id": "3882031588705746",
+   "city": "richmond-va",
+   "contributor": "RichmondVA",
+   "width": 11000,
+   "camera_pitch": -0.8267001608242551,
+   "camera_roll": -2.1203027528269613,
+   "computed_rotation": [
+    0.92141144362372,
+    -1.6259458890008,
+    1.6351579273801
+   ],
+   "sha256": "ca24b85fcfbebe29734eb99dc4ba79b39a7a6c5813b7669b24b70e32992ade7a",
+   "amp_before": 0.6319,
+   "amp_after": {
+    "+1,+1": 0.9377,
+    "+1,-1": 1.5283,
+    "-1,+1": 0.6475,
+    "-1,-1": 0.8236
+   }
+  },
+  {
+   "pano_id": "4125218147737104",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": -15.081609486712543,
+   "camera_roll": -6.307958860183036,
+   "computed_rotation": [
+    1.6570457166071,
+    -0.99630400606314,
+    0.89823900261078
+   ],
+   "sha256": "ebdfb9655d21c3264dd0dedcc5767f3292cf7041e7b4dd4c8b45f2c4970245c2",
+   "amp_before": 2.8693,
+   "amp_after": {
+    "+1,+1": 5.5765,
+    "+1,-1": 3.2325,
+    "-1,+1": 2.0122,
+    "-1,-1": 3.8961
+   }
+  },
+  {
+   "pano_id": "614436767693579",
+   "city": "richmond-va",
+   "contributor": "HKocen",
+   "width": 11000,
+   "camera_pitch": -3.1590414835522362,
+   "camera_roll": 17.35976353358522,
+   "computed_rotation": [
+    1.4392037336504,
+    -0.77339475913721,
+    0.29218007096546
+   ],
+   "sha256": "332124a4b796d4a3c33e08849bc648f01128c589e95550b0234d09f149b151bd",
+   "amp_before": 0.8515,
+   "amp_after": {
+    "+1,+1": 7.3446,
+    "+1,-1": 6.8728,
+    "-1,+1": 7.4499,
+    "-1,-1": 6.9259
+   }
+  },
+  {
+   "pano_id": "666141542480267",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": 6.168523488423222,
+   "camera_roll": 9.618603943117616,
+   "computed_rotation": [
+    1.3625932768752,
+    -0.5605146162411,
+    0.36197444165028
+   ],
+   "sha256": "5f6e8fea1bb0050cab38a9b1de97f29e4b6bfeb6e0f0e363421876b5c5eaa12c",
+   "amp_before": 5.14,
+   "amp_after": {
+    "+1,+1": 6.3475,
+    "+1,-1": 11.368,
+    "-1,+1": 0.1255,
+    "-1,-1": 10.3993
+   }
+  },
+  {
+   "pano_id": "702777969129412",
+   "city": "richmond-va",
+   "contributor": "HKocen",
+   "width": 11000,
+   "camera_pitch": -0.6858654472151414,
+   "camera_roll": -2.4895087027290956,
+   "computed_rotation": [
+    1.5349622354486,
+    -0.48300682274406,
+    0.5426887615994
+   ],
+   "sha256": "be7c29f43e8bd1f88414d96e350ce3a4ef8296bc188184488d949475a440d180",
+   "amp_before": 1.0812,
+   "amp_after": {
+    "+1,+1": 0.4973,
+    "+1,-1": 2.0387,
+    "-1,+1": 0.2889,
+    "-1,-1": 1.9543
+   }
+  },
+  {
+   "pano_id": "712269211672483",
+   "city": "richmond-va",
+   "contributor": "echostorm",
+   "width": 11000,
+   "camera_pitch": -2.8794825942398097,
+   "camera_roll": -0.7407106600501341,
+   "computed_rotation": [
+    0.84140544680213,
+    -1.7381077726484,
+    1.6630860881233
+   ],
+   "sha256": "d16321e0faa84caac621acfb1536cd4356db23b26c0791ab8dfdbe06f87155b3",
+   "amp_before": 1.3053,
+   "amp_after": {
+    "+1,+1": 3.2026,
+    "+1,-1": 3.096,
+    "-1,+1": 1.1746,
+    "-1,-1": 0.6754
+   }
+  },
+  {
+   "pano_id": "718061687836699",
+   "city": "richmond-va",
+   "contributor": "echostorm",
+   "width": 11000,
+   "camera_pitch": -2.214365734272531,
+   "camera_roll": -2.0645657429270217,
+   "computed_rotation": [
+    1.469380919997,
+    0.75466272160026,
+    -0.67464653487029
+   ],
+   "sha256": "fbb7768f044b951466f9967a850b17804390f02bb0f3410b331693dd8fd3f4c8",
+   "amp_before": 3.5994,
+   "amp_after": {
+    "+1,+1": 3.2443,
+    "+1,-1": 4.1977,
+    "-1,+1": 3.0716,
+    "-1,-1": 5.0578
+   }
+  },
+  {
+   "pano_id": "733113836369035",
+   "city": "richmond-va",
+   "contributor": "echostorm",
+   "width": 11000,
+   "camera_pitch": -1.704229918910215,
+   "camera_roll": -1.481964486299429,
+   "computed_rotation": [
+    0.64402478371408,
+    1.8486542202276,
+    -1.777700954888
+   ],
+   "sha256": "517094c6a50c9a7205571106b834dc5e4a2d96544a2c30ed1b4ce31ed3383d76",
+   "amp_before": 1.4806,
+   "amp_after": {
+    "+1,+1": 2.1813,
+    "+1,-1": 2.6,
+    "-1,+1": 0.3663,
+    "-1,-1": 1.7009
+   }
+  },
+  {
+   "pano_id": "764108632978436",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": -18.623665161153728,
+   "camera_roll": -6.8938202453096595,
+   "computed_rotation": [
+    1.7121531223695,
+    -1.0325871892294,
+    0.88391292101004
+   ],
+   "sha256": "6c94afd92ad7ece1773a03b598d21eeae12912fe68383ace59fd84e249ad15df",
+   "amp_before": 3.4152,
+   "amp_after": {
+    "+1,+1": 7.2195,
+    "+1,-1": 3.1653,
+    "-1,+1": 1.6882,
+    "-1,-1": 4.0851
+   }
+  },
+  {
+   "pano_id": "923768265942651",
+   "city": "richmond-va",
+   "contributor": "HKocen",
+   "width": 11000,
+   "camera_pitch": 2.014440077313249,
+   "camera_roll": -0.15892140803148527,
+   "computed_rotation": [
+    1.4746327951707,
+    -0.50761144009773,
+    0.53001416685386
+   ],
+   "sha256": "be45fe20eef55934a495f8f897937012912e46f7e5baef44e2ec5982dfab3807",
+   "amp_before": 1.6279,
+   "amp_after": {
+    "+1,+1": 3.0214,
+    "+1,-1": 3.0763,
+    "-1,+1": 0.6046,
+    "-1,-1": 0.5957
+   }
+  },
+  {
+   "pano_id": "938117268482917",
+   "city": "richmond-va",
+   "contributor": "jacobwhall",
+   "width": 4096,
+   "camera_pitch": -17.641828271860774,
+   "camera_roll": -2.559664994191726,
+   "computed_rotation": [
+    1.6619066457,
+    0.99167658824737,
+    -0.67023875783744
+   ],
+   "sha256": "1ab5af83df3b7de41395e661f037bfbe0ef21ffb40580c0cbff50f0b97c1780c",
+   "amp_before": 7.2473,
+   "amp_after": {
+    "+1,+1": 12.103,
+    "+1,-1": 11.6291,
+    "-1,+1": 0.9045,
+    "-1,-1": 2.5269
+   }
+  },
+  {
+   "pano_id": "989463609906444",
+   "city": "richmond-va",
+   "contributor": "HKocen",
+   "width": 11000,
+   "camera_pitch": -5.6607547807538525,
+   "camera_roll": -3.170837001351978,
+   "computed_rotation": [
+    0.61988752121188,
+    1.931161061305,
+    -1.7154698067777
+   ],
+   "sha256": "1018315a8e13ef5adefa464de45f4f541b3a3c55d22d8cbbc3fddfdb1901e46e",
+   "amp_before": 2.7904,
+   "amp_after": {
+    "+1,+1": 4.7794,
+    "+1,-1": 6.1932,
+    "-1,+1": 0.8289,
+    "-1,-1": 3.4198
+   }
+  }
+ ]
+}

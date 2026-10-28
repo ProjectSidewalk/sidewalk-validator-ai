@@ -100,7 +100,7 @@ indexed in [`docs/README.md`](docs/README.md).
         ▼
  [2] read panorama      pano store <city>/<pano_id[:2]>/<pano_id>.jpg → 8192×4096 equirectangular
         ▼
- [3] perspective view   90° FOV, 2048², centred on the label, rig-tilt corrected (sidewalk-panorama-tools, β = 0.95)
+ [3] perspective view   90° FOV, 2048², centred on the label, rig-tilt corrected (sidewalk-panorama-tools, β = 0.95 (GSV))
         ▼
  [4] depth-sized crop   Depth Anything V2 (metric, ViT-B) at the centre → crop_half = 6100 / depth_m px → 640 px WebP
         ▼
@@ -199,9 +199,10 @@ prior itself is settled). What is still open:
 - **Datasets on Hugging Face** are the 2025-08 uploads, with the CurbRamp set a copy of Crosswalk
   ([#7](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/7)); cards, DOIs and licences are
   [#2](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/2).
-- **Non-GSV imagery** (Mapillary, Panoramax) is excluded from training and serving until per-provider pose
-  handling exists ([#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9),
-  [`docs/decisions.md`](docs/decisions.md)).
+- **Non-GSV imagery** (Mapillary, Panoramax) is included in training with a per-provider pose and frame
+  ([#72](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/72),
+  [`docs/decisions.md`](docs/decisions.md)); serving is still GSV-only until sidewalk-ai-api applies the same pose
+  and SidewalkWebpage lifts its GSV filters (#72 steps 3 and 4).
 - **AI Disagree votes** cast by the 2025-08 models hide labels on their own in production; the reversal and a
   masked expert re-label are in review ([SidewalkWebpage#5793](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5793),
   [#62](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/62),

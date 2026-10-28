@@ -1,0 +1,98 @@
+{
+ "source": "mapillary",
+ "fetched": "2026-10-28",
+ "asset": "thumb_2048_url",
+ "pose_columns": "camera_pitch/camera_roll as the Project Sidewalk DB stores them (rawLabels 2026-10-27), website sign",
+ "panoramas": [
+  {
+   "pano_id": "1792391791667719",
+   "city": "richmond-va",
+   "camera_pitch": 17.749558591199087,
+   "camera_roll": 9.210170581182789,
+   "computed_rotation": [
+    0.61679220800347,
+    1.5533609981347,
+    -2.2360398068194
+   ],
+   "creator": "jacobwhall",
+   "captured_at": "2025-08-18",
+   "sha256": "7b48aad8151b95b47a2bd0d77dad4f75ebe92db6c2b0ed3bed420b7d58cc59c0",
+   "bytes": 183136
+  },
+  {
+   "pano_id": "1065203879101102",
+   "city": "richmond-va",
+   "camera_pitch": -8.904215998036877,
+   "camera_roll": -9.771385591733846,
+   "computed_rotation": [
+    1.4476136015921,
+    1.0198881105571,
+    -0.64969363090248
+   ],
+   "creator": "jacobwhall",
+   "captured_at": "2025-01-14",
+   "sha256": "43dc01600d4030ca35808fe12894bdf2591a5740dd75257d55e6788f8d2ee910",
+   "bytes": 289766
+  },
+  {
+   "pano_id": "2001774006895864",
+   "city": "richmond-va",
+   "camera_pitch": 1.7092471995071732,
+   "camera_roll": 13.960283692081815,
+   "computed_rotation": [
+    1.496201960112,
+    0.66572471808829,
+    -1.0375174880867
+   ],
+   "creator": "jacobwhall",
+   "captured_at": "2025-08-18",
+   "sha256": "f817848e39c208fb9a772f711f96d7863977beae5e07a54982b5b5ded2a5ab7d",
+   "bytes": 182769
+  },
+  {
+   "pano_id": "1545453500214262",
+   "city": "laurens-ia",
+   "camera_pitch": -3.10462047237923,
+   "camera_roll": 7.026064954329208,
+   "computed_rotation": [
+    1.1171867883008,
+    -1.3554509951048,
+    1.1448395057929
+   ],
+   "creator": "GIS_ISG",
+   "captured_at": "2025-11-04",
+   "sha256": "1a6f00ad371cbd5b6c7e0dd38560d123c7e4e3a00b3e4fb463bc6867afe8a817",
+   "bytes": 276323
+  },
+  {
+   "pano_id": "2671710353182473",
+   "city": "richmond-va",
+   "camera_pitch": -6.085363009953902,
+   "camera_roll": -1.1068085435279582,
+   "computed_rotation": [
+    0.66738093216955,
+    1.9336637832942,
+    -1.7265578195459
+   ],
+   "creator": "echostorm",
+   "captured_at": "2024-11-11",
+   "sha256": "1f6d2be109dbbf17a23392b6734d9653bea391df24afb9dcbdee74aaa919e201",
+   "bytes": 271087
+  },
+  {
+   "pano_id": "1416913142890466",
+   "city": "richmond-va",
+   "camera_pitch": 2.413469233465003,
+   "camera_roll": -2.910992633822752,
+   "computed_rotation": [
+    1.4863264079614,
+    -0.45558945349094,
+    0.55331376889714
+   ],
+   "creator": "HKocen",
+   "captured_at": "2024-11-11",
+   "sha256": "078517e608e4e5c70bcbb351c5164e8e5132db69d13a9617584a127a17a01a80",
+   "bytes": 233975
+  }
+ ]
+}

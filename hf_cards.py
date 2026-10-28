@@ -547,6 +547,40 @@ def _cities_table(ds):
     return "\n".join(lines) + "\n"
 
 
+def non_gsv_count(pano_sources):
+    """Rows not on GSV imagery in a ``{provider: n}`` count (a blank provider counts as GSV: older manifests).
+
+    >>> non_gsv_count({"gsv": 5, "mapillary": 2, "panoramax": 1}), non_gsv_count({"gsv": 3, "": 1}), non_gsv_count({})
+    (3, 0, 0)
+    """
+    return sum(n for s, n in pano_sources.items() if s not in ("gsv", ""))
+
+
+def imagery_sentence(pano_sources, settings):
+    """The dataset card's sentence on imagery providers, from what was actually published (``split.csv``'s
+    ``pano_source`` counts), not from what the generator would have allowed.
+
+    >>> imagery_sentence({"gsv": 10}, {})[:62]
+    'labels from non-GSV imagery, with unusable panorama geometry, '
+    >>> s = imagery_sentence({"gsv": 10, "mapillary": 2}, {"source_beta": {"mapillary": 0.0, "panoramax": 1.0}})
+    >>> "2 Mapillary" in s and "mapillary 0, panoramax 1" in s
+    True
+    """
+    n = non_gsv_count(pano_sources)
+    if not n:
+        return ("labels from non-GSV imagery, with unusable panorama geometry, or with legacy unconverted coordinates "
+                "are excluded. ")
+    parts = ", ".join(f"{pano_sources[s]:,} {s.capitalize()}" for s in sorted(pano_sources) if s not in ("gsv", ""))
+    betas = settings.get("source_beta") or {}
+    beta_text = (" (tilt-correction beta per provider: " + ", ".join(f"{k} {v:g}" for k, v in sorted(betas.items()))
+                 + ")") if betas else ""
+    return ("labels with unusable panorama geometry or with legacy unconverted coordinates are excluded. "
+            f"The dataset includes {parts} label{'s' if n != 1 else ''} on non-GSV imagery{beta_text}. Mapillary "
+            "clicks are stored in the rig frame, so those crops are not tilt-corrected; Panoramax crops are "
+            "corrected only when both stored camera angles are non-zero (the only case its viewer levels the "
+            "panorama). The manifest's `pose_source` says which pose each crop used. ")
+
+
 def dataset_card(ctx, license_id=None):
     """The dataset repo's ``README.md``.
 
@@ -595,6 +629,7 @@ def dataset_card(ctx, license_id=None):
     expert_row = ("| either | otherwise, the class an expert account voted for, if every expert vote on the label agrees "
                   "and no other human voted the other way |\n")
     source_counts = gen.get("class_source_counts") or {}
+    imagery_text = imagery_sentence(ds.get("pano_sources") or {}, settings)
     expert_text = (f"\nExpert votes came from {n_experts} project-team account{'s' if n_experts != 1 else ''}; the "
                    "manifest's `class_source` column says which rule decided each label (`margin` or `expert`)"
                    + (f": {fmt(source_counts.get('margin', 0))} margin and {fmt(source_counts.get('expert', 0))} "
@@ -632,15 +667,16 @@ def dataset_card(ctx, license_id=None):
              + "| (dropped) | unvalidated, unsure, or contested |\n"
              + (expert_text if n_experts else ""),
              f"Labels placed by the `SidewalkAI` account are "
-             f"{'included (tagged `author = ai` in the manifest)' if include_ai else 'excluded'}; labels from "
-             "non-GSV imagery, with unusable panorama geometry, or with legacy unconverted coordinates are excluded. "
-             f"The `correct` class is then downsampled to {dg.CORRECT_PROPORTION:.0%} of the dataset by a seeded hash "
+             f"{'included (tagged `author = ai` in the manifest)' if include_ai else 'excluded'}; "
+             + imagery_text
+             + f"The `correct` class is then downsampled to {dg.CORRECT_PROPORTION:.0%} of the dataset by a seeded hash "
              f"of `label_uid` (seed {gen.get('seed', dg.SEED)}), a training-balance choice, not the real class mix. "
              + prior_text + "\n",
              "## How a crop is made\n",
              f"The panorama is read from the lab's panorama store and resized to 8192×4096. A {dg.VIEW_SIZE}² "
              f"perspective view with a {dg.VIEW_FOV_DEG:g}° field of view is rendered centred on the label with "
-             f"rig-tilt correction (beta = {settings.get('tilt_beta', gen.get('tilt_beta', TODO + ' tilt beta'))}). "
+             f"rig-tilt correction (beta = {settings.get('tilt_beta', gen.get('tilt_beta', TODO + ' tilt beta'))}"
+             f"{' for GSV' if non_gsv_count(ds.get('pano_sources') or {}) else ''}). "
              f"Depth Anything V2 (metric, "
              f"{str(settings.get('depth_dataset', dg.DEPTH_DATASET)).upper()}, "
              f"{ENCODER_NAMES.get(settings.get('depth_encoder', gen.get('depth_encoder')), TODO + ' encoder')}) estimates "
