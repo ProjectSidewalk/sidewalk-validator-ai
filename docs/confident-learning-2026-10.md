@@ -61,9 +61,26 @@ python analysis/confident_learning.py report --data-dir $DATA --out docs/confide
 
 ## Train-row accounting
 
-_To be filled from `rule.json` and `flag_summary.json` per type: rows dropped by each rule, rows flagged by
-the confident joint (by class, by vote margin, by target source, by author, by deployment with private
-deployments pooled), and the overlap between the rule drops and the flags._
+**The stricter rules** (from each type's `cl/<rule>/rule.json`, 2026-10-28). The round-3 train rows per type and
+what each rule keeps; `symmetric` touches only `incorrect` rows (it tightens the Disagree side to match the
+Agree side), `unanimous3` also drops `correct` rows that carry a single Disagree vote. Expert-sourced targets
+are never dropped.
+
+| Type | train rows (correct / incorrect) | symmetric keeps | dropped | unanimous3 keeps | dropped |
+|---|---:|---:|---:|---:|---:|
+| CurbRamp | 3,795 / 3,130 | 3,795 / 1,430 | 1,700 (54% of incorrect) | 3,534 / 1,213 | 2,178 |
+| Crosswalk | 1,156 / 933 | 1,156 / 609 | 324 (35%) | 1,106 / 373 | 610 |
+| NoCurbRamp | 6,738 / 5,461 | 6,738 / 3,498 | 1,963 (36%) | 5,553 / 1,338 | 5,308 |
+| Obstacle | 6,097 / 4,457 | 6,097 / 1,810 | 2,647 (59%) | 4,862 / 1,417 | 4,275 |
+| SurfaceProblem | 5,839 / 4,661 | 5,839 / 1,580 | 3,081 (66%) | 5,140 / 1,171 | 4,189 |
+
+So between a third and two thirds of the `incorrect` targets rest on a net Disagree of exactly two, and under
+`unanimous3` the `incorrect` class shrinks to a fifth to a third of its size for every type but Crosswalk.
+Whatever these variants do to the held-out numbers, they do it with far fewer Disagree examples, which is part
+of what is being measured.
+
+_Confident-joint flags (by class, vote margin, target source, author and deployment, private deployments
+pooled), and their overlap with the rule drops: to be filled from `flag_summary.json`._
 
 ## Results
 
