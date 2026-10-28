@@ -4,7 +4,7 @@ Does the 0.92 gate mean the same thing in every city? This note answers that for
 from the same production pull as [`calibration-2026-10.md`](calibration-2026-10.md) (2026-10-17, labels with at least
 two human votes, outcome `tie_half`). It is the production half of
 [#15](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/15). The held-out-city benchmark for the
-retrained models is the README's [Held-out-city benchmark](../README.md#held-out-city-benchmark) recipe, which has
+retrained models is the [Held-out-city benchmark](running-on-hyak.md#held-out-city-benchmark) recipe, which has
 not been run yet.
 
 **Reproduce.** Every table, count and figure below is the unedited output of `calibration/per_city.py`, run on the
