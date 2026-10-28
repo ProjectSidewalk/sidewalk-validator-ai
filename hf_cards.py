@@ -575,8 +575,10 @@ def imagery_sentence(pano_sources, settings):
     beta_text = (" (tilt-correction beta per provider: " + ", ".join(f"{k} {v:g}" for k, v in sorted(betas.items()))
                  + ")") if betas else ""
     return ("labels with unusable panorama geometry or with legacy unconverted coordinates are excluded. "
-            f"The dataset includes {parts} label{'s' if n != 1 else ''} on non-GSV imagery, cropped with their "
-            f"provider's own camera pose{beta_text}; the manifest's `pose_source` says which pose each crop used. ")
+            f"The dataset includes {parts} label{'s' if n != 1 else ''} on non-GSV imagery{beta_text}. Mapillary "
+            "clicks are stored in the rig frame, so those crops are not tilt-corrected; Panoramax crops are "
+            "corrected only when both stored camera angles are non-zero (the only case its viewer levels the "
+            "panorama). The manifest's `pose_source` says which pose each crop used. ")
 
 
 def dataset_card(ctx, license_id=None):

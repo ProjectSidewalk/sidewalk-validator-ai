@@ -1393,8 +1393,10 @@ def main(argv=None):
     os.makedirs(base_dir, exist_ok=True)
 
     # Per-provider pose (crop_pose, #72), for every row this run renders. Mapillary rows with no DB pose take the
-    # Graph API rotation when a token was given; a lookup that did not get an answer stops the run before any crop is
-    # cut, so no crop is silently left uncorrected (answers are cached, so the re-run asks only for the rest).
+    # Graph API rotation when a token was given. Mapillary crops are uncorrected either way (the click is rig-frame,
+    # beta 0), so the lookup only fills the recorded pose; a lookup that did not get an answer still stops the run
+    # before any crop is cut, so no row silently lacks the pose the run was asked to record (answers are cached, so
+    # the re-run asks only for the rest).
     rotations = None
     if settings["mapillary_api"]:
         need = mapillary_need
@@ -1404,8 +1406,8 @@ def main(argv=None):
               f"{len(need) - n_called} from {cache_path}; {len(failed)} unanswered")
         if failed:
             sys.exit(f"{len(failed)} Mapillary Graph API lookups got no answer (first: {failed[:3]}); answers so far "
-                     f"are cached in {cache_path}. Re-run to retry them, or drop --mapillary-token-env to render "
-                     f"those labels uncorrected.")
+                     f"are cached in {cache_path}. Re-run to retry them, or drop --mapillary-token-env to run "
+                     f"without recording their pose (Mapillary crops are not tilt-corrected either way).")
     poses = {r['label_uid']: crop_pose.pose_for_row(r, args.tilt_beta, rotations)
              for r in combined_filtered.to_dict('records')}
     run_pose_counts = pose_counts([poses[u] for u in combined_filtered['label_uid']],

@@ -100,7 +100,7 @@ indexed in [`docs/README.md`](docs/README.md).
         ▼
  [2] read panorama      pano store <city>/<pano_id[:2]>/<pano_id>.jpg → 8192×4096 equirectangular
         ▼
- [3] perspective view   90° FOV, 2048², centred on the label, rig-tilt corrected (sidewalk-panorama-tools, β = 0.95)
+ [3] perspective view   90° FOV, 2048², centred on the label, rig-tilt corrected (sidewalk-panorama-tools, β = 0.95 (GSV))
         ▼
  [4] depth-sized crop   Depth Anything V2 (metric, ViT-B) at the centre → crop_half = 6100 / depth_m px → 640 px WebP
         ▼

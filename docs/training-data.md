@@ -45,8 +45,9 @@ Labels on Mapillary and Panoramax imagery (Richmond VA, Laurens IA, Bayonne FR) 
 and frame (`pose_source` in the manifest; the per-provider table, the pixel-measured signs and the beta assumptions
 are in [`decisions.md`](decisions.md)). Mapillary's viewer stores the click in the rig frame, so Mapillary crops are
 not tilt-corrected; Panoramax crops are corrected (beta 1.0, unmeasured) only when both stored angles are non-zero,
-the only case its viewer levels the panorama. Labels on any other provider (e.g. Infra3D) are dropped and counted as
-`unsupported_source`, as are rows with unusable pano geometry and legacy labels
+the only case its viewer levels the panorama, and a pitch-only Panoramax pose instead moves the click back by
+`pers:pitch`, which the viewer adds to it (`click_lat_offset_deg`). Labels on any other provider (e.g. Infra3D) are
+dropped and counted as `unsupported_source`. Rows with unusable pano geometry and legacy labels
 with unconverted coordinates (negative `pano_y`: Seattle 193, CDMX 14, Pittsburgh 8, SPGG 1) are excluded, and so
 are labels placed by the `SidewalkAI` account (RampNet curb ramps in Vancouver WA, Richmond VA and Laurens IA),
 because production never sends those to the validator; `--include-ai-labels` keeps them, tagged `author = ai` in

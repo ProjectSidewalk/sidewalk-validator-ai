@@ -442,7 +442,9 @@ def test_dataset_card_states_non_gsv_imagery_from_what_was_published(tmp_path, s
     with open(path, "w") as f:
         json.dump(run, f)
     _, d = pub.stage(root, T)
-    assert "non-GSV imagery, with unusable" in _read(os.path.join(d, "README.md"))  # nothing non-GSV selected
+    card = _read(os.path.join(d, "README.md"))
+    assert "non-GSV imagery, with unusable" in card  # nothing non-GSV selected
+    assert "for GSV)" not in card and "beta = 0.95)" in card
     root, *_ = make_root(tmp_path / "with-mapillary", pano_sources={0: "mapillary", 1: "mapillary"})
     path = os.path.join(root, T, "generation_run.json")
     with open(path, "w") as f:

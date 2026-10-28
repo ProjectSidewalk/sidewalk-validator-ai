@@ -5,8 +5,8 @@ what would change it. One section per decision, newest first.
 
 ## Labels on Mapillary and Panoramax imagery are kept, with a per-provider pose (October 2026)
 
-Issue [#72](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/72), step 1. **Supersedes** the next
-section ("Labels on non-GSV imagery stay out of training").
+Issue [#72](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/72), step 1. **Supersedes** the section
+"Labels on non-GSV imagery stay out of training (October 2026)" below.
 
 **Decision.** `data_generation.py` no longer drops labels whose `pano_source` is `mapillary` or `panoramax`. Any other
 provider (Infra3D exists) is dropped as `unsupported_source`. For each human label `crop_pose.pose_for_row` reads the
@@ -132,7 +132,8 @@ The implementation is [`analysis/slices.py`](../analysis/slices.py). New experim
 
 ## Labels on non-GSV imagery stay out of training (October 2026) — superseded
 
-**Superseded by the section above ([#72](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/72)).** Kept
+**Superseded by "Labels on Mapillary and Panoramax imagery are kept, with a per-provider pose (October 2026)" above
+([#72](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/72)).** Kept
 as the record of why the drop existed.
 
 Issue [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9), item 4.

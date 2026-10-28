@@ -767,7 +767,7 @@ CROISSANT_FIELDS = {
     "label_uid": ("sc:Text", "Unique key, <city>:<label_id>."),
     "city": ("sc:Text", "Project Sidewalk deployment (city_id)."),
     "label_id": ("sc:Integer", "Label id within its city; NOT unique across cities."),
-    "pano_id": ("sc:Text", "Google Street View panorama id."),
+    "pano_id": ("sc:Text", "Panorama id in its imagery provider's namespace (see pano_source); unique only with it."),
     "label_class": ("sc:Text", "correct or incorrect, from human validation votes."),
     "human_agree": ("sc:Integer", "Human Agree votes."),
     "human_disagree": ("sc:Integer", "Human Disagree votes."),

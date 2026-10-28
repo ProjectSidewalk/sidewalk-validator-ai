@@ -578,9 +578,17 @@ def test_check_resume_rejects_changed_source_beta_and_mapillary_api(tmp_path):
     assert dg.check_resume(str(run), "h", st)[1] == {}
 
 
-def test_load_city_keeps_numeric_pano_ids_as_strings(tmp_path):
+def test_load_city_keeps_numeric_pano_ids_as_strings(tmp_path, monkeypatch):
     pd.DataFrame({"label_id": [1, 2], "pano_id": ["1792391791667719", "0012"]}).to_csv(tmp_path / "c.csv", index=False)
     assert dg.load_city("c", cache_dir=str(tmp_path))["pano_id"].tolist() == ["1792391791667719", "0012"]
+
+    class Resp:  # the live rawLabels download, same rule
+        text = "label_id,pano_id\n1,1792391791667719\n2,0012\n"
+
+        def raise_for_status(self):
+            pass
+    monkeypatch.setattr("requests.get", lambda url, timeout=None: Resp())
+    assert dg.load_city("c", "sub")["pano_id"].tolist() == ["1792391791667719", "0012"]
 
 
 def test_mapillary_api_pose_is_the_port_negated():
@@ -589,6 +597,8 @@ def test_mapillary_api_pose_is_the_port_negated():
     assert (round(pose.camera_pitch, 4), round(pose.camera_roll, 4)) == (-2.2318, -6.355)
     assert crop_pose.needs_mapillary_rotation(_pose_row("mapillary"))
     assert not crop_pose.needs_mapillary_rotation(_pose_row("mapillary", 1.0, 2.0))
+    assert crop_pose.needs_mapillary_rotation(_pose_row("mapillary", 1.0, None))  # one DB angle: looked up
+    assert crop_pose.needs_mapillary_rotation(_pose_row("mapillary", None, 2.0))
     assert not crop_pose.needs_mapillary_rotation(_pose_row("mapillary", author="ai"))
     assert not crop_pose.needs_mapillary_rotation(_pose_row("gsv"))
 
