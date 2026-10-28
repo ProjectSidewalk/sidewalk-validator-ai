@@ -606,7 +606,8 @@ def dataset_summary(split_df, content_hash):
 
     Returns a dict: ``n``, ``splits`` (present, in canonical order), ``counts`` ({split: {class: n}}),
     ``split_counts``, ``class_totals``, ``cities`` ({city: n}, sorted), ``heldout_cities``, ``capture_years``
-    ({min, max} from the leading year of ``image_capture_date``), ``n_panoramas`` and ``content_hash``.
+    ({min, max} from the leading year of ``image_capture_date``), ``n_panoramas``, ``pano_sources`` ({provider: n}; empty
+    when ``split.csv`` has no ``pano_source`` column) and ``content_hash``.
     """
     splits = [s for s in SPLITS if (split_df["split"] == s).any()]
     counts = {s: {c: int(((split_df["split"] == s) & (split_df["label_class"] == c)).sum()) for c in CLASSES}
@@ -624,6 +625,9 @@ def dataset_summary(split_df, content_hash):
             "heldout_cities": sorted(split_df.loc[split_df["split"] == "test_heldout", "city"].astype(str).unique()),
             "capture_years": {"min": min(years) if years else None, "max": max(years) if years else None},
             "n_panoramas": int(split_df["pano_id"].nunique()) if "pano_id" in split_df.columns else None,
+            "pano_sources": ({str(k): int(v) for k, v in sorted(
+                split_df["pano_source"].fillna("").astype(str).str.strip().str.lower().value_counts().items())}
+                if "pano_source" in split_df.columns else {}),
             "content_hash": content_hash}
 
 
