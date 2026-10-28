@@ -180,6 +180,11 @@ DEPTH_DEVICE_HELP = "CUDA is required; --allow-cpu renders with numpy and runs d
 # Labels
 # ---------------------------------------------------------------------------------------------------------------------
 
+#: Mapillary pano_ids are all digits, so without this read_csv makes them int64: a mixed frame then cannot be sorted
+#: by pano_id and ``pano_id[:2]`` (the store path) fails. Every pano_id is a string.
+PANO_ID_DTYPE = {"pano_id": str}
+
+
 def load_city(city_id, subdomain=None, cache_dir=None):
     """rawLabels of one deployment as a DataFrame with a ``city`` column (the city_id).
 
@@ -188,7 +193,7 @@ def load_city(city_id, subdomain=None, cache_dir=None):
     """
     cached = os.path.join(cache_dir, f"{city_id}.csv") if cache_dir else None
     if cached and os.path.exists(cached):
-        df = pd.read_csv(cached, low_memory=False)
+        df = pd.read_csv(cached, low_memory=False, dtype=PANO_ID_DTYPE)
     else:
         import requests
         url = f'{deployment_base_url(subdomain or HOST_OVERRIDES.get(city_id, city_id))}/v3/api/rawLabels?filetype=csv'
@@ -202,7 +207,7 @@ def load_city(city_id, subdomain=None, cache_dir=None):
                     raise
                 print(f"rawLabels for {city_id} failed ({e}); retrying once")
                 time.sleep(10)
-        df = pd.read_csv(io.StringIO(response.text), low_memory=False)
+        df = pd.read_csv(io.StringIO(response.text), low_memory=False, dtype=PANO_ID_DTYPE)
     df['city'] = city_id
     return df
 
