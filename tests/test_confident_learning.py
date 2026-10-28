@@ -268,11 +268,21 @@ def test_report_tables_and_expert_aggregates(toy, tmp_path):
                                                                        "correct": {"0.92": {"recall": 0.9}}}},
                 "test_heldout": {"auc": heldout, "recall_at_precision": {"incorrect": {"0.92": {"recall": 0.1}}}},
                 "hard": {"auc": 0.5, "n": 7},
-                "per_city": {"test": {"alpha": {"auc": 0.8, "n_by_class": {"correct": 10, "incorrect": 10}},
-                                      "beta": {"auc": 0.9, "n_by_class": {"correct": 30, "incorrect": 10}}},
-                             "test_heldout": {"gamma": {"auc": 0.7, "n_by_class": {"correct": 5, "incorrect": 5}}}}}
+                "per_city": {"test": {"min_city_n": 50, "cities": {
+                                          "alpha": {"auc": 0.8, "n_by_class": {"correct": 10, "incorrect": 10}},
+                                          "beta": {"auc": 0.9, "n_by_class": {"correct": 30, "incorrect": 10}}}},
+                             "test_heldout": {"min_city_n": 50, "cities": {
+                                          "gamma": {"auc": 0.7, "n_by_class": {"correct": 5, "incorrect": 5}}}}}}
     json.dump(metrics(0.95, 0.9, 0.3), open(path.parent / "metrics.json", "w"))
     json.dump(metrics(0.96, 0.91, 0.35), open(path.parent / "metrics_symmetric.json", "w"))
+    # predictions for the baseline only: its within-city AUC then comes from them, symmetric's from the per_city block
+    rng = np.random.default_rng(3)
+    ev = df[df.split != "train"]
+    pred = pd.DataFrame({"label_uid": ev.label_uid, "split": ev.split, "true": ev.label_class,
+                         "p_incorrect": np.where(ev.label_class == "incorrect", rng.uniform(0.4, 1, len(ev)),
+                                                 rng.uniform(0, 0.6, len(ev)))})
+    pred["p_correct"] = 1 - pred.p_incorrect
+    pred.to_csv(path.parent / "predictions.csv", index=False)
     train = df[df.split == "train"]
     gold = pd.DataFrame({"label_uid": train.label_uid.iloc[:6],
                          "verdict": ["correct", "incorrect", "correct", "incorrect", "cant_tell", "correct"]})
@@ -285,14 +295,27 @@ def test_report_tables_and_expert_aggregates(toy, tmp_path):
     doc = tmp_path / "doc"
     assert cl.main(["report", "--data-dir", str(tmp_path), "--label-types", "Toy", "--variants",
                     "symmetric,unanimous3", "--gold", str(gold_path), "--public-cities", "alpha",
-                    "--out", str(doc)]) == 0
+                    "--n-boot", "0", "--within-min-n", "2", "--out", str(doc)]) == 0
     text = (doc / "variants.md").read_text()
     assert "| baseline |" in text and "| symmetric |" in text and "| unanimous3 |" in text
     assert "not run" in text  # unanimous3 has no metrics file
-    assert "0.875 (2)" in text  # within-city test AUC: (0.8*100 + 0.9*300) / 400, weights n_inc x n_cor
+    assert "0.875 (2)" in text  # symmetric's within-city test AUC from the per_city block: (0.8*100 + 0.9*300) / 400
     data = json.load(open(doc / "variants.json"))
     rows = {r["variant"]: r for r in data["Toy"]["metrics"]}
     assert rows["symmetric"]["incorrect_recall_p92_test"] == 0.35
+    assert rows["symmetric"]["within_city_source"].startswith("metrics.json")
+    assert rows["baseline"]["within_city_source"].startswith("predictions")
+    assert rows["baseline"]["cities_test"] == 2 and rows["baseline"]["cities_heldout"] == 1  # alpha, beta; gamma
+    from analysis import retrain_report as rr
+    p = pred[pred.split == "test"].merge(df[["label_uid", "city"]], on="label_uid")
+    wc, _ = rr.within_city_auc(p.true == "incorrect", p.p_incorrect, p.city, min_n=2)
+    assert rows["baseline"]["within_city_test"] == pytest.approx(wc)
+    # held-out table: gamma is not public and not a US city id, so it is lettered as in the round-3 report
+    held = data["Toy"]["heldout"]
+    assert [h["deployment"] for h in held] == ["private city A (outside the US)"] and "gamma" not in text
+    assert held[0]["n"] == int((ev.split == "test_heldout").sum()) and 0 < held[0]["baseline"] <= 1
+    assert "symmetric" not in held[0]  # no predictions for it
+    assert data["Toy"]["slices"] == [] and not (doc / "slices.md").exists()  # no variant has predictions
     acc = {r["variant"]: r for r in data["Toy"]["train"]}
     assert acc["baseline"]["train"] == len(train) and acc["symmetric"]["dropped"] > 0
     exp = {r["variant"]: r for r in data["Toy"]["expert"]}
@@ -327,3 +350,44 @@ def test_rule_priors_count_human_margin_labels_under_each_rule(tmp_path):
     assert out["symmetric"]["CurbRamp"]["incorrect"] == 2 and out["symmetric"]["CurbRamp"]["correct"] == 2
     # unanimous3: (3,0) and (0,3) only
     assert out["unanimous3"]["CurbRamp"] == {"correct": 1, "incorrect": 1, "share_incorrect": 0.5}
+
+
+def test_report_slices_against_baseline(tmp_path):
+    path, df = make_split(tmp_path, n_panos=150)  # enough held-out labels of each class for a slice interval
+    out = path.parent / "cl"
+    cl.main(["rules", "--split", str(path), "--out", str(out)])
+    rng = np.random.default_rng(5)
+    ev = df[df.split != "train"].copy()
+    for name, shift in (("", 0.0), ("_symmetric", 0.1)):
+        pred = pd.DataFrame({"label_uid": ev.label_uid, "split": ev.split, "true": ev.label_class})
+        pred["p_incorrect"] = np.clip(np.where(ev.label_class == "incorrect", rng.uniform(0.3, 1, len(ev)) + shift,
+                                               rng.uniform(0, 0.7, len(ev)) - shift), 0, 1)
+        pred["p_correct"] = 1 - pred.p_incorrect
+        pred.to_csv(path.parent / f"predictions{name}.csv", index=False)
+        json.dump({"test": {"auc": 0.9, "n": 1, "recall_at_precision": {}}, "test_heldout": {"auc": 0.8},
+                   "hard": {}}, open(path.parent / f"metrics{name}.json", "w"))
+    doc = tmp_path / "doc"
+    assert cl.main(["report", "--data-dir", str(tmp_path), "--label-types", "Toy", "--variants", "symmetric",
+                    "--public-cities", "alpha,beta,gamma", "--n-boot", "20", "--slice-min-n", "5",
+                    "--out", str(doc)]) == 0
+    data = json.load(open(doc / "variants.json"))
+    held = {h["deployment"]: h for h in data["Toy"]["heldout"]}
+    assert set(held) == {"gamma"} and held["gamma"]["symmetric"] >= held["gamma"]["baseline"]  # public: named
+    slices = data["Toy"]["slices"]
+    assert {(r["split"], r["by"]) for r in slices} == {("test", "severity"), ("test", "tag"),
+                                                        ("test_heldout", "severity"), ("test_heldout", "tag")}
+    tag_rows = [r for r in slices if r["by"] == "tag" and r["split"] == "test_heldout"]
+    assert [r["slice"] for r in tag_rows] == ["(none)"]  # the toy has no tags
+    assert tag_rows[0]["n"] == int((ev.split == "test_heldout").sum())
+    assert tag_rows[0]["delta"] == pytest.approx(tag_rows[0]["auc_a"] - tag_rows[0]["auc_b"])
+    assert tag_rows[0]["delta_lo"] <= tag_rows[0]["delta"] <= tag_rows[0]["delta_hi"]
+    md = (doc / "slices.md").read_text()
+    assert "### Toy / test / by severity" in md and "symmetric Δ [95% CI]" in md
+    rows = {r["variant"]: r for r in data["Toy"]["metrics"]}
+    assert rows["symmetric"]["within_city_source"].startswith("predictions")
+    assert "test_delta" not in rows["baseline"]
+    d = rows["symmetric"]
+    assert d["heldout_delta_lo"] <= d["heldout_delta"] <= d["heldout_delta_hi"]
+    assert d["test_delta_lo"] <= d["test_delta"] <= d["test_delta_hi"]
+    text = (doc / "variants.md").read_text()
+    assert "Held-out deployments" in text and "Δ held-out [95% CI]" in text

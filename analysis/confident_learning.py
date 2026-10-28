@@ -29,10 +29,14 @@ byte the same, so every variant is scored on the same rows as the round-3 baseli
 - ``prior``: what each rule does to the deployment prior (``data_generation.deployment_prior_entry``: the
   pre-downsampling class counts of human-authored labels meeting the rule, from the cached rawLabels), for the
   second question of https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56.
-- ``report``: one table per label type from the ``evaluate.py`` outputs of the baseline (``metrics.json``) and of
-  each variant (``metrics_<variant>.json``), plus the train-row accounting of every variant, and, when a private
-  expert-rated file is given, how the dropped or flagged rows agree with the expert (aggregates only; the per-row
-  file is never written into the repo).
+- ``report``: one table per label type from the ``evaluate.py`` outputs of the baseline (``metrics.json``,
+  ``predictions.csv``) and of each variant (``metrics_<variant>.json``, ``predictions_<variant>.csv``): test and
+  held-out AUC, the within-city AUC of ``docs/retrain-2026-10.md`` (from the predictions, via
+  ``analysis/retrain_report.py``), the hard slice, recall at precision 0.92; the AUC per held-out deployment
+  (private ones lettered as in the round-3 report); the severity x tag slices of every variant against the
+  baseline (``analysis/slices.py`` paired panorama bootstrap, ``slices.md``); the train-row accounting of every
+  variant; and, when a private expert-rated file is given, how the dropped or flagged rows agree with the expert
+  (aggregates only; the per-row file is never written into the repo).
 
 Every variant split is written by the same writer, keeps the manifest columns as strings exactly as read, and is
 deterministic (sorted by ``label_uid``; the fold shuffle is seeded). Crop paths are left relative, so a variant
@@ -465,7 +469,7 @@ def within_city_auc(m, split):
     """Within-city AUC of ``split`` from evaluate.py's ``--per-city`` block (cities with at least ``--min-city-n``
     rows), and the number of cities: the per-city AUCs averaged with weights n_incorrect x n_correct, the
     definition of docs/retrain-2026-10.md, which a score that only separates deployments cannot raise."""
-    cities = (m.get("per_city") or {}).get(split) or {}
+    cities = ((m.get("per_city") or {}).get(split) or {}).get("cities") or {}
     aucs, weights = [], []
     for v in cities.values():
         if not isinstance(v, dict) or v.get("auc") is None:
@@ -494,9 +498,157 @@ def redact_cities(records, public, key="city", other="other (private deployments
     return sorted(kept, key=lambda r: -r["share"])
 
 
-def variant_rows(data_dir, label_type, variants):
-    """Rows of the comparison table for one label type: the baseline and each variant with a metrics file."""
+PRED_JOIN_COLUMNS = ["label_uid", "city", "pano_id", "severity", "tags"]
+
+
+def load_predictions(data_dir, label_type, name, split_df):
+    """``evaluate.py``'s ``predictions.csv`` (baseline) or ``predictions_<name>.csv`` joined with the split's city,
+    panorama and slice columns (so ``analysis/slices.py`` can slice it); None when the file is absent."""
+    suffix = "" if name == "baseline" else f"_{name}"
+    path = os.path.join(data_dir, label_type, f"predictions{suffix}.csv")
+    if not os.path.exists(path):
+        return None
+    pred = pd.read_csv(path, dtype={"label_uid": str, "split": str, "true": str})
+    m = pred.merge(split_df[PRED_JOIN_COLUMNS], on="label_uid", how="left", validate="one_to_one")
+    if m["city"].isna().any():
+        raise ValueError(f"{path}: {int(m['city'].isna().sum())} predictions have no row in split.csv")
+    return m
+
+
+def within_city_from_predictions(pred, split, min_n=10):
+    """The within-city AUC of ``docs/retrain-2026-10.md`` on one split of a joined predictions frame: per-deployment
+    AUCs averaged with weights n_incorrect x n_correct over deployments with both classes and at least ``min_n``
+    labels (``analysis/retrain_report.within_city_auc``). ``(auc or None, n_cities)``."""
+    from analysis import retrain_report as rr  # imported here: it pulls in matplotlib, which the GPU steps never need
+    p = pred[pred["split"] == split]
+    if p.empty:
+        return None, 0
+    auc, n = rr.within_city_auc(p["true"] == "incorrect", p["p_incorrect"], p["city"], min_n)
+    return (None if np.isnan(auc) else float(auc)), int(n)
+
+
+def heldout_rows(preds, public, min_n=10):
+    """AUC per held-out deployment for every model in ``preds`` (``{name: joined predictions}``). Deployments are
+    named as in the round-3 report: public ones by ``city_id``, private ones lettered (``retrain_report.heldout_names``,
+    a US deployment's ``city_id`` ends in a state code). One record per deployment: ``deployment``, ``n``,
+    ``n_incorrect`` and one AUC per model (None under ``min_n`` labels or with one class)."""
+    from analysis import retrain_report as rr
+    from sklearn.metrics import roc_auc_score
+    held = {name: p[p["split"] == "test_heldout"] for name, p in preds.items()}
+    cities = sorted(set().union(*[set(h["city"]) for h in held.values()])) if held else []
+    us = {c for c in cities if len(c.split("-")[-1]) == 2 and c.split("-")[-1].isalpha()}
+    names = rr.heldout_names(cities, public, us)
     rows = []
+    for c in sorted(cities, key=lambda c: names[c]):
+        row = {"deployment": names[c]}
+        for name, h in held.items():
+            g = h[h["city"] == c]
+            y = (g["true"] == "incorrect").to_numpy()
+            row.setdefault("n", int(len(g)))
+            row.setdefault("n_incorrect", int(y.sum()))
+            ok = len(g) >= min_n and 0 < y.sum() < len(g)
+            row[name] = float(roc_auc_score(y, g["p_incorrect"])) if ok else None
+        rows.append(row)
+    return rows
+
+
+def slice_deltas(preds, variants, min_n=None, n_boot=None, seed=0):
+    """Severity and tag slices of each variant against the baseline on the same rows, test and held-out:
+    ``analysis/slices.paired_delta_table`` (AUC of both, the difference, and its 95% interval from resampling whole
+    panoramas, the same resample for both models). Records with ``split``, ``by``, ``variant`` and the table's
+    columns; empty without baseline predictions."""
+    from analysis import slices as sl
+    base = preds.get("baseline")
+    out = []
+    if base is None:
+        return out
+    min_n = sl.MIN_N if min_n is None else min_n
+    n_boot = sl.N_BOOT if n_boot is None else n_boot
+    for name in variants:
+        p = preds.get(name)
+        if p is None:
+            continue
+        for split in ("test", "test_heldout"):
+            part = p[p["split"] == split]
+            if part.empty:
+                continue
+            for by in sl.BY:
+                t = sl.paired_delta_table(part, base, by, min_n, n_boot, seed)
+                out += [{"split": split, "by": by, "variant": name, **r} for r in t.to_dict("records")]
+    return out
+
+
+def overall_deltas(preds, variants, n_boot=None, seed=0):
+    """Each variant's AUC minus the baseline's on the whole test and held-out splits, with the paired panorama
+    bootstrap of the slices (``analysis/slices.boot_indices``, the same resample scored by both models).
+    ``{(variant, split): {"delta", "delta_lo", "delta_hi"}}``; empty without baseline predictions."""
+    from analysis import slices as sl
+    from sklearn.metrics import roc_auc_score
+    base = preds.get("baseline")
+    out = {}
+    if base is None:
+        return out
+    n_boot = sl.N_BOOT if n_boot is None else n_boot
+    for name in variants:
+        p = preds.get(name)
+        if p is None:
+            continue
+        for split in ("test", "test_heldout"):
+            part = p[p["split"] == split]
+            if part.empty:
+                continue
+            m = part.merge(base[["label_uid", "p_incorrect"]], on="label_uid", suffixes=("", "_b"), validate="one_to_one")
+            y = (m["true"] == "incorrect").to_numpy()
+            a, b = m["p_incorrect"].to_numpy(), m["p_incorrect_b"].to_numpy()
+            rec = {"delta": float(roc_auc_score(y, a) - roc_auc_score(y, b)), "delta_lo": None, "delta_hi": None}
+            if n_boot:
+                idxs = sl.boot_indices(y, m["pano_id"], n_boot, np.random.default_rng(sl.slice_seed(seed, f"{name}:{split}")))
+                vals = [roc_auc_score(y[i], a[i]) - roc_auc_score(y[i], b[i]) for i in idxs]
+                if vals:
+                    rec["delta_lo"], rec["delta_hi"] = (float(v) for v in np.percentile(vals, [2.5, 97.5]))
+            out[(name, split)] = rec
+    return out
+
+
+def _delta_cell(r):
+    if r is None or r.get("delta") is None or np.isnan(r["delta"]):
+        return ""
+    cell = f"{r['delta']:+.3f}"
+    if r.get("delta_lo") is not None and not np.isnan(r["delta_lo"]):
+        cell += f" [{r['delta_lo']:+.3f}, {r['delta_hi']:+.3f}]"
+    return cell
+
+
+def slices_markdown(label_type, records, variants):
+    """``slice_deltas`` records as one table per (split, by): the slice, its rows, the baseline AUC and each
+    variant's AUC difference with its interval."""
+    lines = []
+    for split in ("test", "test_heldout"):
+        for by in ("severity", "tag"):
+            rs = [r for r in records if r["split"] == split and r["by"] == by]
+            if not rs:
+                continue
+            order = list(dict.fromkeys(r["slice"] for r in rs))
+            lines += [f"### {label_type} / {split} / by {by}", "",
+                      f"| {by.capitalize()} | n | incorrect | baseline AUC | "
+                      + " | ".join(f"{v} Δ [95% CI]" for v in variants) + " |",
+                      "|---|---:|---:|---:|" + "---:|" * len(variants)]
+            for name in order:
+                by_variant = {r["variant"]: r for r in rs if r["slice"] == name}
+                first = next(iter(by_variant.values()))
+                cells = [str(name), f"{first['n']:,}", f"{first['n_incorrect']:,}", _fmt(first.get("auc_b"))]
+                cells += [_delta_cell(by_variant.get(v)) for v in variants]
+                lines.append("| " + " | ".join(cells) + " |")
+            lines.append("")
+    return "\n".join(lines)
+
+
+def variant_rows(data_dir, label_type, variants, preds=None, within_min_n=10):
+    """Rows of the comparison table for one label type: the baseline and each variant with a metrics file. The
+    within-city AUC comes from the joined predictions in ``preds`` (the round-3 definition, cities with at least
+    ``within_min_n`` labels) when the model has them, else from the ``--per-city`` block of ``metrics.json`` (cities
+    with at least its ``min_city_n`` rows, a coarser set); ``within_city_source`` says which."""
+    rows, preds = [], preds or {}
     for name in ("baseline", *variants):
         suffix = "" if name == "baseline" else f"_{name}"
         path = os.path.join(data_dir, label_type, f"metrics{suffix}.json")
@@ -505,11 +657,18 @@ def variant_rows(data_dir, label_type, variants):
             continue
         with open(path) as f:
             m = json.load(f)
-        wc_t, n_t = within_city_auc(m, "test")
-        wc_h, n_h = within_city_auc(m, "test_heldout")
+        if name in preds:
+            wc_t, n_t = within_city_from_predictions(preds[name], "test", within_min_n)
+            wc_h, n_h = within_city_from_predictions(preds[name], "test_heldout", within_min_n)
+            source = f"predictions (cities with >= {within_min_n} labels)"
+        else:
+            wc_t, n_t = within_city_auc(m, "test")
+            wc_h, n_h = within_city_auc(m, "test_heldout")
+            source = "metrics.json per_city block"
         rows.append({"variant": name, "test_auc": _metric(m, "test", "auc"),
                      "heldout_auc": _metric(m, "test_heldout", "auc"),
                      "within_city_test": wc_t, "within_city_heldout": wc_h, "cities_test": n_t, "cities_heldout": n_h,
+                     "within_city_source": source,
                      "hard_auc": _metric(m, "hard", "auc"), "hard_n": (m.get("hard") or {}).get("n"),
                      "incorrect_recall_p92_test": _metric(m, "test", "recall_at_precision:incorrect:0.92"),
                      "incorrect_recall_p92_heldout": _metric(m, "test_heldout", "recall_at_precision:incorrect:0.92"),
@@ -570,26 +729,37 @@ def _fmt(v):
     return f"{v:.3f}" if isinstance(v, float) else str(v)
 
 
-def report_markdown(label_type, metric_rows, train_rows, agreement_rows=None):
+def report_markdown(label_type, metric_rows, train_rows, agreement_rows=None, heldout=None, within_min_n=10):
     lines = [f"### {label_type}", "",
-             "| variant | train rows | dropped | flipped | test AUC | within-city test | held-out AUC | "
-             "within-city held-out | hard AUC (n) | incorrect R@P0.92 test | incorrect R@P0.92 held-out | "
-             "correct R@P0.92 test |",
-             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+             "| variant | train rows | dropped | flipped | test AUC | Δ test [95% CI] | within-city test | "
+             "held-out AUC | Δ held-out [95% CI] | within-city held-out | hard AUC (n) | incorrect R@P0.92 test | "
+             "incorrect R@P0.92 held-out | correct R@P0.92 test |",
+             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     train_by = {r["variant"]: r for r in train_rows}
     for r in metric_rows:
         t = train_by.get(r["variant"], {})
         if "missing" in r:
             lines.append(f"| {r['variant']} | {_fmt(t.get('train'))} | {_fmt(t.get('dropped'))} | "
-                         f"{_fmt(t.get('flipped'))} | not run | | | | | | | |")
+                         f"{_fmt(t.get('flipped'))} | not run | | | | | | | | | |")
             continue
         hard = f"{_fmt(r['hard_auc'])} ({r['hard_n']})" if r.get("hard_n") else "—"
+        d_test = _delta_cell({"delta": r.get("test_delta"), "delta_lo": r.get("test_delta_lo"),
+                              "delta_hi": r.get("test_delta_hi")} if "test_delta" in r else None)
+        d_held = _delta_cell({"delta": r.get("heldout_delta"), "delta_lo": r.get("heldout_delta_lo"),
+                              "delta_hi": r.get("heldout_delta_hi")} if "heldout_delta" in r else None)
         lines.append("| " + " | ".join([
             r["variant"], _fmt(t.get("train")), _fmt(t.get("dropped")), _fmt(t.get("flipped")),
-            _fmt(r["test_auc"]), f"{_fmt(r['within_city_test'])} ({r['cities_test']})",
-            _fmt(r["heldout_auc"]), f"{_fmt(r['within_city_heldout'])} ({r['cities_heldout']})", hard,
+            _fmt(r["test_auc"]), d_test, f"{_fmt(r['within_city_test'])} ({r['cities_test']})",
+            _fmt(r["heldout_auc"]), d_held, f"{_fmt(r['within_city_heldout'])} ({r['cities_heldout']})", hard,
             _fmt(r["incorrect_recall_p92_test"]), _fmt(r["incorrect_recall_p92_heldout"]),
             _fmt(r["correct_recall_p92_test"])]) + " |")
+    if heldout:
+        models = [k for k in heldout[0] if k not in ("deployment", "n", "n_incorrect")]
+        lines += ["", f"Held-out deployments, AUC per model (blank under {within_min_n} labels or with one class):", "",
+                  "| deployment | n | incorrect | " + " | ".join(models) + " |", "|---|---:|---:|" + "---:|" * len(models)]
+        for h in heldout:
+            lines.append(f"| {h['deployment']} | {h['n']:,} | {h['n_incorrect']:,} | "
+                         + " | ".join(_fmt(h[k]) for k in models) + " |")
     if agreement_rows:
         lines += ["", "Expert-rated train rows (aggregates; the rated file stays private):", "",
                   "| variant | rated train rows | target = expert | rows touched | of which expert overturns | "
@@ -610,13 +780,27 @@ def cmd_report(args):
             raise SystemExit("--gold needs label_uid and verdict columns")
     public = set(c.strip() for c in (args.public_cities or "").split(",") if c.strip())
     os.makedirs(args.out, exist_ok=True)
-    tables, everything = [], {"_public_cities": sorted(public)}
+    tables, slice_tables, everything = [], [], {"_public_cities": sorted(public)}
     for lt in label_types:
-        metric_rows = variant_rows(args.data_dir, lt, variants)
+        split_df = read_split(os.path.join(args.data_dir, lt, "split.csv"))
+        preds = {name: load_predictions(args.data_dir, lt, name, split_df) for name in ("baseline", *variants)}
+        preds = {k: v for k, v in preds.items() if v is not None}
+        metric_rows = variant_rows(args.data_dir, lt, variants, preds, args.within_min_n)
+        deltas = overall_deltas(preds, variants, args.n_boot, args.seed)
+        for r in metric_rows:
+            for split, key in (("test", "test"), ("test_heldout", "heldout")):
+                d = deltas.get((r["variant"], split))
+                if d:
+                    r[f"{key}_delta"], r[f"{key}_delta_lo"], r[f"{key}_delta_hi"] = d["delta"], d["delta_lo"], d["delta_hi"]
         train_rows = train_accounting(args.data_dir, lt, variants)
         agreement = expert_agreement(args.data_dir, lt, variants, gold) if gold is not None else None
-        everything[lt] = {"metrics": metric_rows, "train": train_rows, "expert": agreement}
-        tables.append(report_markdown(lt, metric_rows, train_rows, agreement))
+        heldout = heldout_rows(preds, public, args.within_min_n) if preds else []
+        slices = slice_deltas(preds, variants, args.slice_min_n, args.n_boot, args.seed)
+        everything[lt] = {"metrics": metric_rows, "train": train_rows, "expert": agreement, "heldout": heldout,
+                          "slices": slices}
+        tables.append(report_markdown(lt, metric_rows, train_rows, agreement, heldout, args.within_min_n))
+        if slices:
+            slice_tables.append(slices_markdown(lt, slices, [v for v in variants if v in preds]))
         flag_path = os.path.join(args.data_dir, lt, "cl", "flag_summary.json")
         if os.path.exists(flag_path):
             with open(flag_path) as f:
@@ -631,6 +815,14 @@ def cmd_report(args):
     with open(os.path.join(args.out, "variants.json"), "w") as f:
         json.dump(everything, f, indent=2, default=float)
         f.write("\n")
+    if slice_tables:
+        with open(os.path.join(args.out, "slices.md"), "w") as f:
+            f.write("# Severity and tag slices: each variant against the round-3 baseline\n\n"
+                    "AUC of the incorrect score on the same rows; Δ = variant − baseline with a 95% interval from "
+                    "resampling whole panoramas, the same resample applied to both models (`analysis/slices.py`). "
+                    "Blank under 30 labels or when the smaller class has fewer than 8. The intervals are not "
+                    "corrected for the number of slices: at 95%, about one cell in twenty excludes zero by chance.\n\n"
+                    + "\n".join(slice_tables))
     print(text)
     return 0
 
@@ -730,7 +922,12 @@ def build_parser():
     t.add_argument("--public-cities", default="",
                    help="comma list of the deployments the live /v3/api/cities lists as public at run time; every "
                         "other deployment is pooled as 'other (private deployments)' in the published flag shares")
-    t.add_argument("--out", required=True, help="directory for variants.md and variants.json")
+    t.add_argument("--within-min-n", type=int, default=10,
+                   help="labels a deployment needs to count in the within-city AUC and the held-out table")
+    t.add_argument("--slice-min-n", type=int, default=None, help="labels a severity or tag slice needs (slices.py default)")
+    t.add_argument("--n-boot", type=int, default=None, help="panorama resamples per slice interval (slices.py default)")
+    t.add_argument("--seed", type=int, default=0)
+    t.add_argument("--out", required=True, help="directory for variants.md, variants.json and slices.md")
     t.set_defaults(func=cmd_report)
 
     q = sub.add_parser("prior", help="deployment prior counts under the margin rule and each stricter rule (#56)")
