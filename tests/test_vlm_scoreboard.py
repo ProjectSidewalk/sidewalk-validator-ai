@@ -352,17 +352,38 @@ def test_slice_names_and_rows_on_a_small_frame(monkeypatch):
                       "tags": ['["a","b"]', '["a"]', '["a","b"]', '["a","b"]', '["b"]', "[]", '["c"]', '["b"]']})
     assert sb.slice_names(s, "severity") == {"CurbRamp": ["1", "2", "(none)"]}
     assert sb.slice_names(s, "tag") == {"CurbRamp": ["b", "a", "(none)"]}    # most common first; "c" is too thin
-    legs = {"good": s.assign(p_incorrect=s.y * 0.8 + 0.1), "bad": s.assign(p_incorrect=1 - (s.y * 0.8 + 0.1))}
-    s = s.assign(city=["p", "p", "q", "q", "p", "q", "p", "q"], split=["test"] * 4 + ["test_heldout"] * 4)
-    assert sb.slice_names(s, "tag") == {"CurbRamp": ["b", "a", "(none)"]}    # most common first; "c" is too thin
+    # tag "a" (rows 0-3) is all test, three of its four crops in city p
+    s = s.assign(city=["p", "p", "p", "q", "p", "q", "q", "q"], split=["test"] * 4 + ["test_heldout"] * 4)
     legs = {"good": s.assign(p_incorrect=s.y * 0.8 + 0.1), "bad": s.assign(p_incorrect=1 - (s.y * 0.8 + 0.1))}
     rows = pd.DataFrame(sb.slice_rows(legs, s, None, "tag", n_boot=20, seed=1, within_min_n=2))
     a = rows[rows.tag == "a"].set_index("leg")
     assert a.loc["good", "auc"] == 1.0 and a.loc["bad", "auc"] == 0.0 and a.loc["good", "n"] == 4
-    assert a.loc["good", "auc_lo"] == 1.0 and a.loc["bad", "auc_hi"] == 0.0
-    assert a.loc["good", "top_deployment_share"] == 0.5 and a.loc["good", "within_city_auc"] == 1.0
+    assert a.loc["good", "top_deployment_share"] == 0.75
+    assert a.loc["good", "auc_test"] == 1.0 and np.isnan(a.loc["good", "auc_test_heldout"])
+    assert a.loc["good", "n_test"] == 4 and a.loc["good", "n_test_heldout"] == 0
+    assert a.loc["good", "within_city_auc"] == 1.0 and a.loc["good", "n_cities"] == 1   # q has one crop of "a"
+    rows = pd.DataFrame(sb.slice_rows(legs, s, None, "tag", n_boot=20, seed=1))     # default: cities need 10 rows
+    assert np.isnan(rows.within_city_auc).all()
     assert rows.n_train.isna().all()                               # no train rows staged
     assert np.isnan(rows[rows.tag == "(none)"].auc).all()          # one crop: blank
+
+
+def test_slice_interval_is_the_label_bootstrap_and_ignores_row_order():
+    rng = np.random.default_rng(5)
+    y = np.r_[np.zeros(40), np.ones(40)].astype(int)
+    s = pd.DataFrame({"label_uid": [f"x:{i:03d}" for i in range(80)], "label_type": "CurbRamp", "city": "p",
+                      "split": np.where(np.arange(80) % 2, "test", "test_heldout"), "y": y, "severity": 2,
+                      "tags": "[]"})
+    m = s.assign(p_incorrect=rng.random(80) + 0.4 * y)
+    rows = sb.slice_rows({"m": m, "shuffled": m.sample(frac=1, random_state=1)}, s, None, "severity", 200, 7)
+    r, sh = rows
+    lo, hi = sb.ci(sb.boot_auc(y, m.p_incorrect, 200, sb._slice_rng(7, "severity", "CurbRamp", "2"))[:, 0])
+    assert (r["auc_lo"], r["auc_hi"]) == (lo, hi) and lo < r["auc"] < hi
+    assert (sh["auc_lo"], sh["auc_hi"]) == (lo, hi)                # same draws whatever order the leg's rows are in
+    for sp in sb.SPLITS:                                           # per split: that split's crops only
+        k = (s.split == sp).to_numpy()
+        assert r[f"auc_{sp}"] == pytest.approx(sb.auc(y[k], m.p_incorrect[k])) and r[f"n_{sp}"] == 40
+    assert r["auc_test"] != pytest.approx(r["auc_test_heldout"])
 
 
 def test_slice_auc_needs_enough_of_each_class(monkeypatch):
@@ -370,8 +391,10 @@ def test_slice_auc_needs_enough_of_each_class(monkeypatch):
     monkeypatch.setattr(sb, "SLICE_MIN_CLASS", 2)
     s = pd.DataFrame({"label_uid": [f"x:{i}" for i in range(6)], "label_type": "CurbRamp", "city": "p",
                       "split": "test", "y": [1, 1, 1, 1, 1, 0], "severity": 1, "tags": "[]"})
-    r = sb.slice_rows({"m": s.assign(p_incorrect=np.linspace(0.9, 0.1, 6))}, s, None, "severity", n_boot=10)[0]
+    r = sb.slice_rows({"m": s.assign(p_incorrect=np.linspace(0.9, 0.1, 6))}, s, None, "severity", n_boot=10,
+                      within_min_n=2)[0]
     assert r["n"] == 6 and np.isnan(r["auc"]) and np.isnan(r["auc_test"])    # one correct crop: no AUC
+    assert np.isnan(r["within_city_auc"])                         # nor within city, though the city has 6 rows
     tr = pd.DataFrame({"label_type": ["CurbRamp"], "label_class": ["correct"], "severity": [1], "tags": ["[]"]})
     r = sb.slice_rows({"m": s.assign(p_incorrect=0.5)}, s, tr, "severity", n_boot=10)[0]
     assert r["n_train"] == 1
@@ -404,6 +427,50 @@ def test_check_catches_an_edited_slice_cell_in_both_modes(board, monkeypatch):
     with pytest.raises(SystemExit):
         sb.main(base + ["--check"])
     p.write_text(good)
+
+
+@pytest.mark.parametrize("column, delta", [("incorrect_share", 0.001), ("n_test", 1)])
+def test_ci_check_runs_the_consistency_checks(board, column, delta):
+    """Edits the doc tables do not show (a share off by 0.001 still renders as the same %, n_test is not shown):
+    only consistency_problems can catch them in CI mode."""
+    ci = [a if a != str(board["stage"]) else str(board["stage"]) + "-absent" for a in board["base"]]
+    p = board["out"] / "by_severity.csv"
+    good = p.read_text()
+    df = pd.read_csv(p, dtype={"severity": str}, keep_default_na=False, na_values=[""])
+    df.loc[0, column] = df.loc[0, column] + delta
+    df.to_csv(p, index=False, float_format=sb.FLOAT)
+    with pytest.raises(SystemExit):
+        sb.main(ci + ["--check"])
+    p.write_text(good)
+    sb.main(ci + ["--check"])
+
+
+def test_consistency_problems_each_branch():
+    ok = pd.DataFrame({"leg": ["a"], "auc": [0.7], "auc_lo": [0.6], "auc_hi": [0.8], "n": [10], "n_incorrect": [4],
+                       "incorrect_share": [0.4], "n_test": [6], "n_test_heldout": [4]})
+    assert sb.consistency_problems({"by_tag": ok}) == []
+    assert "interval" in sb.consistency_problems({"by_tag": ok.assign(auc=0.9)})[0]
+    assert "incorrect_share" in sb.consistency_problems({"by_tag": ok.assign(incorrect_share=0.5)})[0]
+    assert "sum to n" in sb.consistency_problems({"by_tag": ok.assign(n_test=7)})[0]
+
+
+def test_stage_writes_train_rows_without_ids(tmp_path):
+    run = tmp_path / "run"
+    for k, t in enumerate(sb.LABEL_TYPES):
+        os.makedirs(run / t)
+        rows = [{"label_uid": f"c:{k}{i:03d}", "city": "c", "label_type": t, "label_class": ["correct", "incorrect"][i % 2],
+                 "split": ["train", "train", "train", "test", "test_heldout"][i % 5], "severity": 1 + i % 3,
+                 "tags": '["x"]', "status": "ok" if i != 0 else "missing", "crop_path": f"{i}.webp"} for i in range(20)]
+        d = pd.DataFrame(rows)
+        d.to_csv(run / t / "split.csv", index=False)
+        held = d[d.split.isin(sb.SPLITS)]
+        held[["label_uid"]].assign(p_incorrect=0.5).to_csv(run / t / "predictions.csv", index=False)
+    stage = tmp_path / "stage"
+    sb.main(["stage", "--run-dir", str(run), "--scores-dir", str(stage)])
+    tr = pd.read_csv(stage / "train" / "CurbRamp.csv")
+    assert list(tr.columns) == ["label_type", "label_class", "severity", "tags"]   # no label_uid, no city
+    assert len(tr) == 11                                          # 12 train rows, one not status ok
+    assert {"severity", "tags"} <= set(pd.read_csv(stage / "splits" / "CurbRamp.csv").columns)
 
 
 def test_paired_rows_use_the_same_draws_for_both_legs():

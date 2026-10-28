@@ -496,9 +496,9 @@ def slice_names(splits, by):
     """``{Type: [slice, ...]}`` in row order: every severity present in ascending order, then ``(none)``; every tag
     with at least ``SLICE_MIN_N`` crops, most common first, then ``(none)`` (selected on counts only, never scores).
 
-    >>> s = pd.DataFrame({"label_type": "CurbRamp", "y": 0, "severity": [5, 1, None], "tags": "[]"})
+    >>> s = pd.DataFrame({"label_type": "CurbRamp", "y": 0, "severity": [10, 2, None], "tags": "[]"})
     >>> slice_names(s, "severity")
-    {'CurbRamp': ['1', '5', '(none)']}
+    {'CurbRamp': ['2', '10', '(none)']}
     """
     out = {}
     d = with_slice(splits, by)

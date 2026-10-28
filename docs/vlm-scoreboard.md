@@ -319,8 +319,9 @@ pooled ones.
 **Read the largest-deployment and within-city columns before a pooled cell.** A slice drawn mostly from a few
 deployments with different incorrect shares can score near chance pooled while ranking well inside each deployment
 (the city–class confound), or the reverse. Obstacle parked scooter/motorcycle is the clearest case: production is
-near chance pooled but clearly above it on test deployments and within city. Obstacle parked bike goes the other way:
-round 3 looks strong pooled and is near chance within city.
+near chance pooled but above it on test deployments and within city (one deployment). Within-city AUC has its own
+limit: for Obstacle parked bike, round 3's within-city value rests almost entirely on one held-out deployment with
+three correct crops, so it says little either way.
 
 What the slices show at this build (the numbers are in the tables, which regenerate):
 
@@ -328,8 +329,9 @@ What the slices show at this build (the numbers are in the tables, which regener
   to it elsewhere, and slightly ahead in a few CurbRamp, NoCurbRamp and Crosswalk slices. Crosswalk severity 3 (almost all incorrect) and Crosswalk with no severity are too
   thin to score.
 - **The VLMs' weakest severity slices are Obstacle severities 1 and 2**, and NoCurbRamp severity 2 and no severity.
-- **Round 3's weakest tags transfer badly to new deployments.** Obstacle stairs is below chance for round 3 and
-  production alike (few crops, mostly one deployment, 35 training crops). SurfaceProblem brick/cobblestone,
+- **Round 3's weakest tags are rare or transfer badly to new deployments.** Obstacle stairs is at or below chance
+  for round 3 and production alike (intervals include 0.5; few crops, almost all from held-out deployments, 35
+  training crops). SurfaceProblem brick/cobblestone,
   sand/gravel and utility panel are strong on test deployments but fall on held-out ones, and the first two stay
   low within city; for most SurfaceProblem tags (cracks is the exception), held-out AUC trails test AUC.
 - **Thin training slices:** Obstacle stairs, mailbox and outdoor dining area (one training crop; nearly all of
