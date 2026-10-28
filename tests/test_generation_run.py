@@ -126,7 +126,7 @@ def test_main_records_tilt_depth_and_crop_size(stubbed):
     run = json.loads((stubbed["tmp"] / "out" / "CurbRamp" / "generation_run.json").read_text())
     assert run["settings"] == {"tilt_beta": 0.95, "depth_encoder": "vitb", "depth_dataset": "vkitti",
                                "renderer": "numpy", "include_ai_labels": True,
-                               "package_source": dg.package_source(), "source_beta": {"mapillary": 1.0,
+                               "package_source": dg.package_source(), "source_beta": {"mapillary": 0.0,
                                                                                       "panoramax": 1.0},
                                "mapillary_api": False}
     assert run["pano_store"] == str(stubbed["store"].resolve())  # provenance, outside the resume settings
@@ -567,18 +567,27 @@ def test_store_needs_directories_only_for_cities_with_selected_labels(stubbed):
     assert (m.status == "ok").all()
 
 
+# Real Mapillary pano_ids are all digits (issue #72 review B1: read_csv made them int64 and the run crashed).
+MLY_DB, MLY_NOPOSE, MLY_AI = "1792391791667719", "1065203879101102", "2001774006895864"
+
+
 def non_gsv_rows():
-    """One label per pose path of crop_pose.pose_for_row (issue #72), each on its own panorama."""
-    return [label(1, 4, 0),                                                              # gsv_db
-            {**label(2, 0, 3, pano="mdb"), "pano_source": "mapillary", "camera_pitch": 2.0,
-             "camera_roll": -6.0},                                                       # mapillary_db
-            {**label(3, 4, 0, pano="mapi"), "pano_source": "mapillary", "camera_pitch": None},  # API, if a token
+    """One label per pose path of crop_pose.pose_for_row (issue #72), each on its own panorama, plus one label on an
+    unsupported provider."""
+    return [label(1, 4, 0, pano="gsvpano"),                                              # gsv_db
+            {**label(2, 0, 3, pano=MLY_DB), "pano_source": "mapillary", "camera_pitch": 2.0,
+             "camera_roll": -6.0},                                                       # mapillary_db, beta 0
+            {**label(3, 4, 0, pano=MLY_NOPOSE), "pano_source": "mapillary", "camera_pitch": None},  # API, if a token
             {**label(4, 0, 3, pano="pmx"), "pano_source": "panoramax", "camera_pitch": -4.0,
-             "camera_roll": 3.0},                                                        # panoramax_db
+             "camera_roll": 3.0},                                                        # panoramax_db, beta 1
             {**label(5, 4, 0, pano="pzero"), "pano_source": "panoramax", "camera_pitch": 0,
              "camera_roll": 0},                                                          # 0/0: unknown
-            {**label(6, 0, 3, pano="mai", user=AI), "pano_source": "mapillary", "camera_pitch": 3.0,
-             "camera_roll": 1.0}]                                                        # AI: rig frame
+            {**label(6, 0, 3, pano=MLY_AI, user=AI), "pano_source": "mapillary", "camera_pitch": 3.0,
+             "camera_roll": 1.0},                                                        # AI: rig frame
+            {**label(7, 4, 0, pano="ppitch"), "pano_source": "panoramax", "camera_pitch": 5.0,
+             "camera_roll": None},                                                       # pitch only: offset
+            {**label(8, 4, 0, pano="i3d"), "pano_source": "infra3d", "camera_pitch": 1.0},  # dropped
+            label(9, 0, 3, pano="gsv2")]  # a fourth incorrect label, so the downsample keeps all four correct ones
 
 
 @pytest.fixture
@@ -588,79 +597,159 @@ def non_gsv(tmp_path, monkeypatch):
     make_store(tmp_path, rows)
     monkeypatch.setattr(dg, "PANO_SIZE", (2048, 1024))
     monkeypatch.setattr(dg, "load_depth_model", lambda e, d: FakeDepth())
-    return tmp_path
+    calls = {}
+    real = dg.create_perspective_crop
+
+    def spy(depth_model, pano_rgb, x, y, **kw):
+        calls[round(x * 8192)] = {"y": y, **{k: kw[k] for k in ("camera_pitch", "camera_roll", "apply_tilt", "beta")}}
+        return real(depth_model, pano_rgb, x, y, **kw)
+    monkeypatch.setattr(dg, "create_perspective_crop", spy)
+    return tmp_path, calls
 
 
 def test_non_gsv_labels_are_kept_and_posed_per_provider(non_gsv, capsys):
-    """No label is dropped for its provider any more; each one's pose, sign and beta are in the manifest, and the run
-    record and summary count them per provider."""
-    m = run_main(non_gsv).set_index("label_uid")
-    assert (m.status == "ok").all() and len(m) == 6
+    """No Mapillary or Panoramax label is dropped for its provider; each one's pose, sign, beta and click offset are
+    in the manifest, and the run record and summary count them per provider. An unsupported provider is dropped."""
+    tmp, _ = non_gsv
+    m = run_main(tmp).set_index("label_uid")
+    assert (m.status == "ok").all() and len(m) == 8 and "toy-city:8" not in m.index
     got = {uid: (r.pose_source, r.tilt_applied, r.tilt_beta) for uid, r in m.iterrows()}
-    assert got == {"toy-city:1": ("gsv_db", 1, 0.95), "toy-city:2": ("mapillary_db", 1, 1.0),
-                   "toy-city:3": ("none", 0, 1.0), "toy-city:4": ("panoramax_db", 1, 1.0),
-                   "toy-city:5": ("none", 0, 1.0), "toy-city:6": ("rig_frame", 0, 1.0)}
+    assert got == {"toy-city:1": ("gsv_db", 1, 0.95), "toy-city:2": ("mapillary_db", 0, 0.0),
+                   "toy-city:3": ("none", 0, 0.0), "toy-city:4": ("panoramax_db", 1, 1.0),
+                   "toy-city:5": ("none", 0, 1.0), "toy-city:6": ("rig_frame", 0, 0.0),
+                   "toy-city:7": ("panoramax_db", 0, 0.0), "toy-city:9": ("gsv_db", 1, 0.95)}
     # Package sign: pitch negated for both website-stored sources, roll as stored; GSV unchanged.
     assert (m.loc["toy-city:1", ["pose_pitch", "camera_pitch"]] == 2.0).all()
     assert m.loc["toy-city:2", "pose_pitch"] == -2.0 and m.loc["toy-city:2", "pose_roll"] == -6.0
     assert m.loc["toy-city:4", "pose_pitch"] == 4.0 and m.loc["toy-city:4", "pose_roll"] == 3.0
     assert m.loc["toy-city:2", "camera_pitch"] == 2.0  # the DB column itself is recorded as stored
+    assert m.loc["toy-city:7", "click_lat_offset_deg"] == 5.0 and (m.drop("toy-city:7").click_lat_offset_deg.fillna(0)
+                                                                   == 0).all()
     assert m.loc[["toy-city:3", "toy-city:5", "toy-city:6"], "pose_pitch"].isna().all()
-    run = json.loads((non_gsv / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert str(m.loc["toy-city:2", "pano_id"]) == MLY_DB  # the numeric id survived as a string
+    run = json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
     assert run["pose_counts"] == {
-        "gsv": {"gsv_db/db": 1},
-        "mapillary": {"mapillary_db/db": 1, "none/mapillary_no_db_pose_api_off": 1, "rig_frame/ai_label": 1},
-        "panoramax": {"none/panoramax_zero_pose": 1, "panoramax_db/db": 1}}
+        "gsv": {"gsv_db/db": 2},
+        "mapillary": {"mapillary_db/mapillary_click_rig_frame": 1, "none/mapillary_no_db_pose_api_off": 1,
+                      "rig_frame/ai_label": 1},
+        "panoramax": {"none/panoramax_zero_or_absent_pose": 1, "panoramax_db/level_frame_click": 1,
+                      "panoramax_db/panoramax_pitch_only_click_offset": 1}}
     summary = capsys.readouterr().out.split("Processing complete.")[1]
-    assert "dropped for unusable pano geometry (before selection): none" in summary
-    assert "'none/panoramax_zero_pose': 1" in summary
-    assert "('panoramax', 'panoramax_db'): 1" in summary
+    assert "dropped for unusable pano geometry (before selection): {'unsupported_source': 1}" in summary
+    assert "'none/panoramax_zero_or_absent_pose': 1" in summary
+    assert "('panoramax', 'panoramax_db'): 2" in summary
+
+
+def test_each_rows_pose_and_beta_reach_the_renderer(non_gsv):
+    """What create_perspective_crop is called with, per row: the per-source beta (not --tilt-beta) and pose, and the
+    Panoramax pitch-only click moved back to the rig latitude."""
+    tmp, calls = non_gsv
+    run_main(tmp, "--tilt-beta", "0.9")
+    y = 2600 / 4096
+    want = {3010: (2.0, None, True, 0.9, y),                   # GSV: --tilt-beta reaches it
+            3020: (-2.0, -6.0, True, 0.0, y),                  # Mapillary: pose known, beta 0 (rig-frame click)
+            3030: (None, None, False, 0.0, y),
+            3040: (4.0, 3.0, True, 1.0, y),                    # Panoramax, both angles: beta 1.0, not 0.9
+            3050: (None, None, False, 0.0, y),
+            3060: (None, None, False, 0.0, y),
+            3070: (-5.0, None, True, 0.0, y + 5.0 / 180),      # pitch only: latitude shifted by pers:pitch
+            3090: (2.0, None, True, 0.9, y)}
+    got = {x: (c["camera_pitch"], c["camera_roll"], c["apply_tilt"], c["beta"], c["y"]) for x, c in calls.items()}
+    assert got.keys() == want.keys()
+    for x in want:
+        assert got[x][:4] == want[x][:4] and got[x][4] == pytest.approx(want[x][4]), x
+
+
+def test_numeric_mapillary_pano_ids_beside_a_gsv_city(tmp_path, monkeypatch):
+    """A city whose every pano_id is digits (all Mapillary) next to a GSV city: the ids stay strings, so the frame
+    sorts by pano_id and the store path can take pano_id[:2] (review B1)."""
+    mly = [{**label(i, 4 if i == 1 else 0, 0 if i == 1 else 3, pano=p), "pano_source": "mapillary",
+            "camera_pitch": None} for i, p in enumerate([MLY_DB, MLY_NOPOSE, MLY_AI], start=1)]
+    gsv = [label(i, 4 if i == 1 else 0, 0 if i == 1 else 3) for i in (1, 2, 3)]
+    write_city(tmp_path, gsv)
+    pd.DataFrame(mly).to_csv(tmp_path / "mly-city.csv", index=False)
+    (tmp_path / dg.CITIES_CACHE_FILE).write_text(json.dumps({"fetched_on": "2026-10-28", "url": dg.CITIES_API,
+        "cities": [{"city_id": c, "visibility": "public", "url": f"https://sidewalk-{c}.cs.washington.edu"}
+                   for c in (CITY, "mly-city")]}))
+    store = make_store(tmp_path, gsv)
+    (store / "mly-city").mkdir()
+    for r in mly:
+        write_pano(store, "mly-city", r["pano_id"])
+    monkeypatch.setattr(dg, "PANO_SIZE", (2048, 1024))
+    monkeypatch.setattr(dg, "load_depth_model", lambda e, d: FakeDepth())
+    run_main(tmp_path)
+    m = pd.read_csv(tmp_path / "out" / "CurbRamp" / "manifest.csv", dtype=str)
+    assert (m.status == "ok").all() and len(m) == 6
+    assert set(m.loc[m.city == "mly-city", "pano_id"]) == {MLY_DB, MLY_NOPOSE, MLY_AI}
+    assert dg.load_city("mly-city", cache_dir=str(tmp_path))["pano_id"].tolist() == [MLY_DB, MLY_NOPOSE, MLY_AI]
+
+
+class _GraphSession:
+    """A stand-in for requests.Session answering the Graph API with the Richmond doctest rotation."""
+    calls = []
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        _GraphSession.calls.append((url, headers["Authorization"]))
+
+        class Resp:
+            status_code = 200
+            text = ""
+
+            def json(self):
+                return {"id": url.rsplit("/", 1)[1],
+                        "computed_rotation": [1.3857263583832, 0.71804330335161, -0.58250746512038]}
+        return Resp()
 
 
 def test_mapillary_api_pose_is_fetched_once_and_cached(non_gsv, monkeypatch, capsys):
-    """With a token, the Mapillary label without a DB pose takes the Graph API rotation; the answer is cached, so a
-    re-run makes no call. The token is read from the named variable and never printed."""
-    calls = []
-
-    class Resp:
-        status_code = 200
-        text = ""
-
-        def json(self):
-            return {"id": "mapi", "computed_rotation": [1.3857263583832, 0.71804330335161, -0.58250746512038]}
-
-    class Session:
-        def get(self, url, params=None, headers=None, timeout=None):
-            calls.append((url, headers["Authorization"]))
-            return Resp()
-    monkeypatch.setattr("requests.Session", Session)
+    """With a token, the Mapillary label without a DB pose gets the Graph API rotation as its recorded pose (crop
+    still uncorrected: beta 0); the answer is cached, so a re-run makes no call. The token is never printed."""
+    tmp, _ = non_gsv
+    _GraphSession.calls = []
+    monkeypatch.setattr("requests.Session", _GraphSession)
     monkeypatch.setattr(dg.crop_pose, "API_PAUSE_S", 0)
     monkeypatch.setenv("TOY_MLY_TOKEN", "sekrit-token")
-    m = run_main(non_gsv, "--mapillary-token-env", "TOY_MLY_TOKEN").set_index("label_uid")
-    assert calls == [("https://graph.mapillary.com/mapi", "OAuth sekrit-token")]
+    m = run_main(tmp, "--mapillary-token-env", "TOY_MLY_TOKEN").set_index("label_uid")
+    assert _GraphSession.calls == [(f"https://graph.mapillary.com/{MLY_NOPOSE}", "OAuth sekrit-token")]
     r = m.loc["toy-city:3"]
-    assert r.pose_source == "mapillary_api" and r.tilt_applied == 1
+    assert r.pose_source == "mapillary_api" and r.tilt_applied == 0 and r.tilt_beta == 0.0
     assert (round(r.pose_pitch, 4), round(r.pose_roll, 4)) == (-2.2318, -6.355)
-    cache = (non_gsv / "out" / "CurbRamp" / dg.crop_pose.MAPILLARY_CACHE_FILE).read_text()
+    cache = (tmp / "out" / "CurbRamp" / dg.crop_pose.MAPILLARY_CACHE_FILE).read_text()
     assert "sekrit" not in cache and "sekrit" not in capsys.readouterr().out
-    run = json.loads((non_gsv / "out" / "CurbRamp" / "generation_run.json").read_text())
+    run = json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
     assert run["settings"]["mapillary_api"] is True
-    run_main(non_gsv, "--mapillary-token-env", "TOY_MLY_TOKEN")
-    assert len(calls) == 1  # answered from the cache
+    run_main(tmp, "--mapillary-token-env", "TOY_MLY_TOKEN")
+    assert len(_GraphSession.calls) == 1  # answered from the cache
+
+
+def test_a_token_that_no_row_needs_does_not_invalidate_the_run(stubbed, monkeypatch, capsys):
+    """--mapillary-token-env on a run with no Mapillary label lacking a DB pose makes no call and records
+    mapillary_api false, so adding it to a resubmission keeps every crop (review S7)."""
+    tmp = stubbed["tmp"]
+    run_main(tmp)
+    monkeypatch.setattr("requests.Session", lambda: pytest.fail("no lookup was needed"))
+    monkeypatch.setenv("TOY_MLY_TOKEN", "t")
+    capsys.readouterr()
+    m = run_main(tmp, "--mapillary-token-env", "TOY_MLY_TOKEN")
+    assert (m.status == "ok").all() and "skipped (already ok)': 5" in capsys.readouterr().out
+    run = json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["settings"]["mapillary_api"] is False
 
 
 def test_mapillary_api_failures_stop_before_any_crop(non_gsv, monkeypatch):
+    tmp, _ = non_gsv
+
     class Session:
         def get(self, *a, **k):
             raise ConnectionError("down")
     monkeypatch.setattr("requests.Session", Session)
     monkeypatch.setenv("TOY_MLY_TOKEN", "t")
     with pytest.raises(SystemExit, match="1 Mapillary Graph API lookups got no answer"):
-        run_main(non_gsv, "--mapillary-token-env", "TOY_MLY_TOKEN")
-    assert not list((non_gsv / "out" / "CurbRamp").glob("*/*.webp"))
+        run_main(tmp, "--mapillary-token-env", "TOY_MLY_TOKEN")
+    assert not list((tmp / "out" / "CurbRamp").glob("*/*.webp"))
     monkeypatch.delenv("TOY_MLY_TOKEN")
     with pytest.raises(SystemExit, match="TOY_MLY_TOKEN: that environment variable is unset"):
-        run_main(non_gsv, "--mapillary-token-env", "TOY_MLY_TOKEN")
+        run_main(tmp, "--mapillary-token-env", "TOY_MLY_TOKEN")
 
 
 def test_priors_are_not_written_on_a_refused_resume(stubbed):
@@ -747,7 +836,7 @@ def test_fixed_crop_size_skips_depth_and_is_recorded(stubbed, monkeypatch):
     assert np.allclose(crop[crop.shape[0] // 2, crop.shape[1] // 2], PANO_BGR[::-1], atol=3)  # saved as RGB
     run = json.loads((stubbed["tmp"] / "out" / "CurbRamp" / "generation_run.json").read_text())
     assert run["settings"] == {"tilt_beta": 0.95, "renderer": "numpy", "include_ai_labels": True,
-                               "package_source": dg.package_source(), "source_beta": {"mapillary": 1.0,
+                               "package_source": dg.package_source(), "source_beta": {"mapillary": 0.0,
                                                                                       "panoramax": 1.0},
                                "mapillary_api": False, "fixed_crop_half_px": 300}
     assert run["fixed_crop_half_px"] == 300 and "depth_encoder" not in run  # no unused encoder in the record
