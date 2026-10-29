@@ -35,8 +35,12 @@ eval "$(conda shell.bash hook)"
 conda activate "$ENV"
 export HF_HOME="${HF_HOME:-/gscratch/makelab/$USER/hf_cache}" HF_HUB_OFFLINE=1
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
-SPLIT="$DATA/$LT/cl/$VARIANT/split.csv"
-RUN="$RUNS/$LT/$VARIANT"
+# TAG names the run and the evaluate.py outputs (default: the variant). A seed replicate sets SEED and a TAG such
+# as cl-drop-s43 so it does not overwrite the seed-42 run; VARIANT=baseline trains on the round-3 split itself.
+TAG="${TAG:-$VARIANT}"
+if [ "$VARIANT" = baseline ]; then SPLIT="$DATA/$LT/split.csv"; else SPLIT="$DATA/$LT/cl/$VARIANT/split.csv"; fi
+RUN="$RUNS/$LT/$TAG"
+KEEP_CKPT="${KEEP_CKPT:-1}"  # 0: delete the checkpoints after evaluation (seed replicates: the metrics are the product)
 [ -f "$SPLIT" ] || { echo "no $SPLIT (run confident_learning.py folds / rules / flag first)" >&2; exit 2; }
 mkdir -p "$RUN"
 case "$VARIANT" in
@@ -64,9 +68,13 @@ case "$VARIANT" in
     ;;
   *)
     BEST=$(python -c "import evaluate,sys; print(evaluate.best_checkpoint_in(sys.argv[1]))" "$RUN")
-    python -u evaluate.py --label_type "$LT" --data-dir "$DATA" --checkpoint "$BEST" --tag "$VARIANT" --per-city \
+    python -u evaluate.py --label_type "$LT" --data-dir "$DATA" --checkpoint "$BEST" --tag "$TAG" --per-city \
         || { echo "evaluate failed" >&2; exit 1; }
-    cat "$DATA/$LT/report_$VARIANT.txt"
+    cat "$DATA/$LT/report_$TAG.txt"
+    if [ "$KEEP_CKPT" = 0 ]; then
+      cp "$BEST/trainer_state.json" "$RUN/trainer_state.best.json" 2>/dev/null || true
+      rm -rf "$RUN"/checkpoint-*; echo "removed $RUN/checkpoint-*"
+    fi
     ;;
 esac
-echo "$(date) done $LT $VARIANT"
+echo "$(date) done $LT $TAG"

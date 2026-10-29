@@ -61,6 +61,10 @@ directory for checkpoints):
 ```
 DATA=/gscratch/makelab/$USER/sidewalk-validator-ai/retrain-2026-10 RUNS=/gscratch/scrubbed/$USER/cl-2026-10 \
     analysis/cl_submit.sh CurbRamp Crosswalk NoCurbRamp Obstacle SurfaceProblem
+# seed replicates of a variant and of the baseline (the seed noise), named by TAG, checkpoints deleted after evaluation:
+for LT in CurbRamp Crosswalk NoCurbRamp Obstacle SurfaceProblem; do for S in 43 44; do for V in baseline cl-drop; do
+    LT=$LT VARIANT=$V SEED=$S TAG=$V-s$S KEEP_CKPT=0 DATA=$DATA RUNS=$RUNS \
+        sbatch --job-name=cl-$LT-$V-s$S analysis/confident_learning.slurm; done; done; done
 # when every job is done (add --gold <private expert file> for the agreement counts; the file never enters the repo):
 python analysis/confident_learning.py report --data-dir $DATA --out docs/confident-learning-2026-10 \
     --public-cities "$(curl -sL https://sidewalk-sea.cs.washington.edu/v3/api/cities | python -c 'import json,sys; print(",".join(c["city_id"] for c in json.load(sys.stdin)["cities"] if c.get("visibility") == "public"))')"
