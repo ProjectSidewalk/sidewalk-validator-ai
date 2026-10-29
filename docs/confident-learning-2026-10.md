@@ -12,9 +12,9 @@ below is on the same val / test / test_heldout rows as the round-3 baseline.
 tables come from the checked-in [`confident-learning-2026-10/variants.json`](confident-learning-2026-10/variants.json),
 the rule and prior tables from the chain's `rule.json` files and [`priors.json`](confident-learning-2026-10/priors.json).
 One training seed per variant, as in round 3, then two more seeds of the baseline and of `cl-drop` for every
-type on 2026-10-28/29 (22 jobs, none failed; [`seeds.md`](confident-learning-2026-10/seeds.md)). Short version:
+type, and of `cl-flip` for SurfaceProblem, on 2026-10-28/29 (22 jobs, none failed; [`seeds.md`](confident-learning-2026-10/seeds.md)). Short version:
 dropping the rows the fold models confidently disagree with (`cl-drop`, 4–18% of the train rows) costs about half
-a hundredth on the test split and raises the AUC on the three unseen deployments for four of the five types; across
+a hundredth on the test split for three of the five types and raises the AUC on the three unseen deployments for four of the five types; across
 three seeds the direction holds in 11 of 12 same-seed pairs, but the size is about half of what the first seed
 showed (mean +0.009 to +0.020) and of the same order as the seed noise of the held-out AUC itself. The stricter
 vote rules, run without rebalancing the classes, cost AUC in distribution for every type and out of distribution
@@ -255,7 +255,7 @@ the hard slice, are in [`variants.md`](confident-learning-2026-10/variants.md).
   the hard slice is flagged and `cl-drop` drops those rows too (the hard-slice AUCs move both ways on 5–90
   labels, too few to read). The run cannot tell these apart. Three more cautions: the intervals resample
   panoramas, not deployments, and there are only three of those (CurbRamp's gain is private city A alone); the
-  seed-42 run turned out to be the most favorable of three seeds for Crosswalk, NoCurbRamp and Obstacle (next
+  seed-42 run turned out to be the most favorable of three seeds for all four types that gained (next
   section); and the held-out split has now been used to pick among four variants for five types, so about one
   of those twenty comparisons is expected to clear its interval by chance.
 
@@ -279,25 +279,26 @@ and the number of seeds where `cl-drop` was ahead.
 - **The direction survives, the size shrinks.** On the four types where seed 42 showed a held-out gain, `cl-drop`
   is ahead of its same-seed baseline in 11 of 12 pairs; the exception is Obstacle with seed 44 (−0.014
   [−0.028, −0.001]). But only four of the twelve pairs clear their own interval (Crosswalk, NoCurbRamp and
-  Obstacle with seed 42, Obstacle with seed 43), and the seed-42 run was the most favorable of the three for
-  Crosswalk, NoCurbRamp and Obstacle. The mean gains are about half of the seed-42 figures: NoCurbRamp +0.017
+  Obstacle with seed 42, Obstacle with seed 43), and the seed-42 run was the most favorable of the three for all four types
+  (narrowly for CurbRamp). The mean gains are about half of the seed-42 figures: NoCurbRamp +0.017
   against +0.041, Crosswalk +0.020 against +0.032. Part of that is selection: seed 42's numbers are the ones that
   picked `cl-drop` as the variant to replicate.
 - **The seed moves the held-out AUC as much as the variant does.** The baseline's held-out AUC has a seed sd of
-  0.006–0.021 (NoCurbRamp 0.881 / 0.912 / 0.921 across the three seeds), the size of the `cl-drop` effect. For
-  Crosswalk and NoCurbRamp `cl-drop` is also the *less* seed-sensitive model (sd 0.003 and 0.006 against 0.014
-  and 0.021), which is what removing a few hundred contradictory targets would be expected to do; for the other
-  three types the spreads are alike.
+  0.006–0.021 (NoCurbRamp 0.881 / 0.912 / 0.921 across the three seeds), the size of the `cl-drop` effect. In
+  these three seeds `cl-drop` spreads less for Crosswalk and NoCurbRamp (sd 0.003 and 0.006 against 0.014 and
+  0.021) and about 1.6× more for the other three types; three seeds cannot establish a variance difference either
+  way, so this is an observation, not a property of the method.
 - **The test cost is real and small.** CurbRamp, Crosswalk and NoCurbRamp lose 0.004–0.005 test AUC under
-  `cl-drop` with every seed (0 of 3 ahead for CurbRamp and NoCurbRamp); Obstacle gains 0.006 with every seed;
-  SurfaceProblem is unchanged.
-- **The raw Disagree recall at 0.92 precision on the held-out rows is higher and steadier under `cl-drop`** for the
-  four types (means 0.63 / 0.92 / 0.77 / 0.61 against 0.21 / 0.90 / 0.68 / 0.51). The baseline's CurbRamp figure is
-  0.00 for two seeds and 0.61 for the third, so the round-3 number at that operating point is itself a matter of
-  seed; `cl-drop`'s three are 0.53–0.70.
+  `cl-drop` on average (CurbRamp and NoCurbRamp with every seed, Crosswalk with two of three); Obstacle gains
+  0.006 with every seed; SurfaceProblem is unchanged.
+- **The raw Disagree recall at 0.92 precision on the held-out rows is higher under `cl-drop`** for all four
+  types (means 0.63 / 0.92 / 0.77 / 0.61 against 0.21 / 0.90 / 0.68 / 0.51), and steadier for CurbRamp and
+  NoCurbRamp. The baseline's CurbRamp figure is 0.00 for two seeds and 0.61 for the third, so the round-3 number
+  at that operating point is itself a matter of seed; `cl-drop`'s three are 0.53–0.70.
 - **SurfaceProblem is not helped.** `cl-drop` lowers its held-out AUC with every seed (−0.011 to −0.024) and
   `cl-flip`, which looked like a gain with seed 42 (+0.016), averages to zero over three. The type's held-out AUC
-  stays at 0.70–0.73 whatever is done to the train rows; its problem is not the targets this method can find.
+  stays at 0.69–0.73 whatever is done to the train rows, which suggests its problem is not the targets this
+  method can find.
 
 Severity × tag slices for every variant, test and held-out, are in [`slices.md`](confident-learning-2026-10/slices.md),
 with the baseline AUC and each variant's Δ and interval per slice; the training rows per slice are the round-3

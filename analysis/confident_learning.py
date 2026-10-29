@@ -694,6 +694,7 @@ def variant_rows(data_dir, label_type, variants, preds=None, within_min_n=10):
     return [metric_row(data_dir, label_type, name, preds, within_min_n) for name in ("baseline", *variants)]
 
 
+# A replicate's run name is <variant>-s<seed>, so a variant's own name must not end in -s<digits>.
 SEED_RUN_RE = re.compile(r"^metrics_(?P<variant>.+)-s(?P<seed>\d+)\.json$")
 
 
@@ -726,12 +727,16 @@ def seed_rows(data_dir, label_type, runs, split_df, within_min_n=10, n_boot=None
         r = metric_row(data_dir, label_type, name, preds, within_min_n)
         r.update({"variant": v, "seed": s, "run": name})
         base = runs.get(("baseline", s))
-        if v != "baseline" and base in preds and name in preds:
-            d = overall_deltas({"baseline": preds[base], v: preds[name]}, [v], n_boot, seed)
-            for split, key in (("test", "test"), ("test_heldout", "heldout")):
-                if (v, split) in d:
-                    dd = d[(v, split)]
-                    r[f"{key}_delta"], r[f"{key}_delta_lo"], r[f"{key}_delta_hi"] = dd["delta"], dd["delta_lo"], dd["delta_hi"]
+        if v != "baseline" and "missing" not in r:
+            if base in preds and name in preds:
+                d = overall_deltas({"baseline": preds[base], v: preds[name]}, [v], n_boot, seed)
+                for split, key in (("test", "test"), ("test_heldout", "heldout")):
+                    if (v, split) in d:
+                        dd = d[(v, split)]
+                        r[f"{key}_delta"], r[f"{key}_delta_lo"], r[f"{key}_delta_hi"] = dd["delta"], dd["delta_lo"], dd["delta_hi"]
+            else:  # no same-seed baseline, or one side has no predictions file: the Δ cells say so
+                r["delta_missing"] = "no same-seed baseline" if base is None else "no predictions"
+                print(f"{label_type} {name}: {r['delta_missing']}, no Δ against the baseline", file=sys.stderr)
         rows.append(r)
     return rows
 
@@ -767,8 +772,9 @@ def seed_summary(rows):
         for key in ("test_auc", "heldout_auc", "within_city_heldout", "incorrect_recall_p92_heldout"):
             rec[f"{key}_mean"], rec[f"{key}_sd"], _ = _mean_sd(r.get(key) for r in rs)
         deltas = {k: [r[f"{k}_delta"] for r in rs if r.get(f"{k}_delta") is not None] for k in ("test", "heldout")}
-        rec["n_deltas"] = len(deltas["heldout"])
+        rec["n_deltas"] = len(deltas["heldout"])  # kept for readers of older files; the per-split counts follow
         for k, ds in deltas.items():
+            rec[f"n_deltas_{k}"] = len(ds)
             rec[f"{k}_delta_mean"], rec[f"{k}_delta_sd"], _ = _mean_sd(ds)
             rec[f"{k}_delta_min"] = min(ds) if ds else None
             rec[f"{k}_delta_max"] = max(ds) if ds else None
@@ -786,7 +792,7 @@ def _pm(mean, sd):
 def _delta_range(rec, key):
     if rec.get(f"{key}_delta_mean") is None:
         return "—"
-    n = rec["n_deltas"]
+    n = rec[f"n_deltas_{key}"]
     return (f"{rec[f'{key}_delta_mean']:+.3f} [{rec[f'{key}_delta_min']:+.3f}, {rec[f'{key}_delta_max']:+.3f}], "
             f"{rec[f'{key}_delta_positive']}/{n} > 0")
 
@@ -806,6 +812,8 @@ def seeds_markdown(label_type, rows, summary):
                               "delta_hi": r.get("test_delta_hi")} if "test_delta" in r else None)
         d_held = _delta_cell({"delta": r.get("heldout_delta"), "delta_lo": r.get("heldout_delta_lo"),
                               "delta_hi": r.get("heldout_delta_hi")} if "heldout_delta" in r else None)
+        if r.get("delta_missing"):
+            d_test = d_held = r["delta_missing"]
         lines.append("| " + " | ".join([
             r["variant"], str(r["seed"]), _fmt(r["test_auc"]), d_test,
             f"{_fmt(r['within_city_test'])} ({r['cities_test']})", _fmt(r["heldout_auc"]), d_held,

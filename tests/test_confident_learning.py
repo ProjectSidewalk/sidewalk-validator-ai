@@ -450,7 +450,21 @@ def test_report_seed_replicates_pair_each_seed_with_its_own_baseline(tmp_path):
     assert summary["symmetric"]["heldout_delta_min"] <= summary["symmetric"]["heldout_delta_mean"] <= summary["symmetric"]["heldout_delta_max"]
     assert summary["unanimous3"]["n_seeds"] == 1 and summary["unanimous3"]["test_auc_sd"] is None
     md = (doc / "seeds.md").read_text()
-    assert "### Toy" in md and "| symmetric | 43 |" in md and "3/3 > 0" in md and "| unanimous3 | 43, 44" not in md
+    assert "### Toy" in md and "| symmetric | 43 |" in md and "3/3 > 0" in md
+    assert "| unanimous3 | 43 |" in md and "| unanimous3 | 43 | 0.950 |" in md and "1/1 > 0" in md
+    assert summary["symmetric"]["n_deltas_test"] == summary["symmetric"]["n_deltas_heldout"] == 3
+    # a replicate without predictions (metrics only) gets no Δ, and the table says why
+    json.dump({"test": {"auc": 0.5}, "test_heldout": {"auc": 0.5}, "hard": {}},
+              open(path.parent / "metrics_symmetric-s45.json", "w"))
+    assert cl.main(["report", "--data-dir", str(tmp_path), "--label-types", "Toy", "--variants", "symmetric",
+                    "--public-cities", "alpha,beta,gamma", "--n-boot", "0", "--slice-min-n", "5",
+                    "--out", str(doc)]) == 0
+    data = json.load(open(doc / "variants.json"))["Toy"]["seeds"]
+    r45 = next(r for r in data["rows"] if r["seed"] == 45)
+    assert r45["delta_missing"] == "no same-seed baseline" and "heldout_delta" not in r45
+    assert "| symmetric | 45 | 0.500 | no same-seed baseline |" in (doc / "seeds.md").read_text()
+    s = {x["variant"]: x for x in data["summary"]}["symmetric"]
+    assert s["n_seeds"] == 4 and s["n_deltas_heldout"] == 3
     # the main table is unchanged by the replicates: it still lists only the chain's runs
     main = {r["variant"] for r in json.load(open(doc / "variants.json"))["Toy"]["metrics"]}
     assert main == {"baseline", "symmetric"}
