@@ -41,7 +41,8 @@ RUN="$RUNS/$LT/$VARIANT"
 mkdir -p "$RUN"
 case "$VARIANT" in
   fold*)  # a requeue after the fold's weights were deleted must not retrain: the out-of-fold scores are the product
-    if [ -f "$DATA/$LT/cl/oof_${VARIANT}.csv" ] && [ -f "$RUN/training_run.json" ] && ! ls -d "$RUN"/checkpoint-* >/dev/null 2>&1; then
+    if [ -f "$DATA/$LT/cl/oof_${VARIANT}.csv" ] && [ "$DATA/$LT/cl/oof_${VARIANT}.csv" -nt "$DATA/$LT/cl/folds.csv" ] \
+       && [ -f "$RUN/training_run.json" ] && ! ls -d "$RUN"/checkpoint-* >/dev/null 2>&1; then
       echo "$(date) $LT $VARIANT already scored ($DATA/$LT/cl/oof_${VARIANT}.csv); nothing to do"; exit 0
     fi ;;
 esac

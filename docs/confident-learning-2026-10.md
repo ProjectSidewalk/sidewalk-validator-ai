@@ -15,7 +15,7 @@ One training seed per variant, as in round 3. Short version: dropping the rows t
 disagree with (`cl-drop`, 4–18% of the train rows) leaves the test split within a hundredth of the baseline and
 raises the AUC on the three unseen deployments for four of the five types, three of them past the bootstrap
 interval; the stricter vote rules, run without rebalancing the classes, cost AUC in distribution for every type
-and out of distribution clearly for SurfaceProblem and Obstacle.
+and out of distribution clearly for SurfaceProblem and for Obstacle under `symmetric`.
 
 ## Why
 
@@ -79,8 +79,8 @@ states, predictions) stay on klone under `$DATA/<Type>/cl/`; the flag summary re
 what each rule keeps; `symmetric` touches only `incorrect` rows (it tightens the Disagree side to match the
 Agree side), `unanimous3` also drops `correct` rows that carry any Disagree vote. Expert-sourced targets
 are never dropped. **The rows are dropped and nothing is rebalanced**: round 3's train split is about 55:45
-correct:incorrect, and under the rules it becomes as skewed as 77:23 (SurfaceProblem `symmetric`) or 81:19
-(NoCurbRamp `unanimous3`), whereas a retrain under the rule would downsample `correct` back to 55:45
+correct:incorrect, and under the rules it becomes as skewed as 79:21 (SurfaceProblem `symmetric`) or 81:19
+(NoCurbRamp and SurfaceProblem `unanimous3`), whereas a retrain under the rule would downsample `correct` back to 55:45
 (`data_generation.py`). So the rule variants measure the rule *and* the class mix, and read as "fewer, cleaner
 Disagree examples, more imbalance", not as the rule alone.
 
@@ -250,8 +250,8 @@ the hard slice, are in [`variants.md`](confident-learning-2026-10/variants.md).
 
 Severity × tag slices for every variant, test and held-out, are in [`slices.md`](confident-learning-2026-10/slices.md),
 with the baseline AUC and each variant's Δ and interval per slice; the training rows per slice are the round-3
-counts in [`retrain-2026-10/slices.csv`](retrain-2026-10/slices.csv) (`cl-drop` removes at most 18% of them,
-the rules up to 44%).
+counts in [`retrain-2026-10/slices.csv`](retrain-2026-10/slices.csv) (`cl-drop` removes 4–18% of a type's train
+rows and the rules 16–44%, not evenly across slices: both fall mostly on `incorrect` rows).
 The flag share by deployment, for the deployments with at least 1,000 train rows (private deployments pooled,
 from `variants.json`): seattle-wa 12.4%, chicago-il 12.1%, spgg 10.3%, amsterdam 13.0%, newberg-or 10.8%,
 columbus-oh 18.2%, mendota-il 8.5%, pittsburgh-pa 15.6%, teaneck-nj 7.6%, other (private deployments) 14.2%;
@@ -277,7 +277,8 @@ The rules drop rated rows the expert overturns at about the rate of the rows the
 and confident learning touched two of the 37 and both targets held. With 37 rows this is a sanity check, not a
 measurement; the round-2 packets of [#78](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/78)
 are stratified to add rated items that are also training rows (95 in the two raters' train-split strata), and
-the report reruns on the combined private file with `--gold` once they are rated.
+the report reruns on the combined private file with `--gold` once they are rated; an item both raters saw
+counts only when they gave the same verdict (`adjudicate_gold`), otherwise it is unrated.
 
 ## The deployment prior under each rule
 
@@ -307,7 +308,7 @@ retrain under either rule would write to the file.
 ## Recommendation
 
 1. **Take `cl-drop` into the next retrain, not into production from here.** The gain is where the Disagree
-   gate fails, on deployments the model has not seen, and it costs at most a hundredth in distribution. What
+   gate fails, on deployments the model has not seen, and it costs about a hundredth in distribution. What
    this run does not have is a second seed (the intervals cover evaluation noise only), calibrated maps, or a
    held-out set it has not already been selected on. The next step is cheap: retrain the five types on the
    `cl-drop` splits with two more seeds (`cl_submit.sh` with the existing `cl/cl-drop/split.csv`, about 25
@@ -317,8 +318,8 @@ retrain under either rule would write to the file.
    recipe (one extra CPU step and five fold trainings per type, all scripted here). Try `cl-flip` for
    SurfaceProblem alongside, since it is the only variant that moved that type's held-out AUC up.
 2. **Do not filter the training set with the stricter vote rules as run here**, without rebalancing: they
-   lose in distribution for every type and on the unseen deployments for SurfaceProblem and Obstacle, and gain
-   only Crosswalk's. A fair test of the rule as a *definition* would downsample `correct` back to round 3's
+   lose in distribution for every type and on the unseen deployments for SurfaceProblem and for Obstacle under
+   `symmetric`, and gain only Crosswalk's. A fair test of the rule as a *definition* would downsample `correct` back to round 3's
    55:45 after the filter, which the chain does not do; that is one more batch of ten trainings if the question
    matters for training. The rule question of #56 stays a prior question: the table above is what the served
    prior becomes under either rule, and making the rule symmetric lands at or below the crowd-majority shares
