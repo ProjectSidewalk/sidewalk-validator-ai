@@ -18,8 +18,10 @@ byte the same, so every variant is scored on the same rows as the round-3 baseli
   target is ``c``; a row counts for class ``j`` when ``p(j) >= t_j`` (the largest such ``p`` if both classes
   qualify); the off-diagonal cells of that 2x2 count are the estimated number of wrong targets per (given, likely)
   pair, and the rows flagged are, per cell, the ``count`` rows with that given target and the highest ``p(likely)``
-  (cleanlab's ``prune_by_noise_rate`` filter). Writes ``noisy_targets.csv`` and two more variants: ``cl-drop``
-  (flagged train rows left out) and ``cl-flip`` (their target flipped).
+  (the ``prune_by_noise_rate`` ranking of cleanlab, on the **uncalibrated** joint: cleanlab first rescales each
+  row of the joint to the given class's count, which here would flag 1-9% more rows; not done, so the flag counts
+  are a lower bound of its). Writes ``noisy_targets.csv`` and two more variants: ``cl-drop`` (flagged train rows
+  left out) and ``cl-flip`` (their target flipped).
 - ``rules``: the stricter crowd rules of https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/75 applied
   to the train rows: ``symmetric`` (``incorrect`` needs net Disagree > 2, as ``correct`` needs net Agree > 2) and
   ``unanimous3`` (at least three votes, none the other way; Unsure votes are not counted in the manifest, so they
@@ -115,6 +117,11 @@ def check_eval_rows_unchanged(base, variant):
     b = variant[variant["label_uid"].isin(a["label_uid"])].sort_values("label_uid").reset_index(drop=True)
     if len(a) != len(b) or not a.equals(b[a.columns]):
         raise AssertionError("a variant must leave every val/test/test_heldout row exactly as it was")
+
+
+def sha256_of_text(text):
+    """sha256 of a string (utf-8)."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def sha256_of(path):
@@ -697,6 +704,24 @@ def train_accounting(data_dir, label_type, variants):
     return rows
 
 
+def adjudicate_gold(gold):
+    """One verdict per ``label_uid``: an item rated by several raters (the #78 round-2 packets overlap by design)
+    keeps its verdict only when every rater gave the same one; otherwise it becomes ``cant_tell`` and counts as
+    unrated. Rows are reduced to ``label_uid, verdict``.
+
+    >>> g = pd.DataFrame({"label_uid": ["a:1", "a:1", "a:2", "a:2", "a:3"],
+    ...                   "verdict": ["correct", "correct", "correct", "incorrect", "incorrect"]})
+    >>> adjudicate_gold(g).sort_values("label_uid").verdict.tolist()
+    ['correct', 'cant_tell', 'incorrect']
+    """
+    def one(v):
+        u = set(v)
+        return next(iter(u)) if len(u) == 1 else "cant_tell"
+    out = gold.groupby("label_uid", sort=False)["verdict"].agg(one).reset_index()
+    assert out["label_uid"].is_unique
+    return out
+
+
 def expert_agreement(data_dir, label_type, variants, gold):
     """How the rows a variant dropped or flipped agree with an expert verdict (``gold``: ``label_uid``, ``verdict``
     in ``correct``/``incorrect``). Returns one record per variant with counts only (no ids), so it can be published:
@@ -778,6 +803,7 @@ def cmd_report(args):
         gold = pd.read_csv(args.gold, dtype=str)
         if not {"label_uid", "verdict"} <= set(gold.columns):
             raise SystemExit("--gold needs label_uid and verdict columns")
+        gold = adjudicate_gold(gold)
     public = set(c.strip() for c in (args.public_cities or "").split(",") if c.strip())
     os.makedirs(args.out, exist_ok=True)
     tables, slice_tables, everything = [], [], {"_public_cities": sorted(public)}
@@ -816,13 +842,16 @@ def cmd_report(args):
         json.dump(everything, f, indent=2, default=float)
         f.write("\n")
     if slice_tables:
+        from analysis import slices as sl
+        min_n = sl.MIN_N if args.slice_min_n is None else args.slice_min_n
+        n_boot = sl.N_BOOT if args.n_boot is None else args.n_boot
         with open(os.path.join(args.out, "slices.md"), "w") as f:
             f.write("# Severity and tag slices: each variant against the round-3 baseline\n\n"
                     "AUC of the incorrect score on the same rows; Δ = variant − baseline with a 95% interval from "
-                    "resampling whole panoramas, the same resample applied to both models (`analysis/slices.py`). "
-                    "Blank under 30 labels or when the smaller class has fewer than 8. The intervals are not "
-                    "corrected for the number of slices: at 95%, about one cell in twenty excludes zero by chance.\n\n"
-                    + "\n".join(slice_tables))
+                    f"{n_boot:,} resamples of whole panoramas, the same resample applied to both models "
+                    f"(`analysis/slices.py`). Blank under {min_n} labels or when the smaller class has fewer than "
+                    f"{sl.MIN_CLASS_FOR_CI}. The intervals are not corrected for the number of slices: at 95%, about "
+                    "one cell in twenty excludes zero by chance.\n\n" + "\n".join(slice_tables))
     print(text)
     return 0
 
@@ -860,7 +889,10 @@ def cmd_prior(args):
     all_labels = pd.concat(frames, ignore_index=True)
     label_types = [t.strip() for t in args.label_types.split(",") if t.strip()]
     priors = rule_priors(all_labels, label_types)
-    priors["_source"] = {"cities": list(cities), "rawlabels_cache": os.path.abspath(args.rawlabels_cache),
+    # Provenance without deployment names (the list includes private deployments) or machine paths, so the file
+    # can be committed: the number of deployments and a hash of their sorted ids.
+    priors["_source"] = {"n_cities": len(cities), "cities_sha256": sha256_of_text("\n".join(sorted(cities))),
+                         "rawlabels_cache": os.path.basename(os.path.abspath(args.rawlabels_cache)),
                          "rows": int(len(all_labels))}
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w") as f:

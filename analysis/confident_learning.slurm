@@ -39,6 +39,12 @@ SPLIT="$DATA/$LT/cl/$VARIANT/split.csv"
 RUN="$RUNS/$LT/$VARIANT"
 [ -f "$SPLIT" ] || { echo "no $SPLIT (run confident_learning.py folds / rules / flag first)" >&2; exit 2; }
 mkdir -p "$RUN"
+case "$VARIANT" in
+  fold*)  # a requeue after the fold's weights were deleted must not retrain: the out-of-fold scores are the product
+    if [ -f "$DATA/$LT/cl/oof_${VARIANT}.csv" ] && [ -f "$RUN/training_run.json" ] && ! ls -d "$RUN"/checkpoint-* >/dev/null 2>&1; then
+      echo "$(date) $LT $VARIANT already scored ($DATA/$LT/cl/oof_${VARIANT}.csv); nothing to do"; exit 0
+    fi ;;
+esac
 echo "$(date) train $LT $VARIANT on $SPLIT -> $RUN"
 python -u fine_tune_classifier.py --label_type "$LT" --data-dir "$DATA" --split "$SPLIT" --output-dir "$RUN" \
     --seed "$SEED" --epochs "$EPOCHS" --num-workers 7 || { echo "training failed" >&2; exit 1; }

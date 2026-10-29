@@ -1,0 +1,89 @@
+{
+  "margin": {
+    "CurbRamp": {
+      "correct": 28470,
+      "incorrect": 3797,
+      "share_incorrect": 0.11767440419003936
+    },
+    "Crosswalk": {
+      "correct": 19671,
+      "incorrect": 1281,
+      "share_incorrect": 0.061139747995418096
+    },
+    "NoCurbRamp": {
+      "correct": 13030,
+      "incorrect": 7774,
+      "share_incorrect": 0.3736781388194578
+    },
+    "Obstacle": {
+      "correct": 12247,
+      "incorrect": 6822,
+      "share_incorrect": 0.3577534217840474
+    },
+    "SurfaceProblem": {
+      "correct": 13790,
+      "incorrect": 6484,
+      "share_incorrect": 0.3198184867317747
+    }
+  },
+  "symmetric": {
+    "CurbRamp": {
+      "correct": 28470,
+      "incorrect": 1255,
+      "share_incorrect": 0.04222035323801514
+    },
+    "Crosswalk": {
+      "correct": 19671,
+      "incorrect": 771,
+      "share_incorrect": 0.037716466099207514
+    },
+    "NoCurbRamp": {
+      "correct": 13030,
+      "incorrect": 4790,
+      "share_incorrect": 0.26879910213243546
+    },
+    "Obstacle": {
+      "correct": 12247,
+      "incorrect": 2304,
+      "share_incorrect": 0.15833963301491308
+    },
+    "SurfaceProblem": {
+      "correct": 13790,
+      "incorrect": 1792,
+      "share_incorrect": 0.11500449236298294
+    }
+  },
+  "unanimous3": {
+    "CurbRamp": {
+      "correct": 25545,
+      "incorrect": 939,
+      "share_incorrect": 0.03545536927956502
+    },
+    "Crosswalk": {
+      "correct": 18714,
+      "incorrect": 441,
+      "share_incorrect": 0.02302270947533281
+    },
+    "NoCurbRamp": {
+      "correct": 9692,
+      "incorrect": 1646,
+      "share_incorrect": 0.14517551596401482
+    },
+    "Obstacle": {
+      "correct": 9300,
+      "incorrect": 1694,
+      "share_incorrect": 0.1540840458431872
+    },
+    "SurfaceProblem": {
+      "correct": 11120,
+      "incorrect": 1148,
+      "share_incorrect": 0.09357678513205087
+    }
+  },
+  "_source": {
+    "n_cities": 54,
+    "cities_sha256": "950f40e9d843aa00b9830bb8ffddb52c5e40dfb7fd4d38fa34314cd1455dcd14",
+    "rawlabels_cache": "rawlabels",
+    "rows": 1667379
+  }
+}

@@ -1,6 +1,6 @@
 # Severity and tag slices: each variant against the round-3 baseline
 
-AUC of the incorrect score on the same rows; Δ = variant − baseline with a 95% interval from resampling whole panoramas, the same resample applied to both models (`analysis/slices.py`). Blank under 30 labels or when the smaller class has fewer than 8. The intervals are not corrected for the number of slices: at 95%, about one cell in twenty excludes zero by chance.
+AUC of the incorrect score on the same rows; Δ = variant − baseline with a 95% interval from 1,000 resamples of whole panoramas, the same resample applied to both models (`analysis/slices.py`). Blank under 30 labels or when the smaller class has fewer than 8. The intervals are not corrected for the number of slices: at 95%, about one cell in twenty excludes zero by chance.
 
 ### CurbRamp / test / by severity
 

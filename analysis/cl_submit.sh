@@ -18,7 +18,8 @@ RAWLABELS="${RAWLABELS:-$(cd "$DATA/.." && pwd)/rawlabels}"
 PARTITION_ARGS="${PARTITION_ARGS:-}"
 [ $# -gt 0 ] || { echo "usage: $0 <LabelType> [...]" >&2; exit 2; }
 [ -d logs ] || mkdir -p logs
-sb() { sbatch --parsable "$@"; }
+# --kill-on-invalid-dep: a dependent whose prerequisite failed is cancelled instead of pending forever.
+sb() { sbatch --parsable --kill-on-invalid-dep=yes "$@"; }
 for LT in "$@"; do
   [ -f "$DATA/$LT/split.csv" ] || { echo "no $DATA/$LT/split.csv" >&2; exit 2; }
   prep=$(STEP=prep LT="$LT" DATA="$DATA" RAWLABELS="$RAWLABELS" FOLDS="$FOLDS" \

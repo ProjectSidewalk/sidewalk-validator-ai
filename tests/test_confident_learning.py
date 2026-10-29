@@ -286,6 +286,8 @@ def test_report_tables_and_expert_aggregates(toy, tmp_path):
     train = df[df.split == "train"]
     gold = pd.DataFrame({"label_uid": train.label_uid.iloc[:6],
                          "verdict": ["correct", "incorrect", "correct", "incorrect", "cant_tell", "correct"]})
+    # a second rater who agrees on the first item and disagrees on the second: the second becomes unrated
+    gold = pd.concat([gold, pd.DataFrame({"label_uid": train.label_uid.iloc[:2], "verdict": ["correct", "correct"]})])
     gold_path = tmp_path / "gold.csv"
     gold.to_csv(gold_path, index=False)
     json.dump({"by_city": [{"city": "alpha", "n": 10, "flagged": 1, "share": 0.1},
@@ -319,8 +321,8 @@ def test_report_tables_and_expert_aggregates(toy, tmp_path):
     acc = {r["variant"]: r for r in data["Toy"]["train"]}
     assert acc["baseline"]["train"] == len(train) and acc["symmetric"]["dropped"] > 0
     exp = {r["variant"]: r for r in data["Toy"]["expert"]}
-    assert exp["symmetric"]["n_rated_train"] == 5  # the cant_tell row is not rated
-    assert exp["symmetric"]["touched"] + exp["symmetric"]["untouched"] == 5
+    assert exp["symmetric"]["n_rated_train"] == 4  # the cant_tell row and the rater disagreement are not rated
+    assert exp["symmetric"]["touched"] + exp["symmetric"]["untouched"] == 4
     assert "label_uid" not in text  # no ids in the published table
     flags = data["Toy"]["flag_summary"]
     assert "source_split" not in flags
@@ -350,6 +352,13 @@ def test_rule_priors_count_human_margin_labels_under_each_rule(tmp_path):
     assert out["symmetric"]["CurbRamp"]["incorrect"] == 2 and out["symmetric"]["CurbRamp"]["correct"] == 2
     # unanimous3: (3,0) and (0,3) only
     assert out["unanimous3"]["CurbRamp"] == {"correct": 1, "incorrect": 1, "share_incorrect": 0.5}
+
+
+def test_gold_adjudication_keeps_only_agreeing_raters():
+    gold = pd.DataFrame({"label_uid": ["x:1", "x:1", "x:2", "x:2", "x:3", "x:4", "x:4"],
+                         "verdict": ["correct", "correct", "correct", "incorrect", "incorrect", "cant_tell", "cant_tell"]})
+    out = cl.adjudicate_gold(gold).set_index("label_uid").verdict
+    assert out.to_dict() == {"x:1": "correct", "x:2": "cant_tell", "x:3": "incorrect", "x:4": "cant_tell"}
 
 
 def test_report_slices_against_baseline(tmp_path):

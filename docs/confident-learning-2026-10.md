@@ -8,12 +8,14 @@ Disagree verdicts hold up? Everything here ran on the round-3 crops and splits
 ([`retrain-2026-10.md`](retrain-2026-10.md)); only the **train** rows change between variants, so every number
 below is on the same val / test / test_heldout rows as the round-3 baseline.
 
-**Status: done.** The chain ran on klone on 2026-10-28 (56 jobs, none failed); every number below comes from the
-checked-in [`confident-learning-2026-10/variants.json`](confident-learning-2026-10/variants.json). One training
-seed per variant, as in round 3. Short version: dropping the rows the fold models confidently disagree with
-(`cl-drop`, 4–18% of the train rows) leaves the test split where it was and raises the AUC on the three unseen
-deployments for four of the five types, three of them past the bootstrap interval; the stricter vote rules cost
-AUC in and out of distribution for four types.
+**Status: done.** The chain ran on klone on 2026-10-28 (55 jobs plus the prior job, none failed). The result
+tables come from the checked-in [`confident-learning-2026-10/variants.json`](confident-learning-2026-10/variants.json),
+the rule and prior tables from the chain's `rule.json` files and [`priors.json`](confident-learning-2026-10/priors.json).
+One training seed per variant, as in round 3. Short version: dropping the rows the fold models confidently
+disagree with (`cl-drop`, 4–18% of the train rows) leaves the test split within a hundredth of the baseline and
+raises the AUC on the three unseen deployments for four of the five types, three of them past the bootstrap
+interval; the stricter vote rules, run without rebalancing the classes, cost AUC in distribution for every type
+and out of distribution clearly for SurfaceProblem and Obstacle.
 
 ## Why
 
@@ -47,8 +49,8 @@ Two zero-labor ways to clean the targets are tested here:
 |---|---|
 | Crops, splits, held-out deployments | round 3 (`retrain-2026-10/<Type>/split.csv`, seed 42, tucson-az and two private deployments held out) |
 | Training recipe | round 3: DINOv2-L, 25 epochs, best checkpoint by val macro-F1, seed 42, hard targets |
-| Folds | 5, grouped by panorama with the split's 3 m merge, class-ratio stratified (`confident_learning.py folds`) |
-| Flag rule | confident joint, `prune_by_noise_rate` (`confident_learning.py flag`) |
+| Folds | 5, grouped by panorama with the split's 3 m merge, class-ratio stratified (`confident_learning.py folds`); the same object seen from panoramas more than 3 m apart can sit in two folds, which pulls out-of-fold scores toward the given target, so the flags err on the low side |
+| Flag rule | off-diagonal of the confident joint, uncalibrated, rows ranked by p(likely) as in cleanlab's `prune_by_noise_rate` (`confident_learning.py flag`); cleanlab's row calibration of the joint would flag 1–9% more rows |
 | Variants per type | `symmetric`, `unanimous3`, `cl-drop`, `cl-flip`; baseline = round 3 |
 | Evaluation | `evaluate.py --per-city` on the round-3 split with each variant's best checkpoint (`--tag <variant>`): test and held-out AUC, the hard slice, recall at precision 0.92 per verdict; then `confident_learning.py report`: within-city AUC as defined in the round-3 report (per-deployment AUCs weighted by n_incorrect × n_correct, deployments with ≥ 10 labels), AUC per held-out deployment, and every variant against the baseline on the same rows with a paired panorama bootstrap (1,000 resamples, `analysis/slices.py`), overall and by severity and tag |
 | Compute | klone `ckpt-all`, one GPU per run (A40 or better); 25 fold runs + 20 variant runs; fold checkpoints deleted after their out-of-fold scores are written |
@@ -65,8 +67,9 @@ python analysis/confident_learning.py report --data-dir $DATA --out docs/confide
 ```
 
 The report's outputs are checked in under [`confident-learning-2026-10/`](confident-learning-2026-10/):
-`variants.md` and `variants.json` (every number below, plus the flag accounting per deployment with the private
-deployments pooled) and `slices.md` (severity × tag, every variant against the baseline). The chain's own
+`variants.md` and `variants.json` (the result tables, plus the flag accounting per deployment with the private
+deployments pooled), `slices.md` (severity × tag, every variant against the baseline) and `priors.json` (the
+prior counts under each rule, deployment names replaced by a count and a hash). The chain's own
 outputs (the fold assignments, out-of-fold scores, flagged rows, variant split files, checkpoints' trainer
 states, predictions) stay on klone under `$DATA/<Type>/cl/`; the flag summary records their sha256s.
 
@@ -74,8 +77,12 @@ states, predictions) stay on klone under `$DATA/<Type>/cl/`; the flag summary re
 
 **The stricter rules** (from each type's `cl/<rule>/rule.json`, 2026-10-28). The round-3 train rows per type and
 what each rule keeps; `symmetric` touches only `incorrect` rows (it tightens the Disagree side to match the
-Agree side), `unanimous3` also drops `correct` rows that carry a single Disagree vote. Expert-sourced targets
-are never dropped.
+Agree side), `unanimous3` also drops `correct` rows that carry any Disagree vote. Expert-sourced targets
+are never dropped. **The rows are dropped and nothing is rebalanced**: round 3's train split is about 55:45
+correct:incorrect, and under the rules it becomes as skewed as 77:23 (SurfaceProblem `symmetric`) or 81:19
+(NoCurbRamp `unanimous3`), whereas a retrain under the rule would downsample `correct` back to 55:45
+(`data_generation.py`). So the rule variants measure the rule *and* the class mix, and read as "fewer, cleaner
+Disagree examples, more imbalance", not as the rule alone.
 
 | Type | train rows (correct / incorrect) | symmetric keeps | dropped | unanimous3 keeps | dropped |
 |---|---:|---:|---:|---:|---:|
@@ -86,8 +93,8 @@ are never dropped.
 | SurfaceProblem | 5,839 / 4,661 | 5,839 / 1,580 | 3,081 (66%) | 5,140 / 1,171 | 4,189 |
 
 So between a third and two thirds of the `incorrect` targets rest on a net Disagree of exactly two, and under
-`unanimous3` the `incorrect` class shrinks to a fifth to a third of its size for every type but Crosswalk.
-Whatever these variants do to the held-out numbers, they do it with far fewer Disagree examples, which is part
+`unanimous3` the `incorrect` class shrinks to a quarter to two fifths of its size. Whatever these variants do
+to the held-out numbers, they do it with far fewer Disagree examples and a different class mix, which is part
 of what is being measured.
 
 **The confident-joint flags** (from each type's `cl/flag_summary.json`; the per-row `noisy_targets.csv` stays on
@@ -105,17 +112,19 @@ exactly the net-Disagree-2 `incorrect` rows, so the last column is the net-Disag
 | Obstacle | 10,554 | 1,946 (18.4%) | 679 (11.1%) | 1,267 (28.4%) | 846 (32.0%) | 306 (24.5%) | 245 (15.4%) | 20 of 37 | 846 (43%) |
 | SurfaceProblem | 10,500 | 1,502 (14.3%) | 731 (12.5%) | 771 (16.5%) | 567 (18.4%) | 104 (9.2%) | 361 (13.3%) | 60 of 128 | 567 (38%) |
 
-Three things stand out. The flag rate orders the types as the round-3 held-out AUC does (Crosswalk 4%, CurbRamp
+Three things stand out. The flag rate orders the types as the round-3 test AUC does (Crosswalk 4%, CurbRamp
 8%, NoCurbRamp 11%, SurfaceProblem 14%, Obstacle 18%): the models disagree with their targets most where they
 are weakest, and the method cannot tell a wrong target from a hard crop (41–54% of the hard slice, the labels the
 production AI got wrong against a unanimous crowd or an expert, is flagged). The two-vote Disagrees are flagged
-two to four times as often as the Disagrees with three or more net votes (CurbRamp 12.5% against 6.7%, Crosswalk
-12.3 against 2.6, NoCurbRamp 18.1 against 6.4, SurfaceProblem 18.4 against 9.2; Obstacle 32.0 against 24.5),
-which is the premise of #75 seen from the model's side; but the method flags only 12–32% of those two-vote rows
-and, unlike any vote rule, also flags 2–13% of the `correct` targets. And the expert-sourced targets are flagged
-about as often as the crowd's (expert-sourced `incorrect` rows at 16.6%, 20.6% and 22.3% for NoCurbRamp,
-Obstacle and SurfaceProblem), so the fold models disagree with the expert votes at the rate they disagree with
-everything else; the flags are not a clean measure of crowd error.
+about twice to nearly five times as often as the Disagrees with three or more net votes (CurbRamp 12.5% against
+6.7%, Crosswalk 12.3 against 2.6, NoCurbRamp 18.1 against 6.4, SurfaceProblem 18.4 against 9.2; Obstacle 32.0
+against 24.5), which is the premise of #75 seen from the model's side; but the method flags only 12–32% of those
+two-vote rows and, unlike any vote rule, also flags 2–13% of the `correct` targets. And the expert-sourced
+targets are flagged only a little less often than the crowd's (6.0% against 8.6% for CurbRamp, 8.3 against 11.1
+NoCurbRamp, 15.4 against 19.0 Obstacle, 13.3 against 14.7 SurfaceProblem; Crosswalk 4.0 against 3.9), with the
+expert-sourced `incorrect` rows of NoCurbRamp, Obstacle and SurfaceProblem at 16.6%, 20.6% and 22.3% (CurbRamp
+6.5%, Crosswalk 1.4%): the fold models disagree with the expert votes at nearly the rate they disagree with the
+crowd's, so the flags are not a clean measure of crowd error.
 
 ## Results
 
@@ -203,15 +212,17 @@ the hard slice, are in [`variants.md`](confident-learning-2026-10/variants.md).
 
 - **The stricter rules cost.** `symmetric` and `unanimous3` lower the test AUC for every type (−0.005 to
   −0.032; the interval excludes zero for eight of the ten cells) and the within-city test AUC with it, so this is
-  not the deployment mix shifting. On the unseen deployments they are at or below the baseline for CurbRamp, NoCurbRamp and Obstacle
-  (`symmetric` Obstacle −0.024 [−0.039, −0.009]) and lose clearly for SurfaceProblem (`symmetric` −0.087
-  [−0.115, −0.059], `unanimous3` −0.055 [−0.085, −0.027]); the one gain is Crosswalk under `symmetric` (+0.023
-  [+0.001, +0.050], on 138 held-out rows). Of the 57 test slices with an interval, 16 (`symmetric`) and 14
-  (`unanimous3`) fall below it and one rises (under `symmetric`); on held-out, 10 and 8 fall. The rules remove a
-  third to two thirds of the `incorrect` examples, so what they measure is cleaner targets *at the cost of* fewer
-  examples, and at these training sizes the examples win. They say nothing about the rule as a definition with
-  more data behind it.
-- **Confident learning transfers.** `cl-drop` removes 4–18% of the train rows and leaves the test split within
+  not the deployment mix shifting. On the unseen deployments the picture is mixed: a clear loss for SurfaceProblem
+  under both rules (`symmetric` −0.087 [−0.115, −0.059], `unanimous3` −0.055 [−0.085, −0.027]) and for Obstacle
+  under `symmetric` (−0.024 [−0.039, −0.009]); within noise for CurbRamp (−0.018 [−0.038, +0.000] and −0.007),
+  NoCurbRamp (+0.005 and +0.003) and Obstacle `unanimous3` (−0.008); and one gain, Crosswalk under `symmetric`
+  (+0.023 [+0.001, +0.050], on 138 held-out rows). Of the 57 test slices with an interval, 16 (`symmetric`) and
+  14 (`unanimous3`) fall below it and one rises (under `symmetric`); of the 42 held-out slices, 10 and 8 fall and
+  one rises (under `unanimous3`). The rules remove a third to two thirds of the `incorrect` examples and skew the
+  class mix (see the accounting above), so what they measure is cleaner targets *at the cost of* fewer examples
+  and more imbalance, and as run here the cost wins. They say nothing about the rule as a definition with more
+  data behind it, or with the classes rebalanced.
+- **Confident learning helps on the held-out deployments (one seed).** `cl-drop` removes 4–18% of the train rows and leaves the test split within
   a hundredth of the baseline (−0.008 to +0.009; the within-city test AUC moves by −0.013 to +0.008), while
   the held-out AUC rises for Crosswalk (+0.032 [+0.004, +0.067]), NoCurbRamp (+0.041 [+0.016, +0.063]) and
   Obstacle (+0.022 [+0.009, +0.036]), rises short of the interval for CurbRamp (+0.012 [−0.002, +0.028]), and
@@ -222,20 +233,25 @@ the hard slice, are in [`variants.md`](confident-learning-2026-10/variants.md).
   precision on the held-out rows goes from 0.00 / 0.89 / 0.56 / 0.53 to 0.67 / 0.95 / 0.79 / 0.70 for
   CurbRamp / Crosswalk / NoCurbRamp / Obstacle, and stays at zero for SurfaceProblem.
 - **Flipping is the gentler version of dropping.** `cl-flip` keeps every row and moves the held-out AUC the
-  same way, by less (NoCurbRamp +0.027 [+0.007, +0.049], Crosswalk +0.031 [+0.003, +0.069], Obstacle +0.009,
-  SurfaceProblem +0.016, CurbRamp +0.009); it is the only variant with no held-out slice below its interval
-  (six above), and it is the one variant that helps SurfaceProblem's held-out AUC at all. Its test cost is
+  same way for four types, by less (NoCurbRamp +0.027 [+0.007, +0.049], Crosswalk +0.031 [+0.003, +0.069],
+  Obstacle +0.009, CurbRamp +0.009), and the other way for SurfaceProblem (+0.016 against `cl-drop`'s −0.024,
+  both within noise); it is the only variant with no held-out slice below its interval (six above). Its test cost is
   CurbRamp's −0.009 [−0.015, −0.003] and otherwise noise.
-- **The test split rewards what the held-out split does not.** The test rows come from the training
-  deployments and the same crowds; the held-out rows come from three deployments the model never saw. A change
-  that leaves the first alone and lifts the second is removing something deployment- or crowd-specific that the
-  test split still pays for, which is what wrong targets, absorbed as habits, would look like. That reading is
-  also why the flags should not be mistaken for a list of wrong labels: 41–54% of the hard slice is flagged,
-  and `cl-drop` drops those rows too (the hard-slice AUCs move both ways on 11–90 labels, too few to read).
+- **How much to believe it.** The test rows come from the training deployments and the same crowds; the
+  held-out rows come from three deployments the model never saw, and their targets are crowd-margin labels too.
+  A change that leaves the first alone and lifts the second *could* be removing something deployment- or
+  crowd-specific that the test split still pays for, which is what wrong targets absorbed as habits would look
+  like; it could as well be that a training set without its hardest crops generalizes better, since 41–54% of
+  the hard slice is flagged and `cl-drop` drops those rows too (the hard-slice AUCs move both ways on 5–90
+  labels, too few to read). The run cannot tell these apart. Three more cautions: the intervals resample
+  panoramas, not deployments, and there are only three of those (CurbRamp's gain is private city A alone); the
+  seed was not varied; and the held-out split has now been used to pick among four variants for five types, so
+  about one of those twenty comparisons is expected to clear its interval by chance.
 
 Severity × tag slices for every variant, test and held-out, are in [`slices.md`](confident-learning-2026-10/slices.md),
 with the baseline AUC and each variant's Δ and interval per slice; the training rows per slice are the round-3
-counts in [`retrain-2026-10/slices.csv`](retrain-2026-10/slices.csv) (the variants remove at most 18% of them).
+counts in [`retrain-2026-10/slices.csv`](retrain-2026-10/slices.csv) (`cl-drop` removes at most 18% of them,
+the rules up to 44%).
 The flag share by deployment, for the deployments with at least 1,000 train rows (private deployments pooled,
 from `variants.json`): seattle-wa 12.4%, chicago-il 12.1%, spgg 10.3%, amsterdam 13.0%, newberg-or 10.8%,
 columbus-oh 18.2%, mendota-il 8.5%, pittsburgh-pa 15.6%, teaneck-nj 7.6%, other (private deployments) 14.2%;
@@ -281,29 +297,33 @@ from the served file):
 | Obstacle | 12,247 / 6,822 (35.8%) | 12,247 / 2,304 (15.8%) | 9,300 / 1,694 (15.4%) |
 | SurfaceProblem | 13,790 / 6,484 (32.0%) | 13,790 / 1,792 (11.5%) | 11,120 / 1,148 (9.4%) |
 
-Making the rule symmetric moves the prior most of the way to the ≥ 2-vote majority shares #56 measured on the
-production rows (4 / 6 / 20 / 22 / 15% for Crosswalk / CurbRamp / NoCurbRamp / Obstacle / SurfaceProblem; a
-different population, so not the same number): the served prior's distance from the crowd majority is almost
-entirely the two-vote Disagrees. Whatever prior calibration adopts, the counts above are what a retrain under
-either rule would write to the file.
+Against the ≥ 2-vote majority shares #56 measured on the production rows (4 / 6 / 20 / 22 / 15% for Crosswalk /
+CurbRamp / NoCurbRamp / Obstacle / SurfaceProblem; a different population, so not the same number), the
+symmetric rule lands at or below them for four types (3.8 / 4.2 / 15.8 / 11.5%) and covers about three fifths of
+the gap for NoCurbRamp (26.9%): the served prior's distance from the crowd majority is the two-vote Disagrees,
+and for three types removing them goes past it. Whatever prior calibration adopts, the counts above are what a
+retrain under either rule would write to the file.
 
 ## Recommendation
 
 1. **Take `cl-drop` into the next retrain, not into production from here.** The gain is where the Disagree
-   gate fails, on deployments the model has not seen, and it costs nothing measurable in distribution. What
-   this run does not have is a second seed (the intervals cover evaluation noise only) or calibrated maps. The
-   next step is cheap: retrain the five types on the `cl-drop` splits with two more seeds (`cl_submit.sh` with
-   the existing `cl/cl-drop/split.csv`, about 25 GPU-hours), fit the maps with `calibration/calibrate.py` and
-   read the gate table the way [`retrain-2026-10.md`](retrain-2026-10.md) does. If the held-out gains hold
-   across seeds, `cl-drop` becomes part of the round-4 recipe (one extra CPU step and five fold trainings per
-   type, all scripted here). Try `cl-flip` for SurfaceProblem alongside, since it is the only variant that
-   moved that type's held-out AUC up.
-2. **Do not filter the training set with the stricter vote rules.** At these sizes they lose more from the
-   examples they remove than they gain from the targets they clean, for four of the five types in and out of
-   distribution. The rule question of #56 stays a prior question: the table above is what the served prior
-   becomes under either rule, and making the rule symmetric moves it most of the way to the crowd-majority
-   shares #56 measured. That is a calibration decision, separate from training, and this experiment does not
-   argue against it.
+   gate fails, on deployments the model has not seen, and it costs at most a hundredth in distribution. What
+   this run does not have is a second seed (the intervals cover evaluation noise only), calibrated maps, or a
+   held-out set it has not already been selected on. The next step is cheap: retrain the five types on the
+   `cl-drop` splits with two more seeds (`cl_submit.sh` with the existing `cl/cl-drop/split.csv`, about 25
+   GPU-hours), fit the maps with `calibration/calibrate.py` and read the gate table the way
+   [`retrain-2026-10.md`](retrain-2026-10.md) does; and confirm on deployments this run never looked at, which
+   the next data pull will have. If the held-out gains hold across seeds, `cl-drop` becomes part of the round-4
+   recipe (one extra CPU step and five fold trainings per type, all scripted here). Try `cl-flip` for
+   SurfaceProblem alongside, since it is the only variant that moved that type's held-out AUC up.
+2. **Do not filter the training set with the stricter vote rules as run here**, without rebalancing: they
+   lose in distribution for every type and on the unseen deployments for SurfaceProblem and Obstacle, and gain
+   only Crosswalk's. A fair test of the rule as a *definition* would downsample `correct` back to round 3's
+   55:45 after the filter, which the chain does not do; that is one more batch of ten trainings if the question
+   matters for training. The rule question of #56 stays a prior question: the table above is what the served
+   prior becomes under either rule, and making the rule symmetric lands at or below the crowd-majority shares
+   #56 measured for four types. That is a calibration decision, separate from training, and this experiment
+   does not argue against it.
 3. **Send the flags to an expert, not to the trash.** The flagged rows (`noisy_targets.csv` on klone, with the
    out-of-fold score, vote margin and target source) concentrate on the two-vote Disagrees but also mark 2–13%
    of the `correct` targets and half the hard slice; they are the right packet for the VLM adjudicator of
