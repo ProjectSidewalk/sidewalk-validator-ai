@@ -38,7 +38,9 @@ byte the same, so every variant is scored on the same rows as the round-3 baseli
   (private ones lettered as in the round-3 report); the severity x tag slices of every variant against the
   baseline (``analysis/slices.py`` paired panorama bootstrap, ``slices.md``); the train-row accounting of every
   variant; and, when a private expert-rated file is given, how the dropped or flagged rows agree with the expert
-  (aggregates only; the per-row file is never written into the repo).
+  (aggregates only; the per-row file is never written into the repo). Seed replicates (``metrics_<variant>-s<seed>.json``
+  from the Slurm script's ``TAG``) go to ``seeds.md``: each paired with the baseline of the same seed, and the
+  across-seed mean, sd and range.
 
 Every variant split is written by the same writer, keeps the manifest columns as strings exactly as read, and is
 deterministic (sorted by ``label_uid``; the fold shuffle is seeded). Crop paths are left relative, so a variant
@@ -66,6 +68,7 @@ import glob
 import hashlib
 import json
 import os
+import re
 import sys
 
 import numpy as np
@@ -650,37 +653,175 @@ def slices_markdown(label_type, records, variants):
     return "\n".join(lines)
 
 
+def metrics_path(data_dir, label_type, name):
+    """``evaluate.py``'s metrics file of a run: ``metrics.json`` for the baseline, ``metrics_<name>.json`` otherwise."""
+    suffix = "" if name == "baseline" else f"_{name}"
+    return os.path.join(data_dir, label_type, f"metrics{suffix}.json")
+
+
+def metric_row(data_dir, label_type, name, preds=None, within_min_n=10):
+    """One row of the comparison table: the run's test / held-out / hard AUCs and recalls from its metrics file.
+    The within-city AUC comes from the joined predictions in ``preds`` (the round-3 definition, cities with at least
+    ``within_min_n`` labels) when the run has them, else from the ``--per-city`` block of ``metrics.json`` (cities
+    with at least its ``min_city_n`` rows, a coarser set); ``within_city_source`` says which. ``{"variant": name,
+    "missing": path}`` without a metrics file."""
+    preds = preds or {}
+    path = metrics_path(data_dir, label_type, name)
+    if not os.path.exists(path):
+        return {"variant": name, "missing": path}
+    with open(path) as f:
+        m = json.load(f)
+    if name in preds:
+        wc_t, n_t = within_city_from_predictions(preds[name], "test", within_min_n)
+        wc_h, n_h = within_city_from_predictions(preds[name], "test_heldout", within_min_n)
+        source = f"predictions (cities with >= {within_min_n} labels)"
+    else:
+        wc_t, n_t = within_city_auc(m, "test")
+        wc_h, n_h = within_city_auc(m, "test_heldout")
+        source = "metrics.json per_city block"
+    return {"variant": name, "test_auc": _metric(m, "test", "auc"),
+            "heldout_auc": _metric(m, "test_heldout", "auc"),
+            "within_city_test": wc_t, "within_city_heldout": wc_h, "cities_test": n_t, "cities_heldout": n_h,
+            "within_city_source": source,
+            "hard_auc": _metric(m, "hard", "auc"), "hard_n": (m.get("hard") or {}).get("n"),
+            "incorrect_recall_p92_test": _metric(m, "test", "recall_at_precision:incorrect:0.92"),
+            "incorrect_recall_p92_heldout": _metric(m, "test_heldout", "recall_at_precision:incorrect:0.92"),
+            "correct_recall_p92_test": _metric(m, "test", "recall_at_precision:correct:0.92")}
+
+
 def variant_rows(data_dir, label_type, variants, preds=None, within_min_n=10):
-    """Rows of the comparison table for one label type: the baseline and each variant with a metrics file. The
-    within-city AUC comes from the joined predictions in ``preds`` (the round-3 definition, cities with at least
-    ``within_min_n`` labels) when the model has them, else from the ``--per-city`` block of ``metrics.json`` (cities
-    with at least its ``min_city_n`` rows, a coarser set); ``within_city_source`` says which."""
-    rows, preds = [], preds or {}
-    for name in ("baseline", *variants):
-        suffix = "" if name == "baseline" else f"_{name}"
-        path = os.path.join(data_dir, label_type, f"metrics{suffix}.json")
-        if not os.path.exists(path):
-            rows.append({"variant": name, "missing": path})
-            continue
-        with open(path) as f:
-            m = json.load(f)
-        if name in preds:
-            wc_t, n_t = within_city_from_predictions(preds[name], "test", within_min_n)
-            wc_h, n_h = within_city_from_predictions(preds[name], "test_heldout", within_min_n)
-            source = f"predictions (cities with >= {within_min_n} labels)"
-        else:
-            wc_t, n_t = within_city_auc(m, "test")
-            wc_h, n_h = within_city_auc(m, "test_heldout")
-            source = "metrics.json per_city block"
-        rows.append({"variant": name, "test_auc": _metric(m, "test", "auc"),
-                     "heldout_auc": _metric(m, "test_heldout", "auc"),
-                     "within_city_test": wc_t, "within_city_heldout": wc_h, "cities_test": n_t, "cities_heldout": n_h,
-                     "within_city_source": source,
-                     "hard_auc": _metric(m, "hard", "auc"), "hard_n": (m.get("hard") or {}).get("n"),
-                     "incorrect_recall_p92_test": _metric(m, "test", "recall_at_precision:incorrect:0.92"),
-                     "incorrect_recall_p92_heldout": _metric(m, "test_heldout", "recall_at_precision:incorrect:0.92"),
-                     "correct_recall_p92_test": _metric(m, "test", "recall_at_precision:correct:0.92")})
+    """Rows of the comparison table for one label type: the baseline and each variant (``metric_row``)."""
+    return [metric_row(data_dir, label_type, name, preds, within_min_n) for name in ("baseline", *variants)]
+
+
+SEED_RUN_RE = re.compile(r"^metrics_(?P<variant>.+)-s(?P<seed>\d+)\.json$")
+
+
+def seed_runs(data_dir, label_type, base_seed=42):
+    """The seed replicates of one label type: every ``metrics_<variant>-s<seed>.json`` (the Slurm script's
+    ``TAG=<variant>-s<seed>``), plus the chain's own single-seed run of each such variant (seed ``base_seed``:
+    the baseline's ``metrics.json``, a variant's ``metrics_<variant>.json``) when it exists. ``{(variant, seed):
+    run name}`` with the run name as ``load_predictions`` / ``metric_row`` take it; empty without replicates."""
+    runs = {}
+    d = os.path.join(data_dir, label_type)
+    for fn in os.listdir(d) if os.path.isdir(d) else []:
+        m = SEED_RUN_RE.match(fn)
+        if m:
+            runs[(m["variant"], int(m["seed"]))] = f"{m['variant']}-s{m['seed']}"
+    for v in {v for v, _ in runs}:
+        if (v, base_seed) not in runs and os.path.exists(metrics_path(data_dir, label_type, v)):
+            runs[(v, base_seed)] = v
+    return runs
+
+
+def seed_rows(data_dir, label_type, runs, split_df, within_min_n=10, n_boot=None, seed=0):
+    """``metric_row`` of every run in ``runs`` (``seed_runs``), with ``seed`` and ``variant`` set to the plain
+    variant name, and for each seed that has both the baseline and the variant, the variant's paired AUC
+    difference against the baseline *of the same seed* on test and held-out (``overall_deltas``: whole-panorama
+    bootstrap, both models scored on the same resample). Sorted by variant then seed, baseline first."""
+    preds = {name: load_predictions(data_dir, label_type, name, split_df) for name in runs.values()}
+    preds = {k: v for k, v in preds.items() if v is not None}
+    rows = []
+    for (v, s), name in sorted(runs.items(), key=lambda kv: (kv[0][0] != "baseline", kv[0])):
+        r = metric_row(data_dir, label_type, name, preds, within_min_n)
+        r.update({"variant": v, "seed": s, "run": name})
+        base = runs.get(("baseline", s))
+        if v != "baseline" and base in preds and name in preds:
+            d = overall_deltas({"baseline": preds[base], v: preds[name]}, [v], n_boot, seed)
+            for split, key in (("test", "test"), ("test_heldout", "heldout")):
+                if (v, split) in d:
+                    dd = d[(v, split)]
+                    r[f"{key}_delta"], r[f"{key}_delta_lo"], r[f"{key}_delta_hi"] = dd["delta"], dd["delta_lo"], dd["delta_hi"]
+        rows.append(r)
     return rows
+
+
+def _mean_sd(values):
+    vals = [float(v) for v in values if v is not None and not (isinstance(v, float) and np.isnan(v))]
+    if not vals:
+        return None, None, 0
+    return float(np.mean(vals)), (float(np.std(vals, ddof=1)) if len(vals) > 1 else None), len(vals)
+
+
+def seed_summary(rows):
+    """Per variant over its seeds: mean and sample sd of the test and held-out AUC and of the within-city
+    held-out AUC, and for the paired differences against the same-seed baseline their mean, min, max and how many
+    seeds were positive. One record per variant, in the order of ``rows``.
+
+    >>> rows = [{"variant": "baseline", "seed": 42, "test_auc": 0.90, "heldout_auc": 0.80, "within_city_heldout": 0.7},
+    ...         {"variant": "baseline", "seed": 43, "test_auc": 0.92, "heldout_auc": 0.82, "within_city_heldout": 0.7},
+    ...         {"variant": "x", "seed": 42, "test_auc": 0.91, "heldout_auc": 0.83, "within_city_heldout": 0.7,
+    ...          "test_delta": 0.01, "heldout_delta": 0.03},
+    ...         {"variant": "x", "seed": 43, "test_auc": 0.91, "heldout_auc": 0.81, "within_city_heldout": 0.7,
+    ...          "test_delta": -0.01, "heldout_delta": -0.01}]
+    >>> s = {r["variant"]: r for r in seed_summary(rows)}
+    >>> (s["baseline"]["n_seeds"], round(s["baseline"]["test_auc_mean"], 3), round(s["baseline"]["test_auc_sd"], 4))
+    (2, 0.91, 0.0141)
+    >>> (s["x"]["n_deltas"], round(s["x"]["heldout_delta_mean"], 3), s["x"]["heldout_delta_positive"])
+    (2, 0.01, 1)
+    """
+    out = []
+    for v in dict.fromkeys(r["variant"] for r in rows):
+        rs = [r for r in rows if r["variant"] == v and "missing" not in r]
+        rec = {"variant": v, "n_seeds": len(rs), "seeds": sorted(r["seed"] for r in rs)}
+        for key in ("test_auc", "heldout_auc", "within_city_heldout", "incorrect_recall_p92_heldout"):
+            rec[f"{key}_mean"], rec[f"{key}_sd"], _ = _mean_sd(r.get(key) for r in rs)
+        deltas = {k: [r[f"{k}_delta"] for r in rs if r.get(f"{k}_delta") is not None] for k in ("test", "heldout")}
+        rec["n_deltas"] = len(deltas["heldout"])
+        for k, ds in deltas.items():
+            rec[f"{k}_delta_mean"], rec[f"{k}_delta_sd"], _ = _mean_sd(ds)
+            rec[f"{k}_delta_min"] = min(ds) if ds else None
+            rec[f"{k}_delta_max"] = max(ds) if ds else None
+            rec[f"{k}_delta_positive"] = sum(d > 0 for d in ds)
+        out.append(rec)
+    return out
+
+
+def _pm(mean, sd):
+    if mean is None:
+        return "—"
+    return f"{mean:.3f}" + (f" ± {sd:.3f}" if sd is not None else "")
+
+
+def _delta_range(rec, key):
+    if rec.get(f"{key}_delta_mean") is None:
+        return "—"
+    n = rec["n_deltas"]
+    return (f"{rec[f'{key}_delta_mean']:+.3f} [{rec[f'{key}_delta_min']:+.3f}, {rec[f'{key}_delta_max']:+.3f}], "
+            f"{rec[f'{key}_delta_positive']}/{n} > 0")
+
+
+def seeds_markdown(label_type, rows, summary):
+    """The per-seed table (every run, with the paired difference against the same-seed baseline) and the
+    across-seed summary (mean ± sd; differences as mean [min, max] and the count of positive seeds)."""
+    lines = [f"### {label_type}", "",
+             "| variant | seed | test AUC | Δ test vs same-seed baseline [95% CI] | within-city test | held-out AUC | "
+             "Δ held-out vs same-seed baseline [95% CI] | within-city held-out | incorrect R@P0.92 held-out |",
+             "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    for r in rows:
+        if "missing" in r:
+            lines.append(f"| {r['variant']} | {r['seed']} | not run | | | | | | |")
+            continue
+        d_test = _delta_cell({"delta": r.get("test_delta"), "delta_lo": r.get("test_delta_lo"),
+                              "delta_hi": r.get("test_delta_hi")} if "test_delta" in r else None)
+        d_held = _delta_cell({"delta": r.get("heldout_delta"), "delta_lo": r.get("heldout_delta_lo"),
+                              "delta_hi": r.get("heldout_delta_hi")} if "heldout_delta" in r else None)
+        lines.append("| " + " | ".join([
+            r["variant"], str(r["seed"]), _fmt(r["test_auc"]), d_test,
+            f"{_fmt(r['within_city_test'])} ({r['cities_test']})", _fmt(r["heldout_auc"]), d_held,
+            f"{_fmt(r['within_city_heldout'])} ({r['cities_heldout']})",
+            _fmt(r["incorrect_recall_p92_heldout"])]) + " |")
+    lines += ["", "Across seeds (mean ± sample sd; Δ against the same-seed baseline as mean [min, max] and the "
+              "number of seeds with Δ > 0):", "",
+              "| variant | seeds | test AUC | Δ test | held-out AUC | Δ held-out | within-city held-out | "
+              "incorrect R@P0.92 held-out |", "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for s in summary:
+        lines.append("| " + " | ".join([
+            s["variant"], ", ".join(str(x) for x in s["seeds"]), _pm(s["test_auc_mean"], s["test_auc_sd"]),
+            _delta_range(s, "test"), _pm(s["heldout_auc_mean"], s["heldout_auc_sd"]), _delta_range(s, "heldout"),
+            _pm(s["within_city_heldout_mean"], s["within_city_heldout_sd"]),
+            _pm(s["incorrect_recall_p92_heldout_mean"], s["incorrect_recall_p92_heldout_sd"])]) + " |")
+    return "\n".join(lines) + "\n"
 
 
 def train_accounting(data_dir, label_type, variants):
@@ -806,7 +947,7 @@ def cmd_report(args):
         gold = adjudicate_gold(gold)
     public = set(c.strip() for c in (args.public_cities or "").split(",") if c.strip())
     os.makedirs(args.out, exist_ok=True)
-    tables, slice_tables, everything = [], [], {"_public_cities": sorted(public)}
+    tables, slice_tables, seed_tables, everything = [], [], [], {"_public_cities": sorted(public)}
     for lt in label_types:
         split_df = read_split(os.path.join(args.data_dir, lt, "split.csv"))
         preds = {name: load_predictions(args.data_dir, lt, name, split_df) for name in ("baseline", *variants)}
@@ -825,6 +966,12 @@ def cmd_report(args):
         everything[lt] = {"metrics": metric_rows, "train": train_rows, "expert": agreement, "heldout": heldout,
                           "slices": slices}
         tables.append(report_markdown(lt, metric_rows, train_rows, agreement, heldout, args.within_min_n))
+        runs = seed_runs(args.data_dir, lt, args.base_seed)
+        if runs:
+            rows = seed_rows(args.data_dir, lt, runs, split_df, args.within_min_n, args.n_boot, args.seed)
+            summary = seed_summary(rows)
+            everything[lt]["seeds"] = {"rows": rows, "summary": summary}
+            seed_tables.append(seeds_markdown(lt, rows, summary))
         if slices:
             slice_tables.append(slices_markdown(lt, slices, [v for v in variants if v in preds]))
         flag_path = os.path.join(args.data_dir, lt, "cl", "flag_summary.json")
@@ -852,6 +999,16 @@ def cmd_report(args):
                     f"(`analysis/slices.py`). Blank under {min_n} labels or when the smaller class has fewer than "
                     f"{sl.MIN_CLASS_FOR_CI}. The intervals are not corrected for the number of slices: at 95%, about "
                     "one cell in twenty excludes zero by chance.\n\n" + "\n".join(slice_tables))
+    if seed_tables:
+        with open(os.path.join(args.out, "seeds.md"), "w") as f:
+            f.write("# Seed replicates: the training seed varied, everything else fixed\n\n"
+                    "Every run of a variant that was repeated with another training seed (the Slurm script's "
+                    "`TAG=<variant>-s<seed>`), the chain's own run counted as seed "
+                    f"{args.base_seed}. Each replicate is compared with the baseline trained with the *same* seed, "
+                    "so Δ holds the seed fixed on both sides; its interval resamples whole panoramas of the "
+                    "evaluation split (`analysis/slices.py`), the same resample for both models. The across-seed "
+                    "rows give the spread of the seed itself (sample sd over the seeds) next to the spread of the "
+                    "difference.\n\n" + "\n".join(seed_tables))
     print(text)
     return 0
 
@@ -959,7 +1116,9 @@ def build_parser():
     t.add_argument("--slice-min-n", type=int, default=None, help="labels a severity or tag slice needs (slices.py default)")
     t.add_argument("--n-boot", type=int, default=None, help="panorama resamples per slice interval (slices.py default)")
     t.add_argument("--seed", type=int, default=0)
-    t.add_argument("--out", required=True, help="directory for variants.md, variants.json and slices.md")
+    t.add_argument("--base-seed", type=int, default=42,
+                   help="training seed of the chain's own runs (metrics.json, metrics_<variant>.json), for seeds.md")
+    t.add_argument("--out", required=True, help="directory for variants.md, variants.json, slices.md and seeds.md")
     t.set_defaults(func=cmd_report)
 
     q = sub.add_parser("prior", help="deployment prior counts under the margin rule and each stricter rule (#56)")

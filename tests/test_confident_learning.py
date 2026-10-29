@@ -400,3 +400,57 @@ def test_report_slices_against_baseline(tmp_path):
     assert d["test_delta_lo"] <= d["test_delta"] <= d["test_delta_hi"]
     text = (doc / "variants.md").read_text()
     assert "Held-out deployments" in text and "Δ held-out [95% CI]" in text
+
+
+def test_report_seed_replicates_pair_each_seed_with_its_own_baseline(tmp_path):
+    path, df = make_split(tmp_path, n_panos=150)
+    out = path.parent / "cl"
+    cl.main(["rules", "--split", str(path), "--out", str(out)])
+    ev = df[df.split != "train"].copy()
+    rng = np.random.default_rng(7)
+
+    def write(name, shift, auc):
+        pred = pd.DataFrame({"label_uid": ev.label_uid, "split": ev.split, "true": ev.label_class})
+        pred["p_incorrect"] = np.clip(np.where(ev.label_class == "incorrect", rng.uniform(0.3, 1, len(ev)) + shift,
+                                               rng.uniform(0, 0.7, len(ev)) - shift), 0, 1)
+        pred["p_correct"] = 1 - pred.p_incorrect
+        suffix = "" if name == "baseline" else f"_{name}"
+        pred.to_csv(path.parent / f"predictions{suffix}.csv", index=False)
+        json.dump({"test": {"auc": auc, "recall_at_precision": {}}, "test_heldout": {"auc": auc - 0.1}, "hard": {}},
+                  open(path.parent / f"metrics{suffix}.json", "w"))
+
+    # the chain's seed-42 runs, two replicate seeds of both, and a cl-flip replicate without a seed-42 run
+    write("baseline", 0.0, 0.90); write("symmetric", 0.1, 0.92)
+    write("baseline-s43", 0.0, 0.91); write("symmetric-s43", 0.1, 0.93)
+    write("baseline-s44", 0.0, 0.89); write("symmetric-s44", 0.1, 0.91)
+    write("unanimous3-s43", 0.05, 0.95)
+    runs = cl.seed_runs(str(tmp_path), "Toy")
+    assert runs == {("baseline", 42): "baseline", ("baseline", 43): "baseline-s43", ("baseline", 44): "baseline-s44",
+                    ("symmetric", 42): "symmetric", ("symmetric", 43): "symmetric-s43",
+                    ("symmetric", 44): "symmetric-s44", ("unanimous3", 43): "unanimous3-s43"}
+    assert cl.seed_runs(str(tmp_path), "Nope") == {}
+    doc = tmp_path / "doc"
+    assert cl.main(["report", "--data-dir", str(tmp_path), "--label-types", "Toy", "--variants", "symmetric",
+                    "--public-cities", "alpha,beta,gamma", "--n-boot", "20", "--slice-min-n", "5",
+                    "--out", str(doc)]) == 0
+    data = json.load(open(doc / "variants.json"))["Toy"]["seeds"]
+    rows = {(r["variant"], r["seed"]): r for r in data["rows"]}
+    assert [r["variant"] for r in data["rows"]][:3] == ["baseline"] * 3  # baseline first, then by variant and seed
+    assert rows[("symmetric", 43)]["test_auc"] == 0.93 and rows[("symmetric", 43)]["run"] == "symmetric-s43"
+    for seed in (42, 43, 44):  # each replicate is paired with the baseline of its own seed
+        r = rows[("symmetric", seed)]
+        assert r["heldout_delta_lo"] <= r["heldout_delta"] <= r["heldout_delta_hi"]
+        assert r["heldout_delta"] > 0 and r["test_delta"] > 0
+    assert "heldout_delta" not in rows[("baseline", 43)]
+    assert "heldout_delta" in rows[("unanimous3", 43)]  # no seed-42 run, but baseline-s43 exists to pair with
+    summary = {s["variant"]: s for s in data["summary"]}
+    assert summary["baseline"]["seeds"] == [42, 43, 44] and summary["baseline"]["n_deltas"] == 0
+    assert summary["baseline"]["test_auc_mean"] == pytest.approx(0.90) and summary["baseline"]["test_auc_sd"] == pytest.approx(0.01)
+    assert summary["symmetric"]["n_deltas"] == 3 and summary["symmetric"]["heldout_delta_positive"] == 3
+    assert summary["symmetric"]["heldout_delta_min"] <= summary["symmetric"]["heldout_delta_mean"] <= summary["symmetric"]["heldout_delta_max"]
+    assert summary["unanimous3"]["n_seeds"] == 1 and summary["unanimous3"]["test_auc_sd"] is None
+    md = (doc / "seeds.md").read_text()
+    assert "### Toy" in md and "| symmetric | 43 |" in md and "3/3 > 0" in md and "| unanimous3 | 43, 44" not in md
+    # the main table is unchanged by the replicates: it still lists only the chain's runs
+    main = {r["variant"] for r in json.load(open(doc / "variants.json"))["Toy"]["metrics"]}
+    assert main == {"baseline", "symmetric"}
