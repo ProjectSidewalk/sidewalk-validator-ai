@@ -182,12 +182,21 @@ def select_trainer(target, trainer_cls):
     return trainer_cls if target == "hard" else soft_target_trainer(trainer_cls)
 
 
-def load_split_frames(label_type, data_dir=".", target="hard", vote_weights=None):
+def split_path(label_type, data_dir=".", split=None):
+    """The split file a run trains on: ``split`` if given (``--split``), else ``<data_dir>/<label_type>/split.csv``."""
+    return split if split else os.path.join(data_dir, label_type, "split.csv")
+
+
+def load_split_frames(label_type, data_dir=".", target="hard", vote_weights=None, split=None):
     """``(train_df, val_df)`` with columns ``image`` (absolute crop path) and ``label`` (``LABEL2ID``), or None if
-    ``<data_dir>/<label_type>/split.csv`` does not exist. For ``target`` ``soft``/``weighted`` the train frame also has
-    ``soft_target`` (see ``soft_targets``; ``vote_weights`` is the DataFrame for ``weighted``)."""
+    the split file does not exist. For ``target`` ``soft``/``weighted`` the train frame also has
+    ``soft_target`` (see ``soft_targets``; ``vote_weights`` is the DataFrame for ``weighted``).
+
+    ``split`` names another split file (``--split``), e.g. one that analysis/confident_learning.py wrote with some
+    train rows dropped, flipped or held out as a fold. Relative ``crop_path``s still resolve against
+    ``<data_dir>/<label_type>/``, so a variant split can live anywhere and share the crops."""
     base = os.path.join(data_dir, label_type)
-    path = os.path.join(base, "split.csv")
+    path = split_path(label_type, data_dir, split)
     if not os.path.exists(path):
         return None
     df = pd.read_csv(path)
@@ -281,8 +290,9 @@ def run_key(label_type, data_dir, args):
     """What a resumed run must share with the run that wrote the checkpoints: the split file's hash and the
     settings that shape training. ``--num-workers`` and ``--allow-cpu`` may differ between attempts. A non-default
     ``--target`` (and the vote-weights hash) is part of the key; the default adds nothing, so keys written before
-    ``--target`` existed still match."""
-    path = os.path.join(data_dir, label_type, "split.csv")
+    ``--target`` existed still match. The hash is of the split file the run reads (``--split`` or the default), so
+    a variant split's checkpoints never resume under the production split or the other way round."""
+    path = split_path(label_type, data_dir, getattr(args, "split", None))
     split_sha256 = None
     if os.path.exists(path):
         with open(path, "rb") as f:
@@ -349,7 +359,16 @@ def main(argv=None):
     parser.add_argument('--vote-weights', default=None,
                         help="validator_reliability.py's vote_weights.csv (required by, and only for, "
                              "--target weighted)")
+    parser.add_argument('--split', default=None,
+                        help='train on this split file instead of <data-dir>/<label_type>/split.csv (a variant that '
+                             'analysis/confident_learning.py wrote: a fold held out, or train rows dropped or '
+                             'flipped). Crops still resolve under <data-dir>/<label_type>/. Pair it with '
+                             '--output-dir so the run never lands in the production dinov2/ directory')
     args = parser.parse_args(argv)
+    if args.split and not args.output_dir:
+        parser.error('--split needs --output-dir (a variant run must not land in the production dinov2/ directory)')
+    if args.split and not os.path.isfile(args.split):
+        parser.error(f'--split {args.split} not found')
     if (args.target == 'weighted') != (args.vote_weights is not None):
         parser.error('--vote-weights is required by, and only used with, --target weighted')
 
@@ -376,12 +395,12 @@ def main(argv=None):
     resume = resume_checkpoint(output_dir, key)  # before any slow setup
 
     if args.target == "hard":
-        frames = load_split_frames(label_type, args.data_dir)
+        frames = load_split_frames(label_type, args.data_dir, split=args.split)
     else:
         weights = pd.read_csv(args.vote_weights, dtype={"label_uid": str}) if args.vote_weights else None
-        frames = load_split_frames(label_type, args.data_dir, args.target, weights)
+        frames = load_split_frames(label_type, args.data_dir, args.target, weights, split=args.split)
         if frames is None:
-            raise SystemExit(f"--target {args.target} needs {os.path.join(args.data_dir, label_type, 'split.csv')}")
+            raise SystemExit(f"--target {args.target} needs {split_path(label_type, args.data_dir, args.split)}")
     if frames is not None:
         train_df, val_df = frames
         dataset = DatasetDict({
@@ -490,7 +509,7 @@ def main(argv=None):
     trainer.train(resume_from_checkpoint=resume)
 
     # Provenance next to the checkpoints, so a published model can be traced to its exact split and prior.
-    for name, src in (("split.csv", os.path.join(args.data_dir, label_type, "split.csv")),
+    for name, src in (("split.csv", split_path(label_type, args.data_dir, args.split)),
                       ("deployment_priors.json", os.path.join(args.data_dir, "deployment_priors.json"))):
         if os.path.exists(src):
             shutil.copy(src, os.path.join(output_dir, name))
@@ -508,7 +527,9 @@ def main(argv=None):
            "best_metric": args.best_metric,
            "best_metric_value": trainer.state.best_metric, "id2label": ID2LABEL,
            **generation_settings(label_type, args.data_dir),
-           "split_source": "split.csv" if frames is not None else "imagefolder", **target_settings(args),
+           "split_source": "split.csv" if frames is not None else "imagefolder",
+           **({"split_path": os.path.abspath(args.split), "split_sha256": key["split_sha256"]} if args.split else {}),
+           **target_settings(args),
            "versions": versions}
     with open(os.path.join(output_dir, "training_run.json"), "w") as f:
         json.dump(run, f, indent=2)

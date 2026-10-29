@@ -29,6 +29,7 @@ because each reports one measurement at one point in time; the pipeline pages ar
 | [`road-prior-2026-10.md`](road-prior-2026-10.md) | A road-network prior for CurbRamp (driveway vs curb ramp): first measurement ([#45](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/45)) |
 | [`segmentation-prior-2026-10.md`](segmentation-prior-2026-10.md) | Sidewalk segmentation as a localisation prior for Obstacle and SurfaceProblem ([#44](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/44)) |
 | [`ai-disagree-relabel-2026-10.md`](ai-disagree-relabel-2026-10.md) | A masked expert re-label of the deployed AI's Disagree votes (300 items) and the severity × tag breakdown of AI vote agreement ([SidewalkWebpage#5793](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5793)) |
+| [`confident-learning-2026-10.md`](confident-learning-2026-10.md) | Can wrong crowd targets be found without rating labor? Out-of-fold confident learning and the stricter Disagree rules as split variants, scored against round 3 on the same held-out rows ([#76](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/76), [#75](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/75)) |
 | [`ai-disagree-reversal-2026-10.md`](ai-disagree-reversal-2026-10.md) | Runbook for turning the 2025-08 models' Disagree votes into Unsure in production: per-city dry run and the update script ([SidewalkWebpage#5793](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5793)) |
 
 ## Decisions, audit and hygiene

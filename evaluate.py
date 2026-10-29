@@ -116,8 +116,14 @@ def load_imagefolder(label_type, data_dir="."):
 
 
 def find_best_checkpoint(label_type, data_dir="."):
-    """Path of ``best_model_checkpoint`` from the latest checkpoint's ``trainer_state.json``."""
-    base = os.path.join(data_dir, label_type, "dinov2")
+    """Path of ``best_model_checkpoint`` from the latest checkpoint's ``trainer_state.json`` under
+    ``<data_dir>/<label_type>/dinov2``."""
+    return best_checkpoint_in(os.path.join(data_dir, label_type, "dinov2"))
+
+
+def best_checkpoint_in(base):
+    """Path of ``best_model_checkpoint`` from the latest complete checkpoint's ``trainer_state.json`` under ``base``
+    (a fine_tune_classifier.py output directory)."""
     from fine_tune_classifier import is_complete_checkpoint
     dirs = [d for d in os.listdir(base) if is_complete_checkpoint(os.path.join(base, d))]  # skips one cut off mid-save
     if not dirs:
@@ -134,10 +140,13 @@ def find_best_checkpoint(label_type, data_dir="."):
 # (a) Inference -- GPU; not covered by the unit tests
 # ---------------------------------------------------------------------------------------------------------------------
 
-def run_inference(manifest, checkpoint_dir, revision=None):
-    """Score every row of ``manifest`` whose split is in ``EVAL_SPLITS``; return a predictions DataFrame.
+def run_inference(manifest, checkpoint_dir, revision=None, splits=EVAL_SPLITS):
+    """Score every row of ``manifest`` whose split is in ``splits`` (default ``EVAL_SPLITS``); return a predictions
+    DataFrame.
 
-    ``checkpoint_dir`` is a local checkpoint or a Hugging Face model id, with ``revision`` pinning the latter."""
+    ``checkpoint_dir`` is a local checkpoint or a Hugging Face model id, with ``revision`` pinning the latter.
+    ``splits=("train",)`` scores training rows, which analysis/confident_learning.py uses for out-of-fold
+    predictions (each row scored by the fold model that did not train on it)."""
     import torch
     from PIL import Image
     from tqdm import tqdm
@@ -151,7 +160,7 @@ def run_inference(manifest, checkpoint_dir, revision=None):
     if set(label2id) != set(CLASSES):
         raise ValueError(f"unexpected id2label {model.config.id2label}")
 
-    rows = manifest[manifest.split.isin(EVAL_SPLITS)]
+    rows = manifest[manifest.split.isin(splits)]
     probs = []
     for path in tqdm(rows.crop_path, desc="inference"):
         image = Image.open(path).convert("RGB")
