@@ -11,11 +11,14 @@ below is on the same val / test / test_heldout rows as the round-3 baseline.
 **Status: done.** The chain ran on klone on 2026-10-28 (55 jobs plus the prior job, none failed). The result
 tables come from the checked-in [`confident-learning-2026-10/variants.json`](confident-learning-2026-10/variants.json),
 the rule and prior tables from the chain's `rule.json` files and [`priors.json`](confident-learning-2026-10/priors.json).
-One training seed per variant, as in round 3. Short version: dropping the rows the fold models confidently
-disagree with (`cl-drop`, 4–18% of the train rows) leaves the test split within a hundredth of the baseline and
-raises the AUC on the three unseen deployments for four of the five types, three of them past the bootstrap
-interval; the stricter vote rules, run without rebalancing the classes, cost AUC in distribution for every type
-and out of distribution clearly for SurfaceProblem and for Obstacle under `symmetric`.
+One training seed per variant, as in round 3, then two more seeds of the baseline and of `cl-drop` for every
+type on 2026-10-28/29 (22 jobs, none failed; [`seeds.md`](confident-learning-2026-10/seeds.md)). Short version:
+dropping the rows the fold models confidently disagree with (`cl-drop`, 4–18% of the train rows) costs about half
+a hundredth on the test split and raises the AUC on the three unseen deployments for four of the five types; across
+three seeds the direction holds in 11 of 12 same-seed pairs, but the size is about half of what the first seed
+showed (mean +0.009 to +0.020) and of the same order as the seed noise of the held-out AUC itself. The stricter
+vote rules, run without rebalancing the classes, cost AUC in distribution for every type and out of distribution
+clearly for SurfaceProblem and for Obstacle under `symmetric`.
 
 ## Why
 
@@ -53,7 +56,7 @@ Two zero-labor ways to clean the targets are tested here:
 | Flag rule | off-diagonal of the confident joint, uncalibrated, rows ranked by p(likely) as in cleanlab's `prune_by_noise_rate` (`confident_learning.py flag`); cleanlab's row calibration of the joint would flag 1–9% more rows |
 | Variants per type | `symmetric`, `unanimous3`, `cl-drop`, `cl-flip`; baseline = round 3 |
 | Evaluation | `evaluate.py --per-city` on the round-3 split with each variant's best checkpoint (`--tag <variant>`): test and held-out AUC, the hard slice, recall at precision 0.92 per verdict; then `confident_learning.py report`: within-city AUC as defined in the round-3 report (per-deployment AUCs weighted by n_incorrect × n_correct, deployments with ≥ 10 labels), AUC per held-out deployment, and every variant against the baseline on the same rows with a paired panorama bootstrap (1,000 resamples, `analysis/slices.py`), overall and by severity and tag |
-| Compute | klone `ckpt-all`, one GPU per run (A40 or better); 25 fold runs + 20 variant runs; fold checkpoints deleted after their out-of-fold scores are written |
+| Compute | klone `ckpt-all`, one GPU per run (A40 or better); 25 fold runs + 20 variant runs + 22 seed replicates; fold and replicate checkpoints deleted once their scores are written |
 
 Reproduce from a checkout of this branch on klone (`DATA` is the round-3 output directory, `RUNS` a scratch
 directory for checkpoints):
@@ -65,6 +68,8 @@ DATA=/gscratch/makelab/$USER/sidewalk-validator-ai/retrain-2026-10 RUNS=/gscratc
 for LT in CurbRamp Crosswalk NoCurbRamp Obstacle SurfaceProblem; do for S in 43 44; do for V in baseline cl-drop; do
     LT=$LT VARIANT=$V SEED=$S TAG=$V-s$S KEEP_CKPT=0 DATA=$DATA RUNS=$RUNS \
         sbatch --job-name=cl-$LT-$V-s$S analysis/confident_learning.slurm; done; done; done
+for S in 43 44; do LT=SurfaceProblem VARIANT=cl-flip SEED=$S TAG=cl-flip-s$S KEEP_CKPT=0 DATA=$DATA RUNS=$RUNS \
+    sbatch --job-name=cl-SurfaceProblem-cl-flip-s$S analysis/confident_learning.slurm; done
 # when every job is done (add --gold <private expert file> for the agreement counts; the file never enters the repo):
 python analysis/confident_learning.py report --data-dir $DATA --out docs/confident-learning-2026-10 \
     --public-cities "$(curl -sL https://sidewalk-sea.cs.washington.edu/v3/api/cities | python -c 'import json,sys; print(",".join(c["city_id"] for c in json.load(sys.stdin)["cities"] if c.get("visibility") == "public"))')"
@@ -72,8 +77,9 @@ python analysis/confident_learning.py report --data-dir $DATA --out docs/confide
 
 The report's outputs are checked in under [`confident-learning-2026-10/`](confident-learning-2026-10/):
 `variants.md` and `variants.json` (the result tables, plus the flag accounting per deployment with the private
-deployments pooled), `slices.md` (severity × tag, every variant against the baseline) and `priors.json` (the
-prior counts under each rule, deployment names replaced by a count and a hash). The chain's own
+deployments pooled), `slices.md` (severity × tag, every variant against the baseline), `seeds.md` (the seed
+replicates, each against the baseline of the same seed) and `priors.json` (the prior counts under each rule,
+deployment names replaced by a count and a hash). The chain's own
 outputs (the fold assignments, out-of-fold scores, flagged rows, variant split files, checkpoints' trainer
 states, predictions) stay on klone under `$DATA/<Type>/cl/`; the flag summary records their sha256s.
 
@@ -134,7 +140,7 @@ crowd's, so the flags are not a clean measure of crowd error.
 
 AUC is of the `incorrect` score. Δ is the variant minus the baseline on the same rows, with a 95% interval from
 1,000 resamples of whole panoramas scored by both models (the paired bootstrap of `analysis/slices.py`); it
-captures the sampling noise of the evaluation rows, not the training seed, which was not varied. "Within-city"
+captures the sampling noise of the evaluation rows, not the training seed (the seed replicates further down do that). "Within-city"
 is the round-3 definition (per-deployment AUCs weighted by n_incorrect × n_correct over deployments with at
 least 10 labels; the baseline rows reproduce the round-3 report). The last column is the raw-score recall of
 `incorrect` at precision 0.92 on the held-out rows, the production gate's level but not its calibrated map, so
@@ -226,7 +232,7 @@ the hard slice, are in [`variants.md`](confident-learning-2026-10/variants.md).
   class mix (see the accounting above), so what they measure is cleaner targets *at the cost of* fewer examples
   and more imbalance, and as run here the cost wins. They say nothing about the rule as a definition with more
   data behind it, or with the classes rebalanced.
-- **Confident learning helps on the held-out deployments (one seed).** `cl-drop` removes 4–18% of the train rows and leaves the test split within
+- **Confident learning helps on the held-out deployments (seed 42; the replicates below temper the size).** `cl-drop` removes 4–18% of the train rows and leaves the test split within
   a hundredth of the baseline (−0.008 to +0.009; the within-city test AUC moves by −0.013 to +0.008), while
   the held-out AUC rises for Crosswalk (+0.032 [+0.004, +0.067]), NoCurbRamp (+0.041 [+0.016, +0.063]) and
   Obstacle (+0.022 [+0.009, +0.036]), rises short of the interval for CurbRamp (+0.012 [−0.002, +0.028]), and
@@ -249,8 +255,49 @@ the hard slice, are in [`variants.md`](confident-learning-2026-10/variants.md).
   the hard slice is flagged and `cl-drop` drops those rows too (the hard-slice AUCs move both ways on 5–90
   labels, too few to read). The run cannot tell these apart. Three more cautions: the intervals resample
   panoramas, not deployments, and there are only three of those (CurbRamp's gain is private city A alone); the
-  seed was not varied; and the held-out split has now been used to pick among four variants for five types, so
-  about one of those twenty comparisons is expected to clear its interval by chance.
+  seed-42 run turned out to be the most favorable of three seeds for Crosswalk, NoCurbRamp and Obstacle (next
+  section); and the held-out split has now been used to pick among four variants for five types, so about one
+  of those twenty comparisons is expected to clear its interval by chance.
+
+### Seed replicates
+
+The baseline and `cl-drop` were retrained with seeds 43 and 44 for every type (and `cl-flip` for SurfaceProblem,
+the one type where it beat `cl-drop`), everything else fixed. Each replicate is compared with the baseline of the
+*same* seed; the full per-seed table with intervals is [`seeds.md`](confident-learning-2026-10/seeds.md). Held-out
+AUC as mean ± sample sd over the three seeds; Δ as the mean of the three same-seed differences with their range
+and the number of seeds where `cl-drop` was ahead.
+
+| type | baseline held-out AUC | `cl-drop` held-out AUC | Δ held-out, mean [min, max], seeds ahead | Δ test, mean | incorrect R@P0.92 held-out, baseline → `cl-drop` |
+|---|---:|---:|---:|---:|---:|
+| CurbRamp | 0.908 ± 0.006 | 0.917 ± 0.010 | +0.009 [+0.005, +0.012], 3/3 | −0.004 | 0.21 ± 0.36 → 0.63 ± 0.09 |
+| Crosswalk | 0.949 ± 0.014 | 0.970 ± 0.003 | +0.020 [+0.002, +0.032], 3/3 | −0.004 | 0.90 → 0.92 |
+| NoCurbRamp | 0.905 ± 0.021 | 0.921 ± 0.006 | +0.017 [+0.002, +0.041], 3/3 | −0.005 | 0.68 → 0.77 |
+| Obstacle | 0.869 ± 0.008 | 0.878 ± 0.013 | +0.009 [−0.014, +0.022], 2/3 | +0.006 | 0.51 → 0.61 |
+| SurfaceProblem | 0.720 ± 0.010 | 0.701 ± 0.016 | −0.019 [−0.024, −0.011], 0/3 | +0.001 | 0.03 → 0.00 |
+| SurfaceProblem, `cl-flip` | 0.720 ± 0.010 | 0.721 ± 0.009 | +0.000 [−0.020, +0.016], 2/3 | −0.006 | 0.03 → 0.00 |
+
+- **The direction survives, the size shrinks.** On the four types where seed 42 showed a held-out gain, `cl-drop`
+  is ahead of its same-seed baseline in 11 of 12 pairs; the exception is Obstacle with seed 44 (−0.014
+  [−0.028, −0.001]). But only four of the twelve pairs clear their own interval (Crosswalk, NoCurbRamp and
+  Obstacle with seed 42, Obstacle with seed 43), and the seed-42 run was the most favorable of the three for
+  Crosswalk, NoCurbRamp and Obstacle. The mean gains are about half of the seed-42 figures: NoCurbRamp +0.017
+  against +0.041, Crosswalk +0.020 against +0.032. Part of that is selection: seed 42's numbers are the ones that
+  picked `cl-drop` as the variant to replicate.
+- **The seed moves the held-out AUC as much as the variant does.** The baseline's held-out AUC has a seed sd of
+  0.006–0.021 (NoCurbRamp 0.881 / 0.912 / 0.921 across the three seeds), the size of the `cl-drop` effect. For
+  Crosswalk and NoCurbRamp `cl-drop` is also the *less* seed-sensitive model (sd 0.003 and 0.006 against 0.014
+  and 0.021), which is what removing a few hundred contradictory targets would be expected to do; for the other
+  three types the spreads are alike.
+- **The test cost is real and small.** CurbRamp, Crosswalk and NoCurbRamp lose 0.004–0.005 test AUC under
+  `cl-drop` with every seed (0 of 3 ahead for CurbRamp and NoCurbRamp); Obstacle gains 0.006 with every seed;
+  SurfaceProblem is unchanged.
+- **The raw Disagree recall at 0.92 precision on the held-out rows is higher and steadier under `cl-drop`** for the
+  four types (means 0.63 / 0.92 / 0.77 / 0.61 against 0.21 / 0.90 / 0.68 / 0.51). The baseline's CurbRamp figure is
+  0.00 for two seeds and 0.61 for the third, so the round-3 number at that operating point is itself a matter of
+  seed; `cl-drop`'s three are 0.53–0.70.
+- **SurfaceProblem is not helped.** `cl-drop` lowers its held-out AUC with every seed (−0.011 to −0.024) and
+  `cl-flip`, which looked like a gain with seed 42 (+0.016), averages to zero over three. The type's held-out AUC
+  stays at 0.70–0.73 whatever is done to the train rows; its problem is not the targets this method can find.
 
 Severity × tag slices for every variant, test and held-out, are in [`slices.md`](confident-learning-2026-10/slices.md),
 with the baseline AUC and each variant's Δ and interval per slice; the training rows per slice are the round-3
@@ -312,15 +359,15 @@ retrain under either rule would write to the file.
 ## Recommendation
 
 1. **Take `cl-drop` into the next retrain, not into production from here.** The gain is where the Disagree
-   gate fails, on deployments the model has not seen, and it costs about a hundredth in distribution. What
-   this run does not have is a second seed (the intervals cover evaluation noise only), calibrated maps, or a
-   held-out set it has not already been selected on. The next step is cheap: retrain the five types on the
-   `cl-drop` splits with two more seeds (`cl_submit.sh` with the existing `cl/cl-drop/split.csv`, about 25
-   GPU-hours), fit the maps with `calibration/calibrate.py` and read the gate table the way
-   [`retrain-2026-10.md`](retrain-2026-10.md) does; and confirm on deployments this run never looked at, which
-   the next data pull will have. If the held-out gains hold across seeds, `cl-drop` becomes part of the round-4
-   recipe (one extra CPU step and five fold trainings per type, all scripted here). Try `cl-flip` for
-   SurfaceProblem alongside, since it is the only variant that moved that type's held-out AUC up.
+   gate fails, on deployments the model has not seen, and it costs about half a hundredth in distribution.
+   Across three seeds the gain holds in direction for CurbRamp, Crosswalk and NoCurbRamp (3 of 3 seeds each) and
+   mostly for Obstacle (2 of 3), at about half the size the first seed showed: +0.01 to +0.02 held-out AUC, the
+   same order as the seed noise. That is enough to carry `cl-drop` into the round-4 recipe (one extra CPU step
+   and five fold trainings per type, all scripted here) but not enough to call the gain settled: what is still
+   missing is calibrated maps (`calibration/calibrate.py` on the `cl-drop` runs, read through the gate table the
+   way [`retrain-2026-10.md`](retrain-2026-10.md) does) and deployments this experiment never selected on, which
+   the next data pull will have. Leave SurfaceProblem's train rows alone: neither `cl-drop` nor `cl-flip` moves
+   its held-out AUC up over three seeds.
 2. **Do not filter the training set with the stricter vote rules as run here**, without rebalancing: they
    lose in distribution for every type and on the unseen deployments for SurfaceProblem and for Obstacle under
    `symmetric`, and gain only Crosswalk's. A fair test of the rule as a *definition* would downsample `correct` back to round 3's
