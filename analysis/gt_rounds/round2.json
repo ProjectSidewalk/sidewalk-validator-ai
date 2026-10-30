@@ -1,0 +1,9 @@
+{
+  "_comment": "Issue #78: round 2 of the masked AI-Disagree re-label. Each rater maps to the city they rate in full; rater user_ids are passed on the command line, never stored here. per_type = AI-Disagree items per type per city (170); shares split them over the strata; decoys_per_type (16 x 5 = 80) brings each city to 250; shared = items of each city the other rater also rates.",
+  "raters": {"jon": "sidewalk_seattle", "mikey": "sidewalk_chicago"},
+  "per_type": {"CurbRamp": 42, "Crosswalk": 36, "NoCurbRamp": 34, "Obstacle": 30, "SurfaceProblem": 28},
+  "shares": {"margin": 0.5, "lone": 0.35, "light_voted": 0.15},
+  "margin_correct_cap": 0.4,
+  "decoys_per_type": 16,
+  "shared": 50
+}
