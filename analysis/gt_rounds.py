@@ -209,16 +209,21 @@ def sev_bucket(severity):
 
 def eligible(pool):
     """Rows of ``LABEL_TYPES`` that no expert in the pool has voted on (every ``expert<N>`` column empty) or placed
-    (every ``expert<N>_labeled`` false). Excluding every rater's labels from every city keeps the shared items
-    fair to both raters.
+    (every ``expert<N>_labeled`` false), and whose author is not excluded (``author_excluded`` false, when the pool
+    has that column). Excluding every rater's labels from every city keeps the shared items fair to both raters;
+    excluded authors' labels never appear in Gallery, so a rater could not vote on them.
 
-    >>> p = pd.DataFrame({"label_type": ["CurbRamp"] * 4 + ["Other"], "expert1": [None, "Agree", None, None, None],
-    ...                   "expert2": [None, None, None, "Unsure", None], "expert1_labeled": ["f", "f", "t", "f", "f"],
-    ...                   "expert2_labeled": ["f"] * 5})
+    >>> p = pd.DataFrame({"label_type": ["CurbRamp"] * 5 + ["Other"],
+    ...                   "expert1": [None, "Agree", None, None, None, None],
+    ...                   "expert2": [None, None, None, "Unsure", None, None],
+    ...                   "expert1_labeled": ["f", "f", "t", "f", "f", "f"], "expert2_labeled": ["f"] * 6,
+    ...                   "author_excluded": ["f", "f", "f", "f", "t", "f"]})
     >>> list(eligible(p).index)
     [0]
     """
     ok = pool.label_type.isin(LABEL_TYPES)
+    if "author_excluded" in pool.columns:
+        ok &= ~pool.author_excluded.astype(str).str.lower().isin(["t", "true"])
     for c in pool.columns:
         if c.startswith("expert") and c.endswith("_labeled"):
             ok &= ~pool[c].astype(str).str.lower().isin(["t", "true"])

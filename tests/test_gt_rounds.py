@@ -77,6 +77,13 @@ def test_eligible_without_expert2_columns_still_works():
     assert list(gr.eligible(p).label_id) == [1]
 
 
+def test_eligible_drops_excluded_authors_and_tolerates_older_pools():
+    # Gallery never shows an excluded author's labels, so a rater could not vote on them (round 2: 11 Seattle items).
+    p = _pool([{}, {}, {}]).assign(author_excluded=["f", "t", "true"])
+    assert list(gr.eligible(p).label_id) == [1]
+    assert len(gr.eligible(p.drop(columns=["author_excluded"]))) == 3  # a pool pulled before the column existed
+
+
 def test_strata_follow_the_margin_rule_of_data_generation():
     # The rule of data_generation.eligible_labels: incorrect at net Disagree > 1, correct at net Agree > 2.
     p = _pool([{"h_agree": 0, "h_dis": 2}, {"h_agree": 3, "h_dis": 0}, {"h_agree": 2, "h_dis": 0},

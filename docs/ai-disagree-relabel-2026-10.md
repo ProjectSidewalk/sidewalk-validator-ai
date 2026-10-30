@@ -378,6 +378,13 @@ pages (`packet/rater_jon/rate.html`, `packet/rater_mikey/rate.html`) are the fal
 `votes --rater jon --rater-id <uuid>` (pinned as `votes_jon`), then `score --rater jon` and
 `agreement --sheets jon=... mikey=...`.
 
+Eleven Seattle items (10 Obstacle, 1 SurfaceProblem) never showed in Gallery: all came from one author whose account
+is `excluded` in `user_stat`, and Gallery hides excluded authors' labels. The rater voted on them from each label's
+share page (`/label/<id>`), which shows the existing AI vote, so these 11 are not masked; the rater agreed with the
+AI's Disagree on all of them. They are reported apart from the main results. The pool query now carries
+`author_excluded` and `eligible()` drops those rows, so later rounds cannot draw them; this round's key was built
+before that and is unchanged.
+
 | File (in `~/Data/sidewalk-validator-ai-relabel-2026-10/round2/`) | sha256 |
 |---|---|
 | `pool.csv` (two schemas, pulled 2026-10-28) | `a85a573c303fe6538dba5821cbb7f3dc4667e244aa0c548354aa0e3bdcc23720` |
@@ -386,6 +393,7 @@ pages (`packet/rater_jon/rate.html`, `packet/rater_mikey/rate.html`) are the fal
 | `private-key-do-not-share/key.csv` | `57116bdfa129b66f6944e5520be772e314a046cec9189f22fdee56659e790aed` |
 | `gallery_jon/gallery_urls.csv` | `1b28f58715eee89a1d5d7db56dc9266815513a0d0e1c5a76a1a32dc98f172ba9` |
 | `gallery_mikey/gallery_urls.csv` | `8aaa04b8c89da2a16507c955f877ecbcb2473e820665fece0fba145539749ec9` |
+| `votes_jon.csv` (pinned 2026-10-30, 300 of 300 voted) | `6767596259746e8333b7fcfeec6ca4950c0ef25d7a33f7b3bf0d4e9d90f346eb` |
 
 Results go in a "Round 2 results" section here once both raters are done; the raw sheets stay in `~/Data`.
 
