@@ -397,3 +397,114 @@ def test_gold_table_by_stratum_and_unmasked_left_out():
     assert s.loc["decoy_agree", "agree_correct"] == 1.0 and s.loc["lone", "n_disagree"] == 3
     r = gr.resolution_table(gr.adjudicated(key, sheets, cons, unmasked={"r2"}), ["A", "B"])
     assert r.set_index(["mismatch_kind", "label_type"]).loc[("all", "all"), "n"] == 2
+
+
+def test_agreement_three_answer_view_skips_one_sided_blanks_and_counts_splits_in_kappa():
+    key = _rated([{"shared": True}, {"shared": True}, {"shared": True}, {"shared": True}, {"shared": True}])
+    sa = pd.DataFrame({"packet_id": key.packet_id,
+                       "verdict": ["incorrect", "correct", "cant_tell", "incorrect", "correct"]})
+    sb = pd.DataFrame({"packet_id": key.packet_id, "verdict": ["incorrect", "correct", "correct", "", "correct"]})
+    t = gr.agreement_table(key, {"A": sa, "B": sb}).set_index("label_type")
+    assert t.loc["all", "n_answered"] == 4 and t.loc["all", "agree3"] == pytest.approx(3 / 4)
+    assert t.loc["all", "kappa3"] != pytest.approx(t.loc["all", "kappa"])  # the split lowers the 3-answer kappa
+    assert t.loc["all", "A_confirms_ai"] == pytest.approx(1 / 3) and t.loc["all", "B_confirms_ai"] == pytest.approx(1 / 3)
+
+
+def test_gold_rates_count_unsure_decoys_apart_from_disagrees():
+    gl = pd.DataFrame({"ai_vote": ["Disagree", "Unsure", "Agree"], "gold": ["incorrect", "incorrect", "correct"]})
+    r = gr._gold_rates(gl)
+    assert r["n_disagree"] == 1 and r["confirms_ai"] == 1.0 and r["n_unsure"] == 1 and r["n_agree"] == 1
+
+
+def test_adjudication_page_flags_unmasked_items():
+    key, sheets = _adj_case()
+    key = key.assign(pano_id="p", heading=0.0, pitch=0.0)
+    mm = gr.mismatches(key, sheets, unmasked={"r2"})
+    page = gr.adjudication_page(mm, ["A", "B"], {}, "items", "t")
+    assert page.count("rated unmasked") == 1
+
+
+def test_unmasked_ids_are_checked_against_the_key():
+    key = pd.DataFrame({"packet_id": ["r0", "r1"], "label_uid": ["sidewalk_a:1", "sidewalk_a:2"]})
+    assert gr.unmasked_ids(pd.DataFrame({"packet_id": ["r1"], "label_uid": ["sidewalk_a:2"]}), key) == {"r1"}
+    for bad in (pd.DataFrame({"packet_id": ["zz"], "label_uid": ["sidewalk_a:2"]}),
+                pd.DataFrame({"packet_id": ["r1"], "label_uid": ["sidewalk_b:2"]}),
+                pd.DataFrame({"packet_id": ["r1", "r1"], "label_uid": ["sidewalk_a:2"] * 2})):
+        with pytest.raises(ValueError):
+            gr.unmasked_ids(bad, key)
+
+
+def _cli_round(tmp_path):
+    """A pinned key, pool, two pinned sheets and a pinned unmasked list on disk, as the commands expect."""
+    key, sheets = _adj_case()
+    key = key.assign(label_uid_city=key.label_uid, rater=["A"] * 6 + ["B"], margin_class="", round3_split="",
+                     pano_id="p", schema="sidewalk_a", label_id=range(len(key))).drop(columns="verdict")
+    kdir = tmp_path / "key"
+    kdir.mkdir()
+    kp, pp = kdir / "key.csv", tmp_path / "pool.csv"
+    key.to_csv(kp, index=False)
+    pd.DataFrame({"schema": "sidewalk_a", "label_id": range(len(key)), "heading": 0.0, "pitch": 0.0, "h_agree": 0,
+                  "h_dis": 0}).to_csv(pp, index=False)
+    mp = kdir / "manifest.json"
+    rl.write_manifest(str(mp), {"design": "t", "key_sha256": rl.sha256_file(kp), "pool_sha256": rl.sha256_file(pp)})
+    paths = {}
+    for r, s in sheets.items():
+        paths[r] = tmp_path / f"votes_{r}.csv"
+        s.assign(label_type="CurbRamp", notes="").to_csv(paths[r], index=False)
+        rl.pin(str(mp), f"votes_{r}", str(paths[r]), len(s))
+    up = tmp_path / "unmasked.csv"
+    pd.DataFrame({"packet_id": ["r0"], "label_uid": ["sidewalk_a:0"], "reason": "test"}).to_csv(up, index=False)
+    rl.pin(str(mp), "unmasked", str(up), 1)
+    base = ["--key", str(kp), "--sheets", f"A={paths['A']}", f"B={paths['B']}"]
+    return base, mp, pp, up
+
+
+def test_cli_build_report_and_refusals(tmp_path, capsys):
+    base, mp, pp, up = _cli_round(tmp_path)
+    out = tmp_path / "adj"
+    build = ["adjudicate-build", *base, "--pool", str(pp), "--packet-dir", str(tmp_path), "--out", str(out)]
+    with pytest.raises(SystemExit, match="--unmasked"):  # the manifest pins an unmasked list
+        gr.main(build)
+    gr.main(build + ["--unmasked", str(up)])
+    pins = json.load(open(mp))["rating"]
+    assert {"adjudication_items", "adjudication_page"} <= set(pins)
+    page = (out / "adjudicate.html").read_bytes()
+    with pytest.raises(SystemExit):  # a rerun refuses and leaves the page alone
+        gr.main(build + ["--unmasked", str(up)])
+    assert (out / "adjudicate.html").read_bytes() == page
+    items = pd.read_csv(out / "items.csv", dtype=str, keep_default_na=False)
+    cons = items.assign(consensus="correct")
+    cons.to_csv(out / "consensus.csv", index=False)
+    cons.assign(verdict_A="incorrect").to_csv(out / "tampered.csv", index=False)
+    report = ["adjudicate-report", *base, "--unmasked", str(up), "--items", str(out / "items.csv")]
+    with pytest.raises(SystemExit, match="differ from the pinned"):
+        gr.main(report + ["--consensus", str(out / "tampered.csv"), "--out", str(tmp_path / "bad.csv")])
+    assert not (tmp_path / "bad.csv").exists()
+    gr.main(report + ["--consensus", str(out / "consensus.csv"), "--out", str(tmp_path / "gold.csv")])
+    gold = pd.read_csv(tmp_path / "gold.csv", dtype=str, keep_default_na=False).set_index("packet_id")
+    assert gold.loc["r0", "unmasked"] == "True" and gold.loc["r2", "gold"] == "correct"
+    assert {"adjudication_consensus", "gold_shared"} <= set(json.load(open(mp))["rating"])
+    assert "1 unmasked items left out" in capsys.readouterr().out
+    with pytest.raises(SystemExit):  # gold is not overwritten
+        gr.main(report + ["--consensus", str(out / "consensus.csv"), "--out", str(tmp_path / "gold.csv")])
+
+
+def test_cli_preview_pins_nothing_and_writes_no_final_files(tmp_path):
+    base, mp, pp, up = _cli_round(tmp_path)
+    loose = tmp_path / "votes_B_unpinned.csv"
+    pd.read_csv(tmp_path / "votes_B.csv").to_csv(loose, index=False)
+    loose.write_text(loose.read_text() + "\n")  # different bytes, so not the pinned file
+    before = mp.read_bytes()
+    out = tmp_path / "adj"
+    args = ["adjudicate-build", "--key", base[1], "--sheets", base[3], f"B={loose}", "--pool", str(pp),
+            "--packet-dir", str(tmp_path), "--out", str(out), "--unmasked", str(up), "--allow-unpinned"]
+    gr.main(args)
+    assert mp.read_bytes() == before
+    assert (out / "adjudicate.preview.html").exists() and not (out / "adjudicate.html").exists()
+    assert not (out / "items.csv").exists() and not (out / "meeting_record.md").exists()
+
+
+def test_cli_score_leaves_unmasked_items_out(tmp_path, capsys):
+    base, mp, pp, up = _cli_round(tmp_path)
+    gr.main(["score", "--key", base[1], "--rater", "B", "--sheet", base[4].split("=", 1)[1], "--unmasked", str(up)])
+    assert "1 unmasked items left out" in capsys.readouterr().out

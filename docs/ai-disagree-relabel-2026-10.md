@@ -415,7 +415,8 @@ sheets. The two unmasked shared items stay on the list if they mismatch, flagged
    can't-tell split counts as a disagreement. Adjudication writes a separate consensus sheet.
 2. **The list is built once both sheets are pinned** (`adjudicate-build`), and the item list and the meeting page
    are pinned (`adjudication_items`, `adjudication_page`), so the set of discussed items cannot drift. With an
-   unpinned input the command runs as a preview and pins nothing; `adjudicate-report` refuses a consensus sheet
+   unpinned input the command runs as a preview: it pins nothing and writes only `*.preview.*` files (the report
+   writes no gold CSV). Every command refuses to run without `--unmasked` once the manifest pins that list; `adjudicate-report` refuses a consensus sheet
    whose items or recorded verdicts differ from the pinned list.
 3. **Masking holds during the meeting.** The meeting page shows the crop, a Street View link, each rater's
    verdict and each rater's Gallery comments (pulled and pinned with `comments`). It does not show the AI's vote,

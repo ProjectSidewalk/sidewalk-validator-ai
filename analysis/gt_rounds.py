@@ -68,7 +68,9 @@ and leaves a meeting-record template. ``adjudicate-report`` pins the exported co
 writes each shared item's gold label (the common verdict where the raters matched, the consensus where they did
 not) and prints the independent agreement, how each mismatch was resolved, and how often the gold labels confirm the AI
 (sample rates, per type and per stratum). The independent sheets are never changed. With ``--allow-unpinned``
-the commands run as a preview and pin nothing; every pin and overwrite is checked before anything is written.
+the commands run as a preview: they pin nothing, ``adjudicate-build`` writes ``*.preview.*`` files and
+``adjudicate-report`` writes no gold CSV; every pin and overwrite is checked before anything is written. When the
+manifest pins an unmasked list, every command that reads sheets refuses to run without ``--unmasked``.
 
 **Unmasked items.** ``unmasked.csv`` (``packet_id, label_uid, reason``; pinned as ``unmasked``) lists items a
 rater rated with the AI's vote visible. ``score``, ``agreement`` and ``adjudicate-report`` leave them out of the
@@ -662,10 +664,7 @@ def cmd_score(args):
     mpath = args.manifest or rl.default_manifest(args.key)
     rl.check_pin(mpath, "key", args.key, args.allow_unpinned)
     rl.check_pin(mpath, f"votes_{args.rater}", args.sheet, args.allow_unpinned)
-    unmasked = set()
-    if args.unmasked:
-        rl.check_pin(mpath, "unmasked", args.unmasked, args.allow_unpinned)
-        unmasked = set(pd.read_csv(args.unmasked, dtype=str).packet_id)
+    _, unmasked = _load_unmasked(mpath, key, args.unmasked, args.allow_unpinned)
     man = json.load(open(mpath)) if os.path.exists(mpath) else {}
     items = rater_items(key, args.rater)
     m = rl.unmask(items, _read_sheet(args.sheet))
@@ -690,7 +689,7 @@ def cmd_score(args):
 def cmd_agreement(args):
     key = pd.read_csv(args.key, dtype={"tags": str})
     paths = _sheets_arg(args.sheets)
-    _, unmasked = _check_inputs(args.manifest or rl.default_manifest(args.key), args.key, paths,
+    _, unmasked = _check_inputs(args.manifest or rl.default_manifest(args.key), key, args.key, paths,
                                 args.allow_unpinned, args.unmasked)
     sheets = {r: _read_sheet(p) for r, p in paths.items()}
     try:
@@ -861,7 +860,7 @@ def _gold_rates(gl):
     dr = rl._rate(int((d.gold == "incorrect").sum()), len(d))
     ar = rl._rate(int((a.gold == "correct").sum()), len(a))
     return {"n_disagree": dr["n"], "confirms_ai": dr["rate"], "confirms_lo": dr["lo"], "confirms_hi": dr["hi"],
-            "n_agree": ar["n"], "agree_correct": ar["rate"]}
+            "n_agree": ar["n"], "agree_correct": ar["rate"], "n_unsure": int((gl.ai_vote == "Unsure").sum())}
 
 
 def gold_table(g, by="label_type"):
@@ -952,17 +951,42 @@ def _sheets_arg(specs):
     return dict(spec.split("=", 1) for spec in specs)
 
 
-def _check_inputs(mpath, key_path, sheet_paths, allow_unpinned, unmasked_path=None):
+def unmasked_ids(u, key):
+    """The packet_ids of the unmasked list ``u`` (``packet_id, label_uid, reason``), checked against the key: each
+    packet_id once, every one in the key, and its ``label_uid`` the key's."""
+    if not u.packet_id.is_unique:
+        raise ValueError("the unmasked list repeats packet_ids")
+    m = u[["packet_id", "label_uid"]].merge(key[["packet_id", "label_uid"]], on="packet_id", how="left",
+                                            suffixes=("", "_key"), validate="one_to_one")
+    if m.label_uid_key.isna().any():
+        raise ValueError(f"{int(m.label_uid_key.isna().sum())} unmasked packet_ids are not in the key")
+    if (m.label_uid != m.label_uid_key).any():
+        raise ValueError("an unmasked row's label_uid differs from the key's for its packet_id")
+    return set(u.packet_id)
+
+
+def _load_unmasked(mpath, key, path, allow_unpinned):
+    """``(pinned, packet_ids)`` of the unmasked list. Refuses to run without one when the manifest pins one, so a
+    forgotten ``--unmasked`` cannot put those items back into the tables."""
+    if not path:
+        if _pinned_sha(mpath, "unmasked"):
+            sys.exit("the manifest pins an unmasked list; pass it with --unmasked")
+        return True, set()
+    ok = rl.check_pin(mpath, "unmasked", path, allow_unpinned)
+    try:
+        return ok, unmasked_ids(pd.read_csv(path, dtype=str), key)
+    except ValueError as e:
+        sys.exit(str(e))
+
+
+def _check_inputs(mpath, key, key_path, sheet_paths, allow_unpinned, unmasked_path=None):
     """Check the key, the votes sheets and the unmasked list against their pins. Returns ``(all pinned,
-    unmasked packet_ids)``; with ``allow_unpinned`` a mismatch is a warning and the caller pins nothing."""
+    unmasked packet_ids)``; with ``allow_unpinned`` a mismatch is a warning and the run is a preview."""
     ok = rl.check_pin(mpath, "key", key_path, allow_unpinned)
     for r, path in sheet_paths.items():
         ok &= rl.check_pin(mpath, f"votes_{r}", path, allow_unpinned)
-    unmasked = set()
-    if unmasked_path:
-        ok &= rl.check_pin(mpath, "unmasked", unmasked_path, allow_unpinned)
-        unmasked = set(pd.read_csv(unmasked_path, dtype=str).packet_id)
-    return ok, unmasked
+    u_ok, unmasked = _load_unmasked(mpath, key, unmasked_path, allow_unpinned)
+    return ok and u_ok, unmasked
 
 
 def _pinned_sha(mpath, name):
@@ -1003,7 +1027,7 @@ def cmd_adjudicate_build(args):
     mpath = args.manifest or rl.default_manifest(args.key)
     paths = _sheets_arg(args.sheets)
     raters = list(paths)
-    ok, unmasked = _check_inputs(mpath, args.key, paths, args.allow_unpinned, args.unmasked)
+    ok, unmasked = _check_inputs(mpath, key, args.key, paths, args.allow_unpinned, args.unmasked)
     man = json.load(open(mpath)) if os.path.exists(mpath) else {}
     if man.get("pool_sha256") != rl.sha256_file(args.pool):
         if not args.allow_unpinned:
@@ -1027,7 +1051,8 @@ def cmd_adjudicate_build(args):
     sheet = mm.rename(columns={f"v_{r}": f"verdict_{r}" for r in raters}).assign(
         consensus="", rationale="", rule_clarification="")[adjudication_columns(raters)]
     items = sheet.to_csv(index=False).encode()
-    ppath, spath = os.path.join(args.out, "adjudicate.html"), os.path.join(args.out, "items.csv")
+    sfx = "" if ok else ".preview"  # a preview must not leave files that look final
+    ppath, spath = (os.path.join(args.out, f"adjudicate{sfx}.html"), os.path.join(args.out, f"items{sfx}.csv"))
     for path in (ppath, spath):
         rl.refuse_overwrite(path, args.repin)
     if ok:
@@ -1037,7 +1062,7 @@ def cmd_adjudicate_build(args):
     _write_atomic(ppath, page)
     _write_atomic(spath, items)
     rpath = os.path.join(args.out, "meeting_record.md")
-    if not os.path.exists(rpath):
+    if ok and not os.path.exists(rpath):
         with open(rpath, "w") as f:
             f.write(MEETING_RECORD.format(design=design_name, n=len(mm),
                                           conflicts=int((mm.mismatch_kind == "conflict").sum()),
@@ -1059,12 +1084,20 @@ def cmd_adjudicate_report(args):
     mpath = args.manifest or rl.default_manifest(args.key)
     paths = _sheets_arg(args.sheets)
     raters = list(paths)
-    ok, unmasked = _check_inputs(mpath, args.key, paths, args.allow_unpinned, args.unmasked)
+    ok, unmasked = _check_inputs(mpath, key, args.key, paths, args.allow_unpinned, args.unmasked)
     ipath = args.items or os.path.join(os.path.dirname(os.path.abspath(args.consensus)), "items.csv")
     ok &= rl.check_pin(mpath, "adjudication_items", ipath, args.allow_unpinned)
+    if not ok and args.out:
+        sys.exit("an input is unpinned: a preview prints the tables but writes no gold CSV; drop --out")
     sheets = {r: _read_sheet(p) for r, p in paths.items()}
     consensus, items = _read_sheet(args.consensus), _read_sheet(ipath)
     fixed = [c for c in adjudication_columns(raters) if c not in ADJ_ANSWERS]
+    for name, df in (("consensus sheet", consensus), ("item list", items)):
+        missing = [c for c in fixed + (["consensus"] if df is consensus else []) if c not in df.columns]
+        if missing:
+            sys.exit(f"the {name} lacks columns {missing}")
+        if not df.packet_id.is_unique:
+            sys.exit(f"the {name} repeats packet_ids")
     if not consensus[fixed].sort_values("packet_id").reset_index(drop=True).equals(
             items[fixed].sort_values("packet_id").reset_index(drop=True)):
         sys.exit("the consensus sheet's items or recorded verdicts differ from the pinned adjudication item list")
@@ -1108,12 +1141,13 @@ def cmd_adjudicate_report(args):
     gfmt = {"confirms_ai": lambda r: pct(r, "confirms_ai", "confirms_lo", "confirms_hi"),
             "agree_correct": lambda r: "" if pd.isna(r["agree_correct"]) else f"{r['agree_correct']:.0%}"}
     gcols = ["shared_items", "gold", "from_matched", "from_consensus", "no_gold", "n_disagree", "confirms_ai",
-             "n_agree", "agree_correct"]
+             "n_agree", "agree_correct", "n_unsure"]
     for by in ("label_type", "stratum"):
         print(f"\n## Gold labels on the shared items, by {by.replace('_', ' ')} (after adjudication)\n")
         print(_table_markdown(gold_table(g, by), [by] + gcols, gfmt))
     print("\nconfirms_ai: the gold label is incorrect on an AI Disagree; agree_correct: the gold label is correct on "
-          "an AI Agree decoy. Rates in this stratified sample, not population estimates.")
+          "an AI Agree decoy; n_unsure: gold labels on AI Unsure decoys (an abstention, counted, not rated). Rates in this "
+          "stratified sample, not population estimates.")
 
 
 def build_parser():
