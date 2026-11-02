@@ -51,8 +51,16 @@ raters also rate.
         --unmasked $D/unmasked.csv
     python analysis/gt_rounds.py comments --key $K --rater jon --rater-id <uuid> --out $D/comments_jon.csv
     python analysis/gt_rounds.py adjudicate-build --key $K --sheets jon=$D/votes_jon.csv mikey=$D/votes_mikey.csv \\
-        --pool $D/pool.csv --packet-dir $D/packet --out $D/adjudication \\
-        --comments jon=$D/comments_jon.csv mikey=$D/comments_mikey.csv --unmasked $D/unmasked.csv
+        --out $D/adjudication --unmasked $D/unmasked.csv
+    # the meeting: the raters discuss each listed item in Gallery and change their prod votes and comments there
+    python analysis/gt_rounds.py votes    --key $K --rater jon --rater-id <uuid> --stage post --out $D/post/votes_jon.csv
+    python analysis/gt_rounds.py comments --key $K --rater jon --rater-id <uuid> --stage post \\
+        --out $D/post/comments_jon.csv
+    python analysis/gt_rounds.py adjudicate-consensus --key $K --items $D/adjudication/items.csv \\
+        --post-sheets jon=$D/post/votes_jon.csv mikey=$D/post/votes_mikey.csv \\
+        --comments jon=$D/comments_jon.csv mikey=$D/comments_mikey.csv \\
+        --post-comments jon=$D/post/comments_jon.csv mikey=$D/post/comments_mikey.csv \\
+        --out $D/adjudication/consensus.csv
     python analysis/gt_rounds.py adjudicate-report --key $K --sheets jon=... mikey=... --unmasked $D/unmasked.csv \\
         --consensus $D/adjudication/consensus.csv --meeting-record $D/adjudication/meeting_record.md \\
         --out $D/adjudication/gold_shared.csv
@@ -62,13 +70,17 @@ one page per rater: their own city's list first, then the other raters' shared i
 rating rule. ``votes`` pulls one rater's prod votes on their items and pins the sheet as ``votes_<rater>``.
 
 **Adjudication.** Once both sheets are pinned, the raters meet on every shared item where their verdicts differ
-(correct against incorrect, or can't tell against a verdict). ``adjudicate-build`` writes the meeting page (each
-rater's verdict and Gallery comments; the AI's vote, the crowd's votes and the stratum hidden), pins the item list
-and leaves a meeting-record template. ``adjudicate-report`` pins the exported consensus sheet and the filled record,
+(correct against incorrect, or can't tell against a verdict). ``adjudicate-build`` pins the item list and leaves a
+meeting-record template. The raters meet in Gallery (the masking CSS on, comments shown), change their prod votes
+to the agreed verdict and add the reasoning to their comments. ``votes`` and ``comments`` with ``--stage post`` pull
+that state under separate pins (``votes_<rater>_post``), so the independent sheets stay pinned, and
+``adjudicate-consensus`` turns it into the consensus sheet: the shared post-meeting verdict where the raters now
+match, ``no_consensus`` where they still differ, and the comments added or edited since the independent pull as the
+rationale. ``adjudicate-report`` pins the consensus sheet and the filled record,
 writes each shared item's gold label (the common verdict where the raters matched, the consensus where they did
 not) and prints the independent agreement, how each mismatch was resolved, and how often the gold labels confirm the AI
 (sample rates, per type and per stratum). The independent sheets are never changed. With ``--allow-unpinned``
-the commands run as a preview: they pin nothing, ``adjudicate-build`` writes ``*.preview.*`` files and
+the commands run as a preview: they pin nothing, ``adjudicate-build`` writes ``items.preview.csv`` and
 ``adjudicate-report`` writes no gold CSV; every pin and overwrite is checked before anything is written. When the
 manifest pins an unmasked list, every command that reads sheets refuses to run without ``--unmasked``.
 
@@ -651,8 +663,14 @@ def cmd_votes(args):
     out = rl.remote(args.host, rl.votes_script(items, args.rater_id))
     sheet = rl.votes_to_sheet(items, pd.read_csv(io.StringIO(out)))
     sheet.to_csv(args.out, index=False)
-    rl.pin(args.manifest or rl.default_manifest(args.key), f"votes_{args.rater}", args.out, len(sheet), args.repin)
+    rl.pin(args.manifest or rl.default_manifest(args.key), _pin_name("votes", args.rater, args.stage), args.out,
+           len(sheet), args.repin)
     print(f"{int((sheet.verdict != '').sum())} of {len(sheet)} items voted -> {args.out} (pinned)")
+
+
+def _pin_name(kind, rater, stage=None):
+    """``votes_jon``, or ``votes_jon_post`` for a pull after the meeting, so it never replaces the independent pin."""
+    return f"{kind}_{rater}" + (f"_{stage}" if stage else "")
 
 
 def _read_sheet(path):
@@ -894,39 +912,40 @@ def adjudication_columns(raters):
     return ["packet_id"] + ADJ_FIXED + [f"verdict_{r}" for r in raters] + ADJ_ANSWERS
 
 
-def adjudication_page(mm, raters, notes, packet_items_rel, design_name):
-    """The meeting page: one card per mismatched item with both raters' verdicts and Gallery comments, and a
-    consensus, a rationale and a rule clarification to record. The AI's vote, the crowd's votes and the stratum
-    (which gives decoys away) are not on it."""
-    items, fixed = [], {}
-    for r in mm.itertuples():
-        said = "".join(
-            f"<li><strong>{html.escape(x)}</strong>: {html.escape(getattr(r, f'v_{x}'))}"
-            + (f" &middot; <em>{html.escape(notes[x].get(r.label_uid, ''))}</em>" if notes.get(x, {}).get(r.label_uid)
-               else "") + "</li>" for x in raters)
-        link = (f'<p><a href="{rl.street_view_url(r.pano_id, r.heading, r.pitch)}" target="_blank" '
-                f'rel="noopener noreferrer">Open in Street View</a></p>') if r.pano_id else ""
-        flag = " &middot; rated unmasked, reported apart" if getattr(r, "unmasked", False) else ""
-        items.append({"id": r.packet_id, "image": f"{packet_items_rel}/{r.packet_id}.jpg",
-                      "alt": f"Item {r.order}: a {r.label_type} label, ringed in yellow",
-                      "caption_html": f"{r.order}. {r.label_type} &middot; {r.packet_id} &middot; "
-                                      f"{r.mismatch_kind.replace('_', ' ')}{flag}",
-                      "extra_html": f"<ul>{said}</ul>{link}"})
-        fixed[r.packet_id] = {"order": r.order, "label_type": r.label_type, "mismatch_kind": r.mismatch_kind,
-                              **{f"verdict_{x}": getattr(r, f"v_{x}") for x in raters}}
-    fields = [{"name": "consensus", "legend": "Consensus: is this label correct?", "kind": "radio",
-               "options": CONSENSUS_OPTIONS},
-              {"name": "rationale", "legend": "Why (one line)", "kind": "text"},
-              {"name": "rule_clarification", "legend": "Rule clarification, if this item exposed a gap (optional)",
-               "kind": "text"}]
-    intro = ("<p>Every shared item where your verdicts differ, in a fixed order. The AI's vote and the crowd's votes "
-             "are hidden; keep them hidden until every item has a consensus. Use <em>Can't tell</em> only when the "
-             "imagery cannot show it, and <em>No consensus</em> when you still disagree after discussion.</p>"
-             + RATING_RULE_HTML)
-    return render_page(title=f"GT round {design_name}: adjudication",
-                       heading=f"Adjudication: {len(mm)} items where the raters differ", intro_html=intro,
-                       items=items, fields=fields, sheet_columns=adjudication_columns(raters), fixed=fixed,
-                       storage_key=f"gt_{design_name}_adjudication", export_name="consensus")
+def consensus_from_votes(items, post_sheets, comments=None, post_comments=None):
+    """The consensus sheet from the raters' prod votes after the meeting, in ``items`` (the pinned item list) order:
+    ``consensus`` is the verdict both raters now hold, or ``no_consensus`` where they still differ (one rater's
+    can't tell against the other's verdict included); ``rationale`` holds each rater's comments that are new or
+    edited since the independent pull (``comments``, keyed ``rater -> DataFrame``), as ``rater: text`` joined by
+    `` || ``. Raises when a post-meeting sheet is missing a listed item or leaves one unanswered.
+
+    >>> items = pd.DataFrame({"packet_id": ["r1", "r2"], "label_uid": ["s:1", "s:2"], "consensus": "",
+    ...                       "rationale": "", "rule_clarification": ""})
+    >>> post = {"A": pd.DataFrame({"packet_id": ["r1", "r2"], "verdict": ["incorrect", "correct"]}),
+    ...         "B": pd.DataFrame({"packet_id": ["r1", "r2"], "verdict": ["incorrect", "cant_tell"]})}
+    >>> consensus_from_votes(items, post).consensus.tolist()
+    ['incorrect', 'no_consensus']
+    """
+    c = items.copy()
+    for r, s in post_sheets.items():
+        v = s[["packet_id", "verdict"]].rename(columns={"verdict": f"post_{r}"})
+        v[f"post_{r}"] = v[f"post_{r}"].fillna("").astype(str)
+        c = c.merge(v, on="packet_id", how="left", validate="one_to_one")
+        bad = c[f"post_{r}"].fillna("")
+        if (bad == "").any() or (set(bad) - VERDICT_VALUES):
+            raise ValueError(f"{r}'s post-meeting sheet misses or leaves unanswered {int((bad == '').sum())} "
+                             "listed items, or holds an unknown verdict")
+    ra, rb = list(post_sheets)
+    c["consensus"] = np.where(c[f"post_{ra}"] == c[f"post_{rb}"], c[f"post_{ra}"], "no_consensus")
+    notes = {}
+    for r, post in (post_comments or {}).items():
+        pre = (comments or {}).get(r)
+        seen = set() if pre is None else set(zip(pre.label_uid, pre.comment.fillna("")))
+        new = post[[(u, t) not in seen for u, t in zip(post.label_uid, post.comment.fillna(""))]]
+        for u, t in new.sort_values("timestamp")[["label_uid", "comment"]].values:
+            notes.setdefault(u, []).append(f"{r}: {t}")
+    c["rationale"] = c.label_uid.map(lambda u: " || ".join(notes.get(u, [])))
+    return c.drop(columns=[f"post_{r}" for r in post_sheets])
 
 
 MEETING_RECORD = """# Adjudication meeting record ({design})
@@ -936,7 +955,7 @@ Fill this in during the meeting; `adjudicate-report --meeting-record` pins it wi
 - Date:
 - Attendees:
 - Started / ended:
-- Items: {n} ({conflicts} conflicts, {splits} can't-tell splits), discussed in the page's order: yes / no (if no, the order used)
+- Items: {n} ({conflicts} conflicts, {splits} can't-tell splits), discussed in the list's order: yes / no (if no, the order used)
 - Who gave their reasoning first on each item:
 - The AI's vote and the crowd's votes stayed hidden until every consensus was recorded: yes / no
 - Imagery used beyond the crop (Street View, other dates):
@@ -1016,50 +1035,33 @@ def cmd_comments(args):
     with open(args.out, "w") as f:
         f.write(rl.remote(args.host, rl.comments_script(rater_items(key, args.rater), args.rater_id)))
     c = rl.load_comments(args.out)
-    rl.pin(args.manifest or rl.default_manifest(args.key), f"comments_{args.rater}", args.out, len(c), args.repin)
+    rl.pin(args.manifest or rl.default_manifest(args.key), _pin_name("comments", args.rater, args.stage), args.out,
+           len(c), args.repin)
     print(f"{len(c)} comments on {c.label_uid.nunique()} labels -> {args.out} (pinned)")
 
 
 def cmd_adjudicate_build(args):
     if rl.inside_git_checkout(args.out):
-        sys.exit(f"refusing to write the adjudication packet inside a git checkout: {args.out}")
+        sys.exit(f"refusing to write the adjudication list inside a git checkout: {args.out}")
     key = pd.read_csv(args.key, dtype={"tags": str})
     mpath = args.manifest or rl.default_manifest(args.key)
     paths = _sheets_arg(args.sheets)
     raters = list(paths)
     ok, unmasked = _check_inputs(mpath, key, args.key, paths, args.allow_unpinned, args.unmasked)
     man = json.load(open(mpath)) if os.path.exists(mpath) else {}
-    if man.get("pool_sha256") != rl.sha256_file(args.pool):
-        if not args.allow_unpinned:
-            sys.exit(f"{args.pool} is not the pool the key was built from; pass --allow-unpinned")
-        ok = False
-    notes = {}
-    for spec in args.comments or []:
-        r, path = spec.split("=", 1)
-        ok &= rl.check_pin(mpath, f"comments_{r}", path, args.allow_unpinned)
-        notes[r] = dict(rl.comments_per_label(rl.load_comments(path))[["label_uid", "comment"]].values)
     try:
         mm = mismatches(key, {r: _read_sheet(p) for r, p in paths.items()}, unmasked)
     except ValueError as e:
         sys.exit(str(e))
-    pool = rl.load_pool(args.pool)
-    pool["label_uid"] = pool.schema + ":" + pool.label_id.astype(str)
-    mm = mm.merge(pool[["label_uid", "heading", "pitch"]], on="label_uid", how="left", validate="one_to_one")
     design_name = man.get("design", "round")
-    page = adjudication_page(mm, raters, notes, os.path.relpath(os.path.join(args.packet_dir, "items"), args.out),
-                             design_name).encode()
     sheet = mm.rename(columns={f"v_{r}": f"verdict_{r}" for r in raters}).assign(
         consensus="", rationale="", rule_clarification="")[adjudication_columns(raters)]
     items = sheet.to_csv(index=False).encode()
-    sfx = "" if ok else ".preview"  # a preview must not leave files that look final
-    ppath, spath = (os.path.join(args.out, f"adjudicate{sfx}.html"), os.path.join(args.out, f"items{sfx}.csv"))
-    for path in (ppath, spath):
-        rl.refuse_overwrite(path, args.repin)
+    spath = os.path.join(args.out, "items.csv" if ok else "items.preview.csv")  # a preview must not look final
+    rl.refuse_overwrite(spath, args.repin)
     if ok:
         _refuse_pin_change(mpath, "adjudication_items", items, args.repin)
-        _refuse_pin_change(mpath, "adjudication_page", page, args.repin)
     os.makedirs(args.out, exist_ok=True)
-    _write_atomic(ppath, page)
     _write_atomic(spath, items)
     rpath = os.path.join(args.out, "meeting_record.md")
     if ok and not os.path.exists(rpath):
@@ -1069,10 +1071,43 @@ def cmd_adjudicate_build(args):
                                           splits=int((mm.mismatch_kind == "cant_tell_split").sum())))
     if ok:
         rl.pin(mpath, "adjudication_items", spath, len(sheet), args.repin)
-        rl.pin(mpath, "adjudication_page", ppath, len(sheet), args.repin)
     print(f"{len(mm)} mismatched items ({int((mm.mismatch_kind == 'conflict').sum())} conflicts, "
-          f"{int(mm.unmasked.sum())} unmasked) -> {ppath}; fill {rpath} in the meeting")
-    print("item list and page pinned" if ok else "PREVIEW: an input is unpinned, so nothing was pinned")
+          f"{int(mm.unmasked.sum())} unmasked) -> {spath}; fill {rpath} in the meeting")
+    print("item list pinned" if ok else "PREVIEW: an input is unpinned, so nothing was pinned")
+
+
+def cmd_adjudicate_consensus(args):
+    if rl.inside_git_checkout(args.out):
+        sys.exit(f"refusing to write the consensus sheet inside a git checkout: {args.out}")
+    rl.refuse_overwrite(args.out, args.repin)
+    mpath = args.manifest or rl.default_manifest(args.key)
+    ok = rl.check_pin(mpath, "key", args.key, args.allow_unpinned)
+    ok &= rl.check_pin(mpath, "adjudication_items", args.items, args.allow_unpinned)
+    post = _sheets_arg(args.post_sheets)
+    for r, path in post.items():
+        ok &= rl.check_pin(mpath, _pin_name("votes", r, "post"), path, args.allow_unpinned)
+    comments, post_comments = {}, {}
+    for specs, stage, into in ((args.comments, None, comments), (args.post_comments, "post", post_comments)):
+        for spec in specs or []:
+            r, path = spec.split("=", 1)
+            ok &= rl.check_pin(mpath, _pin_name("comments", r, stage), path, args.allow_unpinned)
+            into[r] = rl.load_comments(path)
+    if not ok:
+        sys.exit("an input is unpinned; the consensus sheet is built only from pinned pulls")
+    key = pd.read_csv(args.key, dtype={"tags": str})
+    items = _read_sheet(args.items)
+    items = items.merge(key[["packet_id", "label_uid"]], on="packet_id", how="left", validate="one_to_one")
+    try:
+        c = consensus_from_votes(items, {r: _read_sheet(p) for r, p in post.items()}, comments, post_comments)
+    except ValueError as e:
+        sys.exit(str(e))
+    out = c[items.columns.drop("label_uid")]
+    _write_atomic(args.out, out.to_csv(index=False).encode())
+    no_note = c[(c.rationale == "")].packet_id.tolist()
+    print(f"{len(c)} items: " + ", ".join(f"{v} {n}" for v, n in c.consensus.value_counts().items())
+          + f" -> {args.out}")
+    if no_note:
+        print(f"no new comment from either rater on {len(no_note)} items: {', '.join(no_note)}")
 
 
 def cmd_adjudicate_report(args):
@@ -1180,6 +1215,7 @@ def build_parser():
     v.add_argument("--host", default="makelab1")
     v.add_argument("--manifest")
     v.add_argument("--repin", action="store_true")
+    v.add_argument("--stage", help="'post' for the pull after the adjudication meeting (pinned as votes_<rater>_post)")
     v.set_defaults(func=cmd_votes)
     s = sub.add_parser("score", help="one rater's sheet against the key")
     s.add_argument("--key", required=True)
@@ -1206,26 +1242,40 @@ def build_parser():
     c.add_argument("--host", default="makelab1")
     c.add_argument("--manifest")
     c.add_argument("--repin", action="store_true")
+    c.add_argument("--stage", help="'post' for the pull after the adjudication meeting (pinned as "
+                                   "comments_<rater>_post)")
     c.set_defaults(func=cmd_comments)
 
-    ab = sub.add_parser("adjudicate-build", help="the meeting page and item list: every shared item where the "
-                                                 "two raters' verdicts differ")
+    ab = sub.add_parser("adjudicate-build", help="the meeting's item list: every shared item where the two "
+                                                 "raters' verdicts differ (pinned)")
     ab.add_argument("--key", required=True)
     ab.add_argument("--sheets", nargs=2, required=True, metavar="RATER=SHEET", help="both pinned votes sheets")
-    ab.add_argument("--pool", required=True, help="the pool the key was built from (for Street View headings)")
-    ab.add_argument("--packet-dir", required=True, help="the build's packet dir (its items/ crops)")
-    ab.add_argument("--out", required=True, help="directory for adjudicate.html, items.csv, meeting_record.md")
-    ab.add_argument("--comments", nargs="*", metavar="RATER=CSV", help="pinned `comments` pulls, shown per rater")
-    ab.add_argument("--unmasked", help="pinned CSV of packet_ids rated unmasked (flagged on the page)")
+    ab.add_argument("--out", required=True, help="directory for items.csv and meeting_record.md")
+    ab.add_argument("--unmasked", help="pinned CSV of packet_ids rated unmasked (kept on the list, flagged)")
     ab.add_argument("--manifest")
     ab.add_argument("--allow-unpinned", action="store_true")
     ab.add_argument("--repin", action="store_true")
     ab.set_defaults(func=cmd_adjudicate_build)
 
+    ac = sub.add_parser("adjudicate-consensus", help="the consensus sheet from the raters' prod votes and comments "
+                                                     "after the meeting")
+    ac.add_argument("--key", required=True)
+    ac.add_argument("--items", required=True, help="the pinned items.csv from adjudicate-build")
+    ac.add_argument("--post-sheets", nargs=2, required=True, metavar="RATER=SHEET",
+                    help="both raters' `votes --stage post` sheets (pinned)")
+    ac.add_argument("--comments", nargs="*", metavar="RATER=CSV", help="the independent `comments` pulls (pinned)")
+    ac.add_argument("--post-comments", nargs="*", metavar="RATER=CSV",
+                    help="the `comments --stage post` pulls (pinned); new or edited comments become the rationale")
+    ac.add_argument("--out", required=True, help="consensus.csv (outside any git checkout)")
+    ac.add_argument("--manifest")
+    ac.add_argument("--allow-unpinned", action="store_true")
+    ac.add_argument("--repin", action="store_true")
+    ac.set_defaults(func=cmd_adjudicate_consensus)
+
     ar = sub.add_parser("adjudicate-report", help="gold labels on the shared items and the adjudication tables")
     ar.add_argument("--key", required=True)
     ar.add_argument("--sheets", nargs=2, required=True, metavar="RATER=SHEET")
-    ar.add_argument("--consensus", required=True, help="the meeting page's exported consensus CSV (pinned)")
+    ar.add_argument("--consensus", required=True, help="adjudicate-consensus's sheet (pinned)")
     ar.add_argument("--meeting-record", help="the filled meeting_record.md (pinned)")
     ar.add_argument("--out", help="gold_shared.csv (pinned; outside any git checkout)")
     ar.add_argument("--items", help="the pinned items.csv (default: beside the consensus sheet)")

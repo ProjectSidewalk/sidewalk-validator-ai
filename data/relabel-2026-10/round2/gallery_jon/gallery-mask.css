@@ -1,0 +1,6 @@
+.card-validation-info, .validation-info-content { display: none !important; }
+.label-detail__vote-count, .label-detail__vote-icon { display: none !important; }
+.label-detail__admin-prev-validations, .label-detail__validator-comments, .label-detail__comments-section,
+.label-detail__comments-count, .label-detail__admin-username { display: none !important; }
+#ps-tooltip { display: none !important; }
+.ai-icon { display: none !important; }

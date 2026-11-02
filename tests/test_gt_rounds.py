@@ -287,7 +287,7 @@ def test_key_columns_cover_both_id_forms_and_the_strata():
 def test_build_parser_subcommands():
     p = gr.build_parser()
     for cmd in ("build", "gallery", "votes", "score", "agreement", "comments", "adjudicate-build",
-                "adjudicate-report"):
+                "adjudicate-consensus", "adjudicate-report"):
         assert cmd in p.format_help()
 
 
@@ -360,17 +360,40 @@ def test_resolution_and_gold_tables():
     assert t.loc["all", "agree_correct"] == 1.0
 
 
-def test_adjudication_page_hides_the_ai_and_crowd_and_carries_both_verdicts():
-    key, sheets = _adj_case()
-    key = key.assign(pano_id="p", heading=0.0, pitch=0.0, h_agree=7)
-    mm = gr.mismatches(key, sheets)
-    page = gr.adjudication_page(mm, ["A", "B"], {"A": {"sidewalk_a:2": "ramp is there"}}, "../packet/items", "t")
-    assert "ramp is there" in page and "no_consensus" in page and "../packet/items/r2.jpg" in page
-    for hidden in ("ai_vote", "stratum", "decoy_agree", "h_agree", "margin_class"):  # the rule text says Disagree
-        assert hidden not in page
+def test_adjudication_columns():
     assert gr.adjudication_columns(["A", "B"]) == ["packet_id", "order", "label_type", "mismatch_kind",
                                                    "verdict_A", "verdict_B", "consensus", "rationale",
                                                    "rule_clarification"]
+
+
+def _comments(rows):
+    return pd.DataFrame(rows, columns=["label_uid", "timestamp", "comment"])
+
+
+def test_consensus_from_votes_takes_matching_post_verdicts_and_new_or_edited_comments():
+    items = pd.DataFrame({"packet_id": ["r1", "r2", "r3"], "label_uid": ["s:1", "s:2", "s:3"], "consensus": "",
+                          "rationale": "", "rule_clarification": ""})
+    post = {"A": pd.DataFrame({"packet_id": ["r3", "r1", "r2", "r9"],
+                               "verdict": ["cant_tell", "correct", "correct", "incorrect"]}),
+            "B": pd.DataFrame({"packet_id": ["r1", "r2", "r3"], "verdict": ["correct", "incorrect", "cant_tell"]})}
+    pre = {"A": _comments([("s:1", 1, "old"), ("s:2", 1, "kept as is")])}
+    after = {"A": _comments([("s:1", 5, "old. Update: agreed"), ("s:2", 1, "kept as is")]),
+             "B": _comments([("s:1", 6, "fine"), ("s:3", 7, "cannot see it")])}
+    c = gr.consensus_from_votes(items, post, pre, after).set_index("packet_id")
+    assert c.consensus.tolist() == ["correct", "no_consensus", "cant_tell"]
+    assert c.loc["r1", "rationale"] == "A: old. Update: agreed || B: fine"
+    assert c.loc["r2", "rationale"] == "" and c.loc["r3", "rationale"] == "B: cannot see it"
+    assert list(c.reset_index().columns) == list(items.columns)
+
+
+def test_consensus_from_votes_refuses_a_missing_or_blank_post_vote():
+    items = pd.DataFrame({"packet_id": ["r1", "r2"], "label_uid": ["s:1", "s:2"]})
+    full = pd.DataFrame({"packet_id": ["r1", "r2"], "verdict": ["correct", "correct"]})
+    for bad in (pd.DataFrame({"packet_id": ["r1"], "verdict": ["correct"]}),
+                pd.DataFrame({"packet_id": ["r1", "r2"], "verdict": ["correct", ""]}),
+                pd.DataFrame({"packet_id": ["r1", "r2"], "verdict": ["correct", "maybe"]})):
+        with pytest.raises(ValueError):
+            gr.consensus_from_votes(items, {"A": full, "B": bad})
 
 
 def test_resolution_columns_partition_n_with_cant_tell_and_no_consensus_outcomes():
@@ -416,14 +439,6 @@ def test_gold_rates_count_unsure_decoys_apart_from_disagrees():
     assert r["n_disagree"] == 1 and r["confirms_ai"] == 1.0 and r["n_unsure"] == 1 and r["n_agree"] == 1
 
 
-def test_adjudication_page_flags_unmasked_items():
-    key, sheets = _adj_case()
-    key = key.assign(pano_id="p", heading=0.0, pitch=0.0)
-    mm = gr.mismatches(key, sheets, unmasked={"r2"})
-    page = gr.adjudication_page(mm, ["A", "B"], {}, "items", "t")
-    assert page.count("rated unmasked") == 1
-
-
 def test_unmasked_ids_are_checked_against_the_key():
     key = pd.DataFrame({"packet_id": ["r0", "r1"], "label_uid": ["sidewalk_a:1", "sidewalk_a:2"]})
     assert gr.unmasked_ids(pd.DataFrame({"packet_id": ["r1"], "label_uid": ["sidewalk_a:2"]}), key) == {"r1"}
@@ -462,19 +477,30 @@ def _cli_round(tmp_path):
 def test_cli_build_report_and_refusals(tmp_path, capsys):
     base, mp, pp, up = _cli_round(tmp_path)
     out = tmp_path / "adj"
-    build = ["adjudicate-build", *base, "--pool", str(pp), "--packet-dir", str(tmp_path), "--out", str(out)]
+    build = ["adjudicate-build", *base, "--out", str(out)]
     with pytest.raises(SystemExit, match="--unmasked"):  # the manifest pins an unmasked list
         gr.main(build)
     gr.main(build + ["--unmasked", str(up)])
-    pins = json.load(open(mp))["rating"]
-    assert {"adjudication_items", "adjudication_page"} <= set(pins)
-    page = (out / "adjudicate.html").read_bytes()
-    with pytest.raises(SystemExit):  # a rerun refuses and leaves the page alone
+    assert "adjudication_items" in json.load(open(mp))["rating"]
+    listed = (out / "items.csv").read_bytes()
+    with pytest.raises(SystemExit):  # a rerun refuses and leaves the list alone
         gr.main(build + ["--unmasked", str(up)])
-    assert (out / "adjudicate.html").read_bytes() == page
+    assert (out / "items.csv").read_bytes() == listed
     items = pd.read_csv(out / "items.csv", dtype=str, keep_default_na=False)
-    cons = items.assign(consensus="correct")
-    cons.to_csv(out / "consensus.csv", index=False)
+    # the meeting: both raters end on correct in prod; the post-meeting pulls get their own pins
+    for r in ("A", "B"):
+        path = tmp_path / f"post_{r}.csv"
+        pd.read_csv(tmp_path / f"votes_{r}.csv", dtype=str, keep_default_na=False).assign(
+            verdict="correct").to_csv(path, index=False)
+        rl.pin(str(mp), f"votes_{r}_post", str(path), 7)
+    consensus = ["adjudicate-consensus", "--key", base[1], "--items", str(out / "items.csv"),
+                 "--post-sheets", f"A={tmp_path / 'post_A.csv'}", f"B={tmp_path / 'post_B.csv'}"]
+    with pytest.raises(SystemExit, match="unpinned"):
+        gr.main(consensus[:-2] + [f"A={tmp_path / 'post_A.csv'}", f"B={tmp_path / 'votes_B.csv'}",
+                                  "--out", str(out / "x.csv")])
+    gr.main(consensus + ["--out", str(out / "consensus.csv")])
+    cons = pd.read_csv(out / "consensus.csv", dtype=str, keep_default_na=False)
+    assert set(cons.consensus) == {"correct"} and list(cons.columns) == list(items.columns)
     cons.assign(verdict_A="incorrect").to_csv(out / "tampered.csv", index=False)
     report = ["adjudicate-report", *base, "--unmasked", str(up), "--items", str(out / "items.csv")]
     with pytest.raises(SystemExit, match="differ from the pinned"):
@@ -496,11 +522,11 @@ def test_cli_preview_pins_nothing_and_writes_no_final_files(tmp_path):
     loose.write_text(loose.read_text() + "\n")  # different bytes, so not the pinned file
     before = mp.read_bytes()
     out = tmp_path / "adj"
-    args = ["adjudicate-build", "--key", base[1], "--sheets", base[3], f"B={loose}", "--pool", str(pp),
-            "--packet-dir", str(tmp_path), "--out", str(out), "--unmasked", str(up), "--allow-unpinned"]
+    args = ["adjudicate-build", "--key", base[1], "--sheets", base[3], f"B={loose}", "--out", str(out),
+            "--unmasked", str(up), "--allow-unpinned"]
     gr.main(args)
     assert mp.read_bytes() == before
-    assert (out / "adjudicate.preview.html").exists() and not (out / "adjudicate.html").exists()
+    assert (out / "items.preview.csv").exists()
     assert not (out / "items.csv").exists() and not (out / "meeting_record.md").exists()
 
 
