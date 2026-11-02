@@ -1,5 +1,5 @@
 """Tests for analysis/gt_rounds.py: design, strata, quotas, severity-bucket filling, shared items, key id forms,
-scoring and inter-rater agreement (the server calls are thin and run by hand)."""
+scoring, inter-rater agreement and adjudication (the server calls are thin and run by hand)."""
 import doctest
 import io
 import json
@@ -243,5 +243,86 @@ def test_key_columns_cover_both_id_forms_and_the_strata():
 
 def test_build_parser_subcommands():
     p = gr.build_parser()
-    for cmd in ("build", "gallery", "votes", "score", "agreement"):
+    for cmd in ("build", "gallery", "votes", "score", "agreement", "comments", "adjudicate-build",
+                "adjudicate-report"):
         assert cmd in p.format_help()
+
+
+def _adj_case():
+    """Six shared items and one own-city item: two matches, a conflict, two can't-tell splits, both can't tell."""
+    key = _rated([{"shared": True}, {"shared": True, "ai_vote": "Agree", "stratum": "decoy_agree"},
+                  {"shared": True, "label_type": "Obstacle"}, {"shared": True, "label_type": "Obstacle"},
+                  {"shared": True}, {"shared": True}, {"shared": False}])
+    key["label_uid"] = [f"sidewalk_a:{i}" for i in range(len(key))]
+    sa = pd.DataFrame({"packet_id": key.packet_id,
+                       "verdict": ["incorrect", "correct", "correct", "cant_tell", "correct", "cant_tell", "correct"]})
+    sb = pd.DataFrame({"packet_id": key.packet_id,
+                       "verdict": ["incorrect", "correct", "incorrect", "incorrect", "cant_tell", "cant_tell", ""]})
+    return key, {"A": sa, "B": sb}
+
+
+def test_mismatches_list_every_differing_shared_item_in_type_order():
+    key, sheets = _adj_case()
+    mm = gr.mismatches(key, sheets)
+    assert list(mm.packet_id) == ["r4", "r2", "r3"]  # CurbRamp before Obstacle, then packet id
+    assert list(mm.order) == [1, 2, 3]
+    assert dict(zip(mm.packet_id, mm.mismatch_kind)) == {"r2": "conflict", "r3": "cant_tell_split",
+                                                         "r4": "cant_tell_split"}
+    assert "r5" not in set(mm.packet_id) and "r6" not in set(mm.packet_id)  # both can't tell match; own-city item out
+
+
+def test_mismatches_refuse_an_unfinished_shared_item():
+    key, sheets = _adj_case()
+    sheets["B"].loc[0, "verdict"] = ""
+    with pytest.raises(ValueError, match="unanswered"):
+        gr.mismatches(key, sheets)
+
+
+def test_adjudicated_gold_comes_from_matches_then_consensus():
+    key, sheets = _adj_case()
+    cons = pd.DataFrame({"packet_id": ["r2", "r3", "r4"], "consensus": ["correct", "no_consensus", "cant_tell"]})
+    g = gr.adjudicated(key, sheets, cons).set_index("packet_id")
+    assert g.loc["r0", "gold"] == "incorrect" and g.loc["r0", "source"] == "matched"
+    assert g.loc["r5", "gold"] == "" and g.loc["r5", "source"] == "both_cant_tell"
+    assert g.loc["r2", "gold"] == "correct" and g.loc["r2", "source"] == "consensus"
+    assert g.loc["r3", "source"] == "no_consensus" and g.loc["r4", "source"] == "consensus_cant_tell"
+    assert "r6" not in g.index
+
+
+def test_adjudicated_refuses_a_consensus_sheet_that_is_short_extra_or_blank():
+    key, sheets = _adj_case()
+    for cons in (pd.DataFrame({"packet_id": ["r2", "r3"], "consensus": ["correct", "correct"]}),
+                 pd.DataFrame({"packet_id": ["r2", "r3", "r4", "r0"], "consensus": ["correct"] * 4}),
+                 pd.DataFrame({"packet_id": ["r2", "r3", "r4"], "consensus": ["correct", "", "correct"]})):
+        with pytest.raises(ValueError):
+            gr.adjudicated(key, sheets, cons)
+
+
+def test_resolution_and_gold_tables():
+    key, sheets = _adj_case()
+    cons = pd.DataFrame({"packet_id": ["r2", "r3", "r4"], "consensus": ["correct", "incorrect", "incorrect"]})
+    g = gr.adjudicated(key, sheets, cons)
+    r = gr.resolution_table(g, ["A", "B"]).set_index(["mismatch_kind", "label_type"])
+    assert r.loc[("all", "all"), "n"] == 3
+    assert r.loc[("all", "all"), "kept_A"] == 1 and r.loc[("all", "all"), "kept_B"] == 1  # r2 to A; r3 to B
+    assert r.loc[("all", "all"), "new"] == 1  # r4: A correct, B can't tell, consensus incorrect
+    assert r.loc[("conflict", "all"), "n"] == 1
+    t = gr.gold_table(g).set_index("label_type")
+    assert t.loc["all", "shared_items"] == 6 and t.loc["all", "gold"] == 5 and t.loc["all", "no_gold"] == 1
+    assert t.loc["all", "from_matched"] == 2 and t.loc["all", "from_consensus"] == 3
+    # AI Disagree gold: r0 incorrect, r2 correct, r3 incorrect, r4 incorrect -> 3 of 4 confirm the AI
+    assert t.loc["all", "n_disagree"] == 4 and t.loc["all", "confirms_ai"] == pytest.approx(0.75)
+    assert t.loc["all", "agree_correct"] == 1.0
+
+
+def test_adjudication_page_hides_the_ai_and_crowd_and_carries_both_verdicts():
+    key, sheets = _adj_case()
+    key = key.assign(pano_id="p", heading=0.0, pitch=0.0, h_agree=7)
+    mm = gr.mismatches(key, sheets)
+    page = gr.adjudication_page(mm, ["A", "B"], {"A": {"sidewalk_a:2": "ramp is there"}}, "../packet/items", "t")
+    assert "ramp is there" in page and "no_consensus" in page and "../packet/items/r2.jpg" in page
+    for hidden in ("ai_vote", "stratum", "decoy_agree", "h_agree", "margin_class"):  # the rule text says Disagree
+        assert hidden not in page
+    assert gr.adjudication_columns(["A", "B"]) == ["packet_id", "order", "label_type", "mismatch_kind",
+                                                   "verdict_A", "verdict_B", "consensus", "rationale",
+                                                   "rule_clarification"]

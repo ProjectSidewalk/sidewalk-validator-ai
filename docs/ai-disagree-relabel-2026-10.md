@@ -397,6 +397,37 @@ before that and is unchanged.
 
 Results go in a "Round 2 results" section here once both raters are done; the raw sheets stay in `~/Data`.
 
+### Adjudication protocol (agreed 2026-11-02, before the meeting)
+
+The two raters meet on **every shared item where their verdicts differ**: correct against incorrect (a conflict)
+and can't tell against a verdict (a can't-tell split). Items both raters called can't tell match and are not
+discussed; they have no gold label. An interim check on 2026-11-02 (Mikey's sheet unpinned at 187 of 300, so 79
+shared items rated by both) found 3 conflicts and 8 can't-tell splits; the list is built only from both pinned
+sheets.
+
+1. **Independent ratings stay untouched.** The pinned `votes_jon` and `votes_mikey` sheets give the independent
+   agreement and kappa, reported first. Adjudication writes a separate consensus sheet.
+2. **The list is built once both sheets are pinned** (`adjudicate-build`), and the item list itself is pinned
+   (`adjudication_items`), so the set of discussed items cannot drift.
+3. **Masking holds during the meeting.** The meeting page shows the crop, a Street View link, each rater's
+   verdict and each rater's Gallery comments (pulled and pinned with `comments`). It does not show the AI's vote,
+   the crowd's votes or the stratum (which would give the decoys away). Showing each rater's verdict and comments
+   anchors the discussion on them; that is the point of the meeting, and it is reported.
+4. **Fixed order:** label type, then packet id (packet ids are random hex).
+5. **One consensus per item:** correct, incorrect, can't tell (the imagery cannot show it), or no consensus; a
+   one-line rationale; and a rule clarification where the item exposed a gap in the three-item rule.
+6. **A meeting record** (`meeting_record.md`, a template written by `adjudicate-build`): date, attendees, order
+   used, who gave their reasoning first, whether masking held, imagery used beyond the crop, deviations, and the
+   rule clarifications agreed. It is pinned with the consensus sheet.
+7. **Gold label per shared item:** the common verdict where the raters matched, the consensus where they did not.
+   Can't tell, no consensus and both-can't-tell items have none, and are counted.
+
+`adjudicate-report` prints the independent agreement, the mismatches by kind and type with whose verdict each
+consensus kept, and the gold labels with the AI's Disagree precision on them, and writes `gold_shared.csv`
+(label-level, private, pinned as `gold_shared`). Everything sits under
+`~/Data/sidewalk-validator-ai-relabel-2026-10/round2/adjudication/`, with the sha256s in the manifest; the
+aggregate tables and those sha256s go in the results section here.
+
 ## Severity and tags, against the crowd
 
 How often a human majority of at least two decisive votes confirms the AI's Agree and Disagree votes:
