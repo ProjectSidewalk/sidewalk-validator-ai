@@ -381,7 +381,10 @@ pages (`packet/rater_jon/rate.html`, `packet/rater_mikey/rate.html`) are the fal
 Eleven Seattle items (10 Obstacle, 1 SurfaceProblem) never showed in Gallery: all came from one author whose account
 is `excluded` in `user_stat`, and Gallery hides excluded authors' labels. The rater voted on them from each label's
 share page (`/label/<id>`), which shows the existing AI vote, so these 11 are not masked; the rater agreed with the
-AI's Disagree on all of them. They are reported apart from the main results. The pool query now carries
+AI's Disagree on all of them. Two of the 11 are shared items, and the other rater also rated them unmasked (they
+were not in Gallery for either rater). They are listed in `unmasked.csv` (checked against `user_stat.excluded` on
+prod, 2026-11-02; pinned as `unmasked`), and `score`, `agreement` and `adjudicate-report` leave them out of every
+table and count them apart. The pool query now carries
 `author_excluded` and `eligible()` drops those rows, so later rounds cannot draw them; this round's key was built
 before that and is unchanged.
 
@@ -394,6 +397,7 @@ before that and is unchanged.
 | `gallery_jon/gallery_urls.csv` | `1b28f58715eee89a1d5d7db56dc9266815513a0d0e1c5a76a1a32dc98f172ba9` |
 | `gallery_mikey/gallery_urls.csv` | `8aaa04b8c89da2a16507c955f877ecbcb2473e820665fece0fba145539749ec9` |
 | `votes_jon.csv` (pinned 2026-10-30, 300 of 300 voted) | `6767596259746e8333b7fcfeec6ca4950c0ef25d7a33f7b3bf0d4e9d90f346eb` |
+| `unmasked.csv` (11 items, 2 shared; pinned 2026-11-02) | `de3e5fd60329e962fd99e700b2d049e3ca74c3bc0432b8861d6801d40aac7f95` |
 
 Results go in a "Round 2 results" section here once both raters are done; the raw sheets stay in `~/Data`.
 
@@ -403,12 +407,16 @@ The two raters meet on **every shared item where their verdicts differ**: correc
 and can't tell against a verdict (a can't-tell split). Items both raters called can't tell match and are not
 discussed; they have no gold label. An interim check on 2026-11-02 (Mikey's sheet unpinned at 187 of 300, so 79
 shared items rated by both) found 3 conflicts and 8 can't-tell splits; the list is built only from both pinned
-sheets.
+sheets. The two unmasked shared items stay on the list if they mismatch, flagged, and are left out of the tables.
 
 1. **Independent ratings stay untouched.** The pinned `votes_jon` and `votes_mikey` sheets give the independent
-   agreement and kappa, reported first. Adjudication writes a separate consensus sheet.
-2. **The list is built once both sheets are pinned** (`adjudicate-build`), and the item list itself is pinned
-   (`adjudication_items`), so the set of discussed items cannot drift.
+   agreement, reported first and in two views: over items both raters decided (correct or incorrect; binary
+   kappa), and over every item both answered with can't tell as a third answer (three-category kappa), where a
+   can't-tell split counts as a disagreement. Adjudication writes a separate consensus sheet.
+2. **The list is built once both sheets are pinned** (`adjudicate-build`), and the item list and the meeting page
+   are pinned (`adjudication_items`, `adjudication_page`), so the set of discussed items cannot drift. With an
+   unpinned input the command runs as a preview and pins nothing; `adjudicate-report` refuses a consensus sheet
+   whose items or recorded verdicts differ from the pinned list.
 3. **Masking holds during the meeting.** The meeting page shows the crop, a Street View link, each rater's
    verdict and each rater's Gallery comments (pulled and pinned with `comments`). It does not show the AI's vote,
    the crowd's votes or the stratum (which would give the decoys away). Showing each rater's verdict and comments
@@ -422,8 +430,11 @@ sheets.
 7. **Gold label per shared item:** the common verdict where the raters matched, the consensus where they did not.
    Can't tell, no consensus and both-can't-tell items have none, and are counted.
 
-`adjudicate-report` prints the independent agreement, the mismatches by kind and type with whose verdict each
-consensus kept, and the gold labels with the AI's Disagree precision on them, and writes `gold_shared.csv`
+`adjudicate-report` prints the independent agreement, the mismatches by kind and type with how each was resolved
+(the columns partition the count: kept one rater's verdict, a new verdict, can't tell, no consensus), and the gold
+labels per type and per stratum with how often they confirm the AI. Those are rates in this stratified sample, not
+estimates of the AI's precision in the population; the per-stratum view shows what the pooled rate mixes. It writes
+`gold_shared.csv`
 (label-level, private, pinned as `gold_shared`). Everything sits under
 `~/Data/sidewalk-validator-ai-relabel-2026-10/round2/adjudication/`, with the sha256s in the manifest; the
 aggregate tables and those sha256s go in the results section here.

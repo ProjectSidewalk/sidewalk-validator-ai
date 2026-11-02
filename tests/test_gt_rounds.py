@@ -88,10 +88,10 @@ def test_strata_follow_the_margin_rule_of_data_generation():
     # The rule of data_generation.eligible_labels: incorrect at net Disagree > 1, correct at net Agree > 2.
     p = _pool([{"h_agree": 0, "h_dis": 2}, {"h_agree": 3, "h_dis": 0}, {"h_agree": 2, "h_dis": 0},
                {"h_agree": 1, "h_dis": 2}, {"h_agree": 2, "h_dis": 1}, {"h_agree": 4, "h_dis": 1},
-               {"h_agree": 1, "h_dis": 1}])
-    assert list(gr.margin_class(p)) == ["incorrect", "correct", "", "", "", "correct", ""]
+               {"h_agree": 1, "h_dis": 1}, {"h_agree": 1, "h_dis": 0}])
+    assert list(gr.margin_class(p)) == ["incorrect", "correct", "", "", "", "correct", "", ""]
     assert list(gr.assign_stratum(p)) == ["margin_incorrect", "margin_correct", "light_voted", "light_voted",
-                                          "light_voted", "margin_correct", ""]
+                                          "light_voted", "margin_correct", "", ""]  # one decisive vote: no stratum
 
 
 def test_prepare_and_candidates_cap_margin_correct_and_rank_agree_decoys_first():
@@ -209,6 +209,16 @@ def test_score_table_confirms_ai_and_training_target_on_margin_rows():
     assert t.loc[("margin_incorrect", "all"), "target_rate"] == 0.5 and t.loc[("margin_incorrect", "all"), "rate"] == 0.5
     assert t.loc[("margin_correct", "all"), "rate"] == 0.0 and t.loc[("margin_correct", "all"), "target_rate"] == 1.0
     assert t.loc[("decoy_agree", "all"), "rate"] == 1.0
+    m2 = pd.concat([m, _rated([{"verdict": ""}])], ignore_index=True)
+    assert gr.score_table(m2).set_index(["stratum", "label_type"]).loc[("lone", "all"), "unanswered"] == 1
+    w = gr.score_table(m, {"lone": {"CurbRamp": 100}, "margin_incorrect": {"CurbRamp": 100}}).set_index(
+        ["stratum", "label_type"])
+    assert w.loc[("lone", "all"), "w_rate"] == 0.5 and w.loc[("margin_incorrect", "all"), "w_rate"] == 0.5
+    m3 = m.copy()
+    m3.loc[m3.stratum == "margin_incorrect", "verdict"] = "incorrect"
+    w3 = gr.score_table(m3, {"lone": {"CurbRamp": 100}, "margin_incorrect": {"CurbRamp": 100}}).set_index(
+        ["stratum", "label_type"])
+    assert w3.loc[("lone", "all"), "w_rate"] == 0.5 and w3.loc[("margin_incorrect", "all"), "w_rate"] == 1.0
     md = gr.score_markdown(gr.score_table(m, {"lone": {"CurbRamp": 100}}))
     assert "population-weighted" in md and "training target" in md
     assert "r0" not in md
@@ -225,8 +235,41 @@ def test_agreement_table_percent_kappa_and_each_rater_vs_ai():
     assert t.loc["all", "n_disagree"] == 2
     assert t.loc["all", "A_confirms_ai"] == 0.5 and t.loc["all", "B_confirms_ai"] == 1.0
     assert not np.isnan(t.loc["all", "kappa"])
+    assert t.loc["all", "n_answered"] == 4 and t.loc["all", "agree3"] == pytest.approx(2 / 4)
+    assert t.loc["all", "cant_tell_splits"] == 1
     with pytest.raises(ValueError):
         gr.agreement_table(key, {"A": sa})
+
+
+def test_agreement_needs_both_decided_counts_per_type_and_leaves_unmasked_out():
+    key = _rated([{"shared": True}, {"shared": True}, {"shared": True, "label_type": "Obstacle"},
+                  {"shared": True, "label_type": "Obstacle"}])
+    sa = pd.DataFrame({"packet_id": key.packet_id, "verdict": ["incorrect", "correct", "incorrect", "correct"]})
+    sb = pd.DataFrame({"packet_id": key.packet_id, "verdict": ["incorrect", "cant_tell", "incorrect", "incorrect"]})
+    t = gr.agreement_table(key, {"A": sa, "B": sb}).set_index("label_type")
+    assert t.loc["all", "n"] == 3 and t.loc["CurbRamp", "n"] == 1  # B's can't tell is not decided
+    assert t.loc["CurbRamp", "shared_items"] == 2 and t.loc["Obstacle", "shared_items"] == 2
+    u = gr.agreement_table(key, {"A": sa, "B": sb}, unmasked={"r0"}).set_index("label_type")
+    assert u.loc["all", "shared_items"] == 3 and u.loc["all", "unmasked_excluded"] == 1
+    assert u.loc["CurbRamp", "unmasked_excluded"] == 1 and u.loc["Obstacle", "unmasked_excluded"] == 0
+
+
+@pytest.mark.parametrize("bad", ["Correct", "correct ", "agree"])
+def test_shared_pairs_refuses_unknown_verdicts(bad):
+    key = _rated([{"shared": True}, {"shared": True}])
+    sa = pd.DataFrame({"packet_id": key.packet_id, "verdict": ["correct", bad]})
+    sb = pd.DataFrame({"packet_id": key.packet_id, "verdict": ["correct", "correct"]})
+    with pytest.raises(ValueError, match="unexpected verdicts"):
+        gr.shared_pairs(key, {"A": sa, "B": sb})
+
+
+def test_shared_pairs_refuses_short_repeated_or_foreign_sheets():
+    key = _rated([{"shared": True}, {"shared": True}])
+    good = pd.DataFrame({"packet_id": key.packet_id, "verdict": ["correct", "correct"]})
+    for bad in (good.iloc[:1], pd.concat([good, good.iloc[:1]]),
+                pd.concat([good, pd.DataFrame({"packet_id": ["zz"], "verdict": ["correct"]})])):
+        with pytest.raises(ValueError):
+            gr.shared_pairs(key, {"A": good, "B": bad})
 
 
 def test_gallery_index_carries_rule_mask_and_shared_marker():
@@ -286,6 +329,7 @@ def test_adjudicated_gold_comes_from_matches_then_consensus():
     assert g.loc["r5", "gold"] == "" and g.loc["r5", "source"] == "both_cant_tell"
     assert g.loc["r2", "gold"] == "correct" and g.loc["r2", "source"] == "consensus"
     assert g.loc["r3", "source"] == "no_consensus" and g.loc["r4", "source"] == "consensus_cant_tell"
+    assert g.loc["r3", "gold"] == "" and g.loc["r4", "gold"] == ""
     assert "r6" not in g.index
 
 
@@ -293,7 +337,8 @@ def test_adjudicated_refuses_a_consensus_sheet_that_is_short_extra_or_blank():
     key, sheets = _adj_case()
     for cons in (pd.DataFrame({"packet_id": ["r2", "r3"], "consensus": ["correct", "correct"]}),
                  pd.DataFrame({"packet_id": ["r2", "r3", "r4", "r0"], "consensus": ["correct"] * 4}),
-                 pd.DataFrame({"packet_id": ["r2", "r3", "r4"], "consensus": ["correct", "", "correct"]})):
+                 pd.DataFrame({"packet_id": ["r2", "r3", "r4"], "consensus": ["correct", "", "correct"]}),
+                 pd.DataFrame({"packet_id": ["r2", "r3", "r4", "r4"], "consensus": ["correct"] * 4})):
         with pytest.raises(ValueError):
             gr.adjudicated(key, sheets, cons)
 
@@ -326,3 +371,29 @@ def test_adjudication_page_hides_the_ai_and_crowd_and_carries_both_verdicts():
     assert gr.adjudication_columns(["A", "B"]) == ["packet_id", "order", "label_type", "mismatch_kind",
                                                    "verdict_A", "verdict_B", "consensus", "rationale",
                                                    "rule_clarification"]
+
+
+def test_resolution_columns_partition_n_with_cant_tell_and_no_consensus_outcomes():
+    key, sheets = _adj_case()
+    cons = pd.DataFrame({"packet_id": ["r2", "r3", "r4"], "consensus": ["incorrect", "cant_tell", "no_consensus"]})
+    g = gr.adjudicated(key, sheets, cons)
+    r = gr.resolution_table(g, ["A", "B"]).set_index(["mismatch_kind", "label_type"])
+    row = r.loc[("all", "all")]
+    assert (row.n, row.kept_A, row.kept_B, row.new, row.cant_tell, row.no_consensus) == (3, 0, 1, 0, 1, 1)
+    # r3: A said can't tell, consensus can't tell -> counted once, under cant_tell, not under kept_A
+    assert r.loc[("cant_tell_split", "all"), "kept_A"] == 0 and r.loc[("cant_tell_split", "all"), "cant_tell"] == 1
+    t = gr.gold_table(g).set_index("label_type")
+    assert t.loc["all", "from_consensus"] == 1 and t.loc["all", "no_gold"] == 3
+
+
+def test_gold_table_by_stratum_and_unmasked_left_out():
+    key, sheets = _adj_case()
+    cons = pd.DataFrame({"packet_id": ["r2", "r3", "r4"], "consensus": ["correct", "incorrect", "incorrect"]})
+    g = gr.adjudicated(key, sheets, cons, unmasked={"r0"})
+    assert g.set_index("packet_id").loc["r0", "gold"] == "incorrect"  # kept in the gold CSV, flagged
+    t = gr.gold_table(g).set_index("label_type")
+    assert t.loc["all", "shared_items"] == 5 and t.loc["all", "n_disagree"] == 3
+    s = gr.gold_table(g, by="stratum").set_index("stratum")
+    assert s.loc["decoy_agree", "agree_correct"] == 1.0 and s.loc["lone", "n_disagree"] == 3
+    r = gr.resolution_table(gr.adjudicated(key, sheets, cons, unmasked={"r2"}), ["A", "B"])
+    assert r.set_index(["mismatch_kind", "label_type"]).loc[("all", "all"), "n"] == 2

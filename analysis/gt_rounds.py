@@ -39,21 +39,21 @@ raters also rate.
 
     D=~/Data/sidewalk-validator-ai-relabel-2026-10/round2
     ssh -fNM makelab1                     # one master; the pull and the build go through it
-    SCHEMAS="sidewalk_seattle sidewalk_chicago" EXPERT1_ID=<uuid> EXPERT2_ID=<uuid> \\
-        ssh makelab1 "SCHEMAS='sidewalk_seattle sidewalk_chicago' EXPERT1_ID=... EXPERT2_ID=... bash -s" \\
+    ssh makelab1 "SCHEMAS='sidewalk_seattle sidewalk_chicago' EXPERT1_ID=... EXPERT2_ID=... bash -s" \\
         < analysis/pull_relabel_pool.sh > $D/pool.csv
     python analysis/gt_rounds.py build --design analysis/gt_rounds/round2.json --pool $D/pool.csv \\
         --packet-dir $D/packet --key-dir $D/private-key-do-not-share --seed $SECRET_SEED \\
         --round3-splits ~/Data/sidewalk-validator-ai-retrain-2026-10/round3
     python analysis/gt_rounds.py gallery --key $K --rater jon --out $D/gallery_jon
-    python analysis/gt_rounds.py votes   --key $K --rater jon --rater-id <uuid> --out $D/packet/sheet_jon.csv
-    python analysis/gt_rounds.py score   --key $K --rater jon --sheet $D/packet/sheet_jon.csv
-    python analysis/gt_rounds.py agreement --key $K --sheets jon=$D/packet/sheet_jon.csv mikey=$D/packet/sheet_mikey.csv
+    python analysis/gt_rounds.py votes   --key $K --rater jon --rater-id <uuid> --out $D/votes_jon.csv
+    python analysis/gt_rounds.py score   --key $K --rater jon --sheet $D/votes_jon.csv --unmasked $D/unmasked.csv
+    python analysis/gt_rounds.py agreement --key $K --sheets jon=$D/votes_jon.csv mikey=$D/votes_mikey.csv \\
+        --unmasked $D/unmasked.csv
     python analysis/gt_rounds.py comments --key $K --rater jon --rater-id <uuid> --out $D/comments_jon.csv
     python analysis/gt_rounds.py adjudicate-build --key $K --sheets jon=$D/votes_jon.csv mikey=$D/votes_mikey.csv \\
         --pool $D/pool.csv --packet-dir $D/packet --out $D/adjudication \\
-        --comments jon=$D/comments_jon.csv mikey=$D/comments_mikey.csv
-    python analysis/gt_rounds.py adjudicate-report --key $K --sheets jon=... mikey=... \\
+        --comments jon=$D/comments_jon.csv mikey=$D/comments_mikey.csv --unmasked $D/unmasked.csv
+    python analysis/gt_rounds.py adjudicate-report --key $K --sheets jon=... mikey=... --unmasked $D/unmasked.csv \\
         --consensus $D/adjudication/consensus.csv --meeting-record $D/adjudication/meeting_record.md \\
         --out $D/adjudication/gold_shared.csv
 
@@ -66,8 +66,13 @@ rating rule. ``votes`` pulls one rater's prod votes on their items and pins the 
 rater's verdict and Gallery comments; the AI's vote, the crowd's votes and the stratum hidden), pins the item list
 and leaves a meeting-record template. ``adjudicate-report`` pins the exported consensus sheet and the filled record,
 writes each shared item's gold label (the common verdict where the raters matched, the consensus where they did
-not) and prints the independent agreement, how each mismatch was resolved, and the AI's precision on the gold
-labels. The independent sheets are never changed.
+not) and prints the independent agreement, how each mismatch was resolved, and how often the gold labels confirm the AI
+(sample rates, per type and per stratum). The independent sheets are never changed. With ``--allow-unpinned``
+the commands run as a preview and pin nothing; every pin and overwrite is checked before anything is written.
+
+**Unmasked items.** ``unmasked.csv`` (``packet_id, label_uid, reason``; pinned as ``unmasked``) lists items a
+rater rated with the AI's vote visible. ``score``, ``agreement`` and ``adjudicate-report`` leave them out of the
+tables and count them apart; the gold CSV keeps them with an ``unmasked`` flag.
 """
 import argparse
 import hashlib
@@ -450,14 +455,17 @@ def score_markdown(t):
 
 
 def cohen_kappa(a, b):
-    """Cohen's kappa for two equal-length label sequences (nan when either rater used one label only).
+    """Cohen's kappa for two equal-length label sequences: nan when chance agreement is 1 (both raters used the
+    same single label), 0 when one rater used a single label and the other did not.
 
     >>> round(cohen_kappa(["c", "c", "i", "i"], ["c", "c", "i", "c"]), 3)
     0.5
     >>> cohen_kappa(["c", "c"], ["c", "c"])
     nan
+    >>> cohen_kappa(["c", "c"], ["c", "i"])
+    0.0
     """
-    a, b = pd.Series(list(a)), pd.Series(list(b))
+    a, b = pd.Series(list(a), dtype=object), pd.Series(list(b), dtype=object)
     n = len(a)
     if n == 0:
         return float("nan")
@@ -465,34 +473,6 @@ def cohen_kappa(a, b):
     labels = sorted(set(a) | set(b))
     pe = sum((a == l).mean() * (b == l).mean() for l in labels)
     return float("nan") if pe == 1 else (po - pe) / (1 - pe)
-
-
-def agreement_table(key, sheets):
-    """Per type and overall, on the items every rater in ``sheets`` (``{rater: sheet DataFrame}``) answered with
-    ``correct`` or ``incorrect``: percent agreement with its Wilson interval, Cohen's kappa, n, and each rater's
-    agreement with the AI (Disagree items only). Two raters only."""
-    if len(sheets) != 2:
-        raise ValueError("agreement needs exactly two raters' sheets")
-    (ra, sa), (rb, sb) = sheets.items()
-    shared = key[key.shared.astype(str).str.lower().isin(["true", "1"])]
-    m = shared.merge(sa[["packet_id", "verdict"]].rename(columns={"verdict": "va"}), on="packet_id", how="left",
-                     validate="one_to_one")
-    m = m.merge(sb[["packet_id", "verdict"]].rename(columns={"verdict": "vb"}), on="packet_id", how="left",
-                validate="one_to_one")
-    dec = m[m.va.isin(["correct", "incorrect"]) & m.vb.isin(["correct", "incorrect"])]
-    rows = []
-    for t in ("all",) + tuple(LABEL_TYPES):
-        g = dec if t == "all" else dec[dec.label_type == t]
-        if not len(g):
-            continue
-        r = rl._rate(int((g.va == g.vb).sum()), len(g))
-        d = g[g.ai_vote == "Disagree"]
-        rows.append({"label_type": t, "n": r["n"], "agree": r["rate"], "lo": r["lo"], "hi": r["hi"],
-                     "kappa": cohen_kappa(g.va, g.vb), "n_disagree": len(d),
-                     f"{ra}_confirms_ai": float((d.va == "incorrect").mean()) if len(d) else np.nan,
-                     f"{rb}_confirms_ai": float((d.vb == "incorrect").mean()) if len(d) else np.nan,
-                     "shared_items": int(len(m if t == "all" else m[m.label_type == t]))})
-    return pd.DataFrame(rows)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -527,6 +507,9 @@ def cmd_build(args):
     for d in (args.packet_dir, args.key_dir):
         if rl.inside_git_checkout(d):
             sys.exit(f"refusing to write the packet or its key inside a git checkout: {d}")
+    if os.path.exists(os.path.join(args.key_dir, "key.csv")):
+        sys.exit(f"{args.key_dir}/key.csv exists: rebuilding would replace the key and wipe every rating pin in "
+                 "its manifest; build into a new key dir")
     design = load_design(args.design)
     design_name = os.path.splitext(os.path.basename(args.design))[0]
     pool = rl.load_pool(args.pool)
@@ -586,8 +569,7 @@ def cmd_build(args):
                 "round3_in_train": {r: int(((key.rater == r) & (key.round3_split == "train")).sum())
                                     for r in design["raters"]},
                 "rating": {"round3_splits": split_shas} if split_shas else {}}
-    with open(os.path.join(args.key_dir, "manifest.json"), "w") as f:
-        json.dump(manifest, f, indent=1)
+    rl.write_manifest(os.path.join(args.key_dir, "manifest.json"), manifest)
     print(f"{len(key)} items ({manifest['shared']} shared) -> {args.packet_dir}/rater_*/rate.html\n"
           f"key -> {kpath} (sha256 {manifest['key_sha256']})")
 
@@ -631,13 +613,18 @@ def cmd_gallery(args):
             ids = [int(i) for i in g.label_id]
             for j in range(0, len(ids), 500):
                 lists.append((schema_city[sch], city_url[schema_city[sch]], ids[j:j + 500], shared_part))
+    urls = pd.DataFrame([{"order": i, "city_id": c, "shared": s, "n": len(ids), "label_ids": " ".join(map(str, ids)),
+                          "url": rl.gallery_url(b, ids)} for i, (c, b, ids, s) in enumerate(lists, 1)])
+    mpath = args.manifest or rl.default_manifest(args.key)
+    man = json.load(open(mpath)) if os.path.exists(mpath) else {}
+    old = man.get("gallery", {}).get(args.rater, {}).get("urls_sha256")
+    if old and old != hashlib.sha256(urls.to_csv(index=False).encode()).hexdigest() and not args.repin:
+        sys.exit(f"the manifest records different Gallery lists for {args.rater}; pass --repin to replace them")
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "index.html"), "w") as f:
         f.write(gallery_index_html(args.rater, lists, len(items)))
     with open(os.path.join(args.out, "gallery-mask.css"), "w") as f:
         f.write(rl.GALLERY_MASK_CSS)
-    urls = pd.DataFrame([{"order": i, "city_id": c, "shared": s, "n": len(ids), "label_ids": " ".join(map(str, ids)),
-                          "url": rl.gallery_url(b, ids)} for i, (c, b, ids, s) in enumerate(lists, 1)])
     upath = os.path.join(args.out, "gallery_urls.csv")
     urls.to_csv(upath, index=False)
     cpath = os.path.join(args.out, "cityparams_snapshot.conf")
@@ -646,9 +633,7 @@ def cmd_gallery(args):
     commit = subprocess.run(["git", "-C", os.path.dirname(os.path.abspath(args.cityparams)), "log", "-1",
                              "--format=%H %cI", "--", os.path.basename(args.cityparams)],
                             capture_output=True, text=True).stdout.strip()
-    mpath = args.manifest or rl.default_manifest(args.key)
     if os.path.exists(mpath):
-        man = json.load(open(mpath))
         man.setdefault("gallery", {})[args.rater] = {
             "urls_sha256": rl.sha256_file(upath), "cityparams_sha256": rl.sha256_file(cpath),
             "cityparams_commit": commit, "lists": len(lists), "labels": int(urls.n.sum()),
@@ -677,9 +662,15 @@ def cmd_score(args):
     mpath = args.manifest or rl.default_manifest(args.key)
     rl.check_pin(mpath, "key", args.key, args.allow_unpinned)
     rl.check_pin(mpath, f"votes_{args.rater}", args.sheet, args.allow_unpinned)
+    unmasked = set()
+    if args.unmasked:
+        rl.check_pin(mpath, "unmasked", args.unmasked, args.allow_unpinned)
+        unmasked = set(pd.read_csv(args.unmasked, dtype=str).packet_id)
     man = json.load(open(mpath)) if os.path.exists(mpath) else {}
     items = rater_items(key, args.rater)
     m = rl.unmask(items, _read_sheet(args.sheet))
+    apart = m[m.packet_id.isin(unmasked)]
+    m = m[~m.packet_id.isin(unmasked)]
     own = m[m.rater == args.rater]
     print(f"## Rater {args.rater}, own city ({len(own)} items)\n")
     print(score_markdown(score_table(own, man.get("population", {}).get(args.rater))))
@@ -688,23 +679,36 @@ def cmd_score(args):
         print(f"\n## Rater {args.rater}, shared items from the other city ({len(other)} items)\n")
         print(score_markdown(score_table(other)))
     print("\ndecoy rows are the share the expert called correct (AI Agree, or abstained for decoy_unsure).")
+    if len(apart):
+        right = sum(rl.ai_right(v, r) for v, r in zip(apart.ai_vote, apart.verdict))
+        print(f"\n{len(apart)} unmasked items left out of the tables above (the rater saw the AI's vote); the "
+              f"rater confirmed the AI on {right} of them ({apart.verdict.value_counts().to_dict()}).")
     if (m.verdict == "").sum():
         print(f"\nWARNING: {int((m.verdict == '').sum())} items unanswered")
 
 
 def cmd_agreement(args):
     key = pd.read_csv(args.key, dtype={"tags": str})
-    sheets = {}
-    for spec in args.sheets:
-        rater, path = spec.split("=", 1)
-        sheets[rater] = _read_sheet(path)
-    t = agreement_table(key, sheets)
+    paths = _sheets_arg(args.sheets)
+    _, unmasked = _check_inputs(args.manifest or rl.default_manifest(args.key), args.key, paths,
+                                args.allow_unpinned, args.unmasked)
+    sheets = {r: _read_sheet(p) for r, p in paths.items()}
+    try:
+        t = agreement_table(key, sheets, unmasked)
+    except ValueError as e:
+        sys.exit(str(e))
     ra, rb = list(sheets)
-    print(f"| Type | shared items | both decided | agreement | kappa | AI Disagrees | {ra} confirms AI | {rb} confirms AI |")
-    print("|---|---:|---:|---|---:|---:|---:|---:|")
-    for r in t.itertuples():
-        print(f"| {r.label_type} | {r.shared_items} | {r.n} | {rl._pct(r.agree, r.lo, r.hi)} | {r.kappa:.2f} | "
-              f"{r.n_disagree} | {getattr(r, f'{ra}_confirms_ai'):.0%} | {getattr(r, f'{rb}_confirms_ai'):.0%} |")
+    pct = lambda r, k, lo, hi: "" if pd.isna(r[k]) else rl._pct(r[k], r[lo], r[hi])  # noqa: E731
+    print(f"| Type | shared items | both decided | agreement | kappa | both answered | agreement, 3 answers | "
+          f"kappa, 3 answers | can't-tell splits | AI Disagrees | {ra} confirms AI | {rb} confirms AI |")
+    print("|---|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|")
+    for r in t.to_dict("records"):
+        print(f"| {r['label_type']} | {r['shared_items']} | {r['n']} | {pct(r, 'agree', 'lo', 'hi')} | "
+              f"{r['kappa']:.2f} | {r['n_answered']} | {pct(r, 'agree3', 'lo3', 'hi3')} | {r['kappa3']:.2f} | "
+              f"{r['cant_tell_splits']} | {r['n_disagree']} | {r[f'{ra}_confirms_ai']:.0%} | "
+              f"{r[f'{rb}_confirms_ai']:.0%} |")
+    if t.unmasked_excluded.iloc[0]:
+        print(f"\n{int(t.unmasked_excluded.iloc[0])} unmasked shared items left out.")
     if args.out:
         t.to_csv(args.out, index=False)
 
@@ -714,56 +718,109 @@ def cmd_agreement(args):
 # ---------------------------------------------------------------------------------------------------------------------
 
 DECIDED = ("correct", "incorrect")
+VERDICT_VALUES = {v for v, _, _ in rl.VERDICTS}
 CONSENSUS_VALUES = [v for v, _, _ in rl.VERDICTS] + ["no_consensus"]
 CONSENSUS_OPTIONS = rl.VERDICTS + [("no_consensus", "No consensus", "n")]
 ADJ_FIXED = ["order", "label_type", "mismatch_kind"]
+ADJ_ANSWERS = ["consensus", "rationale", "rule_clarification"]
 
 
-def shared_pairs(key, sheets):
-    """The shared key rows with each rater's verdict as ``v_<rater>`` (blank when unanswered). Two raters only."""
+def shared_pairs(key, sheets, unmasked=()):
+    """The shared key rows with each rater's verdict as ``v_<rater>`` (blank when unanswered) and ``unmasked``
+    (the item is in ``unmasked``: some rater saw the AI's vote while rating it). Two raters only. Raises when a
+    sheet repeats a packet_id, misses a shared item, holds a packet_id the key does not, or holds a verdict
+    other than correct / incorrect / cant_tell / blank."""
     if len(sheets) != 2:
-        raise ValueError("adjudication needs exactly two raters' sheets")
+        raise ValueError("needs exactly two raters' sheets")
     m = key[key.shared.astype(str).str.lower().isin(["true", "1"])].copy()
     for r, s in sheets.items():
-        m = m.merge(s[["packet_id", "verdict"]].rename(columns={"verdict": f"v_{r}"}), on="packet_id", how="left",
-                    validate="one_to_one")
-        m[f"v_{r}"] = m[f"v_{r}"].fillna("").astype(str)
+        s = s[["packet_id", "verdict"]].copy()
+        s["verdict"] = s.verdict.fillna("").astype(str)
+        if not s.packet_id.is_unique:
+            raise ValueError(f"{r}'s sheet repeats packet_ids")
+        if set(m.packet_id) - set(s.packet_id):
+            raise ValueError(f"{r}'s sheet misses {len(set(m.packet_id) - set(s.packet_id))} shared items")
+        if set(s.packet_id) - set(key.packet_id):
+            raise ValueError(f"{r}'s sheet has packet_ids that are not in the key")
+        bad = set(s.verdict) - VERDICT_VALUES - {""}
+        if bad:
+            raise ValueError(f"unexpected verdicts in {r}'s sheet: {sorted(bad)}")
+        m = m.merge(s.rename(columns={"verdict": f"v_{r}"}), on="packet_id", how="left", validate="one_to_one")
+    m["unmasked"] = m.packet_id.isin(set(unmasked))
     return m.reset_index(drop=True)
 
 
-def mismatches(key, sheets):
+def agreement_table(key, sheets, unmasked=()):
+    """Inter-rater agreement on the shared items, per type and overall, leaving out ``unmasked`` items.
+
+    Two views. **Both decided** (``n``, ``agree`` with its Wilson interval, ``kappa``): items both raters called
+    correct or incorrect, the binary agreement. **All answers** (``n_answered``, ``agree3``, ``kappa3``): every item
+    both raters answered, can't tell as a third category, so a can't-tell split counts as a disagreement
+    (``cant_tell_splits`` counts them). Also each rater's agreement with the AI on the both-decided Disagree items."""
+    full = shared_pairs(key, sheets, unmasked)
+    ra, rb = list(sheets)
+    p = full[~full.unmasked]
+    rows = []
+    for t in ("all",) + tuple(LABEL_TYPES):
+        x = p if t == "all" else p[p.label_type == t]
+        if not len(x):
+            continue
+        va, vb = x[f"v_{ra}"], x[f"v_{rb}"]
+        both = (va != "") & (vb != "")
+        dec = x[va.isin(DECIDED) & vb.isin(DECIDED)]
+        r = rl._rate(int((dec[f"v_{ra}"] == dec[f"v_{rb}"]).sum()), len(dec))
+        a3 = rl._rate(int((va[both] == vb[both]).sum()), int(both.sum()))
+        d = dec[dec.ai_vote == "Disagree"]
+        rows.append({"label_type": t, "shared_items": len(x), "n": r["n"], "agree": r["rate"], "lo": r["lo"],
+                     "hi": r["hi"], "kappa": cohen_kappa(dec[f"v_{ra}"], dec[f"v_{rb}"]),
+                     "n_answered": a3["n"], "agree3": a3["rate"], "lo3": a3["lo"], "hi3": a3["hi"],
+                     "kappa3": cohen_kappa(va[both], vb[both]),
+                     "cant_tell_splits": int((both & (va != vb) & ((va == "cant_tell") | (vb == "cant_tell"))).sum()),
+                     "n_disagree": len(d),
+                     f"{ra}_confirms_ai": float((d[f"v_{ra}"] == "incorrect").mean()) if len(d) else np.nan,
+                     f"{rb}_confirms_ai": float((d[f"v_{rb}"] == "incorrect").mean()) if len(d) else np.nan,
+                     "unmasked_excluded": int((full.unmasked & ((full.label_type == t) if t != "all" else True)).sum())})
+    return pd.DataFrame(rows)
+
+
+def mismatches(key, sheets, unmasked=()):
     """Every shared item where the two raters' verdicts differ, in meeting order (label type, then packet id) with
     ``order`` from 1 and ``mismatch_kind``: ``conflict`` (correct against incorrect) or ``cant_tell_split`` (can't
     tell against a verdict). Raises while any shared item is unanswered: the meeting list must be final."""
-    p = shared_pairs(key, sheets)
-    va, vb = (p[f"v_{r}"] for r in sheets)
+    p = shared_pairs(key, sheets, unmasked)
+    ra, rb = list(sheets)
+    va, vb = p[f"v_{ra}"], p[f"v_{rb}"]
     if ((va == "") | (vb == "")).any():
         raise ValueError(f"{int(((va == '') | (vb == '')).sum())} shared items are unanswered by a rater")
     m = p[va != vb].copy()
-    m["mismatch_kind"] = np.where(m[f"v_{list(sheets)[0]}"].isin(DECIDED) & m[f"v_{list(sheets)[1]}"].isin(DECIDED),
-                                  "conflict", "cant_tell_split")
+    m["mismatch_kind"] = np.where(m[f"v_{ra}"].isin(DECIDED) & m[f"v_{rb}"].isin(DECIDED), "conflict",
+                                  "cant_tell_split")
     m = m.sort_values(["label_type", "packet_id"]).reset_index(drop=True)
     m.insert(0, "order", range(1, len(m) + 1))
     return m
 
 
-def adjudicated(key, sheets, consensus):
+def adjudicated(key, sheets, consensus, unmasked=()):
     """The shared items with their gold label: the raters' common verdict where they matched, the consensus where
     they did not. ``gold`` is blank where there is no gold label, and ``source`` says why: ``matched``,
-    ``both_cant_tell``, ``consensus``, ``consensus_cant_tell`` or ``no_consensus``. Raises unless ``consensus``
-    holds exactly the mismatched items, each with a consensus value."""
-    p = shared_pairs(key, sheets)
-    mm = mismatches(key, sheets)
+    ``both_cant_tell``, ``consensus``, ``consensus_cant_tell`` or ``no_consensus``. ``unmasked`` items keep their
+    gold label and are flagged, so the tables can leave them out. Raises unless ``consensus`` holds each mismatched
+    item exactly once, each with a consensus value."""
+    p = shared_pairs(key, sheets, unmasked)
+    mm = mismatches(key, sheets, unmasked)
     c = consensus[["packet_id", "consensus"]].copy()
     c["consensus"] = c.consensus.fillna("").astype(str)
-    if set(c.packet_id) != set(mm.packet_id) or not c.packet_id.is_unique:
-        raise ValueError("the consensus sheet's packet_ids are not exactly the mismatched items")
+    if not c.packet_id.is_unique or set(c.packet_id) != set(mm.packet_id):
+        raise ValueError("the consensus sheet does not hold each mismatched item exactly once")
     bad = set(c.consensus) - set(CONSENSUS_VALUES)
     if bad:
         raise ValueError(f"missing or unexpected consensus values: {sorted(bad)}")
     p = p.merge(c, on="packet_id", how="left", validate="one_to_one")
     p = p.merge(mm[["packet_id", "order", "mismatch_kind"]], on="packet_id", how="left", validate="one_to_one")
-    va, vb = (p[f"v_{r}"] for r in sheets)
+    p["consensus"] = p.consensus.fillna("")
+    p["mismatch_kind"] = p.mismatch_kind.fillna("")
+    ra, rb = list(sheets)
+    va, vb = p[f"v_{ra}"], p[f"v_{rb}"]
     matched = va == vb
     p["source"] = np.select(
         [matched & va.isin(DECIDED), matched, p.consensus.isin(DECIDED), p.consensus == "cant_tell"],
@@ -773,10 +830,10 @@ def adjudicated(key, sheets, consensus):
 
 
 def resolution_table(g, raters):
-    """Per mismatch kind and type: how many mismatches, and whose original verdict the consensus kept (``kept_<r>``;
-    on a can't-tell split the rater who said can't tell is kept when the consensus is can't tell), a decided
-    consensus neither rater gave (``new``), ``cant_tell`` and ``no_consensus``."""
-    m = g[g.mismatch_kind.notna() & (g.mismatch_kind != "")]
+    """Per mismatch kind and type (unmasked items left out): how many mismatches, and how each was resolved. The
+    columns partition ``n``: ``kept_<r>`` (a decided consensus equal to that rater's verdict), ``new`` (a decided
+    consensus neither rater gave), ``cant_tell`` and ``no_consensus``."""
+    m = g[(g.mismatch_kind != "") & ~g.unmasked]
     rows = []
     for kind in ("all", "conflict", "cant_tell_split"):
         k = m if kind == "all" else m[m.mismatch_kind == kind]
@@ -784,31 +841,45 @@ def resolution_table(g, raters):
             x = k if t == "all" else k[k.label_type == t]
             if not len(x) and t != "all":
                 continue
+            decided = x.consensus.isin(DECIDED)
             row = {"mismatch_kind": kind, "label_type": t, "n": len(x)}
+            kept = pd.Series(False, index=x.index)
             for r in raters:
-                row[f"kept_{r}"] = int((x.consensus == x[f"v_{r}"]).sum())
-            given = pd.concat([x.consensus == x[f"v_{r}"] for r in raters], axis=1).any(axis=1)
-            row["new"] = int((x.consensus.isin(DECIDED) & ~given).sum())
+                hit = decided & (x.consensus == x[f"v_{r}"])
+                row[f"kept_{r}"] = int(hit.sum())
+                kept |= hit
+            row["new"] = int((decided & ~kept).sum())
             row["cant_tell"] = int((x.consensus == "cant_tell").sum())
             row["no_consensus"] = int((x.consensus == "no_consensus").sum())
+            assert sum(row[c] for c in [f"kept_{r}" for r in raters] + ["new", "cant_tell", "no_consensus"]) == len(x)
             rows.append(row)
     return pd.DataFrame(rows)
 
 
-def gold_table(g):
-    """Per type: shared items, gold labels (from matched verdicts / from consensus), items left without one, and
-    on the gold labels how often the expert confirms the AI's Disagree, and how often an AI Agree is correct."""
+def _gold_rates(gl):
+    d, a = gl[gl.ai_vote == "Disagree"], gl[gl.ai_vote == "Agree"]
+    dr = rl._rate(int((d.gold == "incorrect").sum()), len(d))
+    ar = rl._rate(int((a.gold == "correct").sum()), len(a))
+    return {"n_disagree": dr["n"], "confirms_ai": dr["rate"], "confirms_lo": dr["lo"], "confirms_hi": dr["hi"],
+            "n_agree": ar["n"], "agree_correct": ar["rate"]}
+
+
+def gold_table(g, by="label_type"):
+    """Per ``by`` (``label_type`` or ``stratum``), unmasked items left out: shared items, gold labels (from matched
+    verdicts / from consensus), items left without one, and on the gold labels the share of AI Disagrees the
+    experts call incorrect (``confirms_ai``) and of AI Agree decoys they call correct. These are rates in this
+    stratified sample, not population estimates; the per-stratum view shows what the pooled rate mixes."""
+    g = g[~g.unmasked]
+    groups = ("all",) + (tuple(LABEL_TYPES) if by == "label_type" else STRATA)
     rows = []
-    for t in ("all",) + tuple(LABEL_TYPES):
-        x = g if t == "all" else g[g.label_type == t]
-        gl = x[x.gold != ""]
-        d, a = gl[gl.ai_vote == "Disagree"], gl[gl.ai_vote == "Agree"]
-        dr, ar = rl._rate(int((d.gold == "incorrect").sum()), len(d)), rl._rate(int((a.gold == "correct").sum()), len(a))
-        rows.append({"label_type": t, "shared_items": len(x), "gold": len(gl),
+    for v in groups:
+        x = g if v == "all" else g[g[by] == v]
+        if not len(x) and v != "all":
+            continue
+        rows.append({by: v, "shared_items": len(x), "gold": int((x.gold != "").sum()),
                      "from_matched": int((x.source == "matched").sum()),
                      "from_consensus": int((x.source == "consensus").sum()), "no_gold": int((x.gold == "").sum()),
-                     "n_disagree": dr["n"], "confirms_ai": dr["rate"], "confirms_lo": dr["lo"],
-                     "confirms_hi": dr["hi"], "n_agree": ar["n"], "agree_correct": ar["rate"]})
+                     **_gold_rates(x[x.gold != ""])})
     return pd.DataFrame(rows)
 
 
@@ -818,6 +889,10 @@ def _table_markdown(t, cols, fmt=None):
     for r in t.to_dict("records"):
         out.append("| " + " | ".join(fmt[c](r) if c in fmt else str(r[c]) for c in cols) + " |")
     return "\n".join(out)
+
+
+def adjudication_columns(raters):
+    return ["packet_id"] + ADJ_FIXED + [f"verdict_{r}" for r in raters] + ADJ_ANSWERS
 
 
 def adjudication_page(mm, raters, notes, packet_items_rel, design_name):
@@ -832,10 +907,11 @@ def adjudication_page(mm, raters, notes, packet_items_rel, design_name):
                else "") + "</li>" for x in raters)
         link = (f'<p><a href="{rl.street_view_url(r.pano_id, r.heading, r.pitch)}" target="_blank" '
                 f'rel="noopener noreferrer">Open in Street View</a></p>') if r.pano_id else ""
+        flag = " &middot; rated unmasked, reported apart" if getattr(r, "unmasked", False) else ""
         items.append({"id": r.packet_id, "image": f"{packet_items_rel}/{r.packet_id}.jpg",
                       "alt": f"Item {r.order}: a {r.label_type} label, ringed in yellow",
                       "caption_html": f"{r.order}. {r.label_type} &middot; {r.packet_id} &middot; "
-                                      f"{r.mismatch_kind.replace('_', ' ')}",
+                                      f"{r.mismatch_kind.replace('_', ' ')}{flag}",
                       "extra_html": f"<ul>{said}</ul>{link}"})
         fixed[r.packet_id] = {"order": r.order, "label_type": r.label_type, "mismatch_kind": r.mismatch_kind,
                               **{f"verdict_{x}": getattr(r, f"v_{x}") for x in raters}}
@@ -854,11 +930,6 @@ def adjudication_page(mm, raters, notes, packet_items_rel, design_name):
                        storage_key=f"gt_{design_name}_adjudication", export_name="consensus")
 
 
-def adjudication_columns(raters):
-    return ["packet_id"] + ADJ_FIXED + [f"verdict_{r}" for r in raters] + \
-        ["consensus", "rationale", "rule_clarification"]
-
-
 MEETING_RECORD = """# Adjudication meeting record ({design})
 
 Fill this in during the meeting; `adjudicate-report --meeting-record` pins it with the consensus sheet.
@@ -875,18 +946,42 @@ Fill this in during the meeting; `adjudicate-report --meeting-record` pins it wi
 """
 
 
+# --- pins and writes for the commands: check every input and every pin before writing anything ---
+
 def _sheets_arg(specs):
-    out = {}
-    for spec in specs:
-        rater, path = spec.split("=", 1)
-        out[rater] = path
-    return out
+    return dict(spec.split("=", 1) for spec in specs)
 
 
-def _check_sheet_pins(mpath, key_path, sheet_paths, allow_unpinned):
-    rl.check_pin(mpath, "key", key_path, allow_unpinned)
+def _check_inputs(mpath, key_path, sheet_paths, allow_unpinned, unmasked_path=None):
+    """Check the key, the votes sheets and the unmasked list against their pins. Returns ``(all pinned,
+    unmasked packet_ids)``; with ``allow_unpinned`` a mismatch is a warning and the caller pins nothing."""
+    ok = rl.check_pin(mpath, "key", key_path, allow_unpinned)
     for r, path in sheet_paths.items():
-        rl.check_pin(mpath, f"votes_{r}", path, allow_unpinned)
+        ok &= rl.check_pin(mpath, f"votes_{r}", path, allow_unpinned)
+    unmasked = set()
+    if unmasked_path:
+        ok &= rl.check_pin(mpath, "unmasked", unmasked_path, allow_unpinned)
+        unmasked = set(pd.read_csv(unmasked_path, dtype=str).packet_id)
+    return ok, unmasked
+
+
+def _pinned_sha(mpath, name):
+    man = json.load(open(mpath)) if os.path.exists(mpath) else {}
+    return man.get("rating", {}).get(name, {}).get("sha256")
+
+
+def _refuse_pin_change(mpath, name, data, repin):
+    """Exit, before anything is written, if ``name`` is pinned to other content and ``repin`` is not set."""
+    old = _pinned_sha(mpath, name)
+    if old and old != hashlib.sha256(data).hexdigest() and not repin:
+        sys.exit(f"{name} is already pinned to different content (sha256 {old[:12]}...); pass --repin to replace it")
+
+
+def _write_atomic(path, data):
+    tmp = f"{path}.tmp.{os.getpid()}"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.replace(tmp, path)
 
 
 def cmd_comments(args):
@@ -907,82 +1002,118 @@ def cmd_adjudicate_build(args):
     key = pd.read_csv(args.key, dtype={"tags": str})
     mpath = args.manifest or rl.default_manifest(args.key)
     paths = _sheets_arg(args.sheets)
-    _check_sheet_pins(mpath, args.key, paths, args.allow_unpinned)
     raters = list(paths)
-    try:
-        mm = mismatches(key, {r: _read_sheet(p) for r, p in paths.items()})
-    except ValueError as e:
-        sys.exit(str(e))
+    ok, unmasked = _check_inputs(mpath, args.key, paths, args.allow_unpinned, args.unmasked)
     man = json.load(open(mpath)) if os.path.exists(mpath) else {}
-    if man.get("pool_sha256") != rl.sha256_file(args.pool) and not args.allow_unpinned:
-        sys.exit(f"{args.pool} is not the pool the key was built from; pass --allow-unpinned")
-    pool = rl.load_pool(args.pool)
-    pool["label_uid"] = pool.schema + ":" + pool.label_id.astype(str)
-    mm = mm.merge(pool[["label_uid", "heading", "pitch"]], on="label_uid", how="left", validate="one_to_one")
+    if man.get("pool_sha256") != rl.sha256_file(args.pool):
+        if not args.allow_unpinned:
+            sys.exit(f"{args.pool} is not the pool the key was built from; pass --allow-unpinned")
+        ok = False
     notes = {}
     for spec in args.comments or []:
         r, path = spec.split("=", 1)
-        rl.check_pin(mpath, f"comments_{r}", path, args.allow_unpinned)
+        ok &= rl.check_pin(mpath, f"comments_{r}", path, args.allow_unpinned)
         notes[r] = dict(rl.comments_per_label(rl.load_comments(path))[["label_uid", "comment"]].values)
-    os.makedirs(args.out, exist_ok=True)
-    rel = os.path.relpath(os.path.join(args.packet_dir, "items"), args.out)
+    try:
+        mm = mismatches(key, {r: _read_sheet(p) for r, p in paths.items()}, unmasked)
+    except ValueError as e:
+        sys.exit(str(e))
+    pool = rl.load_pool(args.pool)
+    pool["label_uid"] = pool.schema + ":" + pool.label_id.astype(str)
+    mm = mm.merge(pool[["label_uid", "heading", "pitch"]], on="label_uid", how="left", validate="one_to_one")
     design_name = man.get("design", "round")
-    with open(os.path.join(args.out, "adjudicate.html"), "w") as f:
-        f.write(adjudication_page(mm, raters, notes, rel, design_name))
+    page = adjudication_page(mm, raters, notes, os.path.relpath(os.path.join(args.packet_dir, "items"), args.out),
+                             design_name).encode()
     sheet = mm.rename(columns={f"v_{r}": f"verdict_{r}" for r in raters}).assign(
         consensus="", rationale="", rule_clarification="")[adjudication_columns(raters)]
-    spath = os.path.join(args.out, "items.csv")
-    rl.refuse_overwrite(spath, args.repin)
-    sheet.to_csv(spath, index=False)
-    rl.pin(mpath, "adjudication_items", spath, len(sheet), args.repin)
+    items = sheet.to_csv(index=False).encode()
+    ppath, spath = os.path.join(args.out, "adjudicate.html"), os.path.join(args.out, "items.csv")
+    for path in (ppath, spath):
+        rl.refuse_overwrite(path, args.repin)
+    if ok:
+        _refuse_pin_change(mpath, "adjudication_items", items, args.repin)
+        _refuse_pin_change(mpath, "adjudication_page", page, args.repin)
+    os.makedirs(args.out, exist_ok=True)
+    _write_atomic(ppath, page)
+    _write_atomic(spath, items)
     rpath = os.path.join(args.out, "meeting_record.md")
     if not os.path.exists(rpath):
         with open(rpath, "w") as f:
             f.write(MEETING_RECORD.format(design=design_name, n=len(mm),
                                           conflicts=int((mm.mismatch_kind == "conflict").sum()),
                                           splits=int((mm.mismatch_kind == "cant_tell_split").sum())))
-    print(f"{len(mm)} mismatched items ({int((mm.mismatch_kind == 'conflict').sum())} conflicts) -> "
-          f"{args.out}/adjudicate.html; item list pinned as adjudication_items; fill {rpath} in the meeting")
+    if ok:
+        rl.pin(mpath, "adjudication_items", spath, len(sheet), args.repin)
+        rl.pin(mpath, "adjudication_page", ppath, len(sheet), args.repin)
+    print(f"{len(mm)} mismatched items ({int((mm.mismatch_kind == 'conflict').sum())} conflicts, "
+          f"{int(mm.unmasked.sum())} unmasked) -> {ppath}; fill {rpath} in the meeting")
+    print("item list and page pinned" if ok else "PREVIEW: an input is unpinned, so nothing was pinned")
 
 
 def cmd_adjudicate_report(args):
+    if args.out and rl.inside_git_checkout(args.out):
+        sys.exit(f"refusing to write gold labels inside a git checkout: {args.out}")
+    if args.out:
+        rl.refuse_overwrite(args.out, args.repin)
     key = pd.read_csv(args.key, dtype={"tags": str})
     mpath = args.manifest or rl.default_manifest(args.key)
     paths = _sheets_arg(args.sheets)
-    _check_sheet_pins(mpath, args.key, paths, args.allow_unpinned)
-    sheets = {r: _read_sheet(p) for r, p in paths.items()}
     raters = list(paths)
-    consensus = _read_sheet(args.consensus)
+    ok, unmasked = _check_inputs(mpath, args.key, paths, args.allow_unpinned, args.unmasked)
+    ipath = args.items or os.path.join(os.path.dirname(os.path.abspath(args.consensus)), "items.csv")
+    ok &= rl.check_pin(mpath, "adjudication_items", ipath, args.allow_unpinned)
+    sheets = {r: _read_sheet(p) for r, p in paths.items()}
+    consensus, items = _read_sheet(args.consensus), _read_sheet(ipath)
+    fixed = [c for c in adjudication_columns(raters) if c not in ADJ_ANSWERS]
+    if not consensus[fixed].sort_values("packet_id").reset_index(drop=True).equals(
+            items[fixed].sort_values("packet_id").reset_index(drop=True)):
+        sys.exit("the consensus sheet's items or recorded verdicts differ from the pinned adjudication item list")
     try:
-        g = adjudicated(key, sheets, consensus)
+        g = adjudicated(key, sheets, consensus, unmasked)
     except ValueError as e:
         sys.exit(str(e))
-    rl.pin(mpath, "adjudication_consensus", args.consensus, len(consensus), args.repin)
-    if args.meeting_record:
-        rl.pin(mpath, "adjudication_meeting_record", args.meeting_record, 1, args.repin)
+    cols = ["packet_id", "label_uid", "label_uid_city", "label_type", "rater", "stratum", "margin_class",
+            "round3_split", "ai_vote"] + [f"v_{r}" for r in raters] + ["unmasked", "consensus", "source", "gold"]
+    gold = g[cols].to_csv(index=False).encode()
+    if ok:
+        _refuse_pin_change(mpath, "adjudication_consensus", open(args.consensus, "rb").read(), args.repin)
+        if args.meeting_record:
+            _refuse_pin_change(mpath, "adjudication_meeting_record", open(args.meeting_record, "rb").read(),
+                               args.repin)
+        if args.out:
+            _refuse_pin_change(mpath, "gold_shared", gold, args.repin)
     if args.out:
-        if rl.inside_git_checkout(args.out):
-            sys.exit(f"refusing to write gold labels inside a git checkout: {args.out}")
-        cols = ["packet_id", "label_uid", "label_uid_city", "label_type", "rater", "stratum", "margin_class",
-                "round3_split", "ai_vote"] + [f"v_{r}" for r in raters] + ["consensus", "source", "gold"]
-        g[cols].to_csv(args.out, index=False)
-        rl.pin(mpath, "gold_shared", args.out, len(g), args.repin)
-    ia = agreement_table(key, sheets)
+        _write_atomic(args.out, gold)
+    if ok:
+        rl.pin(mpath, "adjudication_consensus", args.consensus, len(consensus), args.repin)
+        if args.meeting_record:
+            rl.pin(mpath, "adjudication_meeting_record", args.meeting_record, 1, args.repin)
+        if args.out:
+            rl.pin(mpath, "gold_shared", args.out, len(g), args.repin)
+    else:
+        print("PREVIEW: an input is unpinned, so nothing was pinned\n")
     pct = lambda r, k="agree", lo="lo", hi="hi": rl._pct(r[k], r[lo], r[hi])  # noqa: E731
-    print("## Independent agreement (before adjudication; both raters decided)\n")
-    print(_table_markdown(ia, ["label_type", "shared_items", "n", "agree", "kappa"],
-                          {"agree": pct, "kappa": lambda r: f"{r['kappa']:.2f}"}))
+    f2 = lambda c: (lambda r: f"{r[c]:.2f}")  # noqa: E731
+    ia = agreement_table(key, sheets, unmasked)
+    print(f"## Independent agreement (before adjudication; {int(g.unmasked.sum())} unmasked items left out)\n")
+    print(_table_markdown(ia, ["label_type", "shared_items", "n", "agree", "kappa", "n_answered", "agree3",
+                               "kappa3", "cant_tell_splits"],
+                          {"agree": pct, "kappa": f2("kappa"), "agree3": lambda r: pct(r, "agree3", "lo3", "hi3"),
+                           "kappa3": f2("kappa3")}))
+    print("\nn / agree / kappa: both raters decided (correct or incorrect). n_answered / agree3 / kappa3: every "
+          "item both answered, can't tell as a third category.")
     print("\n## Mismatches and how they were resolved\n")
     print(_table_markdown(resolution_table(g, raters), ["mismatch_kind", "label_type", "n"]
                           + [f"kept_{r}" for r in raters] + ["new", "cant_tell", "no_consensus"]))
-    print("\n## Gold labels on the shared items (after adjudication)\n")
-    print(_table_markdown(gold_table(g), ["label_type", "shared_items", "gold", "from_matched", "from_consensus",
-                                          "no_gold", "n_disagree", "confirms_ai", "n_agree", "agree_correct"],
-                          {"confirms_ai": lambda r: pct(r, "confirms_ai", "confirms_lo", "confirms_hi"),
-                           "agree_correct": lambda r: "" if pd.isna(r["agree_correct"])
-                           else f"{r['agree_correct']:.0%}"}))
+    gfmt = {"confirms_ai": lambda r: pct(r, "confirms_ai", "confirms_lo", "confirms_hi"),
+            "agree_correct": lambda r: "" if pd.isna(r["agree_correct"]) else f"{r['agree_correct']:.0%}"}
+    gcols = ["shared_items", "gold", "from_matched", "from_consensus", "no_gold", "n_disagree", "confirms_ai",
+             "n_agree", "agree_correct"]
+    for by in ("label_type", "stratum"):
+        print(f"\n## Gold labels on the shared items, by {by.replace('_', ' ')} (after adjudication)\n")
+        print(_table_markdown(gold_table(g, by), [by] + gcols, gfmt))
     print("\nconfirms_ai: the gold label is incorrect on an AI Disagree; agree_correct: the gold label is correct on "
-          "an AI Agree decoy.")
+          "an AI Agree decoy. Rates in this stratified sample, not population estimates.")
 
 
 def build_parser():
@@ -1005,6 +1136,7 @@ def build_parser():
     g.add_argument("--out", required=True, help="directory for index.html (outside any git checkout)")
     g.add_argument("--cityparams", default=rl.DEFAULT_CITYPARAMS)
     g.add_argument("--manifest")
+    g.add_argument("--repin", action="store_true", help="replace the Gallery lists recorded for this rater")
     g.set_defaults(func=cmd_gallery)
     v = sub.add_parser("votes", help="one rater's prod votes on their items, as a filled sheet (pinned)")
     v.add_argument("--key", required=True)
@@ -1020,12 +1152,16 @@ def build_parser():
     s.add_argument("--rater", required=True)
     s.add_argument("--sheet", required=True)
     s.add_argument("--manifest")
+    s.add_argument("--unmasked", help="pinned CSV of packet_ids rated unmasked, left out of the tables")
     s.add_argument("--allow-unpinned", action="store_true")
     s.set_defaults(func=cmd_score)
     a = sub.add_parser("agreement", help="inter-rater agreement on the shared items")
     a.add_argument("--key", required=True)
     a.add_argument("--sheets", nargs=2, required=True, metavar="RATER=SHEET")
     a.add_argument("--out", help="CSV of the table")
+    a.add_argument("--unmasked", help="pinned CSV of packet_ids rated unmasked, left out")
+    a.add_argument("--manifest")
+    a.add_argument("--allow-unpinned", action="store_true")
     a.set_defaults(func=cmd_agreement)
 
     c = sub.add_parser("comments", help="one rater's Gallery comments on their items (pinned)")
@@ -1046,6 +1182,7 @@ def build_parser():
     ab.add_argument("--packet-dir", required=True, help="the build's packet dir (its items/ crops)")
     ab.add_argument("--out", required=True, help="directory for adjudicate.html, items.csv, meeting_record.md")
     ab.add_argument("--comments", nargs="*", metavar="RATER=CSV", help="pinned `comments` pulls, shown per rater")
+    ab.add_argument("--unmasked", help="pinned CSV of packet_ids rated unmasked (flagged on the page)")
     ab.add_argument("--manifest")
     ab.add_argument("--allow-unpinned", action="store_true")
     ab.add_argument("--repin", action="store_true")
@@ -1057,6 +1194,8 @@ def build_parser():
     ar.add_argument("--consensus", required=True, help="the meeting page's exported consensus CSV (pinned)")
     ar.add_argument("--meeting-record", help="the filled meeting_record.md (pinned)")
     ar.add_argument("--out", help="gold_shared.csv (pinned; outside any git checkout)")
+    ar.add_argument("--items", help="the pinned items.csv (default: beside the consensus sheet)")
+    ar.add_argument("--unmasked", help="pinned CSV of packet_ids rated unmasked, left out of the tables")
     ar.add_argument("--manifest")
     ar.add_argument("--allow-unpinned", action="store_true")
     ar.add_argument("--repin", action="store_true")
