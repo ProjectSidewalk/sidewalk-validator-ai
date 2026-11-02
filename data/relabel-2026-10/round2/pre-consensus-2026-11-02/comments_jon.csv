@@ -1,0 +1,200 @@
+sidewalk_chicago,35112,2026-10-30 14:31:48.344585-07,,"The curb ramp itself is a bit to the left of this, which is perhaps why AI thought it was wrong?"
+sidewalk_chicago,133595,2026-10-30 14:32:22.809561-07,driveway-transition,This is a sidewalk to driveway transition
+sidewalk_chicago,26575,2026-10-30 14:33:53.503736-07,,Almost looks like its chalked on--a crosswalk grid pattern!
+sidewalk_chicago,187405,2026-10-30 14:34:12.712261-07,,A very minimal crack.
+sidewalk_chicago,181494,2026-10-30 14:34:27.883728-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,138422,2026-10-30 14:34:34.85078-07,ample-space,There is ample space to avoid this object
+sidewalk_chicago,72493,2026-10-30 14:35:14.592813-07,,Why was this even labeled?
+sidewalk_chicago,99365,2026-10-30 14:38:22.887885-07,,A narrow sidewalk--an old style of maybe 2-2.5 feet. I shifted severity from 3 to 2 though.
+sidewalk_chicago,145730,2026-10-30 14:39:32.492365-07,,This is an alleyway but it is part of the pedestrian pathway and has some small cracks but probably wouldn't label it.
+sidewalk_chicago,50181,2026-10-30 14:40:47.579209-07,,I see two other comments said wrong location--maybe we fixed the label placement with our bug fixes?
+sidewalk_chicago,136040,2026-10-30 14:41:48.840236-07,residential-walkway,This is a residential walkway
+sidewalk_chicago,87989,2026-10-30 14:43:15.164801-07,,"There is a bush in the distance, which I think is what this label is intended for."
+sidewalk_chicago,19924,2026-10-30 14:44:01.15984-07,,Is this a pedestrian/bike path or a road?
+sidewalk_chicago,190684,2026-10-30 14:44:24.565528-07,,Brick crosswalk with two white parallel lines (faded)
+sidewalk_chicago,142942,2026-10-30 14:44:47.874858-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_chicago,145055,2026-10-30 14:44:53.505441-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_chicago,78862,2026-10-30 14:45:01.138193-07,ample-space,There is ample space to avoid this object
+sidewalk_chicago,37954,2026-10-30 14:45:41.85942-07,,"I do think this presents a barrier with not enough room to pass, especially with the bike in the way"
+sidewalk_chicago,198147,2026-10-30 14:46:12.793271-07,,Hard to see from here but I think there is a curb ramp here.
+sidewalk_chicago,17440,2026-10-30 14:47:24.603514-07,,There is definitely a curb ramp here.
+sidewalk_chicago,197481,2026-10-30 14:48:11.334709-07,,This is the wrong label type. There is a curb ramp here (level with street here).
+sidewalk_chicago,45207,2026-10-30 14:48:17.73566-07,no-sidewalk-here,There is no sidewalk here
+sidewalk_chicago,85442,2026-10-30 14:48:44.637929-07,,I can't tell if this is intended for pedestrians or not.
+sidewalk_chicago,24814,2026-10-30 14:50:28.563643-07,,A grid crosswalk!
+sidewalk_chicago,200848,2026-10-30 14:50:58.120976-07,,Might not be safe to cross here.
+sidewalk_chicago,23866,2026-10-30 14:51:34.99653-07,,Not sure if I would have marked this but I agree it could maybe create some tripping hazard or other issue
+sidewalk_chicago,56944,2026-10-30 14:52:17.251712-07,,Very faded crosswalk
+sidewalk_chicago,45765,2026-10-30 14:52:57.444129-07,,Construction here. Label should be on the construction sign rather than next to it.
+sidewalk_chicago,110357,2026-10-30 14:53:09.506516-07,no-sidewalk-here,There is no sidewalk here
+sidewalk_chicago,27811,2026-10-30 14:53:40.624805-07,,There is a curb ramp here but obscured by leaves.
+sidewalk_chicago,108274,2026-10-30 14:54:32.219814-07,,This sidewalk appears to be under construction right now and is completely overrun with gravel and sand.
+sidewalk_chicago,197757,2026-10-30 14:55:00.71734-07,,T intersection should have a curb ramp here.
+sidewalk_chicago,29693,2026-10-30 14:55:17.898639-07,,Very faded crosswalk
+sidewalk_chicago,72717,2026-10-30 14:56:46.959602-07,,I probably wouldn't consider this as narrow.
+sidewalk_chicago,174990,2026-10-30 14:57:09.943723-07,,Image is quite washed out
+sidewalk_seattle,224945,2026-10-28 21:08:10.888223-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,2831,2026-10-28 21:08:22.068315-07,ample-space,There is ample space to avoid this object
+sidewalk_seattle,12623,2026-10-28 21:08:50.594038-07,,It might not be safe to cross here
+sidewalk_seattle,174565,2026-10-28 21:08:57.311723-07,driveway,This is a driveway
+sidewalk_seattle,43147,2026-10-28 21:09:57.739372-07,,Label placement looks incorrect. There are legitimate sidewalk cracks here but the label placement is weird.
+sidewalk_seattle,173677,2026-10-28 21:10:42.610703-07,,Label placement looks weird here... there is a sidewalk crack on the panels but this label is on the driveway
+sidewalk_seattle,259072,2026-10-28 21:11:07.214048-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,189241,2026-10-28 21:11:14.010007-07,ample-space,There is ample space to avoid this object
+sidewalk_seattle,223676,2026-10-28 21:11:19.905478-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,169367,2026-10-28 21:11:43.080819-07,,There is a diagonal ramp here but ideally there would be a curb ramp facing this direction
+sidewalk_seattle,237096,2026-10-28 21:12:09.140155-07,,There is a driveway here but I think this is also a missing curb ramp
+sidewalk_seattle,121463,2026-10-28 21:12:33.813943-07,,"This is the wrong label type. This is a curb ramp, though it faces diagonal into the intersection."
+sidewalk_seattle,95022,2026-10-28 21:13:00.363612-07,,"This is a very random label, almost like vandalism. Not sure what is going on."
+sidewalk_seattle,99857,2026-10-28 21:13:29.473645-07,,"There is a diagonal ramp here but it doesn't really cover the marked crosswalk well, so not sure."
+sidewalk_seattle,194979,2026-10-28 21:14:16.674779-07,,"It is not safe to cross here. Not sure why this label was added (was it for the seam to the alleyway... but even then, a curb ramp not needed as there is no elevation change)."
+sidewalk_seattle,237903,2026-10-28 21:14:43.551861-07,,A very dark and sort of difficult to see curb ramp
+sidewalk_seattle,149978,2026-10-28 21:15:04.340146-07,,This is the wrong label type. This is a curb ramp
+sidewalk_seattle,65165,2026-10-28 21:15:29.452433-07,,There is plenty of room to go around
+sidewalk_seattle,64455,2026-10-29 06:34:32.660715-07,,This is a strange sidewalk as it angles to the road but it's definitely missing a curb ramp
+sidewalk_seattle,290796,2026-10-29 06:35:44.536786-07,,This is a very unusual artistic type of colored brick crossing area. Not sure if we would call it a painted crosswalk or not given that it also stretches into the middle of the road/intersection
+sidewalk_seattle,289309,2026-10-29 06:36:15.247113-07,,Shadows likely make this one hard for CV
+sidewalk_seattle,171896,2026-10-29 06:36:20.764901-07,driveway,This is a driveway
+sidewalk_seattle,27330,2026-10-29 16:39:02.396073-07,,This is a driveway but just across the street is a corner--and so both sides should have curb ramps (including here) to enable cross-street access
+sidewalk_seattle,100512,2026-10-29 16:40:08.637553-07,,A bit hard to see but seems like debris
+sidewalk_seattle,54927,2026-10-29 16:40:48.274407-07,,"So, this is a tough one. The city put in diagonal ramps here clearly intended to support both travel directions, so I am going to make this as a disagree for now."
+sidewalk_seattle,209600,2026-10-29 16:41:29.28103-07,,Not sure why user added missing curb ramp label here--it's the middle of the block and not clearly an area where pedestrians are intended to cross
+sidewalk_seattle,260466,2026-10-29 16:41:45.541362-07,,Very minimal issue
+sidewalk_seattle,268462,2026-10-29 16:41:59.070735-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,136348,2026-10-29 16:43:15.096369-07,,"Again, this one is right on the edge of ""disagree"" and ""unsure"" because it's a diagonal ramp... and ideally there would be two ramps on this corner but the diagonal ramp is intended to serve both directions of travel"
+sidewalk_seattle,217698,2026-10-29 16:43:31.086994-07,driveway,This is a driveway
+sidewalk_seattle,288025,2026-10-29 16:43:49.517014-07,ample-space,There is ample space to avoid this object
+sidewalk_seattle,161767,2026-10-29 16:44:30.651728-07,,"So, the label is over vegetation rather than a surface problem--but even then, not clear it's an access barrier"
+sidewalk_seattle,227074,2026-10-29 16:44:37.237567-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,163458,2026-10-29 16:44:46.476942-07,driveway,This is a driveway
+sidewalk_seattle,313226,2026-10-29 16:45:14.796132-07,,Crosswalk is in the distance and a strange angle from here but it's defintiely a crosswalk (a zebra crossing)!
+sidewalk_seattle,148542,2026-10-29 16:45:33.437093-07,driveway,This is a driveway
+sidewalk_seattle,184081,2026-10-29 16:45:55.616941-07,,"Dark, grainy photo but clearly shows a crosswalk with a pedestrian signal but no curb ramp"
+sidewalk_seattle,207892,2026-10-29 16:46:11.626069-07,ample-space,There is ample space to avoid this object
+sidewalk_seattle,277249,2026-10-29 16:46:45.94734-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,15251,2026-10-29 16:47:26.341364-07,,"I would have ordinarily said no because it doesn't seem safe to cross here but across the street, there is a curb ramp pointing right back here."
+sidewalk_seattle,237198,2026-10-29 16:47:33.09687-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,267872,2026-10-29 16:47:44.511676-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,248841,2026-10-29 16:48:05.806509-07,,The label is a bit off target but definitely tras/recycling can obstacle
+sidewalk_seattle,64355,2026-10-29 16:57:28.370972-07,,Looks like this is just a randomly placed label
+sidewalk_seattle,223726,2026-10-29 17:06:41.326982-07,no-sidewalk-here,There is no sidewalk here
+sidewalk_seattle,270703,2026-10-29 17:07:29.396858-07,,There is a diagonal curb ramp here that is intended to serve both crossing directions (and both directions have a painted crosswalk)
+sidewalk_seattle,249057,2026-10-29 17:07:52.692679-07,,Basketball hoop in the sidewalk presents an impassable barrier!
+sidewalk_seattle,205769,2026-10-29 17:08:20.836146-07,,Could also mark this as a surface problem. Either would work. This is a lot of overgrowh on the sidewalk though!
+sidewalk_seattle,202605,2026-10-29 17:08:30.057274-07,ample-space,There is ample space to avoid this object
+sidewalk_seattle,212582,2026-10-29 17:08:43.85852-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,62554,2026-10-29 17:09:43.659824-07,,This is a missing curb ramp
+sidewalk_seattle,247537,2026-10-29 17:10:35.575048-07,,"Wow, this is very subtle but I think the original labeler is correct, this sidewalk turns into a dirt path here. Could also use the ""No Sidewalk"" label with an ends abruptly tag imo."
+sidewalk_seattle,232997,2026-10-29 17:10:56.710328-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,244073,2026-10-29 17:12:41.8411-07,,Small amount of debris and a bit cross-slanted as its on a driveway but honestly both are so minor that I probably would not have labeled it in the first place.
+sidewalk_seattle,194988,2026-10-29 17:12:54.19572-07,ample-space,There is ample space to avoid this object
+sidewalk_seattle,297052,2026-10-29 17:13:07.901161-07,driveway,This is a driveway
+sidewalk_seattle,207715,2026-10-29 17:13:15.38722-07,ample-space,There is ample space to avoid this object
+sidewalk_seattle,94228,2026-10-29 17:14:30.476327-07,,There is a diagonal ramp here but the crosswalk connects more to this part of the corner--and the person labeled the right area where there should be a curb ramp
+sidewalk_seattle,318965,2026-10-29 17:15:31.106212-07,,"There is a crosswalk here but where the person labeled, there is a construction cover, which would really make it impossible for the AI to tell the right answer unless it took a broader look"
+sidewalk_seattle,270042,2026-10-29 17:15:52.929741-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,202184,2026-10-29 17:16:31.156573-07,,Unusual perspective with the crosswalk appropriately marked but it's way in the distance and pointing away from camera.
+sidewalk_seattle,141227,2026-10-29 17:17:14.377065-07,,"Techncially there is a grass growing here on this sidewalk panel (between the seams) but it is so minor, I probably would not have labeled it."
+sidewalk_seattle,275463,2026-10-29 17:17:37.947385-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,209636,2026-10-29 19:36:05.154475-07,,The label isn't exactly on the crosswalk but close enough
+sidewalk_seattle,262416,2026-10-29 19:36:22.277193-07,,Pretty minor
+sidewalk_seattle,166108,2026-10-29 19:36:37.537295-07,driveway,This is a driveway
+sidewalk_seattle,116593,2026-10-29 19:38:03.637037-07,,This is a missing curb ramp
+sidewalk_seattle,252674,2026-10-29 19:38:25.076042-07,space-to-avoid-unsure,There might be enough space to avoid the object
+sidewalk_seattle,212141,2026-10-29 19:38:57.098106-07,,Faded white parallel lines but then also a brick crosswalk
+sidewalk_seattle,68697,2026-10-29 19:39:25.808277-07,,I'm really not seeing why this was labeled
+sidewalk_seattle,173878,2026-10-29 19:39:43.049747-07,driveway,This is a driveway
+sidewalk_seattle,113801,2026-10-29 19:40:08.206332-07,driveway-transition,This is a sidewalk to driveway transition
+sidewalk_seattle,86190,2026-10-29 19:40:29.485236-07,,Strange angle but definitely a curb ramp with tactile indicators here
+sidewalk_seattle,209075,2026-10-29 19:40:40.10691-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,251265,2026-10-29 19:40:51.295758-07,stop-line,This is a stop line for cars
+sidewalk_seattle,13355,2026-10-29 19:40:57.094059-07,ample-space,There is ample space to avoid this object
+sidewalk_seattle,142455,2026-10-29 19:41:23.599495-07,,This is the wrong label type. There is a curb ramp right next to the missing curb ramp label.
+sidewalk_seattle,101610,2026-10-29 19:42:09.61596-07,,Might be too minor to label. The tags say grass and uneven/slanted. I just see a slight crack.
+sidewalk_seattle,76571,2026-10-29 19:42:41.283288-07,,This is a vary bad curb ramp but it is a curb ramp
+sidewalk_seattle,164367,2026-10-29 19:42:50.829604-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,272467,2026-10-29 19:42:56.243458-07,driveway,This is a driveway
+sidewalk_seattle,211645,2026-10-29 19:43:15.795943-07,,This is the wrong label type. This is a curb ramp.
+sidewalk_seattle,140992,2026-10-29 19:43:30.256029-07,,Very minor
+sidewalk_seattle,281769,2026-10-29 19:43:39.47554-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,208229,2026-10-29 19:44:28.481665-07,,"This is definitely incorrect. Maybe the labeler saw the shadow from the light pole, which sort of looks like a curb"
+sidewalk_seattle,313275,2026-10-29 19:44:47.926937-07,,"Very faded, especially right where the label is"
+sidewalk_seattle,275394,2026-10-29 19:45:14.825974-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,87360,2026-10-29 19:45:33.8488-07,,This looks like vandalism or a totally random label
+sidewalk_seattle,210690,2026-10-29 19:46:02.681466-07,,Label placement is incorrect. There is a crosswalk here but the label would need to be moved down substantially.
+sidewalk_seattle,63801,2026-10-29 19:46:27.518439-07,,I do not know what the user was trying to label here so I must mark disagree.
+sidewalk_seattle,253157,2026-10-29 19:47:15.882152-07,,The pole is in an awkward position at the curb ramp. I think it presents an access problem.
+sidewalk_seattle,12543,2026-10-29 19:48:30.066194-07,,Challenging angle but I went into GSV to confirm from a diff view that this is in fact a curb ramp
+sidewalk_seattle,171980,2026-10-29 19:48:47.825437-07,,This is the wrong label type. This should be a missing curb ramp.
+sidewalk_seattle,219250,2026-10-29 19:49:01.028385-07,,Minor problem
+sidewalk_seattle,139067,2026-10-29 19:49:25.10534-07,,This is either a very bad curb ramp or a missing curb ramp.
+sidewalk_seattle,65785,2026-10-29 19:50:42.851147-07,,"So, I think this label is correct. If you look across the street, there is a corner with a curb ramp (this is a T intersection where this missing curb ramp label as at the top of the T). While there is a dirveway here, there should also be a curb ramp for access."
+sidewalk_seattle,271484,2026-10-29 19:50:47.503807-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,173470,2026-10-29 19:51:06.588796-07,driveway,This is a driveway
+sidewalk_seattle,242529,2026-10-29 19:51:57.438314-07,,This a a normal seam between two different pavement types along a pedestrian path. No curb ramp exists and no curb ramp is needed (including the label)
+sidewalk_seattle,314176,2026-10-29 19:52:19.447739-07,,An extremely faded yellow crosswalk stripe.
+sidewalk_seattle,210100,2026-10-29 19:53:14.671139-07,,"This is definitely a correct label. This is a T intersection. Across the street at the corner, there is a curb ramp. But here, there is just a driveway. There should also be a curb ramp"
+sidewalk_seattle,118175,2026-10-29 19:53:21.461791-07,driveway,This is a driveway
+sidewalk_seattle,123531,2026-10-29 19:53:47.456497-07,,It's pretty minor but the panel is slanted and has a bit of an uplift
+sidewalk_seattle,192467,2026-10-29 19:54:00.07622-07,,Extremely minor
+sidewalk_seattle,298032,2026-10-29 19:54:13.565252-07,,This is the wrong label type. This should be a curb ramp.
+sidewalk_seattle,199620,2026-10-29 20:10:09.557073-07,,"This is not on a pedestrian path, this is on the road. Did the labeler not undertsand the task? Or intentionally do this? Or just mouse slippage?"
+sidewalk_seattle,139423,2026-10-29 20:10:41.870739-07,,This isn't really on the primary pathway of the pedestrian and it's pretty minor. I wouldn't label it...
+sidewalk_seattle,286705,2026-10-29 20:11:17.268456-07,,A very unusual like paved crosswalk and maybe some old faded white lines though those could also be stop lines
+sidewalk_seattle,227070,2026-10-29 20:11:22.314062-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,231662,2026-10-29 20:11:27.953209-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,127805,2026-10-29 20:11:52.972219-07,,Extremely minor grass growing between sidewalk panels (as is common). Not sure worth marking.
+sidewalk_seattle,260932,2026-10-29 20:12:46.496106-07,,"I mean, this is so minor. I don't really see a crack. I see maybe a bit of grass growing between sidewalk panels."
+sidewalk_seattle,195380,2026-10-29 20:12:54.392975-07,no-sidewalk-here,There is no sidewalk here
+sidewalk_seattle,77639,2026-10-29 20:13:01.656732-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,14991,2026-10-29 20:13:37.856085-07,,"This label is labeling something so far in the distance, it's really hard to tell what's going on here."
+sidewalk_seattle,80591,2026-10-29 20:14:19.92748-07,,This label is in the air above the fence. Was this intentional vandalism? Or a mouse slip or what?
+sidewalk_seattle,232614,2026-10-29 20:14:29.049112-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,209129,2026-10-29 20:14:33.32111-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,117823,2026-10-29 20:15:14.929859-07,,The label looks misplaced. There is a curb ramp at this intersection but the label itself is pretty far from it...
+sidewalk_seattle,88617,2026-10-29 20:15:30.366407-07,,Pretty minor
+sidewalk_seattle,203485,2026-10-29 20:15:42.030498-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,151416,2026-10-29 20:15:47.361199-07,driveway,This is a driveway
+sidewalk_seattle,32035,2026-10-29 20:15:56.601803-07,driveway,This is a driveway
+sidewalk_seattle,139380,2026-10-29 20:16:35.380464-07,,"So, there is a diagonal ramp just next to this that is intended to serve as a curb ramp for this street crossing direction"
+sidewalk_seattle,147937,2026-10-29 20:17:36.084325-07,,"A washed out, bright curb ramp that looks like a driveway but is a curb ramp"
+sidewalk_seattle,114262,2026-10-29 20:17:49.941604-07,driveway,This is a driveway
+sidewalk_seattle,293668,2026-10-29 20:18:24.941028-07,,"I don't know why this was labeled; also, this area is under construction so where the curb ramp would ordinarily be is currently under construction"
+sidewalk_seattle,116558,2026-10-29 20:18:46.374877-07,driveway,This is a driveway
+sidewalk_seattle,130412,2026-10-29 20:19:21.041479-07,,Very minimal. I probably wouldn't label it.
+sidewalk_seattle,170799,2026-10-29 20:19:32.17604-07,driveway,This is a driveway
+sidewalk_seattle,252814,2026-10-29 20:20:11.527807-07,,There is a curb ramp here but this label looks a bit far from it to be 100% sure
+sidewalk_seattle,278633,2026-10-29 20:20:18.275537-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,208004,2026-10-30 07:10:41.9999-07,,"This is not on a pedestrian path. This is clearly on the grass, and not on the pedestrian path."
+sidewalk_seattle,147520,2026-10-30 07:11:11.879656-07,,Very minimal issue here. I probably would not have labeled it but it is grass between the sidewalk panels.
+sidewalk_seattle,248027,2026-10-30 07:11:38.142002-07,,Have no idea why this was placed. Seems quite random and off.
+sidewalk_seattle,275473,2026-10-30 07:12:56.16122-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,251922,2026-10-30 07:13:13.973012-07,,"Wow, a pole in the very center of the sidewalk"
+sidewalk_seattle,88451,2026-10-30 07:13:53.079417-07,,"This is a tough one as it looks like a gravel path with some evidence of a curb ramp. But we don't typically mark ""missing curb ramps"" where there is no sidewalk"
+sidewalk_seattle,297589,2026-10-30 07:14:03.282142-07,,Very faded paint
+sidewalk_seattle,88714,2026-10-30 07:14:35.505614-07,,"Due to street grade, has a cross-slant."
+sidewalk_seattle,207709,2026-10-30 07:14:58.343505-07,,This is not on a pedestrian path. This pole is on the grass. Not on the pedestrian path.
+sidewalk_seattle,209554,2026-10-30 07:15:23.105245-07,,Strange angle and far from camera so AI may struggle here.
+sidewalk_seattle,150752,2026-10-30 07:15:29.774465-07,ample-space,There is ample space to avoid this object
+sidewalk_seattle,172446,2026-10-30 07:15:35.862244-07,driveway,This is a driveway
+sidewalk_seattle,89165,2026-10-30 07:16:15.843548-07,,There is no ramp here but there should be to enable crossing to the corner across the street.
+sidewalk_seattle,246373,2026-10-30 07:16:41.679437-07,,Mailbox plus overgrowth from vegetation creates limited room.
+sidewalk_seattle,161328,2026-10-30 07:17:09.048391-07,,The curb dips down a bit but not enough to justify calling it a curb ramp
+sidewalk_seattle,298978,2026-10-30 14:25:59.846241-07,,A T-intersection that requires a curb ramp here
+sidewalk_seattle,192036,2026-10-30 14:26:32.90694-07,,This is so minimal that I would not have labeled it but the sidewalk panel here is cracked
+sidewalk_seattle,290362,2026-10-30 14:26:39.795132-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,61589,2026-10-30 14:27:31.888346-07,,This label seems off -- I wonder if an old (now fixed) bug
+sidewalk_seattle,212622,2026-10-30 14:27:48.449659-07,driveway,This is a driveway
+sidewalk_seattle,258784,2026-10-30 14:29:39.504174-07,,The label is a bit off (too low) but definitely labels a missing curb ramp
+sidewalk_seattle,169923,2026-10-30 14:30:05.320912-07,driveway,This is a driveway
+sidewalk_seattle,216579,2026-10-30 15:05:15.517045-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,216613,2026-10-30 15:05:25.341139-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,216652,2026-10-30 15:05:32.857057-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,216797,2026-10-30 15:05:38.569937-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,217400,2026-10-30 15:05:45.864524-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,217765,2026-10-30 15:05:56.086733-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,218088,2026-10-30 15:06:10.628597-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,219049,2026-10-30 15:06:16.054413-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,221152,2026-10-30 15:06:26.380864-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,222082,2026-10-30 15:06:31.720204-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,218451,2026-10-30 15:07:56.465174-07,not-pedestrian-path,This is not on a pedestrian path
