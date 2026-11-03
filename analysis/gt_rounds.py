@@ -486,7 +486,7 @@ def cohen_kappa(a, b):
     po = float((a == b).mean())
     labels = sorted(set(a) | set(b))
     pe = sum((a == l).mean() * (b == l).mean() for l in labels)
-    return float("nan") if pe == 1 else (po - pe) / (1 - pe)
+    return float("nan") if pe == 1 else float((po - pe) / (1 - pe))
 
 
 # ---------------------------------------------------------------------------------------------------------------------

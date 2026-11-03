@@ -269,7 +269,13 @@
    "file": "gold_shared.csv",
    "sha256": "c560bdc612ca1a156691d25857bab3961a818abdc4488cedf32267e3e9e585ab",
    "rows": 100,
-   "written_at": "2026-11-02T22:38:54.483146191+00:00"
+   "written_at": "2026-11-03T13:54:50.546862602+00:00"
+  },
+  "adjudication_meeting_record": {
+   "file": "meeting_record.md",
+   "sha256": "5f17737b09214780554bfb5e1c09e19830b2a76fb370659db5399fc4dffc367e",
+   "rows": 1,
+   "written_at": "2026-11-03T13:53:54.999497890+00:00"
   }
  },
  "gallery": {

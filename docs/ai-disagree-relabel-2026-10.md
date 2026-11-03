@@ -404,7 +404,7 @@ before that and is unchanged.
 rating and adjudication were over (the key carries the AI's and the crowd's votes, so it stayed private until then):
 the key, manifest and seed (`key/`); the pool (`pool.csv.gz`); the Gallery lists; the independent sheets and comments
 (`pre-consensus-2026-11-02/`, committed before the meeting); the post-meeting pulls (`post/`); and the item list,
-consensus sheet, meeting record and gold labels (`adjudication/`). Each folder has a `SHA256SUMS`, and each file's
+consensus sheet, meeting record and gold labels (`adjudication/`). `SHA256SUMS` (and one in `pre-consensus-2026-11-02/`) lists every file, and each file's
 sha256 matches its pin in `key/manifest.json`. The Street View crops are not committed (Google's imagery terms),
 nor are rater user ids.
 
@@ -429,7 +429,8 @@ sheets. The two unmasked shared items stay on the list if they mismatch, flagged
    meeting mask that hides the vote counts, the vote list and the AI icon but shows comments, so each rater's
    reasoning is on screen. The stratum is never shown. Crowd comments on the same labels are visible too; that is
    a known leak and is reported. (A dedicated meeting page was built first and dropped for Gallery before the
-   meeting.)
+   meeting.) In round 2 the mask was not on during the meeting, so the raters saw the AI's vote and the crowd's
+   votes while they discussed; the independent ratings were masked and pinned before it (see the meeting record).
 4. **Fixed order:** label type, then packet id (packet ids are random hex).
 5. **One consensus per item, recorded in prod:** both raters set their vote to the agreed verdict (correct,
    incorrect, or can't tell when the imagery cannot show it) and add the reasoning to their Gallery comment. Votes
@@ -477,7 +478,11 @@ differently: whether there is room to get around an object, and whether an objec
 path.
 
 **The meeting** (2026-11-02, both raters, on Zoom, in Gallery) took up all 17 mismatches (5 conflicts, 12 can't-tell
-splits) and reached a consensus on every one:
+splits) and reached a consensus on every one. The meeting was not masked: the raters could see the AI's vote and
+the crowd's votes, so the consensus verdicts, unlike the independent ratings above, were not reached masked. Who
+spoke first varied by item. The raters agreed three rating-rule clarifications: an Obstacle with room to pass is
+incorrect; a misplaced label whose feature is nearby is can't tell; a crack that may be too minor to label is can't
+tell ([`meeting_record.md`](../data/relabel-2026-10/round2/adjudication/meeting_record.md)). How the mismatches were resolved:
 
 | Mismatch | n | Kept rater 1's verdict | Kept rater 2's verdict | Can't tell | No consensus |
 |---|---:|---:|---:|---:|---:|
