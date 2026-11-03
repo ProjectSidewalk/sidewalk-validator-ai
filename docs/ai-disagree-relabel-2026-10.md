@@ -347,8 +347,13 @@ with the design file [`analysis/gt_rounds/round2.json`](../analysis/gt_rounds/ro
 - **Strata.** Per city, 170 AI Disagrees and 80 decoys (AI Agree; Unsure where a type had too few Agree votes). The
   Disagrees split into `margin_incorrect` (net human Disagree ≥ 2: the training target sides with the AI),
   `margin_correct` (net Agree ≥ 3: the AI contradicts its training target), `lone` (no human vote) and
-  `light_voted` (votes short of the margin rule), half of them margin rows. `margin_correct` is capped at 40% of
-  the margin cell and topped up with `margin_incorrect`.
+  `light_voted` (at least two decisive human votes with a majority, short of the margin rule), half of them margin
+  rows. `margin_correct` is capped at 40% of the margin cell and topped up with `margin_incorrect`.
+- **Not sampled.** AI Disagrees in none of the four strata are never drawn: one decisive human vote, only Unsure
+  votes, or a tie. That is 8,611 of Seattle's 17,284 eligible AI Disagrees (6,701 with one decisive vote, 371 with
+  only Unsure votes, 1,539 ties) and 3,853 of Chicago's 10,769 (3,002 / 145 / 706). The ties are the labels where
+  the AI's Disagree breaks the tie in prod. No rate from this round, the population-weighted ones in `score`
+  included, covers them; a later round needs a stratum for them. `build` prints these counts.
 - **Quotas per type** (AI Disagrees per city): CurbRamp 42, Crosswalk 36, NoCurbRamp 34, Obstacle 30,
   SurfaceProblem 28, each filled over severity buckets (1–2 / 3–5 / none) in proportion to the eligible pool.
 - **Exclusions.** Labels either rater voted on or placed are out of every list, both cities.
@@ -363,10 +368,10 @@ with the design file [`analysis/gt_rounds/round2.json`](../analysis/gt_rounds/ro
 Built from a fresh two-city pull (`SCHEMAS="sidewalk_seattle sidewalk_chicago"`, both raters' votes and
 placements as `expert1` / `expert2` columns), 500 items, no cell short of its quota:
 
-| Rater | City | Items | Shared with the other rater | Disagree strata: margin_incorrect / margin_correct / lone / light_voted | Decoys (Agree / Unsure) | In the round-3 train split | Severity 1–2 / 3–5 / none (Disagrees) |
-|---|---|---:|---:|---|---|---:|---|
-| Jon | Seattle | 250 | 50 | 53 / 32 / 61 / 24 | 80 / 0 | 40 | 122 / 27 / 21 |
-| Mikey | Chicago | 250 | 50 | 53 / 32 / 61 / 24 | 69 / 11 | 55 | 117 / 29 / 24 |
+| Rater | City | Items | Shared with the other rater | Disagree strata: margin_incorrect / margin_correct / lone / light_voted | Decoys (Agree / Unsure) | In round 3: train / val / test | Severity 1–2 / 3–5 / none (Disagrees) |
+|---|---|---:|---:|---|---|---|---|
+| Jon | Seattle | 250 | 50 | 53 / 32 / 61 / 24 | 80 / 0 | 40 / 9 / 9 | 122 / 27 / 21 |
+| Mikey | Chicago | 250 | 50 | 53 / 32 / 61 / 24 | 69 / 11 | 55 / 6 / 14 | 117 / 29 / 24 |
 
 Fewer margin rows are in the round-3 train split than meet the margin rule today because round 3 downsampled the
 `correct` class globally, kept only labels with a stored panorama, and used votes as of 2026-10-19; `margin_class`
@@ -404,8 +409,11 @@ before that and is unchanged.
 rating and adjudication were over (the key carries the AI's and the crowd's votes, so it stayed private until then):
 the key, manifest and seed (`key/`); the pool (`pool.csv.gz`); the Gallery lists; the independent sheets and comments
 (`pre-consensus-2026-11-02/`, committed before the meeting); the post-meeting pulls (`post/`); and the item list,
-consensus sheet, meeting record and gold labels (`adjudication/`). `SHA256SUMS` (and one in `pre-consensus-2026-11-02/`) lists every file, and each file's
-sha256 matches its pin in `key/manifest.json`. The Street View crops are not committed (Google's imagery terms),
+consensus sheet, meeting record and gold labels (`adjudication/`). `SHA256SUMS` (and one in
+`pre-consensus-2026-11-02/`) lists every file. Every data file's sha256 also matches its pin in `key/manifest.json`;
+the Gallery pages (`index.html`) and the folder README are listed in `SHA256SUMS` only. The manifest's
+`adjudication_page` pin is the meeting page that was built and then dropped for Gallery; that page is not
+committed. The Street View crops are not committed (Google's imagery terms),
 nor are rater user ids.
 
 ### Adjudication protocol (agreed 2026-11-02, before the meeting)
@@ -436,11 +444,16 @@ sheets. The two unmasked shared items stay on the list if they mismatch, flagged
    incorrect, or can't tell when the imagery cannot show it) and add the reasoning to their Gallery comment. Votes
    that still differ afterwards are no consensus. `votes --stage post` and `comments --stage post` pull that state
    under their own pins (`votes_<rater>_post`, `comments_<rater>_post`), and `adjudicate-consensus` turns it into
-   the consensus sheet, with the comments added or edited since the independent pull as the rationale. A meeting
-   vote overwrites the independent vote in prod, so the independent sheets were committed before the meeting.
+   the consensus sheet and pins it, with the comments added or edited since the independent pull as the rationale.
+   Prod keeps one comment per rater and label, so an independent comment the meeting replaced or removed is kept
+   in the rationale, marked `[replaced; was: …]` or `[removed; was: …]`. A meeting vote overwrites the independent
+   vote in prod, so the independent sheets were committed before the meeting; `adjudicate-consensus` refuses to
+   run if a post-meeting vote changed on an item that is not on the list, because that change would never reach
+   the gold labels. `adjudicate-report` refuses a consensus sheet that is not the pinned one.
 6. **A meeting record** (`meeting_record.md`, a template written by `adjudicate-build`, filled in afterwards): date, attendees, order
    used, who gave their reasoning first, whether masking held, imagery used beyond the crop, deviations, and the
-   rule clarifications agreed. It is pinned with the consensus sheet.
+   rule clarifications agreed. `adjudicate-report` pins it. In round 2 the clarifications are recorded there only;
+   the consensus sheet's `rule_clarification` column is empty because the consensus was read back from prod.
 7. **Gold label per shared item:** the common verdict where the raters matched, the consensus where they did not.
    Can't tell, no consensus and both-can't-tell items have none, and are counted.
 
@@ -453,7 +466,7 @@ estimates of the AI's precision in the population; the per-stratum view shows wh
 `~/Data/sidewalk-validator-ai-relabel-2026-10/round2/adjudication/`, with the sha256s in the manifest, and is
 committed with the rest of the round (see the Round 2 section above).
 
-### Round 2 results (rated 2026-10-29 to 2026-11-02; adjudicated 2026-11-02)
+### Round 2 results (rated 2026-10-28 to 2026-11-02; adjudicated 2026-11-02; dates in Pacific time)
 
 Both raters rated all 300 of their items. The tables below are the shared items, with the 2 shared items rated
 unmasked left out (98 of 100). From `adjudicate-report`; the label-level files are in
@@ -497,7 +510,9 @@ split ended on the decided verdict 7 times out of 12, in some cases after the ra
 **Gold labels on the shared items** (rates in this stratified sample, not population estimates): 91 of 98 have a
 gold label, 81 from matching verdicts and 10 from the meeting; 7 ended as can't tell. On the AI's 63 Disagrees
 with a gold label, the gold label says incorrect, confirming the AI, **55.6% [43.3, 67.2]** of the time; on its 25
-Agree decoys, it says correct 92% of the time.
+Agree decoys, it says correct 23 times, 92.0% [75.0, 97.8]. The meeting was unmasked, but it does not move the
+Disagree rate: on the 54 Disagrees where the raters matched independently, gold confirms the AI 30 times (55.6%),
+and on the 9 settled in the meeting, 5 times.
 
 | Stratum | Gold labels | AI Disagrees confirmed |
 |---|---:|---|
@@ -514,7 +529,8 @@ Disagrees are confirmed on Obstacle 9 of 9 and Crosswalk 5 of 15. These are 98 i
 | File (in `data/relabel-2026-10/round2/`) | sha256 |
 |---|---|
 | `adjudication/items.csv` (17 mismatches) | `4ecf4d09ab821c1fe1d4711f3fd79a948f903d425ea62932725ea6241c9d415f` |
-| `adjudication/consensus.csv` | `f794bacba541c316460465f97d1b39774ad098cf1220aef9dbad5df9fc742101` |
+| `adjudication/consensus.csv` | `31bf7102b3f52b55ee94469fd20419319eddf4def728b4ecc6073390099803c4` |
+| `adjudication/meeting_record.md` | `5f17737b09214780554bfb5e1c09e19830b2a76fb370659db5399fc4dffc367e` |
 | `adjudication/gold_shared.csv` (100 shared items) | `c560bdc612ca1a156691d25857bab3961a818abdc4488cedf32267e3e9e585ab` |
 
 ## Severity and tags, against the crowd

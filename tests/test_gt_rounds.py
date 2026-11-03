@@ -381,9 +381,22 @@ def test_consensus_from_votes_takes_matching_post_verdicts_and_new_or_edited_com
              "B": _comments([("s:1", 6, "fine"), ("s:3", 7, "cannot see it")])}
     c = gr.consensus_from_votes(items, post, pre, after).set_index("packet_id")
     assert c.consensus.tolist() == ["correct", "no_consensus", "cant_tell"]
-    assert c.loc["r1", "rationale"] == "A: old. Update: agreed || B: fine"
+    assert c.loc["r1", "rationale"] == "A: old. Update: agreed || A: [replaced; was: old] || B: fine"
     assert c.loc["r2", "rationale"] == "" and c.loc["r3", "rationale"] == "B: cannot see it"
     assert list(c.reset_index().columns) == list(items.columns)
+
+
+def test_consensus_from_votes_reports_removed_comments_and_orders_new_ones_in_utc():
+    items = pd.DataFrame({"packet_id": ["r1", "r2"], "label_uid": ["s:1", "s:2"], "consensus": "", "rationale": "",
+                          "rule_clarification": ""})
+    post = {r: pd.DataFrame({"packet_id": ["r1", "r2"], "verdict": ["correct", "correct"]}) for r in ("A", "B")}
+    pre = {"A": _comments([("s:2", "2026-10-30 10:00:00-07", "ample space to pass")]), "B": _comments([])}
+    # the hour DST ended: 01:10-08 is 09:10 UTC, after 01:30-07 (08:30 UTC), though it sorts first as a string
+    after = {"A": _comments([("s:1", "2026-11-01 01:10:00-08", "second"), ("s:1", "2026-11-01 01:30:00-07", "first")]),
+             "B": _comments([])}
+    c = gr.consensus_from_votes(items, post, pre, after).set_index("packet_id")
+    assert c.loc["r1", "rationale"] == "A: first || A: second"
+    assert c.loc["r2", "rationale"] == "A: [removed; was: ample space to pass]"
 
 
 def test_consensus_from_votes_refuses_a_missing_or_blank_post_vote():
@@ -487,24 +500,58 @@ def test_cli_build_report_and_refusals(tmp_path, capsys):
         gr.main(build + ["--unmasked", str(up)])
     assert (out / "items.csv").read_bytes() == listed
     items = pd.read_csv(out / "items.csv", dtype=str, keep_default_na=False)
-    # the meeting: both raters end on correct in prod; the post-meeting pulls get their own pins
+    listed = set(items.packet_id)
+    # the meeting: both raters end on correct on the listed items in prod; the post-meeting pulls get their own pins
     for r in ("A", "B"):
         path = tmp_path / f"post_{r}.csv"
-        pd.read_csv(tmp_path / f"votes_{r}.csv", dtype=str, keep_default_na=False).assign(
-            verdict="correct").to_csv(path, index=False)
+        pre = pd.read_csv(tmp_path / f"votes_{r}.csv", dtype=str, keep_default_na=False)
+        pre.assign(verdict=pre.verdict.where(~pre.packet_id.isin(listed), "correct")).to_csv(path, index=False)
         rl.pin(str(mp), f"votes_{r}_post", str(path), 7)
-    consensus = ["adjudicate-consensus", "--key", base[1], "--items", str(out / "items.csv"),
+        for stage, rows in (("", [("sidewalk_a", 2, "2026-10-30 10:00:00-07", "", f"{r} first look")]),
+                            ("_post", [("sidewalk_a", 2, "2026-11-02 13:50:00-08", "", f"{r} agreed")])):
+            cpath = tmp_path / f"comments_{r}{stage}.csv"
+            pd.DataFrame(rows).to_csv(cpath, index=False, header=False)
+            rl.pin(str(mp), f"comments_{r}{stage}", str(cpath), 1)
+    consensus = ["adjudicate-consensus", "--key", base[1], "--items", str(out / "items.csv"), *base[2:],
+                 "--comments", f"A={tmp_path / 'comments_A.csv'}", f"B={tmp_path / 'comments_B.csv'}",
+                 "--post-comments", f"A={tmp_path / 'comments_A_post.csv'}", f"B={tmp_path / 'comments_B_post.csv'}",
                  "--post-sheets", f"A={tmp_path / 'post_A.csv'}", f"B={tmp_path / 'post_B.csv'}"]
-    with pytest.raises(SystemExit, match="unpinned"):
+    with pytest.raises(SystemExit, match="not the pinned"):  # an unpinned post-meeting sheet
         gr.main(consensus[:-2] + [f"A={tmp_path / 'post_A.csv'}", f"B={tmp_path / 'votes_B.csv'}",
                                   "--out", str(out / "x.csv")])
+    swapped = [a.replace("B=", "C=", 1) if a.startswith("B=") and "comments_B.csv" in a else a for a in consensus]
+    with pytest.raises(SystemExit, match="names raters"):  # comment pulls must name the same raters
+        gr.main(swapped + ["--out", str(out / "x.csv")])
+    with pytest.raises(SystemExit):  # the comment pulls are not optional
+        gr.main(consensus[:consensus.index("--comments")] + consensus[consensus.index("--post-sheets"):]
+                + ["--out", str(out / "x.csv")])
+    assert "--comments" in capsys.readouterr().err
+    # a vote changed after the meeting on an item that is not on the list is refused
+    moved = tmp_path / "post_A_moved.csv"
+    post_a = pd.read_csv(tmp_path / "post_A.csv", dtype=str, keep_default_na=False)
+    unlisted = next(p for p in post_a.packet_id if p not in listed)
+    post_a.assign(verdict=post_a.verdict.where(post_a.packet_id != unlisted, "cant_tell")).to_csv(moved, index=False)
+    rl.pin(str(mp), "votes_A_post", str(moved), 7, repin=True)
+    with pytest.raises(SystemExit, match=f"not on the list.*A:{unlisted}"):
+        gr.main(consensus[:-2] + [f"A={moved}", f"B={tmp_path / 'post_B.csv'}", "--out", str(out / "x.csv")])
+    assert not (out / "x.csv").exists()
+    rl.pin(str(mp), "votes_A_post", str(tmp_path / "post_A.csv"), 7, repin=True)
     gr.main(consensus + ["--out", str(out / "consensus.csv")])
+    assert "adjudication_consensus" in json.load(open(mp))["rating"]  # adjudicate-consensus pins its output
     cons = pd.read_csv(out / "consensus.csv", dtype=str, keep_default_na=False)
     assert set(cons.consensus) == {"correct"} and list(cons.columns) == list(items.columns)
-    cons.assign(verdict_A="incorrect").to_csv(out / "tampered.csv", index=False)
+    r2 = cons.set_index("packet_id").rationale
+    assert any(v == "A: A agreed || A: [replaced; was: A first look] || B: B agreed || B: [replaced; was: B first look]"
+               for v in r2)
     report = ["adjudicate-report", *base, "--unmasked", str(up), "--items", str(out / "items.csv")]
-    with pytest.raises(SystemExit, match="differ from the pinned"):
-        gr.main(report + ["--consensus", str(out / "tampered.csv"), "--out", str(tmp_path / "bad.csv")])
+    # a changed fixed column, and a changed consensus verdict, both fail the consensus pin
+    cons.assign(verdict_A="incorrect").to_csv(out / "tampered.csv", index=False)
+    edited = cons.copy()
+    edited.loc[0, "consensus"] = "cant_tell"
+    edited.to_csv(out / "edited.csv", index=False)
+    for bad in ("tampered.csv", "edited.csv"):
+        with pytest.raises(SystemExit, match="not the pinned adjudication_consensus"):
+            gr.main(report + ["--consensus", str(out / bad), "--out", str(tmp_path / "bad.csv")])
     assert not (tmp_path / "bad.csv").exists()
     gr.main(report + ["--consensus", str(out / "consensus.csv"), "--out", str(tmp_path / "gold.csv")])
     gold = pd.read_csv(tmp_path / "gold.csv", dtype=str, keep_default_na=False).set_index("packet_id")
@@ -513,6 +560,25 @@ def test_cli_build_report_and_refusals(tmp_path, capsys):
     assert "1 unmasked items left out" in capsys.readouterr().out
     with pytest.raises(SystemExit):  # gold is not overwritten
         gr.main(report + ["--consensus", str(out / "consensus.csv"), "--out", str(tmp_path / "gold.csv")])
+
+
+def test_cli_stage_takes_only_post(capsys):
+    with pytest.raises(SystemExit):
+        gr.build_parser().parse_args(["votes", "--key", "k", "--rater", "A", "--rater-id", "u", "--out", "o",
+                                      "--stage", "Post"])
+    assert "invalid choice" in capsys.readouterr().err
+    args = gr.build_parser().parse_args(["comments", "--key", "k", "--rater", "A", "--rater-id", "u", "--out", "o",
+                                         "--stage", "post"])
+    assert gr._pin_name("comments", args.rater, args.stage) == "comments_A_post"
+
+
+def test_unsampled_disagrees_partition_the_unstratified_disagrees():
+    rows = [{"ai_vote": "Disagree", "h_agree": a, "h_dis": d, "h_unsure": u}
+            for a, d, u in [(1, 0, 0), (0, 1, 3), (0, 0, 1), (1, 1, 0), (2, 2, 1), (0, 0, 0), (0, 2, 0), (2, 1, 0)]]
+    df = pd.DataFrame(rows + [{"ai_vote": "Agree", "h_agree": 1, "h_dis": 0, "h_unsure": 0}])
+    u = gr.unsampled_disagrees(df)
+    assert u == {"one_decisive": 2, "unsure_only": 1, "tie": 2}
+    assert sum(u.values()) == int(((df.ai_vote == "Disagree") & (gr.assign_stratum(df) == "")).sum())
 
 
 def test_cli_preview_pins_nothing_and_writes_no_final_files(tmp_path):
