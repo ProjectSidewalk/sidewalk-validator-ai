@@ -349,11 +349,13 @@ with the design file [`analysis/gt_rounds/round2.json`](../analysis/gt_rounds/ro
   `margin_correct` (net Agree ≥ 3: the AI contradicts its training target), `lone` (no human vote) and
   `light_voted` (at least two decisive human votes with a majority, short of the margin rule), half of them margin
   rows. `margin_correct` is capped at 40% of the margin cell and topped up with `margin_incorrect`.
-- **Not sampled.** AI Disagrees in none of the four strata are never drawn: one decisive human vote, only Unsure
+- **Not sampled.** AI Disagrees outside the four strata are never drawn: one decisive human vote, only Unsure
   votes, or a tie. That is 8,611 of Seattle's 17,284 eligible AI Disagrees (6,701 with one decisive vote, 371 with
   only Unsure votes, 1,539 ties) and 3,853 of Chicago's 10,769 (3,002 / 145 / 706). The ties are the labels where
   the AI's Disagree breaks the tie in prod. No rate from this round, the population-weighted ones in `score`
-  included, covers them; a later round needs a stratum for them. `build` prints these counts.
+  included, covers them; a later round needs a stratum for them. `build` prints these counts. The eligible counts
+  still include the excluded author's labels (the pool predates the `author_excluded` column), which matters for
+  the open population-recount question on the PR.
 - **Quotas per type** (AI Disagrees per city): CurbRamp 42, Crosswalk 36, NoCurbRamp 34, Obstacle 30,
   SurfaceProblem 28, each filled over severity buckets (1–2 / 3–5 / none) in proportion to the eligible pool.
 - **Exclusions.** Labels either rater voted on or placed are out of every list, both cities.
@@ -411,7 +413,11 @@ the key, manifest and seed (`key/`); the pool (`pool.csv.gz`); the Gallery lists
 (`pre-consensus-2026-11-02/`, committed before the meeting); the post-meeting pulls (`post/`); and the item list,
 consensus sheet, meeting record and gold labels (`adjudication/`). `SHA256SUMS` (and one in
 `pre-consensus-2026-11-02/`) lists every file. Every data file's sha256 also matches its pin in `key/manifest.json`;
-the Gallery pages (`index.html`) and the folder README are listed in `SHA256SUMS` only. The manifest's
+the Gallery pages (`index.html`) and the folder README are listed in `SHA256SUMS` only. Three pins are not of the
+file as committed: the pool's is of the decompressed CSV, the seed's is of the seed string (no trailing newline),
+and `pre-consensus-2026-11-02/mismatches.csv` is the same file as `adjudication/items.csv`, pinned under that name.
+The pre-consensus README predates its own entry in that folder's `SHA256SUMS`, so its "each CSV" wording is out of
+date. The manifest's
 `adjudication_page` pin is the meeting page that was built and then dropped for Gallery; that page is not
 committed. The Street View crops are not committed (Google's imagery terms),
 nor are rater user ids.

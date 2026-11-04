@@ -974,7 +974,7 @@ def consensus_from_votes(items, post_sheets, comments=None, post_comments=None):
         is_new = [p not in set(pre_pairs) for p in zip(post.label_uid, post.comment.fillna(""))]
         new = post[pd.Series(is_new, index=post.index, dtype=bool)]
         new = new.assign(_t=pd.to_datetime(new.timestamp, utc=True, format="mixed")).sort_values("_t", kind="stable")
-        for u, t in new[["label_uid", "comment"]].values:
+        for u, t in zip(new.label_uid, new.comment.fillna("")):
             notes.setdefault(u, []).append(f"{r}: {t}")
         for u, t in pre_pairs:
             if (u, t) not in post_pairs:
@@ -986,7 +986,8 @@ def consensus_from_votes(items, post_sheets, comments=None, post_comments=None):
 
 def unlisted_changes(items, pre_sheets, post_sheets):
     """The ``(rater, packet_id)`` pairs whose post-meeting verdict differs from the independent one on an item that
-    is not on the adjudication list: a change there never reaches the gold labels, so prod and gold would disagree.
+    is not on the adjudication list, own-city items included: a change there reaches neither the independent sheets
+    nor the gold labels, so prod would silently disagree with both. Revert the vote in prod, or re-pull.
 
     >>> items = pd.DataFrame({"packet_id": ["r1"]})
     >>> pre = {"A": pd.DataFrame({"packet_id": ["r1", "r2", "r3"], "verdict": ["correct", "correct", "incorrect"]})}
@@ -1006,7 +1007,8 @@ def unlisted_changes(items, pre_sheets, post_sheets):
 
 MEETING_RECORD = """# Adjudication meeting record ({design})
 
-Fill this in during the meeting; `adjudicate-report --meeting-record` pins it with the consensus sheet.
+Fill this in during the meeting; `adjudicate-report --meeting-record` pins it (`adjudicate-consensus` pins the
+consensus sheet).
 
 - Date:
 - Attendees:
@@ -1158,8 +1160,8 @@ def cmd_adjudicate_consensus(args):
     pre_s, post_s = {r: _read_sheet(p) for r, p in pre.items()}, {r: _read_sheet(p) for r, p in post.items()}
     moved = unlisted_changes(items, pre_s, post_s)
     if moved:
-        sys.exit(f"{len(moved)} post-meeting votes changed on items not on the list, so prod and the gold labels "
-                 f"would disagree: {', '.join(f'{r}:{p}' for r, p in moved)}")
+        sys.exit(f"{len(moved)} post-meeting votes changed on items not on the list, so prod no longer matches the "
+                 f"independent sheets (and, on shared items, the gold labels): {', '.join(f'{r}:{p}' for r, p in moved)}")
     try:
         c = consensus_from_votes(items, post_s, comments, post_comments)
     except ValueError as e:

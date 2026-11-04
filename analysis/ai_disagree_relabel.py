@@ -887,10 +887,13 @@ def pin(manifest_path, name, path, rows, repin=False):
     """Record ``path`` (a rater pull or a derived file) under ``rating.<name>`` in the manifest: its sha256, row
     count and modification time, so the results can be rebuilt from exactly these files. No rater ids are written.
     An existing pin with a different sha256 is only replaced with ``repin``: re-pulling from prod must not quietly
-    move the frozen record."""
+    move the frozen record. Re-pinning identical content leaves the entry as it is, so reproducing a round does
+    not rewrite its manifest."""
     man = json.load(open(manifest_path)) if os.path.exists(manifest_path) else {}
     sha = sha256_file(path)
     old = man.get("rating", {}).get(name, {}).get("sha256")
+    if old == sha:
+        return
     if old and old != sha and not repin:
         sys.exit(f"{name} is already pinned to a different file (sha256 {old[:12]}...); pass --repin to replace it")
     mtime = pd.Timestamp(os.path.getmtime(path), unit="s", tz="UTC").isoformat()

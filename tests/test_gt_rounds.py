@@ -543,6 +543,18 @@ def test_cli_build_report_and_refusals(tmp_path, capsys):
     r2 = cons.set_index("packet_id").rationale
     assert any(v == "A: A agreed || A: [replaced; was: A first look] || B: B agreed || B: [replaced; was: B first look]"
                for v in r2)
+    pinned = mp.read_bytes()
+    (out / "consensus.csv").rename(out / "consensus_first.csv")
+    gr.main(consensus + ["--out", str(out / "consensus.csv")])  # the same content again: the manifest is untouched
+    assert mp.read_bytes() == pinned
+    (out / "consensus.csv").unlink()
+    rl.pin(str(mp), "comments_A_post", str(tmp_path / "comments_A.csv"), 1, repin=True)
+    with pytest.raises(SystemExit, match="already pinned"):  # different content needs --repin; nothing written
+        gr.main([a.replace("comments_A_post.csv", "comments_A.csv") for a in consensus]
+                + ["--out", str(out / "consensus.csv")])
+    assert not (out / "consensus.csv").exists() and mp.read_bytes() != pinned
+    rl.pin(str(mp), "comments_A_post", str(tmp_path / "comments_A_post.csv"), 1, repin=True)
+    (out / "consensus_first.csv").rename(out / "consensus.csv")
     report = ["adjudicate-report", *base, "--unmasked", str(up), "--items", str(out / "items.csv")]
     # a changed fixed column, and a changed consensus verdict, both fail the consensus pin
     cons.assign(verdict_A="incorrect").to_csv(out / "tampered.csv", index=False)
