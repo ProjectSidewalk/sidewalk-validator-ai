@@ -14,9 +14,12 @@
 # Depth-Anything-V2 submodule and depth_anything_v2_metric_vkitti_vitb.pth in place.
 #   RUN=/gscratch/makelab/jfroehli/ai-labels-2026-10 CKPT=/gscratch/makelab/jfroehli/sidewalk-validator-ai/retrain-2026-10/CurbRamp/dinov2/checkpoint-4340 \
 #     sbatch analysis/ai_labels_gen.slurm
+# PRED names the predictions file in RUN (default predictions.csv): the issue #79 ablation scores one run with two
+# checkpoints, PRED=predictions_with.csv and PRED=predictions_without.csv (the second job finds every crop done).
 set -uo pipefail
 RUN="${RUN:?set RUN to the run directory holding labels.csv}"
 CKPT="${CKPT:?set CKPT to the round-3 CurbRamp checkpoint directory}"
+PRED="${PRED:-predictions.csv}"
 STORE="${STORE:-/gscratch/makelab/jfroehli/pano-stage/ai-labels}"
 module load conda
 eval "$(conda shell.bash hook)"
@@ -25,5 +28,5 @@ export HF_HOME=/gscratch/makelab/jfroehli/hf_cache HF_HUB_OFFLINE=1
 [ -f "$STORE/.pano-store" ] || { echo "no marker in $STORE: staging not verified" >&2; exit 1; }
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 python -u analysis/ai_labels_eval.py crops --labels "$RUN/labels.csv" --pano-store "$STORE" --out "$RUN" || exit 1
-python -u analysis/ai_labels_eval.py score --manifest "$RUN/manifest.csv" --checkpoint "$CKPT" --out "$RUN/predictions.csv" || exit 1
-echo "done: $(wc -l < "$RUN/predictions.csv") prediction rows"
+python -u analysis/ai_labels_eval.py score --manifest "$RUN/manifest.csv" --checkpoint "$CKPT" --out "$RUN/$PRED" || exit 1
+echo "done: $(wc -l < "$RUN/$PRED") prediction rows"

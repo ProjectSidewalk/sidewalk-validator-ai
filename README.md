@@ -154,6 +154,7 @@ sit in the API's `agree_count` / `disagree_count` like anyone else's, so trainin
 | [`evaluate.py`](evaluate.py), [`get_stats.slurm`](get_stats.slurm) | Step 7: predictions and metrics per split, per city and on the hard and gold slices; the job then calibrates |
 | [`calibration/`](calibration) | Step 7b: isotonic confidence→accuracy maps in the API's format, from a retrained model's val split or from production outcomes; per-city checks |
 | [`publish_to_hf.py`](publish_to_hf.py), [`hf_cards.py`](hf_cards.py) | Step 8: staged, checked uploads with generated cards ([`docs/publishing.md`](docs/publishing.md)) |
+| [`ai_label_holdout.py`](ai_label_holdout.py) | Step 1, AI-placed labels: the seeded share held out of training before selection (`--ai-holdout-frac`), written to `ai_label_holdout.csv` and recorded in `generation_run.json` ([#79](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/79)) |
 | [`hard_examples.py`](hard_examples.py), [`validator_reliability.py`](validator_reliability.py) | Labels the deployed AI got wrong against a unanimous crowd or an expert; per-validator reliability for weighted targets |
 | [`export_onnx.py`](export_onnx.py), [`explain.py`](explain.py) | ONNX export, int8 quantisation and benchmarks; saliency maps and the masked rating packet |
 | [`analysis/`](analysis) | The scripts behind every study in `docs/` ([`analysis/README.md`](analysis/README.md)); their data stays outside the repo |
