@@ -94,6 +94,7 @@ Usage::
         --mapillary-token-env MAPILLARY_ACCESS_TOKEN   # also record a pose for Mapillary labels whose DB pose is empty
 """
 import argparse
+import contextlib
 import csv
 import hashlib
 import io
@@ -1077,7 +1078,7 @@ RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "p
                    "mapillary_api")
 #: Settings recorded only when they are not the default, so earlier runs' records stay as they were. Unlike
 #: :data:`RESUME_SETTINGS` they are compared when present on EITHER side, so switching to or from one is caught.
-OPTIONAL_SETTINGS = ("fixed_crop_half_px", "job_window_crops", "verdict_unit", "max_labels_per_face")
+OPTIONAL_SETTINGS = ("fixed_crop_half_px", "job_window_crops", "verdict_unit", "max_labels_per_face", "context_crops")
 #: Settings that only matter when crops are sized by depth. A fixed-size or job-window run does not record them (no
 #: depth model is loaded), and :func:`check_resume` does not compare them when neither run sizes by depth
 #: (:func:`_no_depth`), so ``--depth-encoder`` cannot block such a resume (also one recorded before they were left out).
@@ -1283,6 +1284,12 @@ def build_parser():
                         '(job_crop.py: a 3:2 window on the native panorama, CropSizingRule v2, no projection, no tilt, '
                         'no depth) and skip depth inference. Mutually exclusive with --fixed-crop-half-px. '
                         'publish_to_hf.py refuses models trained this way')
+    p.add_argument('--context-crops', action='store_true',
+                   help='also write the context images of issue #14 (context_crops.py: a wider crop and the 448 px '
+                        'whole view) under <out>/<label_type>/context/; a resume setting. For an existing dataset '
+                        'use `python context_crops.py backfill` instead')
+    p.add_argument('--context-wide-factor', type=int, default=4,
+                   help='with --context-crops: the wide crop is this many times the crop half-width (default 4)')
     p.add_argument('--seed', type=int, default=SEED)
     p.add_argument('--correct-proportion', type=open_unit_float, default=CORRECT_PROPORTION,
                    help='share of correct rows after the downsample, 0 < p < 1 (default %(default)s; retype.slurm '
@@ -1437,6 +1444,9 @@ def main(argv=None):
     settings.update(nosidewalk_faces.resume_settings(args.verdict_unit, args.max_labels_per_face))
     if args.correct_proportion != CORRECT_PROPORTION:  # recorded only when non-default, so older records are unchanged
         settings["correct_proportion"] = args.correct_proportion
+    if args.context_crops:  # issue #14; absent otherwise, so earlier records are unchanged
+        import context_crops
+        settings["context_crops"] = {"factor": args.context_wide_factor, "view_px": context_crops.VIEW_PX}
     previous, changed, city_change = check_resume(run_path, sel_hash, settings, list(cities))
     if (previous or changed or city_change) and not args.force_reselect:
         n_ok = count_ok_rows(manifest_path)
@@ -1478,6 +1488,9 @@ def main(argv=None):
                                   combined_filtered['pano_source'].astype(str).str.strip().str.lower())
     print(f"Crop pose by provider (pose_source/reason): {run_pose_counts}")
     manifest = ManifestWriter(manifest_path, base_dir, selection, keep_ok=not changed, sources=sources, face_ids=face_ids)
+    # Issue #14: a label whose crop is cut again below loses its context row too (keep = the kept ok rows).
+    ctx = (context_crops.ContextIndex(context_crops.context_dir(base_dir), keep=manifest.done)
+           if args.context_crops else None)
     if previous or changed or city_change:
         print(f"WARNING: --force-reselect: selection changed: {bool(previous)}, city list changed: "
               f"{city_change or 'no'}, settings changed: {changed or 'none'}; "
@@ -1510,7 +1523,7 @@ def main(argv=None):
     status_counts = Counter()
     last_pano = (None, None, None)  # ((city, pano_id), BGR array or the status string it failed with, info)
     consecutive_errors = consecutive_missing = 0
-    with manifest:
+    with manifest, (ctx if ctx is not None else contextlib.nullcontext()):
         for processed_count, (_, row) in enumerate(combined_filtered.iterrows(), start=1):
             crop_path = f"{row['label_class']}/{row['city']}_{row['label_id']}.webp"
             pose = poses[f"{row['city']}:{row['label_id']}"]
@@ -1559,6 +1572,12 @@ def main(argv=None):
                         apply_tilt=pose.beta is not None, beta=pose.beta or 0.0, device=device,
                         fixed_crop_half_px=args.fixed_crop_half_px)
                     save_webp(crop, os.path.join(base_dir, crop_path))
+                    if ctx is not None:  # issue #14: the context images, from the same view (context_crops.py)
+                        ctx.write(rec['label_uid'], context_crops.write_context(
+                            pano_rgb, row['pano_x'] / row['pano_width'], y_norm, info['crop_half_px'], ctx.out_dir,
+                            crop_path[:-5], camera_pitch=pose.camera_pitch, camera_roll=pose.camera_roll,
+                            apply_tilt=pose.beta is not None, beta=pose.beta or 0.0, device=device,
+                            factor=args.context_wide_factor))
                     rec.update(info)
                     rec['status'] = 'ok'
             except job_crop.JobCropSkipped as e:  # a label the backend's crop job would not cut either
