@@ -36,11 +36,16 @@ def test_private_ids_resolve_from_listing_without_being_in_the_module():
 
 def test_override_file_from_env(tmp_path, monkeypatch):
     path = tmp_path / "overrides.json"
-    path.write_text(json.dumps({"secret-city": "Taiwan"}))
+    path.write_text(json.dumps({"secret-city": "Lemuria", "_regions": {"lemuria": "Oceania"}}))
     monkeypatch.setenv(regions.OVERRIDES_ENV, str(path))
-    assert regions.country_table([])["secret-city"] == "taiwan"
+    assert regions.country_table([])["secret-city"] == "lemuria"
+    assert "_regions" not in regions.country_table([])
+    assert regions.region_of("lemuria") == "oceania"
+    out = regions.assign(pd.DataFrame({"city": ["secret-city"]}), regions.country_table([]))
+    assert out["region"].tolist() == ["oceania"]
     monkeypatch.delenv(regions.OVERRIDES_ENV)
     assert "secret-city" not in regions.country_table([])
+    assert regions.region_of("lemuria") == regions.UNKNOWN
 
 
 def test_us_state_suffix_heuristic_and_unknown():
@@ -76,7 +81,11 @@ def test_non_public_terms_cover_private_names_and_private_only_countries():
 
 def test_region_of_every_table_country_is_known():
     for country in set(regions.COUNTRY_BY_PUBLIC_CITY.values()):
-        assert regions.region_of(country) != regions.UNKNOWN
+        assert regions.region_of(country, regions.REGION_BY_COUNTRY) != regions.UNKNOWN
+
+
+def test_region_table_names_only_countries_with_a_public_deployment():
+    assert set(regions.REGION_BY_COUNTRY) == set(regions.COUNTRY_BY_PUBLIC_CITY.values())
 
 
 def test_listing_without_country_id_is_refused(tmp_path):

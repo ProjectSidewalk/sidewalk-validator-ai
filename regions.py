@@ -5,7 +5,10 @@ trains a validator that is told the country or region of each label (``region_mo
 ``city_id``. The source of truth is the ``country_id`` field of ``/v3/api/cities``, which every deployment carries,
 private ones included. The table below is a fallback for public deployments only, so a saved listing that lacks an
 entry still resolves; private deployments come from the listing or from a private override file (env
-``REGION_OVERRIDES``, a JSON ``{"<city_id>": "<country_id>"}`` kept outside the repository), never from this module.
+``REGION_OVERRIDES``, a JSON ``{"<city_id>": "<country_id>", "_regions": {"<country_id>": "<region>"}}`` kept outside
+the repository), never from this module. ``REGION_BY_COUNTRY`` likewise lists only countries with a public deployment:
+the region of a country whose deployments are all private comes from the override file's ``_regions`` (without it,
+that country's region is ``unknown``, and region-level conditioning scores it as the unknown region).
 
 Naming rule for public text (the one ``publish_to_hf.py`` enforces for model cards): a country is named only if at
 least one of its deployments is public. A country whose deployments are all private is "private country A", "B", and
@@ -16,7 +19,7 @@ Example::
     >>> listing = [{"city_id": "seattle-wa", "country_id": "usa", "visibility": "public"},
     ...            {"city_id": "hidden-x", "country_id": "atlantis", "visibility": "private"}]
     >>> table = country_table(listing, overrides={})
-    >>> country_of("hidden-x", table), region_of(country_of("seattle-wa", table))
+    >>> country_of("hidden-x", table), region_of(country_of("seattle-wa", table), REGION_BY_COUNTRY)
     ('atlantis', 'north-america')
     >>> display_names(["usa", "atlantis"], public_countries(listing))
     {'atlantis': 'private country A', 'usa': 'usa'}
@@ -43,13 +46,15 @@ COUNTRY_BY_PUBLIC_CITY = {
     "washington-dc": "usa", "west-chester-pa": "usa",
 }
 
+# Countries with at least one public deployment on 2026-11-05 only (see the module docstring for the others).
 REGION_BY_COUNTRY = {
     "usa": "north-america", "canada": "north-america",
     "mexico": "latin-america", "ecuador": "latin-america", "chile": "latin-america", "brazil": "latin-america",
-    "netherlands": "europe", "switzerland": "europe", "france": "europe",
-    "taiwan": "asia", "india": "asia",
+    "netherlands": "europe", "france": "europe",
+    "india": "asia",
     "new-zealand": "oceania",
 }
+REGIONS_KEY = "_regions"
 
 
 def _entries(listing):
@@ -99,7 +104,7 @@ def country_table(listing, overrides=None):
         if c.get("country_id"):
             table[str(c["city_id"])] = str(c["country_id"]).lower()
     extra = _overrides_from_env() if overrides is None else overrides
-    table.update({str(k): str(v).lower() for k, v in extra.items()})
+    table.update({str(k): str(v).lower() for k, v in extra.items() if k != REGIONS_KEY})
     return table
 
 
@@ -119,13 +124,21 @@ def country_of(city_id, table):
     return UNKNOWN
 
 
-def region_of(country):
-    """The world region of a country id, or ``UNKNOWN``.
+def region_table(overrides=None):
+    """``REGION_BY_COUNTRY`` plus the ``_regions`` of ``overrides`` (``None`` reads env ``REGION_OVERRIDES``)."""
+    extra = _overrides_from_env() if overrides is None else overrides
+    return {**REGION_BY_COUNTRY, **{str(k).lower(): str(v).lower() for k, v in extra.get(REGIONS_KEY, {}).items()}}
 
-    >>> region_of("mexico"), region_of("atlantis")
+
+def region_of(country, table=None):
+    """The world region of a country id (``table``, default ``region_table()``), or ``UNKNOWN``.
+
+    >>> region_of("mexico", REGION_BY_COUNTRY), region_of("atlantis", REGION_BY_COUNTRY)
     ('latin-america', 'unknown')
+    >>> region_of("atlantis", region_table({"_regions": {"atlantis": "oceania"}}))
+    'oceania'
     """
-    return REGION_BY_COUNTRY.get(country, UNKNOWN)
+    return (region_table() if table is None else table).get(country, UNKNOWN)
 
 
 def assign(df, table, allow_unknown=False):
@@ -144,7 +157,8 @@ def assign(df, table, allow_unknown=False):
         raise ValueError(f"no country for {len(unknown)} deployment(s): {unknown[:10]}; add them to the listing or "
                          f"to the {OVERRIDES_ENV} file")
     out["country"] = cities.map(lookup)
-    out["region"] = out["country"].map(region_of)
+    rtable = region_table()
+    out["region"] = out["country"].map(lambda c: region_of(c, rtable))
     return out
 
 
