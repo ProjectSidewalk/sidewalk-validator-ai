@@ -64,7 +64,9 @@ never lands in `<Type>/dinov2/` where `evaluate.py` and `publish_to_hf.py` look 
   capped at the whole view (half-width 1024) whenever the tight half-width exceeds 256 px, which is roughly half of
   the labels, so for those labels `two_scale` sees the tight crop and the view. This is reported, not hidden:
   `clipping.md` gives the share per type from the backfilled index. If more than about 60% are capped, a 2.5x
-  second pass is the next step.
+  second pass is the next step. At evaluation the wide crop goes through the processor's resize to 256 and centre
+  crop to 224, which drops the outer 12.5% on each side, so the model sees about 3.5x the tight half-width, not 4x
+  (the tight crop loses the same share, so the ratio between the two streams stays 4).
 - **Stored view 448 px, trained at 224 by default.** 448 is twice the model input (32 x 32 DINOv2 patches), so a
   448 run needs no upsampling. 224 keeps the token count and memory of the baseline (the memory-fair comparison);
   448 (`--context-view-res 448`, `TAG=view_heatmap-r448`) is the detail-fair one at 4x the tokens and about 3x the
@@ -80,7 +82,10 @@ never lands in `<Type>/dinov2/` where `evaluate.py` and `publish_to_hf.py` look 
   dropping the outer 12.5% on each side, which for this arm is exactly the context under test. The view is resized
   to `res` x `res`; in training it goes through `RandomResizedCrop(scale=(0.7, 1.0))` and a flip like the tight
   crop, and the heatmap is computed analytically for the transformed point and sigma (`map_point`, checked against
-  torchvision's own `resized_crop` in the tests).
+  torchvision's own `resized_crop` in the tests). The view is resampled bilinearly (torchvision's `resize` and
+  `resized_crop`, antialiased), while the tight and wide crops go through the checkpoint's bicubic processor; the
+  view arm is consistent within itself (train and eval both bilinear), so this is a difference between arms, not
+  a train/eval mismatch.
 - **4-channel patch embedding**: channels 0 to 2 are the pretrained filters, channel 3 starts at zero, so the model
   computes exactly the pretrained function at step 0 (tested) and learns to use the heatmap.
 - **Side features** (`context_model.side_feature_frame`): severity, number of tags, imagery age in years (against
@@ -88,8 +93,9 @@ never lands in `<Type>/dinov2/` where `evaluate.py` and `publish_to_hf.py` look 
   missing-value flags for severity, age and depth. Missing values take the train median; every column is
   standardised on the train rows; the normaliser is saved in the checkpoint's `config.json` so inference applies
   the same transform.
-- **The wide crop's augmentation is drawn independently of the tight crop's** (its own `RandomResizedCrop` and
-  flip); the evaluation transform of the wide crop is the processor's own, like the tight crop's.
+- **`two_scale` augments the pair together**: in training the collate re-draws the tight crop's augmentation
+  alongside the wide crop's, each with its own `RandomResizedCrop` but one shared horizontal flip, so the two
+  streams are never mirrored against each other (they never are at evaluation; tested).
 
 ## Setup
 
@@ -207,3 +213,9 @@ one.
 - **Side features are what the crowd saw**: severity, tags and the high-quality flag come from the labeler, so
   `side_info` can learn labeler habits that do not transfer to new deployments; the held-out deployments are the
   check.
+- **`high_quality_user` is partly circular with the target.** The rawLabels flag is derived from the labeler's
+  validation record, which includes the very validations that set this label's class, on the evaluation rows as
+  much as on the train rows. Part of any `side_info` gain can therefore be the label's own votes leaking back in.
+  Before reading the arm as an upper bound, run the ablation `side_info-nohq` (the same arm with
+  `high_quality_user` dropped from `SIDE_FEATURES`; not implemented as an option yet, a one-line change) and
+  report both.
