@@ -1,0 +1,5 @@
+packet_id,label_uid,label_uid_city,label_type,rater,stratum,margin_class,round3_split,ai_vote,v_a,v_b,unmasked,consensus,source,gold
+r2a6,sidewalk_a:107,city-a:107,CurbRamp,a,margin_incorrect,,,Disagree,,,False,,matched,incorrect
+r2a7,sidewalk_a:108,city-a:108,Obstacle,a,decoy_agree,,,Agree,,,False,,consensus,correct
+r2b6,sidewalk_b:207,city-b:207,CurbRamp,b,margin_incorrect,,,Disagree,,,False,,no_consensus,
+r2b7,sidewalk_b:208,city-b:208,Obstacle,b,decoy_agree,,,Agree,,,False,,matched,correct

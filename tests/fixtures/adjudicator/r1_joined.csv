@@ -1,0 +1,13 @@
+packet_id,label_uid,schema,label_id,label_type,group,ai_vote,ai_accuracy,h_agree,h_dis,h_unsure,expert2,severity,tags,marker_x,marker_y,crowd,pano_id,verdict,comment,n_comments
+r10000,sidewalk_a:1,sidewalk_a,1,CurbRamp,lone_disagree,Disagree,0.9,0,0,0,,1.0,,0.5,0.5,,P100,incorrect,,0
+r10001,sidewalk_a:2,sidewalk_a,2,Obstacle,lone_disagree,Disagree,0.9,0,0,0,,3.0,narrow;pole,0.5,0.5,,P101,correct,,0
+r10002,sidewalk_a:3,sidewalk_a,3,CurbRamp,voted_disagree,Disagree,0.9,0,3,0,,,steep,0.5,0.5,,P102,incorrect,,0
+r10003,sidewalk_a:4,sidewalk_a,4,Obstacle,voted_disagree,Disagree,0.9,2,1,0,,1.0,,0.5,0.5,,P103,correct,,0
+r10004,sidewalk_a:5,sidewalk_a,5,CurbRamp,voted_disagree,Disagree,0.9,4,0,0,,3.0,narrow;pole,0.5,0.5,,P104,correct,,0
+r10005,sidewalk_a:6,sidewalk_a,6,Obstacle,decoy_agree,Agree,0.9,1,0,0,,,steep,0.5,0.5,,P105,correct,,0
+r10006,sidewalk_a:7,sidewalk_a,7,CurbRamp,decoy_agree,Agree,0.9,0,0,0,,1.0,,0.5,0.5,,P106,cant_tell,,0
+r10007,sidewalk_a:8,sidewalk_a,8,Obstacle,decoy_unsure,Unsure,0.9,0,0,0,,3.0,narrow;pole,0.5,0.5,,P107,incorrect,,0
+r10008,sidewalk_c:1,sidewalk_c,1,CurbRamp,lone_disagree,Disagree,0.9,0,0,0,,,steep,0.5,0.5,,P108,incorrect,,0
+r10009,sidewalk_c:2,sidewalk_c,2,Obstacle,voted_disagree,Disagree,0.9,1,2,0,,1.0,,0.5,0.5,,P109,incorrect,,0
+r1000a,sidewalk_c:3,sidewalk_c,3,CurbRamp,decoy_agree,Agree,0.9,2,0,0,,3.0,narrow;pole,0.5,0.5,,P110,correct,,0
+r1000b,sidewalk_c:4,sidewalk_c,4,Obstacle,voted_disagree,Disagree,0.9,0,2,0,,,steep,0.5,0.5,,P111,correct,,0
