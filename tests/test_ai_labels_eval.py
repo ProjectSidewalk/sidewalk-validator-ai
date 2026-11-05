@@ -197,3 +197,214 @@ def test_baseline_at_prevalence_identity_and_reweighting():
     r2 = ae.baseline_at_prevalence(frame, 0.05, 0.75)  # one wrong Disagree now weighs 19 right ones
     assert r2["disagree_precision"] == pytest.approx(4 / (4 + 19), abs=1e-4) and r2["disagree_recall"] == 0.8
     assert r2["recall_incorrect_at_p92"] == 0.6  # the top three are clean; the fourth Disagree is the heavy negative
+
+
+# --- select --all-ai (issue #80) and select --holdout (issue #79) -----------------------------------------------------
+
+def _pool_rows():
+    v = lambda *vs: json.dumps([vote(*x) for x in vs])  # noqa: E731
+    return [
+        [1, AI, "pA", "gsv", "CurbRamp", "", "[]", "", "2026-09-05 01:10", v(("c", "Agree")), 10, 20, 100, 50, "", ""],
+        [2, AI, "pA", "gsv", "CurbRamp", "", "[]", "", "2026-09-22 19:03", "[]", 10, 20, 100, 50, "", ""],
+        [3, AI, "pB", "gsv", "CurbRamp", "", "[]", "", "2026-09-22 19:03", v(("c", "Agree"), ("d", "Disagree")), 1, 2, 100, 50, "", ""],
+        [4, AI, "pB", "gsv", "CurbRamp", "", "[]", "", "2026-09-22 19:03", v(("d", "Disagree")), 1, 2, 100, 50, "", ""],
+        [5, "h", "pC", "gsv", "CurbRamp", "", "[]", "", "2026-09-22 19:03", v(("c", "Agree")), 1, 2, 100, 50, "", ""],
+        [6, "h", "pC", "gsv", "CurbRamp", "", "[]", "", "2026-09-22 19:03", "[]", 1, 2, 100, 50, "", ""],
+        [7, AI, "pD", "gsv", "CurbRamp", "", "[]", "", "2026-09-22 19:03", v(("c", "Unsure")), 1, 2, 100, 50, "", ""],
+    ]
+
+
+def test_select_all_ai_keeps_unvoted_ai_rows_with_no_class(tmp_path):
+    _rawlabels(tmp_path, "richmond-va", _pool_rows())
+    labels, summary = ae.select_labels(str(tmp_path), ["richmond-va"], all_ai=True)
+    by = labels.set_index("label_uid")
+    assert sorted(by.index) == ["richmond-va:1", "richmond-va:2", "richmond-va:3", "richmond-va:4", "richmond-va:5",
+                                "richmond-va:7"]
+    assert by.loc["richmond-va:2", "label_class"] == "" and by.loc["richmond-va:3", "label_class"] == ""  # unvoted, tie
+    assert by.loc["richmond-va:4", "label_class"] == "incorrect"
+    c = summary["per_city"]["richmond-va"]
+    assert c["ai_selected"] == 5 and c["ai_ties"] == 1 and c["ai_voted"] == 2
+    # one definition of "unvoted" with ai_labels_relabel.prior_status: an Unsure vote is a vote
+    assert c["ai_unvoted"] == 1 and c["ai_unsure_only"] == 1
+    assert summary["ai_ties_kept"] == 1 and summary["ties_dropped"] == 0
+    # the default is unchanged: voted only, the tie dropped
+    default, s0 = ae.select_labels(str(tmp_path), ["richmond-va"])
+    assert sorted(default.label_uid) == ["richmond-va:1", "richmond-va:4", "richmond-va:5"] and s0["ties_dropped"] == 1
+    # an unvoted class survives the CSV round trip as "", not NaN
+    labels.to_csv(tmp_path / "labels.csv", index=False)
+    assert ae.read_labels(tmp_path / "labels.csv").set_index("label_uid").loc["richmond-va:2", "label_class"] == ""
+
+
+def _holdout_csv(path, rows):
+    pd.DataFrame(rows, columns=["label_uid", "city", "label_id", "label_class", "class_source", "pano_source", "tier",
+                                "stratum", "holdout_rank"]).to_csv(path, index=False)
+    return path
+
+
+def test_select_holdout_restricts_ai_rows_and_takes_the_class_from_the_file(tmp_path):
+    _rawlabels(tmp_path, "richmond-va", _pool_rows())
+    # label 1 has one Agree vote (majority correct), but the training rule called it incorrect via an expert
+    hp = _holdout_csv(tmp_path / "h.csv", [
+        ["richmond-va:1", "richmond-va", "1", "incorrect", "expert", "gsv", "core", "richmond-va/incorrect/core", "0.1"],
+        ["richmond-va:4", "richmond-va", "4", "incorrect", "margin", "gsv", "band", "richmond-va/incorrect/band", "0.2"]])
+    from ai_label_holdout import load_holdout
+    labels, summary = ae.select_labels(str(tmp_path), ["richmond-va"], holdout=load_holdout(hp))
+    by = labels.set_index("label_uid")
+    assert sorted(by.index) == ["richmond-va:1", "richmond-va:4", "richmond-va:5"]  # AI: the holdout only; human kept
+    assert by.loc["richmond-va:1", ["label_class", "holdout", "class_source", "holdout_tier"]].tolist() == \
+        ["incorrect", 1, "expert", "core"]
+    assert by.loc["richmond-va:5", ["holdout", "stratum"]].tolist() == [0, ""]
+    assert summary["per_city"]["richmond-va"]["ai_holdout"] == {"correct": 0, "incorrect": 2}
+
+
+def test_select_holdout_exits_on_a_label_missing_from_the_pull(tmp_path):
+    _rawlabels(tmp_path, "richmond-va", _pool_rows())
+    hp = _holdout_csv(tmp_path / "h.csv", [["toy-city:9", "toy-city", "9", "incorrect", "margin", "gsv", "", "x", "0.1"]])
+    from ai_label_holdout import load_holdout
+    with pytest.raises(SystemExit, match="1 held-out labels are not CurbRamp rows.*toy-city:9"):
+        ae.select_labels(str(tmp_path), ["richmond-va"], holdout=load_holdout(hp))
+
+
+def test_all_ai_and_holdout_are_exclusive(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        ae.main(["select", "--rawlabels", str(tmp_path), "--out", str(tmp_path / "o"), "--all-ai", "--holdout", "x.csv"])
+    assert "exclusive" in capsys.readouterr().err
+    with pytest.raises(ValueError, match="exclusive"):
+        ae.select_labels(str(tmp_path), [], all_ai=True, holdout=pd.DataFrame())
+
+
+def test_cmd_select_records_all_ai_and_holdout_provenance(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    _rawlabels(raw, "richmond-va", _pool_rows())
+    ae.main(["select", "--rawlabels", str(raw), "--cities", "richmond-va", "--out", str(tmp_path / "a"), "--all-ai"])
+    sel = json.loads((tmp_path / "a" / "selection.json").read_text())
+    assert sel["all_ai"] is True and sel["holdout"] is None and sel["n_labels"] == 6
+    hp = _holdout_csv(tmp_path / "h.csv", [
+        ["richmond-va:4", "richmond-va", "4", "incorrect", "margin", "gsv", "band", "richmond-va/incorrect/band", "0.2"]])
+    ae.main(["select", "--rawlabels", str(raw), "--cities", "richmond-va", "--out", str(tmp_path / "b"),
+             "--holdout", str(hp)])
+    sel = json.loads((tmp_path / "b" / "selection.json").read_text())
+    assert sel["all_ai"] is False and sel["holdout"]["n"] == 1 and len(sel["holdout"]["sha256"]) == 64
+
+
+# --- ablation (issue #79) --------------------------------------------------------------------------------------------
+
+def _ablation_run(tmp_path, n=60, n_small_city=5):
+    """A holdout run: n held-out AI labels in city-a (every 4th incorrect) + n_small_city in city-b, two human rows.
+    Arm A ranks perfectly; arm B is noisy. Two panos per pano_id so the bootstrap groups."""
+    rng = np.random.default_rng(0)
+    rows = []
+    for i in range(n + n_small_city):
+        city = "city-a" if i < n else "city-b"
+        true = "incorrect" if i % 4 == 0 else "correct"
+        rows.append({"label_uid": f"{city}:{i}", "city": city, "label_id": str(i), "pano_id": f"p{i // 2}",
+                     "author": "ai", "label_class": true, "holdout": 1, "holdout_tier": "core" if i % 2 else "band",
+                     "tier": "", "clean": 1})
+    rows += [{"label_uid": f"city-a:{900 + i}", "city": "city-a", "label_id": str(900 + i), "pano_id": "ph",
+              "author": "human", "label_class": "correct", "holdout": 0, "holdout_tier": "", "tier": "", "clean": 1}
+             for i in range(2)]
+    labels = pd.DataFrame(rows)
+    labels.to_csv(tmp_path / "labels.csv", index=False)
+    pd.DataFrame({"label_uid": labels.label_uid, "status": "ok", "depth_m": "", "crop_half_px": "",
+                  "tilt_applied": "0", "pose_unhandled": "0"}).to_csv(tmp_path / "manifest.csv", index=False)
+    y = (labels.label_class == "incorrect").values
+    pa = np.where(y, 0.9, 0.1)
+    pb = np.clip(np.where(y, 0.6, 0.4) + rng.normal(0, 0.3, len(y)), 0.01, 0.99)
+    for name, pi in (("predictions_with.csv", pa), ("predictions_without.csv", pb)):
+        pd.DataFrame({"label_uid": labels.label_uid, "split": "test", "true": labels.label_class,
+                      "p_correct": 1 - pi, "p_incorrect": pi}).to_csv(tmp_path / name, index=False)
+    (tmp_path / "selection.json").write_text(json.dumps({"holdout": {"path": "h.csv", "sha256": "x", "n": n + 5}}))
+    return tmp_path
+
+
+def test_ablation_pairs_the_arms_and_reports_counts_only_below_the_minimum(tmp_path):
+    run = _ablation_run(tmp_path)
+    a = ae.load_run(str(run), str(run / "predictions_with.csv"))
+    b = ae.load_run(str(run), str(run / "predictions_without.csv"))
+    paired = ae.paired_holdout(a, b)
+    assert len(paired) == 65 and (paired.author == "ai").all()
+    rows = {r["slice"]: r for r in ae.ablation_rows(paired, n_boot=50, min_n=10)}
+    assert set(rows) == {"pooled", "city = city-a", "city = city-b", "tier = band", "tier = core"}
+    pooled = rows["pooled"]
+    assert pooled["auc_a"] == 1.0 and pooled["delta"] > 0 and pooled["delta_lo"] <= pooled["delta"] <= pooled["delta_hi"]
+    assert pooled["a"]["precision"] == 1.0 and pooled["a"]["recall"] == 1.0
+    assert 0 <= pooled["b"]["precision_lo"] <= pooled["b"]["precision"] <= pooled["b"]["precision_hi"] <= 1
+    small = rows["city = city-b"]
+    assert small["n"] == 5 and small["scored"] is False and "auc_a" not in small
+    md = ae.ablation_markdown(list(rows.values()), "with", "without", 50, 10)
+    assert "| city = city-b | 5 | 2 | 3 | — |" in md and "AUC with" in md and "training rule's class" in md
+
+
+def test_ablation_command_writes_json_and_markdown_and_needs_a_holdout_run(tmp_path):
+    run = _ablation_run(tmp_path)
+    ae.main(["ablation", "--run", str(run), "--pred-a", str(run / "predictions_with.csv"),
+             "--pred-b", str(run / "predictions_without.csv"), "--out", str(run / "abl"), "--n-boot", "20",
+             "--min-n", "10"])
+    out = json.loads((run / "abl" / "ablation.json").read_text())
+    assert set(out) >= {"name_a", "name_b", "n_boot", "min_n", "seed", "n_paired", "inputs", "rows"}
+    assert out["name_a"] == "included_tagged" and out["n_paired"] == 65 and len(out["inputs"]["pred_a"]) == 64
+    assert (run / "abl" / "ablation.md").read_text().startswith("<!-- generated by analysis/ai_labels_eval.py ablation")
+    (run / "selection.json").write_text(json.dumps({"holdout": None}))
+    with pytest.raises(SystemExit, match="not selected with --holdout"):
+        ae.main(["ablation", "--run", str(run), "--pred-a", str(run / "predictions_with.csv"),
+                 "--pred-b", str(run / "predictions_without.csv"), "--out", str(run / "abl")])
+
+
+def test_ablation_gate_metrics_per_arm_with_a_map(tmp_path):
+    run = _ablation_run(tmp_path)
+    a = ae.load_run(str(run), str(run / "predictions_with.csv"))
+    b = ae.load_run(str(run), str(run / "predictions_without.csv"))
+    api_map = {"correct": {"0.5": 0.0, "0.85": 0.95}, "incorrect": {"0.5": 0.0, "0.85": 0.95}}
+    rows = ae.ablation_rows(ae.paired_holdout(a, b), n_boot=10, min_n=10, api_map=api_map)
+    pooled = rows[0]
+    assert pooled["gate_a"]["disagree"]["catch"] == 1.0  # arm A: every incorrect at 0.9 passes and is right
+    assert "gate_b" in pooled
+    assert "At the deployed gate" in ae.ablation_markdown(rows, "A", "B", 10, 10)
+
+
+# --- review round 1: mutations that survived ------------------------------------------------------------------------
+
+def test_ablation_interval_is_the_paired_bootstrap_of_one_resample_set(tmp_path):
+    """Both arms are scored on the same panorama resample: the interval is the percentile of the per-resample
+    difference from ONE cluster_boot call, not two independent ones."""
+    from analysis.retrain_report import ci, cluster_boot
+    run = _ablation_run(tmp_path)
+    paired = ae.paired_holdout(ae.load_run(str(run), str(run / "predictions_with.csv")),
+                               ae.load_run(str(run), str(run / "predictions_without.csv")))
+    row = ae.ablation_rows(paired, n_boot=200, min_n=10)[0]
+    y = (paired.true == "incorrect").astype(int).values
+    sa = ae.rank_score(paired.p_correct.values, paired.p_incorrect.values)
+    sb = ae.rank_score(paired.p_correct_b.values, paired.p_incorrect_b.values)
+    boot = cluster_boot(y, np.column_stack([sa, sb]), paired.pano_id.values, 200, ae.SEED)
+    assert (row["delta_lo"], row["delta_hi"]) == ci(boot[:, 0] - boot[:, 1])
+    a = cluster_boot(y, sa, paired.pano_id.values, 200, ae.SEED)[:, 0]
+    b = cluster_boot(y, sb, paired.pano_id.values, 200, ae.SEED + 1)[:, 0]
+    lo, hi = ci(a - b)
+    assert row["delta_hi"] - row["delta_lo"] < hi - lo  # pairing removes the shared panorama noise
+
+
+def test_report_leaves_out_labels_with_no_human_reference(tmp_path):
+    """An --all-ai run's unvoted labels (label_class "") must not be scored as correct by report."""
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    _rawlabels(raw, "richmond-va", _pool_rows())
+    run = tmp_path / "run"
+    ae.main(["select", "--rawlabels", str(raw), "--cities", "richmond-va", "--out", str(run), "--all-ai"])
+    labels = ae.read_labels(run / "labels.csv")
+    assert (labels.label_class == "").sum() == 3  # 2 unvoted, 3 tie, 7 Unsure-only
+    pd.DataFrame({"label_uid": labels.label_uid, "status": "ok", "depth_m": "", "crop_half_px": "",
+                  "tilt_applied": "0", "pose_unhandled": "0"}).to_csv(run / "manifest.csv", index=False)
+    p = np.where(labels.label_class == "incorrect", 0.9, 0.2)
+    pd.DataFrame({"label_uid": labels.label_uid, "split": "test", "true": labels.label_class, "p_correct": 1 - p,
+                  "p_incorrect": p}).to_csv(run / "predictions.csv", index=False)
+    (run / "crops_run.json").write_text(json.dumps({"pano_store_marker": "m", "package_source": "x", "tilt_beta": 0.95,
+                                                    "depth_encoder": "vitb", "status_counts": {"ok": len(labels)}}))
+    (run / "predictions_provenance.json").write_text(json.dumps({"checkpoint": "/c/checkpoint-1", "model_sha256": None,
+                                                                 "n": len(labels), "scored": "2026-11-05"}))
+    m = tmp_path / "map.json"
+    m.write_text(json.dumps({"correct": {"0.5": 0.0, "0.9": 0.95}, "incorrect": {"0.5": 0.0, "0.9": 0.5}}))
+    ae.main(["report", "--run", str(run), "--map", str(m), "--out", str(tmp_path / "rep"), "--n-boot", "10"])
+    md = (tmp_path / "rep" / "tables.md").read_text()
+    assert "Labels with no human reference left out of every table: 3." in md
+    assert "| unseen, all three | 2 | 1 |" in md  # the two voted AI labels only, not 5

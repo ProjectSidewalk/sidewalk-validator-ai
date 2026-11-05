@@ -294,3 +294,51 @@ def test_main_per_city_with_vote_weights_writes_the_gold_tables(tmp_path):
     md = (base / "per_city.md").read_text()
     assert "### test: gold slice per city (gold n >= 3)" in md
     assert "Below the minimum: b (n=1)." in md and "1 city with no gold labels: c." in md
+
+
+# --- AI-authored slice (issue #79) -----------------------------------------------------------------------------------
+
+def _with_authors():
+    df = _per_city_predictions()
+    # AI rows: x:3 x:4 (test, both incorrect), x:6 (test, correct), x:12 (held-out); plus an AI val row that must not count
+    df["author"] = ["ai" if i in (3, 4, 6, 12) else "human" for i in range(len(df))]
+    val = pd.DataFrame({"label_uid": ["x:99"], "split": "val", "city": "a", "true": "correct", "p_incorrect": [0.1],
+                        "author": "ai"})
+    val["p_correct"] = 1 - val.p_incorrect
+    return pd.concat([df, val], ignore_index=True)
+
+
+def test_report_adds_an_ai_authored_slice_beside_test_not_instead_of_it():
+    from evaluate import slice_metrics
+    df = _with_authors()
+    m = report(df)
+    ai = df[df.split.isin(["test", "test_heldout"]) & (df.author == "ai")]
+    assert m["ai_authored"] == slice_metrics(ai) and m["ai_authored"]["n"] == 4
+    assert m["test"]["n"] == 11  # the AI rows are still test rows
+    assert "== ai_authored: n=4" in format_report(m)
+
+
+def test_report_has_no_ai_authored_slice_without_ai_rows_or_column():
+    df = _with_authors()
+    assert "ai_authored" not in report(df.assign(author="human"))
+    assert "ai_authored" not in report(df.drop(columns="author"))
+
+
+def test_main_joins_author_from_the_split(tmp_path):
+    from evaluate import main
+    base = tmp_path / "CurbRamp"
+    base.mkdir()
+    preds = _with_authors()
+    preds = preds[preds.split != "val"]
+    split = pd.DataFrame({"label_uid": preds.label_uid, "city": preds.city, "label_id": range(len(preds)),
+                          "pano_id": [f"p{i}" for i in range(len(preds))], "label_type": "CurbRamp",
+                          "label_class": preds["true"], "crop_path": "c.webp", "split": preds.split, "hard": 0,
+                          "author": preds.author})
+    split.to_csv(base / "split.csv", index=False)
+    preds.drop(columns=["city", "author"]).to_csv(base / "predictions.csv", index=False)
+    main(["--label_type", "CurbRamp", "--data-dir", str(tmp_path), "--skip-inference", "--no-slices"])
+    metrics = json.loads((base / "metrics.json").read_text())
+    assert metrics["ai_authored"]["n"] == 4
+    split.drop(columns="author").to_csv(base / "split.csv", index=False)  # an older split: no slice, no error
+    main(["--label_type", "CurbRamp", "--data-dir", str(tmp_path), "--skip-inference", "--no-slices"])
+    assert "ai_authored" not in json.loads((base / "metrics.json").read_text())

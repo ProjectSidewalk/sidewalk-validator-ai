@@ -19,6 +19,11 @@ The run is resumable: a label whose manifest row says ``ok``, whose crop exists,
 the same class is skipped on restart. ``generation_run.json`` records a hash of the selection, so resuming against a
 changed selection (new votes, other cities, toggling ``--include-ai-labels``) stops with counts unless ``--force-reselect`` is given.
 
+**AI-placed labels** (issue #79): before selection, ``ai_label_holdout.apply`` holds a seeded, pool-stable share
+(``--ai-holdout-frac``) of the eligible AI-authored labels out of training, with or without ``--include-ai-labels``;
+they go to ``<out>/<label_type>/ai_label_holdout.csv`` for evaluation, and ``generation_run.json["ai_labels"]`` records
+the policy, the counts and the file's sha256 (``docs/ai-label-holdout-2026-11.md``).
+
 The view is rendered on the GPU with the package's torch recipe (``sidewalk_panorama_tools.torch_geometry``) and depth
 runs on the same device. CUDA is required unless ``--allow-cpu`` (smoke tests only), which renders with the numpy
 ``render_view`` instead. ``deployment_priors.json`` is written only by a full run (no ``--cities``, no ``--limit``);
@@ -106,6 +111,7 @@ from urllib.parse import urlparse
 import numpy as np
 import pandas as pd
 
+import ai_label_holdout
 import crop_pose
 
 try:  # advisory lock for the shared deployment_priors.json (five label types run in parallel under SLURM)
@@ -1054,6 +1060,8 @@ def create_perspective_crop(depth_model, pano_rgb, label_x_norm, label_y_norm, c
 #: already decides its tilt), so flipping it is a selection change. That still needs ``--force-reselect``, and keeps
 #: every human-authored crop that is still selected; AI correct labels compete in the correct-class downsample, so
 #: some human correct labels near the cutoff can be swapped out. It stays in ``generation_run.json`` as provenance.
+#: ``--ai-holdout-frac`` is not one either: it moves AI labels between training and the held-out set, which the
+#: selection hash already catches; it is recorded in ``generation_run.json["ai_labels"]`` (issue #79).
 #: ``source_beta`` (``crop_pose.SOURCE_BETA``) changes non-GSV crops; GSV's beta is ``tilt_beta``. ``mapillary_api``
 #: is True only when a Graph API lookup actually ran for some selected label: it changes which Mapillary rows carry a
 #: pose (and, should Mapillary's beta ever be non-zero, their crops), so passing ``--mapillary-token-env`` when no row
@@ -1254,6 +1262,11 @@ def build_parser():
                    help='comma list of city_id[=subdomain], overriding the public deployments /v3/api/cities lists')
     p.add_argument('--include-ai-labels', action='store_true',
                    help='keep AI-authored labels in the selection (rendered without tilt correction)')
+    p.add_argument('--ai-holdout-frac', type=ai_label_holdout.frac_arg, default=ai_label_holdout.DEFAULT_FRAC,
+                   help='share of eligible AI-authored labels held out of training per label (seeded, pool-stable) '
+                        'and written to <out>/<label_type>/ai_label_holdout.csv for evaluation, with or without '
+                        '--include-ai-labels (issue #79); 0 <= frac < 1, 0 = no hold-out (reproduces a pre-#79 '
+                        'selection)')
     p.add_argument('--rawlabels-cache', default=None,
                    help='directory of saved rawLabels exports <city_id>.csv, read instead of the API when present; '
                         'also holds the /v3/api/cities listing as cities.json (read if present, else fetched and '
@@ -1323,6 +1336,7 @@ def main(argv=None):
     else:
         print(f"${EXPERTS_ENV} is not set: crowd margin rule only (no expert votes)")
     entry = deployment_prior_entry(eligible, list(cities), n_rows, city_source=city_source)
+    eligible, ai_holdout = ai_label_holdout.apply(eligible, args)  # issue #79: AI-label holdout, before selection
 
     def write_priors():
         update_deployment_priors(priors_path, label_type, entry)
@@ -1391,6 +1405,7 @@ def main(argv=None):
                  f"(all of them if a setting changed) and redone; old crop files stay on disk until overwritten.")
     write_priors()  # only once the resume check has passed
     os.makedirs(base_dir, exist_ok=True)
+    ai_labels_record = ai_label_holdout.record(ai_holdout, eligible, selection, base_dir, args)
 
     # Per-provider pose (crop_pose, #72), for every row this run renders. Mapillary rows with no DB pose take the
     # Graph API rotation when a token was given. Mapillary crops are uncorrected either way (the click is rig-frame,
@@ -1430,7 +1445,7 @@ def main(argv=None):
                    "pano_store": args.pano_store, "pano_store_marker": store_marker,
                    "cities": list(cities), "city_source": city_source, "limit": args.limit, "selection_size": len(selection),
                    "n_experts": len(experts),
-                   "class_source_counts": source_counts, "pose_counts": run_pose_counts,
+                   "class_source_counts": source_counts, "pose_counts": run_pose_counts, "ai_labels": ai_labels_record,
                    "selection_sha256": sel_hash, "started": date.today().isoformat()}, f, indent=2)
         f.write("\n")
 
