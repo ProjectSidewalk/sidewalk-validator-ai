@@ -1265,7 +1265,8 @@ def build_parser():
     p.add_argument('--ai-holdout-frac', type=ai_label_holdout.frac_arg, default=ai_label_holdout.DEFAULT_FRAC,
                    help='share of eligible AI-authored labels held out of training per label (seeded, pool-stable) '
                         'and written to <out>/<label_type>/ai_label_holdout.csv for evaluation, with or without '
-                        '--include-ai-labels (issue #79); 0 < frac < 1')
+                        '--include-ai-labels (issue #79); 0 <= frac < 1, 0 = no hold-out (reproduces a pre-#79 '
+                        'selection)')
     p.add_argument('--rawlabels-cache', default=None,
                    help='directory of saved rawLabels exports <city_id>.csv, read instead of the API when present; '
                         'also holds the /v3/api/cities listing as cities.json (read if present, else fetched and '
@@ -1366,7 +1367,6 @@ def main(argv=None):
         print(f"Deployment prior ({priors_path}{', PARTIAL run' if partial else ''}): "
               f"{entry['correct']} correct, {entry['incorrect']} incorrect")
         print(f"--select-only: {len(combined_filtered)} labels selected; stopping before rendering.")
-        print(f"--select-only: {ai_label_holdout.summary_line(ai_holdout)}; {ai_label_holdout.HOLDOUT_FILE} not written")
         return
 
     # Directories only for cities with a selected label (before --limit, so a limit run checks the same cities).

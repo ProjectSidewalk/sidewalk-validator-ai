@@ -590,9 +590,9 @@ def non_gsv_rows():
             label(9, 0, 3, pano="gsv2")]  # a fourth incorrect label, so the downsample keeps all four correct ones
 
 
-#: The fixture's AI label toy-city:6 draws 0.332 in the issue #79 holdout (seed 42), so the default 0.5 would hold it
-#: out of training; the tests of its rig-frame render keep it in with a smaller fraction.
-KEEP_NON_GSV_AI = ("--ai-holdout-frac", "0.3")
+#: The fixture's AI label toy-city:6 is on a panorama that draws 0.278 in the issue #79 holdout (seed 42), so the
+#: default 0.5 would hold it out of training; the tests of its rig-frame render keep it in with a smaller fraction.
+KEEP_NON_GSV_AI = ("--ai-holdout-frac", "0.25")
 
 
 @pytest.fixture
@@ -892,8 +892,8 @@ def test_largest_fixed_crop_size_is_accepted(stubbed):
 
 import ai_label_holdout  # noqa: E402
 
-AI_UID = "toy-city:4"  # the fixture's only AI-authored label (incorrect)
-AI_DRAW = ai_label_holdout.holdout_fraction(42, AI_UID)  # 0.749...: kept in training at the default 0.5
+AI_UID = "toy-city:4"  # the fixture's only AI-authored label (incorrect), alone on panorama p4
+AI_DRAW = ai_label_holdout.holdout_fraction(42, "toy-city:p4")  # 0.921...: kept in training at the default 0.5
 
 
 def _frac_holding(held):
@@ -967,12 +967,32 @@ def test_select_only_prints_the_holdout_and_writes_no_file(stubbed, capsys):
     dg.main(["--label_type", "CurbRamp", "--rawlabels-cache", str(tmp), "--out", str(tmp / "out"), "--select-only",
              "--include-ai-labels", "--ai-holdout-frac", _frac_holding(True)])
     out = capsys.readouterr().out
-    assert "--select-only: AI-label holdout (issue #79): 1 AI-authored labels held out" in out
+    assert out.count("AI-label holdout (issue #79): 1 AI-authored labels held out") == 1  # printed once, by apply
     assert not (tmp / "out" / "CurbRamp" / ai_label_holdout.HOLDOUT_FILE).exists()
 
 
-@pytest.mark.parametrize("bad", ["0", "1", "1.5", "-0.2"])
+@pytest.mark.parametrize("bad", ["1", "1.5", "-0.2"])
 def test_holdout_fraction_outside_the_open_interval_is_a_usage_error(stubbed, bad, capsys):
     with pytest.raises(SystemExit):
         run_main(stubbed["tmp"], "--ai-holdout-frac", bad)
-    assert "strictly between 0 and 1" in capsys.readouterr().err
+    assert "at least 0 and below 1" in capsys.readouterr().err
+
+
+def test_limit_does_not_shrink_the_recorded_included_counts(stubbed):
+    """included_counts counts the selection before --limit: a smoke run must not misreport what training got."""
+    tmp = stubbed["tmp"]
+    m = run_main(tmp, "--limit", "1")
+    assert len(m) == 1
+    rec = _run_record(tmp)["ai_labels"]
+    assert rec["included_counts"] == {"toy-city": {"correct": 0, "incorrect": 1}}  # AI label kept (draw 0.92)
+
+
+def test_fraction_zero_reproduces_the_pre_holdout_selection(stubbed):
+    """--ai-holdout-frac 0 keeps every AI label in an included run (pre-#79 selection) and still records it."""
+    tmp = stubbed["tmp"]
+    m = run_main(tmp, "--ai-holdout-frac", "0")
+    assert AI_UID in set(m.label_uid)
+    rec = _run_record(tmp)["ai_labels"]
+    assert rec["holdout_frac"] == 0 and rec["holdout_counts"] == {}
+    assert rec["included_counts"] == {"toy-city": {"correct": 0, "incorrect": 1}}
+    assert len(pd.read_csv(tmp / "out" / "CurbRamp" / ai_label_holdout.HOLDOUT_FILE)) == 0
