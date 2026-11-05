@@ -1,0 +1,13 @@
+panoramax/*.sd.jpg - attribution and licence
+
+The eight JPEGs in this directory are the `sd` (2048 x 1024) derivatives of street-level pictures published on
+Panoramax (https://panoramax.fr) by the producer `sig_bayonne` and hosted on panoramax.ign.fr, as served on
+2026-10-06. Each picture's STAC item declares the licence `etalab-2.0`: Licence Ouverte / Open Licence 2.0,
+https://www.etalab.gouv.fr/licence-ouverte-open-licence/
+
+Attribution: sig_bayonne via Panoramax, Licence Ouverte / Etalab 2.0.
+
+They are byte-identical copies of eight of the 14 posed pictures committed in ProjectSidewalk/sidewalk-panorama-tools
+(v1.0.0, reports/data/2026-10-06-non-gsv-levelling/images/, sha256s in its sample.json). poses.json records each
+file's sha256 and size and its STAC pers:pitch / pers:roll, which Project Sidewalk's PanoramaxViewer stores unchanged
+as camera_pitch / camera_roll; tests/test_pose_levelling.py refuses a file that does not match.

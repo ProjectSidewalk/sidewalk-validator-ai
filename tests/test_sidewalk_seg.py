@@ -174,6 +174,19 @@ def test_select_labels_filters_types_and_checks_uid():
         ss.select_labels(s)
 
 
+def test_select_labels_refuses_non_gsv_rows():
+    """The render step re-renders from GSV's pose convention, so a non-GSV row (issue #72 manifests) is refused."""
+    s = pd.DataFrame({c: [0, 0] for c in ss.LABEL_COLUMNS})
+    s["label_uid"], s["city"], s["label_id"] = ["a-wa:1", "a-wa:2"], "a-wa", [1, 2]
+    s["pano_id"], s["label_type"] = ["xyz1", "1792391791667719"], ["Obstacle", "Obstacle"]
+    s["pano_source"] = ["gsv", "gsv"]
+    assert len(ss.select_labels(s)) == 2
+    s.loc[1, "pano_source"] = "mapillary"
+    with pytest.raises(ValueError, match="1 non-GSV rows"):
+        ss.select_labels(s)
+    assert len(ss.select_labels(s[s.pano_source == "gsv"])) == 1
+
+
 def test_auc_helpers():
     assert ss.oriented_auc([0, 0, 1, 1], [0.9, 0.8, 0.2, 0.1]) == (0.0, "-")
     auc, d = ss.oriented_auc([0, 0, 0], [1, 2, 3])

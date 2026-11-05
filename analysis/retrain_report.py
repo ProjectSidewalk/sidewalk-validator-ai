@@ -84,6 +84,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from calibration import _isotonic_map as im  # noqa: E402
 from calibration import calibrate as cal  # noqa: E402
 from analysis import slices as sl  # noqa: E402
+from data_generation import PANO_ID_DTYPE  # noqa: E402
 
 TYPES = ["CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk"]
 SPLITS = ["test", "test_heldout"]
@@ -281,7 +282,8 @@ def metrics_rows(run_dir, label_type, df, args):
 
 
 def production_rows(preds, sample_path, scores_path, args):
-    sample = pd.read_csv(sample_path, usecols=["label_uid", "city", "pano_id", "label_type", "split"])
+    sample = pd.read_csv(sample_path, usecols=["label_uid", "city", "pano_id", "label_type", "split"],
+                         dtype=PANO_ID_DTYPE)
     prod = pd.read_csv(scores_path, usecols=["label_uid", "p_incorrect"]).rename(columns={"p_incorrect": "p_prod"})
     r3 = pd.concat([p[["label_uid", "p_incorrect", "y"]] for p in preds.values()]).rename(columns={"p_incorrect": "r3"})
     df = sample.merge(prod, on="label_uid", validate="one_to_one").merge(r3, on="label_uid", validate="one_to_one")

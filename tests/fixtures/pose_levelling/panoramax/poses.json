@@ -1,0 +1,89 @@
+{
+ "source": "panoramax",
+ "fetched": "2026-10-06",
+ "asset": "sd",
+ "pose_columns": "camera_pitch/camera_roll = STAC pers:pitch/pers:roll, which PanoramaxViewer stores unchanged",
+ "copied_from": "ProjectSidewalk/sidewalk-panorama-tools v1.0.0 reports/data/2026-10-06-non-gsv-levelling (sha256s match its sample.json)",
+ "panoramas": [
+  {
+   "pano_id": "b42a898f-a86c-4130-9a09-c0ebda62bc4d",
+   "city": "bayonne-fr",
+   "camera_pitch": -19.1,
+   "camera_roll": -6.0,
+   "license": "etalab-2.0",
+   "producer": "sig_bayonne",
+   "sha256": "a8d71e31d9df5911ef068576664aa5722e95391f3b6c7d73fac2d8795b28a642",
+   "bytes": 245421
+  },
+  {
+   "pano_id": "a7af7558-8bc3-40db-b6c3-1a22f20eb628",
+   "city": "bayonne-fr",
+   "camera_pitch": -17.9,
+   "camera_roll": 10.0,
+   "license": "etalab-2.0",
+   "producer": "sig_bayonne",
+   "sha256": "4bbe69b3c5bbfde7b15ddad4ef19eedca2748c75206df33656accdeff55b2243",
+   "bytes": 275996
+  },
+  {
+   "pano_id": "54b725fe-5d63-4f94-a86e-166e1233f683",
+   "city": "bayonne-fr",
+   "camera_pitch": -14.6,
+   "camera_roll": 4.2,
+   "license": "etalab-2.0",
+   "producer": "sig_bayonne",
+   "sha256": "613c8289369872cb52e05be742ac6b5f4a11e1c063021587b100fdce50debb5f",
+   "bytes": 276462
+  },
+  {
+   "pano_id": "ba9c29dc-976e-4da6-b061-f83caabceeef",
+   "city": "bayonne-fr",
+   "camera_pitch": 10.5,
+   "camera_roll": 5.7,
+   "license": "etalab-2.0",
+   "producer": "sig_bayonne",
+   "sha256": "e5aaf1a12ca37fea78e339f4397aa29c066d4615a04787fa417b2bd6e9df8e2c",
+   "bytes": 388724
+  },
+  {
+   "pano_id": "6f14d966-d458-4464-aa79-cc23b2228d5c",
+   "city": "bayonne-fr",
+   "camera_pitch": -19.7,
+   "camera_roll": 1.9,
+   "license": "etalab-2.0",
+   "producer": "sig_bayonne",
+   "sha256": "cf4de9cbd7ce5a5ebcb4ac41ba4557cb7dc58579ee4e8f9f078a2726b5b7be27",
+   "bytes": 286223
+  },
+  {
+   "pano_id": "6378c59b-c412-4ff0-aa52-adf4ae638b06",
+   "city": "bayonne-fr",
+   "camera_pitch": 8.9,
+   "camera_roll": 4.8,
+   "license": "etalab-2.0",
+   "producer": "sig_bayonne",
+   "sha256": "6fc68fdff508291db954afc482afa0e0b6bad618958723e3b35036d8e545c86b",
+   "bytes": 341019
+  },
+  {
+   "pano_id": "26b65ab0-dbf4-40d6-8975-f732a6badf16",
+   "city": "bayonne-fr",
+   "camera_pitch": -3.1,
+   "camera_roll": -4.2,
+   "license": "etalab-2.0",
+   "producer": "sig_bayonne",
+   "sha256": "c1721356909269cd884f2ab1026284bc6851ba243e12008178f3cf20bc246f17",
+   "bytes": 292441
+  },
+  {
+   "pano_id": "3d41fefe-4ce5-4d9e-893d-ff47cc29ce93",
+   "city": "bayonne-fr",
+   "camera_pitch": -2.1,
+   "camera_roll": -5.9,
+   "license": "etalab-2.0",
+   "producer": "sig_bayonne",
+   "sha256": "93f7f92d1ae798cda59fa46f7ddd9008c2dd4c9c4f2fdc8b754100607b2d2a71",
+   "bytes": 313104
+  }
+ ]
+}

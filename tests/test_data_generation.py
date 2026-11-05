@@ -1,12 +1,14 @@
 """data_generation.py on a CPU: label selection, AI-author handling, deployment priors, the resumable manifest."""
 import doctest
 import json
+import math
 import os
 
 import numpy as np
 import pandas as pd
 import pytest
 
+import crop_pose
 import data_generation as dg
 import hard_examples
 
@@ -22,8 +24,8 @@ def _votes(agree, disagree, ai_agree=0):
 
 def fixture_labels(tmp_path):
     """30 CurbRamp rows written to CSV and read back (as the API export would be): 12 clearly correct, 6 clearly
-    incorrect, 4 contested/unvalidated, 3 AI-authored correct, 2 AI-authored incorrect, 1 non-GSV, 1 legacy
-    negative pano_y, 1 other label type. AI votes on 5 rows would flip them to correct if counted."""
+    incorrect, 4 contested/unvalidated, 3 AI-authored correct, 2 AI-authored incorrect, 1 non-GSV with a bad pano
+    size, 1 legacy negative pano_y, 1 other label type. AI votes on 5 rows would flip them to correct if counted."""
     rows = []
 
     def add(n, agree, disagree, user="u", source="gsv", pano_y=1000, label_type="CurbRamp", ai_agree=0):
@@ -43,7 +45,7 @@ def fixture_labels(tmp_path):
     add(1, 5, 0, pano_y=-5)
     add(1, 5, 0, label_type="Obstacle")
     rows[-2]["pano_y"] = 5000      # was the legacy row; now pano_y > pano_height: also dropped
-    rows[-3]["pano_width"] = 0     # non-GSV row stays counted as non_gsv (first failing check)
+    rows[-3]["pano_width"] = 0     # the non-GSV row is dropped for its size, not its provider (#72)
     assert len(rows) == 30
     path = tmp_path / "toy-city.csv"
     pd.DataFrame(rows).to_csv(path, index=False)
@@ -303,7 +305,7 @@ def test_expert_votes_add_labels_the_margin_rule_skips(tmp_path):
 
 def test_geometry_bounds_are_dropped_and_counted(tmp_path):
     eligible, dropped = dg.eligible_labels(fixture_labels(tmp_path), "CurbRamp")
-    assert dict(dropped) == {"non_gsv": 1, "pano_y_out_of_range": 1}
+    assert dict(dropped) == {"bad_pano_size": 1, "pano_y_out_of_range": 1}
     bad = pd.DataFrame({"pano_source": ["gsv"] * 4, "pano_x": [1, 1, np.inf, 1], "pano_y": [1, 1, 1, 1],
                         "pano_width": [10, -1, 10, 10], "pano_height": [10, 10, 10, np.nan]})
     keep, why = dg.valid_geometry(bad)
@@ -494,6 +496,156 @@ def test_manifest_row_uid_and_crop_path():
     assert set(rec) == set(dg.MANIFEST_COLUMNS)
 
 
+def test_manifest_row_records_the_pose_and_the_provider_beta():
+    row = pd.Series({"city": "bayonne-fr", "label_id": 7, "pano_id": "x", "label_class": "correct", "author": "human",
+                     "human_agree": 3, "human_disagree": 0, "pano_source": "panoramax", "camera_pitch": -4.0,
+                     "camera_roll": 3.0})
+    pose = crop_pose.pose_for_row(row, 0.95)
+    rec = dg.manifest_row(row, "CurbRamp", "correct/bayonne-fr_7.webp", 0.95, pose)
+    assert (rec["pose_source"], rec["pose_pitch"], rec["pose_roll"], rec["tilt_beta"], rec["click_lat_offset_deg"]) == \
+        ("panoramax_db", 4.0, 3.0, 1.0, 0.0)
+    mly = crop_pose.pose_for_row({**row, "pano_source": "mapillary"}, 0.95)
+    assert dg.manifest_row({**row, "pano_source": "mapillary"}, "CurbRamp", "x.webp", 0.95, mly)["tilt_beta"] == 0.0
+    assert rec["camera_pitch"] == -4.0  # the DB column as stored, in the provider's sign
+    assert set(rec) == set(dg.MANIFEST_COLUMNS)
+
+
+def test_valid_geometry_keeps_supported_providers_only():
+    df = pd.DataFrame({"pano_source": ["gsv", "Mapillary", "panoramax", "infra3d", None], "pano_x": [1] * 5,
+                       "pano_y": [5] * 5, "pano_width": [10] * 5, "pano_height": [10] * 5})
+    keep, why = dg.valid_geometry(df)
+    assert keep.tolist() == [True, True, True, False, False] and dict(why) == {"unsupported_source": 2}
+
+
+ROTATION = [1.3857263583832, 0.71804330335161, -0.58250746512038]  # Richmond VA 2163793620710887: (2.2318, -6.355)
+
+
+def _pose_row(src, pitch=None, roll=None, author="human", pano="p1"):
+    return {"pano_source": src, "pano_id": pano, "camera_pitch": pitch, "camera_roll": roll, "author": author}
+
+
+@pytest.mark.parametrize("row, rotations, want", [
+    # GSV: exactly as before #72 (the DB columns unchanged, --tilt-beta); no column at all is no pose.
+    (_pose_row("gsv", 2.0), None, (2.0, None, "gsv_db", 0.95, "db", 0.0)),
+    (_pose_row("GSV", 2.0, float("nan")), None, (2.0, None, "gsv_db", 0.95, "db", 0.0)),
+    (_pose_row("gsv"), None, (None, None, "none", None, "gsv_no_db_pose", 0.0)),
+    # Mapillary: the click is rig-frame (beta 0); the pose is still read, pitch negated: DB first, else the API.
+    (_pose_row("mapillary", 2.0, -6.0), None, (-2.0, -6.0, "mapillary_db", 0.0, "mapillary_click_rig_frame", 0.0)),
+    (_pose_row("mapillary", 2.0, -6.0), {"p1": [0.0, 0.0, 0.0]},
+     (-2.0, -6.0, "mapillary_db", 0.0, "mapillary_click_rig_frame", 0.0)),                      # DB wins
+    (_pose_row("mapillary", 40.0, 40.0), None, (None, None, "none", None, "mapillary_db_over_tilt", 0.0)),
+    (_pose_row("mapillary", 2.0, None), None, (None, None, "none", None, "mapillary_no_db_pose_api_off", 0.0)),
+    (_pose_row("mapillary", None, -6.0), {"p1": ROTATION},                                     # one angle: not a pose
+     (pytest.approx(-2.2318, abs=1e-4), pytest.approx(-6.355, abs=1e-4), "mapillary_api", 0.0,
+      "mapillary_click_rig_frame", 0.0)),
+    (_pose_row("mapillary"), None, (None, None, "none", None, "mapillary_no_db_pose_api_off", 0.0)),
+    (_pose_row("mapillary"), {}, (None, None, "none", None, "mapillary_api_not_fetched", 0.0)),
+    (_pose_row("mapillary"), {"p1": None}, (None, None, "none", None, "mapillary_api_missing", 0.0)),
+    (_pose_row("mapillary"), {"p1": [math.pi, 0.0, 0.0]}, (None, None, "none", None, "mapillary_api_over_tilt", 0.0)),
+    (_pose_row("mapillary"), {"p1": [0.0, 0.0, 0.0]}, (None, None, "none", None, "mapillary_api_zero_rotation", 0.0)),
+    (_pose_row("mapillary"), {"p1": [1, "x", 2]}, (None, None, "none", None, "mapillary_api_malformed", 0.0)),
+    # Panoramax: both angles non-zero is the only case the viewer levels (beta 1.0); pitch-only shifts the click.
+    (_pose_row("panoramax", -4.0, 3.0), None, (4.0, 3.0, "panoramax_db", 1.0, "level_frame_click", 0.0)),
+    (_pose_row("panoramax", 356.0, 3.0), None, (4.0, 3.0, "panoramax_db", 1.0, "level_frame_click", 0.0)),  # wrapped
+    (_pose_row("panoramax", 0.0, 0.0), None, (None, None, "none", None, "panoramax_zero_or_absent_pose", 0.0)),
+    (_pose_row("panoramax", 0.0, None), None, (None, None, "none", None, "panoramax_zero_or_absent_pose", 0.0)),
+    (_pose_row("panoramax"), None, (None, None, "none", None, "panoramax_zero_or_absent_pose", 0.0)),
+    (_pose_row("panoramax", 5.0, None), None,
+     (-5.0, None, "panoramax_db", 0.0, "panoramax_pitch_only_click_offset", 5.0)),
+    (_pose_row("panoramax", 5.0, 0.0), None,
+     (-5.0, None, "panoramax_db", 0.0, "panoramax_pitch_only_click_offset", 5.0)),
+    (_pose_row("panoramax", 0.0, 2.0), None,
+     (None, 2.0, "panoramax_db", 0.0, "panoramax_roll_only_click_rig_frame", 0.0)),
+    # AI labels were placed on the rig image: never corrected, whatever the provider.
+    (_pose_row("mapillary", 2.0, 1.0, author="ai"), None, (None, None, "rig_frame", None, "ai_label", 0.0)),
+    (_pose_row("gsv", 2.0, author="ai"), None, (None, None, "rig_frame", None, "ai_label", 0.0)),
+    (_pose_row("infra3d", 1.0, 1.0), None, (None, None, "none", None, "unsupported_source:infra3d", 0.0)),
+])
+def test_pose_for_row(row, rotations, want):
+    assert tuple(crop_pose.pose_for_row(row, 0.95, rotations)) == want
+
+
+def test_check_resume_rejects_changed_source_beta_and_mapillary_api(tmp_path):
+    """Both change non-GSV rows, so a resume across either is refused (review S4)."""
+    run = tmp_path / "generation_run.json"
+    st = {"tilt_beta": 0.95, "source_beta": {"mapillary": 0.0, "panoramax": 1.0}, "mapillary_api": False}
+    run.write_text(json.dumps({"selection_sha256": "h", "settings": st}))
+    assert dg.check_resume(str(run), "h", st)[1] == {}
+    assert dg.check_resume(str(run), "h", {**st, "source_beta": {"mapillary": 0.0, "panoramax": 0.9}})[1] == \
+        {"source_beta": ({"mapillary": 0.0, "panoramax": 1.0}, {"mapillary": 0.0, "panoramax": 0.9})}
+    assert dg.check_resume(str(run), "h", {**st, "mapillary_api": True})[1] == {"mapillary_api": (False, True)}
+    run.write_text(json.dumps({"selection_sha256": "h", "settings": {"tilt_beta": 0.95}}))  # a record from before #72
+    assert dg.check_resume(str(run), "h", st)[1] == {}
+
+
+def test_load_city_keeps_numeric_pano_ids_as_strings(tmp_path, monkeypatch):
+    pd.DataFrame({"label_id": [1, 2], "pano_id": ["1792391791667719", "0012"]}).to_csv(tmp_path / "c.csv", index=False)
+    assert dg.load_city("c", cache_dir=str(tmp_path))["pano_id"].tolist() == ["1792391791667719", "0012"]
+
+    class Resp:  # the live rawLabels download, same rule
+        text = "label_id,pano_id\n1,1792391791667719\n2,0012\n"
+
+        def raise_for_status(self):
+            pass
+    monkeypatch.setattr("requests.get", lambda url, timeout=None: Resp())
+    assert dg.load_city("c", "sub")["pano_id"].tolist() == ["1792391791667719", "0012"]
+
+
+def test_mapillary_api_pose_is_the_port_negated():
+    pose = crop_pose.pose_for_row(_pose_row("mapillary"), 0.95, {"p1": ROTATION})
+    assert pose.pose_source == "mapillary_api" and pose.beta == 0.0
+    assert (round(pose.camera_pitch, 4), round(pose.camera_roll, 4)) == (-2.2318, -6.355)
+    assert crop_pose.needs_mapillary_rotation(_pose_row("mapillary"))
+    assert not crop_pose.needs_mapillary_rotation(_pose_row("mapillary", 1.0, 2.0))
+    assert crop_pose.needs_mapillary_rotation(_pose_row("mapillary", 1.0, None))  # one DB angle: looked up
+    assert crop_pose.needs_mapillary_rotation(_pose_row("mapillary", None, 2.0))
+    assert not crop_pose.needs_mapillary_rotation(_pose_row("mapillary", author="ai"))
+    assert not crop_pose.needs_mapillary_rotation(_pose_row("gsv"))
+
+
+def test_every_pose_source_is_declared():
+    assert set(crop_pose.POSE_SOURCES) >= {"gsv_db", "mapillary_db", "mapillary_api", "panoramax_db", "none",
+                                           "rig_frame", "image_estimate"}
+
+
+def test_fetch_mapillary_rotations_caches_answers_not_failures(tmp_path):
+    class Resp:
+        def __init__(self, status, body=None, text=""):
+            self.status_code, self._body, self.text = status, body, text
+
+        def json(self):
+            if isinstance(self._body, Exception):
+                raise self._body
+            return self._body
+    answers = {"a": Resp(200, {"id": "a", "computed_rotation": ROTATION}), "b": Resp(404, None, "not found"),
+               "c": Resp(500), "d": Resp(404, None, '{"error":{"type":"OAuthException","code":190}}'),
+               "e": Resp(200, {"error": {"code": 1}}), "f": Resp(200, ValueError("not JSON"))}
+    asked = []
+
+    class Session:
+        def get(self, url, params=None, headers=None, timeout=None):
+            pid = url.rsplit("/", 1)[1]
+            asked.append(pid)
+            return answers[pid]
+    cache = str(tmp_path / "rot.json")
+    rot, n, failed = crop_pose.fetch_mapillary_rotations(list("abcdefa"), cache, "tok", Session(), pause_s=0)
+    assert rot == {"a": ROTATION, "b": None} and n == 6
+    assert failed == [("c", "http_500"), ("d", "http_404"), ("e", "error_body"), ("f", "non_json_body")]
+    assert "tok" not in open(cache).read()
+    rot, n, failed = crop_pose.fetch_mapillary_rotations(["a", "b"], cache, "tok", Session(), pause_s=0)
+    assert n == 0 and rot == {"a": ROTATION, "b": None} and asked.count("a") == 1
+
+
+def test_pose_counts_by_provider_and_reason():
+    rows = [_pose_row("panoramax", 0.0, 0.0), _pose_row("panoramax", 0.0, None), _pose_row("panoramax", 1.0, 1.0),
+            _pose_row("panoramax", 1.0, None), _pose_row("gsv", 1.0)]
+    poses = [crop_pose.pose_for_row(r, 0.95) for r in rows]
+    assert dg.pose_counts(poses, [r["pano_source"] for r in rows]) == {
+        "gsv": {"gsv_db/db": 1},
+        "panoramax": {"none/panoramax_zero_or_absent_pose": 2, "panoramax_db/level_frame_click": 1,
+                      "panoramax_db/panoramax_pitch_only_click_offset": 1}}
+
+
 def test_depth_sized_crop_clips_near_features():
     img = np.zeros((2048, 2048, 3), np.uint8)
     crop, half, clipped = dg.depth_sized_crop(img, 2.0)  # 3050 px half-width > 1024
@@ -502,7 +654,7 @@ def test_depth_sized_crop_clips_near_features():
         dg.depth_sized_crop(img, 0.0)
 
 
-@pytest.mark.parametrize("module", [dg, hard_examples])
+@pytest.mark.parametrize("module", [dg, hard_examples, crop_pose])
 def test_doctests(module):
     result = doctest.testmod(module)
     assert result.attempted > 0 and result.failed == 0

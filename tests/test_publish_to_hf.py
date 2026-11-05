@@ -32,8 +32,9 @@ def _predictions(n, split, rng):
                          "p_correct": 1 - p_inc, "p_incorrect": p_inc})
 
 
-def make_root(tmp_path, label_type=T, rows=ROWS, max_steps=2, epochs=2):
-    """A pipeline output root with crops, manifest, split, two checkpoints, metrics and a calibrated map."""
+def make_root(tmp_path, label_type=T, rows=ROWS, max_steps=2, epochs=2, pano_sources=None):
+    """A pipeline output root with crops, manifest, split, two checkpoints, metrics and a calibrated map.
+    ``pano_sources`` maps a row index to its ``pano_source`` (default ``gsv``)."""
     root = tmp_path / "out"
     base = root / label_type
     records = []
@@ -43,7 +44,8 @@ def make_root(tmp_path, label_type=T, rows=ROWS, max_steps=2, epochs=2):
         (base / crop).write_bytes(b"RIFF\x00\x00\x00\x00WEBPVP8 " + f"{label_type}:{city}:{lid}".encode())
         records.append({"label_uid": f"{city}:{lid}", "city": city, "label_id": lid, "pano_id": f"pano{i // 2}",
                         "label_type": label_type, "label_class": cls, "author": "human", "human_agree": 3,
-                        "human_disagree": 0, "image_capture_date": date, "pano_source": "gsv",
+                        "human_disagree": 0, "image_capture_date": date,
+                        "pano_source": (pano_sources or {}).get(i, "gsv"),
                         "pano_path": f"/secret/store/{city}/pa/pano{i}.jpg", "depth_m": 5.0, "clipped": 0,
                         "crop_path": crop, "status": "ok", "split": split})
     manifest = pd.DataFrame(records).drop(columns="split")
@@ -426,6 +428,61 @@ def test_dataset_card_states_the_expert_rule_only_when_used(tmp_path, staged):
     assert "expert account voted for" in card and "2 project-team accounts" in card
     assert "9 margin and 3 expert" in card
     assert "met the `correct` margin rule" in card
+
+
+def test_dataset_card_states_non_gsv_imagery_from_what_was_published(tmp_path, staged):
+    """The card's imagery sentence follows split.csv's pano_source counts, not the generator's settings: a run that
+    recorded per-source betas but selected no non-GSV label still says they are excluded (review S5)."""
+    old = _read(os.path.join(staged["dataset"], "README.md"))
+    assert "non-GSV imagery, with unusable" in old and "on non-GSV imagery, cropped" not in old
+    root, *_ = make_root(tmp_path / "with-sources")
+    path = os.path.join(root, T, "generation_run.json")
+    run = json.loads(_read(path))
+    run["settings"]["source_beta"] = {"mapillary": 0.0, "panoramax": 1.0}
+    with open(path, "w") as f:
+        json.dump(run, f)
+    _, d = pub.stage(root, T)
+    card = _read(os.path.join(d, "README.md"))
+    assert "non-GSV imagery, with unusable" in card  # nothing non-GSV selected
+    assert "for GSV)" not in card and "beta = 0.95)" in card
+    root, *_ = make_root(tmp_path / "with-mapillary", pano_sources={0: "mapillary", 1: "mapillary"})
+    path = os.path.join(root, T, "generation_run.json")
+    with open(path, "w") as f:
+        json.dump(run, f)
+    _, d = pub.stage(root, T)
+    card = _read(os.path.join(d, "README.md"))
+    assert "The dataset includes 2 Mapillary labels on non-GSV imagery" in card
+    assert "tilt-correction beta per provider: mapillary 0, panoramax 1)" in card and "{" not in card.split(
+        "tilt-correction beta")[1][:40]
+    assert "non-GSV imagery, with unusable" not in card and "for GSV)" in card
+    assert json.loads(_read(os.path.join(d, "dataset_info.json")))["pano_sources"] == {"gsv": 10, "mapillary": 2}
+
+
+def test_model_card_imagery_bullet_follows_published_pano_sources(tmp_path, staged):
+    """The model card's "Known failure modes" imagery bullet is keyed on split.csv's pano_source counts, like the
+    dataset card: GSV-only says so, a dataset with Mapillary/Panoramax rows names them (review round 3, item 1)."""
+    gsv_only = _read(os.path.join(staged["model"], "README.md"))
+    assert "- Trained and evaluated only on Google Street View panoramas" in gsv_only
+    root, *_ = make_root(tmp_path / "mixed", pano_sources={0: "mapillary", 1: "mapillary", 2: "panoramax"})
+    m, _ = pub.stage(root, T)
+    card = _read(os.path.join(m, "README.md"))
+    assert "only on Google Street View" not in card
+    assert "Google Street View plus 2 Mapillary, 1 Panoramax labels on non-GSV imagery" in card
+
+
+def test_read_dataset_context_keeps_pano_id_a_string(tmp_path):
+    """All-digit pano_ids (Mapillary) with one blank must stay strings, not int64/float64 (review round 3, item 2)."""
+    root, *_ = make_root(tmp_path)
+    for name in ("split.csv", "manifest.csv"):
+        path = os.path.join(root, T, name)
+        df = pd.read_csv(path, dtype=str)
+        df["pano_id"] = [str(1000000000000000 + i) for i in range(len(df))]
+        df.loc[0, "pano_id"] = ""
+        df.to_csv(path, index=False)
+    split, manifest, *_ = pub.read_dataset_context(root, T)
+    for df in (split, manifest):
+        assert not pd.api.types.is_numeric_dtype(df["pano_id"])
+        assert df["pano_id"].iloc[1] == "1000000000000001"
 
 
 def test_dataset_license_flag(tmp_path):

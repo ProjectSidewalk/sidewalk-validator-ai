@@ -1,0 +1,18 @@
+mapillary/*.jpg - attribution and licence
+
+The six JPEGs in this directory are the 2048 x 1024 thumbnails (Graph API field thumb_2048_url) of 360-degree
+street-level images published on Mapillary (https://www.mapillary.com), fetched unmodified on 2026-10-28. Mapillary
+publishes its imagery under the Creative Commons Attribution-ShareAlike 4.0 International licence (CC BY-SA 4.0,
+https://creativecommons.org/licenses/by-sa/4.0/). That licence covers these image files only, not the code in this
+repository. They are the measurement input of tests/test_pose_levelling.py (issue #72); poses.json records each
+file's sha256 and size, and the test refuses a file that does not match.
+
+image id            contributor     captured     link
+1792391791667719    jacobwhall      2025-08-18   https://www.mapillary.com/app/?pKey=1792391791667719&focus=photo
+1065203879101102    jacobwhall      2025-01-14   https://www.mapillary.com/app/?pKey=1065203879101102&focus=photo
+2001774006895864    jacobwhall      2025-08-18   https://www.mapillary.com/app/?pKey=2001774006895864&focus=photo
+1545453500214262    GIS_ISG         2025-11-04   https://www.mapillary.com/app/?pKey=1545453500214262&focus=photo
+2671710353182473    echostorm       2024-11-11   https://www.mapillary.com/app/?pKey=2671710353182473&focus=photo
+1416913142890466    HKocen          2024-11-11   https://www.mapillary.com/app/?pKey=1416913142890466&focus=photo
+
+Attribution: the contributors above via Mapillary, CC BY-SA 4.0.

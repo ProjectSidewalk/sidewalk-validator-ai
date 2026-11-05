@@ -29,8 +29,16 @@ implementation sidewalk-ai-api is meant to pin too, so training and serving cut 
 (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5). The label sits at the view centre, so the old
 out-of-frame failure mode (issue #9, item 1) cannot occur. **Frame rule:** human labels are clicked in the
 gravity-levelled viewer frame while the stored equirect is in the rig frame, so they are rendered with the tilt
-correction (the label's ``camera_pitch``/``camera_roll``, a fraction ``--tilt-beta`` applied;
-https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54). Labels authored by the AI account (RampNet,
+correction (https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54). Whether that holds, and the pose,
+depend on the imagery provider (``crop_pose.pose_for_row``, issue #72): GSV labels are corrected with the label's
+``camera_pitch``/``camera_roll`` and a fraction ``--tilt-beta``. Mapillary's viewer stores the click in the rig frame
+already, so Mapillary crops are NOT corrected (beta 0); their pose is still read (the DB columns, or the Graph API
+``computed_rotation`` when those are empty and ``--mapillary-token-env`` is given) and recorded. Panoramax's viewer
+levels only when both stored angles are non-zero; those crops are corrected with beta 1.0 (unmeasured), a pitch-only
+pose shifts the click by ``pers:pitch`` instead, and the rest are rig-frame. Both website viewers store pitch positive
+nose UP, so their pitch is negated (measured on pixels: tests/test_pose_levelling.py). A label with no usable pose is
+rendered uncorrected and counted by reason. The manifest records ``pose_source``, the pose in the package's sign
+(``pose_pitch``/``pose_roll``), the beta used (``tilt_beta``) and any ``click_lat_offset_deg``. Labels authored by the AI account (RampNet,
 Vancouver WA / Richmond VA / Laurens IA) were placed on the rig-frame image directly, so they are rendered without
 it. They are excluded from the training selection by default anyway: production never sends them to the validator
 (issue #9, item 2).
@@ -57,9 +65,9 @@ docs/audit-2026-10-14.md.
 reads through ``SIDEWALK_SCRAPES_DIR``), with a ``.pano-store`` marker file at the root. Each is resized to 8192x4096
 with ``cv2.INTER_LINEAR``, the same method as the API's cache path (byte-identical pixels also need matching opencv
 builds). Nothing is downloaded: a pano missing from the store is ``no_pano``, an unreadable or non-2:1 file is
-``bad_pano``, and a store that stops answering (a dropped mount, a vanished marker) stops the run. Labels on non-GSV
-imagery (Mapillary, Panoramax) are dropped before selection and counted as ``non_gsv`` in the summary: their pose
-convention differs from GSV's and is not handled yet (docs/decisions.md).
+``bad_pano``, and a store that stops answering (a dropped mount, a vanished marker) stops the run. Labels on
+Mapillary and Panoramax imagery are kept (until #72 they were dropped as ``non_gsv``; docs/decisions.md) and rendered
+as above; any other provider (e.g. Infra3D) is dropped as ``unsupported_source``.
 
 **Cities** are the public deployments ``/v3/api/cities`` lists with a ``url``, sorted by city_id
 (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/8). With ``--rawlabels-cache`` the listing is read
@@ -77,6 +85,8 @@ Usage::
     python data_generation.py --label_type CurbRamp --pano-store /path/to/Panoramas --limit 20 --out /tmp/smoke \
         --allow-cpu
     python data_generation.py --label_type CurbRamp --select-only --rawlabels-cache ~/rawlabels  # priors, no GPU
+    MAPILLARY_ACCESS_TOKEN=... python data_generation.py --label_type CurbRamp --pano-store /path/to/Panoramas \
+        --mapillary-token-env MAPILLARY_ACCESS_TOKEN   # also record a pose for Mapillary labels whose DB pose is empty
 """
 import argparse
 import csv
@@ -95,6 +105,8 @@ from urllib.parse import urlparse
 
 import numpy as np
 import pandas as pd
+
+import crop_pose
 
 try:  # advisory lock for the shared deployment_priors.json (five label types run in parallel under SLURM)
     import fcntl
@@ -146,14 +158,21 @@ MANIFEST_COLUMNS = [
     "label_uid", "city", "label_id", "pano_id", "label_type", "label_class", "class_source", "author", "human_agree",
     "human_disagree", "severity", "tags", "high_quality_user", "image_capture_date", "pano_source", "pano_path",
     "pano_native_w", "pano_native_h", "camera_pitch",
-    "camera_roll", "tilt_applied", "tilt_beta", "depth_m", "crop_half_px", "clipped", "crop_path", "status",
+    "camera_roll", "tilt_applied", "tilt_beta", "pose_source", "pose_pitch", "pose_roll", "click_lat_offset_deg",
+    "depth_m", "crop_half_px", "clipped", "crop_path", "status",
 ]
 # ``class_source`` is the rule that set ``label_class``: ``margin`` (the crowd vote margin) or ``expert``
 # (:func:`expert_verdict`; empty on rows from before it existed). ``pano_source`` is the imagery provider from rawLabels (e.g. ``gsv``); ``pano_path`` is the absolute pano-store file
 # that was read (empty when it was missing, and on rows made by the removed tile fetcher, which a resume redoes), and
 # ``pano_native_w``/``pano_native_h`` its size before the resize (a 2:1 file with black bands passes the 2:1 check, so
 # the native size is what finds them later). (``hard`` is not a manifest column: split_data.py --hard-examples joins
-# it, so a new list needs no regeneration.)
+# it, so a new list needs no regeneration.) ``camera_pitch``/``camera_roll`` are the DB columns as stored, in the
+# provider's own sign; ``pose_source`` says where the crop's pose came from (``crop_pose.POSE_SOURCES``; empty on rows
+# from before #72), ``pose_pitch``/``pose_roll`` the panorama's pose in the package's sign (pitch > 0 nose down; empty
+# when unknown; recorded even when the crop is not corrected, e.g. Mapillary), ``tilt_beta`` the beta the crop was
+# rendered with (``--tilt-beta`` for GSV, 0 for Mapillary, 1.0 or 0 for Panoramax; ``tilt_applied`` says whether a
+# correction actually happened), and ``click_lat_offset_deg`` the degrees subtracted from the stored latitude before
+# rendering (Panoramax pitch-only poses; 0 otherwise).
 
 CSV_TIMEOUT = (10, 300)       # rawLabels exports run to ~175 MB
 PANO_SIZE = (8192, 4096)      # (width, height) every store pano is resized to, as sidewalk-ai-api does
@@ -166,6 +185,11 @@ DEPTH_DEVICE_HELP = "CUDA is required; --allow-cpu renders with numpy and runs d
 # Labels
 # ---------------------------------------------------------------------------------------------------------------------
 
+#: Mapillary pano_ids are all digits, so without this read_csv makes them int64: a mixed frame then cannot be sorted
+#: by pano_id and ``pano_id[:2]`` (the store path) fails. Every pano_id is a string.
+PANO_ID_DTYPE = {"pano_id": str}
+
+
 def load_city(city_id, subdomain=None, cache_dir=None):
     """rawLabels of one deployment as a DataFrame with a ``city`` column (the city_id).
 
@@ -174,7 +198,7 @@ def load_city(city_id, subdomain=None, cache_dir=None):
     """
     cached = os.path.join(cache_dir, f"{city_id}.csv") if cache_dir else None
     if cached and os.path.exists(cached):
-        df = pd.read_csv(cached, low_memory=False)
+        df = pd.read_csv(cached, low_memory=False, dtype=PANO_ID_DTYPE)
     else:
         import requests
         url = f'{deployment_base_url(subdomain or HOST_OVERRIDES.get(city_id, city_id))}/v3/api/rawLabels?filetype=csv'
@@ -188,7 +212,7 @@ def load_city(city_id, subdomain=None, cache_dir=None):
                     raise
                 print(f"rawLabels for {city_id} failed ({e}); retrying once")
                 time.sleep(10)
-        df = pd.read_csv(io.StringIO(response.text), low_memory=False)
+        df = pd.read_csv(io.StringIO(response.text), low_memory=False, dtype=PANO_ID_DTYPE)
     df['city'] = city_id
     return df
 
@@ -462,22 +486,21 @@ def label_author(user_id):
 def valid_geometry(df):
     """Boolean mask of rows whose stored pano point is usable, and the reason counts for the rest.
 
-    Drops (counted by reason): non-GSV providers (``non_gsv``: the pano store holds Mapillary and Panoramax
-    panoramas, but their pose convention differs from GSV's and no crop path handles it yet; docs/decisions.md,
-    issue #9 item 4), non-finite or
-    non-positive ``pano_width``/``pano_height``, non-finite ``pano_x``, and ``pano_y`` outside ``[0, pano_height]``
+    Labels on Mapillary and Panoramax imagery are kept (they were dropped as ``non_gsv`` until issue #72; their pose
+    is ``crop_pose.pose_for_row``'s job). Drops (counted by reason): any other provider (``unsupported_source``, e.g.
+    Infra3D, whose pose convention nobody has measured), non-finite or non-positive ``pano_width``/``pano_height``, non-finite ``pano_x``, and ``pano_y`` outside ``[0, pano_height]``
     (this covers the legacy labels whose pano coordinates were never converted and are negative: Seattle 193,
     CDMX 14, Pittsburgh 8, SPGG 1).
 
-    >>> m, why = valid_geometry(pd.DataFrame({"pano_source": ["gsv", "gsv", "mapillary", "gsv"],
-    ...     "pano_x": [1, 1, 1, float("nan")], "pano_y": [5, -3, 5, 5], "pano_width": [10, 10, 10, 10],
-    ...     "pano_height": [10, 10, 10, 10]}))
+    >>> m, why = valid_geometry(pd.DataFrame({"pano_source": ["gsv", "gsv", "mapillary", "gsv", "infra3d"],
+    ...     "pano_x": [1, 1, 1, float("nan"), 1], "pano_y": [5, -3, 5, 5, 5], "pano_width": [10] * 5,
+    ...     "pano_height": [10] * 5}))
     >>> m.tolist(), dict(why)
-    ([True, False, False, False], {'non_gsv': 1, 'pano_y_out_of_range': 1, 'pano_x_nonfinite': 1})
+    ([True, False, True, False, False], {'unsupported_source': 1, 'pano_y_out_of_range': 1, 'pano_x_nonfinite': 1})
     """
     num = {c: pd.to_numeric(df[c], errors='coerce') for c in ('pano_x', 'pano_y', 'pano_width', 'pano_height')}
     checks = [
-        ('non_gsv', df['pano_source'].astype(str).str.lower() == 'gsv'),
+        ('unsupported_source', df['pano_source'].astype(str).str.strip().str.lower().isin(crop_pose.SUPPORTED_SOURCES)),
         ('bad_pano_size', np.isfinite(num['pano_width']) & np.isfinite(num['pano_height'])
          & (num['pano_width'] > 0) & (num['pano_height'] > 0)),
         ('pano_y_out_of_range', np.isfinite(num['pano_y']) & (num['pano_y'] >= 0) & (num['pano_y'] <= num['pano_height'])),
@@ -707,8 +730,12 @@ def _csv_value(v):
     return v
 
 
-def manifest_row(row, label_type, crop_path, tilt_beta):
-    """The label-level manifest fields for one selected label (the crop fields are filled in after rendering)."""
+def manifest_row(row, label_type, crop_path, tilt_beta, pose=None):
+    """The label-level manifest fields for one selected label (the crop fields are filled in after rendering).
+
+    ``pose`` is the row's ``crop_pose.Pose``; without one (old callers) the pose fields stay empty and ``tilt_beta`` is
+    written as given. With one, ``tilt_beta`` is the beta the crop is rendered with, or the provider's
+    (:func:`row_beta`) when no correction applies (an AI label's row says its provider's beta, as before #72)."""
     city = row['city']
     return {
         "label_uid": f"{city}:{row['label_id']}", "city": city, "label_id": row['label_id'],
@@ -719,9 +746,42 @@ def manifest_row(row, label_type, crop_path, tilt_beta):
         "image_capture_date": row.get('image_capture_date'), "pano_source": row.get('pano_source'),
         "pano_path": None, "pano_native_w": None, "pano_native_h": None,
         "camera_pitch": row.get('camera_pitch'), "camera_roll": row.get('camera_roll'),
-        "tilt_applied": 0, "tilt_beta": tilt_beta, "depth_m": None, "crop_half_px": None, "clipped": None,
+        "tilt_applied": 0,
+        "tilt_beta": tilt_beta if pose is None else (pose.beta if pose.beta is not None else row_beta(row, tilt_beta)),
+        "pose_source": None if pose is None else pose.pose_source,
+        "pose_pitch": None if pose is None else pose.camera_pitch,
+        "pose_roll": None if pose is None else pose.camera_roll,
+        "click_lat_offset_deg": None if pose is None else pose.click_lat_offset_deg, "depth_m": None, "crop_half_px": None, "clipped": None,
         "crop_path": crop_path, "status": "",
     }
+
+
+def row_beta(row, gsv_beta):
+    """The beta of a row's provider: ``gsv_beta`` (``--tilt-beta``) for GSV, ``crop_pose.SOURCE_BETA`` for Mapillary
+    and Panoramax, None for an unknown provider.
+
+    >>> row_beta({"pano_source": "gsv"}, 0.95), row_beta({"pano_source": "Panoramax"}, 0.95)
+    (0.95, 1.0)
+    """
+    src = str(row.get('pano_source') or '').strip().lower()
+    return gsv_beta if src == 'gsv' else crop_pose.SOURCE_BETA.get(src)
+
+
+def pose_counts(poses, pano_sources):
+    """``{pano_source: {pose_source/reason: n}}`` over parallel sequences of ``crop_pose.Pose`` and pano_source, for
+    the run summary and ``generation_run.json`` (a Panoramax 0/0 pose is counted apart from an absent one).
+
+    >>> P = crop_pose.Pose
+    >>> pose_counts([P(1, 0, "gsv_db", .95, "db"), P(None, None, "none", None, "panoramax_zero_pose")],
+    ...             ["gsv", "panoramax"])
+    {'gsv': {'gsv_db/db': 1}, 'panoramax': {'none/panoramax_zero_pose': 1}}
+    """
+    out = {}
+    for pose, src in zip(poses, pano_sources):
+        d = out.setdefault(str(src), {})
+        k = f"{pose.pose_source}/{pose.reason}"
+        d[k] = d.get(k, 0) + 1
+    return {s: dict(sorted(d.items())) for s, d in sorted(out.items())}
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -994,7 +1054,13 @@ def create_perspective_crop(depth_model, pano_rgb, label_x_norm, label_y_norm, c
 #: already decides its tilt), so flipping it is a selection change. That still needs ``--force-reselect``, and keeps
 #: every human-authored crop that is still selected; AI correct labels compete in the correct-class downsample, so
 #: some human correct labels near the cutoff can be swapped out. It stays in ``generation_run.json`` as provenance.
-RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "package_source")
+#: ``source_beta`` (``crop_pose.SOURCE_BETA``) changes non-GSV crops; GSV's beta is ``tilt_beta``. ``mapillary_api``
+#: is True only when a Graph API lookup actually ran for some selected label: it changes which Mapillary rows carry a
+#: pose (and, should Mapillary's beta ever be non-zero, their crops), so passing ``--mapillary-token-env`` when no row
+#: needs it changes nothing. A record from before #72 has neither, so it is not compared on them (its selection held
+#: no non-GSV label; a run that now selects some changes the selection hash anyway).
+RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "package_source", "source_beta",
+                   "mapillary_api")
 #: Settings recorded only when they are not the default, so earlier runs' records stay as they were. Unlike
 #: :data:`RESUME_SETTINGS` they are compared when present on EITHER side, so switching to or from one is caught.
 OPTIONAL_SETTINGS = ("fixed_crop_half_px",)
@@ -1170,7 +1236,13 @@ def build_parser():
                    help='shared deployment_priors.json; default <out>/deployment_priors.json. Partial runs (--cities '
                         'or --limit) write deployment_priors.partial.json beside it instead')
     p.add_argument('--depth-encoder', choices=['vitb', 'vitl'], default='vitb', help='the API serves vitb')
-    p.add_argument('--tilt-beta', type=float, default=DEFAULT_TILT_BETA)
+    p.add_argument('--tilt-beta', type=float, default=DEFAULT_TILT_BETA,
+                   help='beta for GSV labels (Mapillary and Panoramax use crop_pose.SOURCE_BETA)')
+    p.add_argument('--mapillary-token-env', default=None, metavar='VAR',
+                   help='name of the environment variable holding a Mapillary access token: human Mapillary labels '
+                        'with no DB pose then get their pose from the Graph API computed_rotation (cached in '
+                        f'<out>/<label_type>/{crop_pose.MAPILLARY_CACHE_FILE}, so a re-run makes no calls), recorded '
+                        'in the manifest. Mapillary crops are not tilt-corrected either way (the click is rig-frame)')
     p.add_argument('--fixed-crop-half-px', type=int, default=None,
                    help='ablation only (issue #21): give every crop this half-width in view pixels instead of sizing '
                         'it by depth, and skip depth inference (--depth-encoder is then ignored and not recorded). '
@@ -1216,6 +1288,11 @@ def main(argv=None):
         sys.exit(f"--fixed-crop-half-px must be 1 to {MAX_FIXED_CROP_HALF_PX} (half the {VIEW_SIZE} px view; larger "
                  f"values clip to the whole view), got {args.fixed_crop_half_px}")
     experts = parse_experts(os.environ.get(EXPERTS_ENV))  # a malformed value fails before the downloads
+    mapillary_token = None
+    if args.mapillary_token_env and not args.select_only:
+        mapillary_token = (os.environ.get(args.mapillary_token_env) or '').strip()
+        if not mapillary_token:  # the value is never printed, only the variable's name
+            sys.exit(f"--mapillary-token-env {args.mapillary_token_env}: that environment variable is unset or empty")
     if not args.select_only and not args.pano_store:  # before the city listing, which may need the network
         build_parser().error("--pano-store is required unless --select-only")
     if not args.select_only:  # fail fast, before the downloads; the city directories are checked after selection
@@ -1287,9 +1364,13 @@ def main(argv=None):
         print(f"Note: no pano-store directory for {', '.join(unselected_without_dir)}; none of their labels is "
               f"selected, so none is needed.")
 
+    # Mapillary panoramas with no DB pose among the rows this run renders (looked up only with a token, below).
+    mapillary_need = sorted({str(r['pano_id']) for r in combined_filtered.to_dict('records')
+                             if crop_pose.needs_mapillary_rotation(r)})
     settings = {"tilt_beta": args.tilt_beta, "depth_encoder": args.depth_encoder, "depth_dataset": DEPTH_DATASET,
                 "renderer": "torch" if device else "numpy", "include_ai_labels": args.include_ai_labels,
-                "package_source": package_source()}
+                "package_source": package_source(), "source_beta": dict(crop_pose.SOURCE_BETA),
+                "mapillary_api": mapillary_token is not None and bool(mapillary_need)}
     if args.fixed_crop_half_px is not None:  # no depth model is loaded: recording an encoder would misstate the crops
         settings = {k: v for k, v in settings.items() if k not in DEPTH_SETTINGS}
         settings["fixed_crop_half_px"] = args.fixed_crop_half_px
@@ -1310,6 +1391,28 @@ def main(argv=None):
                  f"(all of them if a setting changed) and redone; old crop files stay on disk until overwritten.")
     write_priors()  # only once the resume check has passed
     os.makedirs(base_dir, exist_ok=True)
+
+    # Per-provider pose (crop_pose, #72), for every row this run renders. Mapillary rows with no DB pose take the
+    # Graph API rotation when a token was given. Mapillary crops are uncorrected either way (the click is rig-frame,
+    # beta 0), so the lookup only fills the recorded pose; a lookup that did not get an answer still stops the run
+    # before any crop is cut, so no row silently lacks the pose the run was asked to record (answers are cached, so
+    # the re-run asks only for the rest).
+    rotations = None
+    if settings["mapillary_api"]:
+        need = mapillary_need
+        cache_path = os.path.join(base_dir, crop_pose.MAPILLARY_CACHE_FILE)
+        rotations, n_called, failed = crop_pose.fetch_mapillary_rotations(need, cache_path, mapillary_token)
+        print(f"Mapillary poses: {len(need)} panoramas without a DB pose; {n_called} Graph API calls, "
+              f"{len(need) - n_called} from {cache_path}; {len(failed)} unanswered")
+        if failed:
+            sys.exit(f"{len(failed)} Mapillary Graph API lookups got no answer (first: {failed[:3]}); answers so far "
+                     f"are cached in {cache_path}. Re-run to retry them, or drop --mapillary-token-env to run "
+                     f"without recording their pose (Mapillary crops are not tilt-corrected either way).")
+    poses = {r['label_uid']: crop_pose.pose_for_row(r, args.tilt_beta, rotations)
+             for r in combined_filtered.to_dict('records')}
+    run_pose_counts = pose_counts([poses[u] for u in combined_filtered['label_uid']],
+                                  combined_filtered['pano_source'].astype(str).str.strip().str.lower())
+    print(f"Crop pose by provider (pose_source/reason): {run_pose_counts}")
     manifest = ManifestWriter(manifest_path, base_dir, selection, keep_ok=not changed, sources=sources)
     if previous or changed or city_change:
         print(f"WARNING: --force-reselect: selection changed: {bool(previous)}, city list changed: "
@@ -1327,7 +1430,7 @@ def main(argv=None):
                    "pano_store": args.pano_store, "pano_store_marker": store_marker,
                    "cities": list(cities), "city_source": city_source, "limit": args.limit, "selection_size": len(selection),
                    "n_experts": len(experts),
-                   "class_source_counts": source_counts,
+                   "class_source_counts": source_counts, "pose_counts": run_pose_counts,
                    "selection_sha256": sel_hash, "started": date.today().isoformat()}, f, indent=2)
         f.write("\n")
 
@@ -1345,7 +1448,8 @@ def main(argv=None):
     with manifest:
         for processed_count, (_, row) in enumerate(combined_filtered.iterrows(), start=1):
             crop_path = f"{row['label_class']}/{row['city']}_{row['label_id']}.webp"
-            rec = manifest_row(row, label_type, crop_path, args.tilt_beta)
+            pose = poses[f"{row['city']}:{row['label_id']}"]
+            rec = manifest_row(row, label_type, crop_path, args.tilt_beta, pose)
             if manifest.is_done(rec['label_uid']):
                 status_counts['skipped (already ok)'] += 1
                 continue
@@ -1372,15 +1476,16 @@ def main(argv=None):
                     else:
                         consecutive_missing = 0
                 pano_bgr = last_pano[1]
+                y_norm = row['pano_y'] / row['pano_height'] + (pose.click_lat_offset_deg or 0.0) / 180.0
                 rec.update(last_pano[2])
                 if isinstance(pano_bgr, str):
                     rec['status'] = pano_bgr
                 else:
                     pano_rgb = np.ascontiguousarray(pano_bgr[..., ::-1])
                     crop, info = create_perspective_crop(
-                        depth_model, pano_rgb, row['pano_x'] / row['pano_width'], row['pano_y'] / row['pano_height'],
-                        camera_pitch=row.get('camera_pitch'), camera_roll=row.get('camera_roll'),
-                        apply_tilt=row['author'] == 'human', beta=args.tilt_beta, device=device,
+                        depth_model, pano_rgb, row['pano_x'] / row['pano_width'], y_norm,
+                        camera_pitch=pose.camera_pitch, camera_roll=pose.camera_roll,
+                        apply_tilt=pose.beta is not None, beta=pose.beta or 0.0, device=device,
                         fixed_crop_half_px=args.fixed_crop_half_px)
                     save_webp(crop, os.path.join(base_dir, crop_path))
                     rec.update(info)
@@ -1413,6 +1518,11 @@ def main(argv=None):
     print("Processing complete.")
     print(f"  dropped for unusable pano geometry (before selection): {dict(dropped) or 'none'}")
     print(f"  status counts: {dict(status_counts)}; {n_ok} ok rows in {manifest_path}")
+    print(f"  crop pose by provider (selected rows of this run, pose_source/reason): {run_pose_counts}")
+    if 'pose_source' in final:
+        ok = final[final['status'] == 'ok']
+        print("  ok rows by provider and pose_source (whole manifest): "
+              f"{ok.groupby([ok['pano_source'].fillna(''), ok['pose_source'].fillna('')]).size().to_dict()}")
     if not_from_store:
         print(f"  redone because they predate the pano store (no pano_path): {not_from_store} ok rows")
     if attempted and missing / attempted > args.max_missing_frac:
