@@ -1036,7 +1036,13 @@ def _public(spec):
 def cmd_crops(args):
     """Crops for the type-edit labels, cut as data_generation.py cuts a training crop: the per-provider pose from
     ``crop_pose.pose_for_row`` (``--tilt-beta`` for GSV), the click latitude offset, depth-sized, WebP. Resumable on
-    ``<out>/manifest.csv``; ``crop_path`` there is absolute."""
+    ``<out>/manifest.csv``; ``crop_path`` there is absolute.
+
+    Mapillary: ``mapillary_rotations`` is None (no Graph API lookup, unlike ``data_generation.py
+    --mapillary-token-env``), so a Mapillary label whose DB pose is empty gets the rig-frame fallback here and its
+    crop can differ from the one a training run with a token would cut. The manifest's ``pose_source`` says which
+    pose each crop used. All four type-edit labels of 2026-11-05 are in GSV deployments; wire the token through
+    (with data_generation.py's rotation cache) before this matters."""
     import csv
 
     import crop_pose
@@ -1176,6 +1182,8 @@ def assemble(splits_root, types, edits=None, edit_crops=None, raw=None, colocate
                                                                                   .isin(train_panos).sum())}
         df = pd.concat([df, er], ignore_index=True)
     assert df["row_uid"].is_unique, "row_uid is not unique"
+    # Belt and braces: inherit_splits already gives every panorama one split, so this cannot fire today (and a
+    # mutation test that deletes it survives); it guards a future change to the grouping.
     sd.check_no_shared_panoramas(df[df["split"] != TEST_RETYPE])
     bad = (df["source"] == "validated") & ((df["target_type"] == "") != (df["is_correct"].astype(int) == 0))
     assert not bad.any(), "a validated row's target_type must be empty exactly when it is incorrect"
