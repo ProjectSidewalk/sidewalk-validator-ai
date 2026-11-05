@@ -473,8 +473,7 @@ def model_card(ctx):
              "## Calibration\n",
              _calibration_section(ctx),
              "## Known failure modes and limitations\n",
-             "- Trained and evaluated only on Google Street View panoramas from the cities listed in the dataset "
-             "card; performance elsewhere, and on other imagery, is unmeasured beyond the held-out cities above.\n"
+             _imagery_failure_mode(ds.get("pano_sources") or {}),
              "- Test metrics are on the training class mix (about 55:45 correct:incorrect). Production traffic is "
              "mostly correct labels, so precision on `incorrect` verdicts is lower in deployment than the test "
              "table suggests; the calibrated map accounts for this, the raw metrics do not.\n"
@@ -556,6 +555,28 @@ def non_gsv_count(pano_sources):
     return sum(n for s, n in pano_sources.items() if s not in ("gsv", ""))
 
 
+def _provider_counts(pano_sources):
+    """``"2 Mapillary, 1 Panoramax"``: the non-GSV providers in a ``{provider: n}`` count, as both cards name them."""
+    return ", ".join(f"{pano_sources[s]:,} {s.capitalize()}" for s in sorted(pano_sources) if s not in ("gsv", ""))
+
+
+def _imagery_failure_mode(pano_sources):
+    """The model card's imagery bullet, keyed on ``split.csv``'s ``pano_source`` counts like :func:`imagery_sentence`.
+
+    >>> _imagery_failure_mode({"gsv": 10})[:62]
+    '- Trained and evaluated only on Google Street View panoramas f'
+    >>> "2 Mapillary label" in _imagery_failure_mode({"gsv": 10, "mapillary": 2})
+    True
+    """
+    n = non_gsv_count(pano_sources)
+    if not n:
+        return ("- Trained and evaluated only on Google Street View panoramas from the cities listed in the dataset "
+                "card; performance elsewhere, and on other imagery, is unmeasured beyond the held-out cities above.\n")
+    return (f"- Trained and evaluated on panoramas from the cities listed in the dataset card: Google Street View "
+            f"plus {_provider_counts(pano_sources)} label{'s' if n != 1 else ''} on non-GSV imagery. Performance is "
+            "not reported per provider, and performance elsewhere is unmeasured beyond the held-out cities above.\n")
+
+
 def imagery_sentence(pano_sources, settings):
     """The dataset card's sentence on imagery providers, from what was actually published (``split.csv``'s
     ``pano_source`` counts), not from what the generator would have allowed.
@@ -570,7 +591,7 @@ def imagery_sentence(pano_sources, settings):
     if not n:
         return ("labels from non-GSV imagery, with unusable panorama geometry, or with legacy unconverted coordinates "
                 "are excluded. ")
-    parts = ", ".join(f"{pano_sources[s]:,} {s.capitalize()}" for s in sorted(pano_sources) if s not in ("gsv", ""))
+    parts = _provider_counts(pano_sources)
     betas = settings.get("source_beta") or {}
     beta_text = (" (tilt-correction beta per provider: " + ", ".join(f"{k} {v:g}" for k, v in sorted(betas.items()))
                  + ")") if betas else ""

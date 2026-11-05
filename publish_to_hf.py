@@ -101,6 +101,7 @@ import sys
 import pandas as pd
 
 import hf_cards
+from data_generation import PANO_ID_DTYPE
 
 LABEL_TYPES = ("CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk")
 CLASSES = ("correct", "incorrect")
@@ -664,8 +665,8 @@ def read_dataset_context(root, label_type):
     for p in (split_path, manifest_path):
         if not os.path.exists(p):
             raise PublishError(f"missing {p} (run data_generation.py and split_data.py first)")
-    split = pd.read_csv(split_path)
-    manifest = pd.read_csv(manifest_path)
+    split = pd.read_csv(split_path, dtype=PANO_ID_DTYPE)
+    manifest = pd.read_csv(manifest_path, dtype=PANO_ID_DTYPE)
     check_label_type(manifest, label_type, manifest_path)
     check_label_type(split, label_type, split_path)
     check_label_uids(split, split_path)

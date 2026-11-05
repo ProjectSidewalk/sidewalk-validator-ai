@@ -458,6 +458,33 @@ def test_dataset_card_states_non_gsv_imagery_from_what_was_published(tmp_path, s
     assert json.loads(_read(os.path.join(d, "dataset_info.json")))["pano_sources"] == {"gsv": 10, "mapillary": 2}
 
 
+def test_model_card_imagery_bullet_follows_published_pano_sources(tmp_path, staged):
+    """The model card's "Known failure modes" imagery bullet is keyed on split.csv's pano_source counts, like the
+    dataset card: GSV-only says so, a dataset with Mapillary/Panoramax rows names them (review round 3, item 1)."""
+    gsv_only = _read(os.path.join(staged["model"], "README.md"))
+    assert "- Trained and evaluated only on Google Street View panoramas" in gsv_only
+    root, *_ = make_root(tmp_path / "mixed", pano_sources={0: "mapillary", 1: "mapillary", 2: "panoramax"})
+    m, _ = pub.stage(root, T)
+    card = _read(os.path.join(m, "README.md"))
+    assert "only on Google Street View" not in card
+    assert "Google Street View plus 2 Mapillary, 1 Panoramax labels on non-GSV imagery" in card
+
+
+def test_read_dataset_context_keeps_pano_id_a_string(tmp_path):
+    """All-digit pano_ids (Mapillary) with one blank must stay strings, not int64/float64 (review round 3, item 2)."""
+    root, *_ = make_root(tmp_path)
+    for name in ("split.csv", "manifest.csv"):
+        path = os.path.join(root, T, name)
+        df = pd.read_csv(path, dtype=str)
+        df["pano_id"] = [str(1000000000000000 + i) for i in range(len(df))]
+        df.loc[0, "pano_id"] = ""
+        df.to_csv(path, index=False)
+    split, manifest, *_ = pub.read_dataset_context(root, T)
+    for df in (split, manifest):
+        assert not pd.api.types.is_numeric_dtype(df["pano_id"])
+        assert df["pano_id"].iloc[1] == "1000000000000001"
+
+
 def test_dataset_license_flag(tmp_path):
     root, *_ = make_root(tmp_path)
     _, d = pub.stage(root, T, dataset_license="cc-by-4.0")
