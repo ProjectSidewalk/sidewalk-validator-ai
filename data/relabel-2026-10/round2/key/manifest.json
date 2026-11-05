@@ -1,0 +1,299 @@
+{
+ "design": "round2",
+ "design_sha256": "499fb9dfe5d976651f08d932d9a0c47477386e119080ae2107c91fc5c7404e57",
+ "design_json": {
+  "_comment": "Issue #78: round 2 of the masked AI-Disagree re-label. Each rater maps to the city they rate in full; rater user_ids are passed on the command line, never stored here. per_type = AI-Disagree items per type per city (170); shares split them over the strata; decoys_per_type (16 x 5 = 80) brings each city to 250; shared = items of each city the other rater also rates.",
+  "raters": {
+   "jon": "sidewalk_seattle",
+   "mikey": "sidewalk_chicago"
+  },
+  "per_type": {
+   "CurbRamp": 42,
+   "Crosswalk": 36,
+   "NoCurbRamp": 34,
+   "Obstacle": 30,
+   "SurfaceProblem": 28
+  },
+  "shares": {
+   "margin": 0.5,
+   "lone": 0.35,
+   "light_voted": 0.15
+  },
+  "margin_correct_cap": 0.4,
+  "decoys_per_type": 16,
+  "shared": 50
+ },
+ "pool_sha256": "a85a573c303fe6538dba5821cbb7f3dc4667e244aa0c548354aa0e3bdcc23720",
+ "key_sha256": "57116bdfa129b66f6944e5520be772e314a046cec9189f22fdee56659e790aed",
+ "seed_sha256": "4e73e4bf5bc4c34a604ab5b983dc4723f62ac8c09b6f1107b7862467804ee66d",
+ "items": 500,
+ "quotas": {
+  "margin/CurbRamp": 21,
+  "lone/CurbRamp": 15,
+  "light_voted/CurbRamp": 6,
+  "decoy/CurbRamp": 16,
+  "margin/Crosswalk": 18,
+  "lone/Crosswalk": 13,
+  "light_voted/Crosswalk": 5,
+  "decoy/Crosswalk": 16,
+  "margin/NoCurbRamp": 17,
+  "lone/NoCurbRamp": 12,
+  "light_voted/NoCurbRamp": 5,
+  "decoy/NoCurbRamp": 16,
+  "margin/Obstacle": 15,
+  "lone/Obstacle": 11,
+  "light_voted/Obstacle": 4,
+  "decoy/Obstacle": 16,
+  "margin/SurfaceProblem": 14,
+  "lone/SurfaceProblem": 10,
+  "light_voted/SurfaceProblem": 4,
+  "decoy/SurfaceProblem": 16
+ },
+ "shortfall": {},
+ "population": {
+  "jon": {
+   "lone": {
+    "CurbRamp": 2753,
+    "NoCurbRamp": 404,
+    "Obstacle": 417,
+    "SurfaceProblem": 507,
+    "Crosswalk": 289
+   },
+   "light_voted": {
+    "CurbRamp": 669,
+    "NoCurbRamp": 557,
+    "Obstacle": 160,
+    "SurfaceProblem": 565,
+    "Crosswalk": 15
+   },
+   "margin_incorrect": {
+    "CurbRamp": 627,
+    "NoCurbRamp": 580,
+    "Obstacle": 261,
+    "SurfaceProblem": 607,
+    "Crosswalk": 48
+   },
+   "margin_correct": {
+    "CurbRamp": 66,
+    "NoCurbRamp": 65,
+    "Obstacle": 21,
+    "SurfaceProblem": 53,
+    "Crosswalk": 9
+   }
+  },
+  "mikey": {
+   "lone": {
+    "CurbRamp": 1143,
+    "NoCurbRamp": 530,
+    "Obstacle": 34,
+    "SurfaceProblem": 474,
+    "Crosswalk": 1131
+   },
+   "light_voted": {
+    "CurbRamp": 405,
+    "NoCurbRamp": 361,
+    "Obstacle": 84,
+    "SurfaceProblem": 246,
+    "Crosswalk": 201
+   },
+   "margin_incorrect": {
+    "CurbRamp": 267,
+    "NoCurbRamp": 1247,
+    "Obstacle": 278,
+    "SurfaceProblem": 216,
+    "Crosswalk": 57
+   },
+   "margin_correct": {
+    "CurbRamp": 61,
+    "NoCurbRamp": 103,
+    "Obstacle": 18,
+    "SurfaceProblem": 27,
+    "Crosswalk": 33
+   }
+  }
+ },
+ "city_ids": {
+  "sidewalk_chicago": "chicago-il",
+  "sidewalk_seattle": "seattle-wa"
+ },
+ "counts": {
+  "jon/decoy_agree/Crosswalk": 16,
+  "jon/decoy_agree/CurbRamp": 16,
+  "jon/decoy_agree/NoCurbRamp": 16,
+  "jon/decoy_agree/Obstacle": 16,
+  "jon/decoy_agree/SurfaceProblem": 16,
+  "jon/light_voted/Crosswalk": 5,
+  "jon/light_voted/CurbRamp": 6,
+  "jon/light_voted/NoCurbRamp": 5,
+  "jon/light_voted/Obstacle": 4,
+  "jon/light_voted/SurfaceProblem": 4,
+  "jon/lone/Crosswalk": 13,
+  "jon/lone/CurbRamp": 15,
+  "jon/lone/NoCurbRamp": 12,
+  "jon/lone/Obstacle": 11,
+  "jon/lone/SurfaceProblem": 10,
+  "jon/margin_correct/Crosswalk": 7,
+  "jon/margin_correct/CurbRamp": 8,
+  "jon/margin_correct/NoCurbRamp": 6,
+  "jon/margin_correct/Obstacle": 6,
+  "jon/margin_correct/SurfaceProblem": 5,
+  "jon/margin_incorrect/Crosswalk": 11,
+  "jon/margin_incorrect/CurbRamp": 13,
+  "jon/margin_incorrect/NoCurbRamp": 11,
+  "jon/margin_incorrect/Obstacle": 9,
+  "jon/margin_incorrect/SurfaceProblem": 9,
+  "mikey/decoy_agree/Crosswalk": 16,
+  "mikey/decoy_agree/CurbRamp": 16,
+  "mikey/decoy_agree/NoCurbRamp": 16,
+  "mikey/decoy_agree/Obstacle": 5,
+  "mikey/decoy_agree/SurfaceProblem": 16,
+  "mikey/decoy_unsure/Obstacle": 11,
+  "mikey/light_voted/Crosswalk": 5,
+  "mikey/light_voted/CurbRamp": 6,
+  "mikey/light_voted/NoCurbRamp": 5,
+  "mikey/light_voted/Obstacle": 4,
+  "mikey/light_voted/SurfaceProblem": 4,
+  "mikey/lone/Crosswalk": 13,
+  "mikey/lone/CurbRamp": 15,
+  "mikey/lone/NoCurbRamp": 12,
+  "mikey/lone/Obstacle": 11,
+  "mikey/lone/SurfaceProblem": 10,
+  "mikey/margin_correct/Crosswalk": 7,
+  "mikey/margin_correct/CurbRamp": 8,
+  "mikey/margin_correct/NoCurbRamp": 6,
+  "mikey/margin_correct/Obstacle": 6,
+  "mikey/margin_correct/SurfaceProblem": 5,
+  "mikey/margin_incorrect/Crosswalk": 11,
+  "mikey/margin_incorrect/CurbRamp": 13,
+  "mikey/margin_incorrect/NoCurbRamp": 11,
+  "mikey/margin_incorrect/Obstacle": 9,
+  "mikey/margin_incorrect/SurfaceProblem": 9
+ },
+ "severity_buckets": {
+  "jon/1-2": 122,
+  "jon/3-5": 27,
+  "jon/none": 21,
+  "mikey/1-2": 117,
+  "mikey/3-5": 29,
+  "mikey/none": 24
+ },
+ "shared": {
+  "jon": 50,
+  "mikey": 50
+ },
+ "round3_in_train": {
+  "jon": 40,
+  "mikey": 55
+ },
+ "rating": {
+  "round3_splits": {
+   "CurbRamp": "f2ec89f8032c9b6b7c1533bea7ac82d82b7c139847b14286dd53d932a2195610",
+   "NoCurbRamp": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+   "Obstacle": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+   "SurfaceProblem": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+   "Crosswalk": "91001f64b778ec3d59b381d50911c6bd8ea35449052574d97eb4c9380d37f00f"
+  },
+  "votes_jon": {
+   "file": "votes_jon.csv",
+   "sha256": "6767596259746e8333b7fcfeec6ca4950c0ef25d7a33f7b3bf0d4e9d90f346eb",
+   "rows": 300,
+   "written_at": "2026-10-30T22:12:55.501192331+00:00"
+  },
+  "unmasked": {
+   "file": "unmasked.csv",
+   "sha256": "de3e5fd60329e962fd99e700b2d049e3ca74c3bc0432b8861d6801d40aac7f95",
+   "rows": 11,
+   "written_at": "2026-11-02T19:24:21.771761894+00:00"
+  },
+  "votes_mikey": {
+   "file": "votes_mikey.csv",
+   "sha256": "c159ce6cadc89bb76c6adfe0dbaa3e89255ef87b1b9f251f2fdffd435cafcc86",
+   "rows": 300,
+   "written_at": "2026-11-02T21:23:19.594380617+00:00"
+  },
+  "comments_mikey": {
+   "file": "comments_mikey.csv",
+   "sha256": "526e8a0f7ddf0aa49913e67694b675ff6d0a0270715c66639c60ee46362987ed",
+   "rows": 125,
+   "written_at": "2026-11-02T21:23:22.684791088+00:00"
+  },
+  "comments_jon": {
+   "file": "comments_jon.csv",
+   "sha256": "e56dc780425a5fa20ce13f01bb6e3562036a06d201fa197d6d270b6f15a84a51",
+   "rows": 200,
+   "written_at": "2026-11-02T21:12:07.550620556+00:00"
+  },
+  "adjudication_items": {
+   "file": "items.csv",
+   "sha256": "4ecf4d09ab821c1fe1d4711f3fd79a948f903d425ea62932725ea6241c9d415f",
+   "rows": 17,
+   "written_at": "2026-11-02T21:23:30.408246040+00:00"
+  },
+  "adjudication_page": {
+   "file": "adjudicate.html",
+   "sha256": "6afbbd3e0e38cc7b283b29a37c17c1a8edf48479b324bbde7f8a689a1eb4a45d",
+   "rows": 17,
+   "written_at": "2026-11-02T21:23:30.408062696+00:00"
+  },
+  "votes_jon_post": {
+   "file": "votes_jon.csv",
+   "sha256": "49ad6d59a723730a11d49729099da91d5de136f1ed7686ed601a853bba4527de",
+   "rows": 300,
+   "written_at": "2026-11-02T22:38:18.119926214+00:00"
+  },
+  "comments_jon_post": {
+   "file": "comments_jon.csv",
+   "sha256": "5ccddd9a5a5f441f39d6aa6714f07f717748d3b163b8ac717c9e19e344c4b124",
+   "rows": 202,
+   "written_at": "2026-11-02T22:38:21.328590155+00:00"
+  },
+  "votes_mikey_post": {
+   "file": "votes_mikey.csv",
+   "sha256": "ab8e65f22ee1607462050adb45e1dc2ef60e559026552e20d96df6f996491453",
+   "rows": 300,
+   "written_at": "2026-11-02T22:38:24.476639271+00:00"
+  },
+  "comments_mikey_post": {
+   "file": "comments_mikey.csv",
+   "sha256": "8fc4856abbfabee2ffb557bcbf09d94d4a0d610eeec7fe012b0d064bfd55cd52",
+   "rows": 124,
+   "written_at": "2026-11-02T22:38:27.652975559+00:00"
+  },
+  "adjudication_consensus": {
+   "file": "consensus.csv",
+   "sha256": "31bf7102b3f52b55ee94469fd20419319eddf4def728b4ecc6073390099803c4",
+   "rows": 17,
+   "written_at": "2026-11-03T14:10:28.606698513+00:00"
+  },
+  "gold_shared": {
+   "file": "gold_shared.csv",
+   "sha256": "c560bdc612ca1a156691d25857bab3961a818abdc4488cedf32267e3e9e585ab",
+   "rows": 100,
+   "written_at": "2026-11-03T14:10:30.006176472+00:00"
+  },
+  "adjudication_meeting_record": {
+   "file": "meeting_record.md",
+   "sha256": "5f17737b09214780554bfb5e1c09e19830b2a76fb370659db5399fc4dffc367e",
+   "rows": 1,
+   "written_at": "2026-11-03T13:53:54.999497890+00:00"
+  }
+ },
+ "gallery": {
+  "jon": {
+   "urls_sha256": "1b28f58715eee89a1d5d7db56dc9266815513a0d0e1c5a76a1a32dc98f172ba9",
+   "cityparams_sha256": "9731618a43f90d1b3dde757f19f4420a6dc26c42ec0e69c0eae7572c2e0d246a",
+   "cityparams_commit": "38599ca52ae8fac5ff93ea5ba39c6c0026f76597 2026-10-19T09:03:40-07:00",
+   "lists": 2,
+   "labels": 300,
+   "css_sha256": "904fbf76e99943fb74a017226c59308513b44616b8e7d4d9b2a96c99b52eaec5"
+  },
+  "mikey": {
+   "urls_sha256": "8aaa04b8c89da2a16507c955f877ecbcb2473e820665fece0fba145539749ec9",
+   "cityparams_sha256": "9731618a43f90d1b3dde757f19f4420a6dc26c42ec0e69c0eae7572c2e0d246a",
+   "cityparams_commit": "38599ca52ae8fac5ff93ea5ba39c6c0026f76597 2026-10-19T09:03:40-07:00",
+   "lists": 2,
+   "labels": 300,
+   "css_sha256": "904fbf76e99943fb74a017226c59308513b44616b8e7d4d9b2a96c99b52eaec5"
+  }
+ }
+}

@@ -332,6 +332,214 @@ dataset revisions the production training rows were read from:
 The joined per-label file (`packet/joined_scored.csv`: key, verdict and comments) is pinned in the manifest; it
 holds comment text and label ids from private deployments and stays out of the repo.
 
+## Round 2 (built 2026-10-28; issue #78): Seattle and Chicago, two raters, 100 shared items
+
+Round 1 spent one expert's afternoon on 300 labels across 28 cities. [#74](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/74) needs the expert
+verdicts as a **gold set** that scores automatic target-cleaning methods on the rows they touch, and only 65 of
+round 1's 300 items are rows of the round-3 training set (most are lone or lightly voted Disagrees that never met
+the margin rule). Round 2 therefore changes the design, in [`analysis/gt_rounds.py`](../analysis/gt_rounds.py)
+with the design file [`analysis/gt_rounds/round2.json`](../analysis/gt_rounds/round2.json):
+
+- **One city per rater, with overlap.** Jon rates 250 Seattle items plus 50 of Mikey's Chicago items; Mikey
+  rates 250 Chicago items plus 50 of Jon's Seattle items. The 100 items rated by both give inter-rater agreement per
+  type (`agreement`), so rater and city are not confounded. Both are training cities, so this round measures target
+  quality, not transfer ([#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52)).
+- **Strata.** Per city, 170 AI Disagrees and 80 decoys (AI Agree; Unsure where a type had too few Agree votes). The
+  Disagrees split into `margin_incorrect` (net human Disagree ≥ 2: the training target sides with the AI),
+  `margin_correct` (net Agree ≥ 3: the AI contradicts its training target), `lone` (no human vote) and
+  `light_voted` (at least two decisive human votes with a majority, short of the margin rule), half of them margin
+  rows. `margin_correct` is capped at 40% of the margin cell and topped up with `margin_incorrect`.
+- **Not sampled.** AI Disagrees outside the four strata are never drawn: one decisive human vote, only Unsure
+  votes, or a tie. That is 8,611 of Seattle's 17,284 eligible AI Disagrees (6,701 with one decisive vote, 371 with
+  only Unsure votes, 1,539 ties) and 3,853 of Chicago's 10,769 (3,002 / 145 / 706). The ties are the labels where
+  the AI's Disagree breaks the tie in prod. No rate from this round, the population-weighted ones in `score`
+  included, covers them; a later round needs a stratum for them. `build` prints these counts. The eligible counts
+  still include the excluded author's labels (the pool predates the `author_excluded` column), which matters for
+  the open population-recount question on the PR.
+- **Quotas per type** (AI Disagrees per city): CurbRamp 42, Crosswalk 36, NoCurbRamp 34, Obstacle 30,
+  SurfaceProblem 28, each filled over severity buckets (1–2 / 3–5 / none) in proportion to the eligible pool.
+- **Exclusions.** Labels either rater voted on or placed are out of every list, both cities.
+- **The key** carries `stratum`, `margin_class`, `round3_split` (joined to the pinned round-3 `split.csv` files),
+  `shared`, `rater`, `sev_bucket`, and the label in both id forms (`schema:label_id` and the API `city_id:label_id`
+  that the training manifests use).
+- **The rule given to both raters**, a three-item list on the rating page and the Gallery index: Agree when the
+  feature is really there, even in poor condition (faded crosswalk, steep or broken ramp, cobbles), with condition
+  in severity and tags; Disagree when it is absent, misplaced, or another type; Unsure only when the imagery cannot
+  show it.
+
+Built from a fresh two-city pull (`SCHEMAS="sidewalk_seattle sidewalk_chicago"`, both raters' votes and
+placements as `expert1` / `expert2` columns), 500 items, no cell short of its quota:
+
+| Rater | City | Items | Shared with the other rater | Disagree strata: margin_incorrect / margin_correct / lone / light_voted | Decoys (Agree / Unsure) | In round 3: train / val / test | Severity 1–2 / 3–5 / none (Disagrees) |
+|---|---|---:|---:|---|---|---|---|
+| Jon | Seattle | 250 | 50 | 53 / 32 / 61 / 24 | 80 / 0 | 40 / 9 / 9 | 122 / 27 / 21 |
+| Mikey | Chicago | 250 | 50 | 53 / 32 / 61 / 24 | 69 / 11 | 55 / 6 / 14 | 117 / 29 / 24 |
+
+Fewer margin rows are in the round-3 train split than meet the margin rule today because round 3 downsampled the
+`correct` class globally, kept only labels with a stored panorama, and used votes as of 2026-10-19; `margin_class`
+is the current target, `round3_split` the subset round 3 actually trained on.
+
+Rating is on the live site through each rater's Gallery lists (`gallery_jon/index.html`, `gallery_mikey/index.html`:
+own city first, then the shared list), with the masking CSS of round 1 and the rule above; the per-rater offline
+pages (`packet/rater_jon/rate.html`, `packet/rater_mikey/rate.html`) are the fallback. Votes come back with
+`votes --rater jon --rater-id <uuid>` (pinned as `votes_jon`), then `score --rater jon` and
+`agreement --sheets jon=... mikey=...`.
+
+Eleven Seattle items (10 Obstacle, 1 SurfaceProblem) never showed in Gallery: all came from one author whose account
+is `excluded` in `user_stat`, and Gallery hides excluded authors' labels. The rater voted on them from each label's
+share page (`/label/<id>`), which shows the existing AI vote, so these 11 are not masked; the rater agreed with the
+AI's Disagree on all of them. Two of the 11 are shared items, and the other rater also rated them unmasked (they
+were not in Gallery for either rater). They are listed in `unmasked.csv` (checked against `user_stat.excluded` on
+prod, 2026-11-02; pinned as `unmasked`), and `score`, `agreement` and `adjudicate-report` leave them out of every
+table and count them apart. The pool query now carries
+`author_excluded` and `eligible()` drops those rows, so later rounds cannot draw them; this round's key was built
+before that and is unchanged.
+
+| File (in `~/Data/sidewalk-validator-ai-relabel-2026-10/round2/`) | sha256 |
+|---|---|
+| `pool.csv` (two schemas, pulled 2026-10-28) | `a85a573c303fe6538dba5821cbb7f3dc4667e244aa0c548354aa0e3bdcc23720` |
+| `analysis/gt_rounds/round2.json` | `499fb9dfe5d976651f08d932d9a0c47477386e119080ae2107c91fc5c7404e57` |
+| the build seed (hash of the seed string) | `4e73e4bf5bc4c34a604ab5b983dc4723f62ac8c09b6f1107b7862467804ee66d` |
+| `private-key-do-not-share/key.csv` | `57116bdfa129b66f6944e5520be772e314a046cec9189f22fdee56659e790aed` |
+| `gallery_jon/gallery_urls.csv` | `1b28f58715eee89a1d5d7db56dc9266815513a0d0e1c5a76a1a32dc98f172ba9` |
+| `gallery_mikey/gallery_urls.csv` | `8aaa04b8c89da2a16507c955f877ecbcb2473e820665fece0fba145539749ec9` |
+| `votes_jon.csv` (pinned 2026-10-30, 300 of 300 voted) | `6767596259746e8333b7fcfeec6ca4950c0ef25d7a33f7b3bf0d4e9d90f346eb` |
+| `votes_mikey.csv` (pinned 2026-11-02, 300 of 300 voted) | `c159ce6cadc89bb76c6adfe0dbaa3e89255ef87b1b9f251f2fdffd435cafcc86` |
+| `unmasked.csv` (11 items, 2 shared; pinned 2026-11-02) | `de3e5fd60329e962fd99e700b2d049e3ca74c3bc0432b8861d6801d40aac7f95` |
+
+**Everything above is committed** under [`data/relabel-2026-10/round2/`](../data/relabel-2026-10/round2/), once
+rating and adjudication were over (the key carries the AI's and the crowd's votes, so it stayed private until then):
+the key, manifest and seed (`key/`); the pool (`pool.csv.gz`); the Gallery lists; the independent sheets and comments
+(`pre-consensus-2026-11-02/`, committed before the meeting); the post-meeting pulls (`post/`); and the item list,
+consensus sheet, meeting record and gold labels (`adjudication/`). `SHA256SUMS` (and one in
+`pre-consensus-2026-11-02/`) lists every file. Every data file's sha256 also matches its pin in `key/manifest.json`;
+the Gallery pages (`index.html`) and the folder README are listed in `SHA256SUMS` only. Three pins are not of the
+file as committed: the pool's is of the decompressed CSV, the seed's is of the seed string (no trailing newline),
+and `pre-consensus-2026-11-02/mismatches.csv` is the same file as `adjudication/items.csv`, pinned under that name.
+The pre-consensus README predates its own entry in that folder's `SHA256SUMS`, so its "each CSV" wording is out of
+date. The manifest's
+`adjudication_page` pin is the meeting page that was built and then dropped for Gallery; that page is not
+committed. The Street View crops are not committed (Google's imagery terms),
+nor are rater user ids.
+
+### Adjudication protocol (agreed 2026-11-02, before the meeting)
+
+The two raters meet on **every shared item where their verdicts differ**: correct against incorrect (a conflict)
+and can't tell against a verdict (a can't-tell split). Items both raters called can't tell match and are not
+discussed; they have no gold label. An interim check on 2026-11-02 (Mikey's sheet unpinned at 187 of 300, so 79
+shared items rated by both) found 3 conflicts and 8 can't-tell splits; the list is built only from both pinned
+sheets. The two unmasked shared items stay on the list if they mismatch, flagged, and are left out of the tables.
+
+1. **Independent ratings stay untouched.** The pinned `votes_jon` and `votes_mikey` sheets give the independent
+   agreement, reported first and in two views: over items both raters decided (correct or incorrect; binary
+   kappa), and over every item both answered with can't tell as a third answer (three-category kappa), where a
+   can't-tell split counts as a disagreement. Adjudication writes a separate consensus sheet.
+2. **The list is built once both sheets are pinned** (`adjudicate-build`), and the item list is pinned
+   (`adjudication_items`), so the set of discussed items cannot drift. With an
+   unpinned input the command runs as a preview: it pins nothing and writes only `*.preview.*` files (the report
+   writes no gold CSV). Once the manifest pins that list, every command that uses it (`score`, `agreement`,
+   `adjudicate-build` and `adjudicate-report`) refuses to run without `--unmasked`; `adjudicate-report` refuses a
+   consensus sheet whose items or recorded verdicts differ from the pinned list.
+3. **The meeting is in Gallery, masked.** The raters open the listed items in Gallery (one list per city) with a
+   meeting mask that hides the vote counts, the vote list and the AI icon but shows comments, so each rater's
+   reasoning is on screen. The stratum is never shown. Crowd comments on the same labels are visible too; that is
+   a known leak and is reported. (A dedicated meeting page was built first and dropped for Gallery before the
+   meeting.) In round 2 the mask was not on during the meeting, so the raters saw the AI's vote and the crowd's
+   votes while they discussed; the independent ratings were masked and pinned before it (see the meeting record).
+4. **Fixed order:** label type, then packet id (packet ids are random hex).
+5. **One consensus per item, recorded in prod:** both raters set their vote to the agreed verdict (correct,
+   incorrect, or can't tell when the imagery cannot show it) and add the reasoning to their Gallery comment. Votes
+   that still differ afterwards are no consensus. `votes --stage post` and `comments --stage post` pull that state
+   under their own pins (`votes_<rater>_post`, `comments_<rater>_post`), and `adjudicate-consensus` turns it into
+   the consensus sheet and pins it, with the comments added or edited since the independent pull as the rationale.
+   Prod keeps one comment per rater and label, so an independent comment the meeting replaced or removed is kept
+   in the rationale, marked `[replaced; was: …]` or `[removed; was: …]`. A meeting vote overwrites the independent
+   vote in prod, so the independent sheets were committed before the meeting; `adjudicate-consensus` refuses to
+   run if a post-meeting vote changed on an item that is not on the list, because that change would never reach
+   the gold labels. `adjudicate-report` refuses a consensus sheet that is not the pinned one.
+6. **A meeting record** (`meeting_record.md`, a template written by `adjudicate-build`, filled in afterwards): date, attendees, order
+   used, who gave their reasoning first, whether masking held, imagery used beyond the crop, deviations, and the
+   rule clarifications agreed. `adjudicate-report` pins it. In round 2 the clarifications are recorded there only;
+   the consensus sheet's `rule_clarification` column is empty because the consensus was read back from prod.
+7. **Gold label per shared item:** the common verdict where the raters matched, the consensus where they did not.
+   Can't tell, no consensus and both-can't-tell items have none, and are counted.
+
+`adjudicate-report` prints the independent agreement, the mismatches by kind and type with how each was resolved
+(the columns partition the count: kept one rater's verdict, a new verdict, can't tell, no consensus), and the gold
+labels per type and per stratum with how often they confirm the AI. Those are rates in this stratified sample, not
+estimates of the AI's precision in the population; the per-stratum view shows what the pooled rate mixes. It writes
+`gold_shared.csv`
+(label-level, pinned as `gold_shared`). Everything sits under
+`~/Data/sidewalk-validator-ai-relabel-2026-10/round2/adjudication/`, with the sha256s in the manifest, and is
+committed with the rest of the round (see the Round 2 section above).
+
+### Round 2 results (rated 2026-10-28 to 2026-11-02; adjudicated 2026-11-02; dates in Pacific time)
+
+Both raters rated all 300 of their items. The tables below are the shared items, with the 2 shared items rated
+unmasked left out (98 of 100). From `adjudicate-report`; the label-level files are in
+[`data/relabel-2026-10/round2/`](../data/relabel-2026-10/round2/).
+
+**Independent agreement**, before the meeting. `n` / `agree` / `kappa`: items both raters decided (correct or
+incorrect). `agree3` / `kappa3`: every item both answered, with can't tell as a third answer, so a can't-tell split
+counts as a disagreement. Wilson 95% intervals.
+
+| Type | Shared | Both decided | Agreement | κ | Agreement, 3 answers | κ, 3 answers | Can't-tell splits |
+|---|---:|---:|---|---:|---|---:|---:|
+| all | 98 | 86 | 94.2% [87.1, 97.5] | 0.88 | 82.7% [74.0, 88.9] | 0.68 | 12 |
+| CurbRamp | 22 | 21 | 100.0% [84.5, 100.0] | 1.00 | 95.5% [78.2, 99.2] | 0.90 | 1 |
+| NoCurbRamp | 20 | 16 | 100.0% [80.6, 100.0] | 1.00 | 80.0% [58.4, 91.9] | 0.66 | 4 |
+| Obstacle | 16 | 13 | 76.9% [49.7, 91.8] | 0.52 | 62.5% [38.6, 81.5] | 0.35 | 3 |
+| SurfaceProblem | 18 | 16 | 87.5% [64.0, 96.5] | 0.71 | 77.8% [54.8, 91.0] | 0.56 | 2 |
+| Crosswalk | 22 | 20 | 100.0% [83.9, 100.0] | 1.00 | 90.9% [72.2, 97.5] | 0.79 | 2 |
+
+All 5 conflicts (one rater correct, the other incorrect) are Obstacle (3) or SurfaceProblem (2), and in each the
+Seattle rater said correct and the Chicago rater incorrect. Obstacle is the type the raters most often read
+differently: whether there is room to get around an object, and whether an object in the frontage zone blocks the
+path.
+
+**The meeting** (2026-11-02, both raters, on Zoom, in Gallery) took up all 17 mismatches (5 conflicts, 12 can't-tell
+splits) and reached a consensus on every one. The meeting was not masked: the raters could see the AI's vote and
+the crowd's votes, so the consensus verdicts, unlike the independent ratings above, were not reached masked. Who
+spoke first varied by item. The raters agreed three rating-rule clarifications: an Obstacle with room to pass is
+incorrect; a misplaced label whose feature is nearby is can't tell; a crack that may be too minor to label is can't
+tell ([`meeting_record.md`](../data/relabel-2026-10/round2/adjudication/meeting_record.md)). How the mismatches were resolved:
+
+| Mismatch | n | Kept rater 1's verdict | Kept rater 2's verdict | Can't tell | No consensus |
+|---|---:|---:|---:|---:|---:|
+| conflict | 5 | 1 | 2 | 2 | 0 |
+| can't-tell split | 12 | 1 | 6 | 5 | 0 |
+| all | 17 | 2 | 8 | 7 | 0 |
+
+Rater 1 is the Seattle rater, rater 2 the Chicago rater. Two of the three Obstacle conflicts ended as can't tell
+(a pole beside a curb ramp with an overgrown hedge, and a tree with possibly enough room to pass). A can't-tell
+split ended on the decided verdict 7 times out of 12, in some cases after the raters looked at the spot in other imagery.
+
+**Gold labels on the shared items** (rates in this stratified sample, not population estimates): 91 of 98 have a
+gold label, 81 from matching verdicts and 10 from the meeting; 7 ended as can't tell. On the AI's 63 Disagrees
+with a gold label, the gold label says incorrect, confirming the AI, **55.6% [43.3, 67.2]** of the time; on its 25
+Agree decoys, it says correct 23 times, 92.0% [75.0, 97.8]. The meeting was unmasked, but it does not move the
+Disagree rate: on the 54 Disagrees where the raters matched independently, gold confirms the AI 30 times (55.6%),
+and on the 9 settled in the meeting, 5 times.
+
+| Stratum | Gold labels | AI Disagrees confirmed |
+|---|---:|---|
+| margin_incorrect (net human Disagree ≥ 2) | 19 | 78.9% [56.7, 91.5] |
+| light_voted | 10 | 70.0% [39.7, 89.2] |
+| lone (no human vote) | 23 | 47.8% [29.2, 67.0] |
+| margin_correct (net human Agree ≥ 3) | 11 | 18.2% [5.1, 47.7] |
+
+The order matches the training target: where the crowd's margin already sides with the AI, the experts mostly do
+too; where the crowd's margin says correct, the experts side with the crowd 9 times in 11. Per type, the AI's
+Disagrees are confirmed on Obstacle 9 of 9 and Crosswalk 5 of 15. These are 98 items over two cities; the full
+500-item analysis per rater (`score`) is a separate step.
+
+| File (in `data/relabel-2026-10/round2/`) | sha256 |
+|---|---|
+| `adjudication/items.csv` (17 mismatches) | `4ecf4d09ab821c1fe1d4711f3fd79a948f903d425ea62932725ea6241c9d415f` |
+| `adjudication/consensus.csv` | `31bf7102b3f52b55ee94469fd20419319eddf4def728b4ecc6073390099803c4` |
+| `adjudication/meeting_record.md` | `5f17737b09214780554bfb5e1c09e19830b2a76fb370659db5399fc4dffc367e` |
+| `adjudication/gold_shared.csv` (100 shared items) | `c560bdc612ca1a156691d25857bab3961a818abdc4488cedf32267e3e9e585ab` |
+
 ## Severity and tags, against the crowd
 
 How often a human majority of at least two decisive votes confirms the AI's Agree and Disagree votes:

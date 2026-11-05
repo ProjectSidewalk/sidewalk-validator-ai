@@ -1,0 +1,125 @@
+sidewalk_chicago,203702,2026-10-29 15:46:36.558082-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,169150,2026-10-29 15:46:49.614774-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,51796,2026-10-29 15:47:17.865165-07,ample-space,There is ample space to avoid this object
+sidewalk_chicago,90413,2026-10-30 11:53:57.917361-07,normal-tiles,These are normal sidewalk tiles
+sidewalk_chicago,55931,2026-10-30 15:54:15.432058-07,ample-space,There is ample space to avoid this object
+sidewalk_chicago,207856,2026-10-30 15:54:52.92412-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,198329,2026-10-30 15:55:02.6983-07,wrong-type,This is the wrong label type
+sidewalk_chicago,125914,2026-10-30 15:55:38.367085-07,normal-tiles,These are normal sidewalk tiles
+sidewalk_chicago,9630,2026-10-30 15:58:03.056696-07,better-image,Need a better image
+sidewalk_chicago,141647,2026-10-30 15:58:51.344185-07,driveway,This is a driveway
+sidewalk_chicago,179584,2026-10-30 15:59:13.264919-07,ample-space,There is ample space to avoid this object
+sidewalk_chicago,76470,2026-10-30 15:59:27.213468-07,driveway,This is a driveway
+sidewalk_chicago,53520,2026-10-30 15:59:47.010372-07,placement-incorrect,Label placement looks incorrect
+sidewalk_chicago,141737,2026-10-30 16:00:05.999237-07,wrong-type,This is the wrong label type
+sidewalk_chicago,138691,2026-10-30 16:00:17.502395-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_chicago,163871,2026-10-30 16:00:23.682324-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_chicago,159084,2026-10-30 16:00:45.336232-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,20330,2026-10-30 16:04:22.387168-07,wrong-type,This is the wrong label type
+sidewalk_chicago,142352,2026-10-30 16:06:16.056825-07,driveway,This is a driveway
+sidewalk_chicago,121273,2026-10-30 16:06:20.382525-07,wrong-type,This is the wrong label type
+sidewalk_chicago,181346,2026-10-30 16:06:29.581891-07,wrong-type,This is the wrong label type
+sidewalk_chicago,188524,2026-10-30 16:06:41.863895-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,178763,2026-10-30 16:08:14.372981-07,wrong-type,This is the wrong label type
+sidewalk_chicago,181494,2026-10-30 16:08:19.005704-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,198339,2026-10-30 16:08:25.215021-07,wrong-type,This is the wrong label type
+sidewalk_chicago,138422,2026-10-30 16:09:23.969918-07,ample-space,There is ample space to avoid this object
+sidewalk_chicago,176515,2026-10-30 16:11:17.243885-07,unsafe-crossing,It is not safe to cross here
+sidewalk_chicago,54124,2026-10-30 16:12:24.090412-07,,There is a crosswalk with a curb ramp close by that can be used instead
+sidewalk_chicago,133508,2026-10-30 16:12:36.50352-07,residential-walkway,This is a residential walkway
+sidewalk_chicago,153904,2026-10-30 16:14:58.24047-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_chicago,124787,2026-10-30 16:15:12.887643-07,placement-incorrect,Label placement looks incorrect
+sidewalk_chicago,117105,2026-10-30 16:15:24.155641-07,unsafe-crossing,It is not safe to cross here
+sidewalk_chicago,38919,2026-10-30 16:17:04.853617-07,ample-space,There is ample space to avoid this object
+sidewalk_chicago,72688,2026-10-30 16:17:40.1661-07,ample-space,There is ample space to avoid this object
+sidewalk_chicago,151387,2026-10-30 16:17:53.384797-07,unsafe-crossing,It is not safe to cross here
+sidewalk_chicago,6869,2026-10-30 16:18:40.400254-07,residential-walkway,This is a residential walkway
+sidewalk_chicago,136040,2026-10-30 16:18:48.667819-07,residential-walkway,This is a residential walkway
+sidewalk_chicago,189168,2026-10-30 16:19:25.475884-07,too-minor-unsure,Might be too minor to label
+sidewalk_chicago,54141,2026-10-30 16:19:44.602819-07,driveway,This is a driveway
+sidewalk_chicago,76476,2026-10-30 16:19:49.637344-07,driveway,This is a driveway
+sidewalk_chicago,203010,2026-10-30 16:20:06.579879-07,ample-space,There is ample space to avoid this object
+sidewalk_chicago,87989,2026-10-30 16:20:57.609931-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,19924,2026-10-30 16:21:15.252981-07,wrong-type,This is the wrong label type
+sidewalk_chicago,6159,2026-10-30 16:21:25.930103-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,142942,2026-10-30 16:21:34.011424-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_chicago,7359,2026-10-30 16:21:41.150369-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,53900,2026-10-30 19:12:39.024008-07,too-minor-unsure,Might be too minor to label
+sidewalk_chicago,172328,2026-10-30 19:12:51.118287-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,45214,2026-10-30 19:12:58.423094-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_chicago,198013,2026-10-30 19:13:36.665259-07,ramp-required-unsure,Not sure if a curb ramp is required
+sidewalk_chicago,145055,2026-10-30 19:14:13.842139-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_chicago,10923,2026-10-30 19:14:34.133924-07,ample-space,There is ample space to avoid this object
+sidewalk_chicago,11442,2026-10-30 19:15:07.591338-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,78862,2026-10-30 19:15:17.928228-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,37954,2026-10-30 19:15:30.986024-07,ample-space,There is ample space to avoid this object
+sidewalk_chicago,198147,2026-10-30 19:15:56.730624-07,wrong-type,This is the wrong label type
+sidewalk_chicago,205548,2026-10-30 19:17:41.916513-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,197481,2026-10-30 19:18:43.431595-07,wrong-type,This is the wrong label type
+sidewalk_chicago,52257,2026-11-02 11:51:37.686361-08,wrong-type,This is the wrong label type
+sidewalk_chicago,172015,2026-11-02 11:51:56.086937-08,driveway,This is a driveway
+sidewalk_chicago,45207,2026-11-02 11:52:35.572588-08,no-sidewalk-here,There is no sidewalk here
+sidewalk_chicago,85442,2026-11-02 11:54:48.124984-08,,Seems like it's probably meant for pedestrians? Maybe just to get out into the parking lane?
+sidewalk_chicago,179905,2026-11-02 11:54:55.877044-08,ample-space,There is ample space to avoid this object
+sidewalk_chicago,33503,2026-11-02 11:56:53.784514-08,,"Can't possibly see far enough in this image to tell. Label location would be very inaccurate anyway, since it's so far away."
+sidewalk_chicago,87059,2026-11-02 11:57:23.517818-08,wrong-type,This is the wrong label type
+sidewalk_chicago,71758,2026-11-02 12:03:45.561565-08,,Not even sure what they're saying the obstacle is
+sidewalk_chicago,146495,2026-11-02 12:03:50.579096-08,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_chicago,104006,2026-11-02 12:05:40.400627-08,too-minor-unsure,Might be too minor to label
+sidewalk_chicago,33130,2026-11-02 12:06:51.868658-08,driveway,This is a driveway
+sidewalk_chicago,152804,2026-11-02 12:07:02.225548-08,wrong-type,This is the wrong label type
+sidewalk_chicago,148638,2026-11-02 12:07:40.566301-08,too-minor-unsure,Might be too minor to label
+sidewalk_chicago,207524,2026-11-02 12:08:15.296433-08,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_chicago,200848,2026-11-02 12:08:40.738363-08,unsafe-crossing,It is not safe to cross here
+sidewalk_chicago,60789,2026-11-02 12:09:10.356667-08,,Not even sure what the obstacle is suppose to be here.
+sidewalk_chicago,147187,2026-11-02 12:09:17.403071-08,driveway,This is a driveway
+sidewalk_chicago,86438,2026-11-02 12:09:33.980137-08,ample-space,There is ample space to avoid this object
+sidewalk_chicago,80570,2026-11-02 12:09:44.713753-08,ample-space,There is ample space to avoid this object
+sidewalk_chicago,186124,2026-11-02 12:09:48.767927-08,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,204238,2026-11-02 12:10:02.610496-08,wrong-type,This is the wrong label type
+sidewalk_chicago,162696,2026-11-02 12:10:16.761272-08,ample-space,There is ample space to avoid this object
+sidewalk_chicago,23866,2026-11-02 12:10:45.377297-08,wrong-type,This is the wrong label type
+sidewalk_chicago,198295,2026-11-02 12:11:07.805502-08,wrong-type,This is the wrong label type
+sidewalk_chicago,29441,2026-11-02 12:11:15.577806-08,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,185063,2026-11-02 12:12:33.349492-08,wrong-type,This is the wrong label type
+sidewalk_chicago,196121,2026-11-02 12:22:59.004595-08,wrong-type,This is the wrong label type
+sidewalk_chicago,197583,2026-11-02 12:23:04.937283-08,no-sidewalk-here,There is no sidewalk here
+sidewalk_chicago,110357,2026-11-02 12:24:22.225224-08,no-sidewalk-here,There is no sidewalk here
+sidewalk_chicago,24885,2026-11-02 12:24:57.017753-08,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,49928,2026-11-02 12:26:04.168111-08,unsafe-crossing,It is not safe to cross here
+sidewalk_chicago,83785,2026-11-02 12:33:42.975289-08,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,159154,2026-11-02 12:34:11.783061-08,,This is a driveway
+sidewalk_chicago,150851,2026-11-02 12:34:38.814902-08,wrong-type,This is the wrong label type
+sidewalk_chicago,115612,2026-11-02 12:35:34.695533-08,wrong-type,This is the wrong label type
+sidewalk_chicago,197731,2026-11-02 12:36:02.918397-08,wrong-type,This is the wrong label type
+sidewalk_chicago,108274,2026-11-02 12:36:08.07999-08,wrong-type,This is the wrong label type
+sidewalk_chicago,197757,2026-11-02 12:36:42.090503-08,better-image,Need a better image
+sidewalk_chicago,139034,2026-11-02 12:37:25.724786-08,wrong-type,This is the wrong label type
+sidewalk_chicago,45205,2026-11-02 12:37:31.013622-08,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_chicago,155955,2026-11-02 12:37:36.135537-08,driveway,This is a driveway
+sidewalk_chicago,55207,2026-11-02 12:38:42.951831-08,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_chicago,100128,2026-11-02 12:38:51.949643-08,too-minor-unsure,Might be too minor to label
+sidewalk_seattle,2831,2026-10-29 10:27:05.496141-07,ample-space,There is ample space to avoid this object
+sidewalk_seattle,148542,2026-10-29 10:32:51.775164-07,driveway,This is a driveway
+sidewalk_seattle,232997,2026-10-29 10:33:22.836768-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,297052,2026-10-29 10:33:29.23535-07,driveway,This is a driveway
+sidewalk_seattle,252674,2026-10-29 10:35:48.982788-07,ample-space,There is ample space to avoid this object
+sidewalk_seattle,113801,2026-10-29 10:36:09.040677-07,driveway-transition,This is a sidewalk to driveway transition
+sidewalk_seattle,142455,2026-10-29 10:36:44.019484-07,wrong-type,This is the wrong label type
+sidewalk_seattle,101610,2026-10-29 10:36:56.896044-07,normal-tiles,These are normal sidewalk tiles
+sidewalk_seattle,164367,2026-10-29 10:37:05.287241-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,208229,2026-10-29 10:37:15.368621-07,wrong-type,This is the wrong label type
+sidewalk_seattle,210690,2026-10-29 10:37:26.532598-07,placement-incorrect,Label placement looks incorrect
+sidewalk_seattle,253157,2026-10-29 10:38:13.750175-07,ample-space,There is ample space to avoid this object
+sidewalk_seattle,171980,2026-10-29 10:38:27.665154-07,wrong-type,This is the wrong label type
+sidewalk_seattle,298032,2026-10-29 10:39:12.134244-07,wrong-type,This is the wrong label type
+sidewalk_seattle,199620,2026-10-29 10:39:18.323929-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,231662,2026-10-29 10:39:26.214913-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,77639,2026-10-29 10:39:38.812528-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,209129,2026-10-29 10:39:54.127944-07,no-visible-crosswalk,There is no visible crosswalk here
+sidewalk_seattle,203485,2026-10-29 10:40:25.591038-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,116558,2026-10-29 10:41:54.051634-07,driveway,This is a driveway
+sidewalk_seattle,89165,2026-10-29 10:43:18.612476-07,,This is a residental walkway... also there's no ramp here anyway
+sidewalk_seattle,216652,2026-10-30 15:09:28.924733-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,217765,2026-10-30 15:10:04.227792-07,not-pedestrian-path,This is not on a pedestrian path
+sidewalk_seattle,129519,2026-10-30 19:08:02.317144-07,too-minor-unsure,Might be too minor to label
