@@ -325,3 +325,33 @@ def test_predict_writes_predictions_evaluate_reads(tmp_path, arm):
     assert np.allclose(pred.p_correct + pred.p_incorrect, 1, atol=1e-5)
     m = evaluate.report(pred)
     assert m["test"]["n"] == 4 and m["test_heldout"]["n"] == 4 and m["test"]["auc"] is not None
+
+
+@pytest.mark.parametrize("arm", cm.ARMS)
+def test_fine_tune_trains_and_predict_scores_each_arm(tmp_path, monkeypatch, arm):
+    """fine_tune_classifier.py --context-arm end to end on the CPU with the tiny backbone: the Trainer sees the
+    arm's batches (train augmented, val not), saves a checkpoint context_model.py can score."""
+    pytest.importorskip("datasets")
+    pytest.importorskip("accelerate")
+    import fine_tune_classifier as ft
+    base = tiny_base(tmp_path)
+    monkeypatch.setattr(ft, "CHECKPOINT", base)
+    uids = [(f"c:{k}", ["train", "train", "val", "test"][(k // 2) % 4]) for k in range(16)]
+    write_context_dataset(tmp_path, uids)
+    split = pd.read_csv(tmp_path / "Lt" / "split.csv")
+    split.loc[0, "severity"] = None              # missing values survive Dataset.from_pandas
+    split["high_quality_user"] = split["high_quality_user"].astype(object)
+    split.loc[1, "high_quality_user"] = None
+    split.to_csv(tmp_path / "Lt" / "split.csv", index=False)
+    out = tmp_path / "run"
+    ft.main(["--label_type", "Lt", "--data-dir", str(tmp_path), "--output-dir", str(out), "--allow-cpu",
+             "--epochs", "1", "--num-workers", "0", "--context-arm", arm, "--batch-size", "4"])
+    run = json.loads((out / "training_run.json").read_text())
+    assert run["context_arm"] == arm and run["context_view_res"] == 224 and run["batch_size"] == 4
+    assert json.loads((out / "run_key.json").read_text())["context_arm"] == arm
+    import evaluate
+    ckpt = evaluate.best_checkpoint_in(str(out))
+    assert json.loads(open(f"{ckpt}/config.json").read())["model_type"] == cm.MODEL_TYPE
+    assert cm.main(["predict", "--label_type", "Lt", "--data-dir", str(tmp_path), "--checkpoint", ckpt,
+                    "--tag", f"{arm}-s42", "--splits", "test"]) == 0
+    assert len(pd.read_csv(tmp_path / "Lt" / f"predictions_{arm}-s42.csv")) == 4
