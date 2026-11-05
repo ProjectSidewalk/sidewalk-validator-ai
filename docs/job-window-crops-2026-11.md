@@ -42,7 +42,9 @@ for `test/service/CropGeometrySpec.scala`, are copied verbatim into `tests/fixtu
 pixel**. The resampling is not byte-identical: the backend's `ImageUtils.scaleToMaxEdge` halves repeatedly and finishes
 with a bilinear draw, the port uses one `cv2.resize(..., INTER_AREA)`. Windows at most 1440 px wide are not resampled
 and are exact; on round 3's CurbRamp rows 52% of windows are wider and are downscaled, so their pixels differ from the
-website's stored PNG in the low bits. If a future serve-from-store path needs byte parity, that is sidewalk-ai-api work.
+website's stored PNG in the low bits. One coverage difference: the backend cuts any stored pano, but this path reads
+through `data_generation.read_store_panorama`, which rejects a file that is not 2:1 as `bad_pano`, so a non-2:1 pano
+gets a backend crop and no training crop (none of round 3's rows are affected: round 3 used the same reader). If a future serve-from-store path needs byte parity, that is sidewalk-ai-api work.
 
 ## How it differs from what the model sees today
 
@@ -65,7 +67,9 @@ kept on purpose: the experiment asks what the backend's crop does **under the cu
 half-width, so not comparable with the depth path's number); `clipped` is the window's `shifted` flag; `depth_m` is
 empty. The window facts the manifest has no column for go to `<out>/CurbRamp/job_crops.csv` (box, label fraction,
 stored size, native pano size, rule version), appended per row and compacted to the manifest's ok rows after every
-run. `--tilt-beta` and the pose lookup still run and are recorded; Panoramax's pitch-only latitude offset
+run. A job run needs no GPU (no device is resolved, so no `--allow-cpu`), records no `renderer`, and does not compare
+`renderer` or `package_source` when resuming another job run. `--tilt-beta` and the pose lookup still run and are
+recorded; Panoramax's pitch-only latitude offset
 (`click_lat_offset_deg`) is recorded but not applied, as the backend does not apply it either.
 
 ## Protocol
@@ -73,7 +77,11 @@ run. `--tilt-beta` and the pose lookup still run and are recorded; Panoramax's p
 PR #51's, restricted to the rows that get a job crop:
 
 1. `data_generation.py --job-window-crops` on round 3's rawLabels cache with round 3's seed, `EXPERTS` and
-   `--include-ai-labels` (round 3's settings).
+   `--include-ai-labels` (round 3's settings), and `--ai-holdout-frac 0`. That flag **requires PR
+   [#90](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/90)** (the AI-label hold-out carved before
+   selection); 0 means no hold-out and reproduces round 3's selection. Without it, #90's default holds out half the
+   eligible AI labels, so the job arm would train on about 75 fewer rows (1.1%) than round 3's depth model, a
+   confound in the training set; the test rows would still be paired by `restrict`.
 2. `analysis/job_crop_compare.py restrict`: round 3's `split.csv` restricted to the rows with an ok job crop, **every
    row keeping its round-3 split** (`split_data.py` is not re-run, so nothing drifts). `restrict_summary.json` says
    how many round-3 rows were lost and why.
@@ -106,7 +114,7 @@ per class there):
 - **Round 3's CurbRamp split is GSV only**, so the per-provider comparison Jon asked for **cannot be measured on it**:
   round 3 was generated before [#72](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/72) kept
   Mapillary and Panoramax labels. Nor would a regenerated split help yet: in the same rawLabels snapshot there are
-  15,008 Mapillary and 13 Panoramax CurbRamps, 5,835 and 4 of them with at least one human vote, but **none with
+  15,008 Mapillary and 13 Panoramax CurbRamps, 2,300 and 2 of them with at least one human vote, but **none with
   three human Agree votes and none meeting the crowd margin rule** (measured 2026-11-05 with
   `data_generation.eligible_labels`, without the expert rule). Whether `CropSizingRule` v2, a regression fit on GSV,
   transfers to other rigs therefore cannot be answered from validated labels today; it needs either more validation
