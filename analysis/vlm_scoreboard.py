@@ -1,6 +1,6 @@
 """The open-weight VLM scoreboard (issue #63): every leg on the round-3 held-out split, one generated page.
 
-Rows are models (the round-3 checkpoints, production, every open-weight VLM leg, the 8-shot arm, the 4-bit Mac legs
+Rows are models (the round-3 checkpoints, the 2025-08 models they replaced, every open-weight VLM leg, the 8-shot arm, the 4-bit Mac legs
 of #16); columns are macro-AUC over the five label types (each type equal weight), per-type AUC with a 95% label
 bootstrap interval, test vs held-out-deployment AUC, within-city AUC, balanced accuracy at the argmax, recall of
 ``incorrect`` at precision 0.95, s/crop with the GPU, and coverage. ``incorrect`` is the positive class and the
@@ -100,7 +100,8 @@ PURPOSE, CHAT, POINTING = "purpose-trained", "chat VLM", "pointing model"
 LEGS = {
     # leg -> (display, class, why it is on the board). Order is the coverage table's order for legs not yet run.
     "round3": ("Round 3 (DINOv2-L, 2026-10)", PURPOSE, "the retrained validators"),
-    "production": ("Production (DINOv2-L, 2025-08)", PURPOSE, "the deployed validators"),
+    "production": ("Previous production (DINOv2-L, 2025-08)", PURPOSE,
+                   "the 2025-08 validators, in production until 2026-10-27"),
     "qwen3.8-27b": ("Qwen3.8-27B", CHAT, ""),
     "gemma4-31b": ("Gemma 4 31B", CHAT, ""),
     "gemma4-12b-bf16": ("Gemma 4 12B", CHAT, ""),
@@ -116,9 +117,10 @@ LEGS = {
     "qwen3vl-8b-mlx4": ("Qwen3-VL-8B (4-bit, Mac)", CHAT, ""),
     "gemma4-12b-mlx4": ("Gemma 4 12B (4-bit, Mac)", CHAT, ""),
 }
+SHORT = {REFERENCE: "round 3", "production": "2025-08 models"}   # column headers of the wide slice tables
 MAC_LEGS = {"qwen3vl-2b": "qwen3vl-2b-mlx4", "qwen3vl-8b": "qwen3vl-8b-mlx4", "gemma4-12b": "gemma4-12b-mlx4"}
 DEFAULT_WHY = {
-    "production": "not staged yet (the full-split production run is on klone)",
+    "production": "not staged yet (the full-split 2025-08 run is on klone)",
     "fewshot8": "the 8-shot arm runs on the best zero-shot leg once the board names it",
 }
 for _leg in MAC_LEGS.values():
@@ -744,6 +746,59 @@ def _int(v):
     return f"{int(v):,}"
 
 
+_LEAD = re.compile(r"^-?\d+\.\d+")
+
+
+def _value(cell):
+    """The number a rendered cell starts with (``"0.915 [0.910, 0.919]"`` -> 0.915); None for ``—`` or text."""
+    m = _LEAD.match(str(cell))
+    return float(m.group(0)) if m else None
+
+
+def bold_best(cells, higher=True):
+    """The cells with every one that ties for the best value wrapped in ``**`` (ties at the displayed precision are
+    all bold). Cells without a number stay as they are, and nothing is bold unless two cells have numbers.
+
+    >>> bold_best(["0.915 [0.910, 0.919]", "0.899", "—"])
+    ['**0.915 [0.910, 0.919]**', '0.899', '—']
+    >>> bold_best(["0.050 (A40, 1)", "0.100 (H200, 16)"], higher=False)
+    ['**0.050 (A40, 1)**', '0.100 (H200, 16)']
+    """
+    vals = [_value(c) for c in cells]
+    have = [v for v in vals if v is not None]
+    if len(have) < 2:
+        return list(cells)
+    best = max(have) if higher else min(have)
+    return [f"**{c}**" if v is not None and v == best else c for c, v in zip(cells, vals)]
+
+
+def bold_columns(rows, cols, higher=True):
+    """``bold_best`` down each column index in ``cols``, comparing exactly the ``rows`` given (edited in place)."""
+    for j in cols:
+        for r, c in zip(rows, bold_best([r[j] for r in rows], higher)):
+            r[j] = c
+    return rows
+
+
+def _with_rule(rows, full, n_cols):
+    """``rows`` with the "partial coverage" rule inserted before the first partial row that follows a full one (no
+    rule when no row is full: there is nothing above to rank against).
+
+    >>> [r[1] for r in _with_rule([["", "a"], ["", "b"], ["", "c"]], [True, False, False], 2)]
+    ['a', '*partial coverage, not ranked against the rows above*', 'b', 'c']
+    >>> [r[1] for r in _with_rule([["", "a"], ["", "b"]], [False, False], 2)]
+    ['a', 'b']
+    """
+    out, seen_full, ruled = [], False, False
+    for r, f in zip(rows, full):
+        if not f and seen_full and not ruled:
+            out.append(["", "*partial coverage, not ranked against the rows above*"] + [""] * (n_cols - 2))
+            ruled = True
+        seen_full = seen_full or f
+        out.append(r)
+    return out
+
+
 def render_blocks(aggs):
     """``{block name: markdown}`` from the aggregate CSVs (no per-crop data needed)."""
     b, pt, pr, dep, cov, tm = (aggs[k] for k in ("board", "per_type", "paired", "per_deployment", "coverage",
@@ -768,38 +823,48 @@ def render_blocks(aggs):
         prod = b[b.leg == "production"]
         if len(prod):
             p = prod.iloc[0]
-            lines.append(f"- Production (optimistic, see caveats): macro-AUC {f3(p.macro_auc)}"
+            lines.append(f"- {p.display}, optimistic (see caveats): macro-AUC {f3(p.macro_auc)}"
                          f"{interval(p.macro_auc_lo, p.macro_auc_hi)} on {_int(p.n)} crops.")
     blocks["short_answer"] = "\n".join(lines) if lines else "(no legs staged)"
 
-    head = ["#", "model", "class", "macro-AUC [95% CI]"] + list(LABEL_TYPES) + [
-        "test", "held-out", "within-city", "bal. acc.", "R@P95", "Δ vs round 3 [95% CI]", "s/crop (GPU, batch)",
-        "coverage"]
-    rows, ruled = [], False
+    # Two tables so that neither needs horizontal scrolling on GitHub: AUCs, then class, splits, operating points
+    # and cost. s/crop is not bolded: the legs ran on different GPUs and batch sizes, so the minimum is not a winner.
+    head = ["#", "model", "macro-AUC [95% CI]"] + list(LABEL_TYPES) + ["Δ vs round 3 [95% CI]"]
+    head2 = ["model", "class", "test", "held-out", "within-city", "bal. acc.", "R@P95", "s/crop (GPU, batch)",
+             "coverage"]
+    rows, rows2, full = [], [], []
     for r in b.itertuples():
-        if not bool(r.full) and not ruled and len(rows):
-            rows.append(["", "*partial coverage, not ranked against the rows above*"] + [""] * (len(head) - 2))
-            ruled = True
         speed = "—" if f3(r.s_per_crop) == "—" else f"{float(r.s_per_crop):.3g} ({r.gpu}, {int(r.batch_size)})"
         d = "—" if r.leg == REFERENCE else f"{f3(r.diff_vs_round3)}{interval(r.diff_lo, r.diff_hi)}"
-        name = f"**{r.display}**" if r.leg == REFERENCE else r.display
-        rows.append(["" if f3(r.rank) == "—" else int(float(r.rank)), name, r.model_class, f"{f3(r.macro_auc)}{interval(r.macro_auc_lo, r.macro_auc_hi)}"]
-                    + [f3(getattr(r, f"auc_{t}")) for t in LABEL_TYPES]
-                    + [f3(r.auc_test), f3(r.auc_heldout), f3(r.within_city_auc), f3(r.balanced_accuracy),
-                       f3(r.r_incorrect_p95), d, speed, f"{_int(r.n)} / {_int(r.n_total)}"])
-    blocks["board"] = _table(head, rows) if rows else "(no legs staged)"
+        rows.append(["" if f3(r.rank) == "—" else int(float(r.rank)), r.display,
+                     f"{f3(r.macro_auc)}{interval(r.macro_auc_lo, r.macro_auc_hi)}"]
+                    + [f3(getattr(r, f"auc_{t}")) for t in LABEL_TYPES] + [d])
+        rows2.append([r.display, r.model_class, f3(r.auc_test), f3(r.auc_heldout), f3(r.within_city_auc),
+                      f3(r.balanced_accuracy), f3(r.r_incorrect_p95), speed, f"{_int(r.n)} / {_int(r.n_total)}"])
+        full.append(bool(r.full))
+    ranked = [i for i, f in enumerate(full) if f]            # bold is among the full-coverage rows only
+    bold_columns([rows[i] for i in ranked], range(2, 3 + len(LABEL_TYPES)))
+    bold_columns([rows2[i] for i in ranked], range(2, 7))
+    blocks["board"] = (_table(head, _with_rule(rows, full, len(head))) + "\n\nClass, splits, operating points and "
+                       "cost of the same legs:\n\n" + _table(head2, _with_rule(rows2, full, len(head2)))) if rows \
+        else "(no legs staged)"
 
-    rows = []
+    rows, by_type = [], {}
     disp = dict(zip(b.leg, b.display)) if len(b) else {}
+    full_legs = set(b[b.full.astype(bool)].leg) if len(b) else set()
     for r in pt.itertuples():
         rows.append([disp.get(r.leg, r.leg), r.label_type, _int(r.n), _int(r.n_incorrect),
                      f"{f3(r.auc)}{interval(r.auc_lo, r.auc_hi)}", f3(r.auc_test), f3(r.auc_test_heldout),
                      f"{f3(r.within_city_auc)} ({int(r.n_cities)})", f3(r.balanced_accuracy), f3(r.r_incorrect_p95)])
+        if r.leg in full_legs:
+            by_type.setdefault(r.label_type, []).append(rows[-1])
+    for group in by_type.values():                 # best per type among the legs that scored every crop
+        bold_columns(group, range(4, 10))
     blocks["per_type"] = _table(["model", "type", "n", "incorrect", "AUC [95% CI]", "test", "held-out",
                                  "within-city (cities)", "bal. acc.", "R@P95"], rows) if rows else "(none)"
 
-    rows = [[disp.get(r.leg, r.leg), r.label_type, _int(r.n), f3(r.auc_leg), f3(r.auc_ref),
-             f"{f3(r.diff)}{interval(r.diff_lo, r.diff_hi)}"] for r in pr.itertuples()] if len(pr) else []
+    rows = [[disp.get(r.leg, r.leg), r.label_type, _int(r.n)] + bold_best([f3(r.auc_leg), f3(r.auc_ref)])
+            + [f"{f3(r.diff)}{interval(r.diff_lo, r.diff_hi)}"] for r in pr.itertuples()] if len(pr) else []
     blocks["paired"] = _table(["model", "type", "shared crops", "AUC (model)", "AUC (round 3)",
                                "difference [95% CI]"], rows) if rows else "(none)"
 
@@ -819,8 +884,9 @@ def render_blocks(aggs):
                             aggfunc="first")
         ns = d.groupby(["deployment", "held_out"]).n.max()
         for (dname, ho), r in piv.sort_index(level=[1, 0]).iterrows():
+            cells = [f3(r.get(k)) for k in keep if k in piv.columns]
             rows.append([dname, "held-out" if bool(ho) else "test", _int(ns.loc[(dname, ho)])]
-                        + [f3(r.get(k)) for k in keep if k in piv.columns])
+                        + (bold_best(cells) if best_full else cells))      # a partial VLM is on other crops
         hdr = ["deployment", "split", "n"] + [disp.get(k, k) for k in keep if k in piv.columns]
     blocks["per_deployment"] = _table(hdr, rows) if rows else "(none)"
 
@@ -837,7 +903,8 @@ def render_blocks(aggs):
 
 def slice_table(df, b, by):
     """Markdown for one slice CSV: a row per (type, slice), pooled AUC [95% CI] and within-city AUC of round 3,
-    production and the best full-coverage VLM (the heatmap has every full leg)."""
+    the 2025-08 models and the best full-coverage VLM (the heatmap has every full leg); the best of each per row in
+    bold."""
     if df is None or df.empty:
         return "(no slices staged)"
     best, best_full = best_vlm(b)
@@ -851,18 +918,21 @@ def slice_table(df, b, by):
         for k in keep:
             x = df[(df.leg == k) & (df.label_type == r.label_type) & (df[by] == getattr(r, by))].iloc[0]
             cells += [f"{f3(x.auc)}{interval(x.auc_lo, x.auc_hi)}", f3(x.within_city_auc)]
+        aucs, within = bold_best(cells[0::2]), bold_best(cells[1::2])
         rows.append([r.label_type, getattr(r, by), _int(r.n), f"{r.incorrect_share:.0%}",
-                     f"{r.top_deployment_share:.0%}", "—" if f3(r.n_train) == "—" else _int(r.n_train)] + cells)
+                     f"{r.top_deployment_share:.0%}", "—" if f3(r.n_train) == "—" else _int(r.n_train)]
+                    + [c for pair in zip(aucs, within) for c in pair])
     head = ["type", by, "crops", "incorrect", "largest deployment", "round-3 train"]
     for k in keep:
-        head += [f"{disp.get(k, k)} AUC [95% CI]", "within-city"]
+        head += [f"{SHORT.get(k, disp.get(k, k))} AUC [95% CI]", "within-city"]
     return _table(head, rows)
 
 
 def render_readme_block(aggs):
-    """The README's summary of the board: round 3, production and the ``README_VLMS`` best full-coverage VLM legs,
-    with macro-AUC, per-type AUC and the paired difference against round 3. Rendered from the committed ``board.csv``
-    like every other block, and checked for drift the same way."""
+    """The README's summary of the board: round 3, the 2025-08 models and the ``README_VLMS`` best full-coverage
+    VLM legs, with macro-AUC, per-type AUC (the best of each column in bold) and the paired difference against
+    round 3. No class or crops column, so that the table fits GitHub's README column without scrolling. Rendered from the
+    committed ``board.csv`` like every other block, and checked for drift the same way."""
     b = aggs["board"]
     if b.empty:
         return "(no legs staged)"
@@ -870,16 +940,16 @@ def render_readme_block(aggs):
     purpose = full[full.model_class == PURPOSE]
     purpose = purpose.assign(_ref=(purpose.leg != REFERENCE)).sort_values(["_ref", "macro_auc", "leg"],
                                                                          ascending=[True, False, True])
-    keep = list(purpose.drop(columns="_ref").itertuples())    # round 3 first, then production
+    keep = list(purpose.drop(columns="_ref").itertuples())    # round 3 first, then the 2025-08 models
     vlms = full[full.model_class != PURPOSE].sort_values(["macro_auc", "leg"], ascending=[False, True])
     keep += list(vlms.head(README_VLMS).itertuples())
-    head = ["model", "class", "macro-AUC [95% CI]"] + list(LABEL_TYPES) + ["Δ vs round 3 [95% CI]", "crops"]
+    head = ["model", "macro-AUC [95% CI]"] + list(LABEL_TYPES) + ["Δ vs round 3 [95% CI]"]
     rows = []
-    for r in keep:
+    for r in keep:          # full legs only, so every row scored n_total crops and no crops column is needed
         d = "—" if r.leg == REFERENCE else f"{f3(r.diff_vs_round3)}{interval(r.diff_lo, r.diff_hi)}"
-        name = f"**{r.display}**" if r.leg == REFERENCE else r.display
-        rows.append([name, r.model_class, f"{f3(r.macro_auc)}{interval(r.macro_auc_lo, r.macro_auc_hi)}"]
-                    + [f3(getattr(r, f"auc_{t}")) for t in LABEL_TYPES] + [d, _int(r.n)])
+        rows.append([r.display, f"{f3(r.macro_auc)}{interval(r.macro_auc_lo, r.macro_auc_hi)}"]
+                    + [f3(getattr(r, f"auc_{t}")) for t in LABEL_TYPES] + [d])
+    bold_columns(rows, range(1, 2 + len(LABEL_TYPES)))
     return _table(head, rows)
 
 
@@ -902,7 +972,8 @@ INK, INK2, MUTED, GRID, BASELINE, SURFACE = "#0b0b0b", "#52514e", "#898781", "#e
 MUTED_FILL, EMPTY = "#c9c8c2", "#f3f2ee"
 SEQ = ["#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7", "#3987e5", "#2a78d6", "#256abf",
        "#1c5cab", "#184f95", "#104281", "#0d366b"]
-FOOTNOTE = ("Production may have trained on some held-out labels (optimistic). One run per VLM, thinking off, "
+FOOTNOTE = ("The 2025-08 models (previous production) may have trained on some held-out labels (optimistic). "
+            "One run per VLM, thinking off, "
             "prompts not parallel across types; 4-bit Mac legs cover a sample only.")
 
 
@@ -1067,7 +1138,8 @@ def fig_by_type(b, path):
 
 
 def fig_roc(legs, b, path):
-    """ROC per type: round 3 (blue) and production (ink) solid, the best VLM orange dashed, other VLM legs muted."""
+    """ROC per type: round 3 (blue) and the 2025-08 models (ink) solid, the best VLM orange dashed, other VLM legs
+    muted."""
     plt = _plt()
     best, _ = best_vlm(b)
     fig, axes = plt.subplots(1, len(LABEL_TYPES), figsize=(16, 4.4), sharey=True, facecolor=SURFACE)
@@ -1085,7 +1157,7 @@ def fig_roc(legs, b, path):
             if leg == REFERENCE:
                 kw = dict(color=BLUE, lw=2, ls="-", label=f"round 3 ({a:.2f})")
             elif leg == "production":
-                kw = dict(color=INK, lw=1.6, ls="-", label=f"production ({a:.2f})")
+                kw = dict(color=INK, lw=1.6, ls="-", label=f"2025-08 models ({a:.2f})")
             elif best is not None and leg == best.leg:
                 kw = dict(color=ORANGE, lw=2, ls="--", label=f"{leg_info(leg)[0]} ({a:.2f})")
             else:
@@ -1196,8 +1268,8 @@ def fig_latency(tm, path):
     ax.xaxis.grid(True, color=GRID, lw=0.8, which="major")
     ax.set_axisbelow(True)
     ax.set_xlabel("median seconds per crop (log scale; line to p90)", fontsize=9, color=INK2)
-    _titles(ax, "Seconds per crop, GPU named", "Batch-1 timing runs and full runs are separate rows; production "
-            "in blue.")
+    _titles(ax, "Seconds per crop, GPU named", "Batch-1 timing runs and full runs are separate rows; the purpose-trained "
+            "validators in blue.")
     fig.tight_layout()
     fig.savefig(path, dpi=150, facecolor=SURFACE)
     plt.close(fig)
