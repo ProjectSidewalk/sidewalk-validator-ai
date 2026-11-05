@@ -22,10 +22,15 @@ or teaches it RampNet's own mistakes, is the feedback-loop question of
 [SidewalkWebpage#5790](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5790); answering it needs AI labels
 that neither arm trained on.
 
-**How.** `ai_label_holdout.py`: a label is held out when `sha256("ai-holdout:<seed>:<city>:<label_id>")` (first 12 hex
-digits, as a fraction) is below `--ai-holdout-frac`. Each label's draw is its own, so new votes move at most the
-labels they touch, and the salt keeps it independent of the correct-class downsample. Every AI-placed label is a
-candidate, rejected ones included. Two choices, both judgements:
+**How.** `ai_label_holdout.py`: an AI-placed label is held out when its panorama's draw,
+`sha256("ai-holdout:<seed>:<city>:<pano_id>")` (first 12 hex digits, as a fraction), is below `--ai-holdout-frac`.
+Every AI label on a panorama goes the same way, so the `included_tagged` arm never trains on a panorama that holds a
+held-out AI label. The draw depends only on the panorama, so new votes move at most the labels they touch, and the salt
+keeps it independent of the correct-class downsample. Every AI-placed label is a candidate, rejected ones included.
+Deployment × class × tier strata are recorded (`stratum` in the file), not enforced: each gets about the fraction in
+expectation only, because exact shares would make one label's membership depend on the rest of the pool.
+`--ai-holdout-frac 0` means no hold-out; it exists to reproduce a selection made before #79 exactly, is never the
+default, and is still recorded (`holdout_frac: 0`, an empty file). Two choices, both judgements:
 
 - **Fraction 0.5.** About half of the ~180 eligible rejected AI labels go to evaluation and half to training. The
   with/without ablation is the point of the held-out set, so evaluation power is weighted equally with training rows.
@@ -34,10 +39,12 @@ candidate, rejected ones included. Two choices, both judgements:
   an existing run's selection hash does not move, and the two ablation arms score the identical held-out labels.
   The cost: every run now writes an `ai_label_holdout.csv` (empty when the pool has no AI label).
 
-**Caveat.** Membership is per label, not per panorama. Among the October voted AI labels, 73 % in Laurens, 27 % in
-Richmond and 10 % in Vancouver share a panorama with another voted AI label, so in the `included_tagged` arm a
-held-out label can sit on a panorama the model trained on. That favours the arm with AI labels; the ablation doc
-reports it beside the result.
+**Why per panorama.** A per-label draw, the first version, left held-out labels on panoramas whose other AI labels
+trained in the `included_tagged` arm, which biases the ablation towards that arm: on the October pull (seed 42, frac
+0.5, the two lead accounts as experts) up to 295 of 570 held-out Laurens labels (52 %), 78 of 481 in Richmond and 13 of
+745 in Vancouver. Keyed on the panorama, the same data holds out 1,870 of 3,659 eligible AI labels (178 `incorrect`):
+Laurens 580 correct / 54 incorrect, Richmond 471 / 22, Vancouver 728 / 15, and none of them shares a panorama with a
+training AI label. Human labels on those panoramas still train in both arms.
 
 **What would change it.** The round-4 CurbRamp ablation ([`ai-label-holdout-2026-11.md`](ai-label-holdout-2026-11.md)):
 if training with tagged AI labels does not raise the AUC on the held-out AI labels over training without them, the
