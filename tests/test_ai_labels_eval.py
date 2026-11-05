@@ -85,24 +85,37 @@ def test_select_labels_reference_tier_and_round3_join(tmp_path):
         [5, AI, "pB", "mapillary", "CurbRamp", "", "[]", "", "2026-09-22 19:03", v((AI, "Agree", "AI")), 1, 2, 100, 50, "", ""],
         [6, "h", "pC", "mapillary", "CurbRamp", "2", "[]", "", "2026-09-22 19:03", v(("c", "Agree")), 1, 2, 100, 50, "", ""],
         [7, AI, "pC", "mapillary", "NoCurbRamp", "", "[]", "", "2026-09-22 19:03", v(("c", "Agree")), 1, 2, 100, 50, "", ""],
+        [8, AI, "pD", "mapillary", "CurbRamp", "", "[]", "", "2026-09-22 19:03", v(("c", "Agree")), 1, 2, 100, 50, "", ""],
     ]
     _rawlabels(tmp_path, "richmond-va", rows)
     split = tmp_path / "split.csv"
-    pd.DataFrame({"label_uid": ["richmond-va:1"], "split": ["train"]}).to_csv(split, index=False)
+    pd.DataFrame({"label_uid": ["richmond-va:1", "richmond-va:8"], "split": ["train", "val"]}).to_csv(split, index=False)
     labels, summary = ae.select_labels(str(tmp_path), ["richmond-va"], experts={"e1"}, round3_split=str(split))
-    assert labels.label_uid.tolist() == ["richmond-va:1", "richmond-va:2", "richmond-va:6"]
+    assert labels.label_uid.tolist() == ["richmond-va:1", "richmond-va:2", "richmond-va:6", "richmond-va:8"]
     by = labels.set_index("label_uid")
     assert by.loc["richmond-va:1", ["label_class", "tier", "clean", "round3_split", "author"]].tolist() == \
         ["correct", "core", 0, "train", "ai"]
     assert by.loc["richmond-va:2", ["label_class", "tier", "clean", "expert_class"]].tolist() == \
         ["incorrect", "band", 1, "incorrect"]
     assert by.loc["richmond-va:6", ["author", "tier"]].tolist() == ["human", ""]
+    assert by.loc["richmond-va:8", ["clean", "round3_split"]].tolist() == [0, "val"]  # val leaks like train
     assert summary["ties_dropped"] == 1
     c = summary["per_city"]["richmond-va"]
-    assert c["ai_labels_total"] == 5 and c["ai_voted"] == 2 and c["ai_incorrect"] == 1
-    assert c["ai_by_tier"] == {"core": 1, "band": 1, "mixed": 0} and c["ai_in_round3"] == {"train": 1}
+    assert c["ai_labels_total"] == 6 and c["ai_voted"] == 3 and c["ai_incorrect"] == 1
+    assert c["ai_by_tier"] == {"core": 1, "band": 2, "mixed": 0} and c["ai_in_round3"] == {"train": 1, "val": 1}
     assert c["human_voted"] == 1 and c["ai_expert_decided"] == 1
     assert summary["inputs"]["richmond-va"]["sha256"]
+
+
+def test_load_round3_keeps_only_human_placed_test_rows(tmp_path):
+    uids = ["seattle:1", "seattle:2", "seattle:3"]
+    pd.DataFrame({"label_uid": uids, "split": ["test", "test", "train"], "p_correct": [0.9, 0.2, 0.7],
+                  "p_incorrect": [0.1, 0.8, 0.3]}).to_csv(tmp_path / "predictions.csv", index=False)
+    pd.DataFrame({"label_uid": uids, "city": ["seattle"] * 3, "pano_id": ["a", "b", "c"],
+                  "author": ["ai", "human", "human"]}).to_csv(tmp_path / "split.csv", index=False)
+    df = ae.load_round3(str(tmp_path))
+    assert df.label_uid.tolist() == ["seattle:2"]
+    assert df.verdict.tolist() == ["incorrect"] and df.confidence.tolist() == [0.8]
 
 
 def test_auc_block_with_one_class_is_nan():
