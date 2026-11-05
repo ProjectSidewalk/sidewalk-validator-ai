@@ -827,22 +827,48 @@ def test_cli_recount_writes_aggregates_only(tmp_path, capsys):
 
 def test_cli_score_recounts_population_from_pool_and_flags(tmp_path, capsys):
     pool, pp, fp, dp = _recount_files(tmp_path)
-    a = pool[(pool.schema == "sidewalk_a") & (gr.assign_stratum(pool) == "lone")].head(6)
+    lone = pool[(pool.schema == "sidewalk_a") & (gr.assign_stratum(pool) == "lone") & (pool.label_id % 10 != 0)]
+    a = lone.groupby("label_type").head(1)  # one rated item per type, none of them flagged excluded
     key = pd.DataFrame({"packet_id": [f"r{i}" for i in range(len(a))], "label_uid": a.label_uid.values,
                         "label_type": a.label_type.values, "stratum": "lone", "ai_vote": "Disagree",
                         "margin_class": "", "rater": "A", "shared": False})
     kp, sp = tmp_path / "key.csv", tmp_path / "sheet.csv"
     key.to_csv(kp, index=False)
-    pd.DataFrame({"packet_id": key.packet_id, "label_type": key.label_type, "verdict": "incorrect",
+    # The expert confirms the AI on Obstacle and Crosswalk only: the two types the flags thin out of the lone stratum.
+    confirm = {"Obstacle", "Crosswalk"}
+    pd.DataFrame({"packet_id": key.packet_id, "label_type": key.label_type,
+                  "verdict": ["incorrect" if t in confirm else "correct" for t in key.label_type],
                   "notes": ""}).to_csv(sp, index=False)
     base = ["score", "--key", str(kp), "--rater", "A", "--sheet", str(sp), "--allow-unpinned"]
-    gr.main(base + ["--pool", str(pp), "--author-excluded", str(fp), "--design", str(dp)])
-    out = capsys.readouterr().out
+
+    def lone_row(extra):
+        gr.main(base + extra)
+        out = capsys.readouterr().out
+        rows = [ln for ln in out.splitlines() if ln.startswith("| lone | all |")]
+        assert len(rows) == 1
+        return out, rows[0]
+
+    def pct(pop):
+        return f"{100 * sum(pop[t] for t in confirm) / sum(pop.values()):.1f}%"
+
     before = gr.recount_population(pool, DESIGN)["population"]["A"]["lone"]
     after = gr.recount_population(gr.apply_author_excluded(pool, pd.read_csv(fp))[0], DESIGN)["population"]["A"]
+    assert pct(after["lone"]) != pct(before)  # the fixture's flags must move the weighted rate
+
+    # Default minimum n: 1 decided item per type, so every lone cell is named and the row is unestimable.
+    out, row = lone_row(["--pool", str(pp), "--author-excluded", str(fp), "--design", str(dp)])
     assert f"population lone: ? -> {sum(after['lone'].values()):,}" in out
     assert sum(after["lone"].values()) < sum(before.values())
-    assert "unestimable" in out  # 6 items over 5 types: every lone cell is under n=5
+    assert "| unestimable |" in row and "Obstacle(n=1)" in row and "Crosswalk(n=1)" in row
     assert "WARNING" not in out
+
+    # With every cell kept, the weighted rate is the recount's share of the confirmed types, not the pool's.
+    _, flagged = lone_row(["--pool", str(pp), "--author-excluded", str(fp), "--design", str(dp), "--min-cell", "1"])
+    _, unflagged = lone_row(["--pool", str(pp), "--design", str(dp), "--min-cell", "1"])
+    _, no_pool = lone_row(["--min-cell", "1"])
+    assert f"| {pct(after['lone'])} [" in flagged
+    assert f"| {pct(before)} [" in unflagged
+    assert flagged != unflagged and flagged != no_pool
+
     gr.main(base)
     assert "WARNING" not in capsys.readouterr().out  # no manifest population: nothing to warn about
