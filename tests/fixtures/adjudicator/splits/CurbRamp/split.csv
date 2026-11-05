@@ -1,0 +1,10 @@
+label_uid,city,label_id,pano_id,label_type,label_class,class_source,author,human_agree,human_disagree,severity,tags,crop_path,status,split
+city-a:1,city-a,1,S1,CurbRamp,incorrect,margin,human,0,2,2.0,"[""narrow""]",incorrect/city-a_1.webp,ok,train
+city-a:3,city-a,3,S3,CurbRamp,incorrect,margin,human,0,3,2.0,[],incorrect/city-a_3.webp,ok,val
+city-a:101,city-a,101,S101,CurbRamp,incorrect,expert,human,0,3,2.0,"[""narrow""]",incorrect/city-a_101.webp,ok,train
+city-a:103,city-a,103,S103,CurbRamp,correct,margin,human,4,0,2.0,[],correct/city-a_103.webp,ok,train
+city-b:201,city-b,201,S201,CurbRamp,correct,margin,human,3,0,2.0,"[""narrow""]",correct/city-b_201.webp,ok,train
+city-b:203,city-b,203,S203,CurbRamp,correct,margin,human,3,0,2.0,[],correct/city-b_203.webp,ok,test
+city-a:900,city-a,900,S900,CurbRamp,correct,margin,human,3,0,2.0,[],correct/city-a_900.webp,ok,train
+city-a:901,city-a,901,S901,CurbRamp,incorrect,margin,human,0,2,2.0,"[""narrow""]",incorrect/city-a_901.webp,ok,train
+city-b:902,city-b,902,S902,CurbRamp,incorrect,margin,human,1,3,2.0,[],incorrect/city-b_902.webp,ok,test_heldout

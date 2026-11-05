@@ -1,0 +1,5 @@
+label_uid,city,label_id,pano_id,label_type,label_class,class_source,author,human_agree,human_disagree,severity,tags,crop_path,status,split
+city-a:2,city-a,2,S2,Obstacle,correct,margin,human,3,0,2.0,[],correct/city-a_2.webp,ok,train
+city-b:202,city-b,202,S202,Obstacle,incorrect,margin,human,0,3,2.0,[],incorrect/city-b_202.webp,ok,test
+city-a:104,city-a,104,S104,Obstacle,incorrect,margin,human,0,2,2.0,[],incorrect/city-a_104.webp,ok,train
+city-a:910,city-a,910,S910,Obstacle,correct,margin,human,3,0,2.0,[],correct/city-a_910.webp,ok,val

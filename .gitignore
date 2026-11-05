@@ -6,6 +6,9 @@ SurfaceProblem
 # issue #42 types (NoSidewalk pilot, Signal later); also why a test fixture dir must not be named after a type
 NoSidewalk
 Signal
+# ...but not test fixtures laid out like a data directory (tests/fixtures/adjudicator/splits/<Type>/). Later rules
+# (__pycache__, *.pyc, ...) still apply under tests/fixtures.
+!/tests/fixtures/**
 
 depth_anything_v2_metric_*.pth
 
