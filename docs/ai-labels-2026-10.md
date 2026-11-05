@@ -63,8 +63,9 @@ production does not AI-validate at all ([SidewalkWebpage#4764](https://github.co
 **Confidence tier.** RampNet's confidence is not stored with the label, and the run files with the detections live on
 another machine, so each label's tier comes from the campaign that submitted it (the `send_to_ps.py` submission records,
 `CAMPAIGNS` in the script): `core` = the 0.55 operating point, `band` = the 0.30–0.55 band added after
-[sidewalk-auto-labeler#20](https://github.com/ProjectSidewalk/sidewalk-auto-labeler/issues/20), `mixed` = Richmond's 2026-09-24 re-submission of 14 repositioned sequences at 0.30. Vancouver was
-labelled in September 2025 at 0.55 and has no band.
+[sidewalk-auto-labeler#20](https://github.com/ProjectSidewalk/sidewalk-auto-labeler/issues/20), `mixed` = Richmond's
+2026-09-24 re-submission of 14 repositioned sequences at 0.30. Vancouver was labelled in September 2025 at 0.55 and has
+no band.
 
 **Severity and tags.** RampNet submits neither, so the type × severity and type × tag slices of the standing rule cannot
 be made here; the handful of AI labels a validator edited afterwards are counted in the tables.
@@ -250,17 +251,17 @@ contradicted.
 ### What this says, and what it cannot
 
 1. **The validator ranks RampNet's mistakes about as well as it ranks human mistakes when a project lead is the
-   reference** (AUC 0.96 vs 0.97, though 149 of the 153 lead-rejected unseen labels are Mapillary), and worse against the crowd reference that decides Vancouver's unseen rejections
-   (0.85). The two references cannot be compared on the same labels here (the round-3 selection consumed the
-   lead-rejected Vancouver labels), and one vote per label cannot say whether the crowd or the model is right about the
-   57 contested Vancouver Disagrees. A masked re-label of those 57 plus a matched sample of confirmed ones, the design of
-   `docs/ai-disagree-relabel-2026-10.md` ([PR #66](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/66),
-   where a lead agreed with the production validator's Disagree on human-placed labels 58 % of the time), would settle
-   it with about an hour of rating.
+   reference** (AUC 0.96 vs 0.97, though 149 of the 153 lead-rejected unseen labels are Mapillary), and worse against
+   the crowd reference that decides Vancouver's unseen rejections (0.85). The two references cannot be compared on the
+   same labels here (the round-3 selection consumed the lead-rejected Vancouver labels), and one vote per label cannot
+   say whether the crowd or the model is right about the 57 contested Vancouver Disagrees. A masked re-label of those 57
+   plus a matched sample of confirmed ones, the design of `docs/ai-disagree-relabel-2026-10.md`
+   ([PR #66](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/66), where a lead agreed with the production
+   validator's Disagree on human-placed labels 58 % of the time), would settle it with about an hour of rating.
 2. **At the deployed gate, an Agree vote on an AI label is consistent with the single human vote 99.3 % of the time**,
-   on a 97.8 % base rate, with 90 % coverage. That is one human vote, cast on an AI label, with the Agree lean that
-   implies; it is not ground truth. The gate removes no false positive (it casts no Disagree on AI labels); what it does
-   is sort: the 10 % it withholds carry 16 % rejections against 2 % overall.
+   on a 97.8 % base rate, with 90 % coverage of all labels. That is one human vote, cast on an AI label, with the Agree
+   lean that implies; it is not ground truth. The gate removes no false positive (it casts no Disagree on AI labels);
+   what it does is sort: the 10 % it withholds carry 16 % rejections against 2 % overall.
 3. **Disagree cannot fire as deployed.** The served map never reaches the gate for `incorrect`, and the uncapped map is
    the same. Sending AI labels to the validator today therefore means AI Agree votes and nothing else. If an AI Agree
    counts toward a label's vote total, that removes AI labels from the human queue on the strength of point 2; if it
