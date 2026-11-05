@@ -590,6 +590,11 @@ def non_gsv_rows():
             label(9, 0, 3, pano="gsv2")]  # a fourth incorrect label, so the downsample keeps all four correct ones
 
 
+#: The fixture's AI label toy-city:6 draws 0.332 in the issue #79 holdout (seed 42), so the default 0.5 would hold it
+#: out of training; the tests of its rig-frame render keep it in with a smaller fraction.
+KEEP_NON_GSV_AI = ("--ai-holdout-frac", "0.3")
+
+
 @pytest.fixture
 def non_gsv(tmp_path, monkeypatch):
     rows = non_gsv_rows()
@@ -611,7 +616,7 @@ def test_non_gsv_labels_are_kept_and_posed_per_provider(non_gsv, capsys):
     """No Mapillary or Panoramax label is dropped for its provider; each one's pose, sign, beta and click offset are
     in the manifest, and the run record and summary count them per provider. An unsupported provider is dropped."""
     tmp, _ = non_gsv
-    m = run_main(tmp).set_index("label_uid")
+    m = run_main(tmp, *KEEP_NON_GSV_AI).set_index("label_uid")
     assert (m.status == "ok").all() and len(m) == 8 and "toy-city:8" not in m.index
     got = {uid: (r.pose_source, r.tilt_applied, r.tilt_beta) for uid, r in m.iterrows()}
     assert got == {"toy-city:1": ("gsv_db", 1, 0.95), "toy-city:2": ("mapillary_db", 0, 0.0),
@@ -644,7 +649,7 @@ def test_each_rows_pose_and_beta_reach_the_renderer(non_gsv):
     """What create_perspective_crop is called with, per row: the per-source beta (not --tilt-beta) and pose, and the
     Panoramax pitch-only click moved back to the rig latitude."""
     tmp, calls = non_gsv
-    run_main(tmp, "--tilt-beta", "0.9")
+    run_main(tmp, "--tilt-beta", "0.9", *KEEP_NON_GSV_AI)
     y = 2600 / 4096
     want = {3010: (2.0, None, True, 0.9, y),                   # GSV: --tilt-beta reaches it
             3020: (-2.0, -6.0, True, 0.0, y),                  # Mapillary: pose known, beta 0 (rig-frame click)
@@ -881,3 +886,93 @@ def test_largest_fixed_crop_size_is_accepted(stubbed):
     # Half the view is the whole view, unclipped (centre_crop clips only past the edge).
     m = run_main(stubbed["tmp"], "--fixed-crop-half-px", str(dg.MAX_FIXED_CROP_HALF_PX), "--limit", "1")
     assert m.status.tolist() == ["ok"] and m.clipped.tolist() == [0]
+
+
+# --- the AI-label holdout carved before selection (issue #79) --------------------------------------------------------
+
+import ai_label_holdout  # noqa: E402
+
+AI_UID = "toy-city:4"  # the fixture's only AI-authored label (incorrect)
+AI_DRAW = ai_label_holdout.holdout_fraction(42, AI_UID)  # 0.749...: kept in training at the default 0.5
+
+
+def _frac_holding(held):
+    """A --ai-holdout-frac just above (held) or just below (kept) the fixture AI label's draw."""
+    return str(min(AI_DRAW + 1e-6, 0.999999) if held else max(AI_DRAW - 1e-6, 1e-6))
+
+
+def _run_record(tmp):
+    return json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
+
+
+def test_ai_label_held_out_never_reaches_the_manifest(stubbed):
+    tmp = stubbed["tmp"]
+    m = run_main(tmp, "--ai-holdout-frac", _frac_holding(True))
+    assert AI_UID not in set(m.label_uid) and (m.author == "human").all()
+    held = pd.read_csv(tmp / "out" / "CurbRamp" / ai_label_holdout.HOLDOUT_FILE, dtype=str)
+    assert held.label_uid.tolist() == [AI_UID] and held.label_class.tolist() == ["incorrect"]
+    rec = _run_record(tmp)["ai_labels"]
+    assert rec["policy"] == "included_tagged"
+    assert rec["holdout_counts"] == {"toy-city": {"correct": 0, "incorrect": 1}} and rec["included_counts"] == {}
+    assert rec["eligible_ai_counts"] == {"toy-city": {"correct": 0, "incorrect": 1}}
+    import hashlib
+    assert rec["holdout_sha256"] == hashlib.sha256(
+        (tmp / "out" / "CurbRamp" / ai_label_holdout.HOLDOUT_FILE).read_bytes()).hexdigest()
+
+
+def test_ai_label_kept_in_training_is_counted_and_the_holdout_file_is_empty(stubbed):
+    tmp = stubbed["tmp"]
+    m = run_main(tmp, "--ai-holdout-frac", _frac_holding(False)).set_index("label_uid")
+    assert m.loc[AI_UID, "author"] == "ai"
+    held = pd.read_csv(tmp / "out" / "CurbRamp" / ai_label_holdout.HOLDOUT_FILE)
+    assert len(held) == 0 and list(held.columns) == ai_label_holdout.HOLDOUT_COLUMNS
+    rec = _run_record(tmp)["ai_labels"]
+    assert rec["included_counts"] == {"toy-city": {"correct": 0, "incorrect": 1}} and rec["holdout_counts"] == {}
+
+
+def test_excluded_policy_still_writes_the_holdout_and_keeps_the_selection_hash(stubbed):
+    """Without --include-ai-labels the holdout is carved anyway (both ablation arms score one set), and since the
+    selection would have dropped those rows, the selection hash is what it was before issue #79."""
+    tmp = stubbed["tmp"]
+    run_main(tmp, "--ai-holdout-frac", _frac_holding(True), ai=False)
+    rec = _run_record(tmp)
+    assert rec["ai_labels"]["policy"] == "excluded" and rec["ai_labels"]["included_counts"] == {}
+    assert rec["ai_labels"]["holdout_counts"] == {"toy-city": {"correct": 0, "incorrect": 1}}
+    # the selection hash a pre-#79 run computes: human-authored eligible labels through the unchanged selection
+    raw = pd.read_csv(tmp / f"{CITY}.csv").assign(city=CITY)
+    eligible, _ = dg.eligible_labels(raw, "CurbRamp")
+    sel = dg.select_training_labels(eligible, seed=42)
+    sel["label_uid"] = sel.city + ":" + sel.label_id.astype(str)
+    assert rec["selection_sha256"] == dg.selection_hash(sel)
+    # and moving the fraction under `excluded` is no selection change: the resume goes through without a refusal
+    run_main(tmp, "--ai-holdout-frac", _frac_holding(False), ai=False)
+    assert _run_record(tmp)["ai_labels"]["holdout_counts"] == {}
+
+
+def test_changing_the_fraction_with_ai_labels_included_is_a_selection_change_not_a_setting(stubbed):
+    tmp = stubbed["tmp"]
+    run_main(tmp, "--ai-holdout-frac", _frac_holding(False))
+    with pytest.raises(SystemExit, match="the selection changed") as refused:
+        run_main(tmp, "--ai-holdout-frac", _frac_holding(True))
+    assert "settings changed" not in str(refused.value)
+    calls = stubbed["depth"].calls
+    m = run_main(tmp, "--ai-holdout-frac", _frac_holding(True), "--force-reselect")
+    assert AI_UID not in set(m.label_uid) and stubbed["depth"].calls == calls  # nothing re-rendered
+    assert "ai_holdout_frac" not in _run_record(tmp)["settings"]  # provenance lives in ["ai_labels"]
+    assert _run_record(tmp)["ai_labels"]["holdout_frac"] == float(_frac_holding(True))
+
+
+def test_select_only_prints_the_holdout_and_writes_no_file(stubbed, capsys):
+    tmp = stubbed["tmp"]
+    dg.main(["--label_type", "CurbRamp", "--rawlabels-cache", str(tmp), "--out", str(tmp / "out"), "--select-only",
+             "--include-ai-labels", "--ai-holdout-frac", _frac_holding(True)])
+    out = capsys.readouterr().out
+    assert "--select-only: AI-label holdout (issue #79): 1 AI-authored labels held out" in out
+    assert not (tmp / "out" / "CurbRamp" / ai_label_holdout.HOLDOUT_FILE).exists()
+
+
+@pytest.mark.parametrize("bad", ["0", "1", "1.5", "-0.2"])
+def test_holdout_fraction_outside_the_open_interval_is_a_usage_error(stubbed, bad, capsys):
+    with pytest.raises(SystemExit):
+        run_main(stubbed["tmp"], "--ai-holdout-frac", bad)
+    assert "strictly between 0 and 1" in capsys.readouterr().err
