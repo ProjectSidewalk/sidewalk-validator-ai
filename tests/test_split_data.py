@@ -197,8 +197,8 @@ def test_merge_puts_near_labels_on_one_side(toy, capsys):
 @pytest.fixture
 def toy_old_layout(tmp_path, monkeypatch):
     """The toy dataset in the manifest layout PANO_ONLY_SHA was recorded with (before ``class_source`` and the #72
-    pose columns)."""
-    later = {"class_source", "pose_source", "pose_pitch", "pose_roll", "click_lat_offset_deg"}
+    pose columns, and before ``face_id``, issue #42)."""
+    later = {"class_source", "pose_source", "pose_pitch", "pose_roll", "click_lat_offset_deg", "face_id"}
     monkeypatch.setattr(dg, "MANIFEST_COLUMNS", [c for c in dg.MANIFEST_COLUMNS if c not in later])
     base = tmp_path / "Toy"
     base.mkdir()
