@@ -94,6 +94,11 @@ def soft_targets(df, target, vote_weights=None, path="split.csv"):
     [0.75, 0.2857142857142857]
     """
     if target == "soft":
+        if "soft_target" in df.columns:  # precomputed per row (analysis/adjudicator.py's adj-soft variant)
+            out = pd.to_numeric(df["soft_target"], errors="coerce").astype(float)
+            if out.isna().any() or not out.between(0, 1).all():
+                raise ValueError(f"{path}: soft_target must be a probability on every train row")
+            return pd.Series(out.to_numpy(), index=df.index)
         missing = {"human_agree", "human_disagree"} - set(df.columns)
         if missing:
             raise ValueError(f"{path} has no {sorted(missing)} column(s), which --target soft needs; rebuild it with "

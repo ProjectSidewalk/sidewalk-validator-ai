@@ -30,6 +30,7 @@ set -uo pipefail
 LT="${LT:?set LT}"; VARIANT="${VARIANT:?set VARIANT}"; DATA="${DATA:?set DATA (absolute)}"; RUNS="${RUNS:?set RUNS}"
 ENV="${ENV:-/gscratch/makelab/$USER/envs/sidewalk-validator-ai}"
 SEED="${SEED:-42}"; EPOCHS="${EPOCHS:-25}"
+TARGET="${TARGET:-hard}"  # soft for analysis/adjudicator.py's adj-soft variant (its split.csv carries soft_target)
 module load conda
 eval "$(conda shell.bash hook)"
 conda activate "$ENV"
@@ -57,7 +58,7 @@ case "$VARIANT" in
 esac
 echo "$(date) train $LT $VARIANT on $SPLIT -> $RUN"
 python -u fine_tune_classifier.py --label_type "$LT" --data-dir "$DATA" --split "$SPLIT" --output-dir "$RUN" \
-    --seed "$SEED" --epochs "$EPOCHS" --num-workers 7 || { echo "training failed" >&2; exit 1; }
+    --seed "$SEED" --epochs "$EPOCHS" --num-workers 7 --target "$TARGET" || { echo "training failed" >&2; exit 1; }
 case "$VARIANT" in
   fold*)
     K="${VARIANT#fold}"
