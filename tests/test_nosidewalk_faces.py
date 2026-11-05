@@ -216,22 +216,42 @@ def test_manifest_row_and_resume_refill_face_id(tmp_path):
 
 
 def test_select_only_with_face_unit(tmp_path, capsys):
-    rows = ns_rows([(1, "left", votes(("a", "Agree"), ("b", "Agree")), "l1")] + [(1, "left", "[]", "l1")] * 3
+    rows = ns_rows([(1, "left", votes(("a", "Agree"), ("b", "Agree"), ("c", "Agree")), "l1")]
+                   + [(1, "left", "[]", "l1")] * 3
                    + [(2, "right", votes(("a", "Disagree"), ("b", "Disagree")), "l2")] + [(2, "right", "[]", "l2")] * 2)
     rows.drop(columns="city").to_csv(tmp_path / "toy-city.csv", index=False)
     (tmp_path / dg.CITIES_CACHE_FILE).write_text(json.dumps(
         {"cities": [{"city_id": "toy-city", "visibility": "public", "url": "https://sidewalk-toy.cs.washington.edu"}]}))
     common = ["--label_type", "NoSidewalk", "--select-only", "--rawlabels-cache", str(tmp_path)]
     dg.main(common + ["--out", str(tmp_path / "label")])
-    assert "--select-only: 1 labels selected" in capsys.readouterr().out  # label 5: two Disagrees, margin rule
+    assert "--select-only: 2 labels selected" in capsys.readouterr().out  # labels 1 and 5, margin rule
     dg.main(common + ["--out", str(tmp_path / "face"), "--verdict-unit", "face", "--max-labels-per-face", "3"])
     out = capsys.readouterr().out
-    assert "1 label-rule labels + 6 face-rule labels" in out
+    assert "2 label-rule labels + 5 face-rule labels" in out
     assert "cap 3 per face and class dropped 1" in out
     # 3 incorrect -> int(0.55/0.45 * 3) = 3 correct
     assert "--select-only: 6 labels selected" in out
     prior = json.loads((tmp_path / "face" / "deployment_priors.json").read_text())["NoSidewalk"]
-    assert (prior["correct"], prior["incorrect"]) == (0, 1)  # face rows never enter the margin prior
+    assert (prior["correct"], prior["incorrect"]) == (1, 1)  # face rows never enter the margin prior
+    # the prior is computed before the hook, so the cap cannot move it
+    dg.main(common + ["--out", str(tmp_path / "cap"), "--verdict-unit", "face", "--max-labels-per-face", "1"])
+    capsys.readouterr()
+    prior = json.loads((tmp_path / "cap" / "deployment_priors.json").read_text())["NoSidewalk"]
+    assert (prior["correct"], prior["incorrect"]) == (1, 1)
+
+
+def test_expert_agree_with_a_non_expert_disagree_elsewhere_on_the_face_adds_nothing():
+    rows = ns_rows([(1, "left", votes((EXPERT, "Agree")), "l1"), (1, "left", votes(("d", "Disagree")), "l1"),
+                    (1, "left", "[]", "l1")])
+    out = decide(rows, frozenset({EXPERT}))
+    assert list(out.index) == [1] and out.loc[1, "class_source"] == "expert"  # the label rule only
+
+
+def test_other_label_types_on_the_face_lend_no_votes():
+    rows = ns_rows([(1, "left", "[]", "l1"), (1, "left", "[]", "l1"),
+                    (1, "left", votes(("a", "Agree"), ("b", "Agree")), "l1")])
+    rows.loc[2, "label_type"] = "CurbRamp"
+    assert decide(rows).empty
 
 
 @pytest.mark.parametrize("module", [nf])

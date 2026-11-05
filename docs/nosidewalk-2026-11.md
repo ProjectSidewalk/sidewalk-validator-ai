@@ -31,14 +31,15 @@ The training rule by the rule that decided each label (before the cap):
 | correct | 79 | 2,184 | 4,369 | 5,505 |
 | incorrect | 80 | 200 | 76 | 174 |
 
-Incorrect labels by city under the training rule after the cap: seattle-wa 234, chicago-il 61, amsterdam 41,
-tucson-az 17, oradell-nj 8, then 7 or fewer each. Under the census count the same column read seattle-wa 301,
+Incorrect labels / faces by city under the training rule after the cap: seattle-wa 234 / 84, chicago-il 61 / 32,
+amsterdam 41 / 21, tucson-az 17 / 5, oradell-nj 8 / 5, then 7 or fewer labels each. Under the census count the same column read seattle-wa 301,
 chicago-il 98, tucson-az 73, amsterdam 51.
 
 **The census count and the training rule differ, on purpose.** The census summed votes over a face, so one validator
 who disagreed with three labels of a face counted as three; the training rule counts distinct people (below). That
-costs most in Tucson: 73 incorrect labels by the census count, 23 under the training rule, 17 after the cap. The pilot
-holds `tucson-az` out (decision 5 below), so its held-out incorrect class is thin; see "Open questions".
+costs most in Tucson: 73 incorrect labels by the census count, 23 under the training rule, 17 (on 5 faces) after the
+cap. Tucson alone would be a meaningless held-out set, so the pilot holds out `tucson-az` and `chicago-il` together
+(below and "Open questions").
 
 Signal: 15,455 labels in 39 cities; label margin 1,577 correct / 186 incorrect, with experts 2,245 / 202. It has
 enough label-level verdicts to follow the five shipped types without a face rule.
@@ -95,7 +96,7 @@ which are where false NoSidewalk calls concentrate, so the labels that collect e
 of the time, two labels 80 %, three or more 84 %. Weighted by the share of production labels on faces of each size
 (2026-11-05: 4.9 % of labels on 1-label faces, 5.2 % on 2-label faces, 89.9 % on 3+), **P(correct) = 0.831**. It is
 written into `deployment_priors.json` as pseudo-counts over the 227,035 labels with a face, with a `source` naming the
-method and the Seattle measurement. `data_generation.py` still writes its margin-only entry first;
+method and the Seattle measurement. `data_generation.py` still writes its margin-only entry first (computed before the face rule and the cap);
 `nosidewalk_prior.py` replaces it, and the pilot runs it after every `data_generation.py`. The caveats (one city, a
 per-face measurement used per label, the inventory's own errors) are in [`decisions.md`](decisions.md).
 
@@ -105,15 +106,17 @@ per-face measurement used per label, the inventory's own errors) are in [`decisi
 
 - **Data.** `EXPERTS` set; every deployment the cache holds (a NoSidewalk-only pull of the public ones by default; point
   `CACHE` at a full cache to include private ones, as round 3 did); `--verdict-unit face --max-labels-per-face 5`.
-- **Split.** Face-grouped, `tucson-az` held out (the same held-out city as round 3).
+- **Split.** Face-grouped, `tucson-az` (round 3's public held-out city) and `chicago-il` held out together
+  (`HOLDOUT=tucson-az,chicago-il`, the launcher's default): after the cap, 78 incorrect labels on 37 faces and 475
+  correct labels in `test_heldout`; training keeps 320 of the 398 negatives.
 - **Two crop arms x 3 seeds (42, 43, 44).** Depth-sized (the default) and whole-view (`--fixed-crop-half-px 1024`):
   a NoSidewalk label marks an absence along a stretch, and #42 asked whether the crop size matters.
 - **Evaluate and calibrate.** `evaluate.py --tag s<seed> --per-city` (with the severity and tag slices, on by default),
   then `calibration/calibrate.py` under the face-size prior, Agree only: the Disagree verdict is held back as for the
-  five shipped types ([#57](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/57)).
+  five shipped types ([#57](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/57)).
 - **Report.** `analysis/nosidewalk_pilot.py`: per arm and seed, AUC with a 95 % interval from resampling block faces,
   within-city AUC (the incorrect share differs by city), and the Agree verdict's coverage and precision at the 0.92
-  gate on test and on tucson-az, spliced into the results section below.
+  gate on test and on `test_heldout` (whose two cities also give a within-city AUC), spliced into the results section below.
 
 **Go / no-go bar for serving**, judged after phase B: within-city AUC >= 0.85 on test **and** the Agree verdict's 5-fold
 out-of-fold gate precision with a Wilson 95 % lower bound >= 0.92 on >= 100 test labels. Below that the pilot still
@@ -129,10 +132,11 @@ Seattle, like [#78](https://github.com/ProjectSidewalk/sidewalk-validator-ai/iss
 
 ## Open questions for review
 
-- **Tucson as the held-out city.** Under the training rule tucson-az holds 17 incorrect labels after the cap (105
-  correct before, 31 after), not the 73 the census count suggested. Its held-out AUC interval will be wide. The
-  launcher takes `HOLDOUT=` if another public city should be held out instead (amsterdam has 41 incorrect but only 6
-  correct, so it is no better).
+- **The held-out cities.** Under the training rule after the cap, incorrect labels / faces: seattle-wa 234 / 84,
+  chicago-il 61 / 32, amsterdam 41 / 21, tucson-az 17 / 5. Tucson alone (the plan's choice, the census count suggested
+  73) is five incorrect faces, so the default is `tucson-az,chicago-il` (78 / 37 held out, 15 % of the negatives taken
+  from training). Jon can override with `HOLDOUT=` on the launcher, e.g. `HOLDOUT=chicago-il` alone; amsterdam (41
+  incorrect, 6 correct) is no better a choice.
 - The cap of 5 shrinks the correct class most (12,137 to 4,909) but the 55:45 downsample would cut it to about 486
   anyway; it matters for the incorrect class (530 to 398).
 

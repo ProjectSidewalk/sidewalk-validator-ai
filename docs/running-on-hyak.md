@@ -226,8 +226,8 @@ gate holds per city for the deployed models, is [`per-city-calibration-2026-10.m
 `nosidewalk_submit.sh` runs the NoSidewalk pilot of [#42](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/42)
 in one command: a NoSidewalk-only rawLabels pull (unless `CACHE` points at a complete cache), then per crop arm
 (depth-sized, whole-view) a data job (`data_generation.py --verdict-unit face`, `calibration/nosidewalk_prior.py`,
-`split_data.py --group-col face_id --holdout-cities tucson-az`), three seeds of train + evaluate + calibrate
-(Agree only), and a report job (`analysis/nosidewalk_pilot.py`). From the repo root, in the activated environment:
+`split_data.py --group-col face_id --holdout-cities tucson-az,chicago-il`, override with `HOLDOUT=`), three seeds of train + evaluate + calibrate
+(Agree only), and a CPU-only report job (`analysis/nosidewalk_pilot.py`). From the repo root, in the activated environment:
 
 ```bash
 DATA=/gscratch/makelab/$USER/sidewalk-validator-ai/nosidewalk-2026-11 RUNS=/gscratch/scrubbed/$USER/nosidewalk \

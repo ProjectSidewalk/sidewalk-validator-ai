@@ -119,6 +119,8 @@ def test_launcher_dry_run_prints_the_whole_chain(tmp_path):
     assert "--export=ALL,STEP=train,ARM=whole,SEED=44" in sb[7] and "afterok:dry5" in sb[7]
     assert sb[8].endswith("--dependency=afterany:dry2:dry3:dry4:dry6:dry7:dry8 --export=ALL,STEP=report "
                           "nosidewalk_pilot.slurm")
+    assert "--partition=ckpt-all --gpus-per-node=0" in sb[8]  # the report takes no GPU
+    assert all("--gpus-per-node" not in line for line in sb[:8])
     assert "EXPERTS is not set" in res.stderr
 
 
