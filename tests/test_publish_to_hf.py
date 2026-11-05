@@ -219,7 +219,8 @@ def test_batch_constants_match_fine_tune_classifier():
     import fine_tune_classifier as ft
     assert "per_device_train_batch_size=args.batch_size" in src
     assert "gradient_accumulation_steps=BATCH_TOTAL // args.batch_size" in src
-    assert int(re.search(r"'--batch-size', type=int, default=(\d+)", src).group(1)) == hf_cards.TRAIN_BATCH_SIZE
+    assert "'--batch-size', type=int, default=DEFAULT_BATCH_SIZE" in src
+    assert ft.DEFAULT_BATCH_SIZE == hf_cards.TRAIN_BATCH_SIZE
     assert ft.BATCH_TOTAL // hf_cards.TRAIN_BATCH_SIZE == hf_cards.GRAD_ACCUM
 
 

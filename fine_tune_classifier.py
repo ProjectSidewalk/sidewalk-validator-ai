@@ -337,6 +337,7 @@ def init_settings(args):
 
 
 BATCH_TOTAL = 32  # effective train batch: per-device batch x gradient accumulation (8 x 4 by default)
+DEFAULT_BATCH_SIZE = 8  # --batch-size default; hf_cards.TRAIN_BATCH_SIZE copies it (a test checks)
 
 
 def context_settings(args):
@@ -346,7 +347,7 @@ def context_settings(args):
     arm = getattr(args, "context_arm", "none")
     if arm != "none":
         out.update(context_arm=arm, context_view_res=args.context_view_res)
-    if getattr(args, "batch_size", 8) != 8:
+    if getattr(args, "batch_size", DEFAULT_BATCH_SIZE) != DEFAULT_BATCH_SIZE:
         out["batch_size"] = args.batch_size
     return out
 
@@ -489,7 +490,7 @@ def main(argv=None):
                         help='train a "more context" arm of issue #14 (context_model.py) instead of the plain model')
     parser.add_argument('--context-view-res', type=int, choices=[224, 448], default=224,
                         help='input size of the view_heatmap arm (224: the baseline token count; 448: 4x tokens)')
-    parser.add_argument('--batch-size', type=int, default=8,
+    parser.add_argument('--batch-size', type=int, default=DEFAULT_BATCH_SIZE,
                         help=f'per-device train batch; gradient accumulation is {BATCH_TOTAL} // batch size, so the '
                              f'effective batch stays {BATCH_TOTAL} (two_scale runs two backbone passes per step)')
     args = parser.parse_args(argv)
