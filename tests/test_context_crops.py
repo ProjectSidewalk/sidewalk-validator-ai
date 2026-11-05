@@ -192,8 +192,35 @@ def gen_run(tmp):
     return json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
 
 
-def test_wide_factor_default_is_the_modules():
-    assert dg.build_parser().parse_args(["--label_type", "X"]).context_wide_factor == cc.WIDE_FACTOR
+@pytest.mark.parametrize("extra", [["--context-wide-factor", "2"], ["--context-crops", "--context-wide-factor", "0"]])
+def test_wide_factor_needs_the_flag_and_a_positive_value(stubbed, capsys, extra):
+    with pytest.raises(SystemExit):
+        run_main(stubbed["tmp"], *extra)
+    assert "--context-wide-factor needs --context-crops and must be at least 1" in capsys.readouterr().err
+
+
+def test_context_settings_come_from_the_hook_record_when_there_is_no_run_file(stubbed):
+    """The hook writes no context_run.json; generation_run.json's settings.context_crops is the record."""
+    tmp = stubbed["tmp"]
+    run_main(tmp, "--context-crops", "--context-wide-factor", "2")
+    base = tmp / "out" / "CurbRamp"
+    assert not (base / "context" / cc.RUN_FILE).exists()
+    assert cc.context_settings(str(base)) == (2, cc.VIEW_PX)
+    m = pd.read_csv(base / "manifest.csv")
+    cc.load_index(str(base), m.label_uid, dict(zip(m.label_uid, m.crop_half_px)))  # consistent at factor 2
+    assert cc.context_settings(str(tmp / "nowhere")) == (cc.WIDE_FACTOR, cc.VIEW_PX)
+
+
+def test_stale_context_after_force_reselect_without_the_flag_is_refused(stubbed):
+    tmp = stubbed["tmp"]
+    run_main(tmp, "--context-crops", "--context-wide-factor", "1")
+    run_main(tmp, "--fixed-crop-half-px", "100", "--force-reselect")  # crops re-cut, context/ left as it was
+    base = tmp / "out" / "CurbRamp"
+    m = pd.read_csv(base / "manifest.csv")
+    assert (m.crop_half_px == 100).all()
+    cc.load_index(str(base), m.label_uid)  # uids and files alone cannot tell
+    with pytest.raises(ValueError, match="re-cut.*backfill"):
+        cc.load_index(str(base), m.label_uid, dict(zip(m.label_uid, m.crop_half_px)))
 
 
 def test_hook_writes_one_context_row_per_ok_crop(stubbed):
