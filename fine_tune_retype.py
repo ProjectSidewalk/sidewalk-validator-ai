@@ -150,7 +150,7 @@ def compute_retype_metrics(logits, labels, claimed, is_correct):
     F1 over the classes present), ``auc_claimed_<type>`` of ``p(claimed)`` (correct vs incorrect) per claimed type
     with both classes, and ``auc_claimed`` = the mean of those AUCs over the five ``retype.VALIDATOR_TYPES`` only,
     weighted by each type's val row count (0.0 when none has both classes, so checkpoint selection still has a
-    number). The weighting keeps a small, noisy val type (NoCurbRamp has a few dozen rows) from moving checkpoint
+    number). The weighting keeps a small, noisy val type (NoSidewalk has a few dozen rows) from moving checkpoint
     selection as much as CurbRamp; the extras (NoSidewalk, Signal, Other) are reported but do not select, since no
     deployed validator serves them.
 
