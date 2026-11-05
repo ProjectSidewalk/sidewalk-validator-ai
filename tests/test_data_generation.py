@@ -11,6 +11,7 @@ import pytest
 import crop_pose
 import data_generation as dg
 import hard_examples
+import job_crop
 
 AI = dg.AI_USER_ID
 
@@ -488,6 +489,29 @@ def test_check_resume_skips_depth_settings_only_when_both_runs_are_fixed_size(tm
     assert dg.check_resume(str(run), h, {**depth, "depth_encoder": "vitl"})[1] == {"depth_encoder": ("vitb", "vitl")}
 
 
+def test_check_resume_compares_job_window_crops_on_either_side(tmp_path):
+    a = pd.DataFrame({"label_uid": ["x:1"], "label_class": ["correct"]})
+    h = dg.selection_hash(a)
+    depth = {"tilt_beta": 0.95, "depth_encoder": "vitb", "depth_dataset": "vkitti"}
+    job = {"tilt_beta": 0.95, "job_window_crops": True}
+    run = tmp_path / "generation_run.json"
+    run.write_text(json.dumps({"selection_sha256": h, "settings": depth}))  # a record from before the flag
+    assert dg.check_resume(str(run), h, job)[1] == {
+        "depth_encoder": ("vitb", None), "depth_dataset": ("vkitti", None), "job_window_crops": (None, True)}
+    run.write_text(json.dumps({"selection_sha256": h, "settings": job}))
+    assert dg.check_resume(str(run), h, job) == (None, {}, {})
+    assert dg.check_resume(str(run), h, depth)[1] == {"job_window_crops": (True, None)}
+    run.write_text(json.dumps({"selection_sha256": h, "settings": {**job, **depth}}))  # a job record naming an encoder
+    assert dg.check_resume(str(run), h, job) == (None, {}, {})  # neither run sizes by depth, so it is not compared
+    assert dg.check_resume(str(run), h, {"tilt_beta": 0.95, "fixed_crop_half_px": 300})[1] == {
+        "fixed_crop_half_px": (None, 300), "job_window_crops": (True, None)}
+
+
+def test_no_depth_covers_both_depthless_geometries():
+    assert dg._no_depth({"fixed_crop_half_px": 300}) and dg._no_depth({"job_window_crops": True})
+    assert not dg._no_depth({}) and not dg._no_depth({"job_window_crops": False, "fixed_crop_half_px": None})
+
+
 def test_manifest_row_uid_and_crop_path():
     row = pd.Series({"city": "seattle-wa", "label_id": 12345, "pano_id": "abc", "label_class": "correct",
                      "author": "human", "human_agree": 3, "human_disagree": 0, "camera_pitch": np.nan})
@@ -654,7 +678,7 @@ def test_depth_sized_crop_clips_near_features():
         dg.depth_sized_crop(img, 0.0)
 
 
-@pytest.mark.parametrize("module", [dg, hard_examples, crop_pose])
+@pytest.mark.parametrize("module", [dg, hard_examples, crop_pose, job_crop])
 def test_doctests(module):
     result = doctest.testmod(module)
     assert result.attempted > 0 and result.failed == 0
@@ -701,6 +725,17 @@ def test_fine_tune_records_a_fixed_crop_size_only_when_there_is_one(tmp_path):
     (base / "generation_run.json").write_text(json.dumps({"tilt_beta": 0.95, "fixed_crop_half_px": 300}))
     assert ft.generation_settings("Toy", str(tmp_path)) == {"tilt_beta": 0.95, "depth_encoder": None,
                                                             "fixed_crop_half_px": 300}
+
+
+def test_fine_tune_records_job_window_crops_only_when_set(tmp_path):
+    import fine_tune_classifier as ft
+    base = tmp_path / "Toy"
+    base.mkdir()
+    (base / "generation_run.json").write_text(json.dumps({"tilt_beta": 0.95, "job_window_crops": True}))
+    assert ft.generation_settings("Toy", str(tmp_path)) == {"tilt_beta": 0.95, "depth_encoder": None,
+                                                            "job_window_crops": True}
+    (base / "generation_run.json").write_text(json.dumps({"tilt_beta": 0.95, "job_window_crops": False}))
+    assert "job_window_crops" not in ft.generation_settings("Toy", str(tmp_path))
 
 
 def _write_priors_many(path, label_type):  # module level, so a spawned process can import it
