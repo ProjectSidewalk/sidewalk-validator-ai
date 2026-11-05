@@ -174,8 +174,8 @@ def pick_all(pool, seed=SEED, cap=300, n_decoys=50, rank="band_first"):
 
 
 def prior_status(prior_voters):
-    """``unvoted`` when no human voted on the label before the build, else ``other-voted`` (the rater's own are
-    already left out).
+    """``unvoted`` when no human voted on the label before the build (Agree, Disagree or Unsure: the same definition
+    as ``ai_labels_eval.select_labels``' ``ai_unvoted``), else ``other-voted`` (the rater's own are already left out).
 
     >>> prior_status(""), prior_status("lead other")
     ('unvoted', 'other-voted')
