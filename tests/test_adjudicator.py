@@ -7,6 +7,7 @@ import json
 import math
 import os
 import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 
@@ -143,9 +144,18 @@ def test_gold_summary_has_no_ids(tmp_path):
     assert sum(c["n"] for c in s["cells"]) == 28
 
 
+def _checkout(tmp_path):
+    """A throwaway git work tree, so the "refuses a git checkout" tests do not depend on how the repo was obtained
+    (a `git archive` export has no .git)."""
+    c = tmp_path / "checkout"
+    c.mkdir()
+    subprocess.run(["git", "init", "-q", str(c)], check=True)
+    return c
+
+
 def test_gold_refuses_output_inside_a_git_checkout(tmp_path):
     argv = _gold_argv(tmp_path)
-    argv[argv.index("--out-dir") + 1] = os.path.join(adj.REPO_DIR, "scratch-gold")
+    argv[argv.index("--out-dir") + 1] = str(_checkout(tmp_path) / "scratch-gold")
     with pytest.raises(SystemExit, match="git checkout"):
         adj.main(argv)
 
@@ -395,7 +405,7 @@ def test_score_refuses_foreign_files(tmp_path, stub):
         _scored(tmp_path, stub)
     with pytest.raises(SystemExit, match="git checkout"):
         adj.main(_score_argv(tmp_path / "out" / "gold.csv", tmp_path / "data", tmp_path / "crops",
-                             os.path.join(adj.REPO_DIR, "scratch-scores")))
+                             _checkout(tmp_path) / "scratch-scores"))
 
 
 def test_score_uses_round3_crop_when_no_staged_crop(tmp_path):
@@ -584,7 +594,7 @@ def test_disagreements_packet_masked(tmp_path, stub):
     assert len(adj.pick_disagreements(m, "s")) == 6
     with pytest.raises(SystemExit, match="git checkout"):
         adj.main(["disagreements", "--gold", str(gold), "--scores", str(out), "--model", "stub", "--out-dir", str(pk),
-                  "--key-dir", os.path.join(adj.REPO_DIR, "scratch-key"), "--seed", "s"])
+                  "--key-dir", str(_checkout(tmp_path) / "scratch-key"), "--seed", "s"])
 
 
 # ---------------------------------------------------------------------------------------------------------------------
