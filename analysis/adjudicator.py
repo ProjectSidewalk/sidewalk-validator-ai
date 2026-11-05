@@ -27,8 +27,10 @@ Stages (subcommands)
     Every gold item through a running vLLM server: the verdict from the first token's top-20 log-probs (as
     ``vlm_vllm.py``), then a one-sentence reason in a second request. Resumable.
 ``agree``
-    Agreement with the expert per model and type, the crowd on the same items, the paired difference with a
-    bootstrap interval and McNemar's exact test, strata, severity and tag slices with training counts, and the bar.
+    On the AI's Disagree votes (the population a relabel would touch): agreement with the expert per model and
+    type, the crowd on the same items, the paired difference with a bootstrap interval and McNemar's exact test,
+    severity and tag slices with training counts, and the bar. Strata cover every decided item; the decoys (AI
+    Agree or Unsure) get a separate sanity table.
 ``disagreements``
     A masked reading packet of up to 30 items where a model and the expert disagree.
 ``relabel``
@@ -37,7 +39,8 @@ Stages (subcommands)
     ``adj-replace`` and ``adj-soft`` split variants for ``confident_learning.slurm``.
 ``reliability``
     The reliability-weighted crowd (``validator_reliability.py``'s vote weights) against the expert, in the same
-    table as the models.
+    table as the models, with the majorities the weights flip and the ties they break counted on their own (under
+    the current weights the weighted target is the plain majority except on ties).
 ``report``
     The doc's tables and provenance, spliced between ``<!-- BEGIN GENERATED: name ... -->`` markers.
 
@@ -111,7 +114,8 @@ REASON_MAX_TOKENS = 60
 PACKET_PER_TYPE = 6
 BEGIN = "<!-- BEGIN GENERATED: {name} (analysis/adjudicator.py) -->"
 END = "<!-- END GENERATED: {name} -->"
-BLOCKS = ("gold_counts", "agreement", "paired", "strata", "slices", "reliability", "bar", "variants", "provenance")
+BLOCKS = ("gold_counts", "agreement", "paired", "decoys", "strata", "slices", "reliability", "bar", "variants",
+          "provenance")
 VARIANTS = ("adj-replace", "adj-soft")
 GB_PER_PANO = 0.01
 
@@ -451,7 +455,8 @@ def label_geometry(items, rawlabels_dir, label_points=None):
     """``(rows, missing)``: each item with the crop geometry, ``pano_source`` and ``author`` from the rawLabels cache
     (``<rawlabels_dir>/<city_id>.csv``, joined one-to-one on ``label_id`` within its city) or from
     ``label_points`` (``pull_label_points.sh`` output, keyed on ``schema, label_id``) for items the cache lacks
-    (private deployments, excluded authors). ``missing`` lists the items found in neither."""
+    (private deployments, excluded authors, labels newer than the snapshot or deleted since). ``missing`` lists the
+    items found in neither."""
     parts = []
     for city, g in items.groupby("city_id", sort=True):
         path = os.path.join(rawlabels_dir, f"{city}.csv")
@@ -860,6 +865,27 @@ def _groups(m, by):
                 yield model, k, sub
 
 
+def ai_disagree_items(m):
+    """The rows the AI voted Disagree on: the population the adjudicator would relabel (#77) and the one the bar,
+    the agreement table, the paired comparison and the slices are computed on. The decoys (AI Agree or Unsure) are
+    scored separately by :func:`decoy_rows`, because the crowd agrees with the expert far more often on them."""
+    return m[m.ai_vote == "Disagree"]
+
+
+def decoy_rows(m):
+    """Per model x (type | all), on the decoys (the AI voted Agree or Unsure): ``n``, ``vlm_agree`` [``lo``,
+    ``hi``] (Wilson) and ``says_correct``, the share the model calls correct. A sanity row: decoys are mostly correct
+    labels, so a usable model calls most of them correct. Not part of the bar."""
+    rows = []
+    for model, t, x in _groups(m[m.ai_vote != "Disagree"], "label_type"):
+        v = rl._rate(int((x.verdict == x.expert).sum()), len(x))
+        rows.append({"model": model, "label_type": t, "n": v["n"], "vlm_agree": v["rate"], "lo": v["lo"],
+                     "hi": v["hi"], "says_correct": float((x.verdict == "correct").mean()),
+                     "expert_correct": float((x.expert == "correct").mean())})
+    return pd.DataFrame(rows, columns=["model", "label_type", "n", "vlm_agree", "lo", "hi", "says_correct",
+                                       "expert_correct"])
+
+
 def agreement_rows(m, n_boot=N_BOOT, seed=0):
     """Per model x (type | all): ``n``, ``vlm_agree`` [``lo``, ``hi``] (Wilson; share of items where the model's
     verdict is the expert's), the crowd majority on the items that have one (``crowd_n``, ``crowd_agree``
@@ -911,11 +937,11 @@ def paired_delta(vlm_ok, crowd_ok, n_boot=N_BOOT, seed=0):
 
 
 def paired_rows(m, n_boot=N_BOOT, seed=0):
-    """Per model x (type | all), on the items with a crowd majority: ``n_pair``, ``vlm_agree``, ``crowd_agree``,
+    """Per model x (type | all), on the AI-Disagree items with a crowd majority (decoys never enter): ``n_pair``, ``vlm_agree``, ``crowd_agree``,
     ``delta`` [``delta_lo``, ``delta_hi``] (paired, label-level bootstrap), ``mcnemar_p`` and the discordant counts
     ``b_vlm_only`` (the model right, the crowd wrong) and ``b_crowd_only``."""
     rows = []
-    for model, t, x in _groups(m[m.crowd_class != ""], "label_type"):
+    for model, t, x in _groups(ai_disagree_items(m)[lambda d: d.crowd_class != ""], "label_type"):
         v, c = (x.verdict == x.expert).to_numpy(), (x.crowd_class == x.expert).to_numpy()
         delta, lo, hi = paired_delta(v, c, n_boot, sl.slice_seed(seed, f"{model}/{t}"))
         b, cc = int((v & ~c).sum()), int((~v & c).sum())
@@ -958,8 +984,9 @@ def slice_tables(m, train, min_n=SLICE_MIN_N, n_boot=N_BOOT, seed=0):
 
 def bar_decision(paired_row, all_row, min_n=BAR_MIN_N):
     """Whether a (model, type) clears the bar: ``n_pair >= min_n``, the paired lower bound of (model - crowd)
-    agreement with the expert ``> 0``, and the model's agreement on every decided item (the lone ones, which have no
-    crowd majority, included) at least the crowd's on the paired items.
+    agreement with the expert ``> 0``, and the model's agreement on every decided AI-Disagree item (the lone ones,
+    which have no crowd majority, included) at least the crowd's on the paired items. Both rows must come from the
+    AI-Disagree items only (:func:`ai_disagree_items`); :func:`bar_table` checks that.
 
     >>> bar_decision({"n_pair": 40, "delta_lo": 0.01, "crowd_agree": 0.7}, {"vlm_agree": 0.8})["clears"]
     True
@@ -979,7 +1006,10 @@ def bar_decision(paired_row, all_row, min_n=BAR_MIN_N):
 
 
 def bar_table(agreement, paired, min_n=BAR_MIN_N):
-    """``{model: {type: {"clears", "reason", "delta", "delta_lo"}}}`` for every model x (type | all)."""
+    """``{model: {type: {"clears", "reason", "delta", "delta_lo"}}}`` for every model x (type | all). ``agreement``
+    must be :func:`agreement_rows` of the AI-Disagree items only (every row's ``ai_disagree_n`` equals its ``n``)."""
+    if len(agreement) and not (agreement.ai_disagree_n == agreement.n).all():
+        raise ValueError("bar_table needs agreement rows of the AI-Disagree items only (decoys are not in the bar)")
     out = {}
     a = agreement.set_index(["model", "label_type"])
     for r in paired.to_dict("records"):
@@ -1016,6 +1046,15 @@ def paired_markdown(rows):
         lines.append(f"| {r['model']} | {r['label_type']} | {r['n_pair']} | {100 * r['vlm_agree']:.1f}% | "
                      f"{100 * r['crowd_agree']:.1f}% | {100 * r['delta']:+.1f}{ci} | {r['b_vlm_only']} | "
                      f"{r['b_crowd_only']} | {r['mcnemar_p']:.3g} |")
+    return "\n".join(lines)
+
+
+def decoys_markdown(rows):
+    lines = ["| Model | Type | Decoys (AI Agree or Unsure) | Agrees with the expert | Model says correct | "
+             "Expert says correct |", "|---|---|---:|---|---:|---:|"]
+    for r in rows.to_dict("records"):
+        lines.append(f"| {r['model']} | {r['label_type']} | {r['n']} | {_pct(r['vlm_agree'], r['lo'], r['hi'])} | "
+                     f"{100 * r['says_correct']:.1f}% | {100 * r['expert_correct']:.1f}% |")
     return "\n".join(lines)
 
 
@@ -1065,21 +1104,26 @@ def cmd_agree(args):
     models = args.models.split(",")
     m = merge_scores(gold, load_scores(args.scores, models))
     unscored = {mod: int(gold.decided.sum() - (m.model == mod).sum()) for mod in models}
-    agreement = agreement_rows(m, args.n_boot, args.seed)
+    dis = ai_disagree_items(m)
+    agreement = agreement_rows(dis, args.n_boot, args.seed)
     paired = paired_rows(m, args.n_boot, args.seed)
+    decoys = decoy_rows(m)
     strata = stratum_rows(m)
-    tabs = slice_tables(m, train_rows_of(args.split_root) if args.split_root else None, n_boot=args.n_boot,
+    tabs = slice_tables(dis, train_rows_of(args.split_root) if args.split_root else None, n_boot=args.n_boot,
                         seed=args.seed)
     bar = bar_table(agreement, paired)
     os.makedirs(args.out_dir, exist_ok=True)
     agreement.to_csv(os.path.join(args.out_dir, "agreement.csv"), index=False)
     paired.to_csv(os.path.join(args.out_dir, "paired.csv"), index=False)
+    decoys.to_csv(os.path.join(args.out_dir, "decoys.csv"), index=False)
     strata.to_csv(os.path.join(args.out_dir, "strata.csv"), index=False)
     tabs["severity"].to_csv(os.path.join(args.out_dir, "slices_severity.csv"), index=False)
     tabs["tag"].to_csv(os.path.join(args.out_dir, "slices_tag.csv"), index=False)
     write_json(os.path.join(args.out_dir, "bar.json"), {"min_n": BAR_MIN_N, "n_boot": args.n_boot, "seed": args.seed,
+                                                       "population": "ai_vote == Disagree",
                                                        "unscored_decided": unscored, "decisions": bar})
-    md = "\n\n".join([agreement_markdown(agreement), paired_markdown(paired), strata_markdown(strata),
+    md = "\n\n".join([agreement_markdown(agreement), paired_markdown(paired), decoys_markdown(decoys),
+                      strata_markdown(strata),
                       slices_markdown(tabs), bar_markdown(bar)])
     with open(os.path.join(args.out_dir, "agree.md"), "w") as f:
         f.write(md + "\n")
@@ -1384,7 +1428,15 @@ RELIABILITY_MODELS = {"crowd_pool": "crowd majority (pool, 2026-10-27/28)",
 
 def reliability_rows(g, n_boot=N_BOOT, seed=0):
     """Rows in the agreement table's layout, one per target x (type | all), on the covered items, plus
-    ``n_gold_decided``, ``n_covered`` and the paired delta (weighted - unweighted snapshot majority, same items)."""
+    ``n_gold_decided``, ``n_covered`` and, on the reliability-weighted rows, how the weights changed the snapshot's
+    plain majority: ``n_flipped`` (a majority the weights reverse) and the tie-broken items (no plain majority, a
+    weighted one): ``n_tie_broken`` and ``tie_agree`` [``tie_lo``, ``tie_hi``], their agreement with the expert.
+
+    Under ``validator_reliability.vote_weights`` (Beta-smoothed reliabilities over their mean, so every weight is
+    close to 1) the weighted target equals the plain majority except on ties: on the 2026-10-19 Seattle snapshot
+    0 of 142,275 majorities flip, and the weights break 9,570 ties. So the weighted and plain rows differ only by
+    the tie-broken items, and those are reported on their own. ``n_boot`` and ``seed`` are kept for the CLI's
+    signature; no interval here is bootstrapped."""
     rows = []
     for t in ("all",) + tuple(LABEL_TYPES):
         x = g if t == "all" else g[g.label_type == t]
@@ -1392,34 +1444,38 @@ def reliability_rows(g, n_boot=N_BOOT, seed=0):
             continue
         cov = x[x.covered]
         both = cov[(cov.reliability_weighted != "") & (cov.crowd_cache != "")]
-        delta, lo, hi = paired_delta((both.reliability_weighted == both.expert).to_numpy(),
-                                     (both.crowd_cache == both.expert).to_numpy(), n_boot,
-                                     sl.slice_seed(seed, f"reliability/{t}"))
+        ties = cov[(cov.reliability_weighted != "") & (cov.crowd_cache == "")]
+        tie = rl._rate(int((ties.reliability_weighted == ties.expert).sum()), len(ties))
         for col, name in RELIABILITY_MODELS.items():
             y = cov[cov[col] != ""]
             r = rl._rate(int((y[col] == y.expert).sum()), len(y))
             d = y[y.ai_vote == "Disagree"]
+            weighted = col == "reliability_weighted"
             rows.append({"model": name, "label_type": t, "n": r["n"], "vlm_agree": r["rate"], "lo": r["lo"],
                          "hi": r["hi"], "crowd_n": 0, "crowd_agree": np.nan, "crowd_lo": np.nan, "crowd_hi": np.nan,
                          "ai_disagree_n": int(len(d)),
                          "ai_confirmed": float((d.expert == "incorrect").mean()) if len(d) else np.nan,
                          "auc_vs_expert": np.nan, "auc_lo": np.nan, "auc_hi": np.nan,
                          "n_gold_decided": int(len(x)), "n_covered": int(len(cov)),
-                         "n_paired": int(len(both)), "delta_weighted_minus_unweighted": delta,
-                         "delta_lo": lo, "delta_hi": hi})
+                         "n_flipped": int((both.reliability_weighted != both.crowd_cache).sum()) if weighted else 0,
+                         "n_tie_broken": int(len(ties)) if weighted else 0,
+                         "tie_agree": tie["rate"] if weighted else np.nan,
+                         "tie_lo": tie["lo"] if weighted else np.nan, "tie_hi": tie["hi"] if weighted else np.nan})
     return pd.DataFrame(rows)
 
 
 def reliability_markdown(rows):
-    out = [agreement_markdown(rows), "", "| Type | Decided gold items | Covered | Paired | Weighted - unweighted [95%] |",
-           "|---|---:|---:|---:|---|"]
+    out = [agreement_markdown(rows), "", "| Type | Decided gold items | Covered | Plain majorities the weights flip | "
+           "Ties the weights break | Tie-broken items: weighted target agrees with the expert |",
+           "|---|---:|---:|---:|---:|---|"]
     for r in rows[rows.model == RELIABILITY_MODELS["reliability_weighted"]].to_dict("records"):
-        d = "" if pd.isna(r["delta_weighted_minus_unweighted"]) else \
-            f"{100 * r['delta_weighted_minus_unweighted']:+.1f}" + (
-                "" if pd.isna(r["delta_lo"]) else f" [{100 * r['delta_lo']:+.1f}, {100 * r['delta_hi']:+.1f}]")
-        out.append(f"| {r['label_type']} | {r['n_gold_decided']} | {r['n_covered']} | {r['n_paired']} | {d} |")
+        tie = _pct(r["tie_agree"], r["tie_lo"], r["tie_hi"]) if r["n_tie_broken"] else ""
+        out.append(f"| {r['label_type']} | {r['n_gold_decided']} | {r['n_covered']} | {r['n_flipped']} | "
+                   f"{r['n_tie_broken']} | {tie} |")
     out += ["", "Covered: a public deployment with at least one human vote in the rawLabels snapshot the weights were "
-                "built from; private-deployment items count only as not covered."]
+                "built from; private-deployment items count only as not covered. Under the current weight scheme the "
+                "weighted target is the plain majority except on ties, so the weighted and snapshot rows differ only "
+                "by the tie-broken items in the last two columns."]
     return "\n".join(out)
 
 
@@ -1553,10 +1609,12 @@ def provenance_markdown(p):
 def report_blocks(agree_dir, gold_summary, scores_dir=None, split_root=None):
     """``{block name: Markdown}`` for the doc, from the ``agree`` / ``reliability`` outputs."""
     blocks = {"gold_counts": gold_markdown(gold_summary) + f"\n\n`gold.csv` sha256 `{gold_summary.get('gold_sha256')}`."}
-    a, p, s = (_csv(os.path.join(agree_dir, f)) for f in ("agreement.csv", "paired.csv", "strata.csv"))
+    a, p, dc, s = (_csv(os.path.join(agree_dir, f)) for f in ("agreement.csv", "paired.csv", "decoys.csv",
+                                                               "strata.csv"))
     pending = "_Not yet run._"
     blocks["agreement"] = agreement_markdown(a) if a is not None else pending
     blocks["paired"] = paired_markdown(p) if p is not None else pending
+    blocks["decoys"] = decoys_markdown(dc) if dc is not None else pending
     blocks["strata"] = strata_markdown(s) if s is not None else pending
     sv, tg = _csv(os.path.join(agree_dir, "slices_severity.csv")), _csv(os.path.join(agree_dir, "slices_tag.csv"))
     blocks["slices"] = slices_markdown({"severity": sv, "tag": tg}) if sv is not None and tg is not None else pending

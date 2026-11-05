@@ -8,6 +8,7 @@ import math
 import os
 import shutil
 import sys
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -359,6 +360,12 @@ def test_score_writes_adj_columns_verdict_reason_and_resumes(tmp_path, stub):
     # the reason request carries the prefill turn too
     reason_bodies = [b for u, b in stub.calls if u.endswith("/chat/completions") and "logprobs" not in b]
     assert reason_bodies and all(b["messages"][-1]["content"] == "<think></think>" for b in reason_bodies)
+    # ... and the model's own answer as the assistant turn: "No." after an incorrect verdict (the stub says no to
+    # obstacles), "Yes." after a correct one
+    answers = [(b["messages"][1]["content"], "obstacle label" in b["messages"][0]["content"][1]["text"])
+               for b in reason_bodies]
+    assert {a for a, _ in answers} == {"Yes.", "No."}
+    assert all(a == ("No." if obstacle else "Yes.") for a, obstacle in answers)
     n_calls = len(stub.calls)
     adj.main(_score_argv(gold, root, crops, out, prefill="<think></think>"))
     assert len(stub.calls) == n_calls  # nothing left to score
@@ -447,6 +454,35 @@ def test_paired_delta_and_mcnemar_by_hand():
     assert adj.mcnemar_exact(3, 3) == 1.0
 
 
+def test_paired_rows_take_ai_disagree_items_with_a_crowd_majority_only():
+    rows = ([{"expert": "incorrect", "p_incorrect": 0.9, "crowd_class": "incorrect"}] * 4
+            + [{"expert": "incorrect", "p_incorrect": 0.9, "crowd_class": ""}] * 3  # no crowd majority
+            + [{"expert": "correct", "p_incorrect": 0.1, "crowd_class": "correct", "ai_vote": "Agree"}] * 5  # decoys
+            + [{"expert": "correct", "p_incorrect": 0.9, "crowd_class": "correct", "ai_vote": "Unsure",
+                "label_type": "Obstacle"}] * 2)
+    p = adj.paired_rows(_m(rows), n_boot=0).set_index("label_type")
+    assert p.loc["all", "n_pair"] == 4 and p.loc["CurbRamp", "n_pair"] == 4
+    assert "Obstacle" not in p.index  # its only paired items are decoys
+    assert p.loc["all", "crowd_agree"] == 1.0 and p.loc["all", "vlm_agree"] == 1.0
+
+
+def test_decoys_are_a_separate_sanity_row_and_never_in_the_bar():
+    rows = ([{"expert": "incorrect", "p_incorrect": 0.9, "crowd_class": "incorrect"}] * 3
+            + [{"expert": "correct", "p_incorrect": 0.2, "crowd_class": "correct", "ai_vote": "Agree"}] * 3
+            + [{"expert": "incorrect", "p_incorrect": 0.2, "crowd_class": "correct", "ai_vote": "Unsure"}])
+    m = _m(rows)
+    d = adj.decoy_rows(m).set_index("label_type").loc["all"]
+    assert d.n == 4 and d.vlm_agree == pytest.approx(0.75) and d.says_correct == 1.0
+    assert d.expert_correct == pytest.approx(0.75)
+    dis = adj.ai_disagree_items(m)
+    assert len(dis) == 3 and set(dis.ai_vote) == {"Disagree"}
+    bar = adj.bar_table(adj.agreement_rows(dis, n_boot=0), adj.paired_rows(m, n_boot=0))
+    assert bar["M"]["all"]["n_pair"] == 3
+    with pytest.raises(ValueError, match="AI-Disagree items only"):
+        adj.bar_table(adj.agreement_rows(m, n_boot=0), adj.paired_rows(m, n_boot=0))
+    assert list(adj.decoy_rows(_m([{"expert": "correct"}])).columns)[:3] == ["model", "label_type", "n"]
+
+
 def test_shuffled_verdicts_drop_agreement_to_chance():
     rng = np.random.default_rng(7)
     n = 400
@@ -497,15 +533,26 @@ def test_bar_decision(paired, all_row, clears, why):
 
 def test_agree_cli_writes_aggregates_and_bar(tmp_path, stub):
     gold, root, crops, out = _scored(tmp_path, stub, no_reason=True)
+    g = pd.read_csv(gold, dtype=str, keep_default_na=False)
+    g.loc[g.label_uid == "city-b:203", "ai_vote"] = "Agree"  # a scored decoy with a crowd majority
+    g.to_csv(gold, index=False)
     adj.main(["agree", "--gold", str(gold), "--scores", str(out), "--models", "stub", "--split-root", str(root),
               "--out-dir", str(tmp_path / "agree"), "--n-boot", "50"])
-    for f in ("agreement.csv", "paired.csv", "strata.csv", "slices_severity.csv", "slices_tag.csv", "bar.json",
-              "agree.md"):
+    for f in ("agreement.csv", "paired.csv", "decoys.csv", "strata.csv", "slices_severity.csv", "slices_tag.csv",
+              "bar.json", "agree.md"):
         assert (tmp_path / "agree" / f).exists()
         text = (tmp_path / "agree" / f).read_text()
         assert "city-a:" not in text and "city-c" not in text
     bar = json.load(open(tmp_path / "agree" / "bar.json"))
     assert set(bar["decisions"]["stub"]) <= {"all", "CurbRamp", "Obstacle"} and bar["min_n"] == 30
+    assert bar["population"] == "ai_vote == Disagree"
+    a = pd.read_csv(tmp_path / "agree" / "agreement.csv")
+    assert (a.n == a.ai_disagree_n).all()  # the agreement table is the AI-Disagree items only
+    assert a.set_index("label_type").loc["all", "n"] == 10
+    assert pd.read_csv(tmp_path / "agree" / "decoys.csv").set_index("label_type").loc["all", "n"] == 1
+    assert pd.read_csv(tmp_path / "agree" / "paired.csv").set_index("label_type").loc["all", "n_pair"] == 6
+    assert bar["decisions"]["stub"]["all"]["n_pair"] == 6
+    assert pd.read_csv(tmp_path / "agree" / "slices_severity.csv").n.sum() == 10  # slices: AI Disagrees only
     assert not any(d["clears"] for d in bar["decisions"]["stub"].values())  # n < 30 in the fixture
     md = (tmp_path / "agree" / "agree.md").read_text()
     assert "reference: crowd majority, round 1" in md and "74.5% [64.8, 82.2]" in md
@@ -706,6 +753,14 @@ def test_reliability_refuses_snapshot_after_rating(tmp_path):
     with pytest.raises(ValueError, match="no created"):
         adj.snapshot_check({}, str(raw), "2026-10-27")
     adj.snapshot_check({"created": "2026-10-22T15:38:50"}, str(raw), "2026-10-27")  # naive times read as UTC
+    with pytest.raises(ValueError, match="vote weights were created"):  # on the cutoff itself: refused
+        adj.snapshot_check({"created": "2026-10-27T00:00:00+00:00"}, str(raw), "2026-10-27")
+    adj.snapshot_check({"created": "2026-10-26T23:59:59+00:00"}, str(raw), "2026-10-27")
+    cutoff = datetime(2026, 10, 27, tzinfo=timezone.utc).timestamp()
+    os.utime(raw / "city-a.csv", (cutoff, cutoff))
+    with pytest.raises(ValueError, match="city-a.csv"):
+        adj.snapshot_check({"created": "2026-10-22T15:38:50+00:00"}, str(raw), "2026-10-27")
+    os.utime(raw / "city-a.csv", (OLD, OLD))
     os.utime(raw / "city-b.csv", None)  # touched now: after the rating
     with pytest.raises(ValueError, match="city-b.csv"):
         adj.snapshot_check({"created": "2026-10-22T15:38:50+00:00"}, str(raw), "2026-10-27")
@@ -725,6 +780,29 @@ def test_reliability_coverage_excludes_private_and_unvoted(tmp_path):
     assert g.loc["city-a:5", "covered"] and g.loc["city-a:5", "crowd_cache"] == "correct"  # the AI vote is ignored
     assert g.loc["city-a:4", "crowd_cache"] == "correct" and g.loc["city-a:4", "reliability_weighted"] == "incorrect"
     assert g.loc["city-a:104", "crowd_cache"] == "" and g.loc["city-a:104", "reliability_weighted"] == ""
+
+
+def test_reliability_reports_flips_and_tie_broken_items_not_a_delta():
+    def row(t, expert, cache, weighted, covered=True):
+        return {"label_type": t, "expert": expert, "crowd_cache": cache, "reliability_weighted": weighted,
+                "crowd_pool": cache, "covered": covered, "ai_vote": "Disagree"}
+    g = pd.DataFrame([row("CurbRamp", "correct", "correct", "correct")] * 4
+                     + [row("CurbRamp", "incorrect", "correct", "incorrect")]  # a flipped majority
+                     + [row("CurbRamp", "correct", "", "correct")] * 2  # ties the weights break, right
+                     + [row("Obstacle", "correct", "", "incorrect")]  # a tie broken the wrong way
+                     + [row("Obstacle", "correct", "", "")]  # a tie the weights leave
+                     + [row("Obstacle", "correct", "", "correct", covered=False)])  # not covered
+    r = adj.reliability_rows(g, n_boot=0)
+    w = r[r.model == adj.RELIABILITY_MODELS["reliability_weighted"]].set_index("label_type")
+    assert w.loc["all", "n_flipped"] == 1 and w.loc["all", "n_tie_broken"] == 3
+    assert w.loc["all", "tie_agree"] == pytest.approx(2 / 3) and w.loc["all", "n_covered"] == 9
+    assert w.loc["Obstacle", "n_tie_broken"] == 1 and w.loc["Obstacle", "tie_agree"] == 0.0
+    assert w.loc["CurbRamp", "n_flipped"] == 1 and w.loc["CurbRamp", "tie_agree"] == 1.0
+    assert not any(c.startswith("delta") for c in r.columns)
+    plain = r[r.model == adj.RELIABILITY_MODELS["crowd_cache"]].set_index("label_type")
+    assert (plain.n_tie_broken == 0).all() and plain.tie_agree.isna().all()
+    md = adj.reliability_markdown(r)
+    assert "| all | 10 | 9 | 1 | 3 | 66.7% [" in md and "except on ties" in md
 
 
 def test_reliability_table_layout_matches_agreement(tmp_path, capsys):
