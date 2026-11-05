@@ -1047,7 +1047,7 @@ def test_job_window_crops_cut_the_backend_window_and_record_it(job_store):
         assert np.allclose(crop[box.height // 2, box.width // 2], PANO_BGR[::-1], atol=3)  # saved as RGB
     assert m.loc[f"{CITY}:3", "clipped"] == 1  # y = 250 of 256: shifted off the bottom pole
     run = json.loads((_job_out(tmp) / "generation_run.json").read_text())
-    assert run["settings"] == {"tilt_beta": 0.95, "renderer": "numpy", "include_ai_labels": True,
+    assert run["settings"] == {"tilt_beta": 0.95, "include_ai_labels": True,  # no renderer: no view is rendered
                                "package_source": dg.package_source(), "source_beta": {"mapillary": 0.0,
                                                                                       "panoramax": 1.0},
                                "mapillary_api": False, "job_window_crops": True}
@@ -1119,3 +1119,46 @@ def test_job_window_crops_force_reselect_rewrites_the_sidecar(job_store):
     run_main(tmp, "--job-window-crops", "--tilt-beta", "0.5", "--force-reselect")  # a setting changed: all redone
     side = pd.read_csv(_job_out(tmp) / "job_crops.csv")
     assert len(side) == 5 and side.label_uid.is_unique
+
+
+def test_job_window_crops_need_no_gpu_and_no_allow_cpu(job_store, monkeypatch):
+    def no_device(allow_cpu):
+        raise AssertionError("resolve_device was called for job-window crops")
+    monkeypatch.setattr(dg, "resolve_device", no_device)
+    tmp = job_store["tmp"]
+    dg.main(["--label_type", "CurbRamp", "--rawlabels-cache", str(tmp), "--out", str(tmp / "out"),
+             "--pano-store", str(tmp / "store"), "--include-ai-labels", "--job-window-crops"])  # no --allow-cpu
+    assert (pd.read_csv(_job_out(tmp) / "manifest.csv").status == "ok").all()
+
+
+def test_job_window_resume_ignores_the_renderer_and_package_commit(job_store, monkeypatch):
+    tmp = job_store["tmp"]
+    run_main(tmp, "--job-window-crops")
+    run_path = _job_out(tmp) / "generation_run.json"
+    run = json.loads(run_path.read_text())  # as if the first run was a CPU smoke on another panorama-tools commit
+    run["settings"].update(renderer="numpy", package_source="old@abc")
+    run_path.write_text(json.dumps(run))
+    before = (_job_out(tmp) / "job_crops.csv").read_text()
+    run_main(tmp, "--job-window-crops")  # no refusal, every ok row kept
+    assert (_job_out(tmp) / "job_crops.csv").read_text() == before
+
+
+def test_fixed_size_resume_still_compares_the_renderer(stubbed):
+    tmp = stubbed["tmp"]
+    run_main(tmp, "--fixed-crop-half-px", "300")
+    run_path = tmp / "out" / "CurbRamp" / "generation_run.json"
+    run = json.loads(run_path.read_text())
+    run["settings"]["renderer"] = "torch"
+    run_path.write_text(json.dumps(run))
+    with pytest.raises(SystemExit, match=r"renderer 'torch' -> 'numpy'"):  # fixed-size crops ARE rendered views
+        run_main(tmp, "--fixed-crop-half-px", "300")
+
+
+def test_depth_rerun_of_a_job_dir_removes_the_stale_sidecar(job_store, monkeypatch):
+    tmp = job_store["tmp"]
+    run_main(tmp, "--job-window-crops")
+    assert (_job_out(tmp) / "job_crops.csv").exists()
+    monkeypatch.setattr(dg, "load_depth_model", lambda encoder, device: FakeDepth())
+    m = run_main(tmp, "--force-reselect")
+    assert (m.status == "ok").all() and m.depth_m.notna().all()
+    assert not (_job_out(tmp) / "job_crops.csv").exists()

@@ -1124,7 +1124,9 @@ def check_resume(run_path, new_hash, settings, cities=None):
     old_hash = old.get("selection_sha256")
     old_settings = old.get("settings", {})
     both_fixed = _no_depth(old_settings) and _no_depth(settings)
-    compared = [k for k in RESUME_SETTINGS if not (both_fixed and k in DEPTH_SETTINGS)]
+    both_job = bool(old_settings.get("job_window_crops")) and bool(settings.get("job_window_crops"))
+    compared = [k for k in RESUME_SETTINGS if not (both_fixed and k in DEPTH_SETTINGS)
+                and not (both_job and k in job_crop.NO_VIEW_SETTINGS)]
     changed = {k: (old_settings.get(k), settings.get(k)) for k in compared
                if k in old_settings and old_settings.get(k) != settings.get(k)}
     changed.update({k: (old_settings.get(k), settings.get(k)) for k in OPTIONAL_SETTINGS
@@ -1334,7 +1336,7 @@ def main(argv=None):
             sys.exit(f"--rawlabels-cache {args.rawlabels_cache} has no <city_id>.csv for {len(missing)} listed "
                      f"cities: {', '.join(missing)}. Pull them into the cache (FRESH=1 sbatch data_generation.slurm, "
                      f"or analysis/fetch_all.py), or pass --cities to run without them.")
-    device = None if args.select_only else resolve_device(args.allow_cpu)
+    device = None if args.select_only or args.job_window_crops else resolve_device(args.allow_cpu)
 
     all_cities = pd.concat([load_city(c, s, args.rawlabels_cache) for c, s in cities.items()], ignore_index=True)
     n_rows = int((all_cities['label_type'] == label_type).sum())
@@ -1402,7 +1404,7 @@ def main(argv=None):
         settings = {k: v for k, v in settings.items() if k not in DEPTH_SETTINGS}
         settings["fixed_crop_half_px"] = args.fixed_crop_half_px
     if args.job_window_crops:  # no depth model and no view: record neither the encoder nor a fixed size
-        settings = {k: v for k, v in settings.items() if k not in DEPTH_SETTINGS}
+        settings = {k: v for k, v in settings.items() if k not in DEPTH_SETTINGS + job_crop.UNRECORDED_SETTINGS}
         settings["job_window_crops"] = True
     previous, changed, city_change = check_resume(run_path, sel_hash, settings, list(cities))
     if (previous or changed or city_change) and not args.force_reselect:
@@ -1563,8 +1565,7 @@ def main(argv=None):
         ok = final[final['status'] == 'ok']
         print("  ok rows by provider and pose_source (whole manifest): "
               f"{ok.groupby([ok['pano_source'].fillna(''), ok['pose_source'].fillna('')]).size().to_dict()}")
-    if args.job_window_crops:
-        job_crop.finish_run(base_dir, final)
+    job_crop.finish_run(base_dir, final, enabled=args.job_window_crops)  # off: removes a stale job_crops.csv
     if not_from_store:
         print(f"  redone because they predate the pano store (no pano_path): {not_from_store} ok rows")
     if attempted and missing / attempted > args.max_missing_frac:

@@ -507,6 +507,17 @@ def test_check_resume_compares_job_window_crops_on_either_side(tmp_path):
         "fixed_crop_half_px": (None, 300), "job_window_crops": (True, None)}
 
 
+def test_check_resume_skips_view_settings_only_between_job_runs(tmp_path):
+    h = dg.selection_hash(pd.DataFrame({"label_uid": ["x:1"], "label_class": ["correct"]}))
+    job = {"tilt_beta": 0.95, "job_window_crops": True, "package_source": "a"}
+    run = tmp_path / "generation_run.json"
+    run.write_text(json.dumps({"selection_sha256": h, "settings": {**job, "renderer": "numpy", "package_source": "b"}}))
+    assert dg.check_resume(str(run), h, job) == (None, {}, {})
+    fixed = {"tilt_beta": 0.95, "fixed_crop_half_px": 300, "renderer": "torch"}
+    run.write_text(json.dumps({"selection_sha256": h, "settings": {**fixed, "renderer": "numpy"}}))
+    assert dg.check_resume(str(run), h, fixed)[1] == {"renderer": ("numpy", "torch")}
+
+
 def test_no_depth_covers_both_depthless_geometries():
     assert dg._no_depth({"fixed_crop_half_px": 300}) and dg._no_depth({"job_window_crops": True})
     assert not dg._no_depth({}) and not dg._no_depth({"job_window_crops": False, "fixed_crop_half_px": None})

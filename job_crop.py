@@ -73,6 +73,11 @@ MAX_STORED_WIDTH = 1440  # a ceiling, never a target: narrower windows are store
 SIDECAR_FILE = "job_crops.csv"
 SIDECAR_COLUMNS = ["label_uid", "left", "top", "width", "height", "shifted", "fx", "fy", "stored_w", "stored_h",
                    "pano_native_w", "pano_native_h", "rule_version"]
+#: data_generation.py settings a job-window run does not record: no view is rendered, so there is no renderer.
+UNRECORDED_SETTINGS = ("renderer",)
+#: data_generation.py resume settings that describe the view renderer; check_resume does not compare them when both
+#: runs are job-window runs (``package_source`` is still recorded as provenance, but no crop of this path uses it).
+NO_VIEW_SETTINGS = ("renderer", "package_source")
 #: The keys of :func:`crop_for_row`'s info that are manifest columns; everything else goes to the sidecar.
 MANIFEST_KEYS = ("tilt_applied", "depth_m", "crop_half_px", "clipped")
 
@@ -86,7 +91,7 @@ class CropBox(namedtuple("CropBox", "left top width height shifted")):
     __slots__ = ()
 
 
-class JobCropSkipped(RuntimeError):
+class JobCropSkipped(Exception):
     """The backend would not cut this label's crop; ``reason`` (``dims_mismatch`` or ``out_of_frame``) is the
     manifest status."""
 
@@ -354,9 +359,17 @@ def compact_sidecar(path, ok_uids):
     return df
 
 
-def finish_run(base_dir, manifest):
-    """Post-loop step of ``--job-window-crops``: compact ``<base_dir>/job_crops.csv`` to the ok rows of ``manifest``
-    (the final manifest DataFrame) and print one summary line. Returns the summary dict."""
+def finish_run(base_dir, manifest, enabled=True):
+    """Post-loop step of every data_generation.py run. With ``enabled`` (``--job-window-crops``): compact
+    ``<base_dir>/job_crops.csv`` to the ok rows of ``manifest`` (the final manifest DataFrame), print one summary line
+    and return the summary dict. Without it: remove a ``job_crops.csv`` left by an earlier job-window run of the same
+    directory (it would describe crops that a ``--force-reselect`` has since replaced) and return None."""
+    if not enabled:
+        stale = os.path.join(base_dir, SIDECAR_FILE)
+        if os.path.exists(stale):
+            os.remove(stale)
+            print(f"  removed {stale}: it described job-window crops this run replaced")
+        return None
     ok_uids = manifest.loc[manifest["status"] == "ok", "label_uid"].tolist()
     side = compact_sidecar(os.path.join(base_dir, SIDECAR_FILE), ok_uids)
     status = manifest["status"].fillna("")
