@@ -13,11 +13,17 @@ import confident_learning as cl  # noqa: E402
 import region_transfer as rt  # noqa: E402
 import regions  # noqa: E402
 
-COLS = ["label_uid", "city", "label_id", "pano_id", "label_type", "label_class", "class_source", "author",
-        "human_agree", "human_disagree", "severity", "tags", "latitude", "longitude", "hard", "crop_path", "status",
-        "split"]
-# xland: alpha, beta; yland: gamma (public), dorado (private); wland: epsilon; zland (private only): omega, held out.
-CITIES = ["alpha", "beta", "gamma", "dorado", "epsilon", "omega"]
+import data_generation  # noqa: E402
+
+# Exactly the round-3 split.csv columns: data_generation.MANIFEST_COLUMNS with split_data.add_hard's ``hard`` before
+# ``crop_path`` and ``split`` last. No latitude/longitude: the 3 m merge reads them from the rawLabels cache, as on klone.
+_AT = data_generation.MANIFEST_COLUMNS.index("crop_path")
+COLS = data_generation.MANIFEST_COLUMNS[:_AT] + ["hard"] + data_generation.MANIFEST_COLUMNS[_AT:] + ["split"]
+# xland: alpha, beta; yland: gamma (public), dorado (private); wland: epsilon (round-3 train/val/test) and zeta
+# (round-3 test_heldout, so a held-out wland must leave zeta's rows byte-identical); zland (private only): omega,
+# held out.
+CITIES = ["alpha", "beta", "gamma", "dorado", "epsilon", "omega", "zeta"]
+HELDOUT_CITIES = {"omega", "zeta"}
 LISTING = {"cities": [
     {"city_id": "alpha", "country_id": "xland", "visibility": "public"},
     {"city_id": "beta", "country_id": "xland", "visibility": "public"},
@@ -25,30 +31,38 @@ LISTING = {"cities": [
     {"city_id": "dorado", "country_id": "yland", "visibility": "private", "city_name_short": "Doradoville"},
     {"city_id": "epsilon", "country_id": "wland", "visibility": "public"},
     {"city_id": "omega", "country_id": "zland", "visibility": "private", "city_name_short": "Omegaville"},
+    {"city_id": "zeta", "country_id": "wland", "visibility": "public"},
 ]}
 LT = "Toy"
 
 
-def make_data(tmp_path, n_panos=420, seed=0):
-    """``$DATA`` with ``Toy/split.csv`` (round-3 shape), crops, and ``cities.json``."""
+def make_data(tmp_path, n_panos=490, seed=0):
+    """``$DATA`` with ``Toy/split.csv`` (round-3 columns, no coordinates), crops, ``cities.json`` and the
+    rawLabels cache ``rawlabels/<city>.csv`` (``label_id``, ``latitude``, ``longitude``)."""
     rng = np.random.default_rng(seed)
-    rows, i = [], 0
+    rows, coords, i = [], [], 0
     for p in range(n_panos):
-        city = CITIES[p % 6]
-        split = "test_heldout" if city == "omega" else ["train", "train", "train", "val", "test"][(p // 6) % 5]
+        city = CITIES[p % len(CITIES)]
+        split = ("test_heldout" if city in HELDOUT_CITIES
+                 else ["train", "train", "train", "val", "test"][(p // len(CITIES)) % 5])
         for _ in range(int(rng.integers(1, 4))):
             cls = "incorrect" if rng.random() < 0.45 else "correct"
             rows.append({"label_uid": f"{city}:{i}", "city": city, "label_id": str(i), "pano_id": f"pano{p:04d}",
                          "label_type": LT, "label_class": cls, "class_source": "margin", "author": "human",
                          "human_agree": "3", "human_disagree": "0", "severity": str(int(rng.integers(1, 4))),
-                         "tags": json.dumps(["steep"] if rng.random() < 0.5 else []),
-                         "latitude": f"{47.0 + p * 0.001:.6f}", "longitude": "-122.300000", "hard": "0",
+                         "tags": json.dumps(["steep"] if rng.random() < 0.5 else []), "hard": "0",
                          "crop_path": f"{cls}/{city}_{i}.webp", "status": "ok", "split": split})
+            coords.append({"city": city, "label_id": str(i), "latitude": f"{47.0 + p * 0.001:.6f}",
+                           "longitude": "-122.300000"})
             i += 1
-    df = pd.DataFrame(rows, columns=COLS).sort_values("label_uid").reset_index(drop=True)
+    df = pd.DataFrame(rows, columns=COLS).astype(object).fillna("").sort_values("label_uid").reset_index(drop=True)
     base = tmp_path / LT
     base.mkdir(parents=True, exist_ok=True)
     df.to_csv(base / "split.csv", index=False, lineterminator="\n")
+    raw = tmp_path / "rawlabels"
+    raw.mkdir(exist_ok=True)
+    for city, g in pd.DataFrame(coords).groupby("city"):
+        g.drop(columns="city").to_csv(raw / f"{city}.csv", index=False)
     (tmp_path / "cities.json").write_text(json.dumps(LISTING))
     return tmp_path, df
 
@@ -64,7 +78,8 @@ def country_series(df):
 
 def run_variants(data_dir, *extra):
     return rt.main(["variants", "--split", str(data_dir / LT / "split.csv"), "--cities-json",
-                    str(data_dir / "cities.json"), "--min-eval-class", "20", "--min-pool", "20",
+                    str(data_dir / "cities.json"), "--rawlabels", str(data_dir / "rawlabels"),
+                    "--min-eval-class", "20", "--min-pool", "20",
                     "--min-frac-class", "5", "--fractions", "0.25,0.5,1.0", "--out",
                     str(data_dir / LT / "region"), *extra])
 
@@ -89,6 +104,70 @@ def test_loco_moves_only_the_country_and_keeps_everything_else_byte_identical(da
     assert (data_dir / LT / "region" / "yland" / "split.csv").read_bytes().count(b"\r") == 0
 
 
+def test_fixture_mirrors_the_round3_split_and_variants_needs_rawlabels(data):
+    # The round-3 split.csv has no coordinates; without the rawLabels cache the 3 m merge cannot run.
+    data_dir, _ = data
+    head = (data_dir / LT / "split.csv").read_text().split("\n")[0].split(",")
+    assert head == COLS and "latitude" not in head
+    with pytest.raises(ValueError, match="no latitude/longitude"):
+        rt.main(["variants", "--split", str(data_dir / LT / "split.csv"), "--cities-json",
+                 str(data_dir / "cities.json"), "--min-eval-class", "20", "--min-pool", "20", "--min-frac-class",
+                 "5", "--out", str(data_dir / LT / "region")])
+
+
+def test_round3_heldout_rows_of_the_heldout_country_stay_byte_identical(data):
+    data_dir, df = data
+    assert run_variants(data_dir) == 0
+    rdir = data_dir / LT / "region"
+    assert json.loads((rdir / "variants.json").read_text())["countries"]["wland"]["eligible"]
+    base = cl.read_split(str(data_dir / LT / "split.csv"))
+    zeta = base[base.city == "zeta"].reset_index(drop=True)
+    assert len(zeta) and (zeta.split == "test_heldout").all()
+    files = [rdir / "wland" / "split.csv"] + sorted((rdir / "wland").glob("ft-*/split.csv"))
+    assert len(files) >= 2
+    for f in files:
+        v = cl.read_split(str(f))
+        got = v[v.label_uid.isin(zeta.label_uid)].sort_values("label_uid").reset_index(drop=True)
+        assert zeta.sort_values("label_uid").reset_index(drop=True).equals(got[zeta.columns]), f
+    loco = cl.read_split(str(files[0]))
+    assert (loco.loc[loco.city == "epsilon", "split"] != "train").all()   # the country's other rows did move
+
+
+def test_variants_refuses_a_loco_split_that_touches_round3_heldout_rows(data, monkeypatch):
+    # The untouched mask must cover the held-out country's round-3 test_heldout rows, not only other countries.
+    data_dir, _ = data
+    real = rt.loco_split
+
+    def leaky(base, country_col, country):
+        out = real(base, country_col, country)
+        out.loc[out.city == "zeta", "split"] = rt.HELDOUT_COUNTRY
+        return out
+    monkeypatch.setattr(rt, "loco_split", leaky)
+    with pytest.raises(AssertionError, match="changed rows"):
+        run_variants(data_dir, "--countries", "wland")
+
+
+def test_check_rows_unchanged_raises_on_a_planted_change():
+    base = pd.DataFrame({"label_uid": ["a", "b", "c"], "split": ["train", "val", "test"], "severity": ["1", "2", "3"]})
+    keep = np.array([True, True, False])
+    rt.check_rows_unchanged(base, base.copy(), keep)
+    rt.check_rows_unchanged(base, base.assign(split=["train", "val", "pool"]), keep)   # c is not protected
+    with pytest.raises(AssertionError):
+        rt.check_rows_unchanged(base, base.assign(severity=["1", "9", "3"]), keep)
+    with pytest.raises(AssertionError):
+        rt.check_rows_unchanged(base, base.iloc[1:], keep)                             # a protected row dropped
+
+
+@pytest.mark.parametrize("other", ["train", "val", "test"])
+def test_check_no_straddle_catches_a_panorama_in_the_heldout_country_split(other):
+    df = pd.DataFrame({"label_uid": ["a", "b", "c"], "pano_id": ["p1", "p1", "p2"],
+                       "split": [other, rt.HELDOUT_COUNTRY, "pool"]})
+    with pytest.raises(Exception):
+        rt.check_no_straddle(df)
+    rt.check_no_straddle(df.assign(pano_id=["p1", "p3", "p2"]))
+    rt.check_no_straddle(df.assign(split=[rt.POOL, rt.HELDOUT_COUNTRY, "pool"]))   # pool rows are not scored
+
+
 def test_eligibility_thresholds_and_reasons(data):
     _, df = data
     country = country_series(df)
@@ -107,11 +186,11 @@ def test_eligibility_thresholds_and_reasons(data):
 
 
 def test_pool_fractions_are_nested_grouped_and_seeded(data):
-    _, df = data
+    data_dir, df = data
     country = country_series(df)
     loco = rt.loco_split(df, country, "yland")
     pool = loco[loco.split == rt.POOL]
-    groups = cl.train_groups(pool, None, 3.0)
+    groups = cl.train_groups(pool, str(data_dir / "rawlabels"), 3.0)
     a = rt.pool_fractions(pool, groups, [0.25, 0.5, 1.0], 42, 0.2, 5)
     s25, s50, s100 = (set(a[p]["train"]) for p in (25, 50, 100))
     assert s25 < s50 < s100
@@ -308,6 +387,15 @@ def test_paired_delta_flags_a_known_difference(data):
     assert d0["delta_lo"] <= 0 <= d0["delta_hi"]
     with pytest.raises(ValueError, match="no score"):
         rt.paired_delta(better, base.iloc[:5], "test")
+
+
+def test_paired_delta_resamples_both_models_on_the_same_panoramas(data):
+    # Identical scores: every paired resample gives exactly 0; an unpaired resample would not.
+    _, df = data
+    test = df[df.split.isin(["test", "val"])].assign(split="test")
+    a = joined(test, scored(test, np.random.default_rng(11), 0.8))
+    d = rt.paired_delta(a, a.copy(), "test", n_boot=200, seed=0)
+    assert d["delta"] == 0 and d["delta_lo"] == 0 and d["delta_hi"] == 0
 
 
 def synth_preds(df, rng):
