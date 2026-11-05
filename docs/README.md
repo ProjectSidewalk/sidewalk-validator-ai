@@ -30,6 +30,7 @@ because each reports one measurement at one point in time; the pipeline pages ar
 | [`segmentation-prior-2026-10.md`](segmentation-prior-2026-10.md) | Sidewalk segmentation as a localisation prior for Obstacle and SurfaceProblem ([#44](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/44)) |
 | [`ai-disagree-relabel-2026-10.md`](ai-disagree-relabel-2026-10.md) | A masked expert re-label of the deployed AI's Disagree votes (300 items) and the severity × tag breakdown of AI vote agreement ([SidewalkWebpage#5793](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5793)) |
 | [`ai-disagree-reversal-2026-10.md`](ai-disagree-reversal-2026-10.md) | Runbook for turning the 2025-08 models' Disagree votes into Unsure in production: per-city dry run and the update script ([SidewalkWebpage#5793](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5793)) |
+| [`ai-labels-2026-10.md`](ai-labels-2026-10.md) | The round-3 CurbRamp validator on RampNet's AI-placed curb ramps in three public deployments, against the existing human votes: AUC per city, what the deployed gate would do, the round-3 leakage and its effect on the reference ([SidewalkWebpage#5790](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5790)) |
 
 ## Decisions, audit and hygiene
 
