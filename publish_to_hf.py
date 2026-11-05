@@ -28,7 +28,8 @@ script writes to), builds two folders under ``<out>/<label_type>/publish/``:
 names the same label type; ``split.csv`` still has the sha256 recorded in ``dinov2/run_key.json`` at training time;
 ``predictions.csv`` covers exactly the split's evaluation rows; the dataset's content hash differs from every other
 staged label type's; neither ``generation_run.json`` nor ``dinov2/training_run.json`` records ``fixed_crop_half_px``
-(the fixed-size ablation of issue #21, which serving does not reproduce: it sizes every crop by depth). A train-size
+(the fixed-size ablation of issue #21, which serving does not reproduce: it sizes every crop by depth) or
+``job_window_crops`` (the backend crop-job windows of issue #53, likewise not what serving renders). A train-size
 cross-check against ``trainer_state.json`` and out-of-order file times only warn.
 
 **Card overrides.** Facts the pipeline does not record (per-type failure modes, the split seed, the dataset
@@ -645,8 +646,9 @@ def check_not_duplicate(root, label_type, content_hash):
 
 def check_depth_sized(root, label_type):
     """Raise ``PublishError`` if ``<root>/<label_type>``'s ``generation_run.json`` or ``dinov2/training_run.json``
-    records ``fixed_crop_half_px``: those crops come from the fixed-size ablation (issue #21), serving sizes every
-    crop by depth, and the cards say so. Checked before anything is staged, and again before ``--push-staged``."""
+    records ``fixed_crop_half_px`` or ``job_window_crops``: those crops come from the fixed-size ablation (issue #21)
+    or the crop-job-window experiment (issue #53), serving renders a depth-sized view of every label, and the cards
+    say so. Checked before anything is staged, and again before ``--push-staged``."""
     base = os.path.join(root, label_type)
     runs = [_read_json(os.path.join(base, "generation_run.json")),
             _read_json(os.path.join(base, "dinov2", "training_run.json"))]
@@ -654,7 +656,7 @@ def check_depth_sized(root, label_type):
         hf_cards.require_depth_sized(*runs)
     except ValueError as e:
         raise PublishError(f"{base}: {e}. Retrain on depth-sized crops (data_generation.py without "
-                           f"--fixed-crop-half-px) to publish") from e
+                           f"--fixed-crop-half-px or --job-window-crops) to publish") from e
 
 
 def read_dataset_context(root, label_type):

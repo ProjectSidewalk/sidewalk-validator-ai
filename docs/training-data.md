@@ -169,3 +169,12 @@ deployed 2026-10-27 with API 1.2.0) is a precondition for serving them. One resi
 training reads crops back from WebP quality 95, while the API classifies the in-memory PIL crop; on fresh crops the
 two differ by a mean |Δ| of 1.1 grey levels. The stage-by-stage comparison of the two pipelines is
 [`serving-parity-2026-10.md`](serving-parity-2026-10.md).
+
+**Experiment-only geometries.** `--fixed-crop-half-px` (issue
+[#21](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/21)) cuts every crop at one size from the same
+view; `--job-window-crops` (issue [#53](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/53),
+`job_crop.py`) cuts each crop as SidewalkWebpage's nightly crop job does: a 3:2 window of the native stored panorama
+sized by `CropSizingRule` v2, with no projection, tilt correction or depth
+([`job-window-crops-2026-11.md`](job-window-crops-2026-11.md)). Both are recorded in `generation_run.json` as resume
+settings, so neither output directory can be resumed as a depth-sized one, and `publish_to_hf.py` refuses models
+trained on either.

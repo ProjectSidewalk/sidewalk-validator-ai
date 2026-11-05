@@ -221,7 +221,8 @@ def generation_settings(label_type, data_dir="."):
     """The tilt beta and depth encoder the dataset was built with, from data_generation.py's
     ``<label_type>/generation_run.json`` (empty values if it is missing, e.g. an old imagefolder dataset), plus
     ``fixed_crop_half_px`` when the crops were cut at a fixed size (the issue #21 ablation, which serving does not
-    implement; ``publish_to_hf.py`` refuses such a model).
+    implement; ``publish_to_hf.py`` refuses such a model), and ``job_window_crops`` when they are SidewalkWebpage's
+    crop-job windows (issue #53, refused likewise).
 
     >>> generation_settings("CurbRamp", "/nonexistent")
     {'tilt_beta': None, 'depth_encoder': None}
@@ -234,6 +235,8 @@ def generation_settings(label_type, data_dir="."):
     settings = {"tilt_beta": run.get("tilt_beta"), "depth_encoder": run.get("depth_encoder")}
     if run.get("fixed_crop_half_px") is not None:  # absent for depth-sized crops, so their record is unchanged
         settings["fixed_crop_half_px"] = run["fixed_crop_half_px"]
+    if run.get("job_window_crops"):  # issue #53's backend crop-job windows; publish_to_hf.py refuses these too
+        settings["job_window_crops"] = True
     return settings
 
 
