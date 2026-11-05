@@ -21,12 +21,24 @@ CITIES_API = "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities"
 
 
 def ok(text):
-    """True if the export is complete: it ends with a newline, parses strictly (no unterminated quoted field), and its
-    last rows are as wide as its own header. Returns ``(complete, data_rows)``."""
+    r"""True if the export is complete: it ends with a newline, parses strictly (no unterminated quoted field), and its
+    last rows are as wide as its own header. Returns ``(complete, data_rows)``.
+
+    Trailing blank lines are ignored, and a header with no rows is a complete, empty export: that is what the API
+    returns for a city with no labels of a ``labelType`` (header plus one blank line, checked 2026-11-05), which would
+    otherwise cost 16 tile requests.
+
+    >>> ok("a,b\n1,2\n"), ok("a,b\n\n"), ok("a,b\n1,2"), ok('a,b\n1,"2\n')
+    ((True, 1), (True, 0), (False, 1), (False, 0))
+    """
     try:
         rows = list(csv.reader(io.StringIO(text), strict=True))
     except csv.Error:
         return False, 0
+    while rows and not rows[-1]:
+        rows.pop()
+    if text.endswith("\n") and len(rows) == 1:
+        return True, 0
     complete = text.endswith("\n") and len(rows) > 1 and all(len(r) == len(rows[0]) for r in rows[-3:])
     return complete, len(rows) - 1
 
@@ -156,7 +168,7 @@ def main(argv=None, get=None):
             text, n = fetch_city(get, c, lt)
             if text is not None:
                 part = list(csv.reader(io.StringIO(text)))
-                part_header, part_rows = part[0], part[1:]
+                part_header, part_rows = part[0], [r for r in part[1:] if r]  # no blank lines
             else:
                 part_header, tiled = n
                 if part_header is None:

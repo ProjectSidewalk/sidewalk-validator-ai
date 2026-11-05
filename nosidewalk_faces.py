@@ -29,7 +29,8 @@ which makes the face's opposition positive, so the face cannot be ``correct`` (a
 ``cap_labels_per_face`` then keeps at most ``n`` labels per (face, class), the ``n`` with the lowest
 ``data_generation.label_rank`` (stable under a changing pool), so a 30-label face is not 5 % of the negatives.
 
-``data_generation.py --verdict-unit face`` calls :func:`apply_verdict_unit` once, right after ``eligible_labels``.
+``data_generation.py --verdict-unit face`` calls :func:`apply_verdict_unit` once, after ``eligible_labels`` and the
+deployment prior, before the selection.
 ``data_generation`` is imported inside the functions, not at the top, because it imports this module.
 """
 import json
@@ -271,9 +272,8 @@ def apply_verdict_unit(all_labels, eligible, label_type, experts, unit, max_labe
     """``data_generation.main``'s one hook: ``eligible`` unchanged for ``unit == "label"``; for ``"face"``,
     :func:`add_face_verdicts` then :func:`cap_labels_per_face`, with a printed summary.
 
-    The deployment prior (``data_generation.deployment_prior_entry``) still counts ``class_source == "margin"`` rows
-    only, so face rows never enter it. It is computed after this hook, so under ``face`` it counts the margin labels
-    that survive the cap; that entry is a placeholder in any case: NoSidewalk's prior is written over it by
+    ``data_generation.main`` calls it right after ``deployment_prior_entry``, so the margin prior never sees face rows
+    or the cap. Under ``face`` that entry is a placeholder in any case: NoSidewalk's prior is written over it by
     ``calibration/nosidewalk_prior.py`` (the pilot runs it after ``data_generation.py``), because the margin-rule
     count is a queue-biased sample (``docs/nosidewalk-2026-11.md``).
     """

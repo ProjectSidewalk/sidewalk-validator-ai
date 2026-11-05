@@ -14,7 +14,8 @@
 #
 #   STEP=data   ARM=depth|whole        crops with --verdict-unit face, the face-size prior, the face-grouped split
 #   STEP=train  ARM=depth|whole SEED=n train, evaluate (--tag s<n>, --per-city), calibrate (Agree only)
-#   STEP=report                        analysis/nosidewalk_pilot.py over every arm and seed
+#   STEP=report                        analysis/nosidewalk_pilot.py over every arm and seed (CPU only:
+#                                      nosidewalk_submit.sh submits it on ckpt-all with --gpus-per-node=0)
 #
 # ARM=depth is the default depth-sized crop; ARM=whole is --fixed-crop-half-px 1024, the whole 90 degree view
 # (a NoSidewalk label marks an absence along a stretch, and issue 42 asked whether a wider crop helps).
@@ -26,7 +27,7 @@ STEP="${STEP:?set STEP=data|train|report}"
 DATA="${DATA:?set DATA (the pilot root, absolute)}"
 LT=NoSidewalk
 CACHE="${CACHE:-$DATA/rawlabels-ns}"
-HOLDOUT="${HOLDOUT-tucson-az}"
+HOLDOUT="${HOLDOUT-tucson-az,chicago-il}"
 MAX_PER_FACE="${MAX_PER_FACE:-5}"
 EPOCHS="${EPOCHS:-25}"
 [ -f .gitmodules ] || { echo "Submit this job from the repo root." >&2; exit 1; }

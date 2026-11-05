@@ -10,14 +10,14 @@
 #    NoSidewalk-only pull of every public deployment is made into it (analysis/fetch_all.py --label-types NoSidewalk).
 #    To include private deployments, as round 3 did, point CACHE at a complete full cache (e.g. round 3's rawlabels/).
 # 2. Per arm (depth, whole): one data job (crops with --verdict-unit face, the face-size prior, the face-grouped
-#    split holding out HOLDOUT, default tucson-az).
+#    split holding out HOLDOUT, default tucson-az,chicago-il).
 # 3. Per arm and seed (42 43 44): one train job (train, evaluate, calibrate Agree-only), after its arm's data job.
 # 4. One report job after every train job: analysis/nosidewalk_pilot.py -> $DATA/report/pilot.{json,md}.
 # Job ids are appended to nosidewalk_jobs.txt. EXPERTS stays in the environment (sbatch exports it); never in a file.
 set -euo pipefail
 DATA="${DATA:?set DATA (absolute)}"; RUNS="${RUNS:?set RUNS}"; PANO_STORE="${PANO_STORE:?set PANO_STORE}"
 CACHE="${CACHE:-$DATA/rawlabels-ns}"
-HOLDOUT="${HOLDOUT-tucson-az}"
+HOLDOUT="${HOLDOUT-tucson-az,chicago-il}"
 ARMS="${ARMS:-depth whole}"
 SEEDS="${SEEDS:-42 43 44}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -63,5 +63,7 @@ for ARM in $ARMS; do
   done
   echo "$ARM data=$DATA_JOB" | { if [ "$DRY_RUN" = 1 ]; then cat; else tee -a nosidewalk_jobs.txt; fi; }
 done
-sb --job-name=ns-report --dependency="afterany:$(IFS=:; echo "${TRAIN[*]}")" --export=ALL,STEP=report nosidewalk_pilot.slurm
+# The report is CPU work: the free ckpt-all partition without a GPU (the #SBATCH lines are overridden).
+sb --job-name=ns-report --partition=ckpt-all --gpus-per-node=0 --ntasks-per-node=1 --cpus-per-task=4 --mem=32G \
+   --time=2:00:00 --dependency="afterany:$(IFS=:; echo "${TRAIN[*]}")" --export=ALL,STEP=report nosidewalk_pilot.slurm
 echo "train=${TRAIN[*]} report=$JOB" | { if [ "$DRY_RUN" = 1 ]; then cat; else tee -a nosidewalk_jobs.txt; fi; }

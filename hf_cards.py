@@ -51,7 +51,7 @@ LABEL_TYPE_DESCRIPTIONS = {
     "Obstacle": "an obstacle in the pedestrian path",
     "SurfaceProblem": "a sidewalk surface problem (cracks, heaving, uneven or broken surface)",
     "Crosswalk": "a crosswalk",
-    "NoSidewalk": "a street side with no sidewalk (labelled per block face; issue #42)",
+    "NoSidewalk": "a street side with no sidewalk",
     "Signal": "a pedestrian signal",
 }
 

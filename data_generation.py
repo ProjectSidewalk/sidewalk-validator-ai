@@ -1326,7 +1326,6 @@ def main(argv=None):
     n_rows = int((all_cities['label_type'] == label_type).sum())
 
     eligible, dropped = eligible_labels(all_cities, label_type, experts)  # once, for both the prior and the selection
-    eligible = nosidewalk_faces.apply_verdict_unit(all_cities, eligible, label_type, experts, args.verdict_unit, args.max_labels_per_face, args.seed)
     print(f"{n_rows} {label_type} rows; dropped for unusable pano geometry: {dict(dropped) or 'none'}")
     if experts:
         by_expert = eligible.loc[eligible['class_source'] == 'expert']
@@ -1336,6 +1335,8 @@ def main(argv=None):
     else:
         print(f"${EXPERTS_ENV} is not set: crowd margin rule only (no expert votes)")
     entry = deployment_prior_entry(eligible, list(cities), n_rows, city_source=city_source)
+    eligible = nosidewalk_faces.apply_verdict_unit(all_cities, eligible, label_type, experts, args.verdict_unit,
+                                                   args.max_labels_per_face, args.seed)  # issue #42; after the prior
 
     def write_priors():
         update_deployment_priors(priors_path, label_type, entry)

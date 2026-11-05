@@ -45,7 +45,7 @@ def stub(calls, truncate=()):
             return Response(text=HEADER + body)
         if city in truncate:
             return Response(text=HEADER + body + '9,"unterminated')
-        return Response(text=HEADER + body)
+        return Response(text=HEADER + (body or "\n"))  # the API's empty export: header plus one blank line
     return get
 
 
@@ -82,6 +82,17 @@ def test_label_types_write_one_csv_per_city_and_record_the_types(tmp_path, capsy
     assert (tmp_path / "alpha.csv").read_text() == HEADER + "1,NoSidewalk,0.1,0.1\n2,Signal,0.2,0.2\n"
     assert (tmp_path / "beta.csv").read_text() == HEADER + "7,NoSidewalk,0.5,0.5\n"  # Signal: header only
     assert json.loads((tmp_path / "cities.json").read_text())["label_types"] == ["NoSidewalk", "Signal"]
+
+
+def test_an_empty_type_export_is_complete_and_not_tiled(tmp_path, capsys):
+    calls = []
+    fa.main([str(tmp_path), "--label-types", "Signal"], get=stub(calls))
+    assert not [u for u in calls if "bbox=" in u]
+    assert (tmp_path / "beta.csv").read_text() == HEADER  # no blank row carried into the cache
+    assert "beta: Signal: 0 labels" in capsys.readouterr().out
+    assert fa.ok(HEADER + "\n") == (True, 0) and fa.ok(HEADER) == (True, 0)
+    assert fa.ok(HEADER + "1,a,0,0\n\n") == (True, 1)
+    assert fa.ok("")[0] is False
 
 
 def test_a_cache_holds_one_set_of_label_types(tmp_path):
