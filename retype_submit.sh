@@ -15,7 +15,7 @@
 #
 # report needs the network (public/private comes from the live /v3/api/cities). If the compute nodes cannot reach it,
 # only the report job fails; rerun it on a login node (minutes of CPU):
-#   STEP=report LEG=complement DATA=... RUNS=... bash retype.slurm
+#   STEP=report LEG=complement JOB_IDS=<ids from retype_jobs.txt> DATA=... RUNS=... bash retype.slurm
 #
 # Job ids are appended to retype_jobs.txt. Optional: LEGS (default "complement other"; "complement" runs one leg),
 # EXTRAS (default "NoSidewalk Signal Other Occlusion"), SKIP_EXTRAS=1 (the extra types already exist under DATA),

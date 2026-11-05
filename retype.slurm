@@ -13,7 +13,8 @@
 #   STEP=eval LEG=complement   predict, per-type export, evaluate.py, calibrate (GPU, about 1 h)
 #   STEP=report LEG=complement the doc's aggregates (CPU, minutes; needs the network: public/private comes from the
 #                              live /v3/api/cities). If compute nodes cannot reach it, the report job fails and nothing
-#                              else is lost; rerun it on a login node with `STEP=report LEG=<leg> ... bash retype.slurm`.
+#                              else is lost; rerun it on a login node with
+#                              `STEP=report LEG=<leg> JOB_IDS=<ids from retype_jobs.txt> ... bash retype.slurm`.
 #
 #   STEP=train LEG=complement DATA=/gscratch/makelab/$USER/sidewalk-validator-ai/retrain-2026-10 \
 #       RUNS=/gscratch/scrubbed/$USER/retype-2026-11 sbatch --constraint='a40|l40|l40s|a100|h200' retype.slurm
@@ -132,7 +133,7 @@ case "$STEP" in
         --run-dir "$RUN" --docs-dir "$OUT/docs-$LEG" --public-cities "$PUBLIC_CITIES" --rawlabels "$RAWLABELS" \
         --job-ids "${JOB_IDS:-${SLURM_JOB_ID:-}}" \
         || { echo "report failed (no network for the live city list?): rerun on a login node with" \
-                  "STEP=report LEG=$LEG DATA=$DATA RUNS=$RUNS bash retype.slurm" >&2; exit 1; }
+                  "STEP=report LEG=$LEG JOB_IDS=<ids from retype_jobs.txt> DATA=$DATA RUNS=$RUNS bash retype.slurm" >&2; exit 1; }
     ;;
   *) echo "unknown STEP $STEP" >&2; exit 2 ;;
 esac
