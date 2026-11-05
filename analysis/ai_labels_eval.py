@@ -18,6 +18,10 @@ Stages (subcommands)::
     # 3. klone: score the crops with the round-3 checkpoint (evaluate.run_inference)
     python analysis/ai_labels_eval.py score --manifest RUN/manifest.csv --checkpoint retrain-2026-10/CurbRamp/dinov2/checkpoint-4340 \\
         --out RUN/predictions.csv
+    # (issue #79) the with/without ablation on the labels a data_generation.py run held out: select --holdout
+    #    <out>/CurbRamp/ai_label_holdout.csv, crops once, score once per checkpoint (--out predictions_<arm>.csv), then
+    python analysis/ai_labels_eval.py ablation --run RUN --pred-a RUN/predictions_with.csv \\
+        --pred-b RUN/predictions_without.csv --out RUN/ablation
     # 4. Mac: the tables and figures
     python analysis/ai_labels_eval.py report --run RUN --map round3/CurbRamp/calibration/curbramp.json \\
         --map-uncapped round3/CurbRamp/calibration/uncapped/curbramp.json --round3 round3/CurbRamp \\
@@ -579,10 +583,12 @@ def read_labels(path):
     return df
 
 
-def load_run(run_dir):
+def load_run(run_dir, predictions=None):
+    """labels.csv + manifest.csv + one predictions file (default ``<run_dir>/predictions.csv``) as one frame with
+    ``true``, ``verdict``, ``confidence`` and ``scored``."""
     labels = read_labels(os.path.join(run_dir, "labels.csv"))
     manifest = pd.read_csv(os.path.join(run_dir, "manifest.csv"), dtype=str, keep_default_na=False)
-    pred = pd.read_csv(os.path.join(run_dir, "predictions.csv"))
+    pred = pd.read_csv(predictions or os.path.join(run_dir, "predictions.csv"))
     df = labels.merge(manifest[["label_uid", "status", "depth_m", "crop_half_px", "tilt_applied", "pose_unhandled"]],
                       on="label_uid", how="left", validate="one_to_one")
     df = df.merge(pred[["label_uid", "p_correct", "p_incorrect"]], on="label_uid", how="left", validate="one_to_one")
@@ -857,6 +863,133 @@ def cmd_report(args):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# ablation (issue #79): the held-out AI labels scored by two checkpoints, with and without AI labels in training
+# ---------------------------------------------------------------------------------------------------------------------
+
+def paired_holdout(a, b):
+    """The held-out AI rows (``holdout == 1``) scored in BOTH arms: ``a``'s rows with ``b``'s probabilities beside
+    them as ``p_correct_b``/``p_incorrect_b``. ``a`` and ``b`` are :func:`load_run` frames of one run."""
+    keep = lambda f: f[(f.author == "ai") & (f.holdout.astype(str) == "1") & f.scored]  # noqa: E731
+    ha, hb = keep(a), keep(b)
+    m = ha.merge(hb[["label_uid", "p_correct", "p_incorrect"]], on="label_uid", how="inner", suffixes=("", "_b"),
+                 validate="one_to_one")
+    return m.sort_values("label_uid", kind="mergesort").reset_index(drop=True)
+
+
+def _disagree_stats(true, p_correct, p_incorrect):
+    """Argmax Disagree precision and recall with Wilson 95% intervals."""
+    verdict = np.where(np.asarray(p_incorrect) > np.asarray(p_correct), "incorrect", "correct")
+    true = np.asarray(true)
+    n_dis, n_inc = int((verdict == "incorrect").sum()), int((true == "incorrect").sum())
+    hits = int(((verdict == "incorrect") & (true == "incorrect")).sum())
+    plo, phi = wilson(hits, n_dis)
+    rlo, rhi = wilson(hits, n_inc)
+    return {"n_disagree": n_dis, "hits": hits,
+            "precision": round(hits / n_dis, 4) if n_dis else float("nan"), "precision_lo": round(plo, 4),
+            "precision_hi": round(phi, 4), "recall": round(hits / n_inc, 4) if n_inc else float("nan"),
+            "recall_lo": round(rlo, 4), "recall_hi": round(rhi, 4)}
+
+
+def ablation_rows(paired, n_boot=1000, min_n=30, api_map=None, seed=SEED):
+    """Per slice (pooled, each city, each holdout tier): n, AUC of arm A and arm B on the same labels, the paired
+    difference A - B with a panorama-resampled 95% interval (each resample scores both arms,
+    ``retrain_report.cluster_boot``), argmax Disagree precision/recall per arm with Wilson intervals and, with
+    ``api_map``, the deployed gate's metrics per arm. A slice under ``min_n`` labels or with one class only reports
+    its counts (``scored`` False)."""
+    from sklearn.metrics import roc_auc_score
+    from analysis.retrain_report import ci, cluster_boot
+    tier_col = "holdout_tier" if "holdout_tier" in paired else "tier"
+    slices = [("pooled", paired)] + [(f"city = {c}", g) for c, g in paired.groupby("city")]
+    slices += [(f"tier = {t}", g) for t, g in paired.groupby(tier_col) if t != ""]
+    rows = []
+    for name, g in slices:
+        y = (g.true == "incorrect").astype(int).values
+        row = {"slice": name, "n": int(len(g)), "n_incorrect": int(y.sum()), "n_panos": int(g.pano_id.nunique()),
+               "scored": bool(len(g) >= min_n and 0 < y.sum() < len(y))}
+        if row["scored"]:
+            sa = rank_score(g.p_correct.values, g.p_incorrect.values)
+            sb = rank_score(g.p_correct_b.values, g.p_incorrect_b.values)
+            row["auc_a"], row["auc_b"] = float(roc_auc_score(y, sa)), float(roc_auc_score(y, sb))
+            row["delta"] = row["auc_a"] - row["auc_b"]
+            boot = cluster_boot(y, np.column_stack([sa, sb]), g.pano_id.values, n_boot, seed)
+            row["delta_lo"], row["delta_hi"] = ci(boot[:, 0] - boot[:, 1])
+            row["a"] = _disagree_stats(g.true, g.p_correct, g.p_incorrect)
+            row["b"] = _disagree_stats(g.true, g.p_correct_b, g.p_incorrect_b)
+            if api_map is not None:
+                for arm, pc, pi in (("a", g.p_correct, g.p_incorrect), ("b", g.p_correct_b, g.p_incorrect_b)):
+                    verdict = np.where(pi > pc, "incorrect", "correct")
+                    served = served_accuracy(api_map, verdict, np.maximum(pc, pi))
+                    row[f"gate_{arm}"] = gate_metrics(g.true, verdict, served)
+        rows.append(row)
+    return rows
+
+
+def ablation_markdown(rows, name_a, name_b, n_boot, min_n):
+    """The ablation table: one row per slice; slices under the minimum show counts only."""
+    def ci_(r, arm, k):
+        s = r[arm]
+        return fmt_ci(s[k], s[f"{k}_lo"], s[f"{k}_hi"])
+    L = [f"<!-- generated by analysis/ai_labels_eval.py ablation on {datetime.now(timezone.utc).date()} -->", "",
+         f"Held-out AI-placed labels (`ai_label_holdout.csv`, issue #79), scored by A = `{name_a}` and B = `{name_b}`. "
+         f"Reference: the training rule's class from the holdout file. Δ = A − B with a paired {n_boot}-resample "
+         f"panorama bootstrap; precision and recall are the argmax Disagree verdict's, Wilson 95%. Slices under "
+         f"{min_n} labels or with one class show counts only.", "",
+         f"| slice | n | incorrect | panos | AUC {name_a} | AUC {name_b} | Δ AUC [95% CI] | Disagree precision "
+         f"{name_a} | Disagree precision {name_b} | Disagree recall {name_a} | Disagree recall {name_b} |",
+         "|---|---:|---:|---:|---:|---:|---|---|---|---|---|"]
+    for r in rows:
+        head = f"| {r['slice']} | {r['n']:,} | {r['n_incorrect']} | {r['n_panos']:,} |"
+        if not r["scored"]:
+            L.append(head + " — | — | — | — | — | — | — |")
+            continue
+        L.append(head + f" {fmt(r['auc_a'])} | {fmt(r['auc_b'])} | {fmt_ci(r['delta'], r['delta_lo'], r['delta_hi'])} | "
+                 f"{ci_(r, 'a', 'precision')} | {ci_(r, 'b', 'precision')} | {ci_(r, 'a', 'recall')} | "
+                 f"{ci_(r, 'b', 'recall')} |")
+    gated = [r for r in rows if r["scored"] and "gate_a" in r]
+    if gated:
+        L += ["", "At the deployed gate (served accuracy ≥ 0.92):", "",
+              f"| slice | Agree pass {name_a} | Agree pass {name_b} | Agree precision {name_a} | Agree precision "
+              f"{name_b} | Disagree pass {name_a} | Disagree pass {name_b} | Disagree catch {name_a} | Disagree catch "
+              f"{name_b} |", "|---|---:|---:|---|---|---:|---:|---:|---:|"]
+        for r in gated:
+            ga, gb = r["gate_a"], r["gate_b"]
+            prec = lambda g: fmt_ci(g["agree"]["precision"], g["agree"]["precision_lo"], g["agree"]["precision_hi"])  # noqa: E731
+            L.append(f"| {r['slice']} | {ga['agree']['n_pass']} | {gb['agree']['n_pass']} | {prec(ga)} | {prec(gb)} | "
+                     f"{ga['disagree']['n_pass']} | {gb['disagree']['n_pass']} | {fmt(ga['disagree']['catch'])} | "
+                     f"{fmt(gb['disagree']['catch'])} |")
+    L += ["", "Severity and tags: AI-placed labels carry neither (RampNet submits none), so the type × severity and "
+          "type × tag slices apply to the human-placed test and held-out splits (`evaluate.py` `metrics.json` of each "
+          "arm), not here."]
+    return "\n".join(L) + "\n"
+
+
+def cmd_ablation(args):
+    sel = json.load(open(os.path.join(args.run, "selection.json")))
+    if not sel.get("holdout"):
+        sys.exit(f"{args.run} was not selected with --holdout: the ablation scores the held-out set only")
+    a, b = load_run(args.run, args.pred_a), load_run(args.run, args.pred_b)
+    paired = paired_holdout(a, b)
+    n_held = int((a.author == "ai").sum())
+    if len(paired) < n_held:
+        print(f"note: {n_held - len(paired)} of {n_held} held-out labels are not scored in both arms (no crop)")
+    api_map = json.load(open(args.map)) if args.map else None
+    rows = ablation_rows(paired, args.n_boot, args.min_n, api_map)
+    os.makedirs(args.out, exist_ok=True)
+    md = ablation_markdown(rows, args.name_a, args.name_b, args.n_boot, args.min_n)
+    with open(os.path.join(args.out, "ablation.md"), "w") as f:
+        f.write(md)
+    out = {"name_a": args.name_a, "name_b": args.name_b, "n_boot": args.n_boot, "min_n": args.min_n, "seed": SEED,
+           "n_paired": int(len(paired)), "n_held_out": n_held,
+           "inputs": {"labels_csv": sha256_file(os.path.join(args.run, "labels.csv")),
+                      "holdout": sel["holdout"], "pred_a": sha256_file(args.pred_a), "pred_b": sha256_file(args.pred_b),
+                      "map": sha256_file(args.map) if args.map else None},
+           "rows": rows}
+    with open(os.path.join(args.out, "ablation.json"), "w") as f:
+        json.dump(out, f, indent=2, default=float)
+    print(md)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 
 def build_parser():
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -896,6 +1029,17 @@ def build_parser():
     r.add_argument("--n-boot", type=int, default=1000)
     r.add_argument("--min-n", type=int, default=30)
     r.set_defaults(func=cmd_report)
+    a = sub.add_parser("ablation", help="held-out AI labels scored by two checkpoints, paired (issue #79)")
+    a.add_argument("--run", required=True, help="a run selected with --holdout (labels.csv, selection.json, manifest.csv)")
+    a.add_argument("--pred-a", required=True, help="predictions of arm A (e.g. trained with --include-ai-labels)")
+    a.add_argument("--pred-b", required=True, help="predictions of arm B (e.g. trained without)")
+    a.add_argument("--name-a", default="included_tagged")
+    a.add_argument("--name-b", default="excluded")
+    a.add_argument("--out", required=True)
+    a.add_argument("--map", default=None, help="a served accuracy map, for the gate metrics per arm")
+    a.add_argument("--n-boot", type=int, default=1000)
+    a.add_argument("--min-n", type=int, default=30)
+    a.set_defaults(func=cmd_ablation)
     return p
 
 
