@@ -155,6 +155,7 @@ sit in the API's `agree_count` / `disagree_count` like anyone else's, so trainin
 | [`calibration/`](calibration) | Step 7b: isotonic confidence→accuracy maps in the API's format, from a retrained model's val split or from production outcomes; per-city checks |
 | [`publish_to_hf.py`](publish_to_hf.py), [`hf_cards.py`](hf_cards.py) | Step 8: staged, checked uploads with generated cards ([`docs/publishing.md`](docs/publishing.md)) |
 | [`hard_examples.py`](hard_examples.py), [`validator_reliability.py`](validator_reliability.py) | Labels the deployed AI got wrong against a unanimous crowd or an expert; per-validator reliability for weighted targets |
+| [`context_crops.py`](context_crops.py), [`context_model.py`](context_model.py) | Issue #14, more context: a 4x wider crop and the whole view per label (`data_generation.py --context-crops`, or `context_crops.py backfill` for an existing dataset), and three context arms for `fine_tune_classifier.py --context-arm` ([`docs/context-arms-2026-11.md`](docs/context-arms-2026-11.md)) |
 | [`export_onnx.py`](export_onnx.py), [`explain.py`](explain.py) | ONNX export, int8 quantisation and benchmarks; saliency maps and the masked rating packet |
 | [`analysis/`](analysis) | The scripts behind every study in `docs/` ([`analysis/README.md`](analysis/README.md)); their data stays outside the repo |
 | `Depth-Anything-V2/` | Git submodule of upstream [Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2), pinned to the commit sidewalk-ai-api uses |

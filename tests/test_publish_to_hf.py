@@ -214,8 +214,13 @@ def test_batch_constants_match_fine_tune_classifier():
     """hf_cards copies the batch size and accumulation from fine_tune_classifier.py; they must stay equal."""
     with open(os.path.join(os.path.dirname(pub.__file__), "fine_tune_classifier.py")) as f:
         src = f.read()
-    assert int(re.search(r"per_device_train_batch_size=(\d+)", src).group(1)) == hf_cards.TRAIN_BATCH_SIZE
-    assert int(re.search(r"gradient_accumulation_steps=(\d+)", src).group(1)) == hf_cards.GRAD_ACCUM
+    # --batch-size (issue #14) defaults to the card's per-device batch; accumulation is BATCH_TOTAL // batch size.
+    import fine_tune_classifier as ft
+    assert "per_device_train_batch_size=args.batch_size" in src
+    assert "gradient_accumulation_steps=BATCH_TOTAL // args.batch_size" in src
+    assert "'--batch-size', type=int, default=DEFAULT_BATCH_SIZE" in src
+    assert ft.DEFAULT_BATCH_SIZE == hf_cards.TRAIN_BATCH_SIZE
+    assert ft.BATCH_TOTAL // hf_cards.TRAIN_BATCH_SIZE == hf_cards.GRAD_ACCUM
 
 
 # ---------------------------------------------------------------------------------------------------------------------

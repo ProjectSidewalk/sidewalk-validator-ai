@@ -89,6 +89,7 @@ Usage::
         --mapillary-token-env MAPILLARY_ACCESS_TOKEN   # also record a pose for Mapillary labels whose DB pose is empty
 """
 import argparse
+import contextlib
 import csv
 import hashlib
 import io
@@ -1063,7 +1064,7 @@ RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "p
                    "mapillary_api")
 #: Settings recorded only when they are not the default, so earlier runs' records stay as they were. Unlike
 #: :data:`RESUME_SETTINGS` they are compared when present on EITHER side, so switching to or from one is caught.
-OPTIONAL_SETTINGS = ("fixed_crop_half_px",)
+OPTIONAL_SETTINGS = ("fixed_crop_half_px", "context_crops")
 #: Settings that only matter when crops are sized by depth. A fixed-size run does not record them (no depth model is
 #: loaded), and :func:`check_resume` does not compare them when both runs are fixed-size, so ``--depth-encoder``
 #: cannot block a fixed-size resume (also one recorded before they were left out).
@@ -1249,6 +1250,12 @@ def build_parser():
                         f'Must be 1 to {MAX_FIXED_CROP_HALF_PX}: the view is {VIEW_SIZE} px square, so a half-width of '
                         f'{MAX_FIXED_CROP_HALF_PX} is the whole view and larger values clip to it. Serving sizes by depth, '
                         'so publish_to_hf.py refuses models trained this way')
+    p.add_argument('--context-crops', action='store_true',
+                   help='also write the context images of issue #14 (context_crops.py: a wider crop and the 448 px '
+                        'whole view) under <out>/<label_type>/context/; a resume setting. For an existing dataset '
+                        'use `python context_crops.py backfill` instead')
+    p.add_argument('--context-wide-factor', type=int, default=None,
+                   help='with --context-crops: the wide crop is this many times the crop half-width (default 4)')
     p.add_argument('--seed', type=int, default=SEED)
     p.add_argument('--cities', default=None,
                    help='comma list of city_id[=subdomain], overriding the public deployments /v3/api/cities lists')
@@ -1295,6 +1302,9 @@ def main(argv=None):
             sys.exit(f"--mapillary-token-env {args.mapillary_token_env}: that environment variable is unset or empty")
     if not args.select_only and not args.pano_store:  # before the city listing, which may need the network
         build_parser().error("--pano-store is required unless --select-only")
+    if args.context_wide_factor is not None and (not args.context_crops or args.context_wide_factor < 1):
+        build_parser().error("--context-wide-factor needs --context-crops and must be at least 1")
+    args.context_wide_factor = args.context_wide_factor or 4  # context_crops.WIDE_FACTOR (a test checks they agree)
     if not args.select_only:  # fail fast, before the downloads; the city directories are checked after selection
         check_pano_store_marker(args.pano_store)
     default_cities = not args.cities or not any(i.strip() for i in args.cities.split(","))
@@ -1374,6 +1384,9 @@ def main(argv=None):
     if args.fixed_crop_half_px is not None:  # no depth model is loaded: recording an encoder would misstate the crops
         settings = {k: v for k, v in settings.items() if k not in DEPTH_SETTINGS}
         settings["fixed_crop_half_px"] = args.fixed_crop_half_px
+    if args.context_crops:  # issue #14; absent otherwise, so earlier records are unchanged
+        import context_crops
+        settings["context_crops"] = {"factor": args.context_wide_factor, "view_px": context_crops.VIEW_PX}
     previous, changed, city_change = check_resume(run_path, sel_hash, settings, list(cities))
     if (previous or changed or city_change) and not args.force_reselect:
         n_ok = count_ok_rows(manifest_path)
@@ -1414,6 +1427,9 @@ def main(argv=None):
                                   combined_filtered['pano_source'].astype(str).str.strip().str.lower())
     print(f"Crop pose by provider (pose_source/reason): {run_pose_counts}")
     manifest = ManifestWriter(manifest_path, base_dir, selection, keep_ok=not changed, sources=sources)
+    # Issue #14: a label whose crop is cut again below loses its context row too (keep = the kept ok rows).
+    ctx = (context_crops.ContextIndex(context_crops.context_dir(base_dir), keep=manifest.done)
+           if args.context_crops else None)
     if previous or changed or city_change:
         print(f"WARNING: --force-reselect: selection changed: {bool(previous)}, city list changed: "
               f"{city_change or 'no'}, settings changed: {changed or 'none'}; "
@@ -1445,7 +1461,7 @@ def main(argv=None):
     status_counts = Counter()
     last_pano = (None, None, None)  # ((city, pano_id), BGR array or the status string it failed with, info)
     consecutive_errors = consecutive_missing = 0
-    with manifest:
+    with manifest, (ctx if ctx is not None else contextlib.nullcontext()):
         for processed_count, (_, row) in enumerate(combined_filtered.iterrows(), start=1):
             crop_path = f"{row['label_class']}/{row['city']}_{row['label_id']}.webp"
             pose = poses[f"{row['city']}:{row['label_id']}"]
@@ -1488,6 +1504,12 @@ def main(argv=None):
                         apply_tilt=pose.beta is not None, beta=pose.beta or 0.0, device=device,
                         fixed_crop_half_px=args.fixed_crop_half_px)
                     save_webp(crop, os.path.join(base_dir, crop_path))
+                    if ctx is not None:  # issue #14: the context images, from the same view (context_crops.py)
+                        ctx.write(rec['label_uid'], context_crops.write_context(
+                            pano_rgb, row['pano_x'] / row['pano_width'], y_norm, info['crop_half_px'], ctx.out_dir,
+                            crop_path[:-5], camera_pitch=pose.camera_pitch, camera_roll=pose.camera_roll,
+                            apply_tilt=pose.beta is not None, beta=pose.beta or 0.0, device=device,
+                            factor=args.context_wide_factor))
                     rec.update(info)
                     rec['status'] = 'ok'
             except Exception as e:
