@@ -31,10 +31,12 @@ so the model computes exactly the pretrained function at step 0 and learns to us
 
 torch, torchvision and transformers are imported inside functions and the classes are built by ``build_classes()``, so
 this module imports on the CPU-only CI. The model is never registered with ``AutoModel`` (``model_type``
-``context_dinov2``): ``evaluate.py``, ``publish_to_hf.py`` and sidewalk-ai-api cannot load it by accident. Score a
-checkpoint with this module, then let ``evaluate.py`` compute the metrics::
+``context_dinov2``): ``evaluate.py`` and sidewalk-ai-api cannot load it by accident (``publish_to_hf.py`` copies
+checkpoint files without loading them, and ``--context-arm`` never writes to ``<Type>/dinov2/``). Score a checkpoint
+with this module, then let ``evaluate.py`` compute the metrics::
 
-    python context_model.py predict --label_type NoCurbRamp --data-dir D --checkpoint RUN/checkpoint-N --tag view_heatmap
+    python context_model.py predict --label_type NoCurbRamp --data-dir D --checkpoint RUN/checkpoint-N \
+        --tag view_heatmap
     python evaluate.py --label_type NoCurbRamp --data-dir D --skip-inference --tag view_heatmap --per-city
 
 Pattern: ``region_model.py`` (issue #33, PR #88).
