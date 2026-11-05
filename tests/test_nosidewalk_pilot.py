@@ -137,7 +137,7 @@ def test_job_file_steps_and_arms():
     text = open(os.path.join(ROOT, "nosidewalk_pilot.slurm")).read()
     for needle in ("--verdict-unit face", "--group-col face_id", "--fixed-crop-half-px 1024",
                    "calibration.nosidewalk_prior", "--hold-back incorrect", "--tag \"s$SEED\"", "#SBATCH --account=makelab",
-                   "#SBATCH --partition=gpu-l40s"):
+                   "#SBATCH --partition=gpu-l40s", 'HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"', "HF_HOME="):
         assert needle in text
     bad = subprocess.run(["bash", "nosidewalk_pilot.slurm"], cwd=ROOT, capture_output=True, text=True,
                          env={**os.environ, "STEP": "nonsense", "DATA": "/d"})
