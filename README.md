@@ -150,7 +150,7 @@ sit in the API's `agree_count` / `disagree_count` like anyone else's, so trainin
 |---|---|
 | [`data_generation.py`](data_generation.py), [`data_generation.slurm`](data_generation.slurm) | Steps 1–5: label selection, deployment priors, panoramas from the pano store, views, depth-sized crops, a resumable `manifest.csv`; the job then runs the split |
 | [`split_data.py`](split_data.py) | Step 5: train/val/test by panorama, nearby panoramas merged, optional held-out cities, the `hard` flag |
-| [`fine_tune_classifier.py`](fine_tune_classifier.py), [`fine_tune.slurm`](fine_tune.slurm) | Step 6: Hugging Face `Trainer` on `facebook/dinov2-large`; hard, soft or reliability-weighted targets |
+| [`fine_tune_classifier.py`](fine_tune_classifier.py), [`fine_tune.slurm`](fine_tune.slurm) | Step 6: Hugging Face `Trainer` on `facebook/dinov2-large`; hard, soft or reliability-weighted targets; `--split` trains on a variant split (a fold held out, rows dropped or flipped; `analysis/confident_learning.py`) |
 | [`evaluate.py`](evaluate.py), [`get_stats.slurm`](get_stats.slurm) | Step 7: predictions and metrics per split, per city and on the hard and gold slices; the job then calibrates |
 | [`calibration/`](calibration) | Step 7b: isotonic confidence→accuracy maps in the API's format, from a retrained model's val split or from production outcomes; per-city checks |
 | [`publish_to_hf.py`](publish_to_hf.py), [`hf_cards.py`](hf_cards.py) | Step 8: staged, checked uploads with generated cards ([`docs/publishing.md`](docs/publishing.md)) |
