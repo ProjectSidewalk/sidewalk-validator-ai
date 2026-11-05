@@ -26,6 +26,16 @@ rater would be re-rating their own vote, and the API carries no vote timestamps,
 The list is one seeded shuffle of all cells. The key (``private-key-do-not-share/key.csv``) records each label's cell,
 the validator's probabilities and whether a lead or another account cast the original vote (``prior_voters``).
 
+**Full pool, ranked (``--pool all``, issue #80).** From a run selected with ``ai_labels_eval.py select --all-ai``,
+every unseen, scored AI label of the city is a candidate, voted or not. The packet keeps the validator's Disagree
+verdicts only, ranked ``band`` tier first, then by the log-odds ``rank_score`` (``--rank score`` drops the tier
+key), capped at ``--cap``, plus ``--n-decoys`` Agree verdicts sampled by seeded rank, in one independent seeded order
+(cells ``ranked`` and ``decoy``). ``score`` then reports the hit rate (rater Disagree / rater's decided votes) per
+tier, per prior-vote status (``unvoted`` / ``other-voted``) and per 50-rank bin, beside the decoys' rate::
+
+    RATER=... EXPERTS=... python analysis/ai_labels_relabel.py build --run RUN_ALL --city vancouver-wa --pool all \\
+        --cap 300 --out RUN_ALL/ranked-vancouver-wa
+
 **Scoring** reads the rater's vote per label from a rawLabels pull taken after rating (``validations[].user_id``; the
 public API carries them within minutes). ``cant_tell`` is Unsure. The report gives, per cell, how often the rater sided
 with the validator and with the original human vote, Wilson intervals, and the validator's precision on its Disagrees
@@ -44,10 +54,13 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import data_generation as dg  # noqa: E402
-from analysis.ai_labels_eval import load_run, read_labels, wilson  # noqa: E402
+from analysis.ai_labels_eval import load_run, rank_score, read_labels, wilson  # noqa: E402
 
 SEED = 20261028
 CELLS = ("contested", "confirmed", "missed", "decoy")
+GALLERY_MAX = 500
+RANKS = ("band_first", "score")
+RANK_BIN = 50
 # the masking CSS of analysis/ai_disagree_relabel.py (PR #66), copied so this branch does not depend on that one
 GALLERY_MASK_CSS = """\
 .card-validation-info, .validation-info-content { display: none !important; }
@@ -110,6 +123,66 @@ def pick(pool, seed=SEED, n_decoys=50):
     return out.drop(columns=["rank", "order"])
 
 
+def rank_disagrees(pool, rank="band_first"):
+    """The validator's Disagree verdicts of ``pool``, best first, with ``rank_score`` and ``rank_position`` 1..n.
+
+    ``band_first``: the ``band`` tier (RampNet 0.30-0.55, where the rejections are) first, then the log-odds
+    ``rank_score`` descending, then ``label_uid``; ``score``: no tier key. ``pool`` needs ``label_uid, verdict,
+    p_correct, p_incorrect`` and, for ``band_first``, ``tier``.
+
+    >>> pool = pd.DataFrame({"label_uid": ["c:1", "c:2", "c:3", "c:4"], "verdict": ["incorrect"] * 3 + ["correct"],
+    ...                      "p_incorrect": [0.99, 0.6, 0.6, 0.1], "tier": ["core", "band", "band", "band"]})
+    >>> pool["p_correct"] = 1 - pool.p_incorrect
+    >>> rank_disagrees(pool).label_uid.tolist(), rank_disagrees(pool, "score").label_uid.tolist()
+    (['c:2', 'c:3', 'c:1'], ['c:1', 'c:2', 'c:3'])
+    """
+    if rank not in RANKS:
+        raise ValueError(f"rank must be one of {RANKS}, got {rank!r}")
+    d = pool[pool.verdict == "incorrect"].copy()
+    d["rank_score"] = rank_score(d.p_correct.values, d.p_incorrect.values)
+    d["_band"] = (d.tier == "band").astype(int) if rank == "band_first" else 0
+    d = d.sort_values(["_band", "rank_score", "label_uid"], ascending=[False, False, True], kind="mergesort")
+    d["rank_position"] = np.arange(1, len(d) + 1)
+    return d.drop(columns="_band").reset_index(drop=True)
+
+
+def pick_all(pool, seed=SEED, cap=300, n_decoys=50, rank="band_first"):
+    """The ``--pool all`` packet: the top ``cap`` of :func:`rank_disagrees` (cell ``ranked``) plus the ``n_decoys``
+    Agree verdicts with the lowest seeded rank (cell ``decoy``), in one independent seeded order (``packet_id`` 1..n),
+    so the rater cannot tell the ranked labels from the decoys by position.
+
+    >>> pool = pd.DataFrame({"label_uid": [f"c:{i}" for i in range(20)], "verdict": ["incorrect"] * 8 + ["correct"] * 12,
+    ...                      "p_incorrect": np.linspace(0.99, 0.01, 20), "tier": "core", "true": ""})
+    >>> pool["p_correct"] = 1 - pool.p_incorrect
+    >>> p = pick_all(pool, "s", cap=5, n_decoys=3)
+    >>> sorted(p.cell.value_counts().to_dict().items()), sorted(p.rank_position.dropna().astype(int).tolist())
+    ([('decoy', 3), ('ranked', 5)], [1, 2, 3, 4, 5])
+    """
+    if cap + n_decoys > GALLERY_MAX:
+        raise ValueError(f"--cap {cap} + --n-decoys {n_decoys} exceeds the {GALLERY_MAX}-label Gallery list")
+    ranked = rank_disagrees(pool, rank).head(cap).assign(cell="ranked")
+    decoys = pool[pool.verdict == "correct"].copy()
+    decoys["_rank"] = decoys.label_uid.map(lambda u: seeded_rank(seed, u))
+    decoys = decoys.sort_values("_rank").head(n_decoys).drop(columns="_rank").assign(cell="decoy")
+    decoys["rank_score"] = rank_score(decoys.p_correct.values, decoys.p_incorrect.values)
+    decoys["rank_position"] = np.nan
+    out = pd.concat([ranked, decoys], ignore_index=True)
+    out["order"] = out.label_uid.map(lambda u: seeded_rank(f"{seed}:order", u))
+    out = out.sort_values("order").reset_index(drop=True)
+    out["packet_id"] = np.arange(1, len(out) + 1)
+    return out.drop(columns="order")
+
+
+def prior_status(prior_voters):
+    """``unvoted`` when no human voted on the label before the build, else ``other-voted`` (the rater's own are
+    already left out).
+
+    >>> prior_status(""), prior_status("lead other")
+    ('unvoted', 'other-voted')
+    """
+    return "other-voted" if str(prior_voters).strip() else "unvoted"
+
+
 def prior_votes(validations_json, rater_id):
     """``(rater's vote or "", voter ids)`` over the human Agree/Disagree/Unsure votes on a label.
 
@@ -128,8 +201,8 @@ def prior_votes(validations_json, rater_id):
 
 def gallery_url(base, label_ids):
     """The Gallery page that shows exactly ``label_ids``, in order (SidewalkWebpage#5444; at most 500)."""
-    if len(label_ids) > 500:
-        raise ValueError("Gallery review lists hold at most 500 labels")
+    if len(label_ids) > GALLERY_MAX:
+        raise ValueError(f"Gallery review lists hold at most {GALLERY_MAX} labels")
     return f"{base}/gallery?labelIds={','.join(str(i) for i in label_ids)}"
 
 
@@ -188,7 +261,14 @@ def cmd_build(args):
     if not rater:
         sys.exit("RATER (the rater's user_id) must be set")
     experts = dg.parse_experts(os.environ.get("EXPERTS"))
+    if args.pool == "all":
+        if args.cap + args.n_decoys > GALLERY_MAX:  # before any file is read or written
+            sys.exit(f"--cap {args.cap} + --n-decoys {args.n_decoys} exceeds the {GALLERY_MAX}-label Gallery list")
+        sel = json.load(open(os.path.join(args.run, "selection.json")))
+        if sel.get("all_ai") is not True:
+            sys.exit(f"--pool all needs a run selected with ai_labels_eval.py select --all-ai; {args.run} was not")
     df = load_run(args.run)
+    # --pool all: no vote filter (an unvoted label has true == ""); contested: the run holds voted labels only anyway
     pool = df[(df.author == "ai") & df.scored & (df.clean == 1) & (df.city == args.city)].copy()
     before = args.rawlabels_before or os.path.join(args.run, "rawlabels", f"{args.city}.csv")
     raw = pd.read_csv(before, dtype=str, usecols=["label_id", "validations"])
@@ -200,10 +280,16 @@ def cmd_build(args):
     # is invisible in the API (no timestamps). Pull rawLabels right before building so recent votes count.
     n_rater = int((pool.prior_rater_vote != "").sum())
     pool = pool[pool.prior_rater_vote == ""]
-    picked = pick(pool, args.seed, args.n_decoys)
-    key = picked[["packet_id", "label_uid", "city", "label_id", "pano_id", "cell", "verdict", "true", "expert_class",
-                  "p_correct", "p_incorrect", "confidence", "round3_split", "prior_rater_vote", "prior_voters",
-                  "n_votes", "tier"]].copy()
+    cols = ["packet_id", "label_uid", "city", "label_id", "pano_id", "cell", "verdict", "true", "expert_class",
+            "p_correct", "p_incorrect", "confidence", "round3_split", "prior_rater_vote", "prior_voters", "n_votes",
+            "tier"]
+    if args.pool == "all":
+        picked = pick_all(pool, args.seed, args.cap, args.n_decoys, args.rank)
+        picked["prior_status"] = picked.prior_voters.map(prior_status)
+        cols += ["rank_position", "rank_score", "prior_status"]
+    else:
+        picked = pick(pool, args.seed, args.n_decoys)
+    key = picked[cols].copy()
     key["rater_id"] = rater
     priv = os.path.join(args.out, "private-key-do-not-share")
     os.makedirs(priv, exist_ok=True)
@@ -225,7 +311,13 @@ def cmd_build(args):
            "key_sha256": sha256_file(kpath), "labels_sha256": sha256_file(os.path.join(args.run, "labels.csv")),
            "predictions_sha256": sha256_file(os.path.join(args.run, "predictions.csv")),
            "rawlabels_before_sha256": sha256_file(before),
-           "css_sha256": hashlib.sha256(GALLERY_MASK_CSS.encode()).hexdigest(), "gallery_url": url}
+           "css_sha256": hashlib.sha256(GALLERY_MASK_CSS.encode()).hexdigest(), "gallery_url": url,
+           "pool": args.pool}
+    if args.pool == "all":
+        ranked = key[key.cell == "ranked"]
+        man.update(cap=args.cap, rank=args.rank, n_ranked=int(len(ranked)),
+                   n_unvoted_ranked=int((ranked.prior_status == "unvoted").sum()),
+                   n_disagree_in_pool=int((pool.verdict == "incorrect").sum()))
     with open(os.path.join(args.out, "manifest.json"), "w") as f:
         json.dump(man, f, indent=2)
     print(json.dumps({k: v for k, v in man.items() if k != "gallery_url"}, indent=2))
@@ -356,6 +448,44 @@ def score_markdown(rows, prior=None, readback=None):
     return "\n".join(L) + "\n"
 
 
+def _rank_bin(position):
+    lo = (int(position) - 1) // RANK_BIN * RANK_BIN + 1
+    return f"{lo}-{lo + RANK_BIN - 1}"
+
+
+def hit_rate_markdown(rows, readback=None):
+    """The ``--pool all`` result: hit rate = rater Disagree / rater's decided votes (Unsure counted beside, not in the
+    denominator, as in :func:`score_markdown`), with Wilson 95% intervals, overall and per tier, prior-vote status
+    and 50-rank bin of the ranked labels, and the decoys' Disagree rate beside it."""
+    L = [f"<!-- analysis/ai_labels_relabel.py score (--pool all), {datetime.now(timezone.utc).date()} -->", "",
+         "| slice | n | voted | Unsure | hit rate: rater Disagree / decided [Wilson 95%] |", "|---|---:|---:|---:|---|"]
+    voted = rows[rows.verdict_rater != ""]
+
+    def line(name, g):
+        v = voted.loc[voted.index.isin(g.index)]
+        dec = v[v.verdict_rater != "cant_tell"]
+        L.append(f"| {name} | {len(g)} | {len(v)} | {int((v.verdict_rater == 'cant_tell').sum())} | "
+                 f"{_rate(int((dec.verdict_rater == 'incorrect').sum()), len(dec))} |")
+
+    ranked = rows[rows.cell == "ranked"].copy()
+    line("ranked, all", ranked)
+    for t, g in ranked.groupby(ranked.tier.fillna("").astype(str)):
+        line(f"ranked, tier {t or 'unknown'}", g)
+    for st, g in ranked.groupby("prior_status"):
+        line(f"ranked, {st}", g)
+    ranked["_bin"] = ranked.rank_position.map(_rank_bin)
+    for b, g in sorted(ranked.groupby("_bin"), key=lambda kv: int(kv[0].split("-")[0])):
+        line(f"ranked, rank {b}", g)
+    line("decoys (validator Agree)", rows[rows.cell == "decoy"])
+    L += ["", "Comparators (issues #71, #80): against a project lead the validator's Disagree on a RampNet label was "
+          "right 38 % [29, 49] of the time (33 of 86 decided, Vancouver, voted labels); by the crowd reference about "
+          "1 in 3 of its Disagrees were bad pins, against 1 in 50 of all labels."]
+    if readback:
+        L.append(f"Read-back check: {readback['gained_rater_vote']} labels gained exactly one vote by the rater, "
+                 f"{readback['unchanged']} unchanged, nothing else changed.")
+    return "\n".join(L) + "\n"
+
+
 def cmd_score(args):
     rater = os.environ.get("RATER", "")
     if not rater:
@@ -371,11 +501,18 @@ def cmd_score(args):
     readback = readback_check(key, before, after, rater)
     rows = score_rows(key, after, rater)
     rows.to_csv(os.path.join(args.out, "private-key-do-not-share", "scored.csv"), index=False)
+    if man.get("pool") == "all":
+        md = hit_rate_markdown(rows, readback)
+        return _write_score(args, man, md, after_path, readback, rows)
     df = load_run(args.run)
     pool = df[(df.author == "ai") & df.scored & (df.clean == 1) & (df.city == city)]
     pool = pool.merge(before, on="label_id", how="left", validate="one_to_one")
     prior = prior_disagrees(pool, rater)
     md = score_markdown(rows, prior, readback)
+    _write_score(args, man, md, after_path, readback, rows)
+
+
+def _write_score(args, man, md, after_path, readback, rows):
     with open(os.path.join(args.out, "results.md"), "w") as f:
         f.write(md)
     man["scored"] = {"on": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -396,6 +533,11 @@ def build_parser():
     b.add_argument("--seed", type=int, default=SEED)
     b.add_argument("--n-decoys", type=int, default=50)
     b.add_argument("--rawlabels-before", help="a rawLabels pull taken just before building (default: the run's pull)")
+    b.add_argument("--pool", choices=("contested", "all"), default="contested",
+                   help="contested: the four-cell packet of the voted labels (#71); all: the ranked Disagree list over "
+                        "every AI label of a select --all-ai run (#80)")
+    b.add_argument("--cap", type=int, default=300, help="--pool all: Disagree verdicts kept after ranking")
+    b.add_argument("--rank", choices=RANKS, default="band_first", help="--pool all: ranking order")
     b.add_argument("--force", action="store_true")
     b.set_defaults(func=cmd_build)
     s = sub.add_parser("score")
