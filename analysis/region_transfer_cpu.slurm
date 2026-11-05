@@ -28,7 +28,7 @@ case "$STEP" in
     python -u analysis/region_transfer.py variants --split "$DATA/$LT/split.csv" --cities-json "$CITIES_JSON" \
         --rawlabels "$RAWLABELS" --seed "${SPLIT_SEED:-42}" --out "$DATA/$LT/region"
     mkdir -p "$DATA/$LT/region/eval/$LT"
-    ln -sfn "$DATA/$LT/split.csv" "$DATA/$LT/region/eval/$LT/split.csv"
+    [ -e "$DATA/$LT/region/eval/$LT/split.csv" ] || ln -s "$DATA/$LT/split.csv" "$DATA/$LT/region/eval/$LT/split.csv"
     ;;
   calibrate)
     DATA="${DATA:?set DATA}"; CITIES_JSON="${CITIES_JSON:?set CITIES_JSON}"

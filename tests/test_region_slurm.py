@@ -59,7 +59,9 @@ def test_every_variants_call_passes_rawlabels(name):
 
 def test_split_link_is_made_once_by_the_launcher_not_per_gpu_job():
     assert "ln -sfn" not in read("region_transfer.slurm")
-    assert 'ln -sfn "$DATA/$LT/split.csv" "$DATA/$LT/region/eval/$LT/split.csv"' in read("region_submit.sh")
+    assert "ln -sfn" not in read("region_submit.sh")
+    assert '|| ln -s "$DATA/$LT/split.csv" "$DATA/$LT/region/eval/$LT/split.csv"' in read("region_submit.sh")
+    assert '|| ln -s "$DATA/$LT/split.csv" "$DATA/$LT/region/eval/$LT/split.csv"' in read("region_transfer_cpu.slurm")
 
 
 def test_force_unk_ablation_is_scored_for_condall_only():
