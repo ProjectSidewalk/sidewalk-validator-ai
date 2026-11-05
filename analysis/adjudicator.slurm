@@ -98,6 +98,8 @@ export no_proxy="127.0.0.1,${no_proxy:-}" NO_PROXY="127.0.0.1,${NO_PROXY:-}"
 SHM=/dev/shm/vllm_${SLURM_JOB_ID:-$$}
 mkdir -p "$SHM"
 NGPU=$(nvidia-smi -L | wc -l)
+# By hand without the launcher, the header's 2 GPUs are fewer than GLM's TP 4; vLLM would fail after the long load.
+[ "$NGPU" -ge "$TP" ] || { echo "$NGPU GPU(s) allocated, tensor parallel size $TP: request --gpus=<type>:$TP"; exit 2; }
 GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1 | sed 's/NVIDIA //; s/ .*//')
 GPU_LABEL=${GPU_LABEL:-${NGPU}x${GPU_NAME}}
 module load apptainer 2>/dev/null || true
