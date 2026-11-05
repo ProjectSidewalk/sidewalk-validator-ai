@@ -95,6 +95,27 @@ def test_compute_retype_metrics_known_values():
     assert fr.compute_retype_metrics(logits[:2], [0, 0], [0, 0], [1, 1])["auc_claimed"] == 0.0
 
 
+def test_auc_claimed_is_row_weighted_over_the_validator_types_only():
+    """CurbRamp (8 val rows, AUC 1.0) and NoCurbRamp (2 rows, AUC 0.0) average to 0.8, not 0.5; NoSidewalk (an
+    extra, AUC 0.0) is reported but does not select."""
+    rows = []  # (claimed index, is_correct, p(claimed))
+    rows += [(0, 1, 0.9)] * 4 + [(0, 0, 0.2)] * 4
+    rows += [(1, 1, 0.2), (1, 0, 0.9)]
+    rows += [(5, 1, 0.2), (5, 0, 0.9)]
+    probs = np.full((len(rows), 8), 0.01)
+    for k, (c, _, pc) in enumerate(rows):
+        probs[k, c] = pc
+    claimed = [r[0] for r in rows]
+    is_correct = [r[1] for r in rows]
+    labels = [c if ok else -100 for c, ok, _ in rows]
+    m = fr.compute_retype_metrics(np.log(probs), labels, claimed, is_correct)
+    assert m["auc_claimed_CurbRamp"] == 1.0 and m["auc_claimed_NoCurbRamp"] == 0.0
+    assert m["auc_claimed_NoSidewalk"] == 0.0 and "NoSidewalk" not in rt.VALIDATOR_TYPES
+    assert m["auc_claimed"] == pytest.approx(0.8)
+    only_extra = fr.compute_retype_metrics(np.log(probs[-2:]), labels[-2:], claimed[-2:], is_correct[-2:])
+    assert only_extra["auc_claimed"] == 0.0 and "auc_claimed_NoSidewalk" in only_extra
+
+
 def test_trainer_metrics_unpacks_the_label_tuple():
     logits = np.log(np.full((2, 8), 1 / 8))
     pred = SimpleNamespace(predictions=logits, label_ids=(np.array([0, -100]), np.array([0, 0]), np.array([1, 0])))

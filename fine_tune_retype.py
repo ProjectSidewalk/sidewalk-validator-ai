@@ -1,11 +1,12 @@
 """Fine-tune one DINOv2-Large over the eight label types (``retype.CLASSES``): validation as re-typing (issue #13).
 
 Reads ``retype_split.csv`` (``python retype.py assemble``), trains on its ``train`` rows and keeps the checkpoint with
-the best validation ``--best-metric`` (default ``auc_claimed``: the mean, over claimed types, of the AUC of
-``p(claimed)`` for correct vs incorrect, which is the verdict the API would serve). The recipe is round 3's
-(``fine_tune_classifier.py``): ``facebook/dinov2-large``, batch 8 x accumulation 4, lr 1e-5, warm-up 0.1, train
-augmentation ``RandomResizedCrop(224, scale=(0.7, 1.0))`` + flip, val preprocessing = the checkpoint's slow
-``AutoImageProcessor`` (what evaluate.py and sidewalk-ai-api run). Only the head and the loss differ.
+the best validation ``--best-metric`` (default ``auc_claimed``: the mean, over the five validator types weighted by
+their val rows, of the AUC of ``p(claimed)`` for correct vs incorrect, which is the verdict the API would serve).
+The recipe is round 3's (``fine_tune_classifier.py``): ``facebook/dinov2-large``, batch 8 x accumulation 4, lr 1e-5,
+warm-up 0.1, train augmentation ``RandomResizedCrop(224, scale=(0.7, 1.0))`` + flip, val preprocessing = the
+checkpoint's slow ``AutoImageProcessor`` (what evaluate.py and sidewalk-ai-api run). Only the head and the loss
+differ.
 
 Loss (``retype_loss``):
 
@@ -147,8 +148,11 @@ def _softmax(x):
 def compute_retype_metrics(logits, labels, claimed, is_correct):
     """Validation metrics: ``top1_acc`` and ``macro_f1`` of the type head on positive rows (``labels != -100``;
     F1 over the classes present), ``auc_claimed_<type>`` of ``p(claimed)`` (correct vs incorrect) per claimed type
-    with both classes, and ``auc_claimed`` = their mean (0.0 when no type has both, so checkpoint selection still has
-    a number).
+    with both classes, and ``auc_claimed`` = the mean of those AUCs over the five ``retype.VALIDATOR_TYPES`` only,
+    weighted by each type's val row count (0.0 when none has both classes, so checkpoint selection still has a
+    number). The weighting keeps a small, noisy val type (NoCurbRamp has a few dozen rows) from moving checkpoint
+    selection as much as CurbRamp; the extras (NoSidewalk, Signal, Other) are reported but do not select, since no
+    deployed validator serves them.
 
     >>> lg = np.log(np.array([[.8, .1, .1] + [1e-9] * 5, [.2, .7, .1] + [1e-9] * 5, [.6, .3, .1] + [1e-9] * 5]))
     >>> m = compute_retype_metrics(lg, [0, -100, 1], [0, 0, 1], [1, 0, 1])
@@ -168,13 +172,15 @@ def compute_retype_metrics(logits, labels, claimed, is_correct):
     else:
         out["top1_acc"] = out["macro_f1"] = 0.0
     pc = p[np.arange(len(p)), claimed]
-    aucs = []
+    aucs, ns = [], []
     for i, c in rt.ID2LABEL.items():
         m = claimed == i
         if m.any() and 0 < is_correct[m].sum() < m.sum():
             out[f"auc_claimed_{c}"] = float(roc_auc_score(is_correct[m], pc[m]))
-            aucs.append(out[f"auc_claimed_{c}"])
-    out["auc_claimed"] = float(np.mean(aucs)) if aucs else 0.0
+            if c in rt.VALIDATOR_TYPES:
+                aucs.append(out[f"auc_claimed_{c}"])
+                ns.append(int(m.sum()))
+    out["auc_claimed"] = float(np.average(aucs, weights=ns)) if aucs else 0.0
     return out
 
 
