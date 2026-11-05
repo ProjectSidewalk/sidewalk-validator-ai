@@ -39,6 +39,11 @@ checkpoint with this module, then let ``evaluate.py`` compute the metrics::
 
 Pattern: ``region_model.py`` (issue #33, PR #88).
 """
+import argparse
+import functools
+import os
+import sys
+
 import numpy as np
 import pandas as pd
 
@@ -183,3 +188,306 @@ def map_point(cx, cy, crop, res, flip=False):
     x = (cx + 0.5 - j) * res / w - 0.5
     y = (cy + 0.5 - i) * res / h - 0.5
     return (res - 1 - x if flip else x), y
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Input transforms (torch / torchvision, imported when called)
+# ---------------------------------------------------------------------------------------------------------------------
+
+class ContextInputs:
+    """Turns one example's context into tensors for the model, train (augmented) or eval (deterministic).
+
+    ``paths`` maps label_uid -> (wide_path, view_path); ``side`` maps label_uid -> normalised side vector. The wide
+    crop is augmented like the tight one (``RandomResizedCrop(crop, scale=(0.7, 1.0))`` + flip) and evaluated with
+    the checkpoint's own processor (resize, centre crop), exactly as the tight crop is; the view as described in the
+    module docstring.
+    """
+
+    def __init__(self, arm, image_processor, res=224, paths=None, side=None, sigma_floor=HEATMAP_SIGMA_FLOOR):
+        self.arm, self.processor, self.res = arm, image_processor, int(res)
+        self.paths, self.side, self.sigma_floor = paths or {}, side or {}, sigma_floor
+        crop = image_processor.crop_size
+        self.crop = (crop["height"], crop["width"]) if "height" in crop else crop["shortest_edge"]
+        self.mean, self.std = list(image_processor.image_mean), list(image_processor.image_std)
+
+    def _open(self, uid, which):
+        from PIL import Image
+        return Image.open(self.paths[uid][0 if which == "wide" else 1]).convert("RGB")
+
+    def wide(self, uid, train):
+        from torchvision.transforms import Compose, Normalize, RandomHorizontalFlip, RandomResizedCrop, ToTensor
+        img = self._open(uid, "wide")
+        if train:
+            tf = Compose([RandomResizedCrop(self.crop, scale=TRAIN_SCALE, antialias=True), RandomHorizontalFlip(),
+                          ToTensor(), Normalize(mean=self.mean, std=self.std)])
+            return tf(img)
+        return self.processor(img, return_tensors="pt")["pixel_values"][0]
+
+    def view(self, uid, crop_half_px, train):
+        """The 4-channel view: normalised RGB at ``res`` plus the heatmap."""
+        import torch
+        import torchvision.transforms.functional as F
+        from torchvision.transforms import RandomResizedCrop
+        img = self._open(uid, "view")
+        s = img.size[0]
+        centre = (s - 1) / 2
+        if train:
+            i, j, h, w = RandomResizedCrop.get_params(img, scale=TRAIN_SCALE, ratio=TRAIN_RATIO)
+            flip = bool(torch.rand(1) < 0.5)
+            img = F.resized_crop(img, i, j, h, w, [self.res, self.res], antialias=True)
+            if flip:
+                img = F.hflip(img)
+            cx, cy = map_point(centre, centre, (i, j, h, w), self.res, flip)
+            raw = float(crop_half_px) * s / VIEW_SIZE / 2  # sigma in stored-view px, then through the crop
+            sigma = (max(self.sigma_floor, raw * self.res / w), max(self.sigma_floor, raw * self.res / h))
+        else:
+            img = F.resize(img, [self.res, self.res], antialias=True)
+            cx, cy = map_point(centre, centre, (0, 0, s, s), self.res)
+            sigma = heatmap_sigma(crop_half_px, self.res, floor=self.sigma_floor)
+        rgb = F.normalize(F.to_tensor(img), self.mean, self.std)
+        hm = torch.from_numpy(heatmap(self.res, self.res, cx, cy, sigma))[None]
+        return torch.cat([rgb, hm], dim=0)
+
+    def side_vector(self, uid):
+        import torch
+        return torch.as_tensor(self.side[uid], dtype=torch.float32)
+
+
+def wrap_collate(collate_fn, inputs):
+    """A collate that adds the arm's inputs to ``collate_fn``'s batch (hard or soft-target alike): reads each
+    example's ``label_uid`` and ``split`` (train rows augmented, the rest not) and, for the view, ``crop_half_px``.
+    ``two_scale`` adds ``pixel_values_wide``; ``view_heatmap`` replaces ``pixel_values`` with the 4-channel view;
+    ``side_info`` adds ``side_features``."""
+    def collate(examples):
+        import torch
+        batch = collate_fn(examples)
+        train = [str(e["split"]) == "train" for e in examples]
+        uids = [str(e["label_uid"]) for e in examples]
+        if inputs.arm == "two_scale":
+            batch["pixel_values_wide"] = torch.stack([inputs.wide(u, t) for u, t in zip(uids, train)])
+        elif inputs.arm == "view_heatmap":
+            batch["pixel_values"] = torch.stack([inputs.view(u, e["crop_half_px"], t)
+                                                 for u, e, t in zip(uids, examples, train)])
+        elif inputs.arm == "side_info":
+            batch["side_features"] = torch.stack([inputs.side_vector(u) for u in uids])
+        return batch
+    return collate
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# The model (torch + transformers)
+# ---------------------------------------------------------------------------------------------------------------------
+
+@functools.lru_cache(maxsize=1)
+def build_classes():
+    """``(ContextDinov2Config, ContextDinov2ForImageClassification)``, built once (transformers imported here)."""
+    import torch
+    from torch import nn
+    from transformers import Dinov2Config, Dinov2Model, Dinov2PreTrainedModel
+    from transformers.modeling_outputs import ImageClassifierOutput
+
+    class ContextDinov2Config(Dinov2Config):
+        model_type = MODEL_TYPE
+
+        def __init__(self, context_arm="two_scale", view_px=448, train_res=224, wide_factor=4,
+                     heatmap_sigma_floor=HEATMAP_SIGMA_FLOOR, side_features=None, side_stats=None,
+                     age_reference_date=None, index_sha256=None, **kwargs):
+            super().__init__(**kwargs)
+            if context_arm not in ARMS:
+                raise ValueError(f"context_arm must be one of {ARMS}")
+            self.context_arm = context_arm
+            self.view_px, self.train_res, self.wide_factor = int(view_px), int(train_res), int(wide_factor)
+            self.heatmap_sigma_floor = float(heatmap_sigma_floor)
+            self.side_features = list(side_features) if side_features else []
+            self.side_stats = side_stats
+            self.age_reference_date = age_reference_date
+            self.index_sha256 = index_sha256
+
+    class ContextDinov2ForImageClassification(Dinov2PreTrainedModel):
+        config_class = ContextDinov2Config
+        accepts_loss_kwargs = False  # as region_model: the Trainer divides by the accumulation steps itself
+
+        def __init__(self, config):
+            super().__init__(config)
+            self.num_labels = config.num_labels
+            self.dinov2 = Dinov2Model(config)
+            h = config.hidden_size
+            n_in = {"two_scale": 4 * h, "view_heatmap": 2 * h,
+                    "side_info": 2 * h + len(config.side_features)}[config.context_arm]
+            self.classifier = nn.Linear(n_in, config.num_labels)
+            self.post_init()
+
+        def pool(self, pixel_values):
+            seq = self.dinov2(pixel_values=pixel_values).last_hidden_state
+            return torch.cat([seq[:, 0], seq[:, 1:].mean(dim=1)], dim=1)  # Dinov2ForImageClassification's pooling
+
+        def forward(self, pixel_values=None, pixel_values_wide=None, side_features=None, labels=None):
+            feats = [self.pool(pixel_values)]
+            arm = self.config.context_arm
+            if arm == "two_scale":
+                if pixel_values_wide is None:
+                    raise ValueError("the two_scale arm needs pixel_values_wide")
+                feats.append(self.pool(pixel_values_wide))
+            elif arm == "side_info":
+                if side_features is None:
+                    raise ValueError("the side_info arm needs side_features")
+                feats.append(side_features.to(feats[0].dtype))
+            logits = self.classifier(torch.cat(feats, dim=1))
+            loss = None
+            if labels is not None:
+                loss = nn.CrossEntropyLoss()(logits.view(-1, self.num_labels), labels.view(-1).to(logits.device))
+            return ImageClassifierOutput(loss=loss, logits=logits)
+
+        @classmethod
+        def from_base(cls, base, context_arm, id2label=None, label2id=None, **fields):
+            """A new model whose backbone is ``base``'s (``facebook/dinov2-large`` or a checkpoint directory) and
+            whose head is fresh. For ``view_heatmap`` the patch projection gets a 4th input channel: channels 0-2
+            are the pretrained filters, channel 3 is zero, so the output equals the base model's at step 0."""
+            base_cfg = Dinov2Config.from_pretrained(base).to_dict()
+            for k in ("model_type", "architectures", "transformers_version", "id2label", "label2id", "num_labels",
+                      "num_channels", "context_arm", "view_px", "train_res", "wide_factor", "heatmap_sigma_floor",
+                      "side_features", "side_stats", "age_reference_date", "index_sha256"):
+                base_cfg.pop(k, None)
+            channels = 4 if context_arm == "view_heatmap" else 3
+            cfg = ContextDinov2Config(context_arm=context_arm, id2label=id2label, label2id=label2id,
+                                      num_channels=channels, **fields, **base_cfg)
+            model = cls(cfg)
+            state = Dinov2Model.from_pretrained(base).state_dict()
+            key = "embeddings.patch_embeddings.projection.weight"
+            if channels == 4:
+                w = state[key]
+                state[key] = torch.cat([w, torch.zeros_like(w[:, :1])], dim=1)
+            model.dinov2.load_state_dict(state)
+            return model
+
+    return ContextDinov2Config, ContextDinov2ForImageClassification
+
+
+def side_table(df, reference_date, stats):
+    """``{label_uid: normalised side vector}`` for the rows of ``df``."""
+    vecs = normalise(side_feature_frame(df, reference_date), stats)
+    return dict(zip(df["label_uid"].astype(str), vecs))
+
+
+def build_for_training(args, base, train_df, val_df, id2label, label2id, collate_fn, image_processor):
+    """The arm's model and collate for ``fine_tune_classifier.py --context-arm``: ``(model, collate_fn)``.
+
+    Needs split.csv frames carrying ``FRAME_COLUMNS[arm]`` (``load_split_frames(..., extra_columns=...)``). For
+    ``two_scale``/``view_heatmap`` every train and val row must be in ``<data-dir>/<label_type>/context/index.csv``
+    (``context_crops.load_index`` raises otherwise, before any weight is loaded) and the index's sha256 goes into the
+    config; for ``side_info`` the normaliser is fitted on the train rows and saved in the config with the age
+    reference date, so inference applies the same transform.
+    """
+    import context_crops
+    arm = args.context_arm
+    need = FRAME_COLUMNS[arm]
+    if train_df is None or any(c not in train_df.columns for c in need):
+        raise SystemExit(f"--context-arm {arm} needs split.csv frames with {list(need)} (not the imagefolder layout)")
+    res = int(getattr(args, "context_view_res", 224))
+    fields = {"train_res": res, "wide_factor": context_crops.WIDE_FACTOR, "view_px": context_crops.VIEW_PX}
+    paths, side = None, None
+    if arm in ("two_scale", "view_heatmap"):
+        base_dir = os.path.join(args.data_dir, args.label_type)
+        uids = list(train_df["label_uid"]) + list(val_df["label_uid"])
+        index = context_crops.load_index(base_dir, require_uids=uids)
+        paths = dict(zip(index["label_uid"], zip(index["wide_path"], index["view_path"])))
+        fields["index_sha256"] = context_crops.index_sha256(base_dir)
+        run = context_crops.read_run_file(context_crops.context_dir(base_dir)) or {}
+        fields["wide_factor"] = run.get("factor", fields["wide_factor"])
+        fields["view_px"] = run.get("view_px", fields["view_px"])
+    else:
+        ref = age_reference(train_df)
+        stats = fit_normaliser(side_feature_frame(train_df, ref))
+        side = {**side_table(train_df, ref, stats), **side_table(val_df, ref, stats)}
+        fields.update(side_features=list(SIDE_COLUMNS), side_stats=stats, age_reference_date=ref)
+    print(f"context arm {arm}: {len(train_df)} train / {len(val_df)} val rows"
+          + (f", view at {res} px" if arm == "view_heatmap" else ""))
+    _, model_cls = build_classes()
+    model = model_cls.from_base(base, arm, id2label, label2id, **fields)
+    inputs = ContextInputs(arm, image_processor, res, paths, side, model.config.heatmap_sigma_floor)
+    return model, wrap_collate(collate_fn, inputs)
+
+
+def run_inference(manifest, checkpoint_dir, data_dir, label_type, splits=("val", "test", "test_heldout")):
+    """``evaluate.run_inference``'s twin for an arm checkpoint: the rows of ``manifest`` (``evaluate.load_split``)
+    whose split is in ``splits``, scored with the eval transforms; returns ``evaluate.PREDICTION_COLUMNS``."""
+    import torch
+    from PIL import Image
+    from tqdm import tqdm
+    from transformers import AutoImageProcessor
+
+    import context_crops
+    from evaluate import CLASSES, PREDICTION_COLUMNS
+
+    _, model_cls = build_classes()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    processor = AutoImageProcessor.from_pretrained(checkpoint_dir, use_fast=False)
+    model = model_cls.from_pretrained(checkpoint_dir).to(device).eval()
+    cfg = model.config
+    label2id = {v: int(k) for k, v in cfg.id2label.items()}
+    if set(label2id) != set(CLASSES):
+        raise ValueError(f"unexpected id2label {cfg.id2label}")
+    rows = manifest[manifest.split.isin(splits)]
+    paths, side = None, None
+    if cfg.context_arm in ("two_scale", "view_heatmap"):
+        base_dir = os.path.join(data_dir, label_type)
+        index = context_crops.load_index(base_dir, require_uids=rows.label_uid)
+        paths = dict(zip(index["label_uid"], zip(index["wide_path"], index["view_path"])))
+        if cfg.index_sha256 and context_crops.index_sha256(base_dir) != cfg.index_sha256:
+            print("NOTE: context/index.csv changed since training (rows added?); scoring with the current files",
+                  file=sys.stderr)
+    else:
+        side = side_table(rows, cfg.age_reference_date, cfg.side_stats)
+    inputs = ContextInputs(cfg.context_arm, processor, cfg.train_res, paths, side, cfg.heatmap_sigma_floor)
+    probs = []
+    for row in tqdm(rows.to_dict("records"), desc="inference"):
+        uid = str(row["label_uid"])
+        kw = {}
+        if cfg.context_arm == "view_heatmap":
+            kw["pixel_values"] = inputs.view(uid, row["crop_half_px"], train=False)[None]
+        else:
+            kw["pixel_values"] = processor(Image.open(row["crop_path"]).convert("RGB"),
+                                           return_tensors="pt")["pixel_values"]
+            if cfg.context_arm == "two_scale":
+                kw["pixel_values_wide"] = inputs.wide(uid, train=False)[None]
+            else:
+                kw["side_features"] = inputs.side_vector(uid)[None]
+        with torch.no_grad():
+            out = model(**{k: v.to(device) for k, v in kw.items()})
+        probs.append(out.logits.softmax(-1).cpu().numpy()[0])
+    probs = np.array(probs).reshape(-1, len(CLASSES))
+    return pd.DataFrame({"label_uid": rows.label_uid.values, "split": rows.split.values,
+                         "true": rows.label_class.values,
+                         "p_correct": probs[:, label2id["correct"]], "p_incorrect": probs[:, label2id["incorrect"]]},
+                        columns=PREDICTION_COLUMNS)
+
+
+def build_parser():
+    p = argparse.ArgumentParser(description="Score a context-arm checkpoint (issue #14).")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    pr = sub.add_parser("predict", help="write <data-dir>/<label_type>/predictions_<tag>.csv for evaluate.py")
+    pr.add_argument("--label_type", required=True)
+    pr.add_argument("--data-dir", default=".", help="holds <label_type>/split.csv and <label_type>/context/")
+    pr.add_argument("--checkpoint", required=True, help="a checkpoint-N directory of a --context-arm run")
+    pr.add_argument("--tag", required=True, help="suffix of predictions_<tag>.csv (then evaluate.py --tag)")
+    pr.add_argument("--splits", default="val,test,test_heldout", help="comma list of splits to score")
+    return p
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    if not args.tag.replace("-", "").replace("_", "").isalnum():
+        build_parser().error("--tag must be letters, digits, '-' or '_' (it becomes part of file names)")
+    import evaluate
+    manifest = evaluate.load_split(args.label_type, args.data_dir)
+    splits = tuple(s.strip() for s in args.splits.split(",") if s.strip())
+    pred = run_inference(manifest, args.checkpoint, args.data_dir, args.label_type, splits)
+    out = os.path.join(args.data_dir, args.label_type, f"predictions_{args.tag}.csv")
+    pred.to_csv(out, index=False)
+    print(f"wrote {out} ({len(pred)} rows); next: python evaluate.py --label_type {args.label_type} --data-dir "
+          f"{args.data_dir} --skip-inference --tag {args.tag} --per-city")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
