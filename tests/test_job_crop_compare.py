@@ -189,3 +189,23 @@ def test_compare_refuses_missing_scores():
     split, job, depth = _synthetic()
     with pytest.raises(ValueError, match="depth predictions have no score"):
         jcc.paired_frame(job, depth.iloc[5:], split)
+
+
+def test_paired_bootstrap_resamples_whole_panoramas(monkeypatch):
+    split, job, depth = _synthetic()
+    paired = jcc.paired_frame(job, depth, split)
+    seen = []
+    real = jcc.rr.cluster_boot
+
+    def spy(y, scores, groups, n_boot, seed, **kw):
+        seen.append(list(groups))
+        return real(y, scores, groups, n_boot, seed, **kw)
+    monkeypatch.setattr(jcc.rr, "cluster_boot", spy)
+    jcc.delta_row(paired, n_boot=5, seed=0)
+    assert seen == [paired.pano_id.tolist()]  # panoramas, not labels (two labels share each pano here)
+
+
+def test_height_only_dims_mismatch_is_caught():
+    d = pd.DataFrame({"pano_path": ["/a", "/b"], "pano_native_w": [100, 100], "pano_native_h": [50, 50],
+                      "pano_y": [10, 10], "pano_width": [100, 100], "pano_height": [50, 60]})
+    assert jcc.job_crop_status(d).tolist() == ["ok", "dims_mismatch"]
