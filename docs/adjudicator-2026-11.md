@@ -104,18 +104,29 @@ median seconds per crop.
 
 **Crops.** Items with a round-3 crop use it. The rest are cut on klone by the unchanged
 `ai_labels_eval.py crops` leg (the training crop pipeline) from a pano stage of at most 600 panoramas. Their
-geometry comes from the public rawLabels cache. Private-deployment and excluded-author items need one read-only pull
-(`analysis/pull_label_points.sh`). Without it they are reported as not scorable (Q7).
+geometry comes from the public rawLabels cache. Items the cache lacks need one read-only pull
+(`analysis/pull_label_points.sh`): private-deployment items, excluded-author items, and labels newer than the
+2026-10-19 snapshot or deleted since. Without it they are reported as not scorable (Q7). On the gold table above,
+`crops` finds 198 items with a round-3 crop, 580 to cut from 577 panoramas and 22 without geometry. Of the 22,
+11 are the unmasked excluded-author items, which are not decided anyway. The other 11 are decided: 4 round-1 items
+from private deployments and 7 round-2 items newer than the snapshot or deleted since. So the pull covers 11
+decided items.
 
 ## The bar
 
+**Population: the AI's Disagree votes only** (`ai_vote == "Disagree"`, `adjudicator.ai_disagree_items`). That is
+what the adjudicator would relabel (#77). The bar, the agreement table, the paired table and the slices are all
+computed on these items. The decoys (the AI voted Agree or Unsure) are left out of the bar because the crowd agrees
+with the expert much more often on them, and their share differs by type, so pooling them would raise the crowd
+baseline unevenly. They get their own sanity table instead: a usable model calls most of them correct.
+
 A (model, type) pair **clears** when all three hold (`adjudicator.bar_decision`):
 
-1. at least 30 decided items of the type have a crowd majority (`n_pair >= 30`);
+1. at least 30 decided AI-Disagree items of the type have a crowd majority (`n_pair >= 30`);
 2. on those same items, the 95% lower bound of (model agreement with the expert) minus (crowd majority agreement
    with the expert) is above 0. The bound comes from a label-level paired bootstrap, 2,000 resamples, seed 0;
-3. the model's agreement on every decided item of the type, the lone items without a crowd majority included, is at
-   least the crowd's on the paired items.
+3. the model's agreement on every decided AI-Disagree item of the type, the lone items without a crowd majority
+   included, is at least the crowd's on the paired items.
 
 The round-1 reference (74.5% [64.8, 82.2], n = 94) is printed as a fixed row. The decision uses the same-item crowd
 rate instead, because the items differ between rounds. McNemar's exact test on the discordant pairs is reported
@@ -123,13 +134,15 @@ beside the bootstrap.
 
 ## Results
 
+**Agreement with the expert** (decided AI-Disagree items):
+
 <!-- BEGIN GENERATED: agreement (analysis/adjudicator.py) -->
 
 _Not yet run._
 
 <!-- END GENERATED: agreement -->
 
-**Paired with the crowd** (decided items with a crowd majority):
+**Paired with the crowd** (decided AI-Disagree items with a crowd majority):
 
 <!-- BEGIN GENERATED: paired (analysis/adjudicator.py) -->
 
@@ -137,7 +150,15 @@ _Not yet run._
 
 <!-- END GENERATED: paired -->
 
-**By stratum:**
+**Decoys** (decided items the AI voted Agree or Unsure; a sanity check, not part of the bar):
+
+<!-- BEGIN GENERATED: decoys (analysis/adjudicator.py) -->
+
+_Not yet run._
+
+<!-- END GENERATED: decoys -->
+
+**By stratum** (all decided items; the decoy strata are listed on their own):
 
 <!-- BEGIN GENERATED: strata (analysis/adjudicator.py) -->
 
@@ -145,7 +166,7 @@ _Not yet run._
 
 <!-- END GENERATED: strata -->
 
-**By severity and tag** (`analysis/slices.py`, with the round-3 training rows per slice):
+**By severity and tag** (decided AI-Disagree items; `analysis/slices.py`, with the round-3 training rows per slice):
 
 <!-- BEGIN GENERATED: slices (analysis/adjudicator.py) -->
 
@@ -163,6 +184,18 @@ in the same layout. Three crowd targets are scored against the expert on the sam
 
 The stage refuses a snapshot made on or after the first rating day, so no rater's gold vote is in the crowd. Only
 items from a public deployment with at least one human vote in the snapshot are covered.
+
+**Under the current weight scheme, the reliability-weighted target is the plain majority except on ties.** This is
+a result, not a placeholder. `validator_reliability.vote_weights` weighs each vote by the validator's Beta-smoothed
+reliability over the mean reliability. The smoothing compresses reliabilities (p10 0.66, p90 0.86 on the 2026-10-17
+data, per its docstring), so every weight is close to 1 and the side with more votes keeps winning. On the whole
+2026-10-19 Seattle snapshot, the weights reverse 0 of the 142,275 labels that have a plain majority. They only break
+ties: 9,570 Seattle labels with no plain majority get a weighted one. On the gold set that leaves 3 tie-broken
+items (1 agrees with the expert), too few to say anything. So the table below reports the weighted and snapshot
+rows, the flipped majorities and the tie-broken items on their own. It does not report a weighted-minus-plain
+difference: over the items both targets decide, that difference counts only flips, so it is 0 here. For #12 this
+means reliability weighting, as currently built, changes no training target that has a majority. A scheme that
+could would need stronger weights, for example uncompressed reliabilities or log-odds weights.
 
 <!-- BEGIN GENERATED: reliability (analysis/adjudicator.py) -->
 
@@ -286,6 +319,7 @@ python analysis/adjudicator.py crops --gold $OUT/gold.csv \
 
 # 2. klone: copy gold.csv, crops/labels.csv, crops/stage_files.txt (and relabel_pool.csv + cityparams.conf for
 #    relabel) to /gscratch/scrubbed/$USER/adjudicator-2026-11, then from the repo checkout:
+mkdir -p logs                                                              # the stage job writes logs/%x-%j.out
 J=$(sbatch --parsable analysis/adjudicator_stage.slurm)                   # pull at most 600 panoramas
 AFTER=$J STAGE=crops analysis/adjudicator_submit.sh                       # cut the missing crops (1 GPU)
 STAGE=score LIMIT=8 analysis/adjudicator_submit.sh gemma4-31b             # smoke (Q4), then:
@@ -302,8 +336,13 @@ python analysis/adjudicator.py disagreements --gold $OUT/gold.csv --scores $OUT/
 python analysis/adjudicator.py report --agree-dir $OUT/agree --gold-summary $OUT/gold_summary.json \
     --scores $OUT/scores --variants-dir $DATA
 
-# 4. only for pairs that clear the bar (klone, then the retrain plan above)
+# 4. only for pairs that clear the bar (klone, then the retrain plan above). relabel reads $OUT/agree/bar.json,
+#    which step 3 wrote on the Mac. --rows train also reads $DATA/<Type>/cl/noisy_targets.csv (the confident-learning
+#    run's, #76) when it is there; without it the contested rows are the AI Disagrees only. Copy bar.json first:
+#      ssh klone mkdir -p /gscratch/scrubbed/<netid>/adjudicator-2026-11/agree
+#      scp $OUT/agree/bar.json klone:/gscratch/scrubbed/<netid>/adjudicator-2026-11/agree/
 STAGE=relabel ROWS=train TYPES=CurbRamp,Crosswalk analysis/adjudicator_submit.sh glm5.3-flash
+# back on the Mac: copy /gscratch/scrubbed/<netid>/adjudicator-2026-11/relabel to $OUT/relabel, then
 python analysis/adjudicator.py variants --split-root $DATA --relabel $OUT/relabel --model glm5.3-flash \
     --types CurbRamp,Crosswalk
 ```
