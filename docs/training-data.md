@@ -61,6 +61,29 @@ because production never sends those to the validator; `--include-ai-labels` kee
 the manifest. (The round-3 CurbRamp run did include them; what the validator makes of AI-placed labels is being
 measured in [#69](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/69).)
 
+### NoSidewalk: verdicts per block face
+
+NoSidewalk is validated on the website per block face, which is settled at two agreeing votes, so the label rule
+above finds 79 correct / 80 incorrect labels among 237,291 (public rawLabels, 2026-11-05). `data_generation.py
+--verdict-unit face` (`nosidewalk_faces.py`, [#42](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/42))
+keeps the label rule and adds, for the labels it leaves undecided, the verdict of their block face
+`(city, street_edge_id, street_side)`:
+
+| class | face rule (`class_source`) |
+|---|---|
+| `correct` | >= 2 distinct human validators voted Agree on any label of the face and none voted Disagree (`face_margin`) |
+| `incorrect` | >= 2 distinct human validators voted Disagree on any label of the face and none voted Agree (`face_margin`) |
+| either | otherwise, with `EXPERTS`: the experts voted on the face, all one way, and no human voted the other way anywhere on it (`face_expert`) |
+| (dropped) | a contradicted face, or a label without a face (no `street_side`) |
+
+Distinct people, not votes; AI votes never count. At most `--max-labels-per-face` (default 5) labels per face and
+class are kept, by `label_rank`, before the 55:45 downsample. The manifest records `face_id`, and
+`split_data.py --group-col face_id` keeps each face (with every panorama that sees it) on one side of the split. The
+deployment prior still counts margin-rule labels only; NoSidewalk's is replaced by the face-size prior of
+`calibration/nosidewalk_prior.py`. Counts, evidence and the pilot: [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md).
+A type-filtered cache (`analysis/fetch_all.py --label-types NoSidewalk`) holds no other type, so use it only for the
+types it was pulled for.
+
 ## Cities
 
 The default is every public deployment that `/v3/api/cities` lists with a `url` (41 at the 2026-10-14 audit; the
