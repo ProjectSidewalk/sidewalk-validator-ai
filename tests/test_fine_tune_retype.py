@@ -140,10 +140,58 @@ def test_retype_loss_complement_other_and_scaling():
     assert torch.isclose(fr.retype_loss(logits, labels, claimed, is_correct, num_items_in_batch=8), want / 2)
     with pytest.raises(ValueError):
         fr.retype_loss(logits, labels, claimed, is_correct, negatives="nope")
-    # a confident claimed probability of 1 stays finite
+    # a confident claimed probability of 1 stays finite, and equals the logit gap (log(1 + 7 e^-100) ~ 100)
     big = torch.full((1, 8), -50.0)
     big[0, 2] = 50.0
-    assert torch.isfinite(fr.retype_loss(big, torch.tensor([-100]), torch.tensor([2]), torch.tensor([0])))
+    big_loss = fr.retype_loss(big, torch.tensor([-100]), torch.tensor([2]), torch.tensor([0]))
+    assert torch.isfinite(big_loss) and big_loss.item() == pytest.approx(100.0 - np.log(7.0), rel=1e-4)
+
+
+def complement_at_gap(torch, gap):
+    """Loss and logit gradient of one incorrect row whose claimed logit leads the other seven (all 0) by ``gap``."""
+    logits = torch.zeros(1, 8)
+    logits[0, 2] = gap
+    logits.requires_grad_()
+    loss = fr.retype_loss(logits, torch.tensor([-100]), torch.tensor([2]), torch.tensor([0]))
+    loss.backward()
+    return loss.detach(), logits.grad
+
+
+@pytest.mark.parametrize("gap", [5, 16, 20, 30])
+def test_complement_loss_keeps_its_gradient_on_confident_wrong_rows(gap):
+    """The exact form -log sum_{j != claimed} p_j = gap - log 7 (+ log(1 + 7 e^-gap)) has no saturation: the
+    gradient on the claimed logit tends to 1 and never collapses to 0 (the old clamp made it exactly 0
+    from a gap of 16 on)."""
+    torch = pytest.importorskip("torch")
+    loss, grad = complement_at_gap(torch, gap)
+    want = gap - np.log(7.0) + np.log1p(7.0 * np.exp(-gap))
+    assert loss.item() == pytest.approx(want, rel=1e-5)
+    assert grad.norm().item() > 0.5
+    assert grad[0, 2].item() > 0.95  # d loss / d claimed logit tends to 1 as the gap grows
+
+
+def test_complement_loss_keeps_growing_with_the_gap():
+    torch = pytest.importorskip("torch")
+    assert complement_at_gap(torch, 30)[0] > complement_at_gap(torch, 16)[0]
+    assert complement_at_gap(torch, 20)[1].abs().sum() > 0 and complement_at_gap(torch, 30)[1].abs().sum() > 0
+
+
+def test_other_leg_weights_negatives_one_whatever_others_positive_count():
+    """--negatives other: an incorrect row costs CE(Other) with weight 1.0, so the ablation's negatives do not move
+    when Other gains positives (and with them a class weight well above 1)."""
+    torch = pytest.importorskip("torch")
+    torch.manual_seed(1)
+    logits = torch.randn(3, 8)
+    labels, claimed, is_correct = torch.tensor([-100] * 3), torch.tensor([0, 1, 4]), torch.tensor([0, 0, 0])
+    counts = {**{c: 0 for c in rt.CLASSES}, "CurbRamp": 1000}
+    weights = {n: rt.class_weights({**counts, "Other": n}, 0.5) for n in (0, 10)}
+    assert weights[0]["Other"] == 1.0 and weights[10]["Other"] > 1.5  # the weight that must not leak in
+    o = rt.LABEL2ID["Other"]
+    want = -torch.log(torch.softmax(logits, -1)[:, o]).mean()
+    for w in weights.values():
+        w_tensor = torch.tensor([w[c] for c in rt.CLASSES])
+        got = fr.retype_loss(logits, labels, claimed, is_correct, w_tensor, negatives="other")
+        assert torch.isclose(got, want)
 
 
 def tiny_model():

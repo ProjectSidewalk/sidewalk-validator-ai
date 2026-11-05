@@ -100,8 +100,12 @@ def retype_loss(logits, labels, claimed, is_correct, class_weights=None, negativ
     """Per-row loss summed and divided by the batch size (or ``num_items_in_batch`` when given).
 
     Positives (``is_correct == 1``): ``w[label] * CE(logits, label)``. Negatives: ``complement`` =
-    ``-log(1 - softmax(logits)[claimed])`` (clamped away from log 0), or ``other`` = ``CE(logits, Other)`` (weighted
-    like an Other positive). ``class_weights``: a length-8 tensor or None (all 1).
+    ``-log(1 - softmax(logits)[claimed])`` = ``-log sum_{j != claimed} p_j``, computed exactly as
+    ``logsumexp(logits) - logsumexp(logits with the claimed column masked to -inf)`` (no clamp, so a confidently
+    wrong row keeps its gradient at any logit gap), or ``other`` = ``CE(logits, Other)``. Negatives carry weight 1.0
+    in both legs: ``class_weights`` come from positive counts only, so weighting the ``other`` leg's negatives by
+    ``w[Other]`` would let a handful of Other positives rescale every negative row and break the comparison with the
+    ``complement`` leg. ``class_weights``: a length-8 tensor or None (all 1).
 
     Example::
 
@@ -121,11 +125,13 @@ def retype_loss(logits, labels, claimed, is_correct, class_weights=None, negativ
     neg = ~pos
     if neg.any():
         if negatives == "complement":
-            p_claimed = logp[neg].gather(1, claimed[neg].long()[:, None]).squeeze(1).exp()
-            per_row[neg] = -torch.log1p(-p_claimed.clamp(max=1 - 1e-6))
+            lg = logits[neg]
+            claimed_col = torch.nn.functional.one_hot(claimed[neg].long(), n_cls).bool()
+            masked = lg.masked_fill(claimed_col, float("-inf"))
+            per_row[neg] = torch.logsumexp(lg, dim=-1) - torch.logsumexp(masked, dim=-1)
         elif negatives == "other":
             other = rt.LABEL2ID[rt.OTHER]
-            per_row[neg] = -logp[neg][:, other] * w[other]
+            per_row[neg] = -logp[neg][:, other]  # weight 1.0, not w[Other] (see the docstring)
         else:
             raise ValueError(f"negatives must be complement or other, got {negatives!r}")
     denom = num_items_in_batch if num_items_in_batch is not None else logits.shape[0]
