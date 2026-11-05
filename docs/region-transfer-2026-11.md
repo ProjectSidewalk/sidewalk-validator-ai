@@ -49,12 +49,13 @@ Three questions follow, one per issue:
 | Fine-tune | from the global model's best checkpoint, 10 epochs, local rows only (no replay) |
 | Region conditioning | a 16-dimensional country embedding concatenated to the pooled image features; unknown row trained by region dropout 0.15 |
 | Seeds | 42 for every arm; 43 and 44 for global, cond and condall only |
-| Country source | `country_id` of `/v3/api/cities` (saved with the run), via `regions.py`; the world region of a country with only private deployments comes from a private override file (`REGION_OVERRIDES`), never from the repository |
+| Country source | `country_id` of `/v3/api/cities` (saved with the run), via `regions.py`; the world region of a country with only private deployments comes from a private override file (`REGION_OVERRIDES`), never from the repository. Without that file, those countries have no region: at the region level they share the unknown row, in training and in scoring, and get no region of their own |
 
 Minimum-n rules: a LOCO cell exists at 30 or more eval rows of each class. An AUC interval needs 8 or more of the
 smaller class. The within-city AUC uses deployments with 10 or more labels of both classes. A gate precision is
 shown at 50 or more gated votes. A country is judged in the summary only with a paired interval and at least 100
-eval rows; otherwise its row says "n too small". A fine-tune fraction needs 20 or more train rows of each class.
+eval rows; otherwise its row says "n too small". Fine-tune fractions are drawn only from a pool of 100 or more rows
+(`MIN_POOL`), and a fraction needs 20 or more train rows of each class.
 
 ## Method
 
@@ -142,6 +143,10 @@ in [`seeds.md`](region-transfer-2026-11/seeds.md).
   country would see; the raw precision under its own mix is the number to read.
 - The conditioned model has no serving path yet. sidewalk-ai-api sends no region, and `evaluate.py` and
   `publish_to_hf.py` cannot load it by design.
+- A conditioned checkpoint must never be published as is. Its `config.json` stores `region_vocab`, the country ids it
+  was trained on, and some of those countries have only private deployments. The training log prints counts only,
+  for the same reason. Today the only guard is that `publish_to_hf.py` cannot load the model class; a serving path
+  would first have to letter or drop the private entries.
 
 ## Serving implication for sidewalk-ai-api
 
@@ -156,7 +161,7 @@ On klone, from a checkout of this branch with the conda env active:
 
 ```bash
 DATA=/gscratch/makelab/$USER/sidewalk-validator-ai/retrain-2026-10 RUNS=/gscratch/scrubbed/$USER/region-2026-11 \
-  CITIES_JSON=$DATA/rawlabels/cities.json SEEDS=42 \
+  CITIES_JSON=$DATA/rawlabels/cities.json RAWLABELS=$DATA/rawlabels SEEDS=42 \
   analysis/region_submit.sh CurbRamp Crosswalk NoCurbRamp Obstacle SurfaceProblem
 ```
 

@@ -8,7 +8,8 @@ entry still resolves; private deployments come from the listing or from a privat
 ``REGION_OVERRIDES``, a JSON ``{"<city_id>": "<country_id>", "_regions": {"<country_id>": "<region>"}}`` kept outside
 the repository), never from this module. ``REGION_BY_COUNTRY`` likewise lists only countries with a public deployment:
 the region of a country whose deployments are all private comes from the override file's ``_regions`` (without it,
-that country's region is ``unknown``, and region-level conditioning scores it as the unknown region).
+that country's region is ``UNKNOWN``, which ``region_model`` never makes a vocabulary entry: at the region level
+those rows get the ``<unk>`` row, in training and at inference, the same row an unseen country is scored with).
 
 Naming rule for public text (the one ``publish_to_hf.py`` enforces for model cards): a country is named only if at
 least one of its deployments is public. A country whose deployments are all private is "private country A", "B", and
@@ -111,6 +112,11 @@ def country_table(listing, overrides=None):
 def country_of(city_id, table):
     """The country of ``city_id``: the table, else ``usa`` when the id ends in a two-letter state code (the rule
     the repository already uses, e.g. ``seattle-wa``), else ``UNKNOWN``.
+
+    The suffix rule is a heuristic, safe only because the table normally holds every deployment: a non-US id that
+    ends in two letters and is missing from the table would come back as ``usa`` (``bayonne-fr`` without its row in
+    ``COUNTRY_BY_PUBLIC_CITY`` would). That is why callers build the table from a saved ``/v3/api/cities`` listing,
+    which carries ``country_id`` for every deployment, private ones included.
 
     >>> country_of("nowhere-zz", {}), country_of("nowhere", {}), country_of("x-123", {})
     ('usa', 'unknown', 'unknown')

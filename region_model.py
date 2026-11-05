@@ -51,25 +51,30 @@ def region_value(city, level, table):
 
 def region_vocab_from_split(train_df, level, table):
     """``["<unk>"] + sorted(set of the train rows' countries or regions)``, from the ``city`` column. Raises
-    ``ValueError`` when a train row's deployment has no country (``regions.assign``).
+    ``ValueError`` when a train row's deployment has no country (``regions.assign``). ``regions.UNKNOWN`` (a
+    country without a region, at the region level) is never a vocabulary entry: those rows are ``<unk>`` (row 0),
+    the row every unseen country is scored with, not a learned region of their own.
 
     >>> import pandas as pd
     >>> t = regions.country_table([], {})
     >>> region_vocab_from_split(pd.DataFrame({"city": ["spgg", "amsterdam", "cdmx"]}), "country", t)
     ['<unk>', 'mexico', 'netherlands']
+    >>> t2 = regions.country_table([{"city_id": "x", "country_id": "atlantis"}], {})
+    >>> region_vocab_from_split(pd.DataFrame({"city": ["x", "cdmx"]}), "region", t2)
+    ['<unk>', 'latin-america']
     """
     values = regions.assign(train_df[["city"]], table)[level]
-    return [UNK] + sorted(set(values))
+    return [UNK] + sorted(set(values) - {regions.UNKNOWN, UNK})
 
 
 def region_ids(values, vocab):
-    """Index of each value in ``vocab``; a value outside it is 0 (``<unk>``).
+    """Index of each value in ``vocab``; a value outside it, or ``regions.UNKNOWN``, is 0 (``<unk>``).
 
-    >>> region_ids(["b", "zz", "a"], ["<unk>", "a", "b"])
-    [2, 0, 1]
+    >>> region_ids(["b", "zz", "a", "unknown"], ["<unk>", "a", "b", "unknown"])
+    [2, 0, 1, 0]
     """
     index = {v: i for i, v in enumerate(vocab)}
-    return [index.get(v, 0) for v in values]
+    return [0 if v == regions.UNKNOWN else index.get(v, 0) for v in values]
 
 
 def city_region_ids(cities, vocab, level, table):
@@ -197,7 +202,14 @@ def build_for_training(args, base, train_df, val_df, id2label, label2id, collate
     if n_unk:
         warnings.warn(f"{n_unk} of {len(val_df)} val rows are in a {level} outside the training vocabulary; they "
                       "are scored as <unk>")
-    print(f"region conditioning at the {level} level: vocabulary {vocab} (sha256 {vocab_sha256(vocab)[:12]})")
+    n_unk_train = int(sum(city_to_id[str(c)] == 0 for c in train_df["city"]))
+    if n_unk_train:
+        warnings.warn(f"{n_unk_train} of {len(train_df)} train rows have no {level} (a country without a region; "
+                      f"set {regions.OVERRIDES_ENV}); they train the <unk> row")
+    # Counts only: the vocabulary itself holds country ids whose deployments may all be private (it is in the
+    # checkpoint's config.json, which stays on klone scratch and is never published as is).
+    print(f"region conditioning at the {level} level: {len(vocab) - 1} {level} ids plus <unk> "
+          f"(vocabulary sha256 {vocab_sha256(vocab)[:12]})")
     _, model_cls = build_classes()
     model = model_cls.from_base(base, vocab, args.region_dim, args.region_dropout, level, id2label, label2id)
     return model, wrap_collate(collate_fn, city_to_id)

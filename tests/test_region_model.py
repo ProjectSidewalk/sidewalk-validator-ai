@@ -28,6 +28,22 @@ def test_unknown_region_maps_to_zero():
     assert rm.region_ids(["usa", "atlantis", "mexico"], ["<unk>", "mexico", "usa"]) == [2, 0, 1]
 
 
+def test_country_without_region_is_unk_not_a_learned_row(monkeypatch):
+    # Two invented all-private countries with no REGION_OVERRIDES entry: at the region level both must share row 0
+    # (<unk>), never a learned "unknown" row that region dropout cannot reach.
+    monkeypatch.delenv(regions.OVERRIDES_ENV, raising=False)
+    table = regions.country_table([{"city_id": "p1", "country_id": "atlantis"},
+                                   {"city_id": "p2", "country_id": "lemuria"}], {})
+    df = pd.DataFrame({"city": ["p1", "p2", "cdmx", "amsterdam"]})
+    vocab = rm.region_vocab_from_split(df, "region", table)
+    assert vocab == ["<unk>", "europe", "latin-america"] and regions.UNKNOWN not in vocab
+    assert rm.city_region_ids(df["city"], vocab, "region", table) == {"amsterdam": 1, "cdmx": 2, "p1": 0, "p2": 0}
+    assert rm.region_ids([regions.UNKNOWN], ["<unk>", regions.UNKNOWN]) == [0]
+    # at the country level they are ordinary vocabulary entries
+    assert rm.region_vocab_from_split(df, "country", table) == ["<unk>", "atlantis", "lemuria", "mexico",
+                                                                 "netherlands"]
+
+
 def test_city_region_ids_val_outside_vocab_is_unk():
     vocab = rm.region_vocab_from_split(pd.DataFrame({"city": ["seattle-wa"]}), "country", TABLE)
     ids = rm.city_region_ids(["seattle-wa", "amsterdam", "nowhere"], vocab, "country", TABLE)
