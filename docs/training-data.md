@@ -59,7 +59,10 @@ with unconverted coordinates (negative `pano_y`: Seattle 193, CDMX 14, Pittsburg
 are labels placed by the `SidewalkAI` account (RampNet curb ramps in Vancouver WA, Richmond VA and Laurens IA),
 because production never sends those to the validator; `--include-ai-labels` keeps them, tagged `author = ai` in
 the manifest. (The round-3 CurbRamp run did include them; what the validator makes of AI-placed labels is being
-measured in [#69](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/69).)
+measured in [#69](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/69).) Either way a seeded half of
+the eligible AI-placed labels is held out of training before selection, into `ai_label_holdout.csv`, and
+`generation_run.json["ai_labels"]` records the policy and counts ([`decisions.md`](decisions.md),
+[#79](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/79)).
 
 ## Cities
 

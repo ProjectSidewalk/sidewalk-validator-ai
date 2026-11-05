@@ -350,6 +350,13 @@ rejections, so the Disagree numbers rest on 56, 51 and 101 labels; no severity o
 a crowd-reference number because the round-3 selection took every lead-rejected label; the Mapillary crops are untilted
 rig-frame renders, as the 150 training AI crops are, but of imagery no training image resembles. The masked re-label above covers one city and one rater; in the other two deployments the lead who would rate cast nearly every original vote, so no masked re-label is possible there under the no-prior-votes rule.
 
+## Follow-ups
+
+- [#79](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/79) and
+  [#80](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/80): the held-out AI-label slice that training
+  can no longer consume, the with/without round-4 ablation on it, and the full-pool ranked Disagree lists for the
+  leads, in [`ai-label-holdout-2026-11.md`](ai-label-holdout-2026-11.md) (not yet run).
+
 ## Reproduce
 
 ```
