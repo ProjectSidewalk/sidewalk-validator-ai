@@ -297,7 +297,8 @@ def report(predictions_df, levels=PRECISION_LEVELS, per_city=False, min_city_n=5
 
     Args:
         predictions_df: columns ``label_uid, split, true, p_correct, p_incorrect`` and, optionally, ``hard``,
-            ``gold`` and ``city``.
+            ``gold``, ``city`` and ``author``. With ``author``, the ``test``/``test_heldout`` rows placed by the AI
+            account also form an ``ai_authored`` slice (only when there are any; they stay in ``test`` too).
         per_city: also add ``per_city``: ``{split: per_city_metrics(...)}`` for ``test`` and ``test_heldout``
             (needs ``city``); render with ``format_per_city``. With a ``gold`` column each split's entry also
             carries the gold slice per city under ``"gold"`` (issue #41).
@@ -322,6 +323,10 @@ def report(predictions_df, levels=PRECISION_LEVELS, per_city=False, min_city_n=5
     if "gold" in predictions_df.columns:
         g = predictions_df[predictions_df.split.isin(["test", "test_heldout"]) & predictions_df.gold.astype(bool)]
         out["gold"] = slice_metrics(g, levels)  # reported even when empty, so a missing slice is visible
+    if "author" in predictions_df.columns:  # issue #79: AI-placed test rows also get a slice of their own
+        a = predictions_df[predictions_df.split.isin(["test", "test_heldout"]) & (predictions_df.author == "ai")]
+        if len(a):
+            out["ai_authored"] = slice_metrics(a, levels)
     return out
 
 
@@ -491,7 +496,7 @@ def main(argv=None):
         predictions.to_csv(pred_path, index=False)
         print(f"wrote {pred_path} ({len(predictions)} rows)")
 
-    joined = ["label_uid", "hard"] + (["city"] if args.per_city else [])
+    joined = ["label_uid", "hard"] + (["city"] if args.per_city else []) + (["author"] if "author" in manifest else [])
     with_hard = predictions.merge(manifest[joined], on="label_uid", how="left", validate="one_to_one")
     if args.vote_weights:
         gold_min = GOLD_MIN_RELIABILITY if args.gold_min_reliability is None else args.gold_min_reliability
