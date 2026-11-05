@@ -362,6 +362,7 @@ def cmd_score(args):
         sys.exit("RATER must be set")
     key = pd.read_csv(os.path.join(args.out, "private-key-do-not-share", "key.csv"), dtype={"label_id": str})
     man = json.load(open(os.path.join(args.out, "manifest.json")))
+    assert key.city.nunique() == 1, "one city per packet"
     city = key.city.iloc[0]
     after_path = os.path.join(args.out, "rawlabels_after", f"{city}.csv")
     after = pd.read_csv(after_path, dtype=str, usecols=["label_id", "validations"])
