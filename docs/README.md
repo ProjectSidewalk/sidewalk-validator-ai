@@ -32,6 +32,7 @@ because each reports one measurement at one point in time; the pipeline pages ar
 | [`confident-learning-2026-10.md`](confident-learning-2026-10.md) | Can wrong crowd targets be found without rating labor? Out-of-fold confident learning and the stricter Disagree rules as split variants, scored against round 3 on the same held-out rows ([#76](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/76), [#75](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/75)) |
 | [`ai-disagree-reversal-2026-10.md`](ai-disagree-reversal-2026-10.md) | Runbook for turning the 2025-08 models' Disagree votes into Unsure in production: per-city dry run and the update script ([SidewalkWebpage#5793](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5793)) |
 | [`ai-labels-2026-10.md`](ai-labels-2026-10.md) | The round-3 CurbRamp validator on RampNet's AI-placed curb ramps in three public deployments, against the existing human votes: AUC per city, what the deployed gate would do, the round-3 leakage and its effect on the reference ([SidewalkWebpage#5790](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5790)) |
+| [`context-arms-2026-11.md`](context-arms-2026-11.md) | Does more context around the crop help? Two-scale crops, the whole view with a point heatmap, and side information, each against round 3 on the same held-out rows ([#14](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/14); not yet run) |
 
 ## Decisions, audit and hygiene
 
