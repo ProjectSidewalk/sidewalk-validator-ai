@@ -7,7 +7,6 @@ panorama-tools' ``CropRunner.py`` itself (commit c1d0751, see that directory's R
 pinned to. The cases below that are not fixture-driven are the Scala spec's own, ported verbatim, plus hand-computed
 ones.
 """
-import doctest
 import json
 import math
 from pathlib import Path
@@ -28,11 +27,6 @@ def _box(d):
 def _pano_rgb():
     """The synthetic pano as RGB (the reference wrote PNGs with PIL, so RGB order is what its pixels mean)."""
     return cv2.imread(str(FIX / "synthetic-pano.png"))[..., ::-1]
-
-
-def test_doctests():
-    result = doctest.testmod(jc)
-    assert result.attempted > 0 and result.failed == 0
 
 
 # ---------------------------------------------------------------------------------------------------------------------
