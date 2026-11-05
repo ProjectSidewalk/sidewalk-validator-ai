@@ -57,6 +57,7 @@ Usage::
         [--target hard|soft|weighted] [--vote-weights reliability/vote_weights.csv]
 """
 import argparse
+import functools
 import hashlib
 import json
 import multiprocessing
@@ -304,14 +305,30 @@ def region_settings(args):
             "cities_json": os.path.abspath(args.cities_json), "cities_json_sha256": file_sha256(args.cities_json)}
 
 
+@functools.lru_cache(maxsize=8)
+def _weights_sha256(path, size, mtime_ns):
+    """Hex sha256 of a weights file, read in 16 MB chunks and computed once per (path, size, mtime): the run key
+    and ``training_run.json`` both need it, and ``model.safetensors`` is about 1.2 GB."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 24), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def init_settings(args):
-    """``{}`` without ``--init-from``, else the checkpoint directory and the hash of its weights."""
+    """``{}`` without ``--init-from``, else the checkpoint directory and the hash of its weights (hashed once per
+    process, see ``_weights_sha256``)."""
     init = getattr(args, "init_from", None)
     if not init:
         return {}
     weights = [os.path.join(init, n) for n in ("model.safetensors", "pytorch_model.bin")]
     weights = [w for w in weights if os.path.exists(w)]
-    return {"init_from": os.path.abspath(init), "init_from_sha256": file_sha256(weights[0]) if weights else None}
+    sha = None
+    if weights:
+        st = os.stat(weights[0])
+        sha = _weights_sha256(os.path.abspath(weights[0]), st.st_size, st.st_mtime_ns)
+    return {"init_from": os.path.abspath(init), "init_from_sha256": sha}
 
 
 def extra_frame_columns(args):

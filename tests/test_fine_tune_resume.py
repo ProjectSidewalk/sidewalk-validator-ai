@@ -156,6 +156,26 @@ def test_region_and_init_settings_enter_the_key(tmp_path):
         resume_checkpoint(str(out2), _key(tmp_path, **{**REGION_DEFAULTS, "init_from": b}))
 
 
+def test_init_weights_are_hashed_once(tmp_path, monkeypatch):
+    import hashlib
+
+    import fine_tune_classifier
+    fine_tune_classifier._weights_sha256.cache_clear()
+    calls = []
+    real = hashlib.sha256
+
+    def counting(*a):
+        calls.append(1)
+        return real(*a)
+    a = _init_dir(tmp_path, "ckpt-a", b"weights a")
+    monkeypatch.setattr(fine_tune_classifier.hashlib, "sha256", counting)
+    args = SimpleNamespace(**{**REGION_DEFAULTS, "init_from": a})
+    first, second = fine_tune_classifier.init_settings(args), fine_tune_classifier.init_settings(args)
+    assert first == second and first["init_from_sha256"] == real(b"weights a").hexdigest()
+    assert len(calls) == 1
+    fine_tune_classifier._weights_sha256.cache_clear()
+
+
 def test_new_flags_are_validated(tmp_path):
     import fine_tune_classifier
     with pytest.raises(SystemExit):
