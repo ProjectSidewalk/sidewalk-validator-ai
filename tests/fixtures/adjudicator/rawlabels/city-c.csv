@@ -1,0 +1,3 @@
+label_id,user_id,pano_id,pano_source,label_type,validations,pano_x,pano_y,pano_width,pano_height,camera_pitch,camera_roll
+2,someone,R2,gsv,CurbRamp,"[{""user_id"": ""u1"", ""validation"": ""Disagree"", ""validator_type"": ""Human""}]",1002,500,16384,8192,-1.0,
+4,someone,R4,gsv,CurbRamp,"[{""user_id"": ""u1"", ""validation"": ""Disagree"", ""validator_type"": ""Human""}]",1004,500,16384,8192,-1.0,
