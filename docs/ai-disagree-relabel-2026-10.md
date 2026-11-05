@@ -437,8 +437,9 @@ sheets. The two unmasked shared items stay on the list if they mismatch, flagged
 2. **The list is built once both sheets are pinned** (`adjudicate-build`), and the item list is pinned
    (`adjudication_items`), so the set of discussed items cannot drift. With an
    unpinned input the command runs as a preview: it pins nothing and writes only `*.preview.*` files (the report
-   writes no gold CSV). Every command refuses to run without `--unmasked` once the manifest pins that list; `adjudicate-report` refuses a consensus sheet
-   whose items or recorded verdicts differ from the pinned list.
+   writes no gold CSV). Once the manifest pins that list, every command that uses it (`score`, `agreement`,
+   `adjudicate-build` and `adjudicate-report`) refuses to run without `--unmasked`; `adjudicate-report` refuses a
+   consensus sheet whose items or recorded verdicts differ from the pinned list.
 3. **The meeting is in Gallery, masked.** The raters open the listed items in Gallery (one list per city) with a
    meeting mask that hides the vote counts, the vote list and the AI icon but shows comments, so each rater's
    reasoning is on screen. The stratum is never shown. Crowd comments on the same labels are visible too; that is

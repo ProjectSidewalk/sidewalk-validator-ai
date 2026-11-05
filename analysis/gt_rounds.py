@@ -86,7 +86,8 @@ not) and prints the independent agreement, how each mismatch was resolved, and h
 (sample rates, per type and per stratum). The independent sheets are never changed. With ``--allow-unpinned``
 ``adjudicate-build`` and ``adjudicate-report`` run as a preview: they pin nothing, ``adjudicate-build`` writes ``items.preview.csv`` and
 ``adjudicate-report`` writes no gold CSV; every pin and overwrite is checked before anything is written. When the
-manifest pins an unmasked list, every command that reads sheets refuses to run without ``--unmasked``.
+manifest pins an unmasked list, every command that uses it (``score``, ``agreement``, ``adjudicate-build`` and
+``adjudicate-report``) refuses to run without ``--unmasked``.
 
 **Unmasked items.** ``unmasked.csv`` (``packet_id, label_uid, reason``; pinned as ``unmasked``) lists items a
 rater rated with the AI's vote visible. ``score``, ``agreement`` and ``adjudicate-report`` leave them out of the

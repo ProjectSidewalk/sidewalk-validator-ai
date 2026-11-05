@@ -170,6 +170,26 @@ def test_mark_shared_is_seeded_and_counts_exactly():
     assert a[a.shared].cell.nunique() > 1
 
 
+def test_mark_shared_draws_apart_from_the_candidate_ranking():
+    """The shared draw ranks on ``<seed>:shared``, so with the same seed it is not simply the best-ranked candidates of
+    each stratum (which would tie the shared set to the sampling order)."""
+    p = _pool(_city("sidewalk_a"))
+    prep = gr.prepare(p, "sidewalk_a")
+    c = gr.candidates(prep, "s", DESIGN)
+    picked, _ = gr.pick(c, set(c.label_uid), DESIGN, gr.bucket_shares(prep))
+    a = gr.mark_shared(picked, "s", 6)
+
+    def top(seed):
+        out = set()
+        for (cell, t), g in a.groupby(["cell", "label_type"]):
+            k = int(g.shared.sum())
+            out |= set(sorted(g.label_uid, key=lambda u: rl.seeded_rank(seed, u))[:k])
+        return out
+
+    assert set(a.label_uid[a.shared]) == top("s:shared")
+    assert set(a.label_uid[a.shared]) != top("s")
+
+
 def test_rater_items_own_city_first_then_other_cities_shared():
     key = pd.DataFrame({"packet_id": list("abcd"), "rater": ["A", "A", "B", "B"], "shared": [True, False, True, False]})
     assert list(gr.rater_items(key, "A").packet_id) == ["a", "b", "c"]
@@ -435,6 +455,13 @@ def test_gold_table_by_stratum_and_unmasked_left_out():
     assert r.set_index(["mismatch_kind", "label_type"]).loc[("all", "all"), "n"] == 2
 
 
+def test_cant_tell_splits_leave_out_items_both_raters_could_not_tell():
+    key, sheets = _adj_case()  # shared: two matches, a conflict, two can't-tell splits, one both can't tell
+    t = gr.agreement_table(key, sheets).set_index("label_type")
+    assert t.loc["all", "cant_tell_splits"] == 2
+    assert t.loc["all", "n_answered"] == 6 and t.loc["all", "agree3"] == pytest.approx(3 / 6)
+
+
 def test_agreement_three_answer_view_skips_one_sided_blanks_and_counts_splits_in_kappa():
     key = _rated([{"shared": True}, {"shared": True}, {"shared": True}, {"shared": True}, {"shared": True}])
     sa = pd.DataFrame({"packet_id": key.packet_id,
@@ -572,6 +599,14 @@ def test_cli_build_report_and_refusals(tmp_path, capsys):
     assert "1 unmasked items left out" in capsys.readouterr().out
     with pytest.raises(SystemExit):  # gold is not overwritten
         gr.main(report + ["--consensus", str(out / "consensus.csv"), "--out", str(tmp_path / "gold.csv")])
+    # gold pinned to other content: refused before the new gold file is written, and the manifest is untouched
+    other = tmp_path / "other_gold.csv"
+    other.write_text("packet_id,gold\nr2,incorrect\n")
+    rl.pin(str(mp), "gold_shared", str(other), 1, repin=True)
+    pinned = mp.read_bytes()
+    with pytest.raises(SystemExit, match="gold_shared is already pinned"):
+        gr.main(report + ["--consensus", str(out / "consensus.csv"), "--out", str(tmp_path / "gold2.csv")])
+    assert not (tmp_path / "gold2.csv").exists() and mp.read_bytes() == pinned
 
 
 def test_cli_stage_takes_only_post(capsys):
