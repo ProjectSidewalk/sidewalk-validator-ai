@@ -92,8 +92,26 @@ def fixed_crop_half_px(*runs):
     return None
 
 
+def job_window_crops(*runs):
+    """Whether any of ``runs`` (as in :func:`fixed_crop_half_px`) records ``job_window_crops``: crops cut as
+    SidewalkWebpage's nightly crop job cuts them (data_generation.py ``--job-window-crops``, issue #53), a 3:2 window
+    on the native pano with no projection, tilt or depth, which is not what serving renders.
+
+    >>> job_window_crops({"tilt_beta": 0.95}, {"settings": {"job_window_crops": True}})
+    True
+    >>> job_window_crops({}, None)
+    False
+    """
+    return any(d.get("job_window_crops") for run in runs for d in ((run or {}), (run or {}).get("settings") or {}))
+
+
 def require_depth_sized(*runs):
-    """Raise ``ValueError`` if any of ``runs`` records fixed-size crops: a card would describe the wrong crops."""
+    """Raise ``ValueError`` if any of ``runs`` records fixed-size or job-window crops: a card would describe the wrong
+    crops."""
+    if job_window_crops(*runs):
+        raise ValueError("the crops are SidewalkWebpage crop-job windows (--job-window-crops, issue #53), but serving "
+                         "renders a depth-sized view around each label: this is an experiment-only model or dataset, "
+                         "and it is not published")
     half = fixed_crop_half_px(*runs)
     if half is not None:
         raise ValueError(f"the crops were cut at a fixed half-width of {half} px (--fixed-crop-half-px, the issue #21 "
