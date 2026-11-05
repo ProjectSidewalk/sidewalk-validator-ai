@@ -1,0 +1,4 @@
+label_id,user_id,pano_id,pano_source,label_type,validations,pano_x,pano_y,pano_width,pano_height,camera_pitch,camera_roll
+202,someone,R202,gsv,CurbRamp,"[{""user_id"": ""u2"", ""validation"": ""Disagree"", ""validator_type"": ""Human""}, {""user_id"": ""u3"", ""validation"": ""Disagree"", ""validator_type"": ""Human""}]",1202,500,16384,8192,-1.0,
+203,someone,R203,gsv,CurbRamp,"[{""user_id"": ""u1"", ""validation"": ""Agree"", ""validator_type"": ""Human""}, {""user_id"": ""u3"", ""validation"": ""Agree"", ""validator_type"": ""Human""}]",1203,500,16384,8192,-1.0,
+204,someone,R204,gsv,CurbRamp,"[{""user_id"": ""u1"", ""validation"": ""Agree"", ""validator_type"": ""Human""}, {""user_id"": ""u2"", ""validation"": ""Disagree"", ""validator_type"": ""Human""}]",1204,500,16384,8192,-1.0,

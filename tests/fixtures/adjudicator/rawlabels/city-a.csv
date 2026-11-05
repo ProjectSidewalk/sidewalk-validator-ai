@@ -1,0 +1,9 @@
+label_id,user_id,pano_id,pano_source,label_type,validations,pano_x,pano_y,pano_width,pano_height,camera_pitch,camera_roll
+1,someone,R1,gsv,CurbRamp,[],1001,500,16384,8192,-1.0,
+3,someone,R3,gsv,CurbRamp,"[{""user_id"": ""u1"", ""validation"": ""Disagree"", ""validator_type"": ""Human""}, {""user_id"": ""u2"", ""validation"": ""Disagree"", ""validator_type"": ""Human""}]",1003,500,16384,8192,-1.0,
+4,someone,R4,gsv,CurbRamp,"[{""user_id"": ""u1"", ""validation"": ""Agree"", ""validator_type"": ""Human""}, {""user_id"": ""u2"", ""validation"": ""Agree"", ""validator_type"": ""Human""}, {""user_id"": ""u3"", ""validation"": ""Disagree"", ""validator_type"": ""Human""}]",1004,500,16384,8192,-1.0,
+5,someone,R5,gsv,CurbRamp,"[{""user_id"": ""u1"", ""validation"": ""Agree"", ""validator_type"": ""Human""}, {""user_id"": ""ai"", ""validation"": ""Disagree"", ""validator_type"": ""AI""}]",1005,500,16384,8192,-1.0,
+6,someone,R6,gsv,CurbRamp,"[{""user_id"": ""u2"", ""validation"": ""Agree"", ""validator_type"": ""Human""}]",1006,500,16384,8192,-1.0,
+102,someone,R102,gsv,CurbRamp,"[{""user_id"": ""u1"", ""validation"": ""Disagree"", ""validator_type"": ""Human""}, {""user_id"": ""u2"", ""validation"": ""Disagree"", ""validator_type"": ""Human""}]",1102,500,16384,8192,-1.0,
+103,someone,R103,gsv,CurbRamp,"[{""user_id"": ""u1"", ""validation"": ""Agree"", ""validator_type"": ""Human""}, {""user_id"": ""u3"", ""validation"": ""Agree"", ""validator_type"": ""Human""}]",1103,500,16384,8192,-1.0,
+104,someone,R104,gsv,CurbRamp,"[{""user_id"": ""u1"", ""validation"": ""Agree"", ""validator_type"": ""Human""}, {""user_id"": ""u2"", ""validation"": ""Disagree"", ""validator_type"": ""Human""}]",1104,500,16384,8192,-1.0,

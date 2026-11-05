@@ -1,0 +1,11 @@
+packet_id,label_type,verdict,notes
+r2b0,CurbRamp,correct,
+r2b1,Obstacle,incorrect,
+r2b2,CurbRamp,correct,
+r2b3,Obstacle,cant_tell,
+r2b4,CurbRamp,correct,
+r2b5,Obstacle,incorrect,
+r2a6,CurbRamp,incorrect,
+r2a7,Obstacle,correct,
+r2b6,CurbRamp,incorrect,
+r2b7,Obstacle,correct,
