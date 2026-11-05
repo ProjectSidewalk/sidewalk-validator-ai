@@ -1240,6 +1240,14 @@ def missing_cached_csvs(cities, cache_dir):
     return [c for c in cities if not os.path.exists(os.path.join(cache_dir, f"{c}.csv"))]
 
 
+def open_unit_float(text):
+    """argparse type for a proportion strictly between 0 and 1."""
+    v = float(text)
+    if not 0 < v < 1:
+        raise argparse.ArgumentTypeError(f"{text} is not strictly between 0 and 1")
+    return v
+
+
 def build_parser():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument('--label_type', required=True, help='Specify the label type')
@@ -1276,9 +1284,10 @@ def build_parser():
                         'no depth) and skip depth inference. Mutually exclusive with --fixed-crop-half-px. '
                         'publish_to_hf.py refuses models trained this way')
     p.add_argument('--seed', type=int, default=SEED)
-    p.add_argument('--correct-proportion', type=float, default=CORRECT_PROPORTION,
+    p.add_argument('--correct-proportion', type=open_unit_float, default=CORRECT_PROPORTION,
                    help='share of correct rows after the downsample, 0 < p < 1 (default %(default)s; retype.slurm '
-                        'uses 0.9 for the small extra types)')
+                        'uses 0.9 for the small extra types). Not a resume setting: a changed value changes the '
+                        'selection, so the resume check catches it through the selection hash')
     p.add_argument('--cities', default=None,
                    help='comma list of city_id[=subdomain], overriding the public deployments /v3/api/cities lists')
     p.add_argument('--include-ai-labels', action='store_true',
