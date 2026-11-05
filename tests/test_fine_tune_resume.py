@@ -104,3 +104,75 @@ def test_no_workers_unless_the_start_method_is_fork(monkeypatch):
     assert fine_tune_classifier.default_num_workers() == 0
     monkeypatch.setattr(multiprocessing, "get_start_method", lambda allow_none=False: "fork")
     assert 0 <= fine_tune_classifier.default_num_workers() <= 8
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Region conditioning and --init-from (analysis/region_transfer.py, issue #33)
+# ---------------------------------------------------------------------------------------------------------------------
+
+REGION_DEFAULTS = {"region_conditioning": "none", "region_dropout": 0.15, "region_dim": 16, "cities_json": None,
+                   "init_from": None}
+
+
+def test_default_run_key_is_unchanged_by_region_and_init_flags(tmp_path):
+    from fine_tune_classifier import init_settings, region_settings
+    old = _key(tmp_path)
+    new = _key(tmp_path, **REGION_DEFAULTS)
+    assert new == old
+    assert set(old) == {"label_type", "split_sha256", "seed", "epochs", "best_metric", "base_checkpoint"}
+    assert region_settings(SimpleNamespace(**REGION_DEFAULTS)) == {} == init_settings(SimpleNamespace(**REGION_DEFAULTS))
+
+
+def _init_dir(tmp_path, name, payload):
+    d = tmp_path / name
+    d.mkdir()
+    (d / "config.json").write_text("{}")
+    (d / "model.safetensors").write_bytes(payload)
+    return str(d)
+
+
+def test_region_and_init_settings_enter_the_key(tmp_path):
+    cities = tmp_path / "cities.json"
+    cities.write_text('{"cities": []}')
+    cond = {**REGION_DEFAULTS, "region_conditioning": "country", "cities_json": str(cities)}
+    key = _key(tmp_path, **cond)
+    assert key["region_conditioning"] == "country" and key["region_dropout"] == 0.15 and "cities_json_sha256" in key
+    assert "cities_json" not in key   # paths stay out of the key, as vote_weights does
+    out = tmp_path / "dinov2"
+    resume_checkpoint(str(out), key)
+    _checkpoint(out, 164)
+    assert resume_checkpoint(str(out), _key(tmp_path, **cond)) == os.path.join(str(out), "checkpoint-164")
+    with pytest.raises(SystemExit, match="region_dropout"):
+        resume_checkpoint(str(out), _key(tmp_path, **{**cond, "region_dropout": 0.3}))
+
+    a = _init_dir(tmp_path, "ckpt-a", b"weights a")
+    b = _init_dir(tmp_path, "ckpt-b", b"weights b")
+    out2 = tmp_path / "ft"
+    key_a = _key(tmp_path, **{**REGION_DEFAULTS, "init_from": a})
+    assert "init_from" not in key_a and len(key_a["init_from_sha256"]) == 64
+    resume_checkpoint(str(out2), key_a)
+    _checkpoint(out2, 10)
+    with pytest.raises(SystemExit, match="init_from_sha256"):
+        resume_checkpoint(str(out2), _key(tmp_path, **{**REGION_DEFAULTS, "init_from": b}))
+
+
+def test_new_flags_are_validated(tmp_path):
+    import fine_tune_classifier
+    with pytest.raises(SystemExit):
+        fine_tune_classifier.main(["--label_type", "X", "--region-conditioning", "country"])   # no --cities-json
+    with pytest.raises(SystemExit):
+        fine_tune_classifier.main(["--label_type", "X", "--init-from", str(tmp_path)])        # no config.json
+
+
+def test_extra_columns_pass_through_load_split_frames(tmp_path):
+    from fine_tune_classifier import extra_frame_columns, load_split_frames
+    d = tmp_path / "Toy"
+    d.mkdir()
+    (d / "split.csv").write_text("label_uid,city,label_class,crop_path,split\n"
+                                 "a:1,cdmx,correct,c/1.webp,train\na:2,spgg,incorrect,c/2.webp,val\n")
+    train, val = load_split_frames("Toy", str(tmp_path), extra_columns=("city",))
+    assert list(train.columns) == ["image", "label", "city"] and val["city"].tolist() == ["spgg"]
+    plain, _ = load_split_frames("Toy", str(tmp_path))
+    assert list(plain.columns) == ["image", "label"]
+    assert extra_frame_columns(SimpleNamespace()) == ()
+    assert extra_frame_columns(SimpleNamespace(region_conditioning="region")) == ("city",)
