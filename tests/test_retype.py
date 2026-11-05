@@ -727,6 +727,74 @@ def test_job_files_parse(name):
     subprocess.run(["bash", "-n", os.path.join(REPO, name)], check=True)
 
 
+FAKE_SBATCH = """#!/bin/bash
+n=$(( $(wc -l < "$SBATCH_LOG" 2>/dev/null || echo 0) + 100 ))
+echo "STEP=$STEP LEG=${LEG:-} $*" >> "$SBATCH_LOG"
+echo $n
+"""
+
+
+def submit_with_fake_sbatch(tmp_path, fetched=True, **env):
+    """Run retype_submit.sh from a scratch directory with a fake ``sbatch`` that logs its arguments."""
+    data, runs = tmp_path / "data", tmp_path / "runs"
+    for t in rt.VALIDATOR_TYPES:
+        (data / t).mkdir(parents=True)
+        (data / t / "split.csv").write_text("x\n")
+        (data / t / "predictions.csv").write_text("x\n")
+    if fetched:
+        (runs / "retype-data" / "label_edits").mkdir(parents=True)
+        (runs / "retype-data" / "label_edits" / "fetch.json").write_text("{}")
+    bin_dir, cwd = tmp_path / "bin", tmp_path / "cwd"
+    bin_dir.mkdir()
+    cwd.mkdir()
+    (bin_dir / "sbatch").write_text(FAKE_SBATCH)
+    (bin_dir / "sbatch").chmod(0o755)
+    (cwd / "retype.slurm").write_text("")
+    log = tmp_path / "sbatch.log"
+    e = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "SBATCH_LOG": str(log), "DATA": str(data),
+         "RUNS": str(runs), "PANO_STORE": "/store", **env}
+    r = subprocess.run(["bash", os.path.join(REPO, "retype_submit.sh")], cwd=cwd, env=e, capture_output=True,
+                       text=True)
+    jobs = {}
+    for line in (log.read_text().splitlines() if log.exists() else []):
+        step, leg = line.split()[0][5:], line.split()[1][4:]
+        jobs[(step, leg) if leg and step in ("train", "eval", "report") else step] = line
+    return r, jobs
+
+
+def test_submit_chain_times_constraints_and_report_job(tmp_path):
+    r, jobs = submit_with_fake_sbatch(tmp_path, LEGS="complement", SKIP_EXTRAS="1")
+    assert r.returncode == 0, r.stderr
+    assert set(jobs) == {"edits", "crops", "assemble", ("train", "complement"), ("eval", "complement"),
+                         ("report", "complement")}
+    assert "--time=24:00:00" in jobs[("train", "complement")]          # 12 epochs budget about 16 h
+    for cpu in ("edits", "assemble", ("report", "complement")):        # CPU steps never wait for a GPU node
+        assert "--gpus=0" in jobs[cpu] and "--constraint" not in jobs[cpu], cpu
+    for gpu in ("crops", ("train", "complement"), ("eval", "complement")):
+        assert "--gpus=1 --constraint=a40|l40|l40s|a100|h200" in jobs[gpu], gpu
+    assert "--dependency=afterok:" in jobs[("report", "complement")]
+    r, jobs = submit_with_fake_sbatch(tmp_path / "t", LEGS="complement", SKIP_EXTRAS="1", TRAIN_TIME="30:00:00")
+    assert "--time=30:00:00" in jobs[("train", "complement")]
+
+
+def test_submit_refuses_without_fetched_edits(tmp_path):
+    r, jobs = submit_with_fake_sbatch(tmp_path, fetched=False, LEGS="complement", SKIP_EXTRAS="1")
+    assert r.returncode == 2 and "fetch-edits" in r.stderr and not jobs
+    r, jobs = submit_with_fake_sbatch(tmp_path / "t", fetched=False, LEGS="complement", SKIP_EXTRAS="1",
+                                      ALLOW_NODE_FETCH="1")
+    assert r.returncode == 0 and "edits" in jobs
+
+
+def test_job_file_defaults_to_the_live_city_list():
+    src = open(os.path.join(REPO, "retype.slurm")).read()
+    assert 'PUBLIC_CITIES="${PUBLIC_CITIES:-live}"' in src and "$RAWLABELS/cities.json" not in src
+    assert "--cities-cache" not in src
+    assert "--time=24:00:00" in src and "--constraint" not in "\n".join(
+        line for line in src.splitlines() if line.startswith("#SBATCH"))
+    report = src[src.index("  report)"):]
+    assert "retype.py report" in report and "retype.py report" not in src[src.index("  eval)"):src.index("  report)")]
+
+
 def test_predict_on_a_tiny_checkpoint(tmp_path):
     """The GPU stage's loop on a CPU (torch only): a tiny random 8-class model scores every requested row."""
     torch = pytest.importorskip("torch")
