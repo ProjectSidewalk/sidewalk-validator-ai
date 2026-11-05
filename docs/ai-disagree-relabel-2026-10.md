@@ -354,8 +354,12 @@ with the design file [`analysis/gt_rounds/round2.json`](../analysis/gt_rounds/ro
   only Unsure votes, 1,539 ties) and 3,853 of Chicago's 10,769 (3,002 / 145 / 706). The ties are the labels where
   the AI's Disagree breaks the tie in prod. No rate from this round, the population-weighted ones in `score`
   included, covers them; a later round needs a stratum for them. `build` prints these counts. The eligible counts
-  still include the excluded author's labels (the pool predates the `author_excluded` column), which matters for
-  the open population-recount question on the PR.
+  still include excluded authors' labels (the pool predates the `author_excluded` column). The recount without them
+  ([#85](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/85)) joins `user_stat.excluded` onto this
+  same pinned pool, so eligibility stays as of the round; it goes in
+  [`ai-disagree-relabel-2026-10/round2_recount.md`](ai-disagree-relabel-2026-10/round2_recount.md), pending the
+  `pull_author_excluded.sh` pull. A design can now sample these Disagrees as a `thin_voted` stratum (name it in
+  `shares`); round 2's design does not.
 - **Quotas per type** (AI Disagrees per city): CurbRamp 42, Crosswalk 36, NoCurbRamp 34, Obstacle 30,
   SurfaceProblem 28, each filled over severity buckets (1–2 / 3–5 / none) in proportion to the eligible pool.
 - **Exclusions.** Labels either rater voted on or placed are out of every list, both cities.
@@ -531,7 +535,11 @@ and on the 9 settled in the meeting, 5 times.
 The order matches the training target: where the crowd's margin already sides with the AI, the experts mostly do
 too; where the crowd's margin says correct, the experts side with the crowd 9 times in 11. Per type, the AI's
 Disagrees are confirmed on Obstacle 9 of 9 and Crosswalk 5 of 15. These are 98 items over two cities; the full
-500-item analysis per rater (`score`) is a separate step.
+500-item analysis per rater (`score`) is a separate step. In `score`'s population-weighted rows, a (stratum, type)
+cell with fewer than 5 decided items carries no weight and is named beside the rate (`--min-cell`); a stratum with
+no cell left is reported as unestimable. With the 11 unmasked items left out, Seattle's lone Obstacle cell has 1
+decided item, so it gets no weight; so do three other Seattle cells (light_voted Obstacle 4 and SurfaceProblem 3,
+margin_correct SurfaceProblem 4). `score --pool --author-excluded` weights by the recount above.
 
 | File (in `data/relabel-2026-10/round2/`) | sha256 |
 |---|---|
