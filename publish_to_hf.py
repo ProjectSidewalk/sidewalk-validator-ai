@@ -284,7 +284,13 @@ def _id_like(terms):
 def pool_private_city_metrics(metrics, root, label_type, public):
     """``metrics.json`` with every private deployment's per-city row removed and one pooled ``non_public`` row
     per split in its place, recomputed from ``predictions.csv`` + ``split.csv`` (the same ``slice_metrics`` the
-    public rows use). Without predictions the pooled row carries counts only."""
+    public rows use). Without predictions the pooled row carries counts only.
+
+    The severity / tag ``slices`` block is dropped: a tag slice of an unseen split can be one non-public deployment's
+    labels (``max_city_share`` near 1), which this function exists to withhold. The slices are reported in the
+    repo's own docs, where deployments are lettered, not on the published card."""
+    if isinstance(metrics, dict) and "slices" in metrics:
+        metrics = {k: v for k, v in metrics.items() if k != "slices"}
     if not isinstance(metrics, dict) or not metrics.get("per_city"):
         return metrics
     import evaluate
@@ -906,7 +912,7 @@ def check_train_size(trainer_state, n_train, grad_accum=hf_cards.GRAD_ACCUM):
 
 
 def default_map_path(root, label_type):
-    """Where ``calibration/calibrate.py`` writes the map in the README's and evaluate.py's commands."""
+    """Where ``calibration/calibrate.py`` writes the map in docs/running-on-hyak.md's and evaluate.py's commands."""
     return os.path.join(root, label_type, "calibration", label_type.lower() + ".json")
 
 
