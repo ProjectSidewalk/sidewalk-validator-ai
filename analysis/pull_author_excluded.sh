@@ -8,16 +8,25 @@
 #       > ~/Data/sidewalk-validator-ai-relabel-2026-10/round2/author_excluded.csv
 #
 # Output: schema,label_id,author_excluded (t/f), one row per non-deleted, non-tutorial label. No user ids. Keep it
-# outside the repo with the pool (it has label ids).
+# outside the repo with the pool (it has label ids). A schema name that is not sidewalk_[a-z0-9_]* stops the script
+# before any query (exit 2). A failed query is reported on stderr and makes the script exit 1 after the other schemas,
+# so check the exit status: the CSV then lacks that schema's rows.
 set -u
 export PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=900000'
 P="psql -X -q -d sidewalk_prod -p 5434 -At"
+SCHEMAS="${SCHEMAS:-sidewalk_seattle sidewalk_chicago}"
+for S in $SCHEMAS; do
+  case "$S" in sidewalk_[a-z0-9_]*) ;; *) echo "$S: not a city schema name" >&2; exit 2 ;; esac
+  case "$S" in *[!a-z0-9_]*) echo "$S: not a city schema name" >&2; exit 2 ;; esac
+done
+FAILED=0
 echo "schema,label_id,author_excluded"
-for S in ${SCHEMAS:-sidewalk_seattle sidewalk_chicago}; do
+for S in $SCHEMAS; do
   $P -c "COPY (
     SELECT '$S', l.label_id, COALESCE(us.excluded, false)
     FROM $S.label l
     LEFT JOIN $S.user_stat us USING (user_id)
     WHERE NOT l.deleted AND NOT l.tutorial
-    ORDER BY l.label_id) TO STDOUT WITH CSV" || echo "$S: query failed" >&2
+    ORDER BY l.label_id) TO STDOUT WITH CSV" || { echo "$S: query failed" >&2; FAILED=1; }
 done
+exit "$FAILED"
