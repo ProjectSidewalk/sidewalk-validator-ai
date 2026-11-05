@@ -64,23 +64,15 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
 import data_generation as dg  # noqa: E402
+from ai_label_holdout import CAMPAIGNS, TIERS, tier_of  # noqa: E402,F401
 
 LABEL_TYPE = "CurbRamp"
 GATE = 0.92
 DEFAULT_CITIES = ("vancouver-wa", "richmond-va", "laurens-ia")
 SEED = 20261027
 
-#: Submission campaigns per deployment: (first UTC date, tier). A label's tier is that of the latest campaign whose date
-#: is <= its ``time_created`` date. From sidewalk-auto-labeler ``runs/<city>/*.submission.json`` (richmond, laurens) and
-#: its docs/server-agree-check.md (Vancouver: one campaign at the 0.55 operating point, 2025-09-18/19, before the band
-#: existed). Richmond 2026-09-24 re-submitted 14 repositioned sequences at 0.30 (``results.posfix3seq.raw.jsonl``), so
-#: those labels mix both tiers.
-CAMPAIGNS = {
-    "vancouver-wa": [("2025-09-18", "core")],
-    "richmond-va": [("2026-09-05", "core"), ("2026-09-22", "band"), ("2026-09-24", "mixed")],
-    "laurens-ia": [("2026-09-17", "core"), ("2026-09-22", "band")],
-}
-TIERS = ("core", "band", "mixed")
+# The campaign table and tier rule moved to ai_label_holdout.py (data_generation imports them there, and cannot
+# import this script, which imports data_generation); re-exported here under the same names.
 
 LABEL_COLUMNS = [
     "label_uid", "city", "label_id", "pano_id", "author", "pano_source", "time_created", "tier", "human_agree",
@@ -146,34 +138,6 @@ def majority_class(agree, disagree):
     if disagree > agree:
         return "incorrect"
     return ""
-
-
-def tier_of(city, time_created, campaigns=CAMPAIGNS):
-    """The confidence tier of a label from its deployment's campaign dates; ``""`` when unknown.
-
-    >>> tier_of("richmond-va", "2026-09-05T01:10:00Z"), tier_of("richmond-va", "2026-09-22 19:03:45.1")
-    ('core', 'band')
-    >>> tier_of("richmond-va", "2026-09-30"), tier_of("laurens-ia", "2026-09-01"), tier_of("nowhere", "2026-09-05")
-    ('mixed', '', '')
-
-    Campaign days are UTC dates; a timestamp with an offset is converted first, a naive one is taken as UTC (what the
-    rawLabels export writes):
-
-    >>> tier_of("laurens-ia", "2026-09-21T20:00:00-07:00"), tier_of("laurens-ia", "not a date")
-    ('band', '')
-    """
-    try:
-        ts = pd.to_datetime(time_created, utc=True)
-    except (ValueError, TypeError):
-        return ""
-    if pd.isna(ts):
-        return ""
-    day = ts.strftime("%Y-%m-%d")
-    tier = ""
-    for first_day, name in campaigns.get(city, []):
-        if day >= first_day:
-            tier = name
-    return tier
 
 
 def wilson(k, n, z=1.96):
