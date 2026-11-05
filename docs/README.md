@@ -33,6 +33,12 @@ because each reports one measurement at one point in time; the pipeline pages ar
 | [`ai-disagree-reversal-2026-10.md`](ai-disagree-reversal-2026-10.md) | Runbook for turning the 2025-08 models' Disagree votes into Unsure in production: per-city dry run and the update script ([SidewalkWebpage#5793](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5793)) |
 | [`ai-labels-2026-10.md`](ai-labels-2026-10.md) | The round-3 CurbRamp validator on RampNet's AI-placed curb ramps in three public deployments, against the existing human votes: AUC per city, what the deployed gate would do, the round-3 leakage and its effect on the reference ([SidewalkWebpage#5790](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5790)) |
 
+## Results and studies (November 2026)
+
+| page | question |
+|---|---|
+| [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md) | NoSidewalk in auto-validation: how much training data the public rawLabels hold, the block-face rule that replaces the label rule for this type, the face-size deployment prior, and the pilot (run 2026-11-05: whole-view crops beat depth-sized ones, within-city AUC 0.93 on test and 0.79 on held-out cities; the Agree gate is not evaluable at this size, not served; [#42](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/42)) |
+
 ## Decisions, audit and hygiene
 
 | page | what it covers |

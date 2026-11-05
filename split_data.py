@@ -21,7 +21,11 @@ Method (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3):
 2. **Groups.** Rows are grouped by ``pano_id``: labels cluster on panoramas (2.8 per panorama across
    all types in Teaneck; within one type's selected set CurbRamp 1.66, SurfaceProblem 1.19), and two crops
    of one corner must not straddle the split (Weld et al. ASSETS'19 split panoramas for the same reason). A row
-   without a ``pano_id`` is its own group.
+   without a ``pano_id`` is its own group. ``--group-col face_id`` (NoSidewalk, issue #42) groups by block face
+   instead: consecutive panoramas along one face show the same stretch, so a panorama-grouped split would leak. A
+   panorama can see both faces of a street, so the face groups are joined with the panorama groups (connected
+   components of "same face or same panorama", :func:`face_pano_groups`) and no panorama straddles the split; a row
+   with an empty ``face_id`` stays in its panorama group.
 3. **Merge nearby groups** (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/27). Groups whose labels
    lie within ``--merge-radius-m`` (default 3 m; haversine distance ``<=`` the radius) of each other become one group
    (connected components over "same panorama or within the radius", so chains merge transitively), so one physical
@@ -61,6 +65,7 @@ Usage::
     python split_data.py --label_type CurbRamp --merge-radius-m 0           # panorama grouping only
     python split_data.py --label_type CurbRamp --holdout-cities teaneck-nj,chicago-il --seed 7
     python split_data.py --label_type CurbRamp --hard-examples analysis/hard_examples_2026-10-17.csv
+    python split_data.py --label_type NoSidewalk --group-col face_id --holdout-cities tucson-az
 """
 import argparse
 import os
@@ -78,6 +83,7 @@ PROXIMITY_RADII_M = (2.0, 5.0, 10.0)
 WARN_GROUP_SHARE = 0.01   # warn when the largest group holds more than this share of the rows
 WARN_SHARE_MISS = 0.03    # warn when train/val/test misses its TARGET share by more than this
 MIN_GUARD_ROWS = 50       # --max-group-share only fires when the largest group also exceeds this many rows
+GROUP_COLS = ("pano_id", "face_id")  # --group-col choices: the initial group key
 
 
 def load_coordinates(manifest, rawlabels_dir=None):
@@ -156,6 +162,39 @@ def pairs_within(lat_q, lon_q, lat_t, lon_t, radius_m):
     j = np.concatenate(cand).astype(int)
     keep = haversine_m(lat_q[i], lon_q[i], lat_t[j], lon_t[j]) <= radius_m
     return i[keep], j[keep]
+
+
+def face_pano_groups(pano_group, face):
+    """Join panorama groups that share a block face: the connected components of "same panorama or same face".
+
+    ``pano_group`` is the per-row panorama key (as in :func:`assign_splits`), ``face`` the per-row ``face_id`` (empty
+    for a row without one, which then only joins its panorama). Each row gets the smallest ``pano_group`` key of its
+    component, so the result is a drop-in group key that never splits a panorama.
+
+    >>> face_pano_groups(pd.Series(["p1", "p2", "p3", "p4"]), pd.Series(["f", "f", "", "g"])).tolist()
+    ['p1', 'p1', 'p3', 'p4']
+    >>> face_pano_groups(pd.Series(["p1", "p1", "p2"]), pd.Series(["f", "g", "g"])).tolist()  # p1 sees both faces
+    ['p1', 'p1', 'p1']
+    """
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+
+    pano_group = pano_group.astype(str)
+    face = face.fillna("").astype(str).reindex(pano_group.index)
+    keys = np.array(sorted(pano_group.unique()), dtype=object)
+    code = pd.Index(keys).get_indexer(pano_group)
+    rows, cols = [code], [code]
+    has_face = (face != "").to_numpy()
+    if has_face.any():
+        # every panorama on a face joins the face's first panorama
+        first = pd.Series(code[has_face]).groupby(face[has_face].to_numpy()).transform("min").to_numpy()
+        rows.append(code[has_face])
+        cols.append(first)
+    r, c = np.concatenate(rows), np.concatenate(cols)
+    n = len(keys)
+    _, comp = connected_components(coo_matrix((np.ones(len(r)), (r, c)), shape=(n, n)), directed=False)
+    smallest = pd.Series(np.arange(n)).groupby(comp).transform("min").to_numpy()
+    return pd.Series(keys[smallest][code], index=pano_group.index)
 
 
 def merge_nearby_groups(group, lat, lon, radius_m):
@@ -238,7 +277,8 @@ def proximity_report(df, coords, radii_m=PROXIMITY_RADII_M):
     return pd.DataFrame(rows)
 
 
-def assign_splits(manifest, seed=42, holdout_cities=(), merge_radius_m=0.0, coords=None, return_stats=False):
+def assign_splits(manifest, seed=42, holdout_cities=(), merge_radius_m=0.0, coords=None, return_stats=False,
+                  group_col="pano_id"):
     """Return the ``status == ok`` rows of ``manifest`` (sorted by ``label_uid``) with a ``split`` column.
 
     With ``merge_radius_m > 0``, ``coords`` (``latitude``/``longitude`` indexed by ``label_uid``, see
@@ -246,7 +286,8 @@ def assign_splits(manifest, seed=42, holdout_cities=(), merge_radius_m=0.0, coor
     ``(df, stats)``: ``merge_nearby_groups``'s dict plus ``split_rows`` / ``max_split_group`` (rows split
     train/val/test, and the largest group among them), ``heldout_pulled_in`` (rows of non-held-out cities sent to
     ``test_heldout`` because their group touches a held-out city) and ``heldout_pulled_in_by_merge`` (the part of
-    those that a shared panorama alone would not have pulled in).
+    those that a shared panorama alone would not have pulled in). ``group_col="face_id"`` starts from
+    :func:`face_pano_groups` instead of panoramas alone (the rest of the method is unchanged).
 
     Pure function of its inputs: same manifest and seed, same assignment. See the module docstring for the method.
     """
@@ -255,6 +296,10 @@ def assign_splits(manifest, seed=42, holdout_cities=(), merge_radius_m=0.0, coor
     if not df["label_uid"].is_unique:
         raise ValueError("label_uid is not unique in the manifest")
     pano_group = df["pano_id"].astype(str).where(df["pano_id"].astype(str).str.len() > 0, "uid:" + df["label_uid"])
+    if group_col == "face_id":
+        pano_group = face_pano_groups(pano_group, df["face_id"])
+    elif group_col != "pano_id":
+        raise ValueError(f"group_col must be one of {GROUP_COLS}, got {group_col!r}")
     if merge_radius_m > 0:
         if coords is None:
             raise ValueError("merge_radius_m > 0 needs coords")
@@ -352,6 +397,9 @@ def build_parser():
                         "has latitude/longitude")
     p.add_argument("--max-group-share", type=float, default=0.05,
                    help="stop when the largest merged group holds more than this share of the rows (0 = no limit)")
+    p.add_argument("--group-col", choices=GROUP_COLS, default="pano_id",
+                   help="initial group key: pano_id, or face_id (block face joined with its panoramas; NoSidewalk, "
+                        "issue #42; needs a manifest from data_generation.py --verdict-unit face)")
     p.add_argument("--max-missing-coords-frac", type=float, default=0.01,
                    help="with merging on, stop when more than this share of ok labels have no coordinates")
     return p
@@ -383,6 +431,9 @@ def main(argv=None):
         return fail(f"--hard-examples '{args.hard_examples}' not found.", computing=False)
     # Strings throughout, so every manifest cell is written back exactly as read.
     manifest = pd.read_csv(manifest_path, dtype=str, keep_default_na=False)
+    if args.group_col == "face_id" and "face_id" not in manifest:
+        return fail(f"--group-col face_id: {manifest_path} has no face_id column (run data_generation.py "
+                    f"--verdict-unit face).", computing=False)
     hard = set(pd.read_csv(args.hard_examples, dtype=str)["label_uid"]) if args.hard_examples else set()
 
     try:
@@ -425,7 +476,7 @@ def _split(args, base, manifest, hard, out_path, tmp_path, fail):
                         f"{list(coords.index[no_xy][:3])}. Raise the limit or use --merge-radius-m 0.")
 
     df, stats = assign_splits(manifest, seed=args.seed, holdout_cities=holdout, merge_radius_m=args.merge_radius_m,
-                              coords=coords, return_stats=True)
+                              coords=coords, return_stats=True, group_col=args.group_col)
     # Guards on the rows actually split train/val/test; only with merging on, so radius 0 behaves as before merging.
     big, n_split = stats["max_split_group"], stats["split_rows"]
     group_share = big / max(n_split, 1)

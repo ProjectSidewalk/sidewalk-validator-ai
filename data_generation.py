@@ -107,6 +107,7 @@ import numpy as np
 import pandas as pd
 
 import crop_pose
+import nosidewalk_faces
 
 try:  # advisory lock for the shared deployment_priors.json (five label types run in parallel under SLURM)
     import fcntl
@@ -155,14 +156,16 @@ DEPTH_DATASET = 'vkitti'
 DEPTH_MAX_M = 80
 
 MANIFEST_COLUMNS = [
-    "label_uid", "city", "label_id", "pano_id", "label_type", "label_class", "class_source", "author", "human_agree",
+    "label_uid", "city", "label_id", "pano_id", "face_id", "label_type", "label_class", "class_source", "author", "human_agree",
     "human_disagree", "severity", "tags", "high_quality_user", "image_capture_date", "pano_source", "pano_path",
     "pano_native_w", "pano_native_h", "camera_pitch",
     "camera_roll", "tilt_applied", "tilt_beta", "pose_source", "pose_pitch", "pose_roll", "click_lat_offset_deg",
     "depth_m", "crop_half_px", "clipped", "crop_path", "status",
 ]
 # ``class_source`` is the rule that set ``label_class``: ``margin`` (the crowd vote margin) or ``expert``
-# (:func:`expert_verdict`; empty on rows from before it existed). ``pano_source`` is the imagery provider from rawLabels (e.g. ``gsv``); ``pano_path`` is the absolute pano-store file
+# (:func:`expert_verdict`; empty on rows from before it existed), and with ``--verdict-unit face`` also ``face_margin`` /
+# ``face_expert`` (``nosidewalk_faces``, issue #42). ``face_id`` is the label's block face ``<city>:<street_edge_id>:<side>``
+# under ``--verdict-unit face`` (empty otherwise, and on labels without a face), ``split_data.py --group-col face_id``'s key. ``pano_source`` is the imagery provider from rawLabels (e.g. ``gsv``); ``pano_path`` is the absolute pano-store file
 # that was read (empty when it was missing, and on rows made by the removed tile fetcher, which a resume redoes), and
 # ``pano_native_w``/``pano_native_h`` its size before the resize (a 2:1 file with black bands passes the 2:1 check, so
 # the native size is what finds them later). (``hard`` is not a manifest column: split_data.py --hard-examples joins
@@ -663,7 +666,7 @@ class ManifestWriter:
                 m.write({...})
     """
 
-    def __init__(self, path, base_dir, selection, keep_ok=True, sources=None):
+    def __init__(self, path, base_dir, selection, keep_ok=True, sources=None, face_ids=None):
         self.path = path
         self.base_dir = base_dir
         self.done = set()
@@ -690,6 +693,8 @@ class ManifestWriter:
                 else:
                     if sources is not None:  # the rule that decides a label can change with new votes
                         row['class_source'] = sources.get(uid, '')
+                    if face_ids is not None:  # a kept row from before face_id existed gets it too
+                        row['face_id'] = face_ids.get(uid, '')
                     kept.append(row)
                     self.done.add(uid)
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
@@ -739,7 +744,7 @@ def manifest_row(row, label_type, crop_path, tilt_beta, pose=None):
     city = row['city']
     return {
         "label_uid": f"{city}:{row['label_id']}", "city": city, "label_id": row['label_id'],
-        "pano_id": row['pano_id'], "label_type": label_type, "label_class": row['label_class'],
+        "pano_id": row['pano_id'], "face_id": row.get('face_id'), "label_type": label_type, "label_class": row['label_class'],
         "class_source": row.get('class_source'),
         "author": row['author'], "human_agree": row['human_agree'], "human_disagree": row['human_disagree'],
         "severity": row.get('severity'), "tags": row.get('tags'), "high_quality_user": row.get('high_quality_user'),
@@ -1063,7 +1068,7 @@ RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "p
                    "mapillary_api")
 #: Settings recorded only when they are not the default, so earlier runs' records stay as they were. Unlike
 #: :data:`RESUME_SETTINGS` they are compared when present on EITHER side, so switching to or from one is caught.
-OPTIONAL_SETTINGS = ("fixed_crop_half_px",)
+OPTIONAL_SETTINGS = ("fixed_crop_half_px", "verdict_unit", "max_labels_per_face")
 #: Settings that only matter when crops are sized by depth. A fixed-size run does not record them (no depth model is
 #: loaded), and :func:`check_resume` does not compare them when both runs are fixed-size, so ``--depth-encoder``
 #: cannot block a fixed-size resume (also one recorded before they were left out).
@@ -1267,6 +1272,13 @@ def build_parser():
     p.add_argument('--allow-cpu', action='store_true', help=DEPTH_DEVICE_HELP)
     p.add_argument('--max-missing-frac', type=float, default=0.2,
                    help='exit non-zero if more than this fraction of attempted labels ended no_pano/bad_pano')
+    p.add_argument('--verdict-unit', choices=nosidewalk_faces.VERDICT_UNITS, default='label',
+                   help='label: the vote rules decide each label (every type). face: then labels the label rules leave '
+                        'undecided take their block face\'s pooled verdict (NoSidewalk, issue #42; nosidewalk_faces.py), '
+                        'and the manifest records face_id for split_data.py --group-col face_id')
+    p.add_argument('--max-labels-per-face', type=int, default=nosidewalk_faces.DEFAULT_MAX_LABELS_PER_FACE,
+                   help='with --verdict-unit face: keep at most this many labels per face and class (lowest label_rank), '
+                        'before the downsample; 0 = no cap')
     p.add_argument('--force-reselect', action='store_true',
                    help='resume although the selection changed since the last run (stale manifest rows are dropped)')
     return p
@@ -1323,6 +1335,8 @@ def main(argv=None):
     else:
         print(f"${EXPERTS_ENV} is not set: crowd margin rule only (no expert votes)")
     entry = deployment_prior_entry(eligible, list(cities), n_rows, city_source=city_source)
+    eligible = nosidewalk_faces.apply_verdict_unit(all_cities, eligible, label_type, experts, args.verdict_unit,
+                                                   args.max_labels_per_face, args.seed)  # issue #42; after the prior
 
     def write_priors():
         update_deployment_priors(priors_path, label_type, entry)
@@ -1337,6 +1351,7 @@ def main(argv=None):
     sel_hash = selection_hash(combined_filtered)
     source_counts = combined_filtered['class_source'].value_counts().to_dict()
     sources = dict(zip(combined_filtered['label_uid'], combined_filtered['class_source']))  # both before --limit
+    face_ids = dict(zip(combined_filtered['label_uid'], combined_filtered['face_id'])) if 'face_id' in combined_filtered else None
     if args.limit is not None:
         combined_filtered = combined_filtered.head(args.limit)
     if args.select_only:
@@ -1374,6 +1389,7 @@ def main(argv=None):
     if args.fixed_crop_half_px is not None:  # no depth model is loaded: recording an encoder would misstate the crops
         settings = {k: v for k, v in settings.items() if k not in DEPTH_SETTINGS}
         settings["fixed_crop_half_px"] = args.fixed_crop_half_px
+    settings.update(nosidewalk_faces.resume_settings(args.verdict_unit, args.max_labels_per_face))
     previous, changed, city_change = check_resume(run_path, sel_hash, settings, list(cities))
     if (previous or changed or city_change) and not args.force_reselect:
         n_ok = count_ok_rows(manifest_path)
@@ -1413,7 +1429,7 @@ def main(argv=None):
     run_pose_counts = pose_counts([poses[u] for u in combined_filtered['label_uid']],
                                   combined_filtered['pano_source'].astype(str).str.strip().str.lower())
     print(f"Crop pose by provider (pose_source/reason): {run_pose_counts}")
-    manifest = ManifestWriter(manifest_path, base_dir, selection, keep_ok=not changed, sources=sources)
+    manifest = ManifestWriter(manifest_path, base_dir, selection, keep_ok=not changed, sources=sources, face_ids=face_ids)
     if previous or changed or city_change:
         print(f"WARNING: --force-reselect: selection changed: {bool(previous)}, city list changed: "
               f"{city_change or 'no'}, settings changed: {changed or 'none'}; "
