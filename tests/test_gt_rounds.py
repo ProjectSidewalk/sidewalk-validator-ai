@@ -231,12 +231,13 @@ def test_score_table_confirms_ai_and_training_target_on_margin_rows():
     assert t.loc[("decoy_agree", "all"), "rate"] == 1.0
     m2 = pd.concat([m, _rated([{"verdict": ""}])], ignore_index=True)
     assert gr.score_table(m2).set_index(["stratum", "label_type"]).loc[("lone", "all"), "unanswered"] == 1
-    w = gr.score_table(m, {"lone": {"CurbRamp": 100}, "margin_incorrect": {"CurbRamp": 100}}).set_index(
+    # min_cell=1: the 2-item cells here sit under the default minimum (5), covered by its own test below
+    w = gr.score_table(m, {"lone": {"CurbRamp": 100}, "margin_incorrect": {"CurbRamp": 100}}, min_cell=1).set_index(
         ["stratum", "label_type"])
     assert w.loc[("lone", "all"), "w_rate"] == 0.5 and w.loc[("margin_incorrect", "all"), "w_rate"] == 0.5
     m3 = m.copy()
     m3.loc[m3.stratum == "margin_incorrect", "verdict"] = "incorrect"
-    w3 = gr.score_table(m3, {"lone": {"CurbRamp": 100}, "margin_incorrect": {"CurbRamp": 100}}).set_index(
+    w3 = gr.score_table(m3, {"lone": {"CurbRamp": 100}, "margin_incorrect": {"CurbRamp": 100}}, min_cell=1).set_index(
         ["stratum", "label_type"])
     assert w3.loc[("lone", "all"), "w_rate"] == 0.5 and w3.loc[("margin_incorrect", "all"), "w_rate"] == 1.0
     md = gr.score_markdown(gr.score_table(m, {"lone": {"CurbRamp": 100}}))
@@ -647,3 +648,201 @@ def test_cli_score_leaves_unmasked_items_out(tmp_path, capsys):
     base, mp, pp, up = _cli_round(tmp_path)
     gr.main(["score", "--key", base[1], "--rater", "B", "--sheet", base[4].split("=", 1)[1], "--unmasked", str(up)])
     assert "1 unmasked items left out" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# #85: recount without excluded authors, cells under n=5, the opt-in thin_voted stratum
+# ---------------------------------------------------------------------------------------------------------------------
+
+THIN_DESIGN = {**DESIGN, "shares": {"margin": 0.4, "lone": 0.25, "light_voted": 0.15, "thin_voted": 0.2}}
+ROUND2 = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "relabel-2026-10", "round2")
+
+
+def _thin_rows(schema, n=4):
+    """AI Disagrees in no round-2 stratum: one decisive vote, only Unsure, and a tie, ``n`` of each per type."""
+    rows = []
+    for t in gr.LABEL_TYPES:
+        for votes in ({"h_agree": 1}, {"h_unsure": 2}, {"h_agree": 1, "h_dis": 1}):
+            rows += [{"schema": schema, "label_type": t, "ai_vote": "Disagree", **votes}] * n
+    return rows
+
+
+def _population_by_hand(pool, schema, strata=gr.DISAGREE_STRATA, thin=False):
+    e = gr.eligible(pool[pool.schema == schema])
+    st = gr.assign_stratum(e, thin=thin)
+    return {s: {t: int(((st == s) & (e.label_type == t)).sum()) for t in gr.LABEL_TYPES} for s in strata}
+
+
+def test_recount_population_matches_build_on_a_pool_without_the_column():
+    p = _pool(_city("sidewalk_a") + _city("sidewalk_b", seed=1) + _thin_rows("sidewalk_a"))
+    r = gr.recount_population(p, DESIGN)
+    assert r["population"]["A"] == _population_by_hand(p, "sidewalk_a")  # what cmd_build pinned before #85
+    assert r["population"]["B"] == _population_by_hand(p, "sidewalk_b")
+    e = gr.eligible(p[p.schema == "sidewalk_a"])
+    assert r["eligible_disagrees"]["sidewalk_a"] == int((e.ai_vote == "Disagree").sum())
+    assert r["unsampled"]["sidewalk_a"] == {"one_decisive": 20, "unsure_only": 20, "tie": 20}
+    assert r["unsampled"]["sidewalk_b"] == {"one_decisive": 0, "unsure_only": 0, "tie": 0}
+
+
+@pytest.mark.skipif(not os.path.exists(os.path.join(ROUND2, "pool.csv.gz")), reason="committed round-2 pool absent")
+def test_recount_population_reproduces_the_committed_round2_manifest():
+    design = gr.load_design(gr.DEFAULT_DESIGN)
+    pool = rl.load_pool(os.path.join(ROUND2, "pool.csv.gz"))
+    man = json.load(open(os.path.join(ROUND2, "key", "manifest.json")))
+    r = gr.recount_population(pool, design)
+    assert r["population"] == man["population"]
+    # the doc's denominators (docs/ai-disagree-relabel-2026-10.md, Round 2), before the exclusion
+    assert r["eligible_disagrees"] == {"sidewalk_seattle": 17284, "sidewalk_chicago": 10769}
+    assert sum(r["unsampled"]["sidewalk_seattle"].values()) == 8611
+    assert sum(r["unsampled"]["sidewalk_chicago"].values()) == 3853
+
+
+def test_recount_drops_excluded_authors_from_weights_and_denominators():
+    p = _pool(_city("sidewalk_a", n_per_stratum=6) + _city("sidewalk_b", n_per_stratum=6) + _thin_rows("sidewalk_a"))
+    before = gr.recount_population(p, DESIGN)
+    a = p[p.schema == "sidewalk_a"]
+    lone = a[(a.label_type == "CurbRamp") & (gr.assign_stratum(a) == "lone")].label_id.iloc[0]
+    light = a[(a.label_type == "Obstacle") & (gr.assign_stratum(a) == "light_voted")].label_id.iloc[0]
+    tie = a[(a.ai_vote == "Disagree") & (a.h_agree == 1) & (a.h_dis == 1)].label_id.iloc[0]
+    decoy = a[a.ai_vote == "Agree"].label_id.iloc[0]
+    flags = pd.DataFrame({"schema": "sidewalk_a", "label_id": a.label_id,
+                          "author_excluded": np.where(a.label_id.isin([lone, light, tie, decoy]), "t", "f")})
+    after = gr.recount_population(gr.apply_author_excluded(p, flags)[0], DESIGN)
+    pb, pa = before["population"]["A"], after["population"]["A"]
+    assert pb["lone"]["CurbRamp"] - pa["lone"]["CurbRamp"] == 1
+    assert pb["light_voted"]["Obstacle"] - pa["light_voted"]["Obstacle"] == 1
+    moved = {(s, t) for s in pb for t in pb[s] if pb[s][t] != pa[s][t]}
+    assert moved == {("lone", "CurbRamp"), ("light_voted", "Obstacle")}
+    assert before["eligible_disagrees"]["sidewalk_a"] - after["eligible_disagrees"]["sidewalk_a"] == 3
+    assert before["unsampled"]["sidewalk_a"]["tie"] - after["unsampled"]["sidewalk_a"]["tie"] == 1
+    assert before["population"]["B"] == after["population"]["B"]  # flags for one city leave the other alone
+
+
+def test_apply_author_excluded_joins_on_the_original_pool():
+    p = _pool([{}, {}, {"expert1": "Agree"}, {}])
+    flags = pd.DataFrame({"schema": ["sidewalk_a"] * 3, "label_id": [1, 2, 3], "author_excluded": ["f", "t", "f"]})
+    out, missing = gr.apply_author_excluded(p, flags)
+    assert missing == 1 and list(out.author_excluded) == [False, True, False, False]  # label 4: not in flags, kept
+    assert list(out.index) == list(p.index) and list(out.label_uid) == list(p.label_uid)
+    # eligibility follows the pinned pool's expert columns: a later prod vote by a rater is not in the flags
+    assert list(gr.eligible(out).label_id) == [1, 4]
+    # a pool that already carries the column has it replaced
+    assert list(gr.apply_author_excluded(p.assign(author_excluded="t"), flags)[0].author_excluded) == \
+        [False, True, False, False]
+    with pytest.raises(ValueError, match="repeat"):
+        gr.apply_author_excluded(p, pd.concat([flags, flags.head(1)]))
+
+
+def test_score_table_flags_cells_under_min_cell():
+    rows = ([{"label_type": "CurbRamp", "verdict": "incorrect"}] * 6 + [{"label_type": "CurbRamp", "verdict": "correct"}] * 2
+            + [{"label_type": "Obstacle", "verdict": "correct"}]
+            + [{"stratum": "light_voted", "label_type": "Obstacle", "verdict": "incorrect"}] * 2)
+    m = _rated(rows)
+    pop = {"lone": {"CurbRamp": 100, "Obstacle": 900, "Crosswalk": 50}, "light_voted": {"Obstacle": 10}}
+    t = gr.score_table(m, pop).set_index(["stratum", "label_type"])
+    assert t.loc[("lone", "all"), "w_rate"] == 0.75  # CurbRamp only: Obstacle (n=1) and Crosswalk (n=0) carry no weight
+    assert t.loc[("lone", "all"), "w_excluded"] == "Obstacle(n=1), Crosswalk(n=0)"
+    assert np.isnan(t.loc[("light_voted", "all"), "w_rate"])
+    assert t.loc[("light_voted", "all"), "w_excluded"] == "Obstacle(n=2)"
+    loose = gr.score_table(m, pop, min_cell=1).set_index(["stratum", "label_type"])
+    assert loose.loc[("lone", "all"), "w_rate"] == pytest.approx((100 * 0.75 + 900 * 0.0) / 1000)
+    md = gr.score_markdown(gr.score_table(m, pop))
+    assert "| light_voted | all |" in md and "unestimable | Obstacle(n=2) |" in md
+    assert "Obstacle(n=1), Crosswalk(n=0)" in md
+
+
+def test_thin_stratum_covers_exactly_the_unsampled_disagrees():
+    p = _pool(_city("sidewalk_a", n_per_stratum=3) + _thin_rows("sidewalk_a"))
+    thin = gr.assign_stratum(p, thin=True)
+    assert int((thin == "thin_voted").sum()) == sum(gr.unsampled_disagrees(p).values()) == 60
+    plain = gr.assign_stratum(p)
+    assert (thin[plain != ""] == plain[plain != ""]).all()  # every other row keeps its stratum
+    assert set(thin[plain == ""]) == {"thin_voted"}
+    assert gr.load_design(THIN_DESIGN)["shares"]["thin_voted"] == 0.2
+    prep = gr.prepare(p, "sidewalk_a", THIN_DESIGN)
+    assert (prep.cell == "thin_voted").sum() == 60
+    q = gr.quotas(THIN_DESIGN)
+    assert q[("thin_voted", "CurbRamp")] == 2 and sum(q[(c, "CurbRamp")] for c in
+                                                       ("margin", "lone", "light_voted", "thin_voted")) == 10
+    c = gr.candidates(prep, "seed", THIN_DESIGN, oversample=1)
+    assert (c[(c.cell == "thin_voted") & (c.label_type == "CurbRamp")].shape[0]) == 2
+    r = gr.recount_population(p, THIN_DESIGN)
+    assert sum(r["population"]["A"]["thin_voted"].values()) == 60
+    with pytest.raises(ValueError, match="shares"):
+        gr.load_design({**DESIGN, "shares": {"margin": 0.5, "lone": 0.5, "other": 0.0}})
+
+
+def test_round2_design_output_unchanged_with_thin_support():
+    p = _pool(_city("sidewalk_a") + _thin_rows("sidewalk_a"))
+    d2 = gr.load_design(gr.DEFAULT_DESIGN)
+    assert not gr.uses_thin(d2) and not gr.uses_thin(DESIGN)
+    a, b = gr.prepare(p, "sidewalk_a"), gr.prepare(p, "sidewalk_a", DESIGN)
+    pd.testing.assert_frame_equal(a, b)
+    assert "thin_voted" not in set(a.stratum) and set(a.cell) == set(gr.CELLS)
+    assert set(gr.recount_population(p, DESIGN)["population"]["A"]) == set(gr.DISAGREE_STRATA)
+    assert list(gr.candidates(a, "s", DESIGN).label_uid) == list(gr.candidates(b, "s", DESIGN).label_uid)
+
+
+def _recount_files(tmp_path):
+    p = _city("sidewalk_a", n_per_stratum=4) + _city("sidewalk_b", n_per_stratum=4) + _thin_rows("sidewalk_a")
+    pool = _pool(p)
+    pp, fp, dp = tmp_path / "pool.csv", tmp_path / "flags.csv", tmp_path / "design.json"
+    pool.drop(columns=["label_uid", "h_dec", "crowd"]).to_csv(pp, index=False)
+    a = pool[pool.schema == "sidewalk_a"]
+    pd.DataFrame({"schema": a.schema, "label_id": a.label_id,
+                  "author_excluded": np.where(a.label_id % 10 == 0, "t", "f")}).to_csv(fp, index=False)
+    dp.write_text(json.dumps(DESIGN))
+    return pool, pp, fp, dp
+
+
+def test_cli_recount_writes_aggregates_only(tmp_path, capsys):
+    pool, pp, fp, dp = _recount_files(tmp_path)
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    a = pool[pool.schema == "sidewalk_a"]
+    pd.DataFrame({"label_id": a.label_id[a.label_id % 10 != 0]}).to_csv(raw / "city-a.csv", index=False)
+    conf = tmp_path / "cityparams.conf"
+    conf.write_text('city-params {\n  db-schema {\n    city-a = "sidewalk_a"\n    city-b = "sidewalk_b"\n  }\n'
+                    '  landing-page-url {\n    prod {\n      city-a = "https://a.example.edu"\n    }\n  }\n}\n')
+    out, md = tmp_path / "recount.json", tmp_path / "recount.md"
+    gr.main(["recount", "--pool", str(pp), "--author-excluded", str(fp), "--design", str(dp), "--out", str(out),
+             "--markdown", str(md), "--rawlabels-proxy", str(raw), "--cityparams", str(conf)])
+    printed = capsys.readouterr().out
+    r = json.load(open(out))
+    n_excl = int((a.label_id % 10 == 0).sum())
+    assert r["excluded_labels"] == {"sidewalk_a": n_excl, "sidewalk_b": 0}
+    dis_excl = int(((a.label_id % 10 == 0) & (a.ai_vote == "Disagree")).sum())
+    assert r["excluded_eligible_disagrees"]["sidewalk_a"] == dis_excl
+    assert r["pool_labels_missing_from_flags"] == int((pool.schema == "sidewalk_b").sum())
+    prox = r["proxy_absent_from_export"]
+    assert prox["sidewalk_a"] == {"ai_disagrees_absent": dis_excl, "of_which_flagged_excluded": dis_excl,
+                                  "flagged_excluded_present_in_export": 0}
+    assert prox["sidewalk_b"]["ai_disagrees_absent"] == 0  # no cache file for city-b: not counted as absent
+    assert set(r) >= {"pool_sha256", "author_excluded_sha256", "design_sha256", "before", "after"}
+    text = out.read_text()
+    assert "sidewalk_a:" not in text and "label_id" not in text  # counts only, no label-level rows
+    assert md.read_text().strip() == printed.split("\n-> ")[0].strip()
+    assert "| sidewalk_a |" in printed and "before -> after" in printed
+
+
+def test_cli_score_recounts_population_from_pool_and_flags(tmp_path, capsys):
+    pool, pp, fp, dp = _recount_files(tmp_path)
+    a = pool[(pool.schema == "sidewalk_a") & (gr.assign_stratum(pool) == "lone")].head(6)
+    key = pd.DataFrame({"packet_id": [f"r{i}" for i in range(len(a))], "label_uid": a.label_uid.values,
+                        "label_type": a.label_type.values, "stratum": "lone", "ai_vote": "Disagree",
+                        "margin_class": "", "rater": "A", "shared": False})
+    kp, sp = tmp_path / "key.csv", tmp_path / "sheet.csv"
+    key.to_csv(kp, index=False)
+    pd.DataFrame({"packet_id": key.packet_id, "label_type": key.label_type, "verdict": "incorrect",
+                  "notes": ""}).to_csv(sp, index=False)
+    base = ["score", "--key", str(kp), "--rater", "A", "--sheet", str(sp), "--allow-unpinned"]
+    gr.main(base + ["--pool", str(pp), "--author-excluded", str(fp), "--design", str(dp)])
+    out = capsys.readouterr().out
+    before = gr.recount_population(pool, DESIGN)["population"]["A"]["lone"]
+    after = gr.recount_population(gr.apply_author_excluded(pool, pd.read_csv(fp))[0], DESIGN)["population"]["A"]
+    assert f"population lone: ? -> {sum(after['lone'].values()):,}" in out
+    assert sum(after["lone"].values()) < sum(before.values())
+    assert "unestimable" in out  # 6 items over 5 types: every lone cell is under n=5
+    assert "WARNING" not in out
+    gr.main(base)
+    assert "WARNING" not in capsys.readouterr().out  # no manifest population: nothing to warn about

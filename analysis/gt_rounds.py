@@ -68,6 +68,19 @@ raters also rate.
         --consensus $D/adjudication/consensus.csv --meeting-record $D/adjudication/meeting_record.md \\
         --out $D/adjudication/gold_shared.csv
 
+**Recount without excluded authors (#85).** Round 2's pool predates the ``author_excluded`` column, so its
+population weights and eligible-Disagree counts include labels Gallery never showed. ``pull_author_excluded.sh``
+reads ``user_stat.excluded`` per label, and ``recount`` joins it onto the round's pinned pool (eligibility stays as
+of the round) and prints the counts before and after; ``score --pool --author-excluded`` weights by the recount::
+
+    ssh makelab1 "SCHEMAS='sidewalk_seattle sidewalk_chicago' bash -s" < analysis/pull_author_excluded.sh \\
+        > $D/author_excluded.csv
+    python analysis/gt_rounds.py recount --pool $D/pool.csv --author-excluded $D/author_excluded.csv \\
+        --rawlabels-proxy <rawLabels cache> --out docs/ai-disagree-relabel-2026-10/round2_recount.json
+
+``score`` gives a (stratum, type) cell with fewer than ``--min-cell`` (5) decided items no population weight and
+names it. A design that names ``thin_voted`` in ``shares`` also samples the AI Disagrees in no other stratum.
+
 ``build`` needs the crop check and fetch on the database host (two calls through the master). ``gallery`` writes
 one page per rater: their own city's list first, then the other raters' shared items, with the masking CSS and the
 rating rule. ``votes`` pulls one rater's prod votes on their items and pins the sheet as ``votes_<rater>``.
@@ -111,8 +124,12 @@ from analysis.rating_page import render_page  # noqa: E402
 
 LABEL_TYPES = rl.LABEL_TYPES
 DISAGREE_STRATA = ("lone", "light_voted", "margin_incorrect", "margin_correct")
+DISAGREE_STRATA_THIN = DISAGREE_STRATA + ("thin_voted",)  # opt-in: a design whose shares name thin_voted (#85)
 STRATA = DISAGREE_STRATA + ("decoy_agree", "decoy_unsure")
 CELLS = ("lone", "light_voted", "margin", "decoy")  # margin = margin_correct (capped) topped up with margin_incorrect
+SHARE_CELLS = {"lone", "light_voted", "margin"}  # the Disagree cells every design's shares must name
+DEFAULT_DESIGN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gt_rounds", "round2.json")
+MIN_CELL = 5  # score: a (stratum, type) cell with fewer decided items carries no population weight (#85)
 SEV_BUCKETS = ("1-2", "3-5", "none")
 KEY_COLUMNS = ["packet_id", "label_uid", "label_uid_city", "schema", "city_id", "label_id", "label_type", "rater",
                "shared", "stratum", "cell", "margin_class", "round3_split", "sev_bucket", "ai_vote", "ai_accuracy",
@@ -150,8 +167,8 @@ def load_design(path_or_dict):
     raters = d.get("raters") or {}
     if len(set(raters.values())) != len(raters) or not raters:
         raise ValueError("raters must map distinct roles to distinct schemas")
-    if set(d.get("shares", {})) != {"lone", "light_voted", "margin"}:
-        raise ValueError("shares must have lone, light_voted and margin")
+    if set(d.get("shares", {})) - {"thin_voted"} != SHARE_CELLS:
+        raise ValueError("shares must have lone, light_voted and margin (and optionally thin_voted)")
     if abs(sum(d["shares"].values()) - 1) > 1e-9:
         raise ValueError("shares must sum to 1")
     if set(d.get("per_type", {})) != set(LABEL_TYPES) or any(int(v) <= 0 for v in d["per_type"].values()):
@@ -214,16 +231,22 @@ def margin_class(df):
     return pd.Series(np.where(net > 2, "correct", np.where(-net > 1, "incorrect", "")), index=df.index)
 
 
-def assign_stratum(df):
+def assign_stratum(df, thin=False):
     """The stratum of each row (empty string if none): for AI Disagrees ``lone`` (no human vote at all),
     ``margin_incorrect`` / ``margin_correct`` (a training row under the margin rule), ``light_voted`` (at least
     two decisive human votes with a majority, short of the margin rule); for AI Agree / Unsure the decoys.
+
+    With ``thin=True`` the AI Disagrees in none of those strata (one decisive vote, only Unsure votes, or a tie:
+    exactly the rows :func:`unsampled_disagrees` counts) become ``thin_voted``, so a later round can sample them
+    (#85). Off by default, so round 2's design and key are unchanged.
 
     >>> d = pd.DataFrame({"ai_vote": ["Disagree"] * 5 + ["Agree", "Unsure"],
     ...                   "h_agree": [0, 0, 3, 2, 0, 0, 0], "h_dis": [0, 2, 0, 1, 0, 0, 0],
     ...                   "h_unsure": [0, 0, 0, 0, 1, 0, 0]})
     >>> list(assign_stratum(d))
     ['lone', 'margin_incorrect', 'margin_correct', 'light_voted', '', 'decoy_agree', 'decoy_unsure']
+    >>> list(assign_stratum(d, thin=True))[4]
+    'thin_voted'
     """
     dec = df.h_agree + df.h_dis
     n_h = dec + df.h_unsure
@@ -231,9 +254,9 @@ def assign_stratum(df):
     mc = margin_class(df)
     return pd.Series(np.select(
         [dis & (n_h == 0), dis & (mc == "incorrect"), dis & (mc == "correct"),
-         dis & (dec >= 2) & (df.h_agree != df.h_dis), df.ai_vote == "Agree", df.ai_vote == "Unsure"],
-        ["lone", "margin_incorrect", "margin_correct", "light_voted", "decoy_agree", "decoy_unsure"], ""),
-        index=df.index)
+         dis & (dec >= 2) & (df.h_agree != df.h_dis), dis & thin, df.ai_vote == "Agree", df.ai_vote == "Unsure"],
+        ["lone", "margin_incorrect", "margin_correct", "light_voted", "thin_voted", "decoy_agree", "decoy_unsure"],
+        ""), index=df.index)
 
 
 def unsampled_disagrees(df):
@@ -287,17 +310,105 @@ def eligible(pool):
     return pool[ok]
 
 
-def prepare(pool, schema):
+def uses_thin(design):
+    """True when a design samples the ``thin_voted`` stratum (its ``shares`` name it).
+
+    A later round opts in with, for example,
+    ``"shares": {"margin": 0.4, "lone": 0.25, "light_voted": 0.15, "thin_voted": 0.2}``.
+
+    >>> uses_thin({"shares": {"margin": 0.5, "lone": 0.35, "light_voted": 0.15}}), uses_thin(None)
+    (False, False)
+    >>> uses_thin({"shares": {"margin": 0.4, "lone": 0.25, "light_voted": 0.15, "thin_voted": 0.2}})
+    True
+    """
+    return "thin_voted" in ((design or {}).get("shares") or {})
+
+
+def prepare(pool, schema, design=None):
     """The eligible rows of one city with ``stratum``, ``cell``, ``margin_class`` and ``sev_bucket``; rows in no
-    stratum dropped."""
+    stratum dropped. A design that samples ``thin_voted`` (:func:`uses_thin`) keeps the thin Disagrees as their
+    own cell."""
     d = eligible(pool[pool.schema == schema]).copy()
-    d["stratum"] = assign_stratum(d)
+    d["stratum"] = assign_stratum(d, thin=uses_thin(design))
     d = d[d.stratum != ""].copy()
     d["cell"] = d.stratum.where(~d.stratum.str.startswith("decoy"), "decoy")
     d["cell"] = d.cell.where(~d.cell.str.startswith("margin"), "margin")
     d["margin_class"] = margin_class(d)
     d["sev_bucket"] = sev_bucket(d.severity)
     return d
+
+
+def recount_population(pool, design):
+    """The population a round's weights and denominators come from, recomputed from a pool (#85).
+
+    Returns ``{"population": {rater: {stratum: {type: n}}}, "eligible_disagrees": {schema: n},
+    "unsampled": {schema: unsampled_disagrees(...)}}``: the eligible rows per Disagree stratum and type of each
+    rater's own city (what ``build`` pins in the manifest as ``population`` and ``score`` weights by), each city's
+    eligible AI Disagrees, and how many of them fall in no stratum. :func:`eligible` drops excluded authors' labels
+    when the pool has an ``author_excluded`` column (:func:`apply_author_excluded`), so the same call gives the
+    counts before and after the exclusion. A design that samples ``thin_voted`` gets that stratum too."""
+    strata = DISAGREE_STRATA_THIN if uses_thin(design) else DISAGREE_STRATA
+    out = {"population": {}, "eligible_disagrees": {}, "unsampled": {}}
+    for rater, schema in design["raters"].items():
+        p = prepare(pool, schema, design)
+        out["population"][rater] = {s: {t: int(((p.stratum == s) & (p.label_type == t)).sum()) for t in LABEL_TYPES}
+                                    for s in strata}
+        e = eligible(pool[pool.schema == schema])
+        out["eligible_disagrees"][schema] = int((e.ai_vote == "Disagree").sum())
+        out["unsampled"][schema] = unsampled_disagrees(e)
+    return out
+
+
+def _truthy(col):
+    return col.astype(str).str.lower().isin(["t", "true", "1"])
+
+
+def apply_author_excluded(pool, flags):
+    """``(pool, n_missing)``: the pool with ``author_excluded`` taken from ``flags`` (``schema, label_id,
+    author_excluded``, the output of ``analysis/pull_author_excluded.sh``), joined one-to-one on
+    ``(schema, label_id)``.
+
+    The flags go onto the ORIGINAL pinned pool rather than a fresh pull, so eligibility stays as of the round:
+    the raters' own votes, now in prod, must not shrink the population they were sampled from. A pool label that
+    is missing from ``flags`` (deleted since, or not in the pull) counts as not excluded; ``n_missing`` says how
+    many. An ``author_excluded`` column already in the pool is replaced. Raises if ``flags`` repeats a label.
+
+    >>> pool = pd.DataFrame({"schema": ["s", "s", "s"], "label_id": [1, 2, 3]})
+    >>> flags = pd.DataFrame({"schema": ["s", "s"], "label_id": [1, 2], "author_excluded": ["f", "t"]})
+    >>> out, missing = apply_author_excluded(pool, flags)
+    >>> list(out.author_excluded), missing
+    ([False, True, False], 1)
+    """
+    f = flags[["schema", "label_id", "author_excluded"]].copy()
+    f["label_id"] = f.label_id.astype(int)
+    f["author_excluded"] = _truthy(f.author_excluded)
+    if f.duplicated(["schema", "label_id"]).any():
+        raise ValueError("the author_excluded flags repeat a (schema, label_id)")
+    p = pool.drop(columns=["author_excluded"], errors="ignore").copy()
+    p["label_id"] = p.label_id.astype(int)
+    m = p.merge(f, on=["schema", "label_id"], how="left", validate="one_to_one", indicator=True)
+    missing = int((m.pop("_merge") == "left_only").sum())
+    m["author_excluded"] = m.author_excluded.eq(True)
+    m.index = pool.index
+    return m, missing
+
+
+def proxy_author_excluded(pool, rawlabels_dir, schema_city):
+    """The pool with ``absent_from_export``: True where the label is missing from the public rawLabels cache file
+    of its city (``<rawlabels_dir>/<city_id>.csv``), None where the city has no cache file. The public export
+    omits excluded authors' labels, so this is an upper bound on them (deleted and newer labels are absent too):
+    a cross-check printed by ``recount``, never used for weights."""
+    out = pool.copy()
+    out["absent_from_export"] = None
+    for schema in sorted(out.schema.unique()):
+        city = schema_city.get(schema)
+        path = os.path.join(rawlabels_dir, f"{city}.csv") if city else None
+        if not path or not os.path.exists(path):
+            continue
+        ids = set(pd.read_csv(path, usecols=["label_id"]).label_id.astype(int))
+        sel = out.schema == schema
+        out.loc[sel, "absent_from_export"] = ~out.loc[sel, "label_id"].astype(int).isin(ids)
+    return out
 
 
 def bucket_shares(prepared):
@@ -439,14 +550,19 @@ def rater_items(key, rater):
 # Scoring (pure, unit-tested)
 # ---------------------------------------------------------------------------------------------------------------------
 
-def score_table(m, population=None):
+def score_table(m, population=None, min_cell=MIN_CELL):
     """Per stratum and (stratum, type) of one rater's items: the share of AI votes the expert confirms
     (``cant_tell`` and blank excluded, counted apart); on the margin strata also how often the training target
     (the crowd's margin class) matches the expert. ``population`` (``{stratum: {type: n}}``, the eligible pool of
-    the rater's own city) adds a population-weighted row per Disagree stratum."""
+    the rater's own city) adds a population-weighted row per Disagree stratum.
+
+    A (stratum, type) cell with fewer than ``min_cell`` decided items carries no population weight (#85): it is
+    left out of ``w_rate`` (the weights renormalise over the rest) and named in ``w_excluded``, for example
+    ``Obstacle(n=1)``. Only cells with a positive population weight are named. If every cell of a stratum is left
+    out, ``w_rate`` is NaN and :func:`score_markdown` prints "unestimable"."""
     rows = []
     decided = m[m.verdict.isin(["correct", "incorrect"])]
-    for s in STRATA:
+    for s in STRATA + ("thin_voted",):
         for t in ("all",) + tuple(LABEL_TYPES):
             sub = m[(m.stratum == s) & ((m.label_type == t) if t != "all" else True)]
             if not len(sub):
@@ -462,31 +578,50 @@ def score_table(m, population=None):
             rows.append(row)
     out = pd.DataFrame(rows)
     if population:
+        out["w_excluded"] = ""
         for s, weights in population.items():
             g = decided[decided.stratum == s]
             per_type = {t: (sum(rl.ai_right(v, r) for v, r in zip(x.ai_vote, x.verdict)), len(x))
                         for t, x in ((t, g[g.label_type == t]) for t in LABEL_TYPES)}
+            small = [t for t in LABEL_TYPES if weights.get(t) and per_type[t][1] < min_cell]
+            kept = {t: kn for t, kn in per_type.items() if t not in small}
             i = out.index[(out.stratum == s) & (out.label_type == "all")]
             if len(i):
-                out.loc[i, ["w_rate", "w_lo", "w_hi"]] = rl.weighted_rate(per_type, weights)
+                out.loc[i, ["w_rate", "w_lo", "w_hi"]] = rl.weighted_rate(kept, weights)
+                out.loc[i, "w_excluded"] = ", ".join(f"{t}(n={per_type[t][1]})" for t in small)
     return out
 
 
 def score_markdown(t):
     cols = ["w_rate" in t.columns, "target_rate" in t.columns]
     head = "| Stratum | Type | Expert confirms the AI | n | can't tell |" + \
-        (" population-weighted |" if cols[0] else "") + (" training target matches expert |" if cols[1] else "")
+        (" population-weighted | cells under the minimum n (no weight) |" if cols[0] else "") + \
+        (" training target matches expert |" if cols[1] else "")
     out = [head, "|" + "---|" * (head.count("|") - 1)]
     for r in t.itertuples():
         line = f"| {r.stratum} | {r.label_type} | {rl._pct(r.rate, r.lo, r.hi)} | {r.n} | {r.cant_tell} |"
         if cols[0]:
-            line += (f" {rl._pct(r.w_rate, r.w_lo, r.w_hi)} |" if r.label_type == "all" and not pd.isna(r.w_rate)
-                     else " |")
+            excl = getattr(r, "w_excluded", "") or ""
+            if r.label_type != "all" or _isna(r.w_rate) and not excl:
+                line += " | |"
+            elif _isna(r.w_rate):
+                line += f" unestimable | {excl} |"
+            else:
+                line += f" {rl._pct(r.w_rate, r.w_lo, r.w_hi)} | {excl} |"
         if cols[1]:
             line += (f" {rl._pct(r.target_rate, r.target_lo, r.target_hi)} ({int(r.target_n)}) |"
                      if not pd.isna(getattr(r, "target_n", np.nan)) else " |")
         out.append(line)
     return "\n".join(out)
+
+
+def _isna(x):
+    """``pd.isna`` for a scalar that may be missing from a row (NaN or None).
+
+    >>> _isna(np.nan), _isna(None), _isna(0.5)
+    (True, True, False)
+    """
+    return x is None or bool(pd.isna(x))
 
 
 def cohen_kappa(a, b):
@@ -551,26 +686,24 @@ def cmd_build(args):
     missing = sorted(set(design["raters"].values()) - set(pool.schema))
     if missing:
         sys.exit(f"the pool has no rows for {missing}")
-    prepared = {s: prepare(pool, s) for s in design["raters"].values()}
+    prepared = {s: prepare(pool, s, design) for s in design["raters"].values()}
+    recount = recount_population(pool, design)
+    population = recount["population"]
     for s in design["raters"].values():
-        e = eligible(pool[pool.schema == s])
-        u = unsampled_disagrees(e)
-        print(f"{s}: {sum(u.values()):,} of {int((e.ai_vote == 'Disagree').sum()):,} eligible AI Disagrees are in no "
-              f"stratum and are never sampled ({u['one_decisive']:,} one decisive vote, {u['unsure_only']:,} only "
-              f"Unsure, {u['tie']:,} ties)")
+        u = recount["unsampled"][s]
+        print(f"{s}: {sum(u.values()):,} of {recount['eligible_disagrees'][s]:,} eligible AI Disagrees are in no "
+              f"stratum{' (sampled as thin_voted)' if uses_thin(design) else ' and are never sampled'} "
+              f"({u['one_decisive']:,} one decisive vote, {u['unsure_only']:,} only Unsure, {u['tie']:,} ties)")
     cands = {s: candidates(p, args.seed, design, args.oversample) for s, p in prepared.items()}
     all_cands = pd.concat(cands.values())
     print(f"{len(all_cands):,} candidates over {len(cands)} cities")
     dir_map, markers = rl.crop_status(args.host, all_cands)
-    picked, shortfall, population = [], {}, {}
+    picked, shortfall = [], {}
     for rater, schema in design["raters"].items():
         p, short = pick(cands[schema], set(markers), design, bucket_shares(prepared[schema]))
         shortfall.update({f"{rater}:{k}": v for k, v in short.items()})
         p = mark_shared(p, f"{args.seed}:{schema}", int(design["shared"])).assign(rater=rater)
         picked.append(p)
-        e = prepared[schema]
-        population[rater] = {s: {t: int(((e.stratum == s) & (e.label_type == t)).sum()) for t in LABEL_TYPES}
-                             for s in DISAGREE_STRATA}
     picked = pd.concat(picked, ignore_index=True)
     if shortfall:
         print(f"WARNING: cells short of their quota: {shortfall}")
@@ -716,8 +849,11 @@ def cmd_score(args):
     apart = m[m.packet_id.isin(unmasked)]
     m = m[~m.packet_id.isin(unmasked)]
     own = m[m.rater == args.rater]
+    population = score_population(args, man)
     print(f"## Rater {args.rater}, own city ({len(own)} items)\n")
-    print(score_markdown(score_table(own, man.get("population", {}).get(args.rater))))
+    print(score_markdown(score_table(own, population, args.min_cell)))
+    print(f"\nPopulation-weighted rows leave out every (stratum, type) cell with fewer than {args.min_cell} decided "
+          "items (named in the last-but-one column); a stratum with none left is unestimable.")
     other = m[m.rater != args.rater]
     if len(other):
         print(f"\n## Rater {args.rater}, shared items from the other city ({len(other)} items)\n")
@@ -729,6 +865,101 @@ def cmd_score(args):
               f"rater confirmed the AI on {right} of them ({apart.verdict.value_counts().to_dict()}).")
     if (m.verdict == "").sum():
         print(f"\nWARNING: {int((m.verdict == '').sum())} items unanswered")
+
+
+def score_population(args, man):
+    """The population weights ``score`` uses for the rater's own city: recounted from ``--pool`` (with the
+    ``--author-excluded`` flags when given, #85) when a pool is passed, else the manifest's, with a warning. Prints
+    the population per stratum before (manifest) and after (recount)."""
+    before = man.get("population", {}).get(args.rater)
+    if not args.pool:
+        if before:
+            print(f"WARNING: population weights from the manifest, which count excluded authors' labels (#85); pass "
+                  f"--pool and --author-excluded to recount them\n")
+        return before
+    pool = rl.load_pool(args.pool)
+    if args.author_excluded:
+        pool, missing = apply_author_excluded(pool, pd.read_csv(args.author_excluded))
+        print(f"author_excluded flags joined; {missing:,} pool labels not in the flags count as not excluded")
+    after = recount_population(pool, load_design(args.design))["population"].get(args.rater)
+    if after is None:
+        sys.exit(f"rater {args.rater} is not in the design {args.design}")
+    for st in after:
+        b = sum((before or {}).get(st, {}).values()) if before else None
+        print(f"population {st}: {'?' if b is None else f'{b:,}'} -> {sum(after[st].values()):,}")
+    print()
+    return after
+
+
+def cmd_recount(args):
+    """The round's population recounted without excluded authors' labels (#85), as Markdown and an aggregate JSON."""
+    design = load_design(args.design)
+    pool = rl.load_pool(args.pool)
+    before = recount_population(pool.drop(columns=["author_excluded"], errors="ignore"), design)
+    flags = pd.read_csv(args.author_excluded)
+    flagged, missing = apply_author_excluded(pool, flags)
+    after = recount_population(flagged, design)
+    out = {"design": os.path.basename(args.design), "design_sha256": rl.sha256_file(args.design),
+           "pool_sha256": rl.sha256_file(args.pool), "author_excluded_sha256": rl.sha256_file(args.author_excluded),
+           "pool_labels_missing_from_flags": missing, "before": before, "after": after,
+           "excluded_labels": {}, "excluded_eligible_disagrees": {}}
+    for schema in design["raters"].values():
+        sel = flagged.schema == schema
+        out["excluded_labels"][schema] = int((sel & flagged.author_excluded).sum())
+        out["excluded_eligible_disagrees"][schema] = (before["eligible_disagrees"][schema]
+                                                       - after["eligible_disagrees"][schema])
+    if args.rawlabels_proxy:
+        schema_city, _ = rl.cityparams(open(args.cityparams).read())
+        prox = proxy_author_excluded(flagged, args.rawlabels_proxy, schema_city)
+        out["proxy_absent_from_export"] = {}
+        for schema in design["raters"].values():
+            sel = (prox.schema == schema) & (prox.ai_vote == "Disagree")
+            absent = sel & prox.absent_from_export.eq(True)
+            out["proxy_absent_from_export"][schema] = {
+                "ai_disagrees_absent": int(absent.sum()),
+                "of_which_flagged_excluded": int((absent & prox.author_excluded).sum()),
+                "flagged_excluded_present_in_export": int((sel & prox.author_excluded
+                                                            & prox.absent_from_export.eq(False)).sum())}
+    md = recount_markdown(out, design)
+    print(md)
+    if args.out:
+        with open(args.out, "w") as f:
+            json.dump(out, f, indent=1, sort_keys=True)
+            f.write("\n")
+        if args.markdown:
+            with open(args.markdown, "w") as f:
+                f.write(md + "\n")
+        print(f"\n-> {args.out}")
+
+
+def recount_markdown(r, design):
+    """The ``recount`` tables: eligible AI Disagrees and the unsampled partition per city, before and after the
+    exclusion, then the stratum x type population per rater (before -> after)."""
+    lines = ["| City (schema) | Excluded-author labels | Eligible AI Disagrees, before -> after | Unsampled, before -> after "
+             "(one decisive / Unsure only / tie, after) |", "|---|---:|---|---|"]
+    for rater, schema in design["raters"].items():
+        ub, ua = r["before"]["unsampled"][schema], r["after"]["unsampled"][schema]
+        lines.append(f"| {schema} | {r['excluded_labels'][schema]:,} | {r['before']['eligible_disagrees'][schema]:,} -> "
+                     f"{r['after']['eligible_disagrees'][schema]:,} | {sum(ub.values()):,} -> {sum(ua.values()):,} "
+                     f"({ua['one_decisive']:,} / {ua['unsure_only']:,} / {ua['tie']:,}) |")
+    for rater in design["raters"]:
+        pb, pa = r["before"]["population"][rater], r["after"]["population"][rater]
+        lines += ["", f"Population of rater {rater}'s city (before -> after):", "",
+                  "| Stratum | " + " | ".join(LABEL_TYPES) + " | all |", "|---|" + "---:|" * (len(LABEL_TYPES) + 1)]
+        for st in pa:
+            cells = [f"{pb.get(st, {}).get(t, 0):,} -> {pa[st][t]:,}" for t in LABEL_TYPES]
+            cells.append(f"{sum(pb.get(st, {}).values()):,} -> {sum(pa[st].values()):,}")
+            lines.append(f"| {st} | " + " | ".join(cells) + " |")
+    if "proxy_absent_from_export" in r:
+        lines += ["", "Cross-check against the public rawLabels export (absent labels are an upper bound on excluded "
+                  "authors' labels; never used for weights):", "",
+                  "| City (schema) | AI Disagrees absent from the export | of which flagged excluded | "
+                  "flagged excluded but present in the export |", "|---|---:|---:|---:|"]
+        for schema, x in r["proxy_absent_from_export"].items():
+            lines.append(f"| {schema} | {x['ai_disagrees_absent']:,} | {x['of_which_flagged_excluded']:,} | "
+                         f"{x['flagged_excluded_present_in_export']:,} |")
+    lines += ["", f"{r['pool_labels_missing_from_flags']:,} pool labels are not in the flags and count as not excluded."]
+    return "\n".join(lines)
 
 
 def cmd_agreement(args):
@@ -1291,7 +1522,24 @@ def build_parser():
     s.add_argument("--manifest")
     s.add_argument("--unmasked", help="pinned CSV of packet_ids rated unmasked, left out of the tables")
     s.add_argument("--allow-unpinned", action="store_true")
+    s.add_argument("--pool", help="recount the population weights from this pool (the round's pinned pool.csv) "
+                                  "instead of the manifest's (#85)")
+    s.add_argument("--author-excluded", help="pull_author_excluded.sh output joined onto --pool (#85)")
+    s.add_argument("--design", default=DEFAULT_DESIGN, help="design JSON for --pool (default: round 2)")
+    s.add_argument("--min-cell", type=int, default=MIN_CELL,
+                   help="cells with fewer decided items get no population weight (default %(default)s)")
     s.set_defaults(func=cmd_score)
+    rc = sub.add_parser("recount", help="the round's population without excluded authors' labels (aggregates only)")
+    rc.add_argument("--pool", required=True, help="the round's pinned pool.csv (the population as of the round)")
+    rc.add_argument("--author-excluded", required=True, help="pull_author_excluded.sh output")
+    rc.add_argument("--design", default=DEFAULT_DESIGN)
+    rc.add_argument("--rawlabels-proxy", help="rawLabels cache dir (<city_id>.csv): cross-check the flags against "
+                                              "the labels missing from the public export")
+    rc.add_argument("--cityparams", default=rl.DEFAULT_CITYPARAMS, help="schema -> city_id for --rawlabels-proxy")
+    rc.add_argument("--out", help="JSON of the counts (aggregates only; commit as "
+                                  "docs/ai-disagree-relabel-2026-10/round2_recount.json)")
+    rc.add_argument("--markdown", help="also write the Markdown tables here (with --out)")
+    rc.set_defaults(func=cmd_recount)
     a = sub.add_parser("agreement", help="inter-rater agreement on the shared items")
     a.add_argument("--key", required=True)
     a.add_argument("--sheets", nargs=2, required=True, metavar="RATER=SHEET")
