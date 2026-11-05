@@ -890,8 +890,13 @@ def _get_text(url):
 
 
 def cmd_fetch_edits(args, get_text=None, fetch_listing=None):
-    """One labelEdits CSV per deployment into ``--out``, and ``fetch.json`` (date, rows and sha256 per city)."""
-    cities, source = dg.resolve_cities(args.cities, args.cities_cache, fetch=fetch_listing)
+    """One labelEdits CSV per deployment into ``--out``, and ``fetch.json`` (date, rows and sha256 per city).
+
+    ``--cities-cache`` serves only the listing (its ``cities.json``) when ``--cities`` is not given. With ``--cities``
+    it is not passed on: ``resolve_cities`` would otherwise take a bare id with a ``<cache>/<id>.csv`` (a rawLabels
+    export, irrelevant here) as its own subdomain, and the labelEdits host is the listing's (``st-louis-mo`` is served
+    from ``sidewalk-st-louis``)."""
+    cities, source = dg.resolve_cities(args.cities, None if args.cities else args.cities_cache, fetch=fetch_listing)
     os.makedirs(args.out, exist_ok=True)
     record = {"fetched": datetime.now(timezone.utc).isoformat(timespec="seconds"), "city_source": source,
               "cities": {}}
@@ -1393,7 +1398,9 @@ def build_parser():
     s = sub.add_parser("fetch-edits", help="labelEdits CSV per deployment (network)")
     s.add_argument("--out", required=True)
     s.add_argument("--cities", default=None, help="comma list of city_id[=subdomain] (default: the public listing)")
-    s.add_argument("--cities-cache", default=None, help="directory holding cities.json (data_generation.py's cache)")
+    s.add_argument("--cities-cache", default=None,
+                   help="directory holding a saved cities.json to use instead of the live listing (default: live; "
+                        "public/private drifts, so prefer live); ignored with --cities")
 
     s = sub.add_parser("type-edits", help="type changes joined to the current rawLabels rows")
     s.add_argument("--edits", required=True, help="fetch-edits output directory")

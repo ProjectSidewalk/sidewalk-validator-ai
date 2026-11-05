@@ -621,6 +621,23 @@ def test_fetch_edits_writes_one_csv_per_public_deployment(tmp_path):
     assert saved["cities"][CITY]["sha256"] == rt.file_sha256(str(tmp_path / "edits" / f"{CITY}.csv"))
 
 
+def test_fetch_edits_resolves_a_bare_id_through_the_listing_even_with_a_cached_csv(tmp_path):
+    """A rawLabels export <cache>/<id>.csv must not make the id its own subdomain: the host comes from the listing."""
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / f"{CITY}.csv").write_text("label_id\n1\n")
+    (cache / dg.CITIES_CACHE_FILE).write_text(json.dumps(LISTING))
+    asked = []
+
+    def get_text(url):
+        asked.append(url)
+        return edits_csv([])
+    args = rt.build_parser().parse_args(["fetch-edits", "--out", str(tmp_path / "edits"), "--cities", CITY,
+                                         "--cities-cache", str(cache)])
+    rt.cmd_fetch_edits(args, get_text=get_text, fetch_listing=lambda url: LISTING)
+    assert asked == ["https://sidewalk-toy.cs.washington.edu/v3/api/labelEdits?filetype=csv"]
+
+
 def test_cmd_type_edits_end_to_end(tmp_path):
     ed = tmp_path / "edits"
     ed.mkdir()
@@ -681,6 +698,9 @@ def test_correct_proportion_flag_reaches_the_selection(tmp_path, capsys):
     dg.main(base + ["--correct-proportion", "0.9"])
     assert "Correct Examples: 27" in capsys.readouterr().out         # all of them
     assert dg.build_parser().parse_args(["--label_type", "x"]).correct_proportion == dg.CORRECT_PROPORTION
+    for bad in ("0", "1", "1.5", "-0.2"):
+        with pytest.raises(SystemExit):
+            dg.build_parser().parse_args(["--label_type", "x", "--correct-proportion", bad])
 
 
 @pytest.mark.parametrize("name", ["retype.slurm", "retype_submit.sh"])
