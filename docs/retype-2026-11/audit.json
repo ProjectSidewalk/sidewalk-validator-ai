@@ -1,0 +1,495 @@
+{
+  "generated": "2026-11-05",
+  "public_cities_source": "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities",
+  "type_changes": {
+    "total": {
+      "deployments": 46,
+      "rows": 13274,
+      "type_changes": 4
+    },
+    "per_deployment": {
+      "amsterdam": {
+        "deployments": 1,
+        "rows": 107,
+        "type_changes": 0
+      },
+      "auckland": {
+        "deployments": 1,
+        "rows": 0,
+        "type_changes": 0
+      },
+      "bayonne-fr": {
+        "deployments": 1,
+        "rows": 0,
+        "type_changes": 0
+      },
+      "blackhawk-hills-il": {
+        "deployments": 1,
+        "rows": 0,
+        "type_changes": 0
+      },
+      "burnaby": {
+        "deployments": 1,
+        "rows": 76,
+        "type_changes": 0
+      },
+      "cdmx": {
+        "deployments": 1,
+        "rows": 590,
+        "type_changes": 1
+      },
+      "chandigarh-india": {
+        "deployments": 1,
+        "rows": 10,
+        "type_changes": 0
+      },
+      "chicago-il": {
+        "deployments": 1,
+        "rows": 2752,
+        "type_changes": 0
+      },
+      "cliffside-park-nj": {
+        "deployments": 1,
+        "rows": 4,
+        "type_changes": 0
+      },
+      "clifton-nj": {
+        "deployments": 1,
+        "rows": 0,
+        "type_changes": 0
+      },
+      "columbus-oh": {
+        "deployments": 1,
+        "rows": 1077,
+        "type_changes": 0
+      },
+      "cuenca": {
+        "deployments": 1,
+        "rows": 0,
+        "type_changes": 0
+      },
+      "danville-il": {
+        "deployments": 1,
+        "rows": 94,
+        "type_changes": 0
+      },
+      "detroit-mi": {
+        "deployments": 1,
+        "rows": 17,
+        "type_changes": 0
+      },
+      "fort-wayne-in": {
+        "deployments": 1,
+        "rows": 52,
+        "type_changes": 0
+      },
+      "gainesville-fl": {
+        "deployments": 1,
+        "rows": 63,
+        "type_changes": 0
+      },
+      "hackensack-nj": {
+        "deployments": 1,
+        "rows": 0,
+        "type_changes": 0
+      },
+      "houston-tx": {
+        "deployments": 1,
+        "rows": 5,
+        "type_changes": 0
+      },
+      "knox-oh": {
+        "deployments": 1,
+        "rows": 9,
+        "type_changes": 0
+      },
+      "la-ca": {
+        "deployments": 1,
+        "rows": 5,
+        "type_changes": 0
+      },
+      "la-piedad": {
+        "deployments": 1,
+        "rows": 0,
+        "type_changes": 0
+      },
+      "laurens-ia": {
+        "deployments": 1,
+        "rows": 25,
+        "type_changes": 0
+      },
+      "madison-wi": {
+        "deployments": 1,
+        "rows": 5,
+        "type_changes": 0
+      },
+      "maywood-nj": {
+        "deployments": 1,
+        "rows": 59,
+        "type_changes": 0
+      },
+      "mendota-il": {
+        "deployments": 1,
+        "rows": 450,
+        "type_changes": 0
+      },
+      "newberg-or": {
+        "deployments": 1,
+        "rows": 981,
+        "type_changes": 0
+      },
+      "newport-ky": {
+        "deployments": 1,
+        "rows": 1,
+        "type_changes": 1
+      },
+      "niagara-falls-ny": {
+        "deployments": 1,
+        "rows": 1,
+        "type_changes": 0
+      },
+      "oradell-nj": {
+        "deployments": 1,
+        "rows": 1466,
+        "type_changes": 0
+      },
+      "paterson-nj": {
+        "deployments": 1,
+        "rows": 85,
+        "type_changes": 0
+      },
+      "pittsburgh-pa": {
+        "deployments": 1,
+        "rows": 876,
+        "type_changes": 0
+      },
+      "rancagua-chile": {
+        "deployments": 1,
+        "rows": 2,
+        "type_changes": 0
+      },
+      "richmond-va": {
+        "deployments": 1,
+        "rows": 0,
+        "type_changes": 0
+      },
+      "santiago-chile": {
+        "deployments": 1,
+        "rows": 5,
+        "type_changes": 0
+      },
+      "sao-paulo-brazil": {
+        "deployments": 1,
+        "rows": 2,
+        "type_changes": 0
+      },
+      "seattle-wa": {
+        "deployments": 1,
+        "rows": 3054,
+        "type_changes": 0
+      },
+      "spgg": {
+        "deployments": 1,
+        "rows": 849,
+        "type_changes": 0
+      },
+      "st-louis-mo": {
+        "deployments": 1,
+        "rows": 124,
+        "type_changes": 2
+      },
+      "teaneck-nj": {
+        "deployments": 1,
+        "rows": 99,
+        "type_changes": 0
+      },
+      "tucson-az": {
+        "deployments": 1,
+        "rows": 124,
+        "type_changes": 0
+      },
+      "vancouver-wa": {
+        "deployments": 1,
+        "rows": 0,
+        "type_changes": 0
+      },
+      "virden-il": {
+        "deployments": 1,
+        "rows": 33,
+        "type_changes": 0
+      },
+      "walla-walla-wa": {
+        "deployments": 1,
+        "rows": 87,
+        "type_changes": 0
+      },
+      "waltham-ma": {
+        "deployments": 1,
+        "rows": 42,
+        "type_changes": 0
+      },
+      "washington-dc": {
+        "deployments": 1,
+        "rows": 39,
+        "type_changes": 0
+      },
+      "west-chester-pa": {
+        "deployments": 1,
+        "rows": 4,
+        "type_changes": 0
+      }
+    },
+    "pairs": {
+      "CurbRamp->NoCurbRamp": 1,
+      "CurbRamp->Other": 1,
+      "NoCurbRamp->CurbRamp": 1,
+      "SurfaceProblem->Obstacle": 1
+    }
+  },
+  "split_rows": {
+    "Crosswalk": 3120,
+    "CurbRamp": 10437,
+    "NoCurbRamp": 18162,
+    "Obstacle": 16894,
+    "SurfaceProblem": 15852
+  },
+  "pano_sharing": {
+    "Crosswalk": {
+      "rows": 3120,
+      "on_shared_pano": 1113,
+      "share": 0.35673076923076924
+    },
+    "CurbRamp": {
+      "rows": 10437,
+      "on_shared_pano": 2253,
+      "share": 0.21586662834147743
+    },
+    "NoCurbRamp": {
+      "rows": 18162,
+      "on_shared_pano": 3177,
+      "share": 0.17492566897918732
+    },
+    "Obstacle": {
+      "rows": 16894,
+      "on_shared_pano": 2654,
+      "share": 0.1570971942701551
+    },
+    "SurfaceProblem": {
+      "rows": 15852,
+      "on_shared_pano": 2534,
+      "share": 0.15985364622760534
+    }
+  },
+  "inherit_moves": [
+    {
+      "type": "Crosswalk",
+      "from": "train",
+      "to": "test",
+      "n": 154
+    },
+    {
+      "type": "Crosswalk",
+      "from": "train",
+      "to": "val",
+      "n": 115
+    },
+    {
+      "type": "Crosswalk",
+      "from": "val",
+      "to": "test",
+      "n": 43
+    },
+    {
+      "type": "CurbRamp",
+      "from": "train",
+      "to": "test",
+      "n": 303
+    },
+    {
+      "type": "CurbRamp",
+      "from": "train",
+      "to": "val",
+      "n": 238
+    },
+    {
+      "type": "CurbRamp",
+      "from": "val",
+      "to": "test",
+      "n": 61
+    },
+    {
+      "type": "NoCurbRamp",
+      "from": "train",
+      "to": "test",
+      "n": 383
+    },
+    {
+      "type": "NoCurbRamp",
+      "from": "train",
+      "to": "val",
+      "n": 429
+    },
+    {
+      "type": "NoCurbRamp",
+      "from": "val",
+      "to": "test",
+      "n": 76
+    },
+    {
+      "type": "Obstacle",
+      "from": "train",
+      "to": "test",
+      "n": 231
+    },
+    {
+      "type": "Obstacle",
+      "from": "train",
+      "to": "val",
+      "n": 273
+    },
+    {
+      "type": "Obstacle",
+      "from": "val",
+      "to": "test",
+      "n": 57
+    },
+    {
+      "type": "SurfaceProblem",
+      "from": "train",
+      "to": "test",
+      "n": 277
+    },
+    {
+      "type": "SurfaceProblem",
+      "from": "train",
+      "to": "val",
+      "n": 340
+    },
+    {
+      "type": "SurfaceProblem",
+      "from": "val",
+      "to": "test",
+      "n": 55
+    }
+  ],
+  "rawlabels_cities": {
+    "public": 42,
+    "private_pooled": 8
+  },
+  "eligible": {
+    "CurbRamp": {
+      "correct": 28470,
+      "incorrect": 3797
+    },
+    "NoCurbRamp": {
+      "correct": 13030,
+      "incorrect": 7774
+    },
+    "Obstacle": {
+      "correct": 12247,
+      "incorrect": 6822
+    },
+    "SurfaceProblem": {
+      "correct": 13790,
+      "incorrect": 6484
+    },
+    "Crosswalk": {
+      "correct": 19671,
+      "incorrect": 1281
+    },
+    "NoSidewalk": {
+      "correct": 88,
+      "incorrect": 139
+    },
+    "Signal": {
+      "correct": 7121,
+      "incorrect": 311
+    },
+    "Other": {
+      "correct": 10,
+      "incorrect": 8
+    }
+  },
+  "colocated": {
+    "1.5m": {
+      "incorrect_labels": 26618,
+      "with_proxy": 623,
+      "pairs": {
+        "NoCurbRamp->CurbRamp": 211,
+        "CurbRamp->NoCurbRamp": 62,
+        "SurfaceProblem->CurbRamp": 52,
+        "CurbRamp->SurfaceProblem": 45,
+        "Obstacle->CurbRamp": 40,
+        "NoCurbRamp->SurfaceProblem": 19,
+        "Obstacle->SurfaceProblem": 19,
+        "SurfaceProblem->Crosswalk": 19,
+        "Obstacle->Signal": 18,
+        "SurfaceProblem->NoCurbRamp": 15,
+        "Crosswalk->CurbRamp": 14,
+        "CurbRamp->Crosswalk": 12,
+        "NoCurbRamp->Obstacle": 11,
+        "Signal->CurbRamp": 11,
+        "SurfaceProblem->Signal": 10,
+        "CurbRamp->Signal": 9,
+        "Obstacle->Crosswalk": 9,
+        "NoCurbRamp->Signal": 8,
+        "NoCurbRamp->Crosswalk": 7,
+        "CurbRamp->Obstacle": 6,
+        "Obstacle->NoCurbRamp": 6,
+        "SurfaceProblem->Obstacle": 5,
+        "Crosswalk->SurfaceProblem": 3,
+        "NoSidewalk->CurbRamp": 2,
+        "NoSidewalk->SurfaceProblem": 2,
+        "Crosswalk->NoCurbRamp": 1,
+        "Crosswalk->Obstacle": 1,
+        "Crosswalk->Signal": 1,
+        "NoSidewalk->Crosswalk": 1,
+        "NoSidewalk->NoCurbRamp": 1,
+        "Signal->Crosswalk": 1,
+        "Signal->NoCurbRamp": 1,
+        "Signal->Obstacle": 1
+      }
+    },
+    "3m": {
+      "incorrect_labels": 26618,
+      "with_proxy": 1214,
+      "pairs": {
+        "NoCurbRamp->CurbRamp": 317,
+        "SurfaceProblem->CurbRamp": 107,
+        "CurbRamp->SurfaceProblem": 89,
+        "Obstacle->CurbRamp": 83,
+        "CurbRamp->NoCurbRamp": 81,
+        "SurfaceProblem->Crosswalk": 59,
+        "Obstacle->SurfaceProblem": 58,
+        "NoCurbRamp->SurfaceProblem": 55,
+        "Crosswalk->CurbRamp": 46,
+        "CurbRamp->Crosswalk": 29,
+        "NoCurbRamp->Crosswalk": 29,
+        "Obstacle->Signal": 27,
+        "Signal->CurbRamp": 24,
+        "SurfaceProblem->NoCurbRamp": 24,
+        "NoCurbRamp->Obstacle": 22,
+        "Obstacle->Crosswalk": 21,
+        "CurbRamp->Signal": 20,
+        "NoCurbRamp->Signal": 19,
+        "Obstacle->NoCurbRamp": 19,
+        "SurfaceProblem->Signal": 19,
+        "CurbRamp->Obstacle": 14,
+        "SurfaceProblem->Obstacle": 14,
+        "Signal->Crosswalk": 8,
+        "Crosswalk->NoCurbRamp": 6,
+        "Crosswalk->Signal": 6,
+        "NoSidewalk->SurfaceProblem": 5,
+        "Crosswalk->SurfaceProblem": 3,
+        "Crosswalk->Obstacle": 2,
+        "Signal->NoCurbRamp": 2,
+        "NoSidewalk->CurbRamp": 1,
+        "NoSidewalk->NoCurbRamp": 1,
+        "NoSidewalk->Signal": 1,
+        "Other->NoCurbRamp": 1,
+        "Signal->Obstacle": 1,
+        "Signal->SurfaceProblem": 1
+      }
+    }
+  }
+}
