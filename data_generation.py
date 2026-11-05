@@ -1288,7 +1288,7 @@ def build_parser():
                    help='also write the context images of issue #14 (context_crops.py: a wider crop and the 448 px '
                         'whole view) under <out>/<label_type>/context/; a resume setting. For an existing dataset '
                         'use `python context_crops.py backfill` instead')
-    p.add_argument('--context-wide-factor', type=int, default=4,
+    p.add_argument('--context-wide-factor', type=int, default=None,
                    help='with --context-crops: the wide crop is this many times the crop half-width (default 4)')
     p.add_argument('--seed', type=int, default=SEED)
     p.add_argument('--correct-proportion', type=open_unit_float, default=CORRECT_PROPORTION,
@@ -1354,6 +1354,9 @@ def main(argv=None):
             sys.exit(f"--mapillary-token-env {args.mapillary_token_env}: that environment variable is unset or empty")
     if not args.select_only and not args.pano_store:  # before the city listing, which may need the network
         build_parser().error("--pano-store is required unless --select-only")
+    if args.context_wide_factor is not None and (not args.context_crops or args.context_wide_factor < 1):
+        build_parser().error("--context-wide-factor needs --context-crops and must be at least 1")
+    args.context_wide_factor = args.context_wide_factor or 4  # context_crops.WIDE_FACTOR (a test checks they agree)
     if not args.select_only:  # fail fast, before the downloads; the city directories are checked after selection
         check_pano_store_marker(args.pano_store)
     default_cities = not args.cities or not any(i.strip() for i in args.cities.split(","))
