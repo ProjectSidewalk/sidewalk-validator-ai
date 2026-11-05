@@ -43,3 +43,25 @@ def test_launcher_kills_invalid_dependents_and_logs_job_ids():
     assert "--kill-on-invalid-dep=yes" in text and "region_jobs.txt" in text
     assert "region_transfer.py variants" in text and "region_transfer.py list" in text
     assert os.access(os.path.join(ROOT, "region_submit.sh"), os.X_OK)
+
+
+@pytest.mark.parametrize("name", ["region_submit.sh", "region_transfer_cpu.slurm"])
+def test_every_variants_call_passes_rawlabels(name):
+    # split.csv has no coordinates (data_generation.MANIFEST_COLUMNS + hard + split), so the 3 m merge of the pools
+    # needs the rawLabels cache; without it variants raises before a single job is submitted.
+    text = read(name)
+    calls = text.split("region_transfer.py variants")[1:]
+    assert calls
+    for call in calls:
+        assert '--rawlabels "$RAWLABELS"' in call.split("--out")[0], name
+    assert 'RAWLABELS="${RAWLABELS:-$DATA/rawlabels}"' in text
+
+
+def test_split_link_is_made_once_by_the_launcher_not_per_gpu_job():
+    assert "ln -sfn" not in read("region_transfer.slurm")
+    assert 'ln -sfn "$DATA/$LT/split.csv" "$DATA/$LT/region/eval/$LT/split.csv"' in read("region_submit.sh")
+
+
+def test_force_unk_ablation_is_scored_for_condall_only():
+    text = read("region_transfer.slurm")
+    assert text.count("\" --force-unk") == 1 and 'if [ "$ARM" = condall ]; then' in text

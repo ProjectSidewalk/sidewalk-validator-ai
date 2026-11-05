@@ -1,7 +1,7 @@
 #!/bin/bash
 # Issues #33 / #52 / #15, the CPU steps of the cross-region chain on klone (see analysis/region_submit.sh):
-#   STEP=variants  LT=<type> DATA=... CITIES_JSON=...           : LOCO and fine-tune split files (the launcher runs this
-#                                                                  itself on the login node; here for a manual rerun)
+#   STEP=variants  LT=<type> DATA=... CITIES_JSON=... [RAWLABELS=$DATA/rawlabels] : LOCO and fine-tune split files
+#                  (the launcher runs this itself on the login node; here for a manual rerun)
 #   STEP=calibrate LT=<type> DATA=... CITIES_JSON=... [SEEDS=42] : arm (d), pooled vs local maps -> region/calibration.json
 #   STEP=cleanup   LT=<type> RUNS=... COUNTRY=... SEED=...       : remove the global run's weights once its ft jobs are done
 # All three are deterministic and idempotent; a rerun rewrites the same files.
@@ -24,8 +24,11 @@ conda activate "$ENV"
 case "$STEP" in
   variants)
     DATA="${DATA:?set DATA}"; CITIES_JSON="${CITIES_JSON:?set CITIES_JSON}"
+    RAWLABELS="${RAWLABELS:-$DATA/rawlabels}"   # split.csv has no coordinates; the 3 m merge reads them here
     python -u analysis/region_transfer.py variants --split "$DATA/$LT/split.csv" --cities-json "$CITIES_JSON" \
-        --seed "${SPLIT_SEED:-42}" --out "$DATA/$LT/region"
+        --rawlabels "$RAWLABELS" --seed "${SPLIT_SEED:-42}" --out "$DATA/$LT/region"
+    mkdir -p "$DATA/$LT/region/eval/$LT"
+    ln -sfn "$DATA/$LT/split.csv" "$DATA/$LT/region/eval/$LT/split.csv"
     ;;
   calibrate)
     DATA="${DATA:?set DATA}"; CITIES_JSON="${CITIES_JSON:?set CITIES_JSON}"

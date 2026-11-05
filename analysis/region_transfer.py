@@ -42,7 +42,7 @@ Layout (``$DATA`` = the round-3 data directory; nothing under ``$DATA/<LT>/`` ou
 Usage::
 
     python analysis/region_transfer.py variants --split $DATA/CurbRamp/split.csv --cities-json $DATA/rawlabels/cities.json \\
-        --out $DATA/CurbRamp/region
+        --rawlabels $DATA/rawlabels --out $DATA/CurbRamp/region
     python analysis/region_transfer.py predict --split-file $DATA/CurbRamp/region/mexico/split.csv --data-dir $DATA \\
         --label-type CurbRamp --run-dir $RUNS/CurbRamp/global-mexico-s42 \\
         --out $DATA/CurbRamp/region/eval/CurbRamp/predictions_global-mexico-s42.csv
@@ -1187,7 +1187,9 @@ def build_parser():
     v = sub.add_parser("variants", help="LOCO and fine-tune split files for one label type")
     v.add_argument("--split", required=True, help="the round-3 split.csv")
     v.add_argument("--cities-json", required=True, help="a saved /v3/api/cities listing (country_id per deployment)")
-    v.add_argument("--rawlabels", default=None, help="cached rawLabels exports, if split.csv lacks coordinates")
+    v.add_argument("--rawlabels", default=None,
+                   help="cached rawLabels exports <city>.csv (needed for the 3 m merge: the round-3 split.csv has no "
+                        "coordinates)")
     v.add_argument("--merge-radius-m", type=float, default=3.0)
     v.add_argument("--seed", type=int, default=42)
     v.add_argument("--countries", default=None, help="comma list (default: every country in the split)")

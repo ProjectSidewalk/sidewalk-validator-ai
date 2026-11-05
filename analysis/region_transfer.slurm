@@ -61,7 +61,12 @@ if [ -f "$RUN/training_run.json" ] && [ "$EVAL/$LT/metrics_$TAG.json" -nt "$RUN/
   echo "$(date) $LT $TAG already evaluated ($EVAL/$LT/metrics_$TAG.json); nothing to do"; exit 0
 fi
 mkdir -p "$RUN" "$EVAL/$LT"
-ln -sfn "$DATA/$LT/split.csv" "$EVAL/$LT/split.csv"   # evaluate.py reads <data-dir>/<LT>/split.csv: every row, one-to-one
+# evaluate.py reads <data-dir>/<LT>/split.csv (every row, one-to-one): region_submit.sh links it to the round-3 file
+# once, before any job starts. Not relinked here: parallel jobs would race on the unlink/relink window.
+# Side effect: evaluate.py's slices_<tag>.md counts "training rows" from that round-3 split, not from this arm's split,
+# so for global/ft/cond the column is wrong. Ignore that file; the report stage recomputes slices from each arm's own
+# train rows (region_transfer.py slice_rows / train_frames).
+[ -e "$EVAL/$LT/split.csv" ] || { echo "no $EVAL/$LT/split.csv (run region_submit.sh, or STEP=variants)" >&2; exit 2; }
 TRAIN_ARGS=(--seed "$SEED" --epochs "$EPOCHS")
 case "$ARM" in
   ft)
@@ -81,7 +86,9 @@ BEST=$(python -c "import evaluate,sys; print(evaluate.best_checkpoint_in(sys.arg
   || { echo "no checkpoint under $RUN" >&2; exit 1; }
 python -u analysis/region_transfer.py predict --split-file "$SPLIT" --data-dir "$DATA" --label-type "$LT" \
     --checkpoint "$BEST" --splits "$SPLITS" --out "$PRED" "${COND_ARGS[@]}" || { echo "predict failed" >&2; exit 1; }
-if [ "$ARM" = cond ] || [ "$ARM" = condall ]; then   # the embedding ablation: the same checkpoint, every row <unk>
+# The embedding ablation (the same checkpoint, every row <unk>), condall only: for LOCO cond the held-out country is
+# <unk> already, so its rows would score identically, and the report reads -unk files only for condall.
+if [ "$ARM" = condall ]; then
   python -u analysis/region_transfer.py predict --split-file "$SPLIT" --data-dir "$DATA" --label-type "$LT" \
       --checkpoint "$BEST" --splits "$SPLITS" --out "$EVAL/$LT/predictions_$TAG-unk.csv" "${COND_ARGS[@]}" --force-unk \
       || { echo "predict --force-unk failed" >&2; exit 1; }
