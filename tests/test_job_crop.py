@@ -307,7 +307,17 @@ def test_finish_run_counts(tmp_path, capsys):
     assert "job-window crops" in capsys.readouterr().out
 
 
-def test_skipped_is_not_a_fatal_runtime_error():
+def test_skipped_is_a_plain_exception_never_fatal():
     import data_generation as dg
-    assert not dg.is_fatal(jc.JobCropSkipped("out_of_frame", "pano_y 9 outside [0, 8)"))
+    e = jc.JobCropSkipped("out_of_frame", "pano_y 9 outside [0, 8) CUDA")  # even a message naming CUDA
+    assert not isinstance(e, RuntimeError) and not dg.is_fatal(e) and e.reason == "out_of_frame"
     assert math.isfinite(jc.window_width(0, 1024, 512))
+
+
+def test_finish_run_disabled_removes_a_stale_sidecar(tmp_path, capsys):
+    import pandas as pd
+    manifest = pd.DataFrame({"label_uid": ["c:1"], "status": ["ok"]})
+    assert jc.finish_run(str(tmp_path), manifest, enabled=False) is None  # nothing there: a no-op
+    (tmp_path / jc.SIDECAR_FILE).write_text("label_uid\nc:1\n")
+    assert jc.finish_run(str(tmp_path), manifest, enabled=False) is None
+    assert not (tmp_path / jc.SIDECAR_FILE).exists() and "removed" in capsys.readouterr().out
