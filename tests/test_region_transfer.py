@@ -14,11 +14,13 @@ import region_transfer as rt  # noqa: E402
 import regions  # noqa: E402
 
 import data_generation  # noqa: E402
+import split_data  # noqa: E402
 
 # Exactly the round-3 split.csv columns: data_generation.MANIFEST_COLUMNS with split_data.add_hard's ``hard`` before
 # ``crop_path`` and ``split`` last. No latitude/longitude: the 3 m merge reads them from the rawLabels cache, as on klone.
-_AT = data_generation.MANIFEST_COLUMNS.index("crop_path")
-COLS = data_generation.MANIFEST_COLUMNS[:_AT] + ["hard"] + data_generation.MANIFEST_COLUMNS[_AT:] + ["split"]
+# Derived through split_data.add_hard itself, so the fixture cannot drift from the real placement rule.
+COLS = list(split_data.add_hard(pd.DataFrame([{c: "" for c in data_generation.MANIFEST_COLUMNS}] ).assign(split=""),
+                                set()).columns)
 # xland: alpha, beta; yland: gamma (public), dorado (private); wland: epsilon (round-3 train/val/test) and zeta
 # (round-3 test_heldout, so a held-out wland must leave zeta's rows byte-identical); zland (private only): omega,
 # held out.

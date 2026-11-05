@@ -39,7 +39,8 @@ for LT in "$@"; do
   # evaluate.py reads <data-dir>/<LT>/split.csv (every row, one-to-one). Linked here, once, before any GPU job starts,
   # so no job relinks it while another job's evaluate.py is reading it.
   mkdir -p "$DATA/$LT/region/eval/$LT"
-  ln -sfn "$DATA/$LT/split.csv" "$DATA/$LT/region/eval/$LT/split.csv"
+  # Guarded, not -f: a re-run while an earlier submission's GPU jobs are still reading the link must not relink it.
+  [ -e "$DATA/$LT/region/eval/$LT/split.csv" ] || ln -s "$DATA/$LT/split.csv" "$DATA/$LT/region/eval/$LT/split.csv"
   calib_deps=()
   while read -r COUNTRY PCTS; do
     [ -n "$COUNTRY" ] || continue
