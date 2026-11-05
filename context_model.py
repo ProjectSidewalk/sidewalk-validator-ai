@@ -199,15 +199,19 @@ def map_point(cx, cy, crop, res, flip=False):
 class ContextInputs:
     """Turns one example's context into tensors for the model, train (augmented) or eval (deterministic).
 
-    ``paths`` maps label_uid -> (wide_path, view_path); ``side`` maps label_uid -> normalised side vector. The wide
-    crop is augmented like the tight one (``RandomResizedCrop(crop, scale=(0.7, 1.0))`` + flip) and evaluated with
-    the checkpoint's own processor (resize, centre crop), exactly as the tight crop is; the view as described in the
-    module docstring.
+    ``paths`` maps label_uid -> (wide_path, view_path); ``tight`` maps label_uid -> the tight crop's path (train
+    rows of ``two_scale``); ``side`` maps label_uid -> normalised side vector. In training, ``two_scale`` re-draws
+    the tight crop's augmentation together with the wide crop's (:meth:`pair`): each gets its own
+    ``RandomResizedCrop(crop, scale=(0.7, 1.0))`` but they share ONE flip, so the two streams are never mirrored
+    against each other (they never are at evaluation). At evaluation both go through the checkpoint's own processor
+    (resize, centre crop); the view as described in the module docstring.
     """
 
-    def __init__(self, arm, image_processor, res=224, paths=None, side=None, sigma_floor=HEATMAP_SIGMA_FLOOR):
+    def __init__(self, arm, image_processor, res=224, paths=None, side=None, sigma_floor=HEATMAP_SIGMA_FLOOR,
+                 tight=None):
         self.arm, self.processor, self.res = arm, image_processor, int(res)
         self.paths, self.side, self.sigma_floor = paths or {}, side or {}, sigma_floor
+        self.tight = tight or {}
         crop = image_processor.crop_size
         self.crop = (crop["height"], crop["width"]) if "height" in crop else crop["shortest_edge"]
         self.mean, self.std = list(image_processor.image_mean), list(image_processor.image_std)
@@ -216,14 +220,25 @@ class ContextInputs:
         from PIL import Image
         return Image.open(self.paths[uid][0 if which == "wide" else 1]).convert("RGB")
 
-    def wide(self, uid, train):
-        from torchvision.transforms import Compose, Normalize, RandomHorizontalFlip, RandomResizedCrop, ToTensor
-        img = self._open(uid, "wide")
+    def wide(self, uid, train=False):
+        """The wide crop at evaluation (the processor's resize and centre crop); training goes through :meth:`pair`."""
         if train:
-            tf = Compose([RandomResizedCrop(self.crop, scale=TRAIN_SCALE, antialias=True), RandomHorizontalFlip(),
-                          ToTensor(), Normalize(mean=self.mean, std=self.std)])
-            return tf(img)
-        return self.processor(img, return_tensors="pt")["pixel_values"][0]
+            return self.pair(uid)[1]
+        return self.processor(self._open(uid, "wide"), return_tensors="pt")["pixel_values"][0]
+
+    def pair(self, uid):
+        """``(tight, wide)`` training tensors: independent scale jitter, one shared horizontal flip."""
+        import torch
+        from PIL import Image
+        from torchvision.transforms import Compose, Normalize, RandomResizedCrop, ToTensor
+        flip = bool(torch.rand(1) < 0.5)
+        out = []
+        for img in (Image.open(self.tight[uid]).convert("RGB"), self._open(uid, "wide")):
+            tf = Compose([RandomResizedCrop(self.crop, scale=TRAIN_SCALE, antialias=True), ToTensor(),
+                          Normalize(mean=self.mean, std=self.std)])
+            t = tf(img)
+            out.append(t.flip(-1) if flip else t)
+        return tuple(out)
 
     def view(self, uid, crop_half_px, train):
         """The 4-channel view: normalised RGB at ``res`` plus the heatmap."""
@@ -258,15 +273,21 @@ class ContextInputs:
 def wrap_collate(collate_fn, inputs):
     """A collate that adds the arm's inputs to ``collate_fn``'s batch (hard or soft-target alike): reads each
     example's ``label_uid`` and ``split`` (train rows augmented, the rest not) and, for the view, ``crop_half_px``.
-    ``two_scale`` adds ``pixel_values_wide``; ``view_heatmap`` replaces ``pixel_values`` with the 4-channel view;
-    ``side_info`` adds ``side_features``."""
+    ``two_scale`` adds ``pixel_values_wide`` and, for train rows, replaces ``pixel_values`` with the tight crop
+    re-augmented under the same flip (:meth:`ContextInputs.pair`); ``view_heatmap`` replaces ``pixel_values`` with
+    the 4-channel view; ``side_info`` adds ``side_features``."""
     def collate(examples):
         import torch
         batch = collate_fn(examples)
         train = [str(e["split"]) == "train" for e in examples]
         uids = [str(e["label_uid"]) for e in examples]
         if inputs.arm == "two_scale":
-            batch["pixel_values_wide"] = torch.stack([inputs.wide(u, t) for u, t in zip(uids, train)])
+            tight, wide = [], []
+            for i, (u, t) in enumerate(zip(uids, train)):
+                a, b = inputs.pair(u) if t else (batch["pixel_values"][i], inputs.wide(u))
+                tight.append(a)
+                wide.append(b)
+            batch["pixel_values"], batch["pixel_values_wide"] = torch.stack(tight), torch.stack(wide)
         elif inputs.arm == "view_heatmap":
             batch["pixel_values"] = torch.stack([inputs.view(u, e["crop_half_px"], t)
                                                  for u, e, t in zip(uids, examples, train)])
@@ -387,16 +408,19 @@ def build_for_training(args, base, train_df, val_df, id2label, label2id, collate
         raise SystemExit(f"--context-arm {arm} needs split.csv frames with {list(need)} (not the imagefolder layout)")
     res = int(getattr(args, "context_view_res", 224))
     fields = {"train_res": res, "wide_factor": context_crops.WIDE_FACTOR, "view_px": context_crops.VIEW_PX}
-    paths, side = None, None
+    paths, side, tight = None, None, None
     if arm in ("two_scale", "view_heatmap"):
         base_dir = os.path.join(args.data_dir, args.label_type)
-        uids = list(train_df["label_uid"]) + list(val_df["label_uid"])
-        index = context_crops.load_index(base_dir, require_uids=uids)
+        both = pd.concat([train_df, val_df], ignore_index=True)
+        index = context_crops.load_index(base_dir, require_uids=both["label_uid"],
+                                         crop_half_px=dict(zip(both["label_uid"].astype(str), both["crop_half_px"])))
         paths = dict(zip(index["label_uid"], zip(index["wide_path"], index["view_path"])))
         fields["index_sha256"] = context_crops.index_sha256(base_dir)
-        run = context_crops.read_run_file(context_crops.context_dir(base_dir)) or {}
-        fields["wide_factor"] = run.get("factor", fields["wide_factor"])
-        fields["view_px"] = run.get("view_px", fields["view_px"])
+        fields["wide_factor"], fields["view_px"] = context_crops.context_settings(base_dir)
+        if arm == "two_scale":
+            if "image" not in train_df.columns:
+                raise SystemExit("--context-arm two_scale needs the train frame's image paths")
+            tight = dict(zip(train_df["label_uid"].astype(str), train_df["image"]))
     else:
         ref = age_reference(train_df)
         stats = fit_normaliser(side_feature_frame(train_df, ref))
@@ -406,7 +430,7 @@ def build_for_training(args, base, train_df, val_df, id2label, label2id, collate
           + (f", view at {res} px" if arm == "view_heatmap" else ""))
     _, model_cls = build_classes()
     model = model_cls.from_base(base, arm, id2label, label2id, **fields)
-    inputs = ContextInputs(arm, image_processor, res, paths, side, model.config.heatmap_sigma_floor)
+    inputs = ContextInputs(arm, image_processor, res, paths, side, model.config.heatmap_sigma_floor, tight)
     return model, wrap_collate(collate_fn, inputs)
 
 
@@ -433,7 +457,8 @@ def run_inference(manifest, checkpoint_dir, data_dir, label_type, splits=("val",
     paths, side = None, None
     if cfg.context_arm in ("two_scale", "view_heatmap"):
         base_dir = os.path.join(data_dir, label_type)
-        index = context_crops.load_index(base_dir, require_uids=rows.label_uid)
+        index = context_crops.load_index(base_dir, require_uids=rows.label_uid,
+                                         crop_half_px=dict(zip(rows.label_uid.astype(str), rows.crop_half_px)))
         paths = dict(zip(index["label_uid"], zip(index["wide_path"], index["view_path"])))
         if cfg.index_sha256 and context_crops.index_sha256(base_dir) != cfg.index_sha256:
             print("NOTE: context/index.csv changed since training (rows added?); scoring with the current files",
