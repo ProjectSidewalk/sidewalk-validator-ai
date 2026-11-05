@@ -1,0 +1,13 @@
+pano_source,split,label_class,n,n_ok,n_no_store,n_dims_mismatch,n_out_of_frame,n_unverified_dims,verdict
+gsv,train,correct,3795,3757,0,38,0,0,
+gsv,train,incorrect,3130,3092,0,38,0,0,
+gsv,train,all,6925,6849,0,76,0,0,
+gsv,val,correct,815,808,0,7,0,0,
+gsv,val,incorrect,672,666,0,6,0,0,
+gsv,val,all,1487,1474,0,13,0,0,
+gsv,test,correct,812,808,0,4,0,0,
+gsv,test,incorrect,667,655,0,12,0,0,
+gsv,test,all,1479,1463,0,16,0,0,AUC measurable
+gsv,test_heldout,correct,318,318,0,0,0,0,
+gsv,test_heldout,incorrect,228,228,0,0,0,0,
+gsv,test_heldout,all,546,546,0,0,0,0,AUC measurable
