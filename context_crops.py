@@ -205,10 +205,27 @@ def index_sha256(base_dir):
         return hashlib.sha256(f.read()).hexdigest()
 
 
-def load_index(base_dir, require_uids=None):
+def context_settings(base_dir):
+    """``(factor, view_px)`` the context images under ``<base_dir>/context`` were made with: from
+    ``context_run.json`` (a backfill), else from ``generation_run.json``'s ``settings.context_crops`` (the
+    ``data_generation.py --context-crops`` hook, which writes no run file), else the module defaults."""
+    run = read_run_file(context_dir(base_dir))
+    if run is None:
+        path = os.path.join(base_dir, "generation_run.json")
+        if os.path.exists(path):
+            with open(path) as f:
+                run = json.load(f).get("settings", {}).get("context_crops")
+    run = run or {}
+    return int(run.get("factor", WIDE_FACTOR)), int(run.get("view_px", VIEW_PX))
+
+
+def load_index(base_dir, require_uids=None, crop_half_px=None):
     """``<base_dir>/context/index.csv`` as a DataFrame with absolute ``wide_path``/``view_path``. With
     ``require_uids``, raise ``ValueError`` naming the first missing ones when any uid has no row or a file of its
-    row is gone (a training run must never silently drop rows)."""
+    row is gone (a training run must never silently drop rows). With ``crop_half_px`` (``{label_uid: tight
+    half-width}``, from split.csv), also raise when a row's ``wide_half_px`` is not what that crop gives
+    (:func:`wide_half_px` at :func:`context_settings`' factor): the crops were re-cut since the context was made,
+    e.g. by ``data_generation.py --force-reselect`` without ``--context-crops``."""
     out_dir = context_dir(base_dir)
     path = os.path.join(out_dir, INDEX_FILE)
     if not os.path.exists(path):
@@ -230,6 +247,15 @@ def load_index(base_dir, require_uids=None):
             raise ValueError(f"{path}: {len(missing)} of {len(want)} required labels have no context row "
                              f"(e.g. {missing[:5]}) and {len(gone)} have a missing file (e.g. {gone[:5]}); run "
                              "context_crops.py backfill for this label type")
+    if crop_half_px is not None:
+        factor, _ = context_settings(base_dir)
+        recorded = dict(zip(df["label_uid"], df["wide_half_px"]))
+        stale = [u for u, h in crop_half_px.items() if str(u) in recorded
+                 and int(recorded[str(u)]) != wide_half_px(int(float(h)), factor)[0]]
+        if stale:
+            raise ValueError(f"{path}: {len(stale)} labels have a wide crop that does not match their crop_half_px "
+                             f"at factor {factor} (e.g. {stale[:5]}): the crops were re-cut after the context was "
+                             f"made. Move {out_dir} aside and run context_crops.py backfill for this label type")
     return df
 
 
