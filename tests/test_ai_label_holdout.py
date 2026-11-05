@@ -17,12 +17,14 @@ def test_doctests():
 
 
 def pool(n_ai=40, n_human=10, city="toy-city", incorrect_every=4, time_created="2026-09-22 19:03"):
-    """``n_human`` human rows then ``n_ai`` AI rows; every ``incorrect_every``-th AI row is incorrect."""
+    """``n_human`` human rows then ``n_ai`` AI rows, two AI rows per panorama; every ``incorrect_every``-th AI row is
+    incorrect."""
     rows = [{"city": city, "label_id": i, "author": "human", "label_class": "correct" if i % 2 else "incorrect",
-             "class_source": "margin", "pano_source": "gsv", "time_created": time_created} for i in range(n_human)]
+             "class_source": "margin", "pano_source": "gsv", "time_created": time_created, "pano_id": f"h{i}"}
+            for i in range(n_human)]
     rows += [{"city": city, "label_id": n_human + i, "author": "ai",
               "label_class": "incorrect" if i % incorrect_every == 0 else "correct", "class_source": "margin",
-              "pano_source": "gsv", "time_created": time_created} for i in range(n_ai)]
+              "pano_source": "gsv", "time_created": time_created, "pano_id": f"a{i // 2}"} for i in range(n_ai)]
     return pd.DataFrame(rows)
 
 
@@ -92,9 +94,9 @@ def test_fraction_is_honoured_in_expectation():
     assert 0.25 < len(held3) / 2000 < 0.35 and set(held3.label_uid) <= set(held.label_uid)  # nested by frac
 
 
-@pytest.mark.parametrize("bad", [0, 1, -0.1, 1.5])
+@pytest.mark.parametrize("bad", [1, -0.1, 1.5])
 def test_fraction_bounds_raise(bad):
-    with pytest.raises(ValueError, match="strictly between 0 and 1"):
+    with pytest.raises(ValueError, match="at least 0 and below 1"):
         h.carve(pool(), 42, bad)
 
 
@@ -199,3 +201,41 @@ def test_apply_prints_the_summary_and_carves_under_both_policies(capsys):
     assert h1.label_uid.tolist() == h2.label_uid.tolist() and len(h1)
     out = capsys.readouterr().out
     assert "policy excluded" in out and "policy included_tagged" in out and "held out of training" in out
+
+
+# per-panorama membership (review round 1, finding 1) ----------------------------------------------------------------
+
+def test_every_ai_label_on_a_panorama_goes_the_same_way():
+    e = pool(n_ai=200)
+    rest, held = h.carve(e, 42)
+    held_panos = set(held.pano_id)
+    left = rest[rest.author == "ai"]
+    assert held_panos and not held_panos & set(left.pano_id)  # no held-out panorama has a training AI label
+    assert (held.holdout_rank == [h.holdout_fraction(42, f"toy-city:{p}") for p in held.pano_id]).all()
+
+
+def test_a_label_added_on_an_existing_panorama_moves_at_most_that_label():
+    e = pool(n_ai=200)
+    _, held = h.carve(e, 42)
+    for pano in (held.pano_id.iloc[0], sorted(set(e.pano_id[e.author == "ai"]) - set(held.pano_id))[0]):
+        extra = pd.DataFrame([{"city": "toy-city", "label_id": 9999, "author": "ai", "label_class": "incorrect",
+                               "class_source": "margin", "pano_source": "gsv", "time_created": "", "pano_id": pano}])
+        _, more = h.carve(pd.concat([e, extra], ignore_index=True), 42)
+        assert set(more.label_uid) ^ set(held.label_uid) <= {"toy-city:9999"}
+        assert ("toy-city:9999" in set(more.label_uid)) == (pano in set(held.pano_id))  # it follows its panorama
+
+
+def test_labels_without_a_panorama_draw_on_their_own_uid():
+    keys = h.holdout_keys(pd.DataFrame({"city": ["c"] * 3, "label_id": [1, 2, 3], "pano_id": ["p", "", None]}))
+    assert keys.tolist() == ["c:p", "c:label:2", "c:label:3"]
+    assert h.holdout_keys(pd.DataFrame({"city": ["c"], "label_id": [7]})).tolist() == ["c:label:7"]
+
+
+def test_fraction_zero_holds_out_nothing_and_is_recorded(tmp_path):
+    e = pool()
+    rest, held = h.carve(e, 42, 0)
+    assert len(held) == 0 and len(rest) == len(e)
+    rec = h.record(held, rest, {}, str(tmp_path), args(ai_holdout_frac=0.0, include_ai_labels=True))
+    assert rec["holdout_frac"] == 0 and rec["holdout_counts"] == {}
+    assert sum(rec["eligible_ai_counts"]["toy-city"].values()) == 40
+    assert len(pd.read_csv(tmp_path / h.HOLDOUT_FILE)) == 0

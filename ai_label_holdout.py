@@ -11,11 +11,17 @@ select --holdout``). It also records the policy (``generation_run.json["ai_label
     eligible, ai_holdout = ai_label_holdout.apply(eligible, args)       # between eligible_labels and selection
     ai_labels_record = ai_label_holdout.record(ai_holdout, eligible, selection, base_dir, args)  # after makedirs
 
-**Membership.** A label is held out when ``holdout_fraction(seed, label_uid) < frac``: a per-label hash, so adding or
-removing one label (new votes) moves at most that label in or out, and the held-out set of a later pull is the earlier
-one plus or minus the labels that changed. The hash stream is salted (``HOLDOUT_SALT``), so it is independent of the
-correct-class downsample rank (:func:`data_generation.label_rank`). Every AI-authored row is a candidate, rejected ones
-included.
+**Membership is per panorama.** An AI-authored label is held out when its PANORAMA's draw,
+``holdout_fraction(seed, f"{city}:{pano_id}")``, is below ``frac`` (a label without a ``pano_id`` draws on its own
+``label_uid``). So every AI label on a panorama goes the same way, and the ``included_tagged`` arm never trains on a
+panorama that holds a held-out AI label (human labels on it still train; the panorama is not removed from training).
+The draw depends only on the panorama, so adding or removing one label (new votes) moves at most that label in or
+out. The hash stream is salted (``HOLDOUT_SALT``), so it is independent of the correct-class downsample rank
+(:func:`data_generation.label_rank`). Every AI-authored row is a candidate, rejected ones included.
+
+**Strata are recorded, not enforced.** Each deployment × class × tier stratum gets about ``frac`` of its labels in
+expectation only; ``stratum`` is written so the realised shares can be checked. Enforcing exact shares would make
+membership depend on the rest of the pool and lose the pool stability above.
 
 **Both policies carve.** The held-out set is carved with or without ``--include-ai-labels``. Under ``excluded`` the
 removed rows would have been dropped by the selection anyway, so an existing run's selection hash does not move; and
@@ -39,7 +45,7 @@ HOLDOUT_SALT = "ai-holdout"
 #: held-out set, so evaluation power is weighted equally with training rows (docs/ai-label-holdout-2026-11.md).
 DEFAULT_FRAC = 0.5
 POLICIES = ("excluded", "included_tagged")
-HOLDOUT_COLUMNS = ["label_uid", "city", "label_id", "label_class", "class_source", "pano_source", "tier", "stratum",
+HOLDOUT_COLUMNS = ["label_uid", "city", "label_id", "pano_id", "label_class", "class_source", "pano_source", "tier", "stratum",
                    "holdout_rank"]
 
 #: Submission campaigns per deployment: (first UTC date, tier). A label's tier is that of the latest campaign whose date
@@ -95,10 +101,14 @@ def holdout_fraction(seed, label_uid, salt=HOLDOUT_SALT):
 
 
 def check_frac(frac):
-    """``frac`` as a float, or ``ValueError`` unless ``0 < frac < 1``."""
+    """``frac`` as a float, or ``ValueError`` unless ``0 <= frac < 1``.
+
+    0 means no hold-out, for reproducing a selection made before issue #79 exactly; it is never the default, and it is
+    still recorded (``holdout_frac: 0``, an empty ``ai_label_holdout.csv``), so the choice is visible.
+    """
     frac = float(frac)
-    if not 0 < frac < 1:
-        raise ValueError(f"the AI-label holdout fraction must be strictly between 0 and 1, got {frac}")
+    if not 0 <= frac < 1:
+        raise ValueError(f"the AI-label holdout fraction must be at least 0 and below 1 (0 = no hold-out), got {frac}")
     return frac
 
 
@@ -123,10 +133,26 @@ def _uids(df):
     return df["city"].astype(str) + ":" + df["label_id"].astype(str)
 
 
+def holdout_keys(df):
+    """The string each row's draw hashes: ``city:pano_id``, or ``city:label:<label_id>`` when ``pano_id`` is
+    missing or blank (so such a label draws alone and never shares a panorama key).
+
+    >>> holdout_keys(pd.DataFrame({"city": ["c", "c"], "label_id": [1, 2], "pano_id": ["pA", None]})).tolist()
+    ['c:pA', 'c:label:2']
+    """
+    city = df["city"].astype(str)
+    by_label = city + ":label:" + df["label_id"].astype(str)
+    if "pano_id" not in df:
+        return by_label
+    pano = df["pano_id"].astype(object).fillna("").astype(str).str.strip()
+    return (city + ":" + pano).where(pano != "", by_label)
+
+
 def carve(eligible, seed, frac=DEFAULT_FRAC):
     """Split ``eligible`` (an :func:`data_generation.eligible_labels` frame) into ``(remaining, holdout)``.
 
-    ``holdout`` holds the AI-authored rows whose :func:`holdout_fraction` is below ``frac``, with
+    ``holdout`` holds the AI-authored rows whose panorama's :func:`holdout_fraction` (:func:`holdout_keys`) is below
+    ``frac``, with
     :data:`HOLDOUT_COLUMNS` (``tier`` from :func:`tier_of`, ``""`` when ``time_created`` is absent or the deployment
     has no campaign table; ``stratum`` = ``city/label_class/tier``; ``holdout_rank`` = the draw), sorted by
     ``label_uid``. ``remaining`` is every other row, columns unchanged, index reset. Human-authored rows never move.
@@ -140,11 +166,12 @@ def carve(eligible, seed, frac=DEFAULT_FRAC):
     frac = check_frac(frac)
     uid = _uids(eligible)
     ai = (eligible["author"] == "ai").to_numpy()
-    draw = pd.Series([holdout_fraction(seed, u) if a else 1.0 for u, a in zip(uid, ai)], index=eligible.index)
+    keys = holdout_keys(eligible)
+    draw = pd.Series([holdout_fraction(seed, k) if a else 1.0 for k, a in zip(keys, ai)], index=eligible.index)
     held = ai & (draw < frac).to_numpy()
     holdout = eligible[held].copy()
     holdout["label_uid"] = uid[held]
-    for col in ("class_source", "pano_source"):
+    for col in ("class_source", "pano_source", "pano_id"):
         if col not in holdout:
             holdout[col] = ""
     times = holdout["time_created"] if "time_created" in holdout else pd.Series("", index=holdout.index)
