@@ -539,7 +539,9 @@ Disagrees are confirmed on Obstacle 9 of 9 and Crosswalk 5 of 15. These are 98 i
 cell with fewer than 5 decided items carries no weight and is named beside the rate (`--min-cell`); a stratum with
 no cell left is reported as unestimable. With the 11 unmasked items left out, Seattle's lone Obstacle cell has 1
 decided item, so it gets no weight; so do three other Seattle cells (light_voted Obstacle 4 and SurfaceProblem 3,
-margin_correct SurfaceProblem 4). `score --pool --author-excluded` weights by the recount above.
+margin_correct SurfaceProblem 4). In Chicago, three cells get no weight, none of them lone
+(light_voted Obstacle 4 and SurfaceProblem 4, margin_correct SurfaceProblem 4). `score --pool --author-excluded`
+weights by the recount above.
 
 | File (in `data/relabel-2026-10/round2/`) | sha256 |
 |---|---|
