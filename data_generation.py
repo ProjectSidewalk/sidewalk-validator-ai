@@ -1219,6 +1219,14 @@ def missing_cached_csvs(cities, cache_dir):
     return [c for c in cities if not os.path.exists(os.path.join(cache_dir, f"{c}.csv"))]
 
 
+def open_unit_float(text):
+    """argparse type for a proportion strictly between 0 and 1."""
+    v = float(text)
+    if not 0 < v < 1:
+        raise argparse.ArgumentTypeError(f"{text} is not strictly between 0 and 1")
+    return v
+
+
 def build_parser():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument('--label_type', required=True, help='Specify the label type')
@@ -1250,6 +1258,10 @@ def build_parser():
                         f'{MAX_FIXED_CROP_HALF_PX} is the whole view and larger values clip to it. Serving sizes by depth, '
                         'so publish_to_hf.py refuses models trained this way')
     p.add_argument('--seed', type=int, default=SEED)
+    p.add_argument('--correct-proportion', type=open_unit_float, default=CORRECT_PROPORTION,
+                   help='share of correct rows after the downsample, 0 < p < 1 (default %(default)s; retype.slurm '
+                        'uses 0.9 for the small extra types). Not a resume setting: a changed value changes the '
+                        'selection, so the resume check catches it through the selection hash')
     p.add_argument('--cities', default=None,
                    help='comma list of city_id[=subdomain], overriding the public deployments /v3/api/cities lists')
     p.add_argument('--include-ai-labels', action='store_true',
@@ -1329,7 +1341,8 @@ def main(argv=None):
         print(f"Deployment prior ({priors_path}{', PARTIAL run' if partial else ''}): "
               f"{entry['correct']} correct, {entry['incorrect']} incorrect")
 
-    combined_filtered = select_training_labels(eligible, seed=args.seed, include_ai_labels=args.include_ai_labels)
+    combined_filtered = select_training_labels(eligible, seed=args.seed, correct_proportion=args.correct_proportion,
+                                               include_ai_labels=args.include_ai_labels)
     combined_filtered['label_uid'] = combined_filtered['city'] + ":" + combined_filtered['label_id'].astype(str)
     assert combined_filtered['label_uid'].is_unique, "label_uid (city:label_id) is not unique in the selection"
     selection = dict(zip(combined_filtered['label_uid'], combined_filtered['label_class']))  # before --limit
@@ -1374,6 +1387,8 @@ def main(argv=None):
     if args.fixed_crop_half_px is not None:  # no depth model is loaded: recording an encoder would misstate the crops
         settings = {k: v for k, v in settings.items() if k not in DEPTH_SETTINGS}
         settings["fixed_crop_half_px"] = args.fixed_crop_half_px
+    if args.correct_proportion != CORRECT_PROPORTION:  # recorded only when non-default, so older records are unchanged
+        settings["correct_proportion"] = args.correct_proportion
     previous, changed, city_change = check_resume(run_path, sel_hash, settings, list(cities))
     if (previous or changed or city_change) and not args.force_reselect:
         n_ok = count_ok_rows(manifest_path)

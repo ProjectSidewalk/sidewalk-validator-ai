@@ -154,6 +154,7 @@ sit in the API's `agree_count` / `disagree_count` like anyone else's, so trainin
 | [`evaluate.py`](evaluate.py), [`get_stats.slurm`](get_stats.slurm) | Step 7: predictions and metrics per split, per city and on the hard and gold slices; the job then calibrates |
 | [`calibration/`](calibration) | Step 7b: isotonic confidence→accuracy maps in the API's format, from a retrained model's val split or from production outcomes; per-city checks |
 | [`publish_to_hf.py`](publish_to_hf.py), [`hf_cards.py`](hf_cards.py) | Step 8: staged, checked uploads with generated cards ([`docs/publishing.md`](docs/publishing.md)) |
+| [`retype.py`](retype.py), [`fine_tune_retype.py`](fine_tune_retype.py), [`retype.slurm`](retype.slurm) | Experiment, not yet run: one 8-class model over label types, inherited round-3 split, binary verdict as p(claimed type) scored by the unchanged `evaluate.py` ([`docs/retype-2026-11.md`](docs/retype-2026-11.md)) |
 | [`hard_examples.py`](hard_examples.py), [`validator_reliability.py`](validator_reliability.py) | Labels the deployed AI got wrong against a unanimous crowd or an expert; per-validator reliability for weighted targets |
 | [`export_onnx.py`](export_onnx.py), [`explain.py`](explain.py) | ONNX export, int8 quantisation and benchmarks; saliency maps and the masked rating packet |
 | [`analysis/`](analysis) | The scripts behind every study in `docs/` ([`analysis/README.md`](analysis/README.md)); their data stays outside the repo |
