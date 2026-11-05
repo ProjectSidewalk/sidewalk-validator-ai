@@ -82,6 +82,9 @@ negatives scoring differently from label-rule ones); SidewalkWebpage changing it
 AI's vote toward `FaceSettledSupport`; production outcomes for AI NoSidewalk votes, which would replace the
 Seattle-based prior.
 
+**Outcome.** Pilot (2026-11-05): whole-view crops (`--fixed-crop-half-px 1024`) for NoSidewalk; not served yet; see
+[`nosidewalk-2026-11.md`](nosidewalk-2026-11.md#results).
+
 ## Labels on Mapillary and Panoramax imagery are kept, with a per-provider pose (October 2026)
 
 Issue [#72](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/72), step 1. **Supersedes** the section

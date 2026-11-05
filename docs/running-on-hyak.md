@@ -234,4 +234,19 @@ DATA=/gscratch/makelab/$USER/sidewalk-validator-ai/nosidewalk-2026-11 RUNS=/gscr
     PANO_STORE=/path/to/Panoramas EXPERTS=... ./nosidewalk_submit.sh    # DRY_RUN=1 prints the commands only
 ```
 
+Three things the first run (2026-11-05) needed that the launcher does not do for you:
+
+- **Stage the panoramas first.** The pilot reads a staged copy of its panoramas (`PANO_STORE`, on scrubbed), not the
+  makelab2 store. The staging recipe is the round-3 one and is not in the repo: list the selection's panorama paths,
+  pull them from makelab2 in sequential 1000-file `rsync --files-from` batches, one ssh connection per batch, **no
+  retries** (the makelab hosts ban fast reconnects; stop on any error other than rsync's 23, "some files missing"),
+  then copy the store's `.pano-store` marker last. Panoramas absent from the store become `no_pano` rows in the
+  manifest (3 of 832 in the first run).
+- **The DINOv2 backbone must already be in the Hugging Face cache.** Compute nodes cannot reach Hugging Face's Xet
+  server, so the job file sets `HF_HOME` (default `/gscratch/makelab/$USER/hf_cache`) and `HF_HUB_OFFLINE=1`.
+  Download once on a login node:
+  `HF_HUB_DISABLE_XET=1 HF_HOME=/gscratch/makelab/$USER/hf_cache python -c "from huggingface_hub import snapshot_download as s; s('facebook/dinov2-large')"`.
+- **An `sbatch` that fails with a socket timeout may still have submitted the job.** Check `squeue -u $USER` before
+  resubmitting; the first attempt queued a duplicate chain that had to be cancelled and its outputs wiped.
+
 Design, bar and results: [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md).

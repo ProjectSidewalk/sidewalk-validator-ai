@@ -23,6 +23,9 @@
 # data_generation.slurm). EXPERTS="<name>=<user_id>,..." comes from the submitting shell (sbatch exports it); it is
 # never written into this file or the repo.
 set -uo pipefail
+# Compute nodes cannot reach Hugging Face's Xet server: read the DINOv2 backbone from a cache pre-downloaded on a login
+# node (docs/running-on-hyak.md, "NoSidewalk pilot"); the first pilot run failed in training without this.
+export HF_HOME="${HF_HOME:-/gscratch/makelab/$USER/hf_cache}" HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 STEP="${STEP:?set STEP=data|train|report}"
 DATA="${DATA:?set DATA (the pilot root, absolute)}"
 LT=NoSidewalk

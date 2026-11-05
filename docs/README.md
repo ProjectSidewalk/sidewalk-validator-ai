@@ -39,7 +39,7 @@ because each reports one measurement at one point in time; the pipeline pages ar
 
 | page | question |
 |---|---|
-| [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md) | NoSidewalk in auto-validation: how much training data the public rawLabels hold, the block-face rule that replaces the label rule for this type, the face-size deployment prior, and the pilot design (phase A; pilot not yet run, [#42](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/42)) |
+| [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md) | NoSidewalk in auto-validation: how much training data the public rawLabels hold, the block-face rule that replaces the label rule for this type, the face-size deployment prior, and the pilot (run 2026-11-05: whole-view crops beat depth-sized ones, within-city AUC 0.93 on test and 0.79 on held-out cities; the Agree gate is not evaluable at this size, not served; [#42](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/42)) |
 
 ## Decisions, audit and hygiene
 
