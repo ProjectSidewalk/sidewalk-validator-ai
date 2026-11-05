@@ -276,21 +276,21 @@ and the number of seeds where `cl-drop` was ahead.
 | SurfaceProblem | 0.720 ± 0.010 | 0.701 ± 0.016 | −0.019 [−0.024, −0.011], 0/3 | +0.001 | 0.03 → 0.00 |
 | SurfaceProblem, `cl-flip` | 0.720 ± 0.010 | 0.721 ± 0.009 | +0.000 [−0.020, +0.016], 2/3 | −0.006 | 0.03 → 0.00 |
 
-- **The direction survives, the size shrinks.** On the four types where seed 42 showed a held-out gain, `cl-drop`
-  is ahead of its same-seed baseline in 11 of 12 pairs; the exception is Obstacle with seed 44 (−0.014
-  [−0.028, −0.001]). But only four of the twelve pairs clear their own interval (Crosswalk, NoCurbRamp and
-  Obstacle with seed 42, Obstacle with seed 43), and the seed-42 run was the most favorable of the three for all four types
-  (narrowly for CurbRamp). The mean gains are about half of the seed-42 figures: NoCurbRamp +0.017
-  against +0.041, Crosswalk +0.020 against +0.032. Part of that is selection: seed 42's numbers are the ones that
-  picked `cl-drop` as the variant to replicate.
+- **The direction survives, the size shrinks.** On the four types where seed 42 showed a held-out gain, `cl-drop` is
+  ahead of its same-seed baseline in 11 of 12 pairs; the exception is Obstacle with seed 44 (−0.014 [−0.028,
+  −0.001]). But only five of the twelve pairs clear their own interval, four positive (Crosswalk, NoCurbRamp and
+  Obstacle with seed 42, Obstacle with seed 43) and that one negative, and the seed-42 run was the most favorable of
+  the three for all four types (narrowly for CurbRamp). The mean gains are about half of the seed-42 figures:
+  NoCurbRamp +0.017 against +0.041, Crosswalk +0.020 against +0.032. Part of that is selection: seed 42's numbers
+  are the ones that picked `cl-drop` as the variant to replicate.
 - **The seed moves the held-out AUC as much as the variant does.** The baseline's held-out AUC has a seed sd of
   0.006–0.021 (NoCurbRamp 0.881 / 0.912 / 0.921 across the three seeds), the size of the `cl-drop` effect. In
   these three seeds `cl-drop` spreads less for Crosswalk and NoCurbRamp (sd 0.003 and 0.006 against 0.014 and
   0.021) and about 1.6× more for the other three types; three seeds cannot establish a variance difference either
   way, so this is an observation, not a property of the method.
-- **The test cost is real and small.** CurbRamp, Crosswalk and NoCurbRamp lose 0.004–0.005 test AUC under
-  `cl-drop` on average (CurbRamp and NoCurbRamp with every seed, Crosswalk with two of three); Obstacle gains
-  0.006 with every seed; SurfaceProblem is unchanged.
+- **The test cost is real and small.** CurbRamp, Crosswalk and NoCurbRamp lose 0.004–0.005 test AUC under `cl-drop`
+  on average (NoCurbRamp with every seed, CurbRamp and Crosswalk with two of three, CurbRamp's third flat at
+  −0.000); Obstacle gains 0.006 with every seed; SurfaceProblem is unchanged.
 - **The raw Disagree recall at 0.92 precision on the held-out rows is higher under `cl-drop`** for all four
   types (means 0.63 / 0.92 / 0.77 / 0.61 against 0.21 / 0.90 / 0.68 / 0.51), and steadier for CurbRamp and
   NoCurbRamp. The baseline's CurbRamp figure is 0.00 for two seeds and 0.61 for the third, so the round-3 number

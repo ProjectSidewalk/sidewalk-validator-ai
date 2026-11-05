@@ -285,7 +285,10 @@ def flag_rows(y, p, classes=CLASSES):
 
     For every off-diagonal cell ``(given, likely)`` of the confident joint with count ``n``, the ``n`` rows with that
     given class and the highest ``p[:, likely]`` are flagged (ties broken by row order, so the result is
-    deterministic). ``likely`` is ``classes[argmax p]`` for flagged rows and the given class otherwise.
+    deterministic). A row whose ``argmax p`` is its given class is then cleared again, as cleanlab does last: with a
+    class threshold below 0.5 a row can clear another class's threshold while the model still prefers its given
+    label. So every flagged row disagrees with the model's argmax, and ``likely`` (the class of its cell) is
+    ``classes[argmax p]`` for flagged rows and the given class otherwise.
 
     >>> y = np.array(["correct", "correct", "correct", "incorrect"])
     >>> p = np.array([[0.9, 0.1], [0.8, 0.2], [0.2, 0.8], [0.3, 0.7]])
@@ -306,6 +309,10 @@ def flag_rows(y, p, classes=CLASSES):
             order = idx[np.argsort(-p[idx, l], kind="stable")][: joint[g, l]]
             flagged[order] = True
             likely[order] = other
+    given_idx = np.array([classes.index(c) for c in y], dtype=int)
+    agrees = np.argmax(p, axis=1) == given_idx  # the model prefers the given label: not an issue (cleanlab's last step)
+    flagged &= ~agrees
+    likely[agrees] = y[agrees]
     return flagged, np.asarray(likely, dtype=object)
 
 

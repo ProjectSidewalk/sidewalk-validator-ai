@@ -142,6 +142,45 @@ def test_flag_takes_the_highest_scoring_rows_per_cell_not_just_any_contradiction
     assert likely.tolist() == ["incorrect", "incorrect", "correct", "correct", "incorrect", "incorrect"]
 
 
+def test_flag_never_keeps_a_row_whose_argmax_is_its_given_label():
+    # t_correct = (0.95+0.90+0.54+0.52)/4 = 0.7275 and t_incorrect = (0.2+0.3+0.4+0.9)/4 = 0.45. Rows 2-3 clear
+    # t_incorrect (0.46, 0.48) but not t_correct, so the joint puts them in the (correct, incorrect) cell, yet the
+    # model still prefers "correct": cleanlab clears such rows, and so must flag_rows.
+    y = np.array(["correct"] * 4 + ["incorrect"] * 4)
+    p_inc = np.array([0.05, 0.10, 0.46, 0.48, 0.2, 0.3, 0.4, 0.9])
+    p = np.column_stack([1 - p_inc, p_inc])
+    joint, t = cl.confident_joint(y, p)
+    assert t == pytest.approx([0.7275, 0.45])
+    assert joint[0, 1] == 2
+    flagged, likely = cl.flag_rows(y, p)
+    assert not flagged[2] and not flagged[3]
+    assert likely[2] == likely[3] == "correct"
+    assert flagged.tolist() == [False, False, False, False, True, False, False, False]  # row 4: p_correct 0.8
+    assert (np.argmax(p, axis=1)[flagged] != np.array([cl.CLASSES.index(c) for c in y])[flagged]).all()
+
+
+def test_eval_rows_guard_raises_when_a_variant_alters_a_val_row(toy):
+    _, df = toy
+    cl.check_eval_rows_unchanged(df, df.copy())  # an untouched copy passes
+    changed = df.copy()
+    i = changed.index[changed.split == "val"][0]
+    changed.loc[i, "label_class"] = "incorrect" if changed.loc[i, "label_class"] == "correct" else "correct"
+    with pytest.raises(AssertionError, match="val/test/test_heldout"):
+        cl.check_eval_rows_unchanged(df, changed)
+
+
+def test_overall_deltas_pair_the_bootstrap_identical_predictions_give_exactly_zero(tmp_path):
+    _, df = make_split(tmp_path, n_panos=150)
+    ev = df[df.split.isin(["test", "test_heldout"])]
+    rng = np.random.default_rng(3)
+    pred = pd.DataFrame({"label_uid": ev.label_uid, "split": ev.split, "true": ev.label_class, "pano_id": ev.pano_id,
+                         "p_incorrect": rng.uniform(0, 1, len(ev))})
+    out = cl.overall_deltas({"baseline": pred, "same": pred.copy()}, ["same"], n_boot=50)
+    assert set(out) == {("same", "test"), ("same", "test_heldout")}
+    for rec in out.values():  # the same resample scored by both models: every replicate is exactly 0
+        assert rec["delta"] == 0 and rec["delta_lo"] == 0 and rec["delta_hi"] == 0
+
+
 def test_flag_command_writes_noisy_targets_and_variants(toy):
     path, df = toy
     out = path.parent / "cl"
