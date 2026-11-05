@@ -1,0 +1,10 @@
+{
+  "0": "CurbRamp",
+  "1": "NoCurbRamp",
+  "2": "Obstacle",
+  "3": "SurfaceProblem",
+  "4": "Crosswalk",
+  "5": "NoSidewalk",
+  "6": "Signal",
+  "7": "Other"
+}
