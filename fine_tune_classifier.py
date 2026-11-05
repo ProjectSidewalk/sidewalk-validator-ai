@@ -45,6 +45,11 @@ val rows carry only ``label_class``, so ``eval_loss`` is the plain cross-entropy
 F1, and checkpoint selection means the same thing for every target. A non-default target, and the vote-weights
 file's hash, are recorded in ``run_key.json`` (so a resume never mixes targets) and in ``training_run.json``.
 
+Cross-region study (``analysis/region_transfer.py``, issue #33): ``--init-from <checkpoint-N>`` starts from a trained
+model instead of ``facebook/dinov2-large`` (local fine-tuning), and ``--region-conditioning country|region
+--cities-json <saved listing>`` trains ``region_model.py``'s region-conditioned head. Both are recorded in
+``run_key.json`` and ``training_run.json``; without them both files are exactly as before.
+
 Usage::
 
     python fine_tune_classifier.py --label_type CurbRamp [--data-dir .] [--seed 42] [--epochs 25] \
@@ -187,10 +192,11 @@ def split_path(label_type, data_dir=".", split=None):
     return split if split else os.path.join(data_dir, label_type, "split.csv")
 
 
-def load_split_frames(label_type, data_dir=".", target="hard", vote_weights=None, split=None):
+def load_split_frames(label_type, data_dir=".", target="hard", vote_weights=None, split=None, extra_columns=()):
     """``(train_df, val_df)`` with columns ``image`` (absolute crop path) and ``label`` (``LABEL2ID``), or None if
     the split file does not exist. For ``target`` ``soft``/``weighted`` the train frame also has
-    ``soft_target`` (see ``soft_targets``; ``vote_weights`` is the DataFrame for ``weighted``).
+    ``soft_target`` (see ``soft_targets``; ``vote_weights`` is the DataFrame for ``weighted``). Every name in
+    ``extra_columns`` is a split.csv column carried into both frames as is (e.g. ``city`` for region conditioning).
 
     ``split`` names another split file (``--split``), e.g. one that analysis/confident_learning.py wrote with some
     train rows dropped, flipped or held out as a fold. Relative ``crop_path``s still resolve against
@@ -207,7 +213,7 @@ def load_split_frames(label_type, data_dir=".", target="hard", vote_weights=None
     if df["label"].isna().any():
         raise ValueError(f"{path}: label_class must be one of {sorted(LABEL2ID)}")
     df["label"] = df["label"].astype(int)
-    cols = ["image", "label"]
+    cols = ["image", "label", *extra_columns]
     if target != "hard":
         train = df[df["split"] == "train"].copy()
         train["soft_target"] = soft_targets(train, target, vote_weights, path)
@@ -280,6 +286,44 @@ def target_settings(args):
     return out
 
 
+def region_settings(args):
+    """``{}`` without ``--region-conditioning`` (so the default run key and provenance are unchanged), else the
+    conditioning level, dropout, embedding size, and the saved city listing's path and hash."""
+    level = getattr(args, "region_conditioning", "none")
+    if level == "none":
+        return {}
+    return {"region_conditioning": level, "region_dropout": args.region_dropout, "region_dim": args.region_dim,
+            "cities_json": os.path.abspath(args.cities_json), "cities_json_sha256": file_sha256(args.cities_json)}
+
+
+def init_settings(args):
+    """``{}`` without ``--init-from``, else the checkpoint directory and the hash of its weights."""
+    init = getattr(args, "init_from", None)
+    if not init:
+        return {}
+    weights = [os.path.join(init, n) for n in ("model.safetensors", "pytorch_model.bin")]
+    weights = [w for w in weights if os.path.exists(w)]
+    return {"init_from": os.path.abspath(init), "init_from_sha256": file_sha256(weights[0]) if weights else None}
+
+
+def extra_frame_columns(args):
+    """split.csv columns the model build needs besides the image and label (``city`` for region conditioning)."""
+    return ("city",) if getattr(args, "region_conditioning", "none") != "none" else ()
+
+
+def build_model(args, base, id2label, label2id, train_df=None, val_df=None, collate_fn=None):
+    """``(model, collate_fn)`` for the run: the plain ``Dinov2ForImageClassification`` from ``base`` (``CHECKPOINT``
+    or ``--init-from``) by default, or, with ``--region-conditioning``, ``region_model.build_for_training``
+    (a region embedding in the head; its collate adds ``region_ids``)."""
+    if getattr(args, "region_conditioning", "none") != "none":
+        import region_model
+        return region_model.build_for_training(args, base, train_df, val_df, id2label, label2id, collate_fn)
+    from transformers import Dinov2ForImageClassification
+    model = Dinov2ForImageClassification.from_pretrained(
+        base, num_labels=len(id2label), id2label=id2label, label2id=label2id, ignore_mismatched_sizes=True)
+    return model, collate_fn
+
+
 def default_output_dir(data_dir, label_type, target="hard"):
     """``<data_dir>/<label_type>/dinov2`` for the hard target (where evaluate.py and publish_to_hf.py look), else
     ``dinov2-<target>``, so an experiment never lands in the production model's directory."""
@@ -299,7 +343,9 @@ def run_key(label_type, data_dir, args):
             split_sha256 = hashlib.sha256(f.read()).hexdigest()
     return {"label_type": label_type, "split_sha256": split_sha256, "seed": args.seed, "epochs": args.epochs,
             "best_metric": args.best_metric, "base_checkpoint": CHECKPOINT,
-            **{k: v for k, v in target_settings(args).items() if k != "vote_weights"}}
+            **{k: v for k, v in target_settings(args).items() if k != "vote_weights"},
+            **{k: v for k, v in {**region_settings(args), **init_settings(args)}.items()
+               if k not in ("cities_json", "init_from")}}
 
 
 def resume_checkpoint(output_dir, key):
@@ -364,7 +410,22 @@ def main(argv=None):
                              'analysis/confident_learning.py wrote: a fold held out, or train rows dropped or '
                              'flipped). Crops still resolve under <data-dir>/<label_type>/. Pair it with '
                              '--output-dir so the run never lands in the production dinov2/ directory')
+    parser.add_argument('--region-conditioning', choices=['none', 'country', 'region'], default='none',
+                        help='add a learned country or region embedding to the head (region_model.py; issue #33)')
+    parser.add_argument('--region-dropout', type=float, default=0.15,
+                        help='share of train rows whose region is replaced by <unk> (with --region-conditioning)')
+    parser.add_argument('--region-dim', type=int, default=16, help='region embedding size (with --region-conditioning)')
+    parser.add_argument('--cities-json', default=None,
+                        help='a saved /v3/api/cities listing (compute nodes have no network); required by '
+                             '--region-conditioning')
+    parser.add_argument('--init-from', default=None,
+                        help='a checkpoint-N directory to start from instead of facebook/dinov2-large (local '
+                             'fine-tuning, analysis/region_transfer.py)')
     args = parser.parse_args(argv)
+    if args.region_conditioning != 'none' and not args.cities_json:
+        parser.error('--region-conditioning needs --cities-json')
+    if args.init_from and not os.path.isfile(os.path.join(args.init_from, 'config.json')):
+        parser.error(f'--init-from {args.init_from} is not a checkpoint directory with config.json')
     if args.split and not args.output_dir:
         parser.error('--split needs --output-dir (a variant run must not land in the production dinov2/ directory)')
     if args.split and not os.path.isfile(args.split):
@@ -378,7 +439,7 @@ def main(argv=None):
     from datasets import Dataset, DatasetDict, load_dataset
     from sklearn.metrics import f1_score
     from torchvision.transforms import Compose, Normalize, RandomHorizontalFlip, RandomResizedCrop, ToTensor
-    from transformers import AutoImageProcessor, Dinov2ForImageClassification, Trainer, TrainingArguments
+    from transformers import AutoImageProcessor, Trainer, TrainingArguments
 
     if not torch.cuda.is_available():
         if not args.allow_cpu:
@@ -395,10 +456,12 @@ def main(argv=None):
     resume = resume_checkpoint(output_dir, key)  # before any slow setup
 
     if args.target == "hard":
-        frames = load_split_frames(label_type, args.data_dir, split=args.split)
+        frames = load_split_frames(label_type, args.data_dir, split=args.split,
+                                   extra_columns=extra_frame_columns(args))
     else:
         weights = pd.read_csv(args.vote_weights, dtype={"label_uid": str}) if args.vote_weights else None
-        frames = load_split_frames(label_type, args.data_dir, args.target, weights, split=args.split)
+        frames = load_split_frames(label_type, args.data_dir, args.target, weights, split=args.split,
+                                   extra_columns=extra_frame_columns(args))
         if frames is None:
             raise SystemExit(f"--target {args.target} needs {split_path(label_type, args.data_dir, args.split)}")
     if frames is not None:
@@ -455,13 +518,8 @@ def main(argv=None):
                                                      dtype=torch.float32)
             return batch
 
-    model = Dinov2ForImageClassification.from_pretrained(
-        CHECKPOINT,
-        num_labels=len(ID2LABEL),
-        id2label=ID2LABEL,
-        label2id=LABEL2ID,
-        ignore_mismatched_sizes=True,
-    )
+    model, collate_fn = build_model(args, args.init_from or CHECKPOINT, ID2LABEL, LABEL2ID,
+                                    *(frames if frames is not None else (None, None)), collate_fn)
     model.to("cuda" if torch.cuda.is_available() else "cpu")  # CPU only reachable with --allow-cpu
 
     def compute_metrics(pred):
@@ -529,7 +587,7 @@ def main(argv=None):
            **generation_settings(label_type, args.data_dir),
            "split_source": "split.csv" if frames is not None else "imagefolder",
            **({"split_path": os.path.abspath(args.split), "split_sha256": key["split_sha256"]} if args.split else {}),
-           **target_settings(args),
+           **target_settings(args), **region_settings(args), **init_settings(args),
            "versions": versions}
     with open(os.path.join(output_dir, "training_run.json"), "w") as f:
         json.dump(run, f, indent=2)
