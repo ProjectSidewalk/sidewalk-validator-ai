@@ -210,7 +210,7 @@ def test_arm_inputs_are_required(tmp_path):
             build(base, arm)(**kw)
 
 
-def write_context_dataset(root, uids, view_px=112):
+def write_context_dataset(root, uids, view_px=112, factor=4):
     """A tiny ``<root>/Lt`` with crops, a context index (wide and view WebPs with structure) and split rows."""
     import context_crops as cc
     from PIL import Image
@@ -224,7 +224,7 @@ def write_context_dataset(root, uids, view_px=112):
                 p = base / f"{sub}{stem}.webp"
                 p.parent.mkdir(parents=True, exist_ok=True)
                 Image.fromarray(rng.integers(0, 255, (size, size, 3), dtype=np.uint8)).save(p, quality=95)
-            ctx.write(uid, {"wide_path": f"wide/{stem}.webp", "view_path": f"view/{stem}.webp", "wide_half_px": 800,
+            ctx.write(uid, {"wide_path": f"wide/{stem}.webp", "view_path": f"view/{stem}.webp", "wide_half_px": cc.wide_half_px(200 + 10 * k, factor)[0],
                             "wide_clipped": 0})
             rows.append({"label_uid": uid, "city": "c", "label_id": k, "pano_id": f"p{k // 2}", "label_type": "Lt",
                          "label_class": "correct" if k % 2 == 0 else "incorrect", "crop_path": f"{stem}.webp",
@@ -355,3 +355,94 @@ def test_fine_tune_trains_and_predict_scores_each_arm(tmp_path, monkeypatch, arm
     assert cm.main(["predict", "--label_type", "Lt", "--data-dir", str(tmp_path), "--checkpoint", ckpt,
                     "--tag", f"{arm}-s42", "--splits", "test"]) == 0
     assert len(pd.read_csv(tmp_path / "Lt" / f"predictions_{arm}-s42.csv")) == 4
+
+
+def test_two_scale_train_pair_shares_one_flip(tmp_path):
+    """Tight and wide crops are re-augmented together: independent scale jitter, one flip, so the pair is never
+    mirrored against itself (an image bright on the left must stay bright on the same side in both)."""
+    torch = pytest.importorskip("torch")
+    from PIL import Image
+    base = tiny_base(tmp_path)
+    df = write_context_dataset(tmp_path, UIDS)
+    half = np.zeros((64, 64, 3), np.uint8)
+    half[:, :32] = 255   # bright left half
+    for p in [tmp_path / "Lt" / c for c in df.crop_path] + list((tmp_path / "Lt" / "context" / "wide").rglob("*.webp")):
+        Image.fromarray(half).save(p)
+    train, val = frames(df, "two_scale", tmp_path)
+    args = SimpleNamespace(context_arm="two_scale", context_view_res=224, data_dir=str(tmp_path), label_type="Lt")
+    _, collate = cm.build_for_training(args, base, train, val, ID2LABEL, LABEL2ID, base_collate, tiny_processor())
+    torch.manual_seed(0)
+    signs = set()
+    for _ in range(12):
+        b = collate(examples_of(train, 4))
+        for t, w in zip(b["pixel_values"], b["pixel_values_wide"]):
+            st = float(t[:, :, :CROP // 2].mean() - t[:, :, CROP // 2:].mean())
+            sw = float(w[:, :, :CROP // 2].mean() - w[:, :, CROP // 2:].mean())
+            assert st * sw > 0, "tight and wide crops mirrored against each other"
+            signs.add(st > 0)
+    assert signs == {True, False}  # both flip outcomes were drawn
+    v = collate(examples_of(val))  # eval rows keep the base collate's tight crop
+    assert torch.equal(v["pixel_values"], torch.zeros(2, 3, CROP, CROP))
+
+
+def test_hook_dataset_factor_reaches_the_config(tmp_path):
+    """No context_run.json (the hook writes none): the factor comes from generation_run.json, and the index is
+    checked against it."""
+    pytest.importorskip("torch")
+    base = tiny_base(tmp_path)
+    df = write_context_dataset(tmp_path, UIDS, factor=2)
+    (tmp_path / "Lt" / "generation_run.json").write_text(json.dumps(
+        {"settings": {"context_crops": {"factor": 2, "view_px": 448}}}))
+    train, val = frames(df, "two_scale", tmp_path)
+    args = SimpleNamespace(context_arm="two_scale", context_view_res=224, data_dir=str(tmp_path), label_type="Lt")
+    model, _ = cm.build_for_training(args, base, train, val, ID2LABEL, LABEL2ID, base_collate, tiny_processor())
+    assert model.config.wide_factor == 2
+    (tmp_path / "Lt" / "generation_run.json").write_text(json.dumps(
+        {"settings": {"context_crops": {"factor": 4, "view_px": 448}}}))
+    with pytest.raises(ValueError, match="backfill"):  # the index's wide crops are factor 2, not 4
+        cm.build_for_training(args, base, train, val, ID2LABEL, LABEL2ID, base_collate, tiny_processor())
+
+
+def _trained_checkpoint(tmp_path, arm):
+    base = tiny_base(tmp_path)
+    uids = [(f"c:{k}", ["train", "val", "test", "test_heldout"][(k // 2) % 4]) for k in range(16)]
+    df = write_context_dataset(tmp_path, uids)
+    train, val = frames(df, arm, tmp_path)
+    args = SimpleNamespace(context_arm=arm, context_view_res=224, data_dir=str(tmp_path), label_type="Lt")
+    model, collate = cm.build_for_training(args, base, train, val, ID2LABEL, LABEL2ID, base_collate, tiny_processor())
+    ckpt = tmp_path / "run" / "checkpoint-1"
+    model.save_pretrained(ckpt)
+    tiny_processor().save_pretrained(ckpt)
+    return ckpt, val, collate
+
+
+@pytest.mark.parametrize("arm", cm.ARMS)
+def test_predict_is_deterministic(tmp_path, arm):
+    pytest.importorskip("torch")
+    ckpt, _, _ = _trained_checkpoint(tmp_path, arm)
+    outs = []
+    for tag in ("a", "b"):
+        assert cm.main(["predict", "--label_type", "Lt", "--data-dir", str(tmp_path), "--checkpoint", str(ckpt),
+                        "--tag", tag]) == 0
+        outs.append((tmp_path / "Lt" / f"predictions_{tag}.csv").read_bytes())
+    assert outs[0] == outs[1]
+
+
+def test_side_info_inference_feeds_what_validation_saw(tmp_path, monkeypatch):
+    """run_inference rebuilds the side vector from the checkpoint's own reference date and normaliser, so a val row
+    gets exactly the vector the training collate gave it."""
+    torch = pytest.importorskip("torch")
+    import evaluate
+    ckpt, val, collate = _trained_checkpoint(tmp_path, "side_info")
+    seen = dict(zip(val.label_uid, collate(examples_of(val, len(val)))["side_features"]))
+    fed = {}
+    real = cm.ContextInputs.side_vector
+
+    def spy(self, uid):
+        fed[uid] = real(self, uid)
+        return fed[uid]
+    monkeypatch.setattr(cm.ContextInputs, "side_vector", spy)
+    cm.run_inference(evaluate.load_split("Lt", str(tmp_path)), str(ckpt), str(tmp_path), "Lt", splits=("val",))
+    assert set(fed) == set(seen) and len(fed) == 4
+    for uid in seen:
+        assert torch.equal(fed[uid], seen[uid]), uid
