@@ -51,6 +51,8 @@ LABEL_TYPE_DESCRIPTIONS = {
     "Obstacle": "an obstacle in the pedestrian path",
     "SurfaceProblem": "a sidewalk surface problem (cracks, heaving, uneven or broken surface)",
     "Crosswalk": "a crosswalk",
+    "NoSidewalk": "a street side with no sidewalk (labelled per block face; issue #42)",
+    "Signal": "a pedestrian signal",
 }
 
 # The README's bibtex, so the cards and the README cite the same thing.
