@@ -3,6 +3,46 @@
 Choices about the training data that are deliberate, not oversights, with the evidence behind each one and
 what would change it. One section per decision, newest first.
 
+## AI-placed labels: included only tagged, with a held-out evaluation slice (November 2026)
+
+Issue [#79](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/79).
+
+**Decision.** AI-placed labels (the `SidewalkAI` account's RampNet curb ramps) may enter training only tagged
+`author = ai`, and only with `--include-ai-labels`. Whichever way that flag is set, `data_generation.py` first holds a
+seeded share of the eligible AI-placed labels out of the pool, BEFORE `select_training_labels`, and writes them to
+`<out>/<type>/ai_label_holdout.csv`; no run may consume every rejected AI label. `generation_run.json["ai_labels"]`
+records the policy (`included_tagged` or `excluded`), the fraction, the hash salt and seed, the held-out, included
+and eligible counts per deployment and class, and the file's sha256. `evaluate.py` reports AI-placed test rows as an
+`ai_authored` slice of their own, never only pooled with human rows.
+
+**Why.** Round 3 ran with `--include-ai-labels`, and the selection keeps every `incorrect` row, so it trained on all
+29 lead-rejected Vancouver AI labels and left none to measure the validator on
+([`ai-labels-2026-10.md`](ai-labels-2026-10.md)). Whether training on AI labels helps the validator judge AI labels,
+or teaches it RampNet's own mistakes, is the feedback-loop question of
+[SidewalkWebpage#5790](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5790); answering it needs AI labels
+that neither arm trained on.
+
+**How.** `ai_label_holdout.py`: a label is held out when `sha256("ai-holdout:<seed>:<city>:<label_id>")` (first 12 hex
+digits, as a fraction) is below `--ai-holdout-frac`. Each label's draw is its own, so new votes move at most the
+labels they touch, and the salt keeps it independent of the correct-class downsample. Every AI-placed label is a
+candidate, rejected ones included. Two choices, both judgements:
+
+- **Fraction 0.5.** About half of the ~180 eligible rejected AI labels go to evaluation and half to training. The
+  with/without ablation is the point of the held-out set, so evaluation power is weighted equally with training rows.
+  It is one flag.
+- **Carved under both policies.** Without `--include-ai-labels` the held-out rows would have been dropped anyway, so
+  an existing run's selection hash does not move, and the two ablation arms score the identical held-out labels.
+  The cost: every run now writes an `ai_label_holdout.csv` (empty when the pool has no AI label).
+
+**Caveat.** Membership is per label, not per panorama. Among the October voted AI labels, 73 % in Laurens, 27 % in
+Richmond and 10 % in Vancouver share a panorama with another voted AI label, so in the `included_tagged` arm a
+held-out label can sit on a panorama the model trained on. That favours the arm with AI labels; the ablation doc
+reports it beside the result.
+
+**What would change it.** The round-4 CurbRamp ablation ([`ai-label-holdout-2026-11.md`](ai-label-holdout-2026-11.md)):
+if training with tagged AI labels does not raise the AUC on the held-out AI labels over training without them, the
+default should become `excluded` with no AI rows at all; if it clearly does, the fraction can drop.
+
 ## Labels on Mapillary and Panoramax imagery are kept, with a per-provider pose (October 2026)
 
 Issue [#72](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/72), step 1. **Supersedes** the section
