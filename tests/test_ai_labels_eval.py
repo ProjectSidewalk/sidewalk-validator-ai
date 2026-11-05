@@ -197,3 +197,88 @@ def test_baseline_at_prevalence_identity_and_reweighting():
     r2 = ae.baseline_at_prevalence(frame, 0.05, 0.75)  # one wrong Disagree now weighs 19 right ones
     assert r2["disagree_precision"] == pytest.approx(4 / (4 + 19), abs=1e-4) and r2["disagree_recall"] == 0.8
     assert r2["recall_incorrect_at_p92"] == 0.6  # the top three are clean; the fourth Disagree is the heavy negative
+
+
+# --- select --all-ai (issue #80) and select --holdout (issue #79) -----------------------------------------------------
+
+def _pool_rows():
+    v = lambda *vs: json.dumps([vote(*x) for x in vs])  # noqa: E731
+    return [
+        [1, AI, "pA", "gsv", "CurbRamp", "", "[]", "", "2026-09-05 01:10", v(("c", "Agree")), 10, 20, 100, 50, "", ""],
+        [2, AI, "pA", "gsv", "CurbRamp", "", "[]", "", "2026-09-22 19:03", "[]", 10, 20, 100, 50, "", ""],
+        [3, AI, "pB", "gsv", "CurbRamp", "", "[]", "", "2026-09-22 19:03", v(("c", "Agree"), ("d", "Disagree")), 1, 2, 100, 50, "", ""],
+        [4, AI, "pB", "gsv", "CurbRamp", "", "[]", "", "2026-09-22 19:03", v(("d", "Disagree")), 1, 2, 100, 50, "", ""],
+        [5, "h", "pC", "gsv", "CurbRamp", "", "[]", "", "2026-09-22 19:03", v(("c", "Agree")), 1, 2, 100, 50, "", ""],
+        [6, "h", "pC", "gsv", "CurbRamp", "", "[]", "", "2026-09-22 19:03", "[]", 1, 2, 100, 50, "", ""],
+    ]
+
+
+def test_select_all_ai_keeps_unvoted_ai_rows_with_no_class(tmp_path):
+    _rawlabels(tmp_path, "richmond-va", _pool_rows())
+    labels, summary = ae.select_labels(str(tmp_path), ["richmond-va"], all_ai=True)
+    by = labels.set_index("label_uid")
+    assert sorted(by.index) == ["richmond-va:1", "richmond-va:2", "richmond-va:3", "richmond-va:4", "richmond-va:5"]
+    assert by.loc["richmond-va:2", "label_class"] == "" and by.loc["richmond-va:3", "label_class"] == ""  # unvoted, tie
+    assert by.loc["richmond-va:4", "label_class"] == "incorrect"
+    c = summary["per_city"]["richmond-va"]
+    assert c["ai_selected"] == 4 and c["ai_unvoted"] == 1 and c["ai_ties"] == 1 and c["ai_voted"] == 2
+    assert summary["ai_ties_kept"] == 1 and summary["ties_dropped"] == 0
+    # the default is unchanged: voted only, the tie dropped
+    default, s0 = ae.select_labels(str(tmp_path), ["richmond-va"])
+    assert sorted(default.label_uid) == ["richmond-va:1", "richmond-va:4", "richmond-va:5"] and s0["ties_dropped"] == 1
+    # an unvoted class survives the CSV round trip as "", not NaN
+    labels.to_csv(tmp_path / "labels.csv", index=False)
+    assert ae.read_labels(tmp_path / "labels.csv").set_index("label_uid").loc["richmond-va:2", "label_class"] == ""
+
+
+def _holdout_csv(path, rows):
+    pd.DataFrame(rows, columns=["label_uid", "city", "label_id", "label_class", "class_source", "pano_source", "tier",
+                                "stratum", "holdout_rank"]).to_csv(path, index=False)
+    return path
+
+
+def test_select_holdout_restricts_ai_rows_and_takes_the_class_from_the_file(tmp_path):
+    _rawlabels(tmp_path, "richmond-va", _pool_rows())
+    # label 1 has one Agree vote (majority correct), but the training rule called it incorrect via an expert
+    hp = _holdout_csv(tmp_path / "h.csv", [
+        ["richmond-va:1", "richmond-va", "1", "incorrect", "expert", "gsv", "core", "richmond-va/incorrect/core", "0.1"],
+        ["richmond-va:4", "richmond-va", "4", "incorrect", "margin", "gsv", "band", "richmond-va/incorrect/band", "0.2"]])
+    from ai_label_holdout import load_holdout
+    labels, summary = ae.select_labels(str(tmp_path), ["richmond-va"], holdout=load_holdout(hp))
+    by = labels.set_index("label_uid")
+    assert sorted(by.index) == ["richmond-va:1", "richmond-va:4", "richmond-va:5"]  # AI: the holdout only; human kept
+    assert by.loc["richmond-va:1", ["label_class", "holdout", "class_source", "holdout_tier"]].tolist() == \
+        ["incorrect", 1, "expert", "core"]
+    assert by.loc["richmond-va:5", ["holdout", "stratum"]].tolist() == [0, ""]
+    assert summary["per_city"]["richmond-va"]["ai_holdout"] == {"correct": 0, "incorrect": 2}
+
+
+def test_select_holdout_exits_on_a_label_missing_from_the_pull(tmp_path):
+    _rawlabels(tmp_path, "richmond-va", _pool_rows())
+    hp = _holdout_csv(tmp_path / "h.csv", [["toy-city:9", "toy-city", "9", "incorrect", "margin", "gsv", "", "x", "0.1"]])
+    from ai_label_holdout import load_holdout
+    with pytest.raises(SystemExit, match="1 held-out labels are not CurbRamp rows.*toy-city:9"):
+        ae.select_labels(str(tmp_path), ["richmond-va"], holdout=load_holdout(hp))
+
+
+def test_all_ai_and_holdout_are_exclusive(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        ae.main(["select", "--rawlabels", str(tmp_path), "--out", str(tmp_path / "o"), "--all-ai", "--holdout", "x.csv"])
+    assert "exclusive" in capsys.readouterr().err
+    with pytest.raises(ValueError, match="exclusive"):
+        ae.select_labels(str(tmp_path), [], all_ai=True, holdout=pd.DataFrame())
+
+
+def test_cmd_select_records_all_ai_and_holdout_provenance(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    _rawlabels(raw, "richmond-va", _pool_rows())
+    ae.main(["select", "--rawlabels", str(raw), "--cities", "richmond-va", "--out", str(tmp_path / "a"), "--all-ai"])
+    sel = json.loads((tmp_path / "a" / "selection.json").read_text())
+    assert sel["all_ai"] is True and sel["holdout"] is None and sel["n_labels"] == 5
+    hp = _holdout_csv(tmp_path / "h.csv", [
+        ["richmond-va:4", "richmond-va", "4", "incorrect", "margin", "gsv", "band", "richmond-va/incorrect/band", "0.2"]])
+    ae.main(["select", "--rawlabels", str(raw), "--cities", "richmond-va", "--out", str(tmp_path / "b"),
+             "--holdout", str(hp)])
+    sel = json.loads((tmp_path / "b" / "selection.json").read_text())
+    assert sel["all_ai"] is False and sel["holdout"]["n"] == 1 and len(sel["holdout"]["sha256"]) == 64
