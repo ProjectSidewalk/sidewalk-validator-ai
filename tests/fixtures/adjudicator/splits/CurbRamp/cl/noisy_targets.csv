@@ -1,0 +1,4 @@
+label_uid,city,label_class,class_source,author,human_agree,human_disagree,fold,p_incorrect,likely_class,flagged
+city-a:101,city-a,x,margin,human,0,0,0,0.5,x,1
+city-a:900,city-a,x,margin,human,0,0,0,0.5,x,1
+city-a:1,city-a,x,margin,human,0,0,0,0.5,x,0

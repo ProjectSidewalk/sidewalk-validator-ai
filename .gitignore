@@ -3,6 +3,9 @@ CurbRamp
 NoCurbRamp
 Obstacle
 SurfaceProblem
+# ...but not test fixtures laid out like a data directory (tests/fixtures/adjudicator/splits/<Type>/). Later rules
+# (__pycache__, *.pyc, ...) still apply under tests/fixtures.
+!/tests/fixtures/**
 
 depth_anything_v2_metric_*.pth
 
