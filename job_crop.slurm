@@ -16,6 +16,16 @@
 #   PANO_STORE=<the store or staged copy round 3 read> OUT=/gscratch/scrubbed/$USER/job-crops-2026-11 \
 #   EXPERTS="<name>=<user_id>,..." sbatch job_crop.slurm
 #
+# REQUIRES PR #90 (AI-label hold-out): step 1 passes --ai-holdout-frac 0, i.e. no hold-out, which reproduces round 3's
+# selection. Without it, #90's default holds out half the eligible AI labels before selection, so the job arm would
+# train on about 75 fewer CurbRamp rows (1.1%) than round 3's depth model (test rows stay paired via restrict). Before
+# #90 merges, data_generation.py rejects the flag: drop it from step 1 then (there is no hold-out to disable).
+#
+# Cost: the job path still decodes and resizes every pano to 8192x4096 in read_store_panorama (the shared reader),
+# then decodes the native file a second time to cut from it: about 2 x 9,343 JPEG decodes for round 3's CurbRamp panos
+# (87% are 16384x8192), roughly 2-3 h of the 20 h budget. Fine for the pilot; a native-only read would need a change to
+# the shared reader.
+#
 # EXPERTS must be round 3's value (it is part of the selection); it is never written into the repo. Restartable: ckpt
 # may preempt and requeue; step 1 resumes (ok rows are skipped), step 2 rewrites the same split, step 3 resumes from
 # the last complete checkpoint. Outputs stay under $OUT (private: crops and per-label rows); only the aggregate tables
@@ -50,7 +60,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 # 1. Job-window crops (no depth model; the GPU is for step 3).
 echo "$(date) data_generation --job-window-crops -> $OUT"
 python -u data_generation.py --label_type "$LT" --out "$OUT" --rawlabels-cache "$CACHE" --pano-store "$PANO_STORE" \
-    --job-window-crops --include-ai-labels --tilt-beta 0.95 --seed "$SEED" || { echo "data_generation failed" >&2; exit 1; }
+    --job-window-crops --include-ai-labels --ai-holdout-frac 0 --tilt-beta 0.95 --seed "$SEED" || { echo "data_generation failed" >&2; exit 1; }
 python - "$ROUND3/$LT/generation_run.json" "$OUT/$LT/generation_run.json" <<'PY'
 import json, sys
 a, b = (json.load(open(p))["selection_sha256"] for p in sys.argv[1:])
