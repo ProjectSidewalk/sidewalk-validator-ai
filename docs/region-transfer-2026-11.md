@@ -49,7 +49,7 @@ Three questions follow, one per issue:
 | Fine-tune | from the global model's best checkpoint, 10 epochs, local rows only (no replay) |
 | Region conditioning | a 16-dimensional country embedding concatenated to the pooled image features; unknown row trained by region dropout 0.15 |
 | Seeds | 42 for every arm; 43 and 44 for global, cond and condall only |
-| Country source | `country_id` of `/v3/api/cities` (saved with the run), via `regions.py` |
+| Country source | `country_id` of `/v3/api/cities` (saved with the run), via `regions.py`; the world region of a country with only private deployments comes from a private override file (`REGION_OVERRIDES`), never from the repository |
 
 Minimum-n rules: a LOCO cell exists at 30 or more eval rows of each class. An AUC interval needs 8 or more of the
 smaller class. The within-city AUC uses deployments with 10 or more labels of both classes. A gate precision is

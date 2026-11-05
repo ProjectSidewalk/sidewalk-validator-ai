@@ -14,7 +14,9 @@
 # A requeued (preempted) job keeps its id, so the dependencies survive preemption. Job ids are appended to
 # region_jobs.txt in the submit directory. Seeds 43 and 44 (SEEDS=42,43,44) add global, cond and condall only.
 # Optional: PARTITION_ARGS for the GPU jobs (e.g. "--partition=gpu-l40s --constraint=l40s"), FT_SEEDS (default the
-# first of SEEDS), LEVELS (default "country region" for condall), FT_EPOCHS (default 10).
+# first of SEEDS), LEVELS (default "country region" for condall), FT_EPOCHS (default 10), REGION_OVERRIDES (a private
+# JSON kept outside the repo: {"_regions": {"<country>": "<region>"}} for countries whose deployments are all
+# private, which regions.py does not list; exported to every job; without it their region-level id is <unk>).
 set -euo pipefail
 DATA="${DATA:?set DATA (absolute)}"; RUNS="${RUNS:?set RUNS}"; CITIES_JSON="${CITIES_JSON:?set CITIES_JSON}"
 SEEDS="${SEEDS:-42}"; FT_SEEDS="${FT_SEEDS:-${SEEDS%%,*}}"; LEVELS="${LEVELS:-country region}"
