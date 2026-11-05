@@ -283,3 +283,15 @@ def test_hit_rate_markdown_excludes_unsure_from_the_denominator():
     assert "| ranked, all | 3 | 3 | 1 | 1/2 = 50.0%" in md
     assert "| ranked, rank 1-50 | 2 |" in md and "| ranked, rank 51-100 | 1 |" in md
     assert "| ranked, tier band | 2 | 2 | 1 | 1/1" in md
+
+
+def test_pick_all_decoys_are_agree_verdicts_disjoint_from_the_ranked_rows():
+    n = 400
+    pool = pd.DataFrame({"label_uid": [f"c:{i}" for i in range(n)], "verdict": ["incorrect"] * 100 + ["correct"] * 300,
+                         "p_incorrect": [0.99 - i * 1e-4 for i in range(100)] + [0.1] * 300, "tier": "core",
+                         "true": ""})
+    pool["p_correct"] = 1 - pool.p_incorrect
+    p = rl.pick_all(pool, "s", cap=40, n_decoys=60)
+    decoys, ranked = p[p.cell == "decoy"], p[p.cell == "ranked"]
+    assert (decoys.verdict == "correct").all() and len(decoys) == 60
+    assert not set(decoys.label_uid) & set(ranked.label_uid) and p.label_uid.is_unique

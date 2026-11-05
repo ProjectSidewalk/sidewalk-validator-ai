@@ -311,8 +311,10 @@ def select_labels(rawlabels_dir, cities, experts=frozenset(), round3_split=None,
     """One row per CurbRamp label with >= 1 human Agree/Disagree vote in ``cities``: AI-authored ones (the study set)
     and human-authored ones (the in-deployment comparison). Returns ``(labels_df, summary)``.
 
-    ``all_ai`` (issue #80) keeps EVERY AI-authored label, voted or not; one with no human reference (unvoted, or a tie)
-    gets ``label_class = ""``. Human-authored rows are unchanged.
+    ``all_ai`` (issue #80) keeps EVERY AI-authored label, voted or not; one with no human reference (no Agree/Disagree
+    vote, or a tie) gets ``label_class = ""``. Human-authored rows are unchanged. The summary's ``ai_unvoted`` counts
+    labels with no human vote at all (Unsure included, as ``ai_labels_relabel.prior_status``); ``ai_unsure_only``
+    those whose only human votes are Unsure.
 
     ``holdout`` (issue #79), a frame from ``ai_label_holdout.load_holdout``, restricts the AI-authored rows to the
     labels ``data_generation.py`` held out of training, and takes their class from that file: the TRAINING rule's
@@ -390,7 +392,11 @@ def select_labels(rawlabels_dir, cities, experts=frozenset(), round3_split=None,
             "pano_source": {k: int(v) for k, v in g.pano_source.value_counts().items()},
         }
         if all_ai:
-            summary["per_city"][city].update(ai_selected=int(len(ai)), ai_unvoted=int((ai.n_votes == 0).sum()),
+            # "unvoted" = no human vote of any kind, Unsure included: the definition ai_labels_relabel.prior_status
+            # uses, so the select summary and the ranked list's unvoted slice count the same labels
+            no_vote = (ai.n_votes == 0) & (ai.human_unsure == 0)
+            summary["per_city"][city].update(ai_selected=int(len(ai)), ai_unvoted=int(no_vote.sum()),
+                                             ai_unsure_only=int(((ai.n_votes == 0) & ~no_vote).sum()),
                                              ai_ties=int(((ai.n_votes > 0) & ~ai._voted).sum()))
         if holdout is not None:
             summary["per_city"][city]["ai_holdout"] = {cls: int((ai.label_class == cls).sum())
@@ -579,7 +585,7 @@ def read_labels(path):
     df = pd.read_csv(path, dtype={"label_id": str}, low_memory=False)
     for c in TEXT_COLS:
         if c in df:
-            df[c] = df[c].fillna("").astype(str)
+            df[c] = df[c].astype(object).fillna("").astype(str)
     return df
 
 
