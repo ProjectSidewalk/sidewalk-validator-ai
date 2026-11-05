@@ -108,9 +108,9 @@ geometry comes from the public rawLabels cache. Items the cache lacks need one r
 (`analysis/pull_label_points.sh`): private-deployment items, excluded-author items, and labels newer than the
 2026-10-19 snapshot or deleted since. Without it they are reported as not scorable (Q7). On the gold table above,
 `crops` finds 198 items with a round-3 crop, 580 to cut from 577 panoramas and 22 without geometry. Of the 22,
-11 are the unmasked excluded-author items, which are not decided anyway. The other 11 are decided: 4 round-1 items
-from private deployments and 7 round-2 items newer than the snapshot or deleted since. So the pull covers 11
-decided items.
+11 are the unmasked excluded-author items, which are not decided anyway. The other 11 are decided: 4 round-1 and 7 round-2 items
+from public deployments whose cached export lacks the label (excluded author, deleted since, or newer than the
+snapshot). So the pull covers 11 decided items.
 
 ## The bar
 
