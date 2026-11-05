@@ -49,6 +49,38 @@ training AI label. Human labels on those panoramas still train in both arms.
 **What would change it.** The round-4 CurbRamp ablation ([`ai-label-holdout-2026-11.md`](ai-label-holdout-2026-11.md)):
 if training with tagged AI labels does not raise the AUC on the held-out AI labels over training without them, the
 default should become `excluded` with no AI rows at all; if it clearly does, the fraction can drop.
+## NoSidewalk training verdicts are decided per block face, with a face-size prior (November 2026)
+
+Issue [#42](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/42), phase A;
+[`nosidewalk-2026-11.md`](nosidewalk-2026-11.md) has the numbers.
+
+**Decision.** For NoSidewalk (`data_generation.py --verdict-unit face`), labels the label rule leaves undecided take
+their block face's verdict: >= 2 distinct human validators one way and none the other (`face_margin`), else an
+uncontradicted expert on the face (`face_expert`); a contradicted face decides nothing, and the label rule is never
+overridden. At most 5 labels per face and class are kept (lowest `label_rank`). The split groups by face joined with
+its panoramas (`split_data.py --group-col face_id`). The deployment prior is the face-size method of
+`calibration/nosidewalk_prior.py`, not the margin-rule count. The default for every type stays `--verdict-unit
+label`.
+
+**Why.** SidewalkWebpage validates NoSidewalk per face and settles a face at two agreeing human votes
+(`SettledMargin = 2`, `FaceSettledSupport = 2`), so the label rule's third net Agree vote rarely arrives: 1,579 labels
+sit at exactly (2, 0) and the label margin rule finds 79 / 80 in 237,291 labels (2026-11-05). Pooling by face does not
+mix classes: of the 1,131 faces carrying label-rule verdicts, 11 carry both. Distinct validators rather than summed
+votes, because one person voting on three labels of a face is one judgment; the training rule keeps 530 of the
+census count's 590 incorrect labels, but only 23 of Tucson's 73. The cap keeps one 30-label face
+from being 5 % of the negatives. The face split, because consecutive panoramas along a face show the same stretch.
+
+**The prior.** The margin-rule labels are a queue-biased sample (the queue serves lone-labeler faces first, where
+false calls concentrate). SidewalkWebpage [#5222](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5222)
+measured against Seattle's sidewalk inventory that a NoSidewalk face is right 69 % / 80 % / 84 % with 1 / 2 / 3+
+labels; weighted by the labels-per-face shares of production labels this gives P(correct) = 0.831 (2026-11-05),
+written as pseudo-counts. Caveats: one city, a per-face measurement applied per label, an inventory with its own
+errors.
+
+**What would change it.** The pilot (phase B) failing the serving bar for reasons the face rule causes (e.g. face-rule
+negatives scoring differently from label-rule ones); SidewalkWebpage changing its settling policy or counting the
+AI's vote toward `FaceSettledSupport`; production outcomes for AI NoSidewalk votes, which would replace the
+Seattle-based prior.
 
 ## Labels on Mapillary and Panoramax imagery are kept, with a per-provider pose (October 2026)
 

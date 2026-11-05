@@ -220,3 +220,18 @@ wrap the three commands per city in a copy of `fine_tune.slurm`. For a first lea
 city, Amsterdam, cdmx and one international city, each its own training run. The production-side counterpart, whether the 0.92
 gate holds per city for the deployed models, is [`per-city-calibration-2026-10.md`](per-city-calibration-2026-10.md)
 (`python -m calibration.per_city`).
+
+## NoSidewalk pilot
+
+`nosidewalk_submit.sh` runs the NoSidewalk pilot of [#42](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/42)
+in one command: a NoSidewalk-only rawLabels pull (unless `CACHE` points at a complete cache), then per crop arm
+(depth-sized, whole-view) a data job (`data_generation.py --verdict-unit face`, `calibration/nosidewalk_prior.py`,
+`split_data.py --group-col face_id --holdout-cities tucson-az`), three seeds of train + evaluate + calibrate
+(Agree only), and a report job (`analysis/nosidewalk_pilot.py`). From the repo root, in the activated environment:
+
+```bash
+DATA=/gscratch/makelab/$USER/sidewalk-validator-ai/nosidewalk-2026-11 RUNS=/gscratch/scrubbed/$USER/nosidewalk \
+    PANO_STORE=/path/to/Panoramas EXPERTS=... ./nosidewalk_submit.sh    # DRY_RUN=1 prints the commands only
+```
+
+Design, bar and results: [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md).
