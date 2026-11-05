@@ -26,14 +26,21 @@ on klone, never into the repo (label lists can include private deployments; the 
 
 - **Who is a candidate.** Every eligible AI-placed label (the training vote rule: net human margin, or an expert
   verdict with `EXPERTS`), `correct` and `incorrect` alike. Nothing is excluded by construction.
-- **Who is held out.** A label is held out when its draw, the first 12 hex digits of
-  `sha256("ai-holdout:<seed>:<city>:<label_id>")` read as a fraction, is below `--ai-holdout-frac` (default 0.5).
-  The draw is the label's own, so a new pull moves at most the labels whose votes changed, and a smaller fraction
-  holds out a subset of a larger one. The salt keeps it independent of the correct-class downsample rank.
+- **Who is held out.** A label is held out when its panorama's draw, the first 12 hex digits of
+  `sha256("ai-holdout:<seed>:<city>:<pano_id>")` read as a fraction, is below `--ai-holdout-frac` (default 0.5; a
+  label without a `pano_id` draws on `<city>:label:<label_id>`). Every AI label on a panorama goes the same way, so
+  the `included_tagged` arm never trains on a panorama holding a held-out AI label. The draw depends only on the
+  panorama, so a new pull moves at most the labels whose votes changed, and a smaller fraction holds out a subset of
+  a larger one. The salt keeps it independent of the correct-class downsample rank.
+- **Strata are recorded, not enforced.** Each deployment × class × tier stratum gets about the fraction in expectation
+  only (`stratum` is in the file, so the realised shares can be checked); enforcing exact shares would make one
+  label's membership depend on the rest of the pool.
+- **`--ai-holdout-frac 0`** means no hold-out. It exists to reproduce a pre-#79 selection exactly (the #53 pilot
+  uses it), is never the default, and is still recorded: `holdout_frac: 0` and an empty `ai_label_holdout.csv`.
 - **Both policies carve.** With or without `--include-ai-labels` the same labels are held out. Without the flag
   those rows would have been dropped anyway, so the selection hash of an existing run does not move; and both
   ablation arms below score the identical set, which their two `ai_label_holdout.csv` files confirm (same sha256).
-- **What is written.** `<out>/CurbRamp/ai_label_holdout.csv` (`label_uid, city, label_id, label_class,
+- **What is written.** `<out>/CurbRamp/ai_label_holdout.csv` (`label_uid, city, label_id, pano_id, label_class,
   class_source, pano_source, tier, stratum, holdout_rank`, sorted by `label_uid`; written on every run, empty when the
   pool has no AI label) and `generation_run.json["ai_labels"]`:
   `policy`, `holdout_frac`, `holdout_salt`, `holdout_seed`, `holdout_file`, `holdout_sha256`, and per deployment ×
@@ -46,8 +53,9 @@ on klone, never into the repo (label lists can include private deployments; the 
   split has any (it never does when the held-out AI labels stay out of `split.csv`, which is the point; the slice is
   there for runs that let AI labels into the test split).
 
-Expected size, from the October counts (eligible under the training rule, before carving): about 3,600 AI-placed
-CurbRamp labels, about 180 of them `incorrect`; at 0.5, about 90 rejected AI labels in each half.
+Expected size, from the October pull (seed 42, frac 0.5, the two lead accounts as experts): 3,659 eligible AI-placed
+CurbRamp labels, 178 of them `incorrect`; 1,870 held out: Laurens 580 correct / 54 incorrect, Richmond 471 / 22,
+Vancouver 728 / 15. None of them shares a panorama with a training AI label.
 
 **Held-out counts: not yet run.** Filled from `generation_run.json["ai_labels"]` of the `with` run:
 
@@ -59,11 +67,12 @@ CurbRamp labels, about 180 of them `incorrect`; at 0.5, about 90 rejected AI lab
 
 ### Caveats
 
-- **Per label, not per panorama.** Among the October voted AI labels, 73 % in Laurens (860 of 1,180), 27 % in
-  Richmond (294 of 1,072) and 10 % in Vancouver (274 of 2,794) share a panorama with another voted AI label. In the
-  `included_tagged` arm a held-out label can therefore sit on a panorama the model trained on, which favours that
-  arm. Report the ablation per deployment (Laurens separately) and read a Laurens gain with that in mind. Carving by
-  `city:pano_id` instead would remove it; it is a one-line change in `ai_label_holdout.carve` if the review prefers it.
+- **Why per panorama.** The first version drew per label, which left held-out labels on panoramas whose other AI
+  labels trained in the `included_tagged` arm: on the same October data up to 295 of 570 held-out Laurens labels
+  (52 %), 78 of 481 in Richmond and 13 of 745 in Vancouver, a bias in the direction of the hypothesis. Per panorama
+  that exposure is zero. What remains: human labels on held-out panoramas train in both arms (equally), and
+  neighbouring panoramas a few metres apart are separate draws (`split_data.py` merges those for its splits; this
+  hold-out does not).
 - **The reference is the training rule's class** (crowd margin or expert), taken from the holdout file, not the
   single-vote majority `ai_labels_eval.py report` uses. The two differ on lightly voted labels; most AI labels have
   one vote, so with `EXPERTS` set the eligible pool is mostly expert-decided labels (October: 3,659 of 5,046 voted AI
@@ -100,7 +109,10 @@ add `--cities` with round 3's list (`generation_run.json["cities"]`) to both `da
 private deployment's name into this page. Run with the same `EXPERTS` as round 3: most AI labels have one vote, so
 without it few are eligible at all. `--map` is optional; with it the ablation adds the deployed gate per arm.
 
-Then the held-out AI labels, scored by both checkpoints (Mac for `select` and `ablation`, klone for the GPU stages):
+Then the held-out AI labels, scored by both checkpoints. Every path here is on klone. `select` and `ablation` are
+CPU-only and light; run them in a small CPU allocation (`salloc -A makelab -p ckpt-all -c 2 --mem 8G`), not on a login node, or
+on the Mac after copying `$B/heldout`, the two prediction files and the `$CACHE` snapshot down (then substitute the
+local paths):
 
 ```
 python analysis/ai_labels_eval.py select --rawlabels $CACHE --holdout $B/with/CurbRamp/ai_label_holdout.csv \
@@ -115,7 +127,7 @@ python analysis/ai_labels_eval.py ablation --run $B/heldout --pred-a $B/heldout/
 ```
 
 The `select` rawLabels directory must be the same snapshot the generation runs used (a held-out label missing from it
-stops `select`). The held-out set is small (about 1,800 labels on fewer panoramas), so staging and cropping fit the
+stops `select`). The held-out set is small (about 1,870 labels on fewer panoramas), so staging and cropping fit the
 jobs' default time limits.
 
 ### Result: not yet run
@@ -131,7 +143,8 @@ Held-out AI-placed labels (`ablation.md`), A = `included_tagged`, B = `excluded`
 | tier = core | | | | | | | |
 | tier = band | | | | | | | |
 
-Beside it, from each arm's `metrics.json` (`evaluate.py --per-city`) and `analysis/retrain_report.py`: human-placed
+Beside it, from each arm's `metrics_with.json` / `metrics_without.json` (`evaluate.py --per-city --tag with|without`,
+in `$B/<arm>/CurbRamp/`) and `analysis/retrain_report.py`: human-placed
 test and held-out AUC, within-city and held-out-city with paired panorama-bootstrap intervals, and the type ×
 severity and type × tag slices with training counts (`analysis/slices.py`), A against B. AI-placed labels carry
 neither severity nor tags (RampNet submits none; as in [#69](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/69)),
@@ -166,6 +179,16 @@ RATER=<user_id> EXPERTS=... python analysis/ai_labels_relabel.py build --run $R 
 # after rating: a fresh pull of each city into <out>/rawlabels_after/<city>.csv, then
 RATER=<user_id> python analysis/ai_labels_relabel.py score --run $R --out $R/ranked-vancouver-wa
 ```
+
+**label_id churn.** A RampNet overwrite run deletes and re-creates labels with new `label_id`s
+([SidewalkWebpage#5707](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5707)). One between `build` and
+`score` makes the Gallery list point at deleted labels and the read-back check fail. Check with the auto-labeler
+team that no campaign or overwrite runs in the deployment from the pull before `build` until the after-pull, and
+rebuild from a fresh `select --all-ai` after any that does.
+
+**"Unvoted"** means no human vote of any kind, Unsure included, both in `select`'s `ai_unvoted` and in the key's
+`prior_status`; labels whose only human votes are Unsure are counted as `ai_unsure_only` and are `other-voted` in
+the list.
 
 **Size.** About 78 k labels on about 33 k panoramas (28,881 Vancouver and 4,613 Richmond panoramas hold AI
 CurbRamp labels in the October pull). Both jobs are multi-hour: the stage job pulls 1,000 panoramas per ssh
