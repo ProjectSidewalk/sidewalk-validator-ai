@@ -253,6 +253,43 @@ def test_assemble_flags_colocated_proxies(tmp_path):
     assert proxy[f"{CITY}:2"] == "NoCurbRamp" and proxy[f"{CITY}:12"] == "" and rec["colocated"]["n"] == 1
 
 
+def test_assemble_flags_a_proxy_whose_partner_sits_on_a_train_panorama(tmp_path):
+    """Label 12 (incorrect NoCurbRamp, val) gets its CurbRamp proxy from label 901, which sits on panorama p22: a
+    train panorama (Obstacle 22). Label 2's partner 900 is on a panorama outside the split: no leak."""
+    root = small_root(tmp_path)
+    m = 1 / 111195
+    raw = pd.DataFrame([raw_label(2, "CurbRamp", votes(0, 3), user="u1", lat=47.0),
+                        raw_label(900, "NoCurbRamp", votes(4, 0), user="u2", lat=47.0 + m),
+                        raw_label(12, "NoCurbRamp", votes(0, 3), user="u1", lat=48.0),
+                        raw_label(901, "CurbRamp", votes(4, 0), user="u2", lat=48.0 + m, pano="p22"),
+                        raw_label(21, "Obstacle", votes(0, 3), user="u1", lat=49.0)])
+    df, rec = rt.assemble(root, rt.VALIDATOR_TYPES, raw=rt.with_label_uid(raw), crop_root=root)
+    d = df.set_index("label_uid")
+    assert d.loc[f"{CITY}:12", "proxy_type"] == "CurbRamp" and d.loc[f"{CITY}:12", "proxy_b_in_train"] == "1"
+    assert d.loc[f"{CITY}:2", "proxy_type"] == "NoCurbRamp" and d.loc[f"{CITY}:2", "proxy_b_in_train"] == "0"
+    assert (df.loc[df.proxy_type == "", "proxy_b_in_train"] == "").all()
+    assert rec["colocated"]["b_in_train_by_split"] == {"val": 1}
+    # without pano_id in rawLabels the flag stays empty rather than claiming "no leak"
+    df2, _ = rt.assemble(root, rt.VALIDATOR_TYPES, raw=rt.with_label_uid(raw.drop(columns="pano_id")),
+                         crop_root=root)
+    assert (df2.proxy_b_in_train == "").all()
+
+
+def test_colocated_eval_breaks_down_by_partner_in_train():
+    pred = pd.DataFrame({"source": ["validated"] * 4 + ["type_edit"], "is_correct": [0, 0, 0, 1, 0],
+                         "split": ["test", "test", "test_heldout", "test", "test_retype"],
+                         "proxy_type": ["CurbRamp", "Obstacle", "CurbRamp", "", ""],
+                         "proxy_b_in_train": ["1", "0", "0", "", ""],
+                         "suggested_type": ["CurbRamp", "Signal", "CurbRamp", "x", "y"],
+                         "suggested_top3": ["CurbRamp|a|b", "Signal|Obstacle|a", "CurbRamp|a|b", "x|y|z", "y|z|a"]})
+    out = rt.colocated_eval(pred)
+    assert out[["split", "proxy_b_in_train", "n"]].values.tolist() == [
+        ["test", "all", 2], ["test", "0", 1], ["test", "1", 1], ["test_heldout", "all", 1], ["test_heldout", "0", 1]]
+    assert out.top1_acc.tolist() == [0.5, 0.0, 1.0, 1.0, 1.0]
+    # predictions written before the flag existed still report (one "" group)
+    assert rt.colocated_eval(pred.drop(columns="proxy_b_in_train")).n.sum() == 6
+
+
 def test_cmd_assemble_writes_split_and_record(tmp_path):
     root = small_root(tmp_path)
     out = tmp_path / "out" / "retype_split.csv"

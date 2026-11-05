@@ -91,12 +91,12 @@ POOLED_PRIVATE = "other (private deployments)"   # as analysis/retrain_report.PO
 GATE = 0.92
 
 SCHEMA = ["row_uid", "label_uid", "city", "label_id", "pano_id", "split", "round3_split", "claimed_type",
-          "target_type", "is_correct", "source", "proxy_type", "severity", "tags", "class_source", "author",
-          "pano_source", "human_agree", "human_disagree", "crop_path", "hard"]
+          "target_type", "is_correct", "source", "proxy_type", "proxy_b_in_train", "severity", "tags",
+          "class_source", "author", "pano_source", "human_agree", "human_disagree", "crop_path", "hard"]
 PROB_COLUMNS = [f"p_{c}" for c in CLASSES]
 PREDICTION_COLUMNS = (["row_uid", "label_uid", "split", "claimed_type", "target_type", "is_correct", "source",
-                       "proxy_type", "p_claimed"] + PROB_COLUMNS + ["top1", "top3", "suggested_type",
-                                                                    "suggested_top3"])
+                       "proxy_type", "proxy_b_in_train", "p_claimed"] + PROB_COLUMNS
+                      + ["top1", "top3", "suggested_type", "suggested_top3"])
 # Columns that would carry per-label identifiers; no aggregate written by ``report`` or ``audit`` may have one.
 ID_COLUMNS = ("row_uid", "label_uid", "label_id", "pano_id", "crop_path", "user_id")
 LABEL_ID_TOKEN = re.compile(r"\b[a-z][a-z0-9-]*:\d+\b")
@@ -257,7 +257,8 @@ def edit_rows(kept, crops):
         new, old = canonical_type(r["new_label_type"]), canonical_type(r["old_label_type"])
         base = {c: r.get(c, "") for c in SCHEMA}
         base.update(label_uid=r["label_uid"], city=r["city"], label_id=str(r["label_id"]), pano_id=r.get("pano_id", ""),
-                    split=TEST_RETYPE, round3_split="", source="type_edit", proxy_type="", hard="0",
+                    split=TEST_RETYPE, round3_split="", source="type_edit", proxy_type="", proxy_b_in_train="",
+                    hard="0",
                     class_source="type_edit", author=dg.label_author(r.get("user_id", "")),
                     crop_path=r["crop_path"], human_agree="", human_disagree="")
         for claimed, correct in ((new, 1), (old, 0)):
@@ -300,6 +301,7 @@ def validated_rows(split_df, type_dir):
     out["round3_split"] = df["split"].to_numpy()
     out["source"] = "validated"
     out["proxy_type"] = ""
+    out["proxy_b_in_train"] = ""
     out["crop_path"] = [p if os.path.isabs(p) else f"{type_dir}/{p}" for p in df["crop_path"]]
     if "hard" not in df.columns:
         out["hard"] = "0"
@@ -374,6 +376,17 @@ def colocated_targets(incorrect, correct, radius_m=COLOCATE_M):
     {'c:1': 'CurbRamp'}
     """
     out = pd.Series("", index=incorrect["label_uid"].to_numpy(), dtype=object)
+    p = _colocated_pairs(incorrect, correct, radius_m)
+    types = p.groupby("uid")["type"].agg(lambda s: sorted(set(s)))
+    one = types[types.map(len) == 1]
+    out.loc[one.index] = one.map(lambda s: s[0])
+    return out
+
+
+def _colocated_pairs(incorrect, correct, radius_m):
+    """Every (incorrect label, qualifying correct label) pair within ``radius_m``: columns ``uid`` (the incorrect
+    label), ``type`` and ``pano`` (the correct label's; ``""`` when ``correct`` has no ``pano_id``)."""
+    parts = []
     for city, q in incorrect.groupby("city"):
         t = correct[correct["city"] == city]
         q = q[np.isfinite(q["latitude"].astype(float)) & np.isfinite(q["longitude"].astype(float))]
@@ -383,14 +396,35 @@ def colocated_targets(incorrect, correct, radius_m=COLOCATE_M):
         i, j = sd.pairs_within(q["latitude"], q["longitude"], t["latitude"], t["longitude"], radius_m)
         if not len(i):
             continue
+        tpano = t["pano_id"].fillna("").astype(str).to_numpy() if "pano_id" in t.columns else np.full(len(t), "")
         p = pd.DataFrame({"uid": q["label_uid"].to_numpy()[i], "claimed": q["claimed_type"].to_numpy()[i],
                           "quser": q["user_id"].astype(str).to_numpy()[i],
-                          "type": t["label_type"].to_numpy()[j], "tuser": t["user_id"].astype(str).to_numpy()[j]})
-        p = p[(p["type"] != p["claimed"]) & (p["quser"] != p["tuser"])]
-        types = p.groupby("uid")["type"].agg(lambda s: sorted(set(s)))
-        one = types[types.map(len) == 1]
-        out.loc[one.index] = one.map(lambda s: s[0])
-    return out
+                          "type": t["label_type"].to_numpy()[j], "tuser": t["user_id"].astype(str).to_numpy()[j],
+                          "pano": tpano[j]})
+        parts.append(p[(p["type"] != p["claimed"]) & (p["quser"] != p["tuser"])])
+    if not parts:
+        return pd.DataFrame(columns=["uid", "claimed", "quser", "type", "tuser", "pano"])
+    return pd.concat(parts, ignore_index=True)
+
+
+def colocated_partner_panos(incorrect, correct, radius_m=COLOCATE_M):
+    """For each incorrect label with a proxy (``colocated_targets``): the panoramas of the correct labels that made
+    it, ``{label_uid: set of pano_id}``. ``assemble`` uses them to flag a proxy whose partner B sits on a train
+    panorama, where "suggested = B" could be a memorised location rather than a recognised type.
+
+    >>> inc = pd.DataFrame({"label_uid": ["c:1"], "city": ["c"], "claimed_type": ["NoCurbRamp"], "user_id": ["u"],
+    ...                     "latitude": [47.0], "longitude": [-122.0]})
+    >>> cor = pd.DataFrame({"city": ["c", "c"], "label_type": ["CurbRamp"] * 2, "user_id": ["v", "w"],
+    ...                     "latitude": [47.0 + 1 / 111195] * 2, "longitude": [-122.0] * 2, "pano_id": ["pa", "pb"]})
+    >>> {k: sorted(v) for k, v in colocated_partner_panos(inc, cor).items()}
+    {'c:1': ['pa', 'pb']}
+    """
+    proxy = colocated_targets(incorrect, correct, radius_m)
+    proxy = proxy[proxy != ""]
+    p = _colocated_pairs(incorrect, correct, radius_m)
+    p = p[p["uid"].isin(proxy.index)]
+    p = p[p["type"] == p["uid"].map(proxy)]
+    return {u: set(g["pano"]) - {""} for u, g in p.groupby("uid")}
 
 
 def load_rawlabels(rawlabels_dir, cities, usecols=None):
@@ -550,6 +584,7 @@ def predictions_frame(rows, probs):
     ci = claimed_index(rows["claimed_type"])
     out = pd.DataFrame({c: rows[c].to_numpy() for c in ("row_uid", "label_uid", "split", "claimed_type",
                                                          "target_type", "is_correct", "source", "proxy_type")})
+    out["proxy_b_in_train"] = rows["proxy_b_in_train"].to_numpy() if "proxy_b_in_train" in rows.columns else ""
     out["p_claimed"] = p_claimed_from_probs(probs, ci)
     for i, c in enumerate(CLASSES):
         out[f"p_{c}"] = probs[:, i]
@@ -717,6 +752,31 @@ def suggestion_eval(rows, target_col, by=None):
         out = pd.DataFrame([{"n": len(d), "top1_acc": float(d.hit1.mean()) if len(d) else float("nan"),
                              "top3_acc": float(d.hit3.mean()) if len(d) else float("nan")}])
     return out[keys + ["n", "top1_acc", "top3_acc"]]
+
+
+def colocated_eval(pred):
+    """``suggestion_eval`` against ``proxy_type`` per split, overall (``proxy_b_in_train = all``) and broken down by
+    whether the proxy's partner B sits on a train panorama (``1``/``0``). Rows with B in train carry a location
+    leak; test_heldout has none by construction (its cities are not in train), so it is the headline.
+
+    >>> r = pd.DataFrame({"source": ["validated"] * 3, "is_correct": [0, 0, 0], "split": ["test"] * 3,
+    ...     "proxy_type": ["CurbRamp"] * 3, "proxy_b_in_train": ["1", "0", "0"],
+    ...     "suggested_type": ["CurbRamp", "CurbRamp", "Signal"], "suggested_top3": ["CurbRamp|a|b"] * 3})
+    >>> colocated_eval(r).values.tolist()
+    [['test', 'all', 3, 0.6666666666666666, 1.0], ['test', '0', 2, 0.5, 1.0], ['test', '1', 1, 1.0, 1.0]]
+    """
+    v = pred[pred["source"] == "validated"]
+    if "proxy_b_in_train" not in v.columns:
+        v = v.assign(proxy_b_in_train="")
+    overall = suggestion_eval(v, "proxy_type", by="split").assign(proxy_b_in_train="all")
+    d = v[v["proxy_type"].astype(str) != ""]
+    by_b = [suggestion_eval(g, "proxy_type", by="split").assign(proxy_b_in_train=b)
+            for b, g in d.groupby(d["proxy_b_in_train"].astype(str))]
+    out = pd.concat([overall] + by_b, ignore_index=True)
+    rank = {"all": 0, "0": 1, "1": 2}
+    out = out.sort_values(["split", "proxy_b_in_train"], key=lambda c: c.map(rank).fillna(3) if c.name ==
+                          "proxy_b_in_train" else c, kind="mergesort").reset_index(drop=True)
+    return out[["split", "proxy_b_in_train", "n", "top1_acc", "top3_acc"]]
 
 
 def check_aggregates(folder, private_terms=()):
@@ -1085,8 +1145,20 @@ def assemble(splits_root, types, edits=None, edit_crops=None, raw=None, colocate
         q["longitude"] = pd.to_numeric(q["longitude"], errors="coerce")
         proxy = colocated_targets(q, cor, colocate_m)
         df["proxy_type"] = df["label_uid"].map(proxy).where(df["is_correct"] == 0, "").fillna("")
-        rec["colocated"] = {"n": int((df["proxy_type"] != "").sum()),
-                            "by_split": {k: int(v) for k, v in df[df.proxy_type != ""]["split"].value_counts().items()}}
+        # The location leak of the proxy: B (the correct label that makes the proxy) on a panorama that is train
+        # after inheritance. The model has then seen B's crop as a B positive, so "suggested = B" may be a
+        # memorised place. "1"/"0" on proxy rows, "" elsewhere (and "" throughout when rawLabels has no pano_id).
+        if "pano_id" in cor.columns:
+            partners = colocated_partner_panos(q, cor, colocate_m)
+            train_panos = set(df.loc[df["split"] == "train", "pano_id"]) - {""}
+            b_train = df["label_uid"].map(lambda u: "1" if partners.get(u, set()) & train_panos else "0")
+            df["proxy_b_in_train"] = b_train.where(df["proxy_type"] != "", "")
+        has = df["proxy_type"] != ""
+        rec["colocated"] = {"n": int(has.sum()),
+                            "by_split": {k: int(v) for k, v in df[has]["split"].value_counts().items()},
+                            "b_in_train_by_split": {k: int(v) for k, v in
+                                                    df[has & (df["proxy_b_in_train"] == "1")]["split"]
+                                                    .value_counts().items()}}
     if edits is not None and len(edits):
         if edit_crops is None:
             raise ValueError("type-edit rows need the crops stage's manifest (--edit-crops)")
@@ -1132,7 +1204,8 @@ def cmd_assemble(args):
         for t, p in type_dirs(args.splits, types).items():
             cities |= set(read_split(p)["city"])
         raw = load_rawlabels(args.rawlabels, cities,
-                             usecols=["label_id", "user_id", "label_type", "validations", "latitude", "longitude"])
+                             usecols=["label_id", "user_id", "label_type", "validations", "latitude", "longitude",
+                                      "pano_id"])
     df, rec = assemble(args.splits, types, edits, crops, raw, args.colocate_m, args.merge_radius_m,
                        args.allow_missing_crops, crop_root=args.splits, min_extra_incorrect=args.min_extra_incorrect)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
@@ -1189,8 +1262,8 @@ def cmd_predict(args):
 
 def read_predictions(path):
     return pd.read_csv(path, dtype={c: str for c in ("row_uid", "label_uid", "split", "claimed_type", "target_type",
-                                                     "source", "proxy_type", "top1", "top3", "suggested_type",
-                                                     "suggested_top3")}, keep_default_na=False)
+                                                     "source", "proxy_type", "proxy_b_in_train", "top1", "top3",
+                                                     "suggested_type", "suggested_top3")}, keep_default_na=False)
 
 
 def cmd_export_binary(args):
@@ -1287,8 +1360,8 @@ def cmd_report(args):
                                         lineterminator="\n")
     suggestion_eval(pred[pred["source"] == "type_edit"], "target_type").to_csv(
         os.path.join(args.docs_dir, "type_edit_eval.csv"), index=False, lineterminator="\n")
-    suggestion_eval(pred[pred["source"] == "validated"], "proxy_type", by="split").to_csv(
-        os.path.join(args.docs_dir, "colocated_eval.csv"), index=False, lineterminator="\n")
+    colocated_eval(pred).to_csv(os.path.join(args.docs_dir, "colocated_eval.csv"), index=False,
+                                lineterminator="\n")
     prov = {"generated": date.today().isoformat(), "n_boot": args.n_boot, "seed": args.seed,
             "slice_boot": args.slice_boot, "public_cities_source": public_source,
             "sha256": {"retype_split.csv": file_sha256(args.split),
