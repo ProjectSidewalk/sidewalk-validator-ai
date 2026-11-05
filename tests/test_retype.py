@@ -290,6 +290,25 @@ def test_colocated_eval_breaks_down_by_partner_in_train():
     assert rt.colocated_eval(pred.drop(columns="proxy_b_in_train")).n.sum() == 6
 
 
+def test_assemble_merge_radius_pulls_a_nearby_panorama_into_the_test_split(tmp_path):
+    """Obstacle 22 (train, panorama p22) is 1 m from CurbRamp 1 (test, panorama 'shared'). Off by default; with
+    --merge-radius-m 3 the two panoramas are one group and 22 moves to test. Labels far apart never merge."""
+    root = small_root(tmp_path)
+    m = 1 / 111195
+    lats = {1: 47.0, 22: 47.0 + m, 2: 47.5, 3: 48.0, 11: 47.0, 12: 49.0, 20: 47.0, 21: 49.0,
+            30 + len("SurfaceProblem"): 50.0, 30 + len("Crosswalk"): 51.0}
+    raw = rt.with_label_uid(pd.DataFrame([raw_label(lid, "CurbRamp", lat=lat, city=PRIVATE if lid == 3 else CITY)
+                                          for lid, lat in lats.items()]))
+    off, _ = rt.assemble(root, rt.VALIDATOR_TYPES, raw=raw, crop_root=root)
+    on, rec = rt.assemble(root, rt.VALIDATOR_TYPES, raw=raw, crop_root=root, merge_radius_m=3.0)
+    assert off.set_index("label_uid").split[f"{CITY}:22"] == "train"
+    s = on.set_index("label_uid").split
+    assert s[f"{CITY}:22"] == "test" and s[f"{CITY}:2"] == "train" and rec["merge_radius_m"] == 3.0
+    assert {"type": "Obstacle", "from": "train", "to": "test", "n": 2} in rec["moves"]  # 20 (pano) and 22 (radius)
+    with pytest.raises(ValueError, match="rawlabels"):
+        rt.assemble(root, rt.VALIDATOR_TYPES, crop_root=root, merge_radius_m=3.0)
+
+
 def test_cmd_assemble_writes_split_and_record(tmp_path):
     root = small_root(tmp_path)
     out = tmp_path / "out" / "retype_split.csv"
@@ -738,3 +757,49 @@ def test_predict_on_a_tiny_checkpoint(tmp_path):
     assert list(p.columns) == rt.PREDICTION_COLUMNS and p.split.tolist() == ["test", "val", "test_retype"]
     assert np.allclose(p[rt.PROB_COLUMNS].sum(axis=1), 1, atol=1e-5)
     assert json.loads((tmp_path / "pred" / "retype_predictions.json").read_text())["rows"] == 3
+
+
+def test_crops_stage_with_a_stubbed_store_and_depth_model(tmp_path, monkeypatch):
+    """cmd_crops on CPU: the pose per provider reaches the renderer, a missing panorama becomes a status row, an
+    error in one label does not end the run, consecutive labels on one panorama read it once, and a rerun skips the
+    ok rows (resume on manifest.csv)."""
+    labels = pd.DataFrame([{**raw_label(1, "NoCurbRamp", pano="pa"), "label_uid": f"{CITY}:1"},
+                           {**raw_label(2, "Obstacle", pano="pa"), "label_uid": f"{CITY}:2"},
+                           {**raw_label(3, "CurbRamp", pano="gone"), "label_uid": f"{CITY}:3"},
+                           {**raw_label(4, "Other", pano="pb", pano_x="bad"), "label_uid": f"{CITY}:4"}])
+    labels_csv = tmp_path / "type_edits.csv"
+    labels.to_csv(labels_csv, index=False)
+    reads, renders = [], []
+
+    def read_store_panorama(store, city, pano_id):
+        reads.append(pano_id)
+        if pano_id == "gone":
+            return "missing_pano", {}
+        return np.zeros((16, 32, 3), np.uint8), {"pano_path": f"{city}/{pano_id}.jpg"}
+
+    def create_perspective_crop(depth_model, pano_rgb, x, y, **kw):
+        renders.append((round(x, 4), kw["apply_tilt"], kw["beta"], kw["camera_pitch"]))
+        return np.zeros((8, 8, 3), np.uint8), {"depth_m": 5.0, "crop_half_px": 100, "clipped": 0}
+    monkeypatch.setattr(dg, "check_pano_store_marker", lambda store: "test")
+    monkeypatch.setattr(dg, "resolve_device", lambda allow_cpu: None)
+    monkeypatch.setattr(dg, "load_depth_model", lambda encoder, device: object())
+    monkeypatch.setattr(dg, "read_store_panorama", read_store_panorama)
+    monkeypatch.setattr(dg, "create_perspective_crop", create_perspective_crop)
+    out = tmp_path / "edit_crops"
+    argv = ["crops", "--labels", str(labels_csv), "--pano-store", str(tmp_path), "--out", str(out), "--allow-cpu",
+            "--tilt-beta", "0.95"]
+    run = rt.main(argv)
+    m = pd.read_csv(out / "manifest.csv", dtype=str, keep_default_na=False).set_index("label_uid")
+    assert m.loc[f"{CITY}:1", "status"] == "ok" and m.loc[f"{CITY}:2", "status"] == "ok"
+    assert m.loc[f"{CITY}:3", "status"] == "missing_pano"
+    assert m.loc[f"{CITY}:4", "status"] == "error:ValueError"
+    assert m.loc[f"{CITY}:1", "pose_source"] == "gsv_db" and float(m.loc[f"{CITY}:1", "tilt_beta"]) == 0.95
+    assert os.path.isabs(m.loc[f"{CITY}:1", "crop_path"]) and os.path.exists(m.loc[f"{CITY}:1", "crop_path"])
+    assert renders == [(round(4000 / 8192, 4), True, 0.95, 1.0)] * 2
+    assert reads == ["gone", "pa", "pb"]  # sorted by city, pano: pa is read once for two labels
+    assert run["status_counts_this_run"] == {"ok": 2, "missing_pano": 1, "error:ValueError": 1}
+    assert json.loads((out / "crops_run.json").read_text())["labels_sha256"] == rt.file_sha256(str(labels_csv))
+    reads.clear()
+    rt.main(argv)  # resume: only the two failed labels are tried again
+    assert reads == ["gone", "pb"]
+    assert len(pd.read_csv(out / "manifest.csv")) == 4
