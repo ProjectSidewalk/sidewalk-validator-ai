@@ -164,3 +164,139 @@ def test_pose_mismatch_rules():
     old = {k: v for k, v in row.items() if k not in cc.POSE_CHECK}  # a manifest from before #72
     assert cc.pose_mismatch(old, pose, 0.95) is None
     assert "before #72" in cc.pose_mismatch({**old, "pano_source": "mapillary"}, pose, 0.95)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# The data_generation hook and the backfill, end to end on test_generation_run.py's synthetic store
+# ---------------------------------------------------------------------------------------------------------------------
+
+from test_generation_run import CITY, run_main, stubbed  # noqa: E402,F401  (stubbed is a fixture)
+
+
+def gradient_store(store):
+    """Replace every store pano with a gradient under a checkerboard, so a crop that moved or changed size is
+    visible to --verify."""
+    import cv2
+    img = gradient_pano(256, 128)
+    yy, xx = np.mgrid[0:128, 0:256]
+    img[((yy // 8 + xx // 8) % 2) == 1] //= 3
+    for p in (store / CITY).rglob("*.jpg"):
+        assert cv2.imwrite(str(p), img[..., ::-1])
+
+
+def ctx_index(tmp):
+    return pd.read_csv(tmp / "out" / "CurbRamp" / "context" / cc.INDEX_FILE)
+
+
+def gen_run(tmp):
+    return json.loads((tmp / "out" / "CurbRamp" / "generation_run.json").read_text())
+
+
+def test_wide_factor_default_is_the_modules():
+    assert dg.build_parser().parse_args(["--label_type", "X"]).context_wide_factor == cc.WIDE_FACTOR
+
+
+def test_hook_writes_one_context_row_per_ok_crop(stubbed):
+    tmp = stubbed["tmp"]
+    m = run_main(tmp, "--context-crops")
+    idx = ctx_index(tmp)
+    ok = m[m.status == "ok"]
+    assert sorted(idx.label_uid) == sorted(ok.label_uid) and len(idx) == 5
+    assert gen_run(tmp)["settings"]["context_crops"] == {"factor": cc.WIDE_FACTOR, "view_px": cc.VIEW_PX}
+    base = tmp / "out" / "CurbRamp"
+    for r in idx.merge(ok, on="label_uid", validate="one_to_one").to_dict("records"):
+        assert r["wide_path"] == "wide/" + r["crop_path"] and r["view_path"] == "view/" + r["crop_path"]
+        assert (base / "context" / r["wide_path"]).exists() and (base / "context" / r["view_path"]).exists()
+        assert r["wide_half_px"] == 1024 and r["wide_clipped"] == 1  # 4 x 835 px asks for more than the view
+
+
+def test_hook_plain_resume_skips_and_flag_is_a_resume_setting(stubbed):
+    tmp = stubbed["tmp"]
+    run_main(tmp, "--context-crops")
+    before = (tmp / "out" / "CurbRamp" / "context" / cc.INDEX_FILE).read_text()
+    calls = stubbed["depth"].calls
+    run_main(tmp, "--context-crops")
+    assert stubbed["depth"].calls == calls
+    assert (tmp / "out" / "CurbRamp" / "context" / cc.INDEX_FILE).read_text() == before
+    with pytest.raises(SystemExit, match="context_crops"):
+        run_main(tmp)  # dropping the flag is a settings change
+    with pytest.raises(SystemExit, match="context_crops"):
+        run_main(tmp, "--context-crops", "--context-wide-factor", "1")
+    run_main(tmp, "--context-crops", "--context-wide-factor", "1", "--force-reselect")
+    assert gen_run(tmp)["settings"]["context_crops"]["factor"] == 1
+    idx = ctx_index(tmp)
+    assert len(idx) == 5 and (idx.wide_half_px == 835).all() and (idx.wide_clipped == 0).all()  # all rewritten
+
+
+def test_without_the_flag_nothing_changes(stubbed):
+    tmp = stubbed["tmp"]
+    run_main(tmp)
+    assert "context_crops" not in gen_run(tmp)["settings"]
+    assert not (tmp / "out" / "CurbRamp" / "context").exists()
+
+
+def backfill(tmp, *extra):
+    return cc.main(["backfill", "--data-dir", str(tmp / "out"), "--label_type", "CurbRamp", "--pano-store",
+                    str(tmp / "store"), "--rawlabels-cache", str(tmp), "--allow-cpu", *extra])
+
+
+def test_backfill_covers_every_ok_row_and_verifies(stubbed, capsys):
+    tmp = stubbed["tmp"]
+    gradient_store(stubbed["store"])
+    m = run_main(tmp)
+    assert backfill(tmp, "--limit", "2") == 0
+    assert len(ctx_index(tmp)) == 2
+    assert backfill(tmp, "--verify", "2") == 0
+    out = capsys.readouterr().out
+    assert "verify: 2 re-cut tight crops" in out
+    idx = ctx_index(tmp)
+    assert sorted(idx.label_uid) == sorted(m.loc[m.status == "ok", "label_uid"])
+    run = json.loads((tmp / "out" / "CurbRamp" / "context" / cc.RUN_FILE).read_text())
+    assert run["factor"] == cc.WIDE_FACTOR and run["view_px"] == cc.VIEW_PX and run["renderer"] == "numpy"
+    before = (tmp / "out" / "CurbRamp" / "context" / cc.INDEX_FILE).read_text()
+    assert backfill(tmp) == 0  # a re-run is a no-op
+    assert (tmp / "out" / "CurbRamp" / "context" / cc.INDEX_FILE).read_text() == before
+    with pytest.raises(SystemExit, match="other settings"):
+        backfill(tmp, "--factor", "2")
+
+
+def test_backfill_matches_the_hook(stubbed):
+    """The backfill re-renders exactly what the hook wrote at generation time."""
+    tmp = stubbed["tmp"]
+    gradient_store(stubbed["store"])
+    run_main(tmp, "--context-crops")
+    ctx = tmp / "out" / "CurbRamp" / "context"
+    hooked = {p.relative_to(ctx): p.read_bytes() for p in ctx.rglob("*.webp")}
+    (ctx / cc.INDEX_FILE).unlink()
+    for p in ctx.rglob("*.webp"):
+        p.unlink()
+    assert backfill(tmp) == 0
+    assert {p.relative_to(ctx): p.read_bytes() for p in ctx.rglob("*.webp")} == hooked
+
+
+def test_backfill_refuses_another_pose_and_catches_a_different_crop(stubbed, capsys):
+    tmp = stubbed["tmp"]
+    gradient_store(stubbed["store"])
+    run_main(tmp)
+    path = tmp / "out" / "CurbRamp" / "manifest.csv"
+    clean = pd.read_csv(path, dtype=str, keep_default_na=False)
+    tampered = clean.copy()
+    tampered.loc[tampered.label_uid == "toy-city:1", "pose_source"] = "none"
+    tampered.to_csv(path, index=False)
+    with pytest.raises(SystemExit, match="toy-city:1.*pose_source"):
+        backfill(tmp)
+    resized = clean.copy()
+    resized.loc[resized.label_uid == "toy-city:1", "crop_half_px"] = "300"  # not the crop on disk
+    resized.to_csv(path, index=False)
+    import shutil
+    shutil.rmtree(tmp / "out" / "CurbRamp" / "context")
+    assert backfill(tmp, "--verify", "5") == 1
+    assert "verify FAILED" in capsys.readouterr().err
+
+
+def test_backfill_needs_the_label_points(stubbed):
+    tmp = stubbed["tmp"]
+    run_main(tmp)
+    (tmp / f"{CITY}.csv").rename(tmp / "elsewhere.csv")
+    with pytest.raises(SystemExit, match="no toy-city.csv"):
+        backfill(tmp)
