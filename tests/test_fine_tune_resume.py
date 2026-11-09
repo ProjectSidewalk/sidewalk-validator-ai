@@ -196,3 +196,60 @@ def test_extra_columns_pass_through_load_split_frames(tmp_path):
     assert list(plain.columns) == ["image", "label"]
     assert extra_frame_columns(SimpleNamespace()) == ()
     assert extra_frame_columns(SimpleNamespace(region_conditioning="region")) == ("city",)
+# --- --context-arm / --batch-size (issue #14, context_model.py) ------------------------------------------------------
+
+def _ctx(**kw):
+    return SimpleNamespace(**{**vars(ARGS), "context_arm": "none", "context_view_res": 224, "batch_size": 8, **kw})
+
+
+def test_default_context_options_leave_the_key_unchanged(tmp_path):
+    import fine_tune_classifier as ft
+    assert ft.context_settings(_ctx()) == {} and ft.context_settings(ARGS) == {}
+    assert _key(tmp_path, context_arm="none", context_view_res=224, batch_size=8) == _key(tmp_path)
+    assert ft.extra_frame_columns(_ctx()) == () and ft.extra_frame_columns(ARGS) == ()
+
+
+def test_context_arm_view_res_and_batch_size_are_in_the_key(tmp_path):
+    import fine_tune_classifier as ft
+    keys = [_key(tmp_path, **vars(_ctx(**kw))) for kw in
+            ({}, {"context_arm": "two_scale"}, {"context_arm": "view_heatmap"},
+             {"context_arm": "view_heatmap", "context_view_res": 448}, {"context_arm": "side_info"},
+             {"batch_size": 4})]
+    assert len({json.dumps(k, sort_keys=True) for k in keys}) == len(keys)
+    assert ft.context_settings(_ctx(context_arm="two_scale", batch_size=4)) == {
+        "context_arm": "two_scale", "context_view_res": 224, "batch_size": 4}
+
+
+def test_extra_frame_columns_per_arm():
+    import context_model
+    import fine_tune_classifier as ft
+    for arm in context_model.ARMS:
+        cols = ft.extra_frame_columns(_ctx(context_arm=arm))
+        assert cols == context_model.FRAME_COLUMNS[arm] and {"label_uid", "split"} <= set(cols)
+    assert "crop_half_px" in ft.extra_frame_columns(_ctx(context_arm="view_heatmap"))
+    assert "tags" in ft.extra_frame_columns(_ctx(context_arm="side_info"))
+
+
+@pytest.mark.parametrize("argv,match", [
+    (["--context-arm", "two_scale"], "--output-dir"),
+    (["--batch-size", "5"], "divide"),
+    (["--context-arm", "view_heatmap", "--output-dir", "x", "--context-view-res", "300"], "invalid choice"),
+])
+def test_context_options_are_checked_before_any_import(argv, match, capsys):
+    import fine_tune_classifier as ft
+    with pytest.raises(SystemExit):
+        ft.main(["--label_type", "CurbRamp", *argv])
+    assert match in capsys.readouterr().err
+
+
+def test_load_split_frames_carries_extra_columns(tmp_path):
+    import fine_tune_classifier as ft
+    d = tmp_path / "Toy"
+    d.mkdir()
+    (d / "split.csv").write_text("label_uid,label_class,crop_path,split,crop_half_px\n"
+                                 "c:1,correct,a.webp,train,200\nc:2,incorrect,b.webp,val,300\n")
+    train, val = ft.load_split_frames("Toy", str(tmp_path), extra_columns=("label_uid", "split", "crop_half_px"))
+    assert list(train.columns) == ["image", "label", "label_uid", "split", "crop_half_px"]
+    assert val.crop_half_px.tolist() == [300] and val.split.tolist() == ["val"]
+    train, _ = ft.load_split_frames("Toy", str(tmp_path))
+    assert list(train.columns) == ["image", "label"]
