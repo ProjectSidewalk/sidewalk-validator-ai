@@ -1,0 +1,1669 @@
+{
+ "cache_name": "rawlabels-ns",
+ "cache_date": "2026-11-05",
+ "listing": "live",
+ "n_experts": 2,
+ "max_labels_per_face": 5,
+ "seed": 42,
+ "types": {
+  "NoSidewalk": {
+   "label_type": "NoSidewalk",
+   "labels": 237291,
+   "cities": 45,
+   "pano_source": {
+    "gsv": 236031,
+    "mapillary": 1257,
+    "panoramax": 3
+   },
+   "human_authored": 237291,
+   "with_votes": {
+    "ge1": 11111,
+    "ge2": 2097,
+    "ge3": 327
+   },
+   "n_experts": 2,
+   "vote_pairs": [
+    {
+     "agree": 1,
+     "disagree": 0,
+     "n": 8010
+    },
+    {
+     "agree": 2,
+     "disagree": 0,
+     "n": 1579
+    },
+    {
+     "agree": 0,
+     "disagree": 1,
+     "n": 1004
+    },
+    {
+     "agree": 1,
+     "disagree": 1,
+     "n": 148
+    },
+    {
+     "agree": 1,
+     "disagree": 2,
+     "n": 86
+    },
+    {
+     "agree": 3,
+     "disagree": 0,
+     "n": 67
+    },
+    {
+     "agree": 2,
+     "disagree": 1,
+     "n": 59
+    },
+    {
+     "agree": 0,
+     "disagree": 2,
+     "n": 43
+    },
+    {
+     "agree": 2,
+     "disagree": 2,
+     "n": 40
+    },
+    {
+     "agree": 3,
+     "disagree": 1,
+     "n": 17
+    },
+    {
+     "agree": 0,
+     "disagree": 3,
+     "n": 15
+    },
+    {
+     "agree": 1,
+     "disagree": 3,
+     "n": 15
+    },
+    {
+     "agree": 4,
+     "disagree": 0,
+     "n": 8
+    },
+    {
+     "agree": 0,
+     "disagree": 4,
+     "n": 6
+    },
+    {
+     "agree": 3,
+     "disagree": 2,
+     "n": 6
+    },
+    {
+     "agree": 5,
+     "disagree": 0,
+     "n": 3
+    },
+    {
+     "agree": 2,
+     "disagree": 3,
+     "n": 2
+    },
+    {
+     "agree": 0,
+     "disagree": 5,
+     "n": 1
+    },
+    {
+     "agree": 4,
+     "disagree": 1,
+     "n": 1
+    },
+    {
+     "agree": 4,
+     "disagree": 2,
+     "n": 1
+    }
+   ],
+   "label_rule_margin": {
+    "dropped": {
+     "bad_pano_size": 171
+    },
+    "class_by_source": {
+     "correct": {
+      "margin": 79
+     },
+     "incorrect": {
+      "margin": 80
+     }
+    },
+    "total": {
+     "incorrect": 80,
+     "correct": 79
+    },
+    "gsv_only": {
+     "incorrect": 80,
+     "correct": 79
+    },
+    "cities_with_20_incorrect": 1,
+    "top_cities_by_incorrect": [
+     {
+      "city": "amsterdam",
+      "correct": 0,
+      "incorrect": 38
+     },
+     {
+      "city": "seattle-wa",
+      "correct": 0,
+      "incorrect": 11
+     },
+     {
+      "city": "chicago-il",
+      "correct": 0,
+      "incorrect": 10
+     },
+     {
+      "city": "oradell-nj",
+      "correct": 11,
+      "incorrect": 6
+     },
+     {
+      "city": "tucson-az",
+      "correct": 1,
+      "incorrect": 5
+     },
+     {
+      "city": "virden-il",
+      "correct": 7,
+      "incorrect": 4
+     },
+     {
+      "city": "blackhawk-hills-il",
+      "correct": 4,
+      "incorrect": 1
+     },
+     {
+      "city": "cdmx",
+      "correct": 0,
+      "incorrect": 1
+     },
+     {
+      "city": "houston-tx",
+      "correct": 0,
+      "incorrect": 1
+     },
+     {
+      "city": "mendota-il",
+      "correct": 0,
+      "incorrect": 1
+     },
+     {
+      "city": "paterson-nj",
+      "correct": 0,
+      "incorrect": 1
+     },
+     {
+      "city": "spgg",
+      "correct": 0,
+      "incorrect": 1
+     }
+    ]
+   },
+   "label_rule_experts": {
+    "dropped": {
+     "bad_pano_size": 171
+    },
+    "class_by_source": {
+     "correct": {
+      "expert": 2184,
+      "margin": 79
+     },
+     "incorrect": {
+      "expert": 200,
+      "margin": 80
+     }
+    },
+    "total": {
+     "correct": 2263,
+     "incorrect": 280
+    },
+    "gsv_only": {
+     "correct": 2253,
+     "incorrect": 280
+    },
+    "cities_with_20_incorrect": 3,
+    "top_cities_by_incorrect": [
+     {
+      "city": "seattle-wa",
+      "correct": 542,
+      "incorrect": 176
+     },
+     {
+      "city": "amsterdam",
+      "correct": 3,
+      "incorrect": 40
+     },
+     {
+      "city": "chicago-il",
+      "correct": 112,
+      "incorrect": 33
+     },
+     {
+      "city": "oradell-nj",
+      "correct": 1169,
+      "incorrect": 8
+     },
+     {
+      "city": "tucson-az",
+      "correct": 11,
+      "incorrect": 5
+     },
+     {
+      "city": "houston-tx",
+      "correct": 30,
+      "incorrect": 4
+     },
+     {
+      "city": "virden-il",
+      "correct": 13,
+      "incorrect": 4
+     },
+     {
+      "city": "cdmx",
+      "correct": 13,
+      "incorrect": 2
+     },
+     {
+      "city": "columbus-oh",
+      "correct": 39,
+      "incorrect": 2
+     },
+     {
+      "city": "walla-walla-wa",
+      "correct": 61,
+      "incorrect": 2
+     },
+     {
+      "city": "blackhawk-hills-il",
+      "correct": 4,
+      "incorrect": 1
+     },
+     {
+      "city": "mendota-il",
+      "correct": 4,
+      "incorrect": 1
+     }
+    ]
+   },
+   "faces": {
+    "labels_with_face": 227035,
+    "valid_labels": 237120,
+    "faces": 38051,
+    "faces_among_label_rule": 1131,
+    "label_rule_labels_on_a_face": 2426,
+    "faces_with_both_classes": 11
+   },
+   "face_rule_census": {
+    "correct": {
+     "faces": 1576,
+     "labels": 15575,
+     "single_labeler_share": 0.4
+    },
+    "incorrect": {
+     "faces": 167,
+     "labels": 590,
+     "single_labeler_share": 0.88
+    },
+    "incorrect_labels_by_city": [
+     {
+      "city": "seattle-wa",
+      "labels": 301
+     },
+     {
+      "city": "chicago-il",
+      "labels": 98
+     },
+     {
+      "city": "tucson-az",
+      "labels": 73
+     },
+     {
+      "city": "amsterdam",
+      "labels": 51
+     },
+     {
+      "city": "mendota-il",
+      "labels": 15
+     },
+     {
+      "city": "paterson-nj",
+      "labels": 9
+     },
+     {
+      "city": "houston-tx",
+      "labels": 7
+     },
+     {
+      "city": "walla-walla-wa",
+      "labels": 7
+     }
+    ],
+    "labels_per_incorrect_face": {
+     "median": 2.0,
+     "p90": 8.0,
+     "max": 30
+    }
+   },
+   "face_rule_pipeline": {
+    "before_cap": {
+     "class_by_source": {
+      "correct": {
+       "expert": 2184,
+       "face_expert": 5505,
+       "face_margin": 4369,
+       "margin": 79
+      },
+      "incorrect": {
+       "expert": 200,
+       "face_expert": 174,
+       "face_margin": 76,
+       "margin": 80
+      }
+     },
+     "total": {
+      "correct": 12137,
+      "incorrect": 530
+     },
+     "faces": {
+      "correct": 1219,
+      "incorrect": 162
+     },
+     "cities_with_20_incorrect": 4,
+     "top_cities_by_incorrect": [
+      {
+       "city": "seattle-wa",
+       "correct": 4302,
+       "incorrect": 315
+      },
+      {
+       "city": "chicago-il",
+       "correct": 834,
+       "incorrect": 74
+      },
+      {
+       "city": "amsterdam",
+       "correct": 6,
+       "incorrect": 69
+      },
+      {
+       "city": "tucson-az",
+       "correct": 105,
+       "incorrect": 23
+      },
+      {
+       "city": "paterson-nj",
+       "correct": 55,
+       "incorrect": 9
+      },
+      {
+       "city": "oradell-nj",
+       "correct": 2282,
+       "incorrect": 8
+      },
+      {
+       "city": "cdmx",
+       "correct": 706,
+       "incorrect": 7
+      },
+      {
+       "city": "walla-walla-wa",
+       "correct": 645,
+       "incorrect": 7
+      },
+      {
+       "city": "columbus-oh",
+       "correct": 391,
+       "incorrect": 6
+      },
+      {
+       "city": "virden-il",
+       "correct": 36,
+       "incorrect": 5
+      },
+      {
+       "city": "houston-tx",
+       "correct": 141,
+       "incorrect": 4
+      },
+      {
+       "city": "blackhawk-hills-il",
+       "correct": 6,
+       "incorrect": 1
+      }
+     ]
+    },
+    "after_cap": {
+     "class_by_source": {
+      "correct": {
+       "expert": 1175,
+       "face_expert": 2004,
+       "face_margin": 1662,
+       "margin": 68
+      },
+      "incorrect": {
+       "expert": 169,
+       "face_expert": 103,
+       "face_margin": 51,
+       "margin": 75
+      }
+     },
+     "total": {
+      "correct": 4909,
+      "incorrect": 398
+     },
+     "faces": {
+      "correct": 1219,
+      "incorrect": 162
+     },
+     "cities_with_20_incorrect": 3,
+     "top_cities_by_incorrect": [
+      {
+       "city": "seattle-wa",
+       "correct": 1808,
+       "incorrect": 234
+      },
+      {
+       "city": "chicago-il",
+       "correct": 444,
+       "incorrect": 61
+      },
+      {
+       "city": "amsterdam",
+       "correct": 6,
+       "incorrect": 41
+      },
+      {
+       "city": "tucson-az",
+       "correct": 31,
+       "incorrect": 17
+      },
+      {
+       "city": "oradell-nj",
+       "correct": 802,
+       "incorrect": 8
+      },
+      {
+       "city": "cdmx",
+       "correct": 328,
+       "incorrect": 7
+      },
+      {
+       "city": "walla-walla-wa",
+       "correct": 358,
+       "incorrect": 7
+      },
+      {
+       "city": "paterson-nj",
+       "correct": 30,
+       "incorrect": 6
+      },
+      {
+       "city": "columbus-oh",
+       "correct": 121,
+       "incorrect": 5
+      },
+      {
+       "city": "virden-il",
+       "correct": 33,
+       "incorrect": 5
+      },
+      {
+       "city": "houston-tx",
+       "correct": 112,
+       "incorrect": 4
+      },
+      {
+       "city": "blackhawk-hills-il",
+       "correct": 6,
+       "incorrect": 1
+      }
+     ]
+    },
+    "cap": 5
+   },
+   "tags_by_class": {
+    "<none>": {
+     "correct": 845,
+     "incorrect": 152
+    },
+    "street has no sidewalks": {
+     "correct": 1041,
+     "incorrect": 42
+    },
+    "street has a sidewalk": {
+     "incorrect": 41,
+     "correct": 212
+    },
+    "ends abruptly": {
+     "correct": 171,
+     "incorrect": 30
+    },
+    "shared pedestrian/car space": {
+     "correct": 72,
+     "incorrect": 24
+    },
+    "gravel/dirt road": {
+     "correct": 108,
+     "incorrect": 16
+    },
+    "covered walkway": {
+     "correct": 2
+    }
+   },
+   "face_size_prior": {
+    "p_correct": 0.830582,
+    "face_size_shares": {
+     "1": 0.048807,
+     "2": 0.052424,
+     "3": 0.898769
+    },
+    "face_size_precision": {
+     "1": 0.69,
+     "2": 0.8,
+     "3": 0.84
+    },
+    "labels_with_face": 227035,
+    "labels_without_face": 10085
+   }
+  },
+  "Signal": {
+   "label_type": "Signal",
+   "labels": 15455,
+   "cities": 39,
+   "pano_source": {
+    "gsv": 15391,
+    "mapillary": 64
+   },
+   "human_authored": 15455,
+   "with_votes": {
+    "ge1": 6968,
+    "ge2": 3608,
+    "ge3": 2107
+   },
+   "n_experts": 2,
+   "vote_pairs": [
+    {
+     "agree": 1,
+     "disagree": 0,
+     "n": 3056
+    },
+    {
+     "agree": 2,
+     "disagree": 0,
+     "n": 1332
+    },
+    {
+     "agree": 3,
+     "disagree": 0,
+     "n": 596
+    },
+    {
+     "agree": 0,
+     "disagree": 1,
+     "n": 304
+    },
+    {
+     "agree": 4,
+     "disagree": 0,
+     "n": 274
+    },
+    {
+     "agree": 5,
+     "disagree": 0,
+     "n": 151
+    },
+    {
+     "agree": 2,
+     "disagree": 1,
+     "n": 119
+    },
+    {
+     "agree": 1,
+     "disagree": 1,
+     "n": 114
+    },
+    {
+     "agree": 3,
+     "disagree": 1,
+     "n": 99
+    },
+    {
+     "agree": 6,
+     "disagree": 0,
+     "n": 83
+    },
+    {
+     "agree": 4,
+     "disagree": 1,
+     "n": 62
+    },
+    {
+     "agree": 0,
+     "disagree": 2,
+     "n": 55
+    },
+    {
+     "agree": 7,
+     "disagree": 0,
+     "n": 49
+    },
+    {
+     "agree": 5,
+     "disagree": 1,
+     "n": 48
+    },
+    {
+     "agree": 2,
+     "disagree": 2,
+     "n": 46
+    },
+    {
+     "agree": 8,
+     "disagree": 0,
+     "n": 45
+    },
+    {
+     "agree": 3,
+     "disagree": 2,
+     "n": 40
+    },
+    {
+     "agree": 1,
+     "disagree": 2,
+     "n": 30
+    },
+    {
+     "agree": 9,
+     "disagree": 0,
+     "n": 27
+    },
+    {
+     "agree": 4,
+     "disagree": 2,
+     "n": 26
+    },
+    {
+     "agree": 5,
+     "disagree": 2,
+     "n": 20
+    },
+    {
+     "agree": 6,
+     "disagree": 1,
+     "n": 19
+    },
+    {
+     "agree": 10,
+     "disagree": 0,
+     "n": 18
+    },
+    {
+     "agree": 7,
+     "disagree": 1,
+     "n": 16
+    },
+    {
+     "agree": 8,
+     "disagree": 1,
+     "n": 16
+    },
+    {
+     "agree": 2,
+     "disagree": 3,
+     "n": 15
+    },
+    {
+     "agree": 1,
+     "disagree": 3,
+     "n": 14
+    },
+    {
+     "agree": 0,
+     "disagree": 3,
+     "n": 13
+    },
+    {
+     "agree": 7,
+     "disagree": 2,
+     "n": 12
+    },
+    {
+     "agree": 10,
+     "disagree": 1,
+     "n": 12
+    },
+    {
+     "agree": 9,
+     "disagree": 1,
+     "n": 11
+    },
+    {
+     "agree": 0,
+     "disagree": 5,
+     "n": 9
+    },
+    {
+     "agree": 3,
+     "disagree": 3,
+     "n": 9
+    },
+    {
+     "agree": 11,
+     "disagree": 0,
+     "n": 9
+    },
+    {
+     "agree": 11,
+     "disagree": 1,
+     "n": 9
+    },
+    {
+     "agree": 0,
+     "disagree": 4,
+     "n": 7
+    },
+    {
+     "agree": 11,
+     "disagree": 2,
+     "n": 7
+    },
+    {
+     "agree": 0,
+     "disagree": 6,
+     "n": 6
+    },
+    {
+     "agree": 2,
+     "disagree": 4,
+     "n": 6
+    },
+    {
+     "agree": 6,
+     "disagree": 2,
+     "n": 6
+    },
+    {
+     "agree": 0,
+     "disagree": 7,
+     "n": 5
+    },
+    {
+     "agree": 1,
+     "disagree": 4,
+     "n": 5
+    },
+    {
+     "agree": 6,
+     "disagree": 3,
+     "n": 5
+    },
+    {
+     "agree": 8,
+     "disagree": 2,
+     "n": 5
+    },
+    {
+     "agree": 8,
+     "disagree": 3,
+     "n": 5
+    },
+    {
+     "agree": 12,
+     "disagree": 2,
+     "n": 5
+    },
+    {
+     "agree": 14,
+     "disagree": 1,
+     "n": 5
+    },
+    {
+     "agree": 0,
+     "disagree": 8,
+     "n": 4
+    },
+    {
+     "agree": 0,
+     "disagree": 9,
+     "n": 4
+    },
+    {
+     "agree": 1,
+     "disagree": 5,
+     "n": 4
+    },
+    {
+     "agree": 1,
+     "disagree": 6,
+     "n": 4
+    },
+    {
+     "agree": 2,
+     "disagree": 5,
+     "n": 4
+    },
+    {
+     "agree": 10,
+     "disagree": 2,
+     "n": 4
+    },
+    {
+     "agree": 13,
+     "disagree": 0,
+     "n": 4
+    },
+    {
+     "agree": 13,
+     "disagree": 2,
+     "n": 4
+    },
+    {
+     "agree": 16,
+     "disagree": 2,
+     "n": 4
+    },
+    {
+     "agree": 1,
+     "disagree": 7,
+     "n": 3
+    },
+    {
+     "agree": 1,
+     "disagree": 10,
+     "n": 3
+    },
+    {
+     "agree": 4,
+     "disagree": 3,
+     "n": 3
+    },
+    {
+     "agree": 12,
+     "disagree": 1,
+     "n": 3
+    },
+    {
+     "agree": 14,
+     "disagree": 2,
+     "n": 3
+    },
+    {
+     "agree": 0,
+     "disagree": 10,
+     "n": 2
+    },
+    {
+     "agree": 0,
+     "disagree": 12,
+     "n": 2
+    },
+    {
+     "agree": 0,
+     "disagree": 14,
+     "n": 2
+    },
+    {
+     "agree": 0,
+     "disagree": 15,
+     "n": 2
+    },
+    {
+     "agree": 2,
+     "disagree": 6,
+     "n": 2
+    },
+    {
+     "agree": 2,
+     "disagree": 7,
+     "n": 2
+    },
+    {
+     "agree": 2,
+     "disagree": 15,
+     "n": 2
+    },
+    {
+     "agree": 4,
+     "disagree": 4,
+     "n": 2
+    },
+    {
+     "agree": 5,
+     "disagree": 3,
+     "n": 2
+    },
+    {
+     "agree": 6,
+     "disagree": 7,
+     "n": 2
+    },
+    {
+     "agree": 7,
+     "disagree": 3,
+     "n": 2
+    },
+    {
+     "agree": 9,
+     "disagree": 2,
+     "n": 2
+    },
+    {
+     "agree": 12,
+     "disagree": 0,
+     "n": 2
+    },
+    {
+     "agree": 12,
+     "disagree": 3,
+     "n": 2
+    },
+    {
+     "agree": 14,
+     "disagree": 0,
+     "n": 2
+    },
+    {
+     "agree": 15,
+     "disagree": 0,
+     "n": 2
+    },
+    {
+     "agree": 15,
+     "disagree": 1,
+     "n": 2
+    },
+    {
+     "agree": 15,
+     "disagree": 2,
+     "n": 2
+    },
+    {
+     "agree": 16,
+     "disagree": 1,
+     "n": 2
+    },
+    {
+     "agree": 16,
+     "disagree": 3,
+     "n": 2
+    },
+    {
+     "agree": 17,
+     "disagree": 1,
+     "n": 2
+    },
+    {
+     "agree": 17,
+     "disagree": 2,
+     "n": 2
+    },
+    {
+     "agree": 18,
+     "disagree": 1,
+     "n": 2
+    },
+    {
+     "agree": 18,
+     "disagree": 2,
+     "n": 2
+    },
+    {
+     "agree": 0,
+     "disagree": 11,
+     "n": 1
+    },
+    {
+     "agree": 0,
+     "disagree": 13,
+     "n": 1
+    },
+    {
+     "agree": 0,
+     "disagree": 20,
+     "n": 1
+    },
+    {
+     "agree": 1,
+     "disagree": 11,
+     "n": 1
+    },
+    {
+     "agree": 1,
+     "disagree": 12,
+     "n": 1
+    },
+    {
+     "agree": 1,
+     "disagree": 13,
+     "n": 1
+    },
+    {
+     "agree": 1,
+     "disagree": 18,
+     "n": 1
+    },
+    {
+     "agree": 1,
+     "disagree": 21,
+     "n": 1
+    },
+    {
+     "agree": 1,
+     "disagree": 23,
+     "n": 1
+    },
+    {
+     "agree": 2,
+     "disagree": 11,
+     "n": 1
+    },
+    {
+     "agree": 2,
+     "disagree": 13,
+     "n": 1
+    },
+    {
+     "agree": 2,
+     "disagree": 14,
+     "n": 1
+    },
+    {
+     "agree": 2,
+     "disagree": 16,
+     "n": 1
+    },
+    {
+     "agree": 3,
+     "disagree": 4,
+     "n": 1
+    },
+    {
+     "agree": 3,
+     "disagree": 5,
+     "n": 1
+    },
+    {
+     "agree": 3,
+     "disagree": 6,
+     "n": 1
+    },
+    {
+     "agree": 3,
+     "disagree": 7,
+     "n": 1
+    },
+    {
+     "agree": 3,
+     "disagree": 8,
+     "n": 1
+    },
+    {
+     "agree": 3,
+     "disagree": 11,
+     "n": 1
+    },
+    {
+     "agree": 3,
+     "disagree": 13,
+     "n": 1
+    },
+    {
+     "agree": 4,
+     "disagree": 6,
+     "n": 1
+    },
+    {
+     "agree": 4,
+     "disagree": 7,
+     "n": 1
+    },
+    {
+     "agree": 4,
+     "disagree": 8,
+     "n": 1
+    },
+    {
+     "agree": 5,
+     "disagree": 5,
+     "n": 1
+    },
+    {
+     "agree": 5,
+     "disagree": 6,
+     "n": 1
+    },
+    {
+     "agree": 5,
+     "disagree": 7,
+     "n": 1
+    },
+    {
+     "agree": 6,
+     "disagree": 4,
+     "n": 1
+    },
+    {
+     "agree": 6,
+     "disagree": 8,
+     "n": 1
+    },
+    {
+     "agree": 7,
+     "disagree": 4,
+     "n": 1
+    },
+    {
+     "agree": 7,
+     "disagree": 5,
+     "n": 1
+    },
+    {
+     "agree": 8,
+     "disagree": 4,
+     "n": 1
+    },
+    {
+     "agree": 8,
+     "disagree": 7,
+     "n": 1
+    },
+    {
+     "agree": 8,
+     "disagree": 11,
+     "n": 1
+    },
+    {
+     "agree": 10,
+     "disagree": 3,
+     "n": 1
+    },
+    {
+     "agree": 10,
+     "disagree": 7,
+     "n": 1
+    },
+    {
+     "agree": 10,
+     "disagree": 12,
+     "n": 1
+    },
+    {
+     "agree": 11,
+     "disagree": 4,
+     "n": 1
+    },
+    {
+     "agree": 11,
+     "disagree": 6,
+     "n": 1
+    },
+    {
+     "agree": 12,
+     "disagree": 4,
+     "n": 1
+    },
+    {
+     "agree": 13,
+     "disagree": 1,
+     "n": 1
+    },
+    {
+     "agree": 13,
+     "disagree": 3,
+     "n": 1
+    },
+    {
+     "agree": 15,
+     "disagree": 3,
+     "n": 1
+    },
+    {
+     "agree": 15,
+     "disagree": 4,
+     "n": 1
+    },
+    {
+     "agree": 17,
+     "disagree": 4,
+     "n": 1
+    }
+   ],
+   "label_rule_margin": {
+    "dropped": {},
+    "class_by_source": {
+     "correct": {
+      "margin": 1577
+     },
+     "incorrect": {
+      "margin": 186
+     }
+    },
+    "total": {
+     "correct": 1577,
+     "incorrect": 186
+    },
+    "gsv_only": {
+     "correct": 1577,
+     "incorrect": 186
+    },
+    "cities_with_20_incorrect": 3,
+    "top_cities_by_incorrect": [
+     {
+      "city": "seattle-wa",
+      "correct": 372,
+      "incorrect": 56
+     },
+     {
+      "city": "chicago-il",
+      "correct": 415,
+      "incorrect": 50
+     },
+     {
+      "city": "amsterdam",
+      "correct": 209,
+      "incorrect": 37
+     },
+     {
+      "city": "cdmx",
+      "correct": 23,
+      "incorrect": 10
+     },
+     {
+      "city": "teaneck-nj",
+      "correct": 109,
+      "incorrect": 6
+     },
+     {
+      "city": "pittsburgh-pa",
+      "correct": 55,
+      "incorrect": 5
+     },
+     {
+      "city": "cuenca",
+      "correct": 137,
+      "incorrect": 4
+     },
+     {
+      "city": "oradell-nj",
+      "correct": 4,
+      "incorrect": 4
+     },
+     {
+      "city": "sao-paulo-brazil",
+      "correct": 0,
+      "incorrect": 3
+     },
+     {
+      "city": "burnaby",
+      "correct": 57,
+      "incorrect": 2
+     },
+     {
+      "city": "hackensack-nj",
+      "correct": 1,
+      "incorrect": 2
+     },
+     {
+      "city": "paterson-nj",
+      "correct": 1,
+      "incorrect": 2
+     }
+    ]
+   },
+   "label_rule_experts": {
+    "dropped": {},
+    "class_by_source": {
+     "correct": {
+      "expert": 668,
+      "margin": 1577
+     },
+     "incorrect": {
+      "expert": 16,
+      "margin": 186
+     }
+    },
+    "total": {
+     "correct": 2245,
+     "incorrect": 202
+    },
+    "gsv_only": {
+     "correct": 2245,
+     "incorrect": 202
+    },
+    "cities_with_20_incorrect": 3,
+    "top_cities_by_incorrect": [
+     {
+      "city": "seattle-wa",
+      "correct": 421,
+      "incorrect": 63
+     },
+     {
+      "city": "chicago-il",
+      "correct": 573,
+      "incorrect": 56
+     },
+     {
+      "city": "amsterdam",
+      "correct": 223,
+      "incorrect": 37
+     },
+     {
+      "city": "cdmx",
+      "correct": 23,
+      "incorrect": 10
+     },
+     {
+      "city": "teaneck-nj",
+      "correct": 126,
+      "incorrect": 6
+     },
+     {
+      "city": "pittsburgh-pa",
+      "correct": 67,
+      "incorrect": 5
+     },
+     {
+      "city": "cuenca",
+      "correct": 137,
+      "incorrect": 4
+     },
+     {
+      "city": "oradell-nj",
+      "correct": 8,
+      "incorrect": 4
+     },
+     {
+      "city": "burnaby",
+      "correct": 261,
+      "incorrect": 3
+     },
+     {
+      "city": "sao-paulo-brazil",
+      "correct": 0,
+      "incorrect": 3
+     },
+     {
+      "city": "hackensack-nj",
+      "correct": 1,
+      "incorrect": 2
+     },
+     {
+      "city": "paterson-nj",
+      "correct": 22,
+      "incorrect": 2
+     }
+    ]
+   },
+   "faces": {
+    "labels_with_face": 15162,
+    "valid_labels": 15455,
+    "faces": 9163,
+    "faces_among_label_rule": 1827,
+    "label_rule_labels_on_a_face": 2396,
+    "faces_with_both_classes": 25
+   },
+   "face_rule_census": {
+    "correct": {
+     "faces": 1983,
+     "labels": 4428,
+     "single_labeler_share": 0.62
+    },
+    "incorrect": {
+     "faces": 91,
+     "labels": 116,
+     "single_labeler_share": 0.95
+    },
+    "incorrect_labels_by_city": [
+     {
+      "city": "chicago-il",
+      "labels": 51
+     },
+     {
+      "city": "seattle-wa",
+      "labels": 24
+     },
+     {
+      "city": "amsterdam",
+      "labels": 8
+     },
+     {
+      "city": "teaneck-nj",
+      "labels": 8
+     },
+     {
+      "city": "oradell-nj",
+      "labels": 4
+     },
+     {
+      "city": "paterson-nj",
+      "labels": 3
+     },
+     {
+      "city": "pittsburgh-pa",
+      "labels": 3
+     },
+     {
+      "city": "sao-paulo-brazil",
+      "labels": 3
+     }
+    ],
+    "labels_per_incorrect_face": {
+     "median": 1.0,
+     "p90": 2.0,
+     "max": 4
+    }
+   },
+   "face_rule_pipeline": {
+    "before_cap": {
+     "class_by_source": {
+      "correct": {
+       "expert": 668,
+       "face_expert": 239,
+       "face_margin": 2374,
+       "margin": 1577
+      },
+      "incorrect": {
+       "expert": 16,
+       "face_expert": 3,
+       "face_margin": 12,
+       "margin": 186
+      }
+     },
+     "total": {
+      "correct": 4858,
+      "incorrect": 217
+     },
+     "faces": {
+      "correct": 2343,
+      "incorrect": 169
+     },
+     "cities_with_20_incorrect": 3,
+     "top_cities_by_incorrect": [
+      {
+       "city": "chicago-il",
+       "correct": 1282,
+       "incorrect": 65
+      },
+      {
+       "city": "seattle-wa",
+       "correct": 560,
+       "incorrect": 65
+      },
+      {
+       "city": "amsterdam",
+       "correct": 560,
+       "incorrect": 37
+      },
+      {
+       "city": "cdmx",
+       "correct": 26,
+       "incorrect": 10
+      },
+      {
+       "city": "teaneck-nj",
+       "correct": 156,
+       "incorrect": 8
+      },
+      {
+       "city": "pittsburgh-pa",
+       "correct": 75,
+       "incorrect": 5
+      },
+      {
+       "city": "cuenca",
+       "correct": 519,
+       "incorrect": 4
+      },
+      {
+       "city": "oradell-nj",
+       "correct": 13,
+       "incorrect": 4
+      },
+      {
+       "city": "burnaby",
+       "correct": 510,
+       "incorrect": 3
+      },
+      {
+       "city": "paterson-nj",
+       "correct": 110,
+       "incorrect": 3
+      },
+      {
+       "city": "sao-paulo-brazil",
+       "correct": 0,
+       "incorrect": 3
+      },
+      {
+       "city": "detroit-mi",
+       "correct": 8,
+       "incorrect": 2
+      }
+     ]
+    },
+    "after_cap": {
+     "class_by_source": {
+      "correct": {
+       "expert": 630,
+       "face_expert": 213,
+       "face_margin": 2192,
+       "margin": 1535
+      },
+      "incorrect": {
+       "expert": 16,
+       "face_expert": 3,
+       "face_margin": 12,
+       "margin": 186
+      }
+     },
+     "total": {
+      "correct": 4570,
+      "incorrect": 217
+     },
+     "faces": {
+      "correct": 2343,
+      "incorrect": 169
+     },
+     "cities_with_20_incorrect": 3,
+     "top_cities_by_incorrect": [
+      {
+       "city": "chicago-il",
+       "correct": 1251,
+       "incorrect": 65
+      },
+      {
+       "city": "seattle-wa",
+       "correct": 558,
+       "incorrect": 65
+      },
+      {
+       "city": "amsterdam",
+       "correct": 523,
+       "incorrect": 37
+      },
+      {
+       "city": "cdmx",
+       "correct": 26,
+       "incorrect": 10
+      },
+      {
+       "city": "teaneck-nj",
+       "correct": 155,
+       "incorrect": 8
+      },
+      {
+       "city": "pittsburgh-pa",
+       "correct": 75,
+       "incorrect": 5
+      },
+      {
+       "city": "cuenca",
+       "correct": 474,
+       "incorrect": 4
+      },
+      {
+       "city": "oradell-nj",
+       "correct": 13,
+       "incorrect": 4
+      },
+      {
+       "city": "burnaby",
+       "correct": 456,
+       "incorrect": 3
+      },
+      {
+       "city": "paterson-nj",
+       "correct": 109,
+       "incorrect": 3
+      },
+      {
+       "city": "sao-paulo-brazil",
+       "correct": 0,
+       "incorrect": 3
+      },
+      {
+       "city": "detroit-mi",
+       "correct": 8,
+       "incorrect": 2
+      }
+     ]
+    },
+    "cap": 5
+   },
+   "tags_by_class": {
+    "<none>": {
+     "incorrect": 172,
+     "correct": 986
+    },
+    "one button": {
+     "correct": 1084,
+     "incorrect": 20
+    },
+    "button waist height": {
+     "correct": 639,
+     "incorrect": 7
+    },
+    "APS": {
+     "incorrect": 6,
+     "correct": 61
+    },
+    "hard to reach buttons": {
+     "correct": 7,
+     "incorrect": 2
+    },
+    "two buttons": {
+     "correct": 115
+    }
+   }
+  }
+ }
+}

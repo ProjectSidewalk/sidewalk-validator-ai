@@ -35,6 +35,12 @@ because each reports one measurement at one point in time; the pipeline pages ar
 | [`ai-label-holdout-2026-11.md`](ai-label-holdout-2026-11.md) | AI-placed labels in training: the held-out evaluation slice, the with/without round-4 ablation (not yet run) and the full-pool ranked Disagree lists for the leads ([#79](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/79), [#80](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/80)) |
 | [`job-window-crops-2026-11.md`](job-window-crops-2026-11.md) | Would a CurbRamp validator trained on the crops SidewalkWebpage's crop job cuts (3:2 windows, `CropSizingRule` v2, no projection, tilt or depth) match the depth-sized one? The port, the per-provider counts (round 3 is GSV only), the paired protocol; not yet run ([#53](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/53)) |
 
+## Results and studies (November 2026)
+
+| page | question |
+|---|---|
+| [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md) | NoSidewalk in auto-validation: how much training data the public rawLabels hold, the block-face rule that replaces the label rule for this type, the face-size deployment prior, and the pilot (run 2026-11-05: whole-view crops beat depth-sized ones, within-city AUC 0.93 on test and 0.79 on held-out cities; the Agree gate is not evaluable at this size, not served; [#42](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/42)) |
+
 ## Decisions, audit and hygiene
 
 | page | what it covers |
