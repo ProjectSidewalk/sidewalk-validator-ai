@@ -126,8 +126,10 @@ def test_trainer_metrics_unpacks_the_label_tuple():
 def test_recipe_constants_match_round_3():
     src = open(os.path.join(REPO, "fine_tune_classifier.py")).read()
     assert "scale=(0.7, 1.0)" in src and fr.CROP_SCALE == (0.7, 1.0)
-    assert re.search(r"per_device_train_batch_size=8\b", src) and fr.TRAIN_BATCH_SIZE == 8
-    assert re.search(r"gradient_accumulation_steps=4\b", src) and fr.GRAD_ACCUM == 4
+    # the validator's batch is `--batch-size` (default DEFAULT_BATCH_SIZE) with accumulation to BATCH_TOTAL (issue #14)
+    assert ftc.DEFAULT_BATCH_SIZE == 8 and fr.TRAIN_BATCH_SIZE == 8
+    assert ftc.BATCH_TOTAL // ftc.DEFAULT_BATCH_SIZE == 4 and fr.GRAD_ACCUM == 4
+    assert re.search(r"gradient_accumulation_steps=BATCH_TOTAL // args\.batch_size", src)
     assert re.search(r"learning_rate=1e-5\b", src) and fr.LEARNING_RATE == 1e-5
     assert re.search(r"warmup_ratio=0.1\b", src) and fr.WARMUP_RATIO == 0.1
     own = open(os.path.join(REPO, "fine_tune_retype.py")).read()
