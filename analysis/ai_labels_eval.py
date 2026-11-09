@@ -18,6 +18,10 @@ Stages (subcommands)::
     # 3. klone: score the crops with the round-3 checkpoint (evaluate.run_inference)
     python analysis/ai_labels_eval.py score --manifest RUN/manifest.csv --checkpoint retrain-2026-10/CurbRamp/dinov2/checkpoint-4340 \\
         --out RUN/predictions.csv
+    # (issue #79) the with/without ablation on the labels a data_generation.py run held out: select --holdout
+    #    <out>/CurbRamp/ai_label_holdout.csv, crops once, score once per checkpoint (--out predictions_<arm>.csv), then
+    python analysis/ai_labels_eval.py ablation --run RUN --pred-a RUN/predictions_with.csv \\
+        --pred-b RUN/predictions_without.csv --out RUN/ablation
     # 4. Mac: the tables and figures
     python analysis/ai_labels_eval.py report --run RUN --map round3/CurbRamp/calibration/curbramp.json \\
         --map-uncapped round3/CurbRamp/calibration/uncapped/curbramp.json --round3 round3/CurbRamp \\
@@ -64,23 +68,15 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
 import data_generation as dg  # noqa: E402
+from ai_label_holdout import CAMPAIGNS, TIERS, load_holdout, tier_of  # noqa: E402,F401
 
 LABEL_TYPE = "CurbRamp"
 GATE = 0.92
 DEFAULT_CITIES = ("vancouver-wa", "richmond-va", "laurens-ia")
 SEED = 20261027
 
-#: Submission campaigns per deployment: (first UTC date, tier). A label's tier is that of the latest campaign whose date
-#: is <= its ``time_created`` date. From sidewalk-auto-labeler ``runs/<city>/*.submission.json`` (richmond, laurens) and
-#: its docs/server-agree-check.md (Vancouver: one campaign at the 0.55 operating point, 2025-09-18/19, before the band
-#: existed). Richmond 2026-09-24 re-submitted 14 repositioned sequences at 0.30 (``results.posfix3seq.raw.jsonl``), so
-#: those labels mix both tiers.
-CAMPAIGNS = {
-    "vancouver-wa": [("2025-09-18", "core")],
-    "richmond-va": [("2026-09-05", "core"), ("2026-09-22", "band"), ("2026-09-24", "mixed")],
-    "laurens-ia": [("2026-09-17", "core"), ("2026-09-22", "band")],
-}
-TIERS = ("core", "band", "mixed")
+# The campaign table and tier rule moved to ai_label_holdout.py (data_generation imports them there, and cannot
+# import this script, which imports data_generation); re-exported here under the same names.
 
 LABEL_COLUMNS = [
     "label_uid", "city", "label_id", "pano_id", "author", "pano_source", "time_created", "tier", "human_agree",
@@ -146,34 +142,6 @@ def majority_class(agree, disagree):
     if disagree > agree:
         return "incorrect"
     return ""
-
-
-def tier_of(city, time_created, campaigns=CAMPAIGNS):
-    """The confidence tier of a label from its deployment's campaign dates; ``""`` when unknown.
-
-    >>> tier_of("richmond-va", "2026-09-05T01:10:00Z"), tier_of("richmond-va", "2026-09-22 19:03:45.1")
-    ('core', 'band')
-    >>> tier_of("richmond-va", "2026-09-30"), tier_of("laurens-ia", "2026-09-01"), tier_of("nowhere", "2026-09-05")
-    ('mixed', '', '')
-
-    Campaign days are UTC dates; a timestamp with an offset is converted first, a naive one is taken as UTC (what the
-    rawLabels export writes):
-
-    >>> tier_of("laurens-ia", "2026-09-21T20:00:00-07:00"), tier_of("laurens-ia", "not a date")
-    ('band', '')
-    """
-    try:
-        ts = pd.to_datetime(time_created, utc=True)
-    except (ValueError, TypeError):
-        return ""
-    if pd.isna(ts):
-        return ""
-    day = ts.strftime("%Y-%m-%d")
-    tier = ""
-    for first_day, name in campaigns.get(city, []):
-        if day >= first_day:
-            tier = name
-    return tier
 
 
 def wilson(k, n, z=1.96):
@@ -336,9 +304,26 @@ def fmt_ci(x, lo, hi, nd=3):
 # select
 # ---------------------------------------------------------------------------------------------------------------------
 
-def select_labels(rawlabels_dir, cities, experts=frozenset(), round3_split=None):
+HOLDOUT_EXTRA_COLUMNS = ["holdout", "stratum", "holdout_tier", "class_source"]
+
+
+def select_labels(rawlabels_dir, cities, experts=frozenset(), round3_split=None, all_ai=False, holdout=None):
     """One row per CurbRamp label with >= 1 human Agree/Disagree vote in ``cities``: AI-authored ones (the study set)
-    and human-authored ones (the in-deployment comparison). Returns ``(labels_df, inputs)``."""
+    and human-authored ones (the in-deployment comparison). Returns ``(labels_df, summary)``.
+
+    ``all_ai`` (issue #80) keeps EVERY AI-authored label, voted or not; one with no human reference (no Agree/Disagree
+    vote, or a tie) gets ``label_class = ""``. Human-authored rows are unchanged. The summary's ``ai_unvoted`` counts
+    labels with no human vote at all (Unsure included, as ``ai_labels_relabel.prior_status``); ``ai_unsure_only``
+    those whose only human votes are Unsure.
+
+    ``holdout`` (issue #79), a frame from ``ai_label_holdout.load_holdout``, restricts the AI-authored rows to the
+    labels ``data_generation.py`` held out of training, and takes their class from that file: the TRAINING rule's
+    class (crowd margin or expert), so the held-out slice is scored against the targets training used, not the
+    single-vote majority. Adds ``holdout`` (1 on those rows), ``stratum``, ``holdout_tier`` and ``class_source``.
+    Exits if a held-out label is missing from the pulls. The two options are exclusive.
+    """
+    if all_ai and holdout is not None:
+        raise ValueError("all_ai and holdout are exclusive")
     frames, inputs = [], {}
     for city in cities:
         path = os.path.join(rawlabels_dir, f"{city}.csv")
@@ -363,18 +348,40 @@ def select_labels(rawlabels_dir, cities, experts=frozenset(), round3_split=None)
         s = pd.read_csv(round3_split, dtype=str, usecols=["label_uid", "split"])
         df["round3_split"] = df.label_uid.map(dict(zip(s.label_uid, s.split))).fillna("")
     df["clean"] = (~df.round3_split.isin(["train", "val"])).astype(int)
-    voted = df[(df.n_votes > 0) & (df.label_class != "")].copy()
+    df["_voted"] = (df.n_votes > 0) & (df.label_class != "")
     ties = int(((df.n_votes > 0) & (df.label_class == "")).sum())
+    is_ai = df.author == "ai"
+    columns = list(LABEL_COLUMNS)
+    if holdout is not None:
+        missing = sorted(set(holdout.label_uid) - set(df.label_uid))
+        if missing:
+            sys.exit(f"{len(missing)} held-out labels are not CurbRamp rows of the rawLabels pulls of "
+                     f"{', '.join(cities)} (first: {missing[:3]}); pull every deployment the holdout covers (--cities)")
+        h = holdout.set_index("label_uid")
+        in_hold = df.label_uid.isin(h.index)
+        df["holdout"] = in_hold.astype(int)
+        df.loc[in_hold, "label_class"] = df.loc[in_hold, "label_uid"].map(h.label_class)
+        for col, src in (("stratum", "stratum"), ("holdout_tier", "tier"), ("class_source", "class_source")):
+            df[col] = df.label_uid.map(h[src]).fillna("") if src in h else ""
+        keep = (is_ai & in_hold) | (~is_ai & df._voted)
+        columns += HOLDOUT_EXTRA_COLUMNS
+    elif all_ai:
+        keep = is_ai | df._voted
+    else:
+        keep = df._voted
+    voted = df[keep].copy()
     voted = voted.sort_values(["city", "label_id"], kind="mergesort").reset_index(drop=True)
-    for c in LABEL_COLUMNS:
+    for c in columns:
         if c not in voted:
             voted[c] = ""
-    summary = {"inputs": inputs, "ties_dropped": ties, "per_city": {}}
+    summary = {"inputs": inputs, "ties_dropped": ties if not all_ai else 0, "per_city": {}}
+    if all_ai:
+        summary["ai_ties_kept"] = int((is_ai & (df.n_votes > 0) & ~df._voted).sum())
     for city, g in voted.groupby("city"):
         ai = g[g.author == "ai"]
         summary["per_city"][city] = {
             "ai_labels_total": int((df[df.city == city].author == "ai").sum()),
-            "ai_voted": int(len(ai)), "ai_panos": int(ai.pano_id.nunique()),
+            "ai_voted": int(ai._voted.sum()), "ai_panos": int(ai.pano_id.nunique()),
             "ai_incorrect": int((ai.label_class == "incorrect").sum()),
             "ai_two_plus_votes": int((ai.n_votes >= 2).sum()),
             "ai_expert_decided": int((ai.expert_class != "").sum()),
@@ -384,13 +391,25 @@ def select_labels(rawlabels_dir, cities, experts=frozenset(), round3_split=None)
             "human_voted": int((g.author == "human").sum()),
             "pano_source": {k: int(v) for k, v in g.pano_source.value_counts().items()},
         }
-    return voted[LABEL_COLUMNS], summary
+        if all_ai:
+            # "unvoted" = no human vote of any kind, Unsure included: the definition ai_labels_relabel.prior_status
+            # uses, so the select summary and the ranked list's unvoted slice count the same labels
+            no_vote = (ai.n_votes == 0) & (ai.human_unsure == 0)
+            summary["per_city"][city].update(ai_selected=int(len(ai)), ai_unvoted=int(no_vote.sum()),
+                                             ai_unsure_only=int(((ai.n_votes == 0) & ~no_vote).sum()),
+                                             ai_ties=int(((ai.n_votes > 0) & ~ai._voted).sum()))
+        if holdout is not None:
+            summary["per_city"][city]["ai_holdout"] = {cls: int((ai.label_class == cls).sum())
+                                                       for cls in ("correct", "incorrect")}
+    return voted[columns], summary
 
 
 def cmd_select(args):
     experts = dg.parse_experts(os.environ.get("EXPERTS"))
     cities = [c.strip() for c in args.cities.split(",") if c.strip()]
-    labels, summary = select_labels(args.rawlabels, cities, experts, args.round3_split)
+    holdout = load_holdout(args.holdout) if args.holdout else None
+    labels, summary = select_labels(args.rawlabels, cities, experts, args.round3_split, all_ai=args.all_ai,
+                                    holdout=holdout)
     os.makedirs(args.out, exist_ok=True)
     labels.to_csv(os.path.join(args.out, "labels.csv"), index=False)
     panos = sorted({f"{c}/{p[:2]}/{p}.jpg" for c, p in zip(labels.city, labels.pano_id)})
@@ -400,7 +419,9 @@ def cmd_select(args):
         "selected_on": datetime.now(timezone.utc).isoformat(timespec="seconds"), "cities": cities,
         "experts_configured": len(experts), "campaigns": CAMPAIGNS, "label_type": LABEL_TYPE,
         "round3_split": {"path": args.round3_split, "sha256": sha256_file(args.round3_split)} if args.round3_split else None,
-        "n_labels": int(len(labels)), "n_panos": len(panos),
+        "n_labels": int(len(labels)), "n_panos": len(panos), "all_ai": bool(args.all_ai),
+        "holdout": ({"path": args.holdout, "sha256": sha256_file(args.holdout), "n": int(len(holdout))}
+                    if args.holdout else None),
         "labels_csv_sha256": sha256_file(os.path.join(args.out, "labels.csv")),
     })
     with open(os.path.join(args.out, "selection.json"), "w") as f:
@@ -548,7 +569,8 @@ def cmd_score(args):
 # report
 # ---------------------------------------------------------------------------------------------------------------------
 
-TEXT_COLS = ("tier", "expert_class", "round3_split", "severity", "tags", "pano_source", "time_created")
+TEXT_COLS = ("tier", "expert_class", "round3_split", "severity", "tags", "pano_source", "time_created", "label_class",
+             "stratum", "holdout_tier", "class_source")
 
 
 def read_labels(path):
@@ -563,14 +585,16 @@ def read_labels(path):
     df = pd.read_csv(path, dtype={"label_id": str}, low_memory=False)
     for c in TEXT_COLS:
         if c in df:
-            df[c] = df[c].fillna("").astype(str)
+            df[c] = df[c].astype(object).fillna("").astype(str)
     return df
 
 
-def load_run(run_dir):
+def load_run(run_dir, predictions=None):
+    """labels.csv + manifest.csv + one predictions file (default ``<run_dir>/predictions.csv``) as one frame with
+    ``true``, ``verdict``, ``confidence`` and ``scored``."""
     labels = read_labels(os.path.join(run_dir, "labels.csv"))
     manifest = pd.read_csv(os.path.join(run_dir, "manifest.csv"), dtype=str, keep_default_na=False)
-    pred = pd.read_csv(os.path.join(run_dir, "predictions.csv"))
+    pred = pd.read_csv(predictions or os.path.join(run_dir, "predictions.csv"))
     df = labels.merge(manifest[["label_uid", "status", "depth_m", "crop_half_px", "tilt_applied", "pose_unhandled"]],
                       on="label_uid", how="left", validate="one_to_one")
     df = df.merge(pred[["label_uid", "p_correct", "p_incorrect"]], on="label_uid", how="left", validate="one_to_one")
@@ -606,6 +630,8 @@ def cmd_report(args):
     from sklearn.metrics import roc_curve
 
     df = load_run(args.run)
+    n_unreferenced = int((df.true == "").sum())
+    df = df[df.true != ""]  # an --all-ai run's unvoted labels have no human reference to score against
     api_map = json.load(open(args.map))
     api_map_unc = json.load(open(args.map_uncapped)) if args.map_uncapped else None
     r3 = load_round3(args.round3) if args.round3 else None
@@ -630,7 +656,8 @@ def cmd_report(args):
                  f"{int((~g.scored).sum())} |")
     L.append("")
     not_scored = ai[~ai.scored].status.value_counts().to_dict()
-    L.append(f"Not scored (no crop): {not_scored or 'none'}. Ties (equal Agree and Disagree) dropped: {sel['ties_dropped']}.")
+    L.append(f"Not scored (no crop): {not_scored or 'none'}. Ties (equal Agree and Disagree) dropped: {sel['ties_dropped']}."
+             + (f" Labels with no human reference left out of every table: {n_unreferenced:,}." if n_unreferenced else ""))
     L.append("")
 
     # 1b. who decided the reference, and where the lead-rejected labels went (the round-3 selection took them)
@@ -665,6 +692,9 @@ def cmd_report(args):
             ("acc", lambda r: fmt(r["acc"])), ("bal. acc", lambda r: fmt(r["bal_acc"])),
             ("recall(incorrect) @ P ≥ 0.92", lambda r: fmt(r["recall_incorrect_at_p92"]))]
     L += ["### Headline: the round-3 CurbRamp validator on AI-placed curb ramps", "", table(head_rows, cols), ""]
+    if "holdout" in df.columns:
+        L += ["AI-placed rows are the labels `data_generation.py` held out of training (`ai_label_holdout.csv`, issue "
+              "#79); their reference is the training rule's class from that file, not the single-vote majority.", ""]
     if r3 is not None:
         b = auc_block(r3, args.n_boot)
         b["slice"] = "baseline: human-placed, round-3 test split (all training deployments)"
@@ -839,6 +869,133 @@ def cmd_report(args):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# ablation (issue #79): the held-out AI labels scored by two checkpoints, with and without AI labels in training
+# ---------------------------------------------------------------------------------------------------------------------
+
+def paired_holdout(a, b):
+    """The held-out AI rows (``holdout == 1``) scored in BOTH arms: ``a``'s rows with ``b``'s probabilities beside
+    them as ``p_correct_b``/``p_incorrect_b``. ``a`` and ``b`` are :func:`load_run` frames of one run."""
+    keep = lambda f: f[(f.author == "ai") & (f.holdout.astype(str) == "1") & f.scored]  # noqa: E731
+    ha, hb = keep(a), keep(b)
+    m = ha.merge(hb[["label_uid", "p_correct", "p_incorrect"]], on="label_uid", how="inner", suffixes=("", "_b"),
+                 validate="one_to_one")
+    return m.sort_values("label_uid", kind="mergesort").reset_index(drop=True)
+
+
+def _disagree_stats(true, p_correct, p_incorrect):
+    """Argmax Disagree precision and recall with Wilson 95% intervals."""
+    verdict = np.where(np.asarray(p_incorrect) > np.asarray(p_correct), "incorrect", "correct")
+    true = np.asarray(true)
+    n_dis, n_inc = int((verdict == "incorrect").sum()), int((true == "incorrect").sum())
+    hits = int(((verdict == "incorrect") & (true == "incorrect")).sum())
+    plo, phi = wilson(hits, n_dis)
+    rlo, rhi = wilson(hits, n_inc)
+    return {"n_disagree": n_dis, "hits": hits,
+            "precision": round(hits / n_dis, 4) if n_dis else float("nan"), "precision_lo": round(plo, 4),
+            "precision_hi": round(phi, 4), "recall": round(hits / n_inc, 4) if n_inc else float("nan"),
+            "recall_lo": round(rlo, 4), "recall_hi": round(rhi, 4)}
+
+
+def ablation_rows(paired, n_boot=1000, min_n=30, api_map=None, seed=SEED):
+    """Per slice (pooled, each city, each holdout tier): n, AUC of arm A and arm B on the same labels, the paired
+    difference A - B with a panorama-resampled 95% interval (each resample scores both arms,
+    ``retrain_report.cluster_boot``), argmax Disagree precision/recall per arm with Wilson intervals and, with
+    ``api_map``, the deployed gate's metrics per arm. A slice under ``min_n`` labels or with one class only reports
+    its counts (``scored`` False)."""
+    from sklearn.metrics import roc_auc_score
+    from analysis.retrain_report import ci, cluster_boot
+    tier_col = "holdout_tier" if "holdout_tier" in paired else "tier"
+    slices = [("pooled", paired)] + [(f"city = {c}", g) for c, g in paired.groupby("city")]
+    slices += [(f"tier = {t}", g) for t, g in paired.groupby(tier_col) if t != ""]
+    rows = []
+    for name, g in slices:
+        y = (g.true == "incorrect").astype(int).values
+        row = {"slice": name, "n": int(len(g)), "n_incorrect": int(y.sum()), "n_panos": int(g.pano_id.nunique()),
+               "scored": bool(len(g) >= min_n and 0 < y.sum() < len(y))}
+        if row["scored"]:
+            sa = rank_score(g.p_correct.values, g.p_incorrect.values)
+            sb = rank_score(g.p_correct_b.values, g.p_incorrect_b.values)
+            row["auc_a"], row["auc_b"] = float(roc_auc_score(y, sa)), float(roc_auc_score(y, sb))
+            row["delta"] = row["auc_a"] - row["auc_b"]
+            boot = cluster_boot(y, np.column_stack([sa, sb]), g.pano_id.values, n_boot, seed)
+            row["delta_lo"], row["delta_hi"] = ci(boot[:, 0] - boot[:, 1])
+            row["a"] = _disagree_stats(g.true, g.p_correct, g.p_incorrect)
+            row["b"] = _disagree_stats(g.true, g.p_correct_b, g.p_incorrect_b)
+            if api_map is not None:
+                for arm, pc, pi in (("a", g.p_correct, g.p_incorrect), ("b", g.p_correct_b, g.p_incorrect_b)):
+                    verdict = np.where(pi > pc, "incorrect", "correct")
+                    served = served_accuracy(api_map, verdict, np.maximum(pc, pi))
+                    row[f"gate_{arm}"] = gate_metrics(g.true, verdict, served)
+        rows.append(row)
+    return rows
+
+
+def ablation_markdown(rows, name_a, name_b, n_boot, min_n):
+    """The ablation table: one row per slice; slices under the minimum show counts only."""
+    def ci_(r, arm, k):
+        s = r[arm]
+        return fmt_ci(s[k], s[f"{k}_lo"], s[f"{k}_hi"])
+    L = [f"<!-- generated by analysis/ai_labels_eval.py ablation on {datetime.now(timezone.utc).date()} -->", "",
+         f"Held-out AI-placed labels (`ai_label_holdout.csv`, issue #79), scored by A = `{name_a}` and B = `{name_b}`. "
+         f"Reference: the training rule's class from the holdout file. Δ = A − B with a paired {n_boot}-resample "
+         f"panorama bootstrap; precision and recall are the argmax Disagree verdict's, Wilson 95%. Slices under "
+         f"{min_n} labels or with one class show counts only.", "",
+         f"| slice | n | incorrect | panos | AUC {name_a} | AUC {name_b} | Δ AUC [95% CI] | Disagree precision "
+         f"{name_a} | Disagree precision {name_b} | Disagree recall {name_a} | Disagree recall {name_b} |",
+         "|---|---:|---:|---:|---:|---:|---|---|---|---|---|"]
+    for r in rows:
+        head = f"| {r['slice']} | {r['n']:,} | {r['n_incorrect']} | {r['n_panos']:,} |"
+        if not r["scored"]:
+            L.append(head + " — | — | — | — | — | — | — |")
+            continue
+        L.append(head + f" {fmt(r['auc_a'])} | {fmt(r['auc_b'])} | {fmt_ci(r['delta'], r['delta_lo'], r['delta_hi'])} | "
+                 f"{ci_(r, 'a', 'precision')} | {ci_(r, 'b', 'precision')} | {ci_(r, 'a', 'recall')} | "
+                 f"{ci_(r, 'b', 'recall')} |")
+    gated = [r for r in rows if r["scored"] and "gate_a" in r]
+    if gated:
+        L += ["", "At the deployed gate (served accuracy ≥ 0.92):", "",
+              f"| slice | Agree pass {name_a} | Agree pass {name_b} | Agree precision {name_a} | Agree precision "
+              f"{name_b} | Disagree pass {name_a} | Disagree pass {name_b} | Disagree catch {name_a} | Disagree catch "
+              f"{name_b} |", "|---|---:|---:|---|---|---:|---:|---:|---:|"]
+        for r in gated:
+            ga, gb = r["gate_a"], r["gate_b"]
+            prec = lambda g: fmt_ci(g["agree"]["precision"], g["agree"]["precision_lo"], g["agree"]["precision_hi"])  # noqa: E731
+            L.append(f"| {r['slice']} | {ga['agree']['n_pass']} | {gb['agree']['n_pass']} | {prec(ga)} | {prec(gb)} | "
+                     f"{ga['disagree']['n_pass']} | {gb['disagree']['n_pass']} | {fmt(ga['disagree']['catch'])} | "
+                     f"{fmt(gb['disagree']['catch'])} |")
+    L += ["", "Severity and tags: AI-placed labels carry neither (RampNet submits none), so the type × severity and "
+          "type × tag slices apply to the human-placed test and held-out splits (`evaluate.py` `metrics.json` of each "
+          "arm), not here."]
+    return "\n".join(L) + "\n"
+
+
+def cmd_ablation(args):
+    sel = json.load(open(os.path.join(args.run, "selection.json")))
+    if not sel.get("holdout"):
+        sys.exit(f"{args.run} was not selected with --holdout: the ablation scores the held-out set only")
+    a, b = load_run(args.run, args.pred_a), load_run(args.run, args.pred_b)
+    paired = paired_holdout(a, b)
+    n_held = int((a.author == "ai").sum())
+    if len(paired) < n_held:
+        print(f"note: {n_held - len(paired)} of {n_held} held-out labels are not scored in both arms (no crop)")
+    api_map = json.load(open(args.map)) if args.map else None
+    rows = ablation_rows(paired, args.n_boot, args.min_n, api_map)
+    os.makedirs(args.out, exist_ok=True)
+    md = ablation_markdown(rows, args.name_a, args.name_b, args.n_boot, args.min_n)
+    with open(os.path.join(args.out, "ablation.md"), "w") as f:
+        f.write(md)
+    out = {"name_a": args.name_a, "name_b": args.name_b, "n_boot": args.n_boot, "min_n": args.min_n, "seed": SEED,
+           "n_paired": int(len(paired)), "n_held_out": n_held,
+           "inputs": {"labels_csv": sha256_file(os.path.join(args.run, "labels.csv")),
+                      "holdout": sel["holdout"], "pred_a": sha256_file(args.pred_a), "pred_b": sha256_file(args.pred_b),
+                      "map": sha256_file(args.map) if args.map else None},
+           "rows": rows}
+    with open(os.path.join(args.out, "ablation.json"), "w") as f:
+        json.dump(out, f, indent=2, default=float)
+    print(md)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 
 def build_parser():
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -847,6 +1004,11 @@ def build_parser():
     s.add_argument("--rawlabels", required=True, help="directory with <city_id>.csv rawLabels exports")
     s.add_argument("--cities", default=",".join(DEFAULT_CITIES))
     s.add_argument("--round3-split", default=None, help="round-3 CurbRamp split.csv, to flag labels it trained on")
+    s.add_argument("--all-ai", action="store_true",
+                   help="keep every AI-authored label, voted or not (issue #80: the full-pool ranked lists)")
+    s.add_argument("--holdout", default=None, metavar="CSV",
+                   help="<out>/CurbRamp/ai_label_holdout.csv of a data_generation.py run: keep only those AI labels, "
+                        "with the training rule's class (issue #79)")
     s.add_argument("--out", required=True)
     s.set_defaults(func=cmd_select)
     c = sub.add_parser("crops", help="cut the crops from a staged pano store copy (GPU)")
@@ -873,11 +1035,25 @@ def build_parser():
     r.add_argument("--n-boot", type=int, default=1000)
     r.add_argument("--min-n", type=int, default=30)
     r.set_defaults(func=cmd_report)
+    a = sub.add_parser("ablation", help="held-out AI labels scored by two checkpoints, paired (issue #79)")
+    a.add_argument("--run", required=True, help="a run selected with --holdout (labels.csv, selection.json, manifest.csv)")
+    a.add_argument("--pred-a", required=True, help="predictions of arm A (e.g. trained with --include-ai-labels)")
+    a.add_argument("--pred-b", required=True, help="predictions of arm B (e.g. trained without)")
+    a.add_argument("--name-a", default="included_tagged")
+    a.add_argument("--name-b", default="excluded")
+    a.add_argument("--out", required=True)
+    a.add_argument("--map", default=None, help="a served accuracy map, for the gate metrics per arm")
+    a.add_argument("--n-boot", type=int, default=1000)
+    a.add_argument("--min-n", type=int, default=30)
+    a.set_defaults(func=cmd_ablation)
     return p
 
 
 def main(argv=None):
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.cmd == "select" and args.all_ai and args.holdout:
+        parser.error("--all-ai and --holdout are exclusive: the holdout is a fixed label set")
     args.func(args)
 
 
