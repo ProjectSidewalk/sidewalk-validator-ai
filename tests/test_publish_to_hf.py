@@ -1,4 +1,5 @@
 """publish_to_hf.py and hf_cards.py on a tiny fake pipeline output root (no GPU, no network, no token)."""
+import doctest
 import hashlib
 import json
 import os
@@ -1589,3 +1590,48 @@ def test_whole_card_links_issue_numbers(tmp_path):
     assert "(issues [#2](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/2) and [#7](" in card
     assert re.search(r"(?<![\w\[/])#\d+\b", card) is None                   # no bare issue number of this repo
     assert "policy decision (issues" in card and ").  Labels" not in card
+
+
+def _mark_job_crops(root, record):
+    """Record ``job_window_crops`` as data_generation.py (top level and under ``settings``) or fine_tune_classifier.py
+    (top level of ``dinov2/training_run.json``) writes it."""
+    path = os.path.join(root, T, record)
+    run = json.loads(_read(path))
+    run["job_window_crops"] = True
+    if "settings" in run:
+        run["settings"]["job_window_crops"] = True
+    with open(path, "w") as f:
+        json.dump(run, f)
+
+
+@pytest.mark.parametrize("record", ["generation_run.json", os.path.join("dinov2", "training_run.json")])
+def test_a_job_window_crop_model_is_never_staged(tmp_path, capsys, record):
+    root, *_ = make_root(tmp_path)
+    _mark_job_crops(root, record)
+    with pytest.raises(pub.PublishError, match="crop-job windows.*--job-window-crops"):
+        pub.check_depth_sized(root, T)
+    with pytest.raises(pub.PublishError, match="issue #53"):
+        pub.stage(root, T)
+    assert not os.path.exists(os.path.join(root, T, "publish"))  # refused before anything is staged
+    assert pub.main(["--label_type", T, "--out", root]) == pub.EXIT_ERROR
+    assert "--job-window-crops" in capsys.readouterr().err
+
+
+def test_push_staged_refuses_a_model_retrained_on_job_window_crops(tmp_path):
+    root, *_ = make_root(tmp_path)
+    pub.stage(root, T)
+    _mark_job_crops(root, os.path.join("dinov2", "training_run.json"))
+    with pytest.raises(pub.PublishError, match="experiment-only"):
+        pub.verify_staged(root, T)
+
+
+def test_cards_refuse_job_window_crop_runs():
+    ctx = {"label_type": T, "model_repo": "m", "dataset_repo": "d", "dataset": {}, "code_commit": None,
+           "overrides": {}, "training_run": {"job_window_crops": True}}
+    with pytest.raises(ValueError, match="crop-job windows"):
+        hf_cards.model_card(ctx)
+    with pytest.raises(ValueError, match="crop-job windows"):
+        hf_cards.dataset_card({**ctx, "training_run": {}, "generation_run": {"settings": {"job_window_crops": True}}})
+    assert hf_cards.job_window_crops({"settings": {"job_window_crops": True}})
+    assert not hf_cards.job_window_crops({"job_window_crops": False}, None, {"settings": None})
+    assert doctest.testmod(hf_cards).failed == 0

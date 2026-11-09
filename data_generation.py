@@ -113,6 +113,7 @@ import pandas as pd
 
 import ai_label_holdout
 import crop_pose
+import job_crop
 
 try:  # advisory lock for the shared deployment_priors.json (five label types run in parallel under SLURM)
     import fcntl
@@ -1071,10 +1072,10 @@ RESUME_SETTINGS = ("tilt_beta", "depth_encoder", "depth_dataset", "renderer", "p
                    "mapillary_api")
 #: Settings recorded only when they are not the default, so earlier runs' records stay as they were. Unlike
 #: :data:`RESUME_SETTINGS` they are compared when present on EITHER side, so switching to or from one is caught.
-OPTIONAL_SETTINGS = ("fixed_crop_half_px",)
-#: Settings that only matter when crops are sized by depth. A fixed-size run does not record them (no depth model is
-#: loaded), and :func:`check_resume` does not compare them when both runs are fixed-size, so ``--depth-encoder``
-#: cannot block a fixed-size resume (also one recorded before they were left out).
+OPTIONAL_SETTINGS = ("fixed_crop_half_px", "job_window_crops")
+#: Settings that only matter when crops are sized by depth. A fixed-size or job-window run does not record them (no
+#: depth model is loaded), and :func:`check_resume` does not compare them when neither run sizes by depth
+#: (:func:`_no_depth`), so ``--depth-encoder`` cannot block such a resume (also one recorded before they were left out).
 DEPTH_SETTINGS = ("depth_encoder", "depth_dataset")
 #: The largest ``--fixed-crop-half-px``: a half-width of ``VIEW_SIZE // 2`` is exactly the whole view, unclipped, and
 #: every larger value clips to that same crop.
@@ -1107,7 +1108,7 @@ def check_resume(run_path, new_hash, settings, cities=None):
     ``new_hash``; ``{name: (old, new)}`` for every setting that differs; and, when ``cities`` is given and the
     recorded city list is a different set, ``{"added": [...], "removed": [...]}`` (else ``{}``). A
     :data:`RESUME_SETTINGS` entry is compared only if the old record has it (a record older than the setting resumes),
-    except that :data:`DEPTH_SETTINGS` are skipped when both runs have ``fixed_crop_half_px``; an
+    except that :data:`DEPTH_SETTINGS` are skipped when neither run sizes crops by depth (:func:`_no_depth`); an
     :data:`OPTIONAL_SETTINGS` entry is compared whenever either side has it. The caller refuses to resume on any of
     them unless ``--force-reselect``. The city list is compared on its own because the selection hash misses a city
     that contributes no selected label; like a selection change (and unlike a settings change) it keeps the crops of
@@ -1122,8 +1123,10 @@ def check_resume(run_path, new_hash, settings, cities=None):
         old = json.load(f)
     old_hash = old.get("selection_sha256")
     old_settings = old.get("settings", {})
-    both_fixed = old_settings.get("fixed_crop_half_px") is not None and settings.get("fixed_crop_half_px") is not None
-    compared = [k for k in RESUME_SETTINGS if not (both_fixed and k in DEPTH_SETTINGS)]
+    both_fixed = _no_depth(old_settings) and _no_depth(settings)
+    both_job = bool(old_settings.get("job_window_crops")) and bool(settings.get("job_window_crops"))
+    compared = [k for k in RESUME_SETTINGS if not (both_fixed and k in DEPTH_SETTINGS)
+                and not (both_job and k in job_crop.NO_VIEW_SETTINGS)]
     changed = {k: (old_settings.get(k), settings.get(k)) for k in compared
                if k in old_settings and old_settings.get(k) != settings.get(k)}
     changed.update({k: (old_settings.get(k), settings.get(k)) for k in OPTIONAL_SETTINGS
@@ -1133,6 +1136,11 @@ def check_resume(run_path, new_hash, settings, cities=None):
         city_change = {"added": sorted(set(cities) - set(old["cities"])),
                        "removed": sorted(set(old["cities"]) - set(cities))}
     return (old_hash if old_hash and old_hash != new_hash else None), changed, city_change
+
+
+def _no_depth(settings):
+    """Whether a run's settings cut crops without depth: ``fixed_crop_half_px`` (#21) or ``job_window_crops`` (#53)."""
+    return settings.get("fixed_crop_half_px") is not None or bool(settings.get("job_window_crops"))
 
 
 def recorded_cities(run_path):
@@ -1257,6 +1265,11 @@ def build_parser():
                         f'Must be 1 to {MAX_FIXED_CROP_HALF_PX}: the view is {VIEW_SIZE} px square, so a half-width of '
                         f'{MAX_FIXED_CROP_HALF_PX} is the whole view and larger values clip to it. Serving sizes by depth, '
                         'so publish_to_hf.py refuses models trained this way')
+    p.add_argument('--job-window-crops', action='store_true',
+                   help='experiment only (issue #53): cut each crop as SidewalkWebpage\'s nightly crop job does '
+                        '(job_crop.py: a 3:2 window on the native panorama, CropSizingRule v2, no projection, no tilt, '
+                        'no depth) and skip depth inference. Mutually exclusive with --fixed-crop-half-px. '
+                        'publish_to_hf.py refuses models trained this way')
     p.add_argument('--seed', type=int, default=SEED)
     p.add_argument('--cities', default=None,
                    help='comma list of city_id[=subdomain], overriding the public deployments /v3/api/cities lists')
@@ -1300,6 +1313,8 @@ def main(argv=None):
     if args.fixed_crop_half_px is not None and not 0 < args.fixed_crop_half_px <= MAX_FIXED_CROP_HALF_PX:
         sys.exit(f"--fixed-crop-half-px must be 1 to {MAX_FIXED_CROP_HALF_PX} (half the {VIEW_SIZE} px view; larger "
                  f"values clip to the whole view), got {args.fixed_crop_half_px}")
+    if args.job_window_crops and args.fixed_crop_half_px is not None:
+        sys.exit("--job-window-crops and --fixed-crop-half-px are two different crop geometries; pass one")
     experts = parse_experts(os.environ.get(EXPERTS_ENV))  # a malformed value fails before the downloads
     mapillary_token = None
     if args.mapillary_token_env and not args.select_only:
@@ -1321,7 +1336,7 @@ def main(argv=None):
             sys.exit(f"--rawlabels-cache {args.rawlabels_cache} has no <city_id>.csv for {len(missing)} listed "
                      f"cities: {', '.join(missing)}. Pull them into the cache (FRESH=1 sbatch data_generation.slurm, "
                      f"or analysis/fetch_all.py), or pass --cities to run without them.")
-    device = None if args.select_only else resolve_device(args.allow_cpu)
+    device = None if args.select_only or args.job_window_crops else resolve_device(args.allow_cpu)
 
     all_cities = pd.concat([load_city(c, s, args.rawlabels_cache) for c, s in cities.items()], ignore_index=True)
     n_rows = int((all_cities['label_type'] == label_type).sum())
@@ -1388,6 +1403,9 @@ def main(argv=None):
     if args.fixed_crop_half_px is not None:  # no depth model is loaded: recording an encoder would misstate the crops
         settings = {k: v for k, v in settings.items() if k not in DEPTH_SETTINGS}
         settings["fixed_crop_half_px"] = args.fixed_crop_half_px
+    if args.job_window_crops:  # no depth model and no view: record neither the encoder nor a fixed size
+        settings = {k: v for k, v in settings.items() if k not in DEPTH_SETTINGS + job_crop.UNRECORDED_SETTINGS}
+        settings["job_window_crops"] = True
     previous, changed, city_change = check_resume(run_path, sel_hash, settings, list(cities))
     if (previous or changed or city_change) and not args.force_reselect:
         n_ok = count_ok_rows(manifest_path)
@@ -1449,7 +1467,8 @@ def main(argv=None):
                    "selection_sha256": sel_hash, "started": date.today().isoformat()}, f, indent=2)
         f.write("\n")
 
-    depth_model = load_depth_model(args.depth_encoder, device) if args.fixed_crop_half_px is None else None
+    depth_model = (load_depth_model(args.depth_encoder, device)
+                   if args.fixed_crop_half_px is None and not args.job_window_crops else None)
     for cls in ("correct", "incorrect"):
         os.makedirs(os.path.join(base_dir, cls), exist_ok=True)
 
@@ -1495,6 +1514,12 @@ def main(argv=None):
                 rec.update(last_pano[2])
                 if isinstance(pano_bgr, str):
                     rec['status'] = pano_bgr
+                elif args.job_window_crops:  # issue #53: the backend's crop-job window from the native file
+                    crop, info = job_crop.crop_for_row(rec['pano_path'], row, rec['label_uid'],
+                                                       os.path.join(base_dir, job_crop.SIDECAR_FILE))
+                    save_webp(crop, os.path.join(base_dir, crop_path))
+                    rec.update(info)
+                    rec['status'] = 'ok'
                 else:
                     pano_rgb = np.ascontiguousarray(pano_bgr[..., ::-1])
                     crop, info = create_perspective_crop(
@@ -1505,6 +1530,8 @@ def main(argv=None):
                     save_webp(crop, os.path.join(base_dir, crop_path))
                     rec.update(info)
                     rec['status'] = 'ok'
+            except job_crop.JobCropSkipped as e:  # a label the backend's crop job would not cut either
+                rec['status'] = e.reason
             except Exception as e:
                 if is_fatal(e):
                     raise
@@ -1538,6 +1565,7 @@ def main(argv=None):
         ok = final[final['status'] == 'ok']
         print("  ok rows by provider and pose_source (whole manifest): "
               f"{ok.groupby([ok['pano_source'].fillna(''), ok['pose_source'].fillna('')]).size().to_dict()}")
+    job_crop.finish_run(base_dir, final, enabled=args.job_window_crops)  # off: removes a stale job_crops.csv
     if not_from_store:
         print(f"  redone because they predate the pano store (no pano_path): {not_from_store} ok rows")
     if attempted and missing / attempted > args.max_missing_frac:

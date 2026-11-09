@@ -33,6 +33,7 @@ because each reports one measurement at one point in time; the pipeline pages ar
 | [`ai-disagree-reversal-2026-10.md`](ai-disagree-reversal-2026-10.md) | Runbook for turning the 2025-08 models' Disagree votes into Unsure in production: per-city dry run and the update script ([SidewalkWebpage#5793](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5793)) |
 | [`ai-labels-2026-10.md`](ai-labels-2026-10.md) | The round-3 CurbRamp validator on RampNet's AI-placed curb ramps in three public deployments, against the existing human votes: AUC per city, what the deployed gate would do, the round-3 leakage and its effect on the reference ([SidewalkWebpage#5790](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5790)) |
 | [`ai-label-holdout-2026-11.md`](ai-label-holdout-2026-11.md) | AI-placed labels in training: the held-out evaluation slice, the with/without round-4 ablation (not yet run) and the full-pool ranked Disagree lists for the leads ([#79](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/79), [#80](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/80)) |
+| [`job-window-crops-2026-11.md`](job-window-crops-2026-11.md) | Would a CurbRamp validator trained on the crops SidewalkWebpage's crop job cuts (3:2 windows, `CropSizingRule` v2, no projection, tilt or depth) match the depth-sized one? The port, the per-provider counts (round 3 is GSV only), the paired protocol; not yet run ([#53](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/53)) |
 
 ## Decisions, audit and hygiene
 

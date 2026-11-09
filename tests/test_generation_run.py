@@ -996,3 +996,169 @@ def test_fraction_zero_reproduces_the_pre_holdout_selection(stubbed):
     assert rec["holdout_frac"] == 0 and rec["holdout_counts"] == {}
     assert rec["included_counts"] == {"toy-city": {"correct": 0, "incorrect": 1}}
     assert len(pd.read_csv(tmp / "out" / "CurbRamp" / ai_label_holdout.HOLDOUT_FILE)) == 0
+# ---------------------------------------------------------------- --job-window-crops (issue #53, job_crop.py)
+
+JOB_W, JOB_H = 512, 256  # the recorded frame of the job-crop fixture's labels AND its store files, as the backend needs
+
+
+def job_label(i, agree, disagree, user="u", pano=None, x=None, y=170, w=JOB_W, h=JOB_H):
+    return {**label(i, agree, disagree, user=user, pano=pano), "pano_x": 200 + 20 * i if x is None else x,
+            "pano_y": y, "pano_width": w, "pano_height": h}
+
+
+@pytest.fixture
+def job_store(tmp_path, monkeypatch):
+    """The ``stubbed`` labels in a frame that matches their 512x256 store files (the stubbed store's 64x32 files
+    would all be ``dims_mismatch``), one label near the seam and one near the bottom pole; the depth model must never
+    load."""
+    import job_crop
+    rows = [job_label(1, 4, 0, pano="shared"), job_label(2, 0, 3, pano="shared", x=5),
+            job_label(3, 0, 3, y=250), job_label(4, 0, 4, user=AI), job_label(5, 5, 0)]
+    write_city(tmp_path, rows)
+    store = mark_store(tmp_path / "store")
+    for pano_id in {r["pano_id"] for r in rows}:
+        write_pano(store, CITY, pano_id, size=(JOB_W, JOB_H))
+    monkeypatch.setattr(dg, "PANO_SIZE", (JOB_W, JOB_H))
+    monkeypatch.setattr(job_crop, "_NATIVE_CACHE", {"path": None, "img": None})
+
+    def no_depth_model(encoder, device):
+        raise RuntimeError("the depth model was loaded for job-window crops")
+    monkeypatch.setattr(dg, "load_depth_model", no_depth_model)
+    return {"tmp": tmp_path, "store": store, "rows": rows}
+
+
+def _job_out(tmp):
+    return tmp / "out" / "CurbRamp"
+
+
+def test_job_window_crops_cut_the_backend_window_and_record_it(job_store):
+    import job_crop
+    tmp = job_store["tmp"]
+    m = run_main(tmp, "--job-window-crops").set_index("label_uid")
+    assert (m.status == "ok").all() and len(m) == 5
+    assert m.depth_m.isna().all() and (m.tilt_applied == 0).all()  # no depth, no tilt correction on this path
+    for r in job_store["rows"]:
+        box, _ = job_crop.window_for(r["pano_x"], r["pano_y"], JOB_W, JOB_H)
+        uid = f"{CITY}:{r['label_id']}"
+        assert m.loc[uid, "crop_half_px"] == box.width // 2 and m.loc[uid, "clipped"] == int(box.shifted)
+        crop = np.asarray(Image.open(_job_out(tmp) / m.loc[uid, "crop_path"]).convert("RGB"))
+        assert crop.shape[:2] == (box.height, box.width)  # 3:2, stored at its own size (narrower than 1440)
+        assert abs(box.width / box.height - 1.5) < 0.02
+        assert np.allclose(crop[box.height // 2, box.width // 2], PANO_BGR[::-1], atol=3)  # saved as RGB
+    assert m.loc[f"{CITY}:3", "clipped"] == 1  # y = 250 of 256: shifted off the bottom pole
+    run = json.loads((_job_out(tmp) / "generation_run.json").read_text())
+    assert run["settings"] == {"tilt_beta": 0.95, "include_ai_labels": True,  # no renderer: no view is rendered
+                               "package_source": dg.package_source(), "source_beta": {"mapillary": 0.0,
+                                                                                      "panoramax": 1.0},
+                               "mapillary_api": False, "job_window_crops": True}
+    assert run["job_window_crops"] is True and "depth_encoder" not in run and "fixed_crop_half_px" not in run
+    side = pd.read_csv(_job_out(tmp) / job_crop.SIDECAR_FILE)
+    assert list(side.columns) == job_crop.SIDECAR_COLUMNS
+    assert sorted(side.label_uid) == sorted(m.index) and side.label_uid.is_unique
+    seam = side.set_index("label_uid").loc[f"{CITY}:2"]
+    assert seam.left + seam.width > JOB_W  # x = 5 wraps across the seam
+    assert (side.pano_native_w == JOB_W).all() and (side.rule_version == job_crop.RULE_VERSION).all()
+
+
+def test_job_window_crops_skip_what_the_backend_skips(job_store, capsys):
+    tmp = job_store["tmp"]
+    rows = job_store["rows"] + [job_label(6, 0, 3, y=JOB_H),  # pano_y == height: kept by valid_geometry, out of frame
+                                job_label(7, 0, 3, w=2 * JOB_W, h=2 * JOB_H)]  # placed on a frame of another size
+    write_city(tmp, rows)
+    for pano_id in ("p6", "p7"):
+        write_pano(job_store["store"], CITY, pano_id, size=(JOB_W, JOB_H))
+    m = run_main(tmp, "--job-window-crops").set_index("label_uid")
+    assert m.loc[f"{CITY}:6", "status"] == "out_of_frame" and m.loc[f"{CITY}:7", "status"] == "dims_mismatch"
+    assert (m.drop([f"{CITY}:6", f"{CITY}:7"]).status == "ok").all()
+    out = capsys.readouterr().out
+    assert "'out_of_frame': 1" in out and "'dims_mismatch': 1" in out
+    side = pd.read_csv(_job_out(tmp) / "job_crops.csv")
+    assert f"{CITY}:6" not in set(side.label_uid) and f"{CITY}:7" not in set(side.label_uid)
+    split = split_data.assign_splits(pd.read_csv(_job_out(tmp) / "manifest.csv"))
+    assert set(split.label_uid) == set(m.index[m.status == "ok"])  # skipped rows never reach a split
+
+
+def test_job_window_crops_resume_rules(job_store):
+    tmp = job_store["tmp"]
+    run_path = _job_out(tmp) / "generation_run.json"
+    run_main(tmp, "--job-window-crops")
+    side = _job_out(tmp) / "job_crops.csv"
+    before = side.read_text()
+    run_main(tmp, "--job-window-crops")  # plain resume: every ok row kept, nothing appended
+    assert side.read_text() == before
+    run_main(tmp, "--job-window-crops", "--depth-encoder", "vitl")  # no depth: the encoder cannot block it
+    with pytest.raises(SystemExit, match=r"job_window_crops True -> None"):
+        run_main(tmp)
+    with pytest.raises(SystemExit, match=r"fixed_crop_half_px None -> 300.*job_window_crops True -> None"):
+        run_main(tmp, "--fixed-crop-half-px", "300")
+    assert json.loads(run_path.read_text())["job_window_crops"] is True  # a refused resume keeps the record
+
+
+def test_depth_run_refuses_to_resume_as_job_crops_until_forced(stubbed, monkeypatch):
+    import job_crop
+    tmp = stubbed["tmp"]
+    run_main(tmp)
+    with pytest.raises(SystemExit, match=r"job_window_crops None -> True"):
+        run_main(tmp, "--job-window-crops")
+    monkeypatch.setattr(job_crop, "_NATIVE_CACHE", {"path": None, "img": None})
+    calls = stubbed["depth"].calls
+    with pytest.raises(SystemExit, match="No crops"):  # the stubbed store's 64x32 files are not the 8192x4096 frame
+        run_main(tmp, "--job-window-crops", "--force-reselect")
+    m = pd.read_csv(tmp / "out" / "CurbRamp" / "manifest.csv")
+    assert stubbed["depth"].calls == calls and len(m) == 5 and (m.status == "dims_mismatch").all()  # all redone
+
+
+def test_job_window_crops_and_fixed_size_are_exclusive(job_store):
+    with pytest.raises(SystemExit, match="two different crop geometries; pass one"):
+        run_main(job_store["tmp"], "--job-window-crops", "--fixed-crop-half-px", "300")
+
+
+def test_job_window_crops_force_reselect_rewrites_the_sidecar(job_store):
+    tmp = job_store["tmp"]
+    run_main(tmp, "--job-window-crops")
+    run_main(tmp, "--job-window-crops", "--tilt-beta", "0.5", "--force-reselect")  # a setting changed: all redone
+    side = pd.read_csv(_job_out(tmp) / "job_crops.csv")
+    assert len(side) == 5 and side.label_uid.is_unique
+
+
+def test_job_window_crops_need_no_gpu_and_no_allow_cpu(job_store, monkeypatch):
+    def no_device(allow_cpu):
+        raise AssertionError("resolve_device was called for job-window crops")
+    monkeypatch.setattr(dg, "resolve_device", no_device)
+    tmp = job_store["tmp"]
+    dg.main(["--label_type", "CurbRamp", "--rawlabels-cache", str(tmp), "--out", str(tmp / "out"),
+             "--pano-store", str(tmp / "store"), "--include-ai-labels", "--job-window-crops"])  # no --allow-cpu
+    assert (pd.read_csv(_job_out(tmp) / "manifest.csv").status == "ok").all()
+
+
+def test_job_window_resume_ignores_the_renderer_and_package_commit(job_store, monkeypatch):
+    tmp = job_store["tmp"]
+    run_main(tmp, "--job-window-crops")
+    run_path = _job_out(tmp) / "generation_run.json"
+    run = json.loads(run_path.read_text())  # as if the first run was a CPU smoke on another panorama-tools commit
+    run["settings"].update(renderer="numpy", package_source="old@abc")
+    run_path.write_text(json.dumps(run))
+    before = (_job_out(tmp) / "job_crops.csv").read_text()
+    run_main(tmp, "--job-window-crops")  # no refusal, every ok row kept
+    assert (_job_out(tmp) / "job_crops.csv").read_text() == before
+
+
+def test_fixed_size_resume_still_compares_the_renderer(stubbed):
+    tmp = stubbed["tmp"]
+    run_main(tmp, "--fixed-crop-half-px", "300")
+    run_path = tmp / "out" / "CurbRamp" / "generation_run.json"
+    run = json.loads(run_path.read_text())
+    run["settings"]["renderer"] = "torch"
+    run_path.write_text(json.dumps(run))
+    with pytest.raises(SystemExit, match=r"renderer 'torch' -> 'numpy'"):  # fixed-size crops ARE rendered views
+        run_main(tmp, "--fixed-crop-half-px", "300")
+
+
+def test_depth_rerun_of_a_job_dir_removes_the_stale_sidecar(job_store, monkeypatch):
+    tmp = job_store["tmp"]
+    run_main(tmp, "--job-window-crops")
+    assert (_job_out(tmp) / "job_crops.csv").exists()
+    monkeypatch.setattr(dg, "load_depth_model", lambda encoder, device: FakeDepth())
+    m = run_main(tmp, "--force-reselect")
+    assert (m.status == "ok").all() and m.depth_m.notna().all()
+    assert not (_job_out(tmp) / "job_crops.csv").exists()
