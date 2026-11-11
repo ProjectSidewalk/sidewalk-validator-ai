@@ -3,6 +3,28 @@
 Choices about the training data that are deliberate, not oversights, with the evidence behind each one and
 what would change it. One section per decision, newest first.
 
+## The deployment prior is the ≥ 2-vote human majority, not the training margin rule (November 2026)
+
+Issue [#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56).
+
+**Decision.** `deployment_priors.json` records the pre-downsampling class counts under four vote rules
+(`data_generation.PRIOR_RULES`: `margin`, `symmetric3`, `symmetric2`, `majority2`), and its top level, which
+`calibration/calibrate.py` reweights to by default, is `majority2`: at least two decisive human votes, majority wins,
+ties left out. The training set keeps the margin rule. The Disagree hold-back stays. This change records and reports;
+the served maps are refitted in a separate PR after the numbers are read.
+
+**Why.** The margin rule is asymmetric (`incorrect` at net Disagree > 1, `correct` at net Agree > 2), so counted under
+it the incorrect share was 37 / 36 / 32% for NoCurbRamp / Obstacle / SurfaceProblem where the ≥ 2-vote majority on the
+same labels gives 22 / 25 / 18%. The majority is what the website treats as a settled label. Under the majority prior
+the round-3 NoCurbRamp Agree gate covers 0.71 of the test split instead of 0.44, and NoCurbRamp Disagree no longer
+clears at all. On production outcomes since round 3 went live, the human majority confirms 94.5–100% of the gated
+Agree votes; Obstacle's 94.5% is below what a majority-prior map would claim for it. Numbers:
+[`deployment-prior-2026-11.md`](deployment-prior-2026-11.md).
+
+**What would change it.** A map fitted on the revision's own production outcomes (`calibrate_from_production.py`)
+supersedes any vote-rule prior for that type; Obstacle is the first candidate. A symmetric TRAINING rule would also
+change the val classes the reweighting assumes, which is #56's second, still open, question.
+
 ## AI-placed labels: included only tagged, with a held-out evaluation slice (November 2026)
 
 Issue [#79](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/79).

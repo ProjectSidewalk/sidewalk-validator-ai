@@ -341,18 +341,32 @@ def clears_at(class_map, gate=im.GATE):
 
 
 def correct_weight(split_all, prior_entry):
-    """``1 / keep rate`` of the correct class: the prior's correct count over the selected human margin-rule correct
-    count (see the module docstring). Incorrect rows keep weight 1.
+    """``1 / keep rate`` of the correct class: the prior's MARGIN-rule correct count over the selected human
+    margin-rule correct count (see the module docstring). Incorrect rows keep weight 1.
+
+    The keep rate divides margin-rule selections by margin-rule counts, so it reads ``rules["margin"]`` when the entry
+    records it (files written since issue #56, whose top level is another rule by default) and the top level of an
+    older entry, which is the margin rule.
 
     >>> sp = pd.DataFrame({"label_class": ["correct"] * 3 + ["incorrect"] * 2, "author": ["human"] * 5,
     ...                    "class_source": ["margin", "margin", "expert", "margin", "margin"]})
     >>> correct_weight(sp, {"correct": 10, "incorrect": 2})
     5.0
+    >>> correct_weight(sp, {"correct": 99, "incorrect": 9, "rule": "majority2",
+    ...                     "rules": {"margin": {"correct": 10, "incorrect": 2}}})
+    5.0
     """
     hm = split_all[(split_all.author == "human") & (split_all.class_source == "margin")]
     n_sel = int((hm.label_class == "correct").sum())
     assert n_sel > 0, "no selected human margin-rule correct labels"
-    return float(prior_entry["correct"]) / n_sel
+    rules = prior_entry.get("rules") or {}
+    if "margin" in rules:
+        margin_correct = rules["margin"]["correct"]
+    elif prior_entry.get("rule", "margin") == "margin":
+        margin_correct = prior_entry["correct"]
+    else:
+        raise ValueError(f"prior entry is under rule {prior_entry.get('rule')!r} and records no margin counts")
+    return float(margin_correct) / n_sel
 
 
 def own_weights(true, k_correct):
