@@ -406,7 +406,7 @@ unweighted (0.890) and not on the held-out cities; see "The 5-fold out-of-fold g
 
 - (a) **5-fold out-of-fold training over the 758 pooled train / val / test crops** (whole view; the 127 held-out
    rows stay held out), calibrating on the pooled out-of-fold predictions, so each fold's Agree map is fitted on
-   about 365 Agree verdicts instead of about 70 and the bar's Wilson lower bound on ≥ 100 labels can be computed.
+   350–365 Agree verdicts instead of about 70 and the bar's Wilson lower bound on ≥ 100 labels can be computed.
    Five training runs of this size are well under an hour of GPU time. **Done 2026-11-11**: see "The 5-fold
    out-of-fold gate" above. Open: which precision basis the bar means (weighted passes, unweighted does not).
 - (b) **More negatives:** a masked expert round on NoSidewalk faces outside Seattle (300–500 faces, run like
@@ -458,7 +458,7 @@ Gate run (step (a), 2026-11-11):
   1 `4a18a0d774441330d1f01d166a46bf2b0c9a01b41d3193485a05e5cda36fd7b4`, 2 `dd424332c2f2b61162dfcfb8ff9a28fb3809a4b9fcca59958d6408d2b4e150db`,
   3 `3c8bc0cfa63b0b7537380896812f7f946b0bfab354df5defec64f65cc3d25876`, 4 `c1527363c6de7357d82b0b0a789b8237802475ce139317896a45cb775ff9b1de`.
 - Report: klone's report job ran at 246d622, whose weighted Wilson bound used an effective-sample-size (Kish)
-  correction (`gate.md` sha256 `f1cc33846011bb77d76671580a34f86694ee276b959636597df7661f4fb638c6`, pooled weighted
+  correction (`gate.md` sha256 `f1cc33846011bb77d76671580a34f86694ee276b959636597df7661f4fb638c6`, kept as `gate.local.md` in the results copy; pooled weighted
   lower bound 0.951); review round 2 replaced that bound with the exact one (the raw Wilson bound mapped through the
   two-class weight ratio; the commit that adds this paragraph), and the report was regenerated on a laptop from the
   copied predictions and split files (`--n-boot 1000 --seed 0`, the defaults): every number other than the weighted
