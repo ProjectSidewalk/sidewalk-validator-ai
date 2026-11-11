@@ -222,24 +222,30 @@ def training_provenance(run):
     'Trained 2026-11-11 (UTC) at sidewalk-validator-ai commit `54e6d21`, Slurm job 42918974. '
     >>> training_provenance({"finished_at": "2026-11-11T17:05:09Z", "git_commit": "54e6d21" + "0" * 33, "git_dirty": True})
     'Trained 2026-11-11 (UTC) at sidewalk-validator-ai commit `54e6d21` (with uncommitted changes). '
+    >>> training_provenance({"finished_at": "2026-11-11T17:05:09Z", "slurm_job_id": 5})  # no git on the node
+    'Trained 2026-11-11 (UTC), Slurm job 5. '
+    >>> training_provenance({"git_commit": "ABCDEF1234", "git_dirty": None, "slurm_job_id": 5})
+    'At sidewalk-validator-ai commit `ABCDEF1` (working tree status unknown), Slurm job 5. '
     >>> training_provenance({"seed": 42})
     ''
     """
-    parts = []
+    phrase = []  # "Trained <date>" and "at commit" form one phrase; the rest are comma-separated
     if run.get("finished_at"):
-        parts.append(f"Trained {run['finished_at'][:10]} (UTC)")
+        phrase.append(f"Trained {run['finished_at'][:10]} (UTC)")
     if run.get("git_commit"):
         commit = f"at sidewalk-validator-ai commit `{run['git_commit'][:7]}`"
         if run.get("git_dirty"):
             commit += " (with uncommitted changes)"
-        parts.append(commit)
+        elif run.get("git_dirty") is None:
+            commit += " (working tree status unknown)"
+        phrase.append(commit)
+    parts = [" ".join(phrase)] if phrase else []
     if run.get("slurm_job_id") is not None:
         parts.append(f"Slurm job {run['slurm_job_id']}")
     if not parts:
         return ""
-    if parts[0].startswith("Trained"):
-        return " ".join(parts[:2]) + (", " + ", ".join(parts[2:]) if parts[2:] else "") + ". "
-    return ", ".join(parts).capitalize() + ". "
+    text = ", ".join(parts)
+    return text[:1].upper() + text[1:] + ". "
 
 
 def size_category(n):
@@ -541,8 +547,8 @@ def model_card(ctx):
              "| `calibration_report.json` | prior, ECE and gate coverage of that map (when present) |\n"
              "| `metrics.json` | the evaluation above |\n"
              "| `trainer_state.json` | trimmed: log history and best checkpoint only |\n"
-             "| `training_run.json` | seed, epochs, start and finish time (UTC), Slurm job id, git commit, "
-             "package versions, generation settings (when present) |\n",
+             "| `training_run.json` | seed, epochs, the final attempt's start and finish time (UTC), Slurm job id, "
+             "git commit, package versions, generation settings (when present) |\n",
              "## Lineage\n",
              LINEAGE + "\n",
              f"Published from [sidewalk-validator-ai]({CODE_URL})"

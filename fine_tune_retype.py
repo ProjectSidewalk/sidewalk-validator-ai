@@ -255,7 +255,7 @@ def main(argv=None):
         args.num_workers = ftc.default_num_workers()
     key = retype_run_key(args)
     resume = ftc.resume_checkpoint(args.output_dir, key)  # before any slow setup
-    started_at = ftc.utc_now()
+    started_at, started = ftc.utc_now(), {**ftc.slurm_state(), **ftc.git_state()}  # the code this attempt imports
 
     train_df, val_df, dropped = load_frames(args.split, args.crop_root, args.cap_per_class, args.seed)
     counts = train_counts(train_df)
@@ -339,9 +339,7 @@ def main(argv=None):
            "class_weights": weights, "cap_per_class": args.cap_per_class, "capped": dropped,
            "n_train_by_class": counts, "n_train_negatives": int((train_df["label"] == IGNORE).sum()),
            "crop_root": os.path.abspath(args.crop_root), "source_runs": source_runs,
-           "started_at": started_at, "finished_at": ftc.utc_now(),
-           "resumed_from": os.path.basename(resume) if resume else None,
-           **ftc.slurm_state(), **ftc.git_state(), "versions": versions}
+           **ftc.run_provenance(started_at, started, resume), "versions": versions}
     with open(os.path.join(args.output_dir, "training_run.json"), "w") as f:
         json.dump(run, f, indent=2)
         f.write("\n")
