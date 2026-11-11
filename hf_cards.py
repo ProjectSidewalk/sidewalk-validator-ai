@@ -212,6 +212,42 @@ def fmt(x, nd=3):
     return f"{x:.{nd}f}"
 
 
+def training_provenance(run):
+    """The card sentence for when and from what code a model was trained, from ``training_run.json``'s
+    ``finished_at``, ``git_commit``, ``git_dirty`` and ``slurm_job_id`` (fine_tune_classifier.py, issue 65).
+    Empty for runs that predate those fields, so older cards are unchanged.
+
+    >>> training_provenance({"finished_at": "2026-11-11T17:05:09Z", "git_commit": "54e6d21" + "0" * 33,
+    ...                      "git_dirty": False, "slurm_job_id": 42918974})
+    'Trained 2026-11-11 (UTC) at sidewalk-validator-ai commit `54e6d21`, Slurm job 42918974. '
+    >>> training_provenance({"finished_at": "2026-11-11T17:05:09Z", "git_commit": "54e6d21" + "0" * 33, "git_dirty": True})
+    'Trained 2026-11-11 (UTC) at sidewalk-validator-ai commit `54e6d21` (with uncommitted changes). '
+    >>> training_provenance({"finished_at": "2026-11-11T17:05:09Z", "slurm_job_id": 5})  # no git on the node
+    'Trained 2026-11-11 (UTC), Slurm job 5. '
+    >>> training_provenance({"git_commit": "ABCDEF1234", "git_dirty": None, "slurm_job_id": 5})
+    'At sidewalk-validator-ai commit `ABCDEF1` (working tree status unknown), Slurm job 5. '
+    >>> training_provenance({"seed": 42})
+    ''
+    """
+    phrase = []  # "Trained <date>" and "at commit" form one phrase; the rest are comma-separated
+    if run.get("finished_at"):
+        phrase.append(f"Trained {run['finished_at'][:10]} (UTC)")
+    if run.get("git_commit"):
+        commit = f"at sidewalk-validator-ai commit `{run['git_commit'][:7]}`"
+        if run.get("git_dirty"):
+            commit += " (with uncommitted changes)"
+        elif run.get("git_dirty") is None:
+            commit += " (working tree status unknown)"
+        phrase.append(commit)
+    parts = [" ".join(phrase)] if phrase else []
+    if run.get("slurm_job_id") is not None:
+        parts.append(f"Slurm job {run['slurm_job_id']}")
+    if not parts:
+        return ""
+    text = ", ".join(parts)
+    return text[:1].upper() + text[1:] + ". "
+
+
 def size_category(n):
     """The Hub's ``size_categories`` bucket for ``n`` examples (``"1K<n<10K"`` etc.)."""
     for limit, name in ((1_000, "n<1K"), (10_000, "1K<n<10K"), (100_000, "10K<n<100K"),
@@ -474,7 +510,8 @@ def model_card(ctx):
              "gradient accumulation, "
              f"10% warm-up, {fmt(trainer.get('num_train_epochs') or run.get('epochs'))} epochs, seed "
              f"{fmt(run.get('seed')) if run.get('seed') is not None else TODO + ' seed (training_run.json missing)'}. "
-             f"The published weights are the checkpoint with the best validation {best_metric} "
+             + training_provenance(run)
+             + f"The published weights are the checkpoint with the best validation {best_metric} "
              f"({fmt(best_value)}; `{best or TODO + ' best checkpoint'}`); `trainer_state.json` keeps the full log "
              "history.\n",
              "```python\n"
@@ -510,7 +547,8 @@ def model_card(ctx):
              "| `calibration_report.json` | prior, ECE and gate coverage of that map (when present) |\n"
              "| `metrics.json` | the evaluation above |\n"
              "| `trainer_state.json` | trimmed: log history and best checkpoint only |\n"
-             "| `training_run.json` | seed, epochs, package versions, generation settings (when present) |\n",
+             "| `training_run.json` | seed, epochs, the final attempt's start and finish time (UTC), Slurm job id, "
+             "git commit, package versions, generation settings (when present) |\n",
              "## Lineage\n",
              LINEAGE + "\n",
              f"Published from [sidewalk-validator-ai]({CODE_URL})"

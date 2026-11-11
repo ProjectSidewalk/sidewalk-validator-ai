@@ -348,6 +348,8 @@ def test_fine_tune_trains_and_predict_scores_each_arm(tmp_path, monkeypatch, arm
              "--epochs", "1", "--num-workers", "0", "--context-arm", arm, "--batch-size", "4"])
     run = json.loads((out / "training_run.json").read_text())
     assert run["context_arm"] == arm and run["context_view_res"] == 224 and run["batch_size"] == 4
+    assert run["started_at"] <= run["finished_at"] and run["resumed_from"] is None  # issue 65 provenance
+    assert {"slurm_job_id", "slurm_restart_count", "git_commit", "git_dirty"} <= set(run)
     assert json.loads((out / "run_key.json").read_text())["context_arm"] == arm
     import evaluate
     ckpt = evaluate.best_checkpoint_in(str(out))
