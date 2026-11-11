@@ -43,7 +43,7 @@ levels only when both stored angles are non-zero; those crops are corrected with
 pose shifts the click by ``pers:pitch`` instead, and the rest are rig-frame. Both website viewers store pitch positive
 nose UP, so their pitch is negated (measured on pixels: tests/test_pose_levelling.py). A label with no usable pose is
 rendered uncorrected and counted by reason, except that a Panoramax label is skipped with its own status when its pose
-is past ``crop_pose.MAX_POSE_TILT_DEG`` (``panoramax_over_tilt``) or its pitch-only click is past a pole
+has both angles non-zero and is past ``crop_pose.MAX_POSE_TILT_DEG`` (``panoramax_over_tilt``) or its pitch-only click is past a pole
 (``panoramax_pitch_offset_past_pole``). The manifest records ``pose_source``, the pose in the package's sign
 (``pose_pitch``/``pose_roll``), the beta used (``tilt_beta``) and any ``click_lat_offset_deg``. Labels authored by the AI account (RampNet,
 Vancouver WA / Richmond VA / Laurens IA) were placed on the rig-frame image directly, so they are rendered without

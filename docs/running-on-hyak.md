@@ -106,7 +106,7 @@ at most one kept label in and one out.
 `PANO_STORE` or city directory names that are not the city_ids), after 50 consecutive per-label errors, or at the
 end if more than 20% of attempted labels ended `no_pano`/`bad_pano` (`--max-missing-frac`). A panorama not in the
 store is `no_pano`; a file that cannot be decoded, or is not 2:1, is `bad_pano`, never a stretched crop. A Panoramax
-label whose pose is past 45° of tilt is `panoramax_over_tilt`, and a pitch-only Panoramax click past a pole is
+label whose pose has both angles non-zero and is past 45° of tilt is `panoramax_over_tilt`, and a pitch-only Panoramax click past a pole is
 `panoramax_pitch_offset_past_pole`; both are skips, decided before the panorama is read, and count toward none of
 these three stops.
 

@@ -1037,7 +1037,7 @@ def cmd_crops(args):
     """Crops for the type-edit labels, cut as data_generation.py cuts a training crop: the per-provider pose from
     ``crop_pose.pose_for_row`` (``--tilt-beta`` for GSV), the click latitude offset, depth-sized, WebP. Resumable on
     ``<out>/manifest.csv``; ``crop_path`` there is absolute. A Panoramax label that data_generation.py skips (a pose
-    past ``crop_pose.MAX_POSE_TILT_DEG``, a pitch-only click past a pole; ``crop_pose.skip_status``) is skipped here
+    with both angles non-zero past ``crop_pose.MAX_POSE_TILT_DEG``, a pitch-only click past a pole; ``crop_pose.skip_status``) is skipped here
     too, with the same status and before its panorama is read.
 
     Mapillary: ``mapillary_rotations`` is None (no Graph API lookup, unlike ``data_generation.py

@@ -594,17 +594,22 @@ def _pose_row(src, pitch=None, roll=None, author="human", pano="p1"):
      (-5.0, None, "panoramax_db", 0.0, "panoramax_pitch_only_click_offset", 5.0)),
     (_pose_row("panoramax", 0.0, 2.0), None,
      (None, 2.0, "panoramax_db", 0.0, "panoramax_roll_only_click_rig_frame", 0.0)),
-    # Panoramax past MAX_POSE_TILT_DEG (45, combined tilt, strict >): refused whichever angles are set (#72); the label
-    # is then skipped by data_generation. Bayonne's largest pose (20.2, 8.5) and 44 degrees are still levelled.
+    # Panoramax with both angles non-zero (the case the viewer levels) past MAX_POSE_TILT_DEG (45, combined tilt,
+    # strict >): refused (#72), and data_generation skips the label. Bayonne's largest pose (20.2, 8.5) and 44 degrees
+    # are still levelled.
     (_pose_row("panoramax", 50.0, 3.0), None, (None, None, "none", None, "panoramax_db_over_tilt", 0.0)),
     (_pose_row("panoramax", 40.0, 40.0), None, (None, None, "none", None, "panoramax_db_over_tilt", 0.0)),
-    (_pose_row("panoramax", 80.0, None), None, (None, None, "none", None, "panoramax_db_over_tilt", 0.0)),
-    (_pose_row("panoramax", 0.0, 60.0), None, (None, None, "none", None, "panoramax_db_over_tilt", 0.0)),
     (_pose_row("panoramax", 190.0, 3.0), None, (None, None, "none", None, "panoramax_db_over_tilt", 0.0)),  # -170
     (_pose_row("panoramax", 20.2, 8.5), None,
      (pytest.approx(-20.2), 8.5, "panoramax_db", 1.0, "level_frame_click", 0.0)),         # wrap180 rounds 20.2
     (_pose_row("panoramax", 44.0, 3.0), None, (-44.0, 3.0, "panoramax_db", 1.0, "level_frame_click", 0.0)),
     (_pose_row("panoramax", 316.0, 3.0), None, (44.0, 3.0, "panoramax_db", 1.0, "level_frame_click", 0.0)),  # -44
+    # A lone angle is not capped (Jon, PR #96), whatever its size: exactly master's behaviour. Pitch-only is an exact
+    # latitude shift (the pole guard is its backstop); roll-only is a rig-frame click.
+    (_pose_row("panoramax", 80.0, None), None,
+     (-80.0, None, "panoramax_db", 0.0, "panoramax_pitch_only_click_offset", 80.0)),
+    (_pose_row("panoramax", 0.0, 60.0), None,
+     (None, 60.0, "panoramax_db", 0.0, "panoramax_roll_only_click_rig_frame", 0.0)),
     # AI labels were placed on the rig image: never corrected, whatever the provider.
     (_pose_row("mapillary", 2.0, 1.0, author="ai"), None, (None, None, "rig_frame", None, "ai_label", 0.0)),
     (_pose_row("gsv", 2.0, author="ai"), None, (None, None, "rig_frame", None, "ai_label", 0.0)),
@@ -627,6 +632,14 @@ def test_rig_y_norm_refuses_a_click_past_a_pole():
     assert crop_pose.skip_status(off(5.0), None) == crop_pose.PAST_POLE_STATUS
     assert crop_pose.skip_status(gsv, 0.5) is None
     assert crop_pose.skip_status(gsv, None) is None  # only a Panoramax pitch-only pose can be past a pole
+    # Uncapped lone angles (Jon, PR #96): a large pitch-only pose is cut where it lands and skipped only past a pole;
+    # a large roll-only pose is never skipped.
+    big_pitch = crop_pose.pose_for_row(_pose_row("panoramax", 80.0, None), 0.95)
+    assert crop_pose.rig_y_norm(0.5, big_pitch) == pytest.approx(0.5 + 80.0 / 180)
+    assert crop_pose.skip_status(big_pitch, crop_pose.rig_y_norm(0.5, big_pitch)) is None
+    assert crop_pose.skip_status(big_pitch, crop_pose.rig_y_norm(0.6, big_pitch)) == crop_pose.PAST_POLE_STATUS
+    big_roll = crop_pose.pose_for_row(_pose_row("panoramax", 0.0, 60.0), 0.95)
+    assert crop_pose.rig_y_norm(0.5, big_roll) == 0.5 and crop_pose.skip_status(big_roll, 0.5) is None
 
 
 def test_check_resume_rejects_changed_source_beta_and_mapillary_api(tmp_path):
