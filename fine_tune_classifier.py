@@ -291,7 +291,7 @@ def slurm_state(env=None):
 
     def as_int(name):
         value = (env.get(name) or "").strip()
-        return int(value) if value.isdigit() else None
+        return int(value) if value.isdecimal() else None
 
     return {"slurm_job_id": as_int("SLURM_JOB_ID"), "slurm_array_job_id": as_int("SLURM_ARRAY_JOB_ID"),
             "slurm_array_task_id": as_int("SLURM_ARRAY_TASK_ID"), "slurm_restart_count": as_int("SLURM_RESTART_COUNT")}
@@ -316,7 +316,9 @@ def run_provenance(started_at, started, resume, finish_state=None):
     now = git_state() if finish_state is None else finish_state
     out = {"started_at": started_at, "finished_at": utc_now(),
            "resumed_from": os.path.basename(resume) if resume else None, **started}
-    if now != {"git_commit": started.get("git_commit"), "git_dirty": started.get("git_dirty")}:
+    moved = now["git_commit"] != started.get("git_commit") or (
+        now["git_dirty"] is not None and started.get("git_dirty") is not None and now["git_dirty"] != started["git_dirty"])
+    if moved:  # an unknown dirty flag on either side is not a change
         out["git_state_at_finish"] = now
     return out
 

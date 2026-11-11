@@ -9,7 +9,7 @@ import hf_cards
 
 
 def _git(cwd, *args):
-    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True,
+    subprocess.run(["git", "-c", "commit.gpgsign=false", *args], cwd=cwd, check=True, capture_output=True,
                    env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
                         "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com"})
 
@@ -94,12 +94,16 @@ def test_run_provenance_records_the_start_state_and_a_changed_finish(monkeypatch
     assert moved["git_commit"] == "a" * 40  # the code that was imported, not the pulled HEAD
     assert moved["git_state_at_finish"] == {"git_commit": "b" * 40, "git_dirty": True}
     assert moved["resumed_from"] == "checkpoint-40"
+    monkeypatch.setattr(ft, "git_state", lambda *a, **k: {"git_commit": "a" * 40, "git_dirty": None})
+    assert "git_state_at_finish" not in ft.run_provenance("2020-01-01T00:00:00Z", started, None)  # status unknown
 
 
 def test_publish_code_commit_uses_the_shared_helper(monkeypatch):
     import publish_to_hf as pub
     monkeypatch.setattr(ft, "git_state", lambda *a, **k: {"git_commit": "c" * 40, "git_dirty": True})
     assert pub.code_commit() == "c" * 40 + "-dirty"
+    monkeypatch.setattr(ft, "git_state", lambda *a, **k: {"git_commit": "c" * 40, "git_dirty": None})
+    assert pub.code_commit() == "c" * 40 + "-dirty?"  # status failed: not reported as clean
     monkeypatch.setattr(ft, "git_state", lambda *a, **k: {"git_commit": None, "git_dirty": None})
     assert pub.code_commit() is None
 
