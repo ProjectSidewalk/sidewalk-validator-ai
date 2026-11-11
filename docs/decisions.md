@@ -196,6 +196,10 @@ reports label type × severity and label type × tag next to its comparative bas
 - **Retrain reports.** `analysis/retrain_report.py` gives them for the new model and, from `predictions_prod.csv`
   (`evaluate.py --checkpoint <served model> --tag prod`), round 3 against production on the same rows, with a
   panorama-resampled interval on the difference.
+- **Scoreboard.** `analysis/vlm_scoreboard.py` takes its slice rows, gates, panorama-bootstrap intervals and paired
+  differences against round 3 from `analysis/slices.py`
+  ([#70](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/70)), and adds per-split and within-city
+  AUC. Its tag rows keep every tag with at least 30 crops of the type.
 - **Production measurements.** They report the same slices against human votes.
 
 **How the slices are counted.**

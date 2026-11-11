@@ -2,7 +2,7 @@
 
 Rows are models (the round-3 checkpoints, the 2025-08 models they replaced, every open-weight VLM leg, the 8-shot arm, the 4-bit Mac legs
 of #16); columns are macro-AUC over the five label types (each type equal weight), per-type AUC with a 95% label
-bootstrap interval, test vs held-out-deployment AUC, within-city AUC, balanced accuracy at the argmax, recall of
+bootstrap interval (slices use a panorama bootstrap), test vs held-out-deployment AUC, within-city AUC, balanced accuracy at the argmax, recall of
 ``incorrect`` at precision 0.95, s/crop with the GPU, and coverage. ``incorrect`` is the positive class and the
 score is ``p_incorrect`` everywhere. Writes ``docs/vlm-scoreboard.md`` and the ``readme_scoreboard`` block of ``README.md`` (generated blocks only; the prose around them
 is hand-written) and ``docs/vlm-scoreboard/*.{csv,png,json}``.
@@ -27,15 +27,16 @@ directory from what is on this Mac: the held-out rows of the round-3 ``split.csv
 
 **Slices.** Every full leg is also scored by label type x severity and label type x tag (``by_severity.csv``,
 ``by_tag.csv``, two heatmaps), with the crop count (test + test_heldout), the incorrect share, the share of the
-largest deployment and the round-3 training count of each slice, so a severity or tag a model handles badly shows up
-even when its type-level AUC looks fine. Each slice has the pooled AUC with its interval, the AUC per split and the
-within-city AUC: a slice drawn mostly from a few deployments with very different incorrect shares can score near
-chance pooled while ranking well inside each deployment (the city-class confound). Naming follows
-``analysis/slices.py`` of PR #67: a crop with several tags counts once in each, and an untagged crop, or one with no
-severity, is in ``(none)``. #67 reports test and held-out separately and bootstraps panoramas; here the headline is
-pooled with a label bootstrap (the per-split columns are the comparable ones). Every tag with at least
-``slices.MIN_N`` crops of the type gets a row; an AUC is blank below ``slices.MIN_N`` crops or ``SLICE_MIN_CLASS`` of a
-class.
+largest deployment and the round-3 training count of each slice (``needs_data`` under ``slices.THIN_TRAIN``), so a
+severity or tag a model handles badly shows up even when its type-level AUC looks fine. All slicing and its
+statistics come from ``analysis/slices.py`` (#70): the rows (``slice_names``: every severity, every tag with at
+least ``slices.MIN_N`` crops of the type, ``(none)`` last), the gates (an AUC is blank below ``slices.MIN_N`` crops
+or ``slices.MIN_CLASS_FOR_CI`` of a class), the pooled AUC with its 95% panorama-bootstrap interval
+(``slice_table``), the AUC per split, and the paired difference against round 3 on the same panorama resamples
+(``paired_delta_table``). A crop with several tags counts once in each, and an untagged crop, or one with no
+severity, is in ``(none)``. The scoreboard adds the within-city AUC: a slice drawn mostly from a few deployments
+with very different incorrect shares can score near chance pooled while ranking well inside each deployment (the
+city-class confound). ``pano_id`` is read from the splits for the bootstrap and never written out.
 
 **Naming.** A deployment is named only if it is public in the live ``/v3/api/cities`` at build time
 (``retrain_report.public_cities``; ``--public-cities`` overrides with a saved response or a list). The two private
@@ -71,7 +72,6 @@ import re
 import shutil
 import sys
 import tempfile
-import zlib
 
 import numpy as np
 import pandas as pd
@@ -93,6 +93,7 @@ README_BLOCK = "readme_scoreboard"
 README_VLMS = 3                                      # best full-coverage VLM legs shown in the README
 OUT_DIR = os.path.join(REPO_DIR, "docs", "vlm-scoreboard")
 N_BOOT, SEED = 1000, 20261021
+SLICE_BOOT = 200      # panorama resamples per slice: slices.py's sklearn AUC per resample makes 1,000 a 35+ min build
 REFERENCE = "round3"
 FLOAT = "%.4f"
 
@@ -156,7 +157,7 @@ def sha256_of(path):
         return hashlib.sha256(f.read()).hexdigest()
 
 
-SPLIT_COLUMNS = ("label_uid", "city", "label_type", "label_class", "split", "severity", "tags")
+SPLIT_COLUMNS = ("label_uid", "city", "label_type", "label_class", "split", "pano_id", "severity", "tags")
 
 
 def load_splits(scores_dir):
@@ -300,9 +301,16 @@ def _type_rng(seed, t, salt=0):
     return np.random.default_rng([seed, salt, LABEL_TYPES.index(t)])
 
 
+def _split_scoreable(y):
+    """A per-split AUC needs ``slices.MIN_N`` crops and ``slices.MIN_CLASS_FOR_CI`` of each class, as a slice does."""
+    n, ni = len(y), int(np.sum(y))
+    return n >= sl.MIN_N and min(ni, n - ni) >= sl.MIN_CLASS_FOR_CI
+
+
 def per_type_rows(leg, df, n_boot, seed, within_min_n=10):
-    """One row per type for one leg: n, AUC with its label-bootstrap CI, per-split AUC, within-city AUC, balanced
-    accuracy at the argmax and recall of incorrect at precision 0.95. Also returns the bootstrap draws per type."""
+    """One row per type for one leg: n, AUC with its label-bootstrap CI, per-split AUC (blank under the slice gate,
+    ``_split_scoreable``), within-city AUC, balanced accuracy at the argmax and recall of incorrect at precision
+    0.95. Also returns the bootstrap draws per type."""
     rows, draws = [], {}
     for t in LABEL_TYPES:
         g = df[df.label_type == t]
@@ -317,7 +325,7 @@ def per_type_rows(leg, df, n_boot, seed, within_min_n=10):
                "auc_lo": lo, "auc_hi": hi}
         for sp in SPLITS:
             gs = g[g.split == sp]
-            row[f"auc_{sp}"] = auc(gs.y, gs.p_incorrect) if len(gs) else float("nan")
+            row[f"auc_{sp}"] = auc(gs.y, gs.p_incorrect) if _split_scoreable(gs.y) else float("nan")
             row[f"n_{sp}"] = len(gs)
         row.update(within_city_auc=wc, n_cities=nc, balanced_accuracy=m["balanced_accuracy"],
                    r_incorrect_p95=m["r_incorrect_p95"])
@@ -464,57 +472,63 @@ def coverage_rows(legs, splits, notes, unscored=None):
 # Slices: label type x severity and label type x tag (the standing rule; conventions of analysis/slices.py, PR #67)
 # --------------------------------------------------------------------------------------------------------------------
 
-SLICE_MIN_CLASS = 10     # a slice needs sl.MIN_N crops for a row, and both for an AUC
-
-
-def _slice_rng(seed, by, t, name):
-    """The same bootstrap draws for every leg on one slice (the full legs share the crops), so cells compare."""
-    return np.random.default_rng([seed, 2 + sl.BY.index(by), LABEL_TYPES.index(t), zlib.crc32(name.encode())])
-
-
-def slice_rows(legs, splits, train, by, n_boot=N_BOOT, seed=SEED, within_min_n=10):
-    """One row per (leg, type, slice) for the legs given (the full ones, in board order): ``n`` (test +
-    test_heldout), ``n_incorrect``, ``incorrect_share``, ``top_deployment_share`` (the largest deployment's share of
-    the slice, unnamed), round-3 ``n_train`` (blank when that type's train rows are not staged), the pooled AUC with its
-    95% class-stratified label-bootstrap interval, the AUC per split and the within-city AUC (each blank when too thin
-    to score: ``sl.MIN_N`` crops and ``SLICE_MIN_CLASS`` of each class, per city ``within_min_n`` rows)."""
-    names = {t: sl.slice_names(g, by, sl.MIN_N) for t in LABEL_TYPES     # the same rows for every leg
-             for g in [splits[splits.label_type == t]] if not g.empty}
-    tr = sl.with_slice(train, by) if train is not None else None
-    trained = set(train.label_type) if train is not None else set()
+def slice_rows(legs, splits, train, by, n_boot=N_BOOT, seed=SEED, within_min_n=10, reference=REFERENCE):
+    """One row per (leg, type, slice) for the legs given (the full ones, in board order). An adapter over
+    ``analysis/slices.py``: the rows are ``slices.slice_names`` of the held-out crops (the same for every leg), and
+    per slice ``slices.slice_table`` gives ``n``, ``n_incorrect``, ``top_deployment_share`` (its ``max_city_share``,
+    unnamed), round-3 ``n_train`` and ``needs_data`` (blank when that type's train rows are not staged), and the
+    pooled AUC with its 95% panorama-bootstrap interval; ``slices.slice_table`` with no bootstrap gives the AUC per
+    split; ``slices.paired_delta_table`` gives ``delta_vs_round3`` [``delta_lo``, ``delta_hi``], the leg minus
+    ``reference`` on the same crops and the same panorama resamples (blank for the reference itself). The within-city
+    AUC (``vlm_baseline.within_city_auc``, cities with ``within_min_n`` rows) is shown only where the pooled AUC is.
+    Every AUC is blank under ``slices.MIN_N`` crops or ``slices.MIN_CLASS_FOR_CI`` of a class."""
+    ref = legs.get(reference)
     rows = []
-    for leg, df in legs.items():
-        d = sl.with_slice(df, by)
-        for t, slices in names.items():
-            dt = d[d.label_type == t]
-            for name in slices:
-                g = dt[dt.slice == name].sort_values("label_uid")    # same row order for every leg
-                n, ni = len(g), int(g.y.sum())
-                a = lo = hi = float("nan")
-                if _scoreable(g.y):
-                    a = auc(g.y, g.p_incorrect)
-                    lo, hi = ci(boot_auc(g.y, g.p_incorrect, n_boot, _slice_rng(seed, by, t, name))[:, 0])
-                n_train = int(((tr.label_type == t) & (tr.slice == name)).sum()) if t in trained else float("nan")
+    for t in LABEL_TYPES:
+        st = splits[splits.label_type == t]
+        if st.empty:
+            continue
+        names = sl.slice_names(st, by, sl.MIN_N)
+        tr = train[train.label_type == t] if train is not None and (train.label_type == t).any() else None
+        tseed = sl.slice_seed(seed, f"{by}/{t}")       # per type; slices.py adds the slice name, so every leg shares it
+        ref_t = ref[ref.label_type == t].assign(true=lambda d: d.label_class) if ref is not None else None
+        for leg, df in legs.items():
+            g = df[df.label_type == t].sort_values("label_uid").assign(true=lambda d: d.label_class)
+            tab = sl.slice_table(g, by, tr, sl.MIN_N, n_boot, tseed).set_index("slice")
+            per_split = {sp: sl.slice_table(g[g.split == sp], by, min_n=sl.MIN_N, n_boot=0).set_index("slice")
+                         for sp in SPLITS if (g.split == sp).any()}
+            delta = (sl.paired_delta_table(g, ref_t, by, sl.MIN_N, n_boot, tseed).set_index("slice")
+                     if ref_t is not None and leg != reference else None)
+            d = sl.with_slice(g, by)
+            for name in names:
+                x = tab.loc[name] if name in tab.index else None
+                n = int(x.n) if x is not None else 0
+                ni = int(x.n_incorrect) if x is not None else 0
                 row = {"leg": leg, "label_type": t, by: name, "n": n, "n_incorrect": ni,
                        "incorrect_share": ni / n if n else float("nan"),
-                       "top_deployment_share": float(g.city.value_counts(normalize=True).iloc[0]) if n else float("nan"),
-                       "n_train": n_train, "auc": a, "auc_lo": lo, "auc_hi": hi}
+                       "top_deployment_share": float(x.max_city_share) if x is not None else float("nan"),
+                       "n_train": int(x.train_n) if x is not None and tr is not None else float("nan"),
+                       "needs_data": bool(x.needs_data) if x is not None and tr is not None else float("nan"),
+                       "auc": float(x.auc) if x is not None else float("nan"),
+                       "auc_lo": float(x.auc_lo) if x is not None else float("nan"),
+                       "auc_hi": float(x.auc_hi) if x is not None else float("nan")}
                 for sp in SPLITS:
-                    gs = g[g.split == sp]
-                    row[f"auc_{sp}"] = auc(gs.y, gs.p_incorrect) if _scoreable(gs.y) else float("nan")
-                    row[f"n_{sp}"] = len(gs)
-                wc, nc = vb.within_city_auc(g.y, g.p_incorrect, g.city, within_min_n) if n else (float("nan"), 0)
-                row.update(within_city_auc=wc if _scoreable(g.y) else float("nan"), n_cities=nc)
+                    s = per_split.get(sp)
+                    has = s is not None and name in s.index
+                    row[f"auc_{sp}"] = float(s.loc[name, "auc"]) if has else float("nan")
+                    row[f"n_{sp}"] = int(s.loc[name, "n"]) if has else 0
+                gs = d[d.slice == name]
+                wc, nc = vb.within_city_auc(gs.y, gs.p_incorrect, gs.city, within_min_n) if n else (float("nan"), 0)
+                row.update(within_city_auc=wc if not np.isnan(row["auc"]) else float("nan"), n_cities=nc)
+                has_d = delta is not None and name in delta.index
+                for col, src in (("delta_vs_round3", "delta"), ("delta_lo", "delta_lo"), ("delta_hi", "delta_hi")):
+                    row[col] = float(delta.loc[name, src]) if has_d else float("nan")
                 rows.append(row)
-    return rows
+    order = {k: i for i, k in enumerate(legs)}          # board order, then type, then slice order
+    return sorted(rows, key=lambda r: order[r["leg"]])
 
 
-def _scoreable(y):
-    n, ni = len(y), int(np.sum(y))
-    return n >= sl.MIN_N and min(ni, n - ni) >= SLICE_MIN_CLASS
-
-
-def build_aggregates(scores_dir, public, n_boot=N_BOOT, seed=SEED, min_city_n=30):
+def build_aggregates(scores_dir, public, n_boot=N_BOOT, seed=SEED, min_city_n=30, slice_boot=SLICE_BOOT):
     """Every committed CSV, as ``{name: DataFrame}``, plus the per-crop frames the ROC figure needs."""
     splits = load_splits(scores_dir)
     legs, unscored = load_scores(scores_dir, splits)
@@ -562,7 +576,7 @@ def build_aggregates(scores_dir, public, n_boot=N_BOOT, seed=SEED, min_city_n=30
     sliced = {"severity", "tags"} <= set(splits.columns)
     train = load_train(scores_dir)
     for by in sl.BY:
-        out[f"by_{by}"] = pd.DataFrame(slice_rows(full_legs, splits, train, by, n_boot, seed) if sliced else [])
+        out[f"by_{by}"] = pd.DataFrame(slice_rows(full_legs, splits, train, by, slice_boot, seed) if sliced else [])
     return out, legs, splits, names
 
 
@@ -843,34 +857,52 @@ def render_blocks(aggs):
                                "GPU-h / 1,000 labels", "GPU-h / 800-label night", "source"], rows) if rows else \
         "(no timing staged yet)"
     for by in sl.BY:
-        blocks[f"by_{by}"] = slice_table(aggs.get(f"by_{by}", pd.DataFrame()), b, by)
+        blocks[f"by_{by}"] = render_slice_table(aggs.get(f"by_{by}", pd.DataFrame()), b, by)
     return blocks
 
 
-def slice_table(df, b, by):
+def _thin(r):
+    """``True`` when the slice's round-3 training count is under ``slices.THIN_TRAIN`` (CSV ``needs_data``)."""
+    v = getattr(r, "needs_data", "")
+    return str(v).strip().lower() in ("true", "1", "1.0")
+
+
+def render_slice_table(df, b, by):
     """Markdown for one slice CSV: a row per (type, slice), pooled AUC [95% CI] and within-city AUC of round 3,
-    the 2025-08 models and the best full-coverage VLM (the heatmap has every full leg); the best of each per row in
-    bold."""
+    the 2025-08 models and the best full-coverage VLM (the heatmap has every full leg), the best of each per row in
+    bold, and for the two non-reference legs the paired difference against round 3 [95% CI]. A round-3 training
+    count under ``slices.THIN_TRAIN`` is flagged "⚠ thin"."""
     if df is None or df.empty:
         return "(no slices staged)"
     best, best_full = best_vlm(b)
     keep = [k for k in (REFERENCE, "production", best.leg if best is not None and best_full else None)
             if k is not None and (df.leg == k).any()]
     disp = dict(zip(b.leg, b.display))
+    has_delta = "delta_vs_round3" in df.columns
     first = df[df.leg == keep[0]]
     rows = []
     for r in first.itertuples():
-        cells = []
+        aucs, within, deltas = [], [], {}
         for k in keep:
             x = df[(df.leg == k) & (df.label_type == r.label_type) & (df[by] == getattr(r, by))].iloc[0]
-            cells += [f"{f3(x.auc)}{interval(x.auc_lo, x.auc_hi)}", f3(x.within_city_auc)]
-        aucs, within = bold_best(cells[0::2]), bold_best(cells[1::2])
-        rows.append([r.label_type, getattr(r, by), _int(r.n), f"{r.incorrect_share:.0%}",
-                     f"{r.top_deployment_share:.0%}", "—" if f3(r.n_train) == "—" else _int(r.n_train)]
-                    + [c for pair in zip(aucs, within) for c in pair])
+            aucs.append(f"{f3(x.auc)}{interval(x.auc_lo, x.auc_hi)}")
+            within.append(f3(x.within_city_auc))
+            if k != REFERENCE and has_delta:
+                deltas[k] = f"{f3(x.delta_vs_round3)}{interval(x.delta_lo, x.delta_hi)}"
+        aucs, within = bold_best(aucs), bold_best(within)
+        train = "—" if f3(r.n_train) == "—" else _int(r.n_train) + (" ⚠ thin" if _thin(r) else "")
+        cells = [r.label_type, getattr(r, by), _int(r.n), f"{r.incorrect_share:.0%}", f"{r.top_deployment_share:.0%}",
+                 train]
+        for i, k in enumerate(keep):
+            cells += [aucs[i], within[i]]
+            if k != REFERENCE and has_delta:
+                cells.append(deltas[k])
+        rows.append(cells)
     head = ["type", by, "crops", "incorrect", "largest deployment", "round-3 train"]
     for k in keep:
         head += [f"{SHORT.get(k, disp.get(k, k))} AUC [95% CI]", "within-city"]
+        if k != REFERENCE and has_delta:
+            head.append("Δ vs round 3 [95% CI]")
     return _table(head, rows)
 
 
@@ -1283,7 +1315,8 @@ def fig_slices(df, b, by, path):
     fig.suptitle(f"AUC by model, label type and {what[0]}", x=0.01, ha="left", fontsize=12, color=INK, y=0.995)
     fig.text(0.01, 0.975, what[1], fontsize=8.5, color=INK2, va="top")
     fig.text(0.01, 0.012, "AUC within the slice (incorrect = positive). Row label: crops (test + held-out), share "
-             f"incorrect, largest deployment's share, round-3 training crops. — = fewer than {sl.MIN_N} crops or {SLICE_MIN_CLASS} of a class; "
+             f"incorrect, largest deployment's share, round-3 training crops. — = fewer than {sl.MIN_N} crops or "
+             f"{sl.MIN_CLASS_FOR_CI} of a class (analysis/slices.py); "
              f"(none) = no {what[0]}.\n{FOOTNOTE}", fontsize=7, color=MUTED)
     w, h = fig.get_size_inches()                        # fixed-inch margins: room for the rotated column names
     fig.subplots_adjust(left=0.36, right=1 - 1.1 / w, top=1 - 2.0 / h, bottom=0.6 / h)
@@ -1348,7 +1381,8 @@ def provenance(scores_dir, public, public_source, args):
     import sklearn
     return {"staged_files": dict(sorted(files.items())), "public_cities": sorted(public),
             "public_cities_source": public_source if public_source.startswith("http") else
-            os.path.basename(public_source), "n_boot": args.n_boot, "seed": args.seed, "min_city_n": args.min_city_n,
+            os.path.basename(public_source), "n_boot": args.n_boot, "slice_boot": args.slice_boot, "seed": args.seed,
+            "min_city_n": args.min_city_n,
             "packages": {"numpy": np.__version__, "pandas": pd.__version__, "scikit-learn": sklearn.__version__,
                          "matplotlib": matplotlib.__version__}}
 
@@ -1485,6 +1519,12 @@ def consistency_problems(aggs, tol=2e-4):
         bad = a[(a.auc < a.auc_lo - tol) | (a.auc > a.auc_hi + tol)]
         if len(bad):
             problems.append(f"{name}.csv: {len(bad)} AUC(s) outside their own interval (first: leg {bad.leg.iloc[0]})")
+        if "delta_vs_round3" in d:
+            a = d.dropna(subset=["delta_vs_round3", "delta_lo", "delta_hi"])
+            bad = a[(a.delta_vs_round3 < a.delta_lo - tol) | (a.delta_vs_round3 > a.delta_hi + tol)]
+            if len(bad):
+                problems.append(f"{name}.csv: {len(bad)} difference(s) vs round 3 outside their own interval "
+                                f"(first: leg {bad.leg.iloc[0]})")
         if "incorrect_share" in d:
             x = d[d.n > 0]
             off = x[(x.n_incorrect / x.n - x.incorrect_share).abs() > tol]
@@ -1528,7 +1568,8 @@ def run_build(args):
         public, frozen = _check_public(args, out_dir)
         problems += no_longer_public(out_dir, public, frozen)
         if staged:
-            aggs, *_ = build_aggregates(args.scores_dir, public, args.n_boot, args.seed, args.min_city_n)
+            aggs, *_ = build_aggregates(args.scores_dir, public, args.n_boot, args.seed, args.min_city_n,
+                                        args.slice_boot)
             with tempfile.TemporaryDirectory() as tmp:
                 write_aggregates(aggs, tmp)
                 for name in aggs:
@@ -1558,7 +1599,8 @@ def run_build(args):
     if not staged:
         raise SystemExit(f"no staging directory at {args.scores_dir}; run `stage` or pass --scores-dir")
     public, src = _public(args)
-    aggs, legs, _splits, _names = build_aggregates(args.scores_dir, public, args.n_boot, args.seed, args.min_city_n)
+    aggs, legs, _splits, _names = build_aggregates(args.scores_dir, public, args.n_boot, args.seed, args.min_city_n,
+                                        args.slice_boot)
     write_aggregates(aggs, out_dir)
     committed = read_aggregates(out_dir)        # render from what was written, exactly as --check will
     if os.path.exists(doc):
@@ -1610,6 +1652,9 @@ def main(argv=None):
                    help="saved /v3/api/cities response or one city_id per line (default: the live API; --check "
                         "falls back to the list in the committed provenance.json when offline)")
     b.add_argument("--n-boot", type=int, default=N_BOOT)
+    b.add_argument("--slice-boot", type=int, default=SLICE_BOOT,
+                   help="panorama resamples per slice interval and per slice difference vs round 3 (slower than "
+                        "--n-boot's vectorised label bootstrap; the committed board uses the default)")
     b.add_argument("--seed", type=int, default=SEED)
     b.add_argument("--min-city-n", type=int, default=30)
     b.add_argument("--no-figures", action="store_true")

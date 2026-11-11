@@ -89,7 +89,7 @@ def board(tmp_path):
     pub = tmp_path / "public.txt"
     pub.write_text("\n".join(PUBLIC))
     base = ["build", "--scores-dir", str(stage), "--out-dir", str(out), "--doc", str(doc), "--readme", str(readme),
-            "--public-cities", str(pub), "--n-boot", "50"]
+            "--public-cities", str(pub), "--n-boot", "50", "--slice-boot", "50"]
     _doc(doc)
     _readme(readme)
     sb.main(base)                                   # aggregates, figures (prose not yet written)
@@ -395,7 +395,8 @@ def test_run_speed_prefers_the_full_run_with_most_crops_on_a_tie():
 
 def test_scoreboard_has_no_slicing_of_its_own():
     """#70: tag parsing, slice assignment, row selection and the thresholds come from analysis/slices.py only."""
-    for name in ("SLICE_BY", "NONE", "parse_tags", "with_slice", "slice_names", "SLICE_MIN_N"):
+    for name in ("SLICE_BY", "NONE", "parse_tags", "with_slice", "slice_names", "SLICE_MIN_N", "SLICE_MIN_CLASS",
+                 "_scoreable", "_slice_rng", "slice_table"):
         assert not hasattr(sb, name), name
     assert sb.sl is sl
 
@@ -418,66 +419,127 @@ def test_slices_cover_full_legs_only_and_count_each_tag(board):
 
 def test_slice_names_and_rows_on_a_small_frame(monkeypatch):
     monkeypatch.setattr(sl, "MIN_N", 4)
-    monkeypatch.setattr(sb, "SLICE_MIN_CLASS", 2)
-    s = pd.DataFrame({"label_uid": [f"x:{i}" for i in range(8)], "label_type": "CurbRamp",
-                      "y": [0, 1, 0, 1, 0, 1, 0, 1], "severity": [1, 1, 1, 1, 2, None, 2, 2],
+    monkeypatch.setattr(sl, "MIN_CLASS_FOR_CI", 2)
+    y = [0, 1, 0, 1, 0, 1, 0, 1]
+    s = pd.DataFrame({"label_uid": [f"x:{i}" for i in range(8)], "label_type": "CurbRamp", "y": y,
+                      "label_class": ["incorrect" if v else "correct" for v in y],
+                      "severity": [1, 1, 1, 1, 2, None, 2, 2],
                       "tags": ['["a","b"]', '["a"]', '["a","b"]', '["a","b"]', '["b"]', "[]", '["c"]', '["b"]']})
-    assert sl.slice_names(s, "severity", 4) == ["1", "2", "(none)"]
-    assert sl.slice_names(s, "tag", 4) == ["b", "a", "(none)"]    # most common first; "c" is too thin
     # tag "a" (rows 0-3) is all test, three of its four crops in city p
     s = s.assign(city=["p", "p", "p", "q", "p", "q", "q", "q"], split=["test"] * 4 + ["test_heldout"] * 4)
     legs = {"good": s.assign(p_incorrect=s.y * 0.8 + 0.1), "bad": s.assign(p_incorrect=1 - (s.y * 0.8 + 0.1))}
-    rows = pd.DataFrame(sb.slice_rows(legs, s, None, "tag", n_boot=20, seed=1, within_min_n=2))
+    rows = pd.DataFrame(sb.slice_rows(legs, s, None, "tag", n_boot=20, seed=1, within_min_n=2, reference="good"))
+    assert rows[rows.leg == "good"].tag.tolist() == ["b", "a", "(none)"]   # slices.slice_names; "c" is too thin
     a = rows[rows.tag == "a"].set_index("leg")
     assert a.loc["good", "auc"] == 1.0 and a.loc["bad", "auc"] == 0.0 and a.loc["good", "n"] == 4
     assert a.loc["good", "top_deployment_share"] == 0.75
     assert a.loc["good", "auc_test"] == 1.0 and np.isnan(a.loc["good", "auc_test_heldout"])
     assert a.loc["good", "n_test"] == 4 and a.loc["good", "n_test_heldout"] == 0
     assert a.loc["good", "within_city_auc"] == 1.0 and a.loc["good", "n_cities"] == 1   # q has one crop of "a"
+    assert np.isnan(a.loc["good", "delta_vs_round3"]) and a.loc["bad", "delta_vs_round3"] == -1.0
     rows = pd.DataFrame(sb.slice_rows(legs, s, None, "tag", n_boot=20, seed=1))     # default: cities need 10 rows
     assert np.isnan(rows.within_city_auc).all()
-    assert rows.n_train.isna().all()                               # no train rows staged
+    assert rows.n_train.isna().all() and rows.needs_data.isna().all()   # no train rows staged
     assert np.isnan(rows[rows.tag == "(none)"].auc).all()          # one crop: blank
+    assert rows.delta_vs_round3.isna().all()                       # no round3 leg given
 
 
-def test_slice_interval_is_the_label_bootstrap_and_ignores_row_order():
-    rng = np.random.default_rng(5)
-    y = np.r_[np.zeros(40), np.ones(40)].astype(int)
-    s = pd.DataFrame({"label_uid": [f"x:{i:03d}" for i in range(80)], "label_type": "CurbRamp", "city": "p",
-                      "split": np.where(np.arange(80) % 2, "test", "test_heldout"), "y": y, "severity": 2,
-                      "tags": "[]"})
-    m = s.assign(p_incorrect=rng.random(80) + 0.4 * y)
+def _slice_frame(n=80, seed=5):
+    """One type, one severity, two splits, ``n`` crops on ``n // 2`` panoramas; a leg with a real signal."""
+    rng = np.random.default_rng(seed)
+    y = np.r_[np.zeros(n // 2), np.ones(n // 2)].astype(int)
+    s = pd.DataFrame({"label_uid": [f"x:{i:03d}" for i in range(n)], "label_type": "CurbRamp",
+                      "city": np.where(np.arange(n) % 3, "p", "q"), "pano_id": [f"pano{i % (n // 2)}" for i in range(n)],
+                      "split": np.where(np.arange(n) % 2, "test", "test_heldout"), "y": y,
+                      "label_class": np.where(y == 1, "incorrect", "correct"), "severity": 2, "tags": "[]"})
+    return s, s.assign(p_incorrect=rng.random(n) + 0.4 * y)
+
+
+def test_slice_rows_match_slices_py():
+    """Every statistic in a scoreboard slice row is the one analysis/slices.py computes on the same rows."""
+    s, m = _slice_frame()
+    tr = s[["label_type", "label_class", "severity", "tags"]].head(30)
+    r = sb.slice_rows({"m": m}, s, tr, "severity", n_boot=200, seed=7)[0]
+    seed = sl.slice_seed(7, "severity/CurbRamp")
+    ref = sl.slice_table(m.sort_values("label_uid").assign(true=m.label_class), "severity", tr, sl.MIN_N, 200,
+                         seed).iloc[0]
+    assert (r["n"], r["n_incorrect"], r["n_train"], r["needs_data"]) == (80, 40, 30, True)
+    assert r["auc"] == ref.auc and (r["auc_lo"], r["auc_hi"]) == (ref.auc_lo, ref.auc_hi)
+    assert r["top_deployment_share"] == ref.max_city_share
+    lo, hi = sl.bootstrap_auc(m.y.to_numpy(), m.p_incorrect, m.pano_id, 200, sl.slice_seed(seed, "2"))
+    assert (r["auc_lo"], r["auc_hi"]) == (lo, hi)                  # the panorama bootstrap, not the label one
+    for sp in sb.SPLITS:
+        k = (s.split == sp).to_numpy()
+        assert r[f"auc_{sp}"] == pytest.approx(roc_auc_score(m.y[k], m.p_incorrect[k])) and r[f"n_{sp}"] == 40
+
+
+def test_slice_delta_vs_round3_is_paired():
+    s, m = _slice_frame()
+    noisy = m.assign(p_incorrect=m.p_incorrect + np.random.default_rng(9).normal(0, 0.5, len(m)))
+    rows = pd.DataFrame(sb.slice_rows({"round3": m, "noisy": noisy}, s, None, "severity", n_boot=200, seed=7))
+    r3, nz = rows.set_index("leg").loc["round3"], rows.set_index("leg").loc["noisy"]
+    assert np.isnan(r3.delta_vs_round3) and np.isnan(r3.delta_lo)  # the reference has no difference with itself
+    assert nz.delta_vs_round3 == pytest.approx(nz.auc - r3.auc)
+    d = sl.paired_delta_table(noisy.sort_values("label_uid").assign(true=noisy.label_class),
+                              m.assign(true=m.label_class), "severity", sl.MIN_N, 200,
+                              sl.slice_seed(7, "severity/CurbRamp")).iloc[0]
+    assert (nz.delta_lo, nz.delta_hi) == (d.delta_lo, d.delta_hi) and nz.delta_lo < nz.delta_vs_round3 < nz.delta_hi
+    # paired: the interval of the difference is narrower than either AUC interval would suggest unpaired
+    assert nz.delta_hi - nz.delta_lo < (nz.auc_hi - nz.auc_lo) + (r3.auc_hi - r3.auc_lo)
+
+
+def test_slice_interval_same_for_shuffled_leg():
+    s, m = _slice_frame()
     rows = sb.slice_rows({"m": m, "shuffled": m.sample(frac=1, random_state=1)}, s, None, "severity", 200, 7)
     r, sh = rows
-    lo, hi = sb.ci(sb.boot_auc(y, m.p_incorrect, 200, sb._slice_rng(7, "severity", "CurbRamp", "2"))[:, 0])
-    assert (r["auc_lo"], r["auc_hi"]) == (lo, hi) and lo < r["auc"] < hi
-    assert (sh["auc_lo"], sh["auc_hi"]) == (lo, hi)                # same draws whatever order the leg's rows are in
-    for sp in sb.SPLITS:                                           # per split: that split's crops only
-        k = (s.split == sp).to_numpy()
-        assert r[f"auc_{sp}"] == pytest.approx(sb.auc(y[k], m.p_incorrect[k])) and r[f"n_{sp}"] == 40
+    assert (sh["auc_lo"], sh["auc_hi"]) == (r["auc_lo"], r["auc_hi"]) and r["auc_lo"] < r["auc"] < r["auc_hi"]
     assert r["auc_test"] != pytest.approx(r["auc_test_heldout"])
 
 
-def test_slice_auc_needs_enough_of_each_class(monkeypatch):
-    monkeypatch.setattr(sl, "MIN_N", 4)
-    monkeypatch.setattr(sb, "SLICE_MIN_CLASS", 2)
-    s = pd.DataFrame({"label_uid": [f"x:{i}" for i in range(6)], "label_type": "CurbRamp", "city": "p",
-                      "split": "test", "y": [1, 1, 1, 1, 1, 0], "severity": 1, "tags": "[]"})
-    r = sb.slice_rows({"m": s.assign(p_incorrect=np.linspace(0.9, 0.1, 6))}, s, None, "severity", n_boot=10,
+@pytest.mark.parametrize("minority, scored", [(7, False), (8, True)])
+def test_slice_auc_gate_is_eight_per_class(minority, scored):
+    """The class gate is slices.MIN_CLASS_FOR_CI (8, was 10 in the scoreboard): 7 of a class is blank, 8 scored."""
+    assert sl.MIN_CLASS_FOR_CI == 8 and sl.MIN_N == 30
+    n = 40
+    y = np.r_[np.ones(minority), np.zeros(n - minority)].astype(int)
+    s = pd.DataFrame({"label_uid": [f"x:{i:02d}" for i in range(n)], "label_type": "CurbRamp", "city": "p",
+                      "pano_id": [f"p{i}" for i in range(n)], "split": "test", "y": y,
+                      "label_class": np.where(y == 1, "incorrect", "correct"), "severity": 1, "tags": "[]"})
+    r = sb.slice_rows({"m": s.assign(p_incorrect=np.linspace(0.9, 0.1, n))}, s, None, "severity", n_boot=20,
                       within_min_n=2)[0]
-    assert r["n"] == 6 and np.isnan(r["auc"]) and np.isnan(r["auc_test"])    # one correct crop: no AUC
-    assert np.isnan(r["within_city_auc"])                         # nor within city, though the city has 6 rows
+    assert r["n"] == n and (not np.isnan(r["auc"])) == scored and (not np.isnan(r["auc_test"])) == scored
+    assert (not np.isnan(r["auc_lo"])) == scored
+    assert (not np.isnan(r["within_city_auc"])) == scored          # within-city only where the pooled AUC is
     tr = pd.DataFrame({"label_type": ["CurbRamp"], "label_class": ["correct"], "severity": [1], "tags": ["[]"]})
-    r = sb.slice_rows({"m": s.assign(p_incorrect=0.5)}, s, tr, "severity", n_boot=10)[0]
-    assert r["n_train"] == 1
+    r = sb.slice_rows({"m": s.assign(p_incorrect=0.5)}, s, tr, "severity", n_boot=0)[0]
+    assert r["n_train"] == 1 and r["needs_data"] is True
     other = tr.assign(label_type="Obstacle")                      # train rows of another type only: blank, not 0
-    assert np.isnan(sb.slice_rows({"m": s.assign(p_incorrect=0.5)}, s, other, "severity", n_boot=10)[0]["n_train"])
+    assert np.isnan(sb.slice_rows({"m": s.assign(p_incorrect=0.5)}, s, other, "severity", n_boot=0)[0]["n_train"])
+
+
+def test_per_type_split_auc_blank_when_thin():
+    """per_type_rows gates a per-split AUC as a slice is gated: slices.MIN_N crops and MIN_CLASS_FOR_CI of a class."""
+    rng = np.random.default_rng(3)
+    rows = []
+    for sp, n, ni in (("test", 200, 60), ("test_heldout", 29, 14)):       # held-out: one crop under MIN_N
+        rows += [{"label_uid": f"{sp}:{i}", "split": sp, "y": int(i < ni)} for i in range(n)]
+    df = pd.DataFrame(rows).assign(label_type="CurbRamp", city="p", label_class=lambda d: np.where(
+        d.y == 1, "incorrect", "correct"))
+    df["p_incorrect"] = np.clip(0.3 * df.y + rng.random(len(df)), 0, 1)
+    r = sb.per_type_rows("m", df, 20, 1)[0][0]
+    assert not np.isnan(r["auc_test"]) and np.isnan(r["auc_test_heldout"]) and r["n_test_heldout"] == 29
+    big = pd.concat([df[df.split == "test"]] + [
+        pd.DataFrame({"label_uid": [f"h:{i}" for i in range(40)], "split": "test_heldout", "y": [1] * 7 + [0] * 33,
+                      "label_type": "CurbRamp", "city": "p"}).assign(
+            label_class=lambda d: np.where(d.y == 1, "incorrect", "correct"), p_incorrect=lambda d: rng.random(40))])
+    r = sb.per_type_rows("m", big, 20, 1)[0][0]
+    assert np.isnan(r["auc_test_heldout"]) and r["n_test_heldout"] == 40     # 7 incorrect: under 8 of a class
 
 
 def test_check_catches_an_edited_slice_cell_in_both_modes(board, monkeypatch):
     base = board["base"]
     monkeypatch.setattr(sl, "MIN_N", 5)      # synthetic severity slices: 15 crops, ~10 per split
-    monkeypatch.setattr(sb, "SLICE_MIN_CLASS", 2)
+    monkeypatch.setattr(sl, "MIN_CLASS_FOR_CI", 2)
     sb.main(base)
     ci = [a if a != str(board["stage"]) else str(board["stage"]) + "-absent" for a in base]
     p = board["out"] / "by_severity.csv"
@@ -582,7 +644,7 @@ def test_old_staging_without_severity_builds_without_slices(tmp_path):
         g.drop(columns=["severity", "tags"]).to_csv(root / "splits" / f"{t}.csv", index=False)
     aggs, *_ = sb.build_aggregates(str(root), set(PUBLIC), n_boot=10)
     assert aggs["by_severity"].empty and aggs["by_tag"].empty
-    assert sb.slice_table(aggs["by_tag"], aggs["board"], "tag") == "(no slices staged)"
+    assert sb.render_slice_table(aggs["by_tag"], aggs["board"], "tag") == "(no slices staged)"
 
 
 def test_bold_marks_the_best_cell_and_the_board_is_two_tables(board):
@@ -644,11 +706,11 @@ def test_bold_in_the_other_tables_and_the_rule(board):
                     within_city_auc=within)
     df = pd.DataFrame([srow(sb.REFERENCE, 1, 0.9, 0.8), srow("production", 1, 0.7, 0.85),
                        srow(sb.REFERENCE, 2, 0.6, np.nan), srow("production", 2, 0.65, np.nan)])
-    rows = body(sb.slice_table(df, b, "severity"))
+    rows = body(sb.render_slice_table(df, b, "severity"))
     assert rows[0][6].startswith("**0.900") and not rows[0][8].startswith("**")      # AUC: round 3 wins
     assert rows[0][9] == "**0.850**" and rows[0][7] == "0.800"                        # within-city: 2025-08 wins
     assert rows[1][8].startswith("**0.650") and rows[1][7] == "—" and rows[1][9] == "—"
-    assert "| round 3 AUC [95% CI] | within-city |" in sb.slice_table(df, b, "severity").splitlines()[0]
+    assert "| round 3 AUC [95% CI] | within-city |" in sb.render_slice_table(df, b, "severity").splitlines()[0]
     # per deployment: no bold when the best VLM is a partial leg (its AUCs are on other crops)
     partial = dict(aggs)
     pb = b.copy()
