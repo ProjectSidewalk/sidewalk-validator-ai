@@ -68,6 +68,25 @@ def with_slice(df, by):
     return d.explode("slice").reset_index(drop=True)
 
 
+def slice_names(df, by, min_n=MIN_N):
+    """The slices of ``df`` (one label type) in row order, chosen on counts only, never on scores: every severity
+    present in ascending order, or every tag with at least ``min_n`` rows, most common first (ties by name); then
+    ``(none)`` last when any row has no severity or no tag. ``vlm_scoreboard.py`` uses it to fix one set of rows
+    for every leg.
+
+    >>> d = pd.DataFrame({"severity": [10, 2, None, 2], "tags": ['["a","b"]', '["b"]', "[]", '["c"]']})
+    >>> slice_names(d, "severity"), slice_names(d, "tag", min_n=1), slice_names(d, "tag", min_n=2)
+    (['2', '10', '(none)'], ['b', 'a', 'c', '(none)'], ['b', '(none)'])
+    """
+    s = with_slice(df, by).slice
+    tail = [NONE] if (s == NONE).any() else []
+    if by == "severity":
+        return sorted({x for x in s if x != NONE}, key=int) + tail
+    c = s.value_counts()
+    c = c[(c >= min_n) & (c.index != NONE)]
+    return sorted(c.index, key=lambda x: (-c[x], x)) + tail
+
+
 def _auc(y, s):
     from sklearn.metrics import roc_auc_score
     return float(roc_auc_score(y, s)) if 0 < y.sum() < len(y) else np.nan

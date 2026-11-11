@@ -34,7 +34,7 @@ chance pooled while ranking well inside each deployment (the city-class confound
 ``analysis/slices.py`` of PR #67: a crop with several tags counts once in each, and an untagged crop, or one with no
 severity, is in ``(none)``. #67 reports test and held-out separately and bootstraps panoramas; here the headline is
 pooled with a label bootstrap (the per-split columns are the comparable ones). Every tag with at least
-``SLICE_MIN_N`` crops of the type gets a row; an AUC is blank below ``SLICE_MIN_N`` crops or ``SLICE_MIN_CLASS`` of a
+``slices.MIN_N`` crops of the type gets a row; an AUC is blank below ``slices.MIN_N`` crops or ``SLICE_MIN_CLASS`` of a
 class.
 
 **Naming.** A deployment is named only if it is public in the live ``/v3/api/cities`` at build time
@@ -82,6 +82,7 @@ sys.path.insert(0, os.path.join(REPO_DIR, "analysis"))
 import evaluate  # noqa: E402
 import vlm_baseline as vb  # noqa: E402
 from retrain_report import CITIES_API, heldout_names, public_cities  # noqa: E402
+from analysis import slices as sl  # noqa: E402
 
 LABEL_TYPES = vb.LABEL_TYPES
 SPLITS = ("test", "test_heldout")
@@ -463,68 +464,12 @@ def coverage_rows(legs, splits, notes, unscored=None):
 # Slices: label type x severity and label type x tag (the standing rule; conventions of analysis/slices.py, PR #67)
 # --------------------------------------------------------------------------------------------------------------------
 
-SLICE_BY = ("severity", "tag")
-NONE = "(none)"
-SLICE_MIN_N, SLICE_MIN_CLASS = 30, 10     # a slice needs SLICE_MIN_N crops for a row, and both for an AUC
-
-
-def parse_tags(value):
-    """A label's tags: a JSON array (``split.csv``), a ``;``-joined string, a list, or missing (as ``slices.py``).
-
-    >>> parse_tags('["narrow","pole"]'), parse_tags("narrow;pole"), parse_tags("[]"), parse_tags(float("nan"))
-    (['narrow', 'pole'], ['narrow', 'pole'], [], [])
-    """
-    if value is None or (isinstance(value, float) and np.isnan(value)):
-        return []
-    if isinstance(value, (list, tuple)):
-        return [str(t) for t in value if str(t)]
-    v = str(value).strip()
-    if v.startswith("["):
-        return [str(t) for t in json.loads(v) if str(t)]
-    return [t for t in v.split(";") if t]
-
-
-def with_slice(df, by):
-    """``df`` with a ``slice`` column for ``by``; tags explode to one row per tag, untagged rows are ``(none)``.
-
-    >>> d = pd.DataFrame({"severity": [1.0, None], "tags": ['["a","b"]', "[]"]})
-    >>> with_slice(d, "severity").slice.tolist(), with_slice(d, "tag").slice.tolist()
-    (['1', '(none)'], ['a', 'b', '(none)'])
-    """
-    if by == "severity":
-        sev = pd.to_numeric(df["severity"], errors="coerce")
-        return df.assign(slice=[NONE if pd.isna(v) else str(int(v)) for v in sev])
-    return df.assign(slice=[parse_tags(v) or [NONE] for v in df["tags"]]).explode("slice").reset_index(drop=True)
-
-
-def slice_names(splits, by):
-    """``{Type: [slice, ...]}`` in row order: every severity present in ascending order, then ``(none)``; every tag
-    with at least ``SLICE_MIN_N`` crops, most common first, then ``(none)`` (selected on counts only, never scores).
-
-    >>> s = pd.DataFrame({"label_type": "CurbRamp", "y": 0, "severity": [10, 2, None], "tags": "[]"})
-    >>> slice_names(s, "severity")
-    {'CurbRamp': ['2', '10', '(none)']}
-    """
-    out = {}
-    d = with_slice(splits, by)
-    for t in LABEL_TYPES:
-        g = d[d.label_type == t]
-        if g.empty:
-            continue
-        if by == "severity":
-            sev = sorted({x for x in g.slice if x != NONE}, key=int)
-            out[t] = sev + ([NONE] if (g.slice == NONE).any() else [])
-            continue
-        c = g.slice.value_counts()
-        c = c[(c >= SLICE_MIN_N) & (c.index != NONE)]
-        keep = sorted(c.index, key=lambda x: (-c[x], x))
-        out[t] = keep + ([NONE] if (g.slice == NONE).any() else [])
-    return out
+SLICE_MIN_CLASS = 10     # a slice needs sl.MIN_N crops for a row, and both for an AUC
 
 
 def _slice_rng(seed, by, t, name):
     """The same bootstrap draws for every leg on one slice (the full legs share the crops), so cells compare."""
-    return np.random.default_rng([seed, 2 + SLICE_BY.index(by), LABEL_TYPES.index(t), zlib.crc32(name.encode())])
+    return np.random.default_rng([seed, 2 + sl.BY.index(by), LABEL_TYPES.index(t), zlib.crc32(name.encode())])
 
 
 def slice_rows(legs, splits, train, by, n_boot=N_BOOT, seed=SEED, within_min_n=10):
@@ -532,13 +477,14 @@ def slice_rows(legs, splits, train, by, n_boot=N_BOOT, seed=SEED, within_min_n=1
     test_heldout), ``n_incorrect``, ``incorrect_share``, ``top_deployment_share`` (the largest deployment's share of
     the slice, unnamed), round-3 ``n_train`` (blank when that type's train rows are not staged), the pooled AUC with its
     95% class-stratified label-bootstrap interval, the AUC per split and the within-city AUC (each blank when too thin
-    to score: ``SLICE_MIN_N`` crops and ``SLICE_MIN_CLASS`` of each class, per city ``within_min_n`` rows)."""
-    names = slice_names(splits, by)
-    tr = with_slice(train, by) if train is not None else None
+    to score: ``sl.MIN_N`` crops and ``SLICE_MIN_CLASS`` of each class, per city ``within_min_n`` rows)."""
+    names = {t: sl.slice_names(g, by, sl.MIN_N) for t in LABEL_TYPES     # the same rows for every leg
+             for g in [splits[splits.label_type == t]] if not g.empty}
+    tr = sl.with_slice(train, by) if train is not None else None
     trained = set(train.label_type) if train is not None else set()
     rows = []
     for leg, df in legs.items():
-        d = with_slice(df, by)
+        d = sl.with_slice(df, by)
         for t, slices in names.items():
             dt = d[d.label_type == t]
             for name in slices:
@@ -565,7 +511,7 @@ def slice_rows(legs, splits, train, by, n_boot=N_BOOT, seed=SEED, within_min_n=1
 
 def _scoreable(y):
     n, ni = len(y), int(np.sum(y))
-    return n >= SLICE_MIN_N and min(ni, n - ni) >= SLICE_MIN_CLASS
+    return n >= sl.MIN_N and min(ni, n - ni) >= SLICE_MIN_CLASS
 
 
 def build_aggregates(scores_dir, public, n_boot=N_BOOT, seed=SEED, min_city_n=30):
@@ -615,7 +561,7 @@ def build_aggregates(scores_dir, public, n_boot=N_BOOT, seed=SEED, min_city_n=30
     full_legs = {leg: legs[leg] for leg in board[board.full.astype(bool)].leg} if len(board) else {}
     sliced = {"severity", "tags"} <= set(splits.columns)
     train = load_train(scores_dir)
-    for by in SLICE_BY:
+    for by in sl.BY:
         out[f"by_{by}"] = pd.DataFrame(slice_rows(full_legs, splits, train, by, n_boot, seed) if sliced else [])
     return out, legs, splits, names
 
@@ -896,7 +842,7 @@ def render_blocks(aggs):
     blocks["timing"] = _table(["model", "GPU", "GPUs", "batch", "crops timed", "median s/crop", "p90 s/crop",
                                "GPU-h / 1,000 labels", "GPU-h / 800-label night", "source"], rows) if rows else \
         "(no timing staged yet)"
-    for by in SLICE_BY:
+    for by in sl.BY:
         blocks[f"by_{by}"] = slice_table(aggs.get(f"by_{by}", pd.DataFrame()), b, by)
     return blocks
 
@@ -1332,12 +1278,12 @@ def fig_slices(df, b, by, path):
     ax.tick_params(length=0, colors=INK2)
     what = {"severity": ("severity", "Severity is the labeler's (1 = least severe). Pooled over test and held-out "
                                      "deployments; the CSV and doc tables add per-split and within-city AUC."),
-            "tag": ("tag", f"Every tag with at least {SLICE_MIN_N} crops of its type; a crop with two tags counts in "
+            "tag": ("tag", f"Every tag with at least {sl.MIN_N} crops of its type; a crop with two tags counts in "
                            "both rows. Pooled over test and held-out deployments; see the CSV for within-city AUC.")}[by]
     fig.suptitle(f"AUC by model, label type and {what[0]}", x=0.01, ha="left", fontsize=12, color=INK, y=0.995)
     fig.text(0.01, 0.975, what[1], fontsize=8.5, color=INK2, va="top")
     fig.text(0.01, 0.012, "AUC within the slice (incorrect = positive). Row label: crops (test + held-out), share "
-             f"incorrect, largest deployment's share, round-3 training crops. — = fewer than {SLICE_MIN_N} crops or {SLICE_MIN_CLASS} of a class; "
+             f"incorrect, largest deployment's share, round-3 training crops. — = fewer than {sl.MIN_N} crops or {SLICE_MIN_CLASS} of a class; "
              f"(none) = no {what[0]}.\n{FOOTNOTE}", fontsize=7, color=MUTED)
     w, h = fig.get_size_inches()                        # fixed-inch margins: room for the rotated column names
     fig.subplots_adjust(left=0.36, right=1 - 1.1 / w, top=1 - 2.0 / h, bottom=0.6 / h)
@@ -1347,7 +1293,7 @@ def fig_slices(df, b, by, path):
 
 def render_figures(aggs, legs, out_dir):
     b = aggs["board"]
-    for by in SLICE_BY:
+    for by in sl.BY:
         if len(aggs.get(f"by_{by}", ())):
             fig_slices(aggs[f"by_{by}"], b, by, os.path.join(out_dir, f"by_{by}.png"))
     fig_leaderboard(b, os.path.join(out_dir, "leaderboard.png"))

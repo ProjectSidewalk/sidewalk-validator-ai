@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 from sklearn.metrics import roc_auc_score
 
+from analysis import slices as sl
 from analysis import vlm_scoreboard as sb
 
 PUBLIC = ["seattle-wa", "chicago-il", "tucson-az"]
@@ -392,6 +393,13 @@ def test_run_speed_prefers_the_full_run_with_most_crops_on_a_tie():
     assert sb.run_speed(bigger, "m") == (0.1, "g-b16", 16)            # the largest batch still comes first
 
 
+def test_scoreboard_has_no_slicing_of_its_own():
+    """#70: tag parsing, slice assignment, row selection and the thresholds come from analysis/slices.py only."""
+    for name in ("SLICE_BY", "NONE", "parse_tags", "with_slice", "slice_names", "SLICE_MIN_N"):
+        assert not hasattr(sb, name), name
+    assert sb.sl is sl
+
+
 def test_slices_cover_full_legs_only_and_count_each_tag(board):
     a = sb.read_aggregates(str(board["out"]))
     sev, tag = a["by_severity"], a["by_tag"]
@@ -409,13 +417,13 @@ def test_slices_cover_full_legs_only_and_count_each_tag(board):
 
 
 def test_slice_names_and_rows_on_a_small_frame(monkeypatch):
-    monkeypatch.setattr(sb, "SLICE_MIN_N", 4)
+    monkeypatch.setattr(sl, "MIN_N", 4)
     monkeypatch.setattr(sb, "SLICE_MIN_CLASS", 2)
     s = pd.DataFrame({"label_uid": [f"x:{i}" for i in range(8)], "label_type": "CurbRamp",
                       "y": [0, 1, 0, 1, 0, 1, 0, 1], "severity": [1, 1, 1, 1, 2, None, 2, 2],
                       "tags": ['["a","b"]', '["a"]', '["a","b"]', '["a","b"]', '["b"]', "[]", '["c"]', '["b"]']})
-    assert sb.slice_names(s, "severity") == {"CurbRamp": ["1", "2", "(none)"]}
-    assert sb.slice_names(s, "tag") == {"CurbRamp": ["b", "a", "(none)"]}    # most common first; "c" is too thin
+    assert sl.slice_names(s, "severity", 4) == ["1", "2", "(none)"]
+    assert sl.slice_names(s, "tag", 4) == ["b", "a", "(none)"]    # most common first; "c" is too thin
     # tag "a" (rows 0-3) is all test, three of its four crops in city p
     s = s.assign(city=["p", "p", "p", "q", "p", "q", "q", "q"], split=["test"] * 4 + ["test_heldout"] * 4)
     legs = {"good": s.assign(p_incorrect=s.y * 0.8 + 0.1), "bad": s.assign(p_incorrect=1 - (s.y * 0.8 + 0.1))}
@@ -451,7 +459,7 @@ def test_slice_interval_is_the_label_bootstrap_and_ignores_row_order():
 
 
 def test_slice_auc_needs_enough_of_each_class(monkeypatch):
-    monkeypatch.setattr(sb, "SLICE_MIN_N", 4)
+    monkeypatch.setattr(sl, "MIN_N", 4)
     monkeypatch.setattr(sb, "SLICE_MIN_CLASS", 2)
     s = pd.DataFrame({"label_uid": [f"x:{i}" for i in range(6)], "label_type": "CurbRamp", "city": "p",
                       "split": "test", "y": [1, 1, 1, 1, 1, 0], "severity": 1, "tags": "[]"})
@@ -468,7 +476,7 @@ def test_slice_auc_needs_enough_of_each_class(monkeypatch):
 
 def test_check_catches_an_edited_slice_cell_in_both_modes(board, monkeypatch):
     base = board["base"]
-    monkeypatch.setattr(sb, "SLICE_MIN_N", 5)      # synthetic severity slices: 15 crops, ~10 per split
+    monkeypatch.setattr(sl, "MIN_N", 5)      # synthetic severity slices: 15 crops, ~10 per split
     monkeypatch.setattr(sb, "SLICE_MIN_CLASS", 2)
     sb.main(base)
     ci = [a if a != str(board["stage"]) else str(board["stage"]) + "-absent" for a in base]
