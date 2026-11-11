@@ -14,9 +14,13 @@ Preprocessing (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5
 is what evaluate.py and the API run, so checkpoint selection, evaluation and serving see identical tensors.
 
 After training, ``split.csv``, ``deployment_priors.json`` (from ``<data-dir>``, if present) and ``training_run.json``
-(seed, epochs, best checkpoint, package versions, and the tilt beta and depth encoder from
-``generation_run.json``) are
-written to the output dir, next to the checkpoints.
+(seed, epochs, best checkpoint, package versions, the tilt beta and depth encoder from
+``generation_run.json``, and the attempt's provenance: ``started_at`` / ``finished_at`` in UTC (``started_at`` is
+this attempt's start: a requeued run also records ``resumed_from``), the Slurm job, array and restart ids when
+run under Slurm, and the git commit of this checkout with a ``git_dirty`` flag, captured at the start so they
+describe the code that was imported; https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/65) are
+written to the output dir, next to the checkpoints. ``finished_at`` is the model's training date for the card and
+for sidewalk-ai-api's ``MODEL_MAP``.
 
 Resuming: a run that is interrupted (a klone ``ckpt`` preemption requeues the job) continues from its last saved
 epoch. ``run_key.json`` in the output dir records the split's hash and the settings that shape training; checkpoints
@@ -69,7 +73,9 @@ import multiprocessing
 import os
 import re
 import shutil
+import subprocess
 import warnings
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -232,6 +238,89 @@ def load_split_frames(label_type, data_dir=".", target="hard", vote_weights=None
                 df[df["split"] == "val"][cols].reset_index(drop=True))
     return (df[df["split"] == "train"][cols].reset_index(drop=True),
             df[df["split"] == "val"][cols].reset_index(drop=True))
+
+
+def utc_now():
+    """The current UTC time as ISO 8601 with a ``Z`` suffix and second precision (``2026-11-11T17:05:09Z``)."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def git_state(repo_dir=None, timeout=30):
+    """``git_commit`` (full SHA of HEAD) and ``git_dirty`` (tracked files or submodule pointers modified; untracked
+    files do not count) of the checkout ``repo_dir`` is in. Default: the checkout this file lives in. Both are None
+    when it is not a git checkout, ``git`` is unavailable, or git refuses the directory (another user's checkout
+    without ``safe.directory``); ``git_dirty`` alone is None when ``git status`` fails or exceeds ``timeout``
+    seconds (a slow network filesystem), so the commit is kept. ``--no-optional-locks`` keeps concurrent trainers
+    from fighting over ``index.lock``. Call it when training *starts*: it records the code Python imported.
+
+    >>> sorted(git_state("/").keys())
+    ['git_commit', 'git_dirty']
+    """
+    repo_dir = repo_dir or os.path.dirname(os.path.abspath(__file__))
+    try:
+        head = subprocess.run(["git", "--no-optional-locks", "rev-parse", "HEAD"], cwd=repo_dir,
+                              capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return {"git_commit": None, "git_dirty": None}
+    if head.returncode != 0 or not head.stdout.strip():
+        return {"git_commit": None, "git_dirty": None}
+    dirty = None
+    try:
+        status = subprocess.run(["git", "--no-optional-locks", "status", "--porcelain", "--untracked-files=no"],
+                                cwd=repo_dir, capture_output=True, text=True, timeout=timeout)
+        if status.returncode == 0:
+            dirty = bool(status.stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return {"git_commit": head.stdout.strip(), "git_dirty": dirty}
+
+
+def slurm_state(env=None):
+    """``slurm_job_id``, ``slurm_array_job_id``, ``slurm_array_task_id`` and ``slurm_restart_count`` from the Slurm
+    environment (``env`` defaults to ``os.environ``); each None when unset or not an integer, so outside Slurm all
+    four are None. In an array, ``SLURM_JOB_ID`` is the per-task id (what ``sacct`` reports) and
+    ``SLURM_ARRAY_JOB_ID`` the array's. Slurm sets ``SLURM_RESTART_COUNT`` only once a job has been requeued, so
+    None means "first attempt" when ``slurm_job_id`` is set and "not under Slurm" when it is not.
+
+    >>> slurm_state({"SLURM_JOB_ID": "42918974", "SLURM_RESTART_COUNT": "1"})
+    {'slurm_job_id': 42918974, 'slurm_array_job_id': None, 'slurm_array_task_id': None, 'slurm_restart_count': 1}
+    >>> slurm_state({})
+    {'slurm_job_id': None, 'slurm_array_job_id': None, 'slurm_array_task_id': None, 'slurm_restart_count': None}
+    """
+    env = os.environ if env is None else env
+
+    def as_int(name):
+        value = (env.get(name) or "").strip()
+        return int(value) if value.isdecimal() else None
+
+    return {"slurm_job_id": as_int("SLURM_JOB_ID"), "slurm_array_job_id": as_int("SLURM_ARRAY_JOB_ID"),
+            "slurm_array_task_id": as_int("SLURM_ARRAY_TASK_ID"), "slurm_restart_count": as_int("SLURM_RESTART_COUNT")}
+
+
+def run_provenance(started_at, started, resume, finish_state=None):
+    """The provenance fields of ``training_run.json`` for an attempt that began at ``started_at`` with ``started``
+    (``git_state()`` and ``slurm_state()`` captured then, so they describe the code that was imported) and resumed
+    from checkpoint ``resume`` (a path, or None). ``finished_at`` is now; if the checkout's commit or dirty state
+    (``finish_state``, default ``git_state()`` now) changed during the run (a ``git pull`` on a shared clone),
+    ``git_state_at_finish`` records what it became.
+
+    >>> started = {"git_commit": "a" * 40, "git_dirty": False, "slurm_job_id": 7, "slurm_array_job_id": None,
+    ...            "slurm_array_task_id": None, "slurm_restart_count": None}
+    >>> p = run_provenance("2026-11-11T17:00:00Z", started, "/runs/checkpoint-40",
+    ...                    finish_state={"git_commit": "a" * 40, "git_dirty": False})
+    >>> p["started_at"], p["resumed_from"], p["slurm_job_id"], p["git_dirty"], "git_state_at_finish" in p
+    ('2026-11-11T17:00:00Z', 'checkpoint-40', 7, False, False)
+    >>> run_provenance("2026-11-11T17:00:00Z", started, None, {"git_commit": "b" * 40, "git_dirty": True})["git_state_at_finish"]
+    {'git_commit': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'git_dirty': True}
+    """
+    now = git_state() if finish_state is None else finish_state
+    out = {"started_at": started_at, "finished_at": utc_now(),
+           "resumed_from": os.path.basename(resume) if resume else None, **started}
+    moved = now["git_commit"] != started.get("git_commit") or (
+        now["git_dirty"] is not None and started.get("git_dirty") is not None and now["git_dirty"] != started["git_dirty"])
+    if moved:  # an unknown dirty flag on either side is not a change
+        out["git_state_at_finish"] = now
+    return out
 
 
 def generation_settings(label_type, data_dir="."):
@@ -533,6 +622,7 @@ def main(argv=None):
     if key["split_sha256"] is None:
         warnings.warn("no split.csv: resuming from an existing checkpoint cannot check that the data is the same.")
     resume = resume_checkpoint(output_dir, key)  # before any slow setup
+    started_at, started = utc_now(), {**slurm_state(), **git_state()}  # this attempt's start and the code it imports
 
     if args.target == "hard":
         frames = load_split_frames(label_type, args.data_dir, split=args.split,
@@ -668,6 +758,7 @@ def main(argv=None):
            "split_source": "split.csv" if frames is not None else "imagefolder",
            **({"split_path": os.path.abspath(args.split), "split_sha256": key["split_sha256"]} if args.split else {}),
            **target_settings(args), **region_settings(args), **init_settings(args), **context_settings(args),
+           **run_provenance(started_at, started, resume),
            "versions": versions}
     with open(os.path.join(output_dir, "training_run.json"), "w") as f:
         json.dump(run, f, indent=2)

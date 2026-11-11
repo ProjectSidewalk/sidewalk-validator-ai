@@ -96,7 +96,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 
 import pandas as pd
@@ -550,16 +549,13 @@ def sha256_file(path, chunk=1 << 20):
 
 def code_commit():
     """This repo's HEAD commit, for the cards' lineage line, with ``-dirty`` if tracked files have uncommitted
-    changes; None outside a git checkout."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    try:
-        sha = subprocess.run(["git", "-C", here, "rev-parse", "HEAD"],
-                             capture_output=True, text=True, check=True, timeout=10).stdout.strip()
-        dirty = subprocess.run(["git", "-C", here, "status", "--porcelain", "--untracked-files=no"],
-                               capture_output=True, text=True, check=True, timeout=10).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
+    changes and ``-dirty?`` if that could not be determined; None outside a git checkout."""
+    from fine_tune_classifier import git_state  # one helper for both (issue 65)
+    state = git_state(os.path.dirname(os.path.abspath(__file__)), timeout=10)
+    if state["git_commit"] is None:
         return None
-    return (sha + "-dirty" if dirty else sha) or None
+    # git_dirty None: status failed or timed out, so say the tree state is unknown rather than printing a clean SHA
+    return state["git_commit"] + {True: "-dirty", None: "-dirty?"}.get(state["git_dirty"], "")
 
 
 # ---------------------------------------------------------------------------------------------------------------------

@@ -268,6 +268,8 @@ def test_main_trains_one_epoch_on_a_tiny_model(tmp_path, monkeypatch):
     assert run["label_type"] == "retype" and run["negatives"] == "complement"
     assert run["best_model_checkpoint"].startswith("checkpoint-") and run["n_train_negatives"] == 3
     assert run["split_sha256"] == ftc.file_sha256(str(split))
+    assert run["started_at"] <= run["finished_at"] and run["resumed_from"] is None  # issue 65 provenance
+    assert {"slurm_job_id", "slurm_restart_count", "git_commit", "git_dirty"} <= set(run)
     state = json.loads((out / run["best_model_checkpoint"] / "trainer_state.json").read_text())
     evals = [h for h in state["log_history"] if "eval_auc_claimed" in h]
     assert evals and "eval_top1_acc" in evals[0] and np.isfinite(evals[0]["eval_loss"])
