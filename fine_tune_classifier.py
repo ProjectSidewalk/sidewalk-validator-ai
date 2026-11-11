@@ -14,9 +14,12 @@ Preprocessing (https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/5
 is what evaluate.py and the API run, so checkpoint selection, evaluation and serving see identical tensors.
 
 After training, ``split.csv``, ``deployment_priors.json`` (from ``<data-dir>``, if present) and ``training_run.json``
-(seed, epochs, best checkpoint, package versions, and the tilt beta and depth encoder from
-``generation_run.json``) are
-written to the output dir, next to the checkpoints.
+(seed, epochs, best checkpoint, package versions, the tilt beta and depth encoder from
+``generation_run.json``, and the run's provenance: ``started_at`` / ``finished_at`` in UTC, the Slurm job id,
+array task id and restart count when run under Slurm, and the git commit of this checkout with a ``git_dirty``
+flag; https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/65) are
+written to the output dir, next to the checkpoints. ``finished_at`` is the model's training date for the card and
+for sidewalk-ai-api's ``MODEL_MAP``.
 
 Resuming: a run that is interrupted (a klone ``ckpt`` preemption requeues the job) continues from its last saved
 epoch. ``run_key.json`` in the output dir records the split's hash and the settings that shape training; checkpoints
@@ -69,7 +72,9 @@ import multiprocessing
 import os
 import re
 import shutil
+import subprocess
 import warnings
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -232,6 +237,51 @@ def load_split_frames(label_type, data_dir=".", target="hard", vote_weights=None
                 df[df["split"] == "val"][cols].reset_index(drop=True))
     return (df[df["split"] == "train"][cols].reset_index(drop=True),
             df[df["split"] == "val"][cols].reset_index(drop=True))
+
+
+def utc_now():
+    """The current UTC time as ISO 8601 with a ``Z`` suffix and second precision (``2026-11-11T17:05:09Z``)."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def git_state(repo_dir=None):
+    """``git_commit`` (full SHA) and ``git_dirty`` (tracked files modified) of the checkout ``repo_dir`` is in; both
+    None when it is not a git checkout or ``git`` is unavailable. Default: the checkout this file lives in.
+
+    >>> sorted(git_state("/").keys())
+    ['git_commit', 'git_dirty']
+    """
+    repo_dir = repo_dir or os.path.dirname(os.path.abspath(__file__))
+    none = {"git_commit": None, "git_dirty": None}
+    try:
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=30)
+        if head.returncode != 0 or not head.stdout.strip():
+            return none
+        status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=repo_dir,
+                                capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return none
+    return {"git_commit": head.stdout.strip(),
+            "git_dirty": bool(status.stdout.strip()) if status.returncode == 0 else None}
+
+
+def slurm_state(env=None):
+    """``slurm_job_id``, ``slurm_array_task_id`` and ``slurm_restart_count`` from the Slurm environment (``env``
+    defaults to ``os.environ``); each None when unset or not an integer, so outside Slurm all three are None.
+
+    >>> slurm_state({"SLURM_JOB_ID": "42918974", "SLURM_RESTART_COUNT": "1"})
+    {'slurm_job_id': 42918974, 'slurm_array_task_id': None, 'slurm_restart_count': 1}
+    >>> slurm_state({})
+    {'slurm_job_id': None, 'slurm_array_task_id': None, 'slurm_restart_count': None}
+    """
+    env = os.environ if env is None else env
+
+    def as_int(name):
+        value = (env.get(name) or "").strip()
+        return int(value) if value.isdigit() else None
+
+    return {"slurm_job_id": as_int("SLURM_JOB_ID"), "slurm_array_task_id": as_int("SLURM_ARRAY_TASK_ID"),
+            "slurm_restart_count": as_int("SLURM_RESTART_COUNT")}
 
 
 def generation_settings(label_type, data_dir="."):
@@ -533,6 +583,7 @@ def main(argv=None):
     if key["split_sha256"] is None:
         warnings.warn("no split.csv: resuming from an existing checkpoint cannot check that the data is the same.")
     resume = resume_checkpoint(output_dir, key)  # before any slow setup
+    started_at = utc_now()  # this attempt's start; a resumed run records the checkpoint it continued from
 
     if args.target == "hard":
         frames = load_split_frames(label_type, args.data_dir, split=args.split,
@@ -668,6 +719,9 @@ def main(argv=None):
            "split_source": "split.csv" if frames is not None else "imagefolder",
            **({"split_path": os.path.abspath(args.split), "split_sha256": key["split_sha256"]} if args.split else {}),
            **target_settings(args), **region_settings(args), **init_settings(args), **context_settings(args),
+           "started_at": started_at, "finished_at": utc_now(),
+           "resumed_from": os.path.basename(resume) if resume else None,
+           **slurm_state(), **git_state(),
            "versions": versions}
     with open(os.path.join(output_dir, "training_run.json"), "w") as f:
         json.dump(run, f, indent=2)
