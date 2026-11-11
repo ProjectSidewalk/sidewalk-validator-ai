@@ -220,7 +220,9 @@ so no single difference is significant; the consistent sign on test is the evide
   is structural, not a property of the model. Calibration fits isotonic curves on the 111 validation labels (65 to 73
   of them Agree verdicts), and `calibration/_isotonic_map.py` serves any isotonic block with fewer than
   `THIN_BLOCK_N` = 300 labels at its 90 % Wilson lower bound rather than its mean. No Agree block can reach 300 labels
-  (the top block holds 7 to 48), so even a block whose labels are all correct is served below 0.92: the highest served Agree value per run
+  (the top block holds 7 to 48), and a block whose labels are all correct clears 0.92 only from about 32 labels
+  (the guard's 90 % bound, 1 / (1 + z² / n); a block at 0.98 needs about 56, at 0.97 about 80), so at this size every
+  Agree block is served below 0.92: the highest served Agree value per run
   is depth 0.882 / 0.899 / 0.889 and whole 0.868 / 0.917 / 0.896 (seeds 42 / 43 / 44). `calibration_report.json`
   records this as `uncapped_reaches_gate.correct = false` in every run.
 
@@ -279,13 +281,23 @@ the wider view helps most. It is a small slice; read it as consistent with the c
 
 ### The 5-fold out-of-fold gate (step (a), run 2026-11-11)
 
-The bar's own test. `analysis/nosidewalk_gate.py` pools the whole-view crops of train, val and test (758 rows on
-443 faces) into five face-grouped folds; fold k's model trains on three folds, selects its checkpoint on one and
-scores the fifth, so every pooled row is scored once by a model that never saw its face. The map that serves a fold
-is fitted on the other four folds' out-of-fold predictions (leave-one-fold-out calibration under the face-size prior,
-Disagree held back, thin-block guard on), so each row's served accuracy is out of sample for the model and for the
-map. Job files `nosidewalk_gate.slurm` / `nosidewalk_gate_submit.sh`; the two held-out cities are scored by every fold
-model under a map fitted on all pooled rows.
+The bar's own test. `analysis/nosidewalk_gate.py` pools the whole-view crops of train, val and test (758 rows in
+450 face groups: 440 faces plus a panorama group for each of the 12 face-less labels) into five face-grouped folds;
+fold k's model trains on three folds, selects its checkpoint on one and scores the fifth, so every pooled row is
+scored once by a model that never saw its face. The map that serves a fold is fitted on the other four folds'
+out-of-fold predictions (leave-one-fold-out calibration under the face-size prior, Disagree held back, thin-block
+guard on), so each row's served accuracy is out of sample for the model and for the map. The gate precision is read
+**reweighted to the deployment prior**, the basis the map is fitted under and the one `calibration_report.json`
+reports, with the Wilson 95 % bound on the Kish effective n; the pooled rows' own 58:42 mix gives an unweighted
+precision that is reported beside it and is not the bar's number. The count of >= 100 passing labels is the raw
+count. Job files `nosidewalk_gate.slurm` / `nosidewalk_gate_submit.sh`; the two held-out cities are scored by every
+fold model under a map fitted on all pooled rows.
+
+What this estimates, and what it does not: the map serving fold k is fitted on four *other* fold models'
+predictions, so the number is for the recipe "a model of this kind plus a pooled out-of-fold map", not for one
+deployed model with its own map; a final model trained on every row is sharper than the 60 % fold models; the pooled
+AUC mixes five score scales; folds are grouped by face, so a panorama carrying two faces can straddle folds (21
+panoramas, 48 rows; the pilot split allows the same); and the mean-of-models row is descriptive only.
 
 <!-- gate-results:start -->
 (not yet run)
@@ -309,9 +321,11 @@ question: better on test in every seed, no worse on the held-out cities on avera
 absence along the whole street. **NoSidewalk is not served**: the test half of the bar passes, the gate half is
 untested.
 
-- (a) **5-fold out-of-fold training over all 885 crops** (whole view), calibrating on the pooled out-of-fold
-   predictions, so the Agree gate is fitted on about 500 Agree verdicts instead of about 70 and the bar's Wilson
-   lower bound on ≥ 100 labels can be computed. Five training runs of this size are well under an hour of L40S time.
+- (a) **5-fold out-of-fold training over the 758 pooled train / val / test crops** (whole view; the 127 held-out
+   rows stay held out), calibrating on the pooled out-of-fold predictions, so each fold's Agree map is fitted on
+   about 365 Agree verdicts instead of about 70 and the bar's Wilson lower bound on ≥ 100 labels can be computed.
+   Five training runs of this size are well under an hour of GPU time. Run 2026-11-11: see "The 5-fold out-of-fold
+   gate" above.
 - (b) **More negatives:** a masked expert round on NoSidewalk faces outside Seattle (300–500 faces, run like
    [#78](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/78)), so test is not one city and the
    held-out drop can be measured on more than Chicago.

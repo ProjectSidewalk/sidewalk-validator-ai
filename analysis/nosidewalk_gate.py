@@ -4,7 +4,7 @@
 The pilot could not evaluate the Agree verdict at the 0.92 gate: its calibration maps were fitted on about 70 Agree
 verdicts of a 111-row val split, so every isotonic block was thin and the guard (``calibration/_isotonic_map.py``,
 ``THIN_BLOCK_N``) held the served value under the gate. This module pools the pilot's whole-view crops (train, val and
-test: 758 rows on 443 faces) into K face-grouped folds and scores every row out of fold, twice over:
+test: 758 rows in 450 face groups) into K face-grouped folds and scores every row out of fold, twice over:
 
 1. ``folds``: fold ``k`` becomes ``test``, fold ``k+1`` becomes ``val`` (checkpoint selection) and the rest ``train``;
    ``test_heldout`` (the held-out cities) is left exactly as it was in every fold's split file. Faces never straddle
@@ -14,8 +14,15 @@ test: 758 rows on 443 faces) into K face-grouped folds and scores every row out 
    ``k`` is fitted on the other folds' out-of-fold predictions under the face-size prior, with the Disagree verdict
    held back as the pilot did. So each row's verdict and served accuracy are both out of sample, for the model and
    for the map. The bar is then read on all pooled rows: within-city AUC >= 0.85 and the Agree verdict's gate
-   precision with a Wilson 95 % lower bound >= 0.92 on >= 100 labels. ``test_heldout`` is reported per fold model
-   under a map fitted on all pooled rows, plus the 5-model mean probability.
+   precision, reweighted to the deployment prior as the map is, with a Wilson 95 % lower bound (on the Kish
+   effective n) >= 0.92 on a raw count of >= 100 passing labels; the unweighted precision is reported beside it.
+   ``test_heldout`` is reported per fold model under a map fitted on all pooled rows, plus the 5-model mean
+   (descriptive only). A missing fold fails the bar whatever the numbers say.
+
+What the number is: the map serving fold k is fitted on predictions from four *other* fold models, so the estimate is
+for the recipe "a model of this kind plus a pooled out-of-fold map", not for one deployed model with its own map; a
+final model trained on every row is sharper than the 60 % fold models; the pooled AUC mixes five score scales; and
+folds are grouped by face, so a panorama carrying two faces can straddle folds (as the pilot split allows).
 
 Only aggregates are written. ``--doc`` splices the markdown between the ``<!-- gate-results:start -->`` and
 ``<!-- gate-results:end -->`` markers of the study page.
@@ -41,7 +48,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from calibration import _isotonic_map as im  # noqa: E402
 from calibration import calibrate as cal  # noqa: E402
 from analysis.confident_learning import assign_folds, read_split, write_split  # noqa: E402
-from analysis.nosidewalk_pilot import agree_gate, without_nan  # noqa: E402
+from analysis.nosidewalk_pilot import without_nan  # noqa: E402
 from analysis.retrain_report import cluster_boot, within_city_auc  # noqa: E402
 
 LABEL_TYPE = "NoSidewalk"
@@ -222,17 +229,58 @@ def served_out_of_fold(pooled, pi_deploy):
     return df.assign(served=served)
 
 
-def gate_stats(df, gate=GATE):
-    """Coverage, precision and the Wilson 95 % lower bound of the Agree verdict at ``gate`` on rows that already
-    carry ``verdict`` and ``served``."""
+def kish_n(w):
+    """Kish effective sample size of weights ``w`` (``(sum w)^2 / sum w^2``); 0 for no weights.
+
+    >>> kish_n(np.array([1.0, 1.0, 1.0])), round(kish_n(np.array([1.0, 3.0])), 3)
+    (3.0, 1.6)
+    """
+    w = np.asarray(w, dtype=float)
+    return float(w.sum() ** 2 / (w ** 2).sum()) if len(w) and (w ** 2).sum() > 0 else 0.0
+
+
+def gate_stats(df, pi_deploy=None, gate=GATE):
+    """The Agree verdict at ``gate`` on rows that carry ``verdict`` and ``served``: raw count, coverage and
+    precision on the rows as they are, and, with ``pi_deploy``, the precision reweighted to the deployment prior
+    (``calibrate.prior_weights``, the weighting the map itself was fitted under) with its Wilson 95 % lower bound on
+    the Kish effective n. The bar reads the weighted bound and the raw count. The weighted fields are NaN when the
+    rows lack a class (a city with only correct labels cannot be reweighted).
+
+    >>> d = pd.DataFrame({"verdict": ["correct"] * 4, "served": [0.95, 0.93, 0.5, 0.99],
+    ...                   "true": ["correct", "incorrect", "correct", "correct"]})
+    >>> g = gate_stats(d, {"correct": 0.9, "incorrect": 0.1})
+    >>> g["n_pass"], round(g["precision"], 3), round(g["precision_weighted"], 3), round(g["kish_n"], 1)
+    (3, 0.667, 0.857, 2.6)
+    """
     passed = ((df["verdict"] == "correct") & (df["served"] >= gate)).to_numpy()
+    correct = (df["true"].to_numpy() == "correct").astype(float)
     n_pass = int(passed.sum())
-    precision = float((df["true"].to_numpy()[passed] == "correct").mean()) if n_pass else float("nan")
-    lower = float(im.wilson_lower(precision, n_pass, z=Z95)) if n_pass else float("nan")
-    n_agree = int((df["verdict"] == "correct").sum())
-    return {"n": int(len(df)), "n_agree_verdicts": n_agree, "n_pass": n_pass,
-            "coverage": n_pass / len(df) if len(df) else float("nan"), "precision": precision,
-            "precision_wilson95_lower": lower}
+    out = {"n": int(len(df)), "n_agree_verdicts": int((df["verdict"] == "correct").sum()), "n_pass": n_pass,
+           "coverage": n_pass / len(df) if len(df) else float("nan"),
+           "precision": float(correct[passed].mean()) if n_pass else float("nan"),
+           "precision_wilson95_lower": float(im.wilson_lower(correct[passed].mean(), n_pass, z=Z95)) if n_pass
+           else float("nan"),
+           "precision_weighted": float("nan"), "kish_n": float("nan"), "precision_weighted_wilson95_lower": float("nan")}
+    if pi_deploy is not None and n_pass:
+        try:
+            w = cal.prior_weights(df["true"], pi_deploy)
+        except ValueError:  # a class is absent from these rows
+            return out
+        out["precision_weighted"] = float(np.average(correct[passed], weights=w[passed]))
+        out["kish_n"] = kish_n(w[passed])
+        out["precision_weighted_wilson95_lower"] = float(im.wilson_lower(out["precision_weighted"], out["kish_n"],
+                                                                         z=Z95))
+    return out
+
+
+def served_with_map(df, api_map):
+    """``verdict``, ``confidence`` and ``served`` (from ``api_map``) for rows with ``p_correct``/``p_incorrect``."""
+    df = cal.verdicts(df)
+    served = np.zeros(len(df))
+    for v in im.API_CLASSES:
+        m = (df["verdict"] == v).to_numpy()
+        served[m] = im.api_lookup_many(api_map[v], df["confidence"].to_numpy()[m])
+    return df.assign(served=served)
 
 
 def auc_block(df, n_boot, seed):
@@ -249,38 +297,64 @@ def auc_block(df, n_boot, seed):
     return out
 
 
-def pooled_report(pooled, pi_deploy, n_boot=1000, seed=0, min_city_n=10):
+def bar_verdict(block, complete=True):
+    """The bar on a pooled block: within-city AUC >= ``BAR_AUC``, and the Agree gate's prior-weighted Wilson lower
+    bound >= ``BAR_PRECISION`` on a raw count of >= ``BAR_N`` passing labels. ``complete=False`` (a fold's
+    predictions missing) fails it whatever the numbers say.
+
+    >>> g = {"n_pass": 120, "precision_weighted_wilson95_lower": 0.93}
+    >>> bar_verdict({"within_city_auc": 0.9, "agree_gate": g})["passes"]
+    True
+    >>> bar_verdict({"within_city_auc": 0.9, "agree_gate": {**g, "n_pass": 99}})["gate_ok"]
+    False
+    >>> bar_verdict({"within_city_auc": 0.9, "agree_gate": g}, complete=False)["passes"]
+    False
+    """
+    g = block["agree_gate"]
+    auc = block["within_city_auc"]
+    lower = g["precision_weighted_wilson95_lower"]
+    out = {"within_city_auc_min": BAR_AUC, "gate_precision_min": BAR_PRECISION, "gate_n_min": BAR_N,
+           "precision_basis": "prior-weighted (calibrate.prior_weights), Wilson 95 % on the Kish effective n",
+           "complete": bool(complete),
+           "auc_ok": bool(auc >= BAR_AUC) if auc is not None and np.isfinite(auc) else False,
+           "gate_ok": bool(g["n_pass"] >= BAR_N and lower is not None and np.isfinite(lower)
+                           and lower >= BAR_PRECISION)}
+    out["passes"] = bool(complete and out["auc_ok"] and out["gate_ok"])
+    return out
+
+
+def pooled_report(pooled, pi_deploy, n_boot=1000, seed=0, min_city_n=10, complete=True):
     """The bar on the pooled out-of-fold rows: AUCs, the leave-one-fold-out gate, per city and per fold."""
     served = served_out_of_fold(pooled, pi_deploy)
     out = auc_block(pooled, n_boot, seed)
-    out["agree_gate"] = gate_stats(served)
-    out["per_fold"] = {int(k): gate_stats(served[served["fold"] == k]) for k in sorted(served["fold"].unique())}
+    out["agree_gate"] = gate_stats(served, pi_deploy)
+    out["per_fold"] = {int(k): gate_stats(served[served["fold"] == k], pi_deploy)
+                       for k in sorted(served["fold"].unique())}
     per_city = {}
     for city, part in served.groupby("city"):
         if len(part) >= min_city_n:
-            per_city[city] = gate_stats(part)
+            per_city[city] = gate_stats(part, pi_deploy)
     out["per_city_gate"] = per_city
-    out["bar"] = {"within_city_auc_min": BAR_AUC, "gate_precision_min": BAR_PRECISION, "gate_n_min": BAR_N,
-                  "auc_ok": bool(out["within_city_auc"] >= BAR_AUC) if np.isfinite(out["within_city_auc"]) else False,
-                  "gate_ok": bool(out["agree_gate"]["n_pass"] >= BAR_N
-                                  and out["agree_gate"]["precision_wilson95_lower"] >= BAR_PRECISION)}
-    out["bar"]["passes"] = out["bar"]["auc_ok"] and out["bar"]["gate_ok"]
+    out["bar"] = bar_verdict(out, complete)
     return out
 
 
 def heldout_report(pooled, heldout, pi_deploy, n_boot=1000, seed=0):
-    """Each fold model on the held-out cities under a map fitted on all pooled rows, plus the 5-model mean."""
+    """Each fold model on the held-out cities under a map fitted on all pooled rows, plus the mean of the fold
+    models' probabilities. The mean row is descriptive only: averaging compresses confidence, so a map fitted on
+    single-model confidences is mis-specified for it."""
     api_map = fit_map(pooled, pi_deploy)
     out = {"map_fit_n": int(len(pooled)), "per_fold": {}}
     for k, part in heldout.groupby("fold"):
         block = auc_block(part, n_boot, seed)
-        block["agree_gate"] = agree_gate(part, api_map)
+        block["agree_gate"] = gate_stats(served_with_map(part, api_map), pi_deploy)
         out["per_fold"][int(k)] = block
     mean = (heldout.groupby(["label_uid", "city", "group", "true"], as_index=False)[["p_correct", "p_incorrect"]]
             .mean())
     block = auc_block(mean, n_boot, seed)
-    block["agree_gate"] = agree_gate(mean, api_map)
+    block["agree_gate"] = gate_stats(served_with_map(mean, api_map), pi_deploy)
     block["models"] = int(heldout["fold"].nunique())
+    block["note"] = "descriptive: the single-model map is mis-specified for averaged probabilities"
     out["mean_of_models"] = block
     return out
 
@@ -291,39 +365,51 @@ def _fmt(x, digits=3):
     return f"{x:.{digits}f}"
 
 
+GATE_HEAD = ("Agree gate n (coverage) | precision, prior-weighted (Wilson 95 % lower; Kish n) | "
+             "precision, unweighted (Wilson 95 % lower)")
+
+
 def _gate_cell(g):
+    """Three cells: raw count (coverage), the weighted precision with its bound and Kish n, the unweighted one."""
     if not g["n_pass"]:
-        return "0 | n/a"
-    return f"{g['n_pass']} ({_fmt(g['coverage'])}) | {_fmt(g['precision'])} ({_fmt(g['precision_wilson95_lower'])})"
+        return "0 | n/a | n/a"
+    weighted = (f"{_fmt(g['precision_weighted'])} ({_fmt(g['precision_weighted_wilson95_lower'])}; "
+                f"{_fmt(g['kish_n'], 0)})") if np.isfinite(g.get("precision_weighted", float("nan"))) else "n/a (one class)"
+    return (f"{g['n_pass']} ({_fmt(g['coverage'])}) | {weighted} | "
+            f"{_fmt(g['precision'])} ({_fmt(g['precision_wilson95_lower'])})")
 
 
 def markdown(rep):
     p, h = rep["pooled"], rep["heldout"]
-    bar = p["bar"]
-    lines = [f"Pooled out-of-fold rows: {p['n']} ({p['n_incorrect']} incorrect) on {p['faces']} faces, "
-             f"{rep['folds']} folds; the map serving each fold is fitted on the other folds under the face-size "
-             f"prior (P(correct) = {rep['prior']['correct']:.3f}), Disagree held back.", "",
-             "| rows | AUC [95 % CI, face resampling] | within-city AUC (cities) | Agree gate n (coverage) | "
-             "gate precision (Wilson 95 % lower) |", "|---|---|---|---|---|"]
+    bar, g = p["bar"], p["agree_gate"]
+    lines = [f"Pooled out-of-fold rows: {p['n']} ({p['n_incorrect']} incorrect) in {p['faces']} face groups, "
+             f"{rep['folds']} folds; the map serving each fold is fitted on the other folds' out-of-fold predictions "
+             f"under the face-size prior (P(correct) = {rep['prior']['correct']:.3f}), Disagree held back, thin-block "
+             "guard on. Precision is reported both reweighted to that prior (the basis the map is fitted under, "
+             "comparable with `calibration_report.json`) and unweighted on the pooled rows' own class mix.", "",
+             f"| rows | AUC [95 % CI, face resampling] | within-city AUC (cities) | {GATE_HEAD} |",
+             "|---|---|---|---|---|---|"]
     ci = f" [{p['auc_ci95'][0]:.3f}, {p['auc_ci95'][1]:.3f}]" if p.get("auc_ci95") else ""
     lines.append(f"| pooled | {_fmt(p['auc'])}{ci} | {_fmt(p['within_city_auc'])} ({p['within_city_n_cities']}) | "
-                 f"{_gate_cell(p['agree_gate'])} |")
-    lines += ["", f"**Bar:** within-city AUC >= {BAR_AUC} is {'met' if bar['auc_ok'] else 'NOT met'}; Agree gate "
-              f"Wilson lower bound >= {BAR_PRECISION} on >= {BAR_N} labels is {'met' if bar['gate_ok'] else 'NOT met'} "
-              f"({p['agree_gate']['n_pass']} labels pass; {p['agree_gate']['n_agree_verdicts']} Agree verdicts). "
-              f"**{'PASSES' if bar['passes'] else 'DOES NOT PASS'}.**", "",
+                 f"{_gate_cell(g)} |")
+    lines += ["", f"**Bar:** within-city AUC >= {BAR_AUC} is {'met' if bar['auc_ok'] else 'NOT met'}; the Agree "
+              f"gate's prior-weighted Wilson 95 % lower bound >= {BAR_PRECISION} on >= {BAR_N} passing labels is "
+              f"{'met' if bar['gate_ok'] else 'NOT met'} ({g['n_pass']} labels pass of {g['n_agree_verdicts']} Agree "
+              f"verdicts; weighted lower bound {_fmt(g['precision_weighted_wilson95_lower'])}, unweighted "
+              f"{_fmt(g['precision_wilson95_lower'])})."
+              + ("" if bar["complete"] else " **Incomplete: a fold's predictions are missing, so the bar fails.**")
+              + f" **{'PASSES' if bar['passes'] else 'DOES NOT PASS'}.**", "",
               "Per fold (each fold's map fitted on the other folds):", "",
-              "| fold | rows | Agree gate n (coverage) | gate precision (Wilson 95 % lower) |", "|---|---|---|---|"]
-    for k, g in p["per_fold"].items():
-        lines.append(f"| {k} | {g['n']} | {_gate_cell(g)} |")
-    lines += ["", "Per city (>= 10 pooled rows):", "",
-              "| city | rows | Agree gate n (coverage) | gate precision (Wilson 95 % lower) |", "|---|---|---|---|"]
-    for city, g in sorted(p["per_city_gate"].items(), key=lambda kv: -kv[1]["n"]):
-        lines.append(f"| {city} | {g['n']} | {_gate_cell(g)} |")
+              f"| fold | rows | {GATE_HEAD} |", "|---|---|---|---|---|"]
+    for k, gk in p["per_fold"].items():
+        lines.append(f"| {k} | {gk['n']} | {_gate_cell(gk)} |")
+    lines += ["", "Per city (>= 10 pooled rows):", "", f"| city | rows | {GATE_HEAD} |", "|---|---|---|---|---|"]
+    for city, gc in sorted(p["per_city_gate"].items(), key=lambda kv: -kv[1]["n"]):
+        lines.append(f"| {city} | {gc['n']} | {_gate_cell(gc)} |")
     lines += ["", f"Held-out cities (`test_heldout`), each fold model under a map fitted on all {h['map_fit_n']} "
-              "pooled rows:", "",
-              "| model | rows (incorrect) | AUC | within-city AUC | Agree gate n (coverage) | gate precision (lower) |",
-              "|---|---|---|---|---|---|"]
+              "pooled rows; the mean-of-models row is descriptive only (averaged probabilities are not what the map "
+              "was fitted on):", "",
+              f"| model | rows (incorrect) | AUC | within-city AUC | {GATE_HEAD} |", "|---|---|---|---|---|---|---|"]
     for k, b in h["per_fold"].items():
         lines.append(f"| fold {k} | {b['n']} ({b['n_incorrect']}) | {_fmt(b['auc'])} | {_fmt(b['within_city_auc'])} | "
                      f"{_gate_cell(b['agree_gate'])} |")
@@ -351,15 +437,19 @@ def cmd_report(args):
     pooled, heldout, n_folds, missing = load_predictions(args.gate)
     if pooled is None:
         raise SystemExit(f"no fold under {args.gate} has predictions (looked for {', '.join(missing)})")
-    if missing:
-        print(f"WARNING: {len(missing)} fold(s) without predictions; the pooled rows are incomplete", file=sys.stderr)
+    folds = pd.read_csv(os.path.join(args.gate, "folds.csv"), dtype={"label_uid": str})
+    unscored = sorted(set(folds["label_uid"]) - set(pooled["label_uid"]))
+    complete = not missing and not unscored
+    if not complete:
+        print(f"WARNING: {len(missing)} fold(s) without predictions and {len(unscored)} pooled rows unscored; "
+              "the bar cannot pass on an incomplete pool", file=sys.stderr)
     pi_deploy, entry = cal.load_prior(args.priors, args.label_type)
     rep = {"label_type": args.label_type, "folds": n_folds, "gate": GATE, "prior": pi_deploy,
            "prior_source": entry.get("source"), "hold_back": {"verdicts": ["incorrect"], "reason": HOLD_BACK_REASON},
-           "pooled": pooled_report(pooled, pi_deploy, args.n_boot, args.seed),
+           "pooled": pooled_report(pooled, pi_deploy, args.n_boot, args.seed, complete=complete),
            "heldout": heldout_report(pooled, heldout, pi_deploy, args.n_boot, args.seed)
            if heldout is not None and len(heldout) else None,
-           "missing": missing}
+           "missing": missing, "unscored_pooled_rows": len(unscored)}
     for path in (args.out_json, args.out_md):
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(args.out_json, "w") as f:

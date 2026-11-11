@@ -110,13 +110,76 @@ def test_served_out_of_fold_never_uses_the_rows_own_fold():
     assert agree0["served"].mean() < agree2["served"].mean()
 
 
-def test_gate_stats_and_bar():
+def test_gate_stats_raw_and_prior_weighted():
     df = pd.DataFrame({"verdict": ["correct"] * 4 + ["incorrect"], "served": [0.95, 0.93, 0.5, 0.99, 0.99],
                        "true": ["correct", "incorrect", "correct", "correct", "incorrect"]})
     g = gate.gate_stats(df)
     assert g["n_pass"] == 3 and g["n_agree_verdicts"] == 4 and g["precision"] == pytest.approx(2 / 3)
     assert g["coverage"] == pytest.approx(0.6)
     assert g["precision_wilson95_lower"] == pytest.approx(float(im.wilson_lower(2 / 3, 3, z=1.96)))
+    assert np.isnan(g["precision_weighted"])  # no prior given
+    pi = {"correct": 0.9, "incorrect": 0.1}
+    g = gate.gate_stats(df, pi)
+    # rows are 3 correct : 2 incorrect; weights 0.9/0.6 = 1.5 for correct, 0.1/0.4 = 0.25 for incorrect
+    assert g["precision_weighted"] == pytest.approx(2 * 1.5 / (2 * 1.5 + 0.25))
+    assert g["kish_n"] == pytest.approx((2 * 1.5 + 0.25) ** 2 / (2 * 1.5 ** 2 + 0.25 ** 2))
+    assert g["precision_weighted_wilson95_lower"] == pytest.approx(
+        float(im.wilson_lower(g["precision_weighted"], g["kish_n"], z=1.96)))
+    assert g["precision"] == pytest.approx(2 / 3)  # the raw numbers are unchanged
+    one_class = gate.gate_stats(df[df["true"] == "correct"], pi)
+    assert one_class["n_pass"] == 2 and np.isnan(one_class["precision_weighted"])
+
+
+def test_bar_reads_the_weighted_bound_and_the_raw_count():
+    block = {"within_city_auc": 0.9, "agree_gate": {"n_pass": 100, "precision_weighted_wilson95_lower": 0.92,
+                                                     "precision_wilson95_lower": 0.5}}
+    assert gate.bar_verdict(block)["passes"] is True  # the unweighted bound does not count
+    assert gate.bar_verdict({**block, "agree_gate": {**block["agree_gate"], "n_pass": 99}})["gate_ok"] is False
+    low = {**block["agree_gate"], "precision_weighted_wilson95_lower": 0.919}
+    assert gate.bar_verdict({**block, "agree_gate": low})["gate_ok"] is False
+    nan = {**block["agree_gate"], "precision_weighted_wilson95_lower": float("nan")}
+    assert gate.bar_verdict({**block, "agree_gate": nan})["gate_ok"] is False
+    assert gate.bar_verdict({**block, "within_city_auc": 0.849})["passes"] is False
+    assert gate.bar_verdict(block, complete=False)["passes"] is False
+
+
+def test_lofo_map_holds_disagree_back():
+    rng = np.random.default_rng(2)
+    n = 400
+    p = np.clip(np.where(np.arange(n) % 2 == 0, 0.95, 0.05) + rng.normal(0, 0.02, n), 0.01, 0.99)
+    df = pd.DataFrame({"p_correct": p, "p_incorrect": 1 - p, "true": np.where(p > 0.5, "correct", "incorrect"),
+                       "fold": (np.arange(n) // 2) % 2})  # both classes in both folds
+    served = gate.served_out_of_fold(df, {"correct": 0.83, "incorrect": 0.17})
+    # perfectly separable Disagree verdicts would clear the gate, but the hold-back caps them under it
+    assert served.loc[served["verdict"] == "incorrect", "served"].max() < im.GATE
+    assert served.loc[served["verdict"] == "correct", "served"].max() >= im.GATE
+
+
+def test_load_predictions_refuses_a_label_scored_twice(tmp_path):
+    split = write_pilot_split(tmp_path)
+    out = tmp_path / "gate"
+    gate.main(["folds", "--split", split, "--out", str(out)])
+    write_fold_predictions(str(out))
+    p1 = pd.read_csv(gate.predictions_path(str(out), 1))
+    dup = pd.read_csv(gate.predictions_path(str(out), 0))
+    dup = pd.concat([dup, p1[p1["split"] == "test"].head(1).assign(fold=0)])
+    dup.to_csv(gate.predictions_path(str(out), 0), index=False)
+    with pytest.raises(ValueError, match="more than once"):
+        gate.load_predictions(str(out))
+
+
+def test_report_with_a_missing_fold_cannot_pass(tmp_path):
+    split = write_pilot_split(tmp_path)
+    out = tmp_path / "gate"
+    gate.main(["folds", "--split", split, "--out", str(out)])
+    write_fold_predictions(str(out))
+    os.remove(gate.predictions_path(str(out), 3))
+    gate.main(["report", "--gate", str(out), "--priors", str(tmp_path / "whole" / "deployment_priors.json"),
+               "--out-json", str(out / "r.json"), "--out-md", str(out / "r.md"), "--n-boot", "20"])
+    rep = json.loads((out / "r.json").read_text())
+    assert rep["missing"] == [gate.predictions_path(str(out), 3)] and rep["unscored_pooled_rows"] > 0
+    assert rep["pooled"]["bar"]["complete"] is False and rep["pooled"]["bar"]["passes"] is False
+    assert "Incomplete" in (out / "r.md").read_text()
 
 
 def test_report_end_to_end_and_splice(tmp_path):
@@ -135,15 +198,18 @@ def test_report_end_to_end_and_splice(tmp_path):
     assert 0.5 < pooled["auc"] <= 1 and pooled["auc_ci95"][0] <= pooled["auc"] <= pooled["auc_ci95"][1]
     assert set(pooled["per_fold"]) == {"0", "1", "2", "3", "4"} and sum(g["n"] for g in pooled["per_fold"].values()) == 180
     assert set(pooled["per_city_gate"]) == {"seattle-wa", "amsterdam"}
-    assert set(pooled["bar"]) == {"within_city_auc_min", "gate_precision_min", "gate_n_min", "auc_ok", "gate_ok",
-                                  "passes"}
+    assert {"auc_ok", "gate_ok", "passes", "complete", "precision_basis"} <= set(pooled["bar"])
     g = pooled["agree_gate"]
-    assert pooled["bar"]["gate_ok"] == (g["n_pass"] >= 100 and g["precision_wilson95_lower"] >= 0.92)
+    assert pooled["bar"]["gate_ok"] == (g["n_pass"] >= 100 and g["precision_weighted_wilson95_lower"] >= 0.92)
+    assert pooled["bar"]["complete"] is True and rep["unscored_pooled_rows"] == 0
+    assert np.isfinite(g["precision_weighted"]) and g["kish_n"] <= g["n_pass"] + 1e-6
     assert pooled["within_city_n_cities"] == 2 and pooled["bar"]["auc_ok"] == (pooled["within_city_auc"] >= 0.85)
     assert pooled["bar"]["passes"] == (pooled["bar"]["auc_ok"] and pooled["bar"]["gate_ok"])
     held = rep["heldout"]
     assert set(held["per_fold"]) == {"0", "1", "2", "3", "4"} and held["mean_of_models"]["models"] == 5
     assert held["mean_of_models"]["n"] == 36 and held["per_fold"]["0"]["n"] == 36
+    assert "descriptive" in held["mean_of_models"]["note"]
+    assert np.isfinite(held["per_fold"]["0"]["agree_gate"]["precision_weighted"])
     md = (out / "report" / "gate.md").read_text()
     assert "| pooled |" in md and "| fold 0 |" in md and "| mean of 5 models |" in md and "**Bar:**" in md
     text = doc.read_text()
