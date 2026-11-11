@@ -3,9 +3,10 @@
 Why
 ---
 ``deployment_priors.json`` was counted under the TRAINING margin rule, which is asymmetric (``incorrect`` at net
-human Disagree > 1, ``correct`` only at net Agree > 2), so it overstated the incorrect share by 15-17 points for three
-types. ``data_generation.py`` now records the counts under every rule in ``data_generation.PRIOR_RULES`` and puts
-``majority2`` (at least two decisive human votes, majority, ties out) at the top level. This module measures the
+human Disagree > 1, ``correct`` only at net Agree > 2), so it overstated the incorrect share by 10-15 points for
+NoCurbRamp, Obstacle and SurfaceProblem. ``data_generation.py`` now records the counts under every rule in
+``data_generation.PRIOR_RULES`` and puts ``majority2`` (at least two decisive human votes, majority, ties out) at the
+top level. This module measures the
 four rules on ONE population and what the choice does to the served maps, without refitting or publishing anything:
 
 - ``shares``: per label type, correct/incorrect counts under each rule over the human-authored, geometry-valid
@@ -251,6 +252,11 @@ def gate_rows(pred, pi, splits=EVAL_SPLITS):
     return out
 
 
+def _missing(v):
+    """None or NaN: a gate statistic with nothing behind it (no verdict passed)."""
+    return v is None or (isinstance(v, float) and np.isnan(v))
+
+
 def check_report(gate_margin, report, split):
     """Compare margin-rule gate rows with an existing ``calibration_report.json`` (Agree as served; Disagree from
     ``hold_back.uncapped_eval`` when it was held back). Returns a list of mismatch strings."""
@@ -264,8 +270,10 @@ def check_report(gate_margin, report, split):
         mine = gate_margin[v]
         for k in ("gate_coverage", "gate_precision", "gate_n"):
             a, b = mine[k], ref[k]
-            same = (a is None or (isinstance(a, float) and np.isnan(a))) and b is None
-            if not same and (b is None or abs(float(a) - float(b)) > REPORT_TOL):
+            a_missing, b_missing = _missing(a), _missing(b)
+            if a_missing and b_missing:
+                continue
+            if a_missing != b_missing or abs(float(a) - float(b)) > REPORT_TOL:
                 bad.append(f"{v} {k}: {a} vs report {b}")
     return bad
 
@@ -465,7 +473,9 @@ def load_assessments(path):
         raise ValueError(f"(schema, label_id) is not unique in {path}: {int(d['label_uid'].duplicated().sum())} repeats")
     # The model a vote came from is named by model_id (one per type, no revision), so the type is checked against it.
     d["model_type"] = d["model_id"].map(TYPE_BY_MODEL)
-    counts["model_type_mismatch"] = int((d["model_type"] != d["label_type"]).sum())
+    mismatch = d["model_type"] != d["label_type"]
+    counts["model_type_mismatch"] = int(mismatch.sum())  # e.g. a label retyped after it was assessed; dropped
+    d = d[~mismatch].copy()
     date = pd.to_datetime(d["ai_date"]).dt.strftime("%Y-%m-%d")
     d["period"] = np.where(date >= ROUND3_FROM, "round3", np.where(date < OLDER_BEFORE, "older", "changeover"))
     counts["periods"] = d["period"].value_counts().to_dict()
@@ -490,7 +500,7 @@ def wilson(k, n):
 def confirmed_by_rule(g):
     """Per rule: labels the human votes decide, the share decided ``correct`` (the AI Agree confirmed) and its 95%
     Wilson interval."""
-    out = {"n": int(len(g)), "n_with_human_vote": int(((g.h_agree + g.h_dis) > 0).sum())}
+    out = {"n": int(len(g)), "n_with_human_vote": int(((g.h_agree + g.h_dis) > 0).sum())}  # Agree/Disagree only
     for r in RULES:
         cls = dg.prior_class(g["h_agree"].to_numpy(), g["h_dis"].to_numpy(), r)
         c, i = int((cls == "correct").sum()), int((cls == "incorrect").sum())
@@ -562,7 +572,7 @@ def observed_markdown(res, min_n=sl.MIN_N):
              f"{OLDER_BEFORE}; {OLDER_BEFORE} itself (the changeover day) is in neither. Cell: share confirmed "
              f"[95% Wilson interval] (decided n); share blank under {min_n} decided.", ""]
     for period in ("round3", "older"):
-        parts += [f"## {period}", "", "| Type | gated Agree | with a human vote | " + " | ".join(RULES) + " |",
+        parts += [f"## {period}", "", "| Type | gated Agree | with a decisive human vote | " + " | ".join(RULES) + " |",
                   "|---|---:|---:|" + "---:|" * len(RULES)]
         for t, rec in res["gated_agree"][period].items():
             parts.append(f"| {t} | {rec['n']:,} | {rec['n_with_human_vote']:,} | " + " | ".join(

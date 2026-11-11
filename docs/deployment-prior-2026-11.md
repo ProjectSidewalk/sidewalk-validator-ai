@@ -9,12 +9,13 @@ refitted or published here, and sidewalk-ai-api is untouched; the refit is a sep
 too high for NoCurbRamp, Obstacle and SurfaceProblem. On one population (the round-3 rawLabels), the plain
 ≥ 2-vote human majority gives 4.4 / 6.8 / 22.5 / 25.4 / 17.5% incorrect against the file's 6.1 / 11.8 / 37.4 / 35.8 /
 32.0%. Refitting the round-3 maps under the majority prior changes one operating point a lot (NoCurbRamp Agree
-coverage 0.44 → 0.71 on the test split) and raises the Agree precision the maps claim for every type by 0.002–0.023.
-The production outcomes so far back the change for four types and argue for caution on one: the round-3 Agree votes
-at the gate are confirmed by the human majority 99.8% (Crosswalk), 99.8% (CurbRamp), 100% (NoCurbRamp), 98.7%
-(SurfaceProblem) and 94.5% (Obstacle, 95% interval 0.904–0.969) of the time. The Obstacle figure is below what the
-majority-prior map would claim for the same verdicts (0.974 on test, 0.981 on the unseen deployments), so for Obstacle
-the majority prior overstates precision, as the caveat below predicts. NoCurbRamp Disagree, which cleared the gate
+coverage 0.44 → 0.71 on the test split) and raises the Agree precision the maps claim for every type, by 0.002–0.023 on the test split
+(0.001–0.057 on the unseen deployments). The round-3 Agree votes at the gate are confirmed by the human majority
+99.8% (Crosswalk), 99.8% (CurbRamp), 100% (NoCurbRamp), 98.7% (SurfaceProblem) and 94.5% (Obstacle, 95% interval
+0.904–0.969) of the time. For Obstacle both maps sit at or above the top of that interval (A claims 0.959 / 0.970,
+D 0.974 / 0.981 on test / unseen deployments), and the A−D gap (about 0.015) is smaller than the interval's width
+(about 0.065), so the production data do not separate the two priors there; they say Obstacle's maps, under either
+prior, may be optimistic. NoCurbRamp Disagree, which cleared the gate
 only under the margin prior, never clears under any of the other three; the Disagree hold-back stays (decision D3).
 
 ## The problem
@@ -118,7 +119,7 @@ label's LATEST assessment, so a label the old model assessed and round 3 re-asse
 **Observed column.** For AI Agree votes at served accuracy ≥ 0.92, the share the human majority confirms, with its
 95% Wilson interval and the number of labels the rule decides. Round 3 under every rule:
 
-| Type | gated Agree | with ≥ 1 human vote | A margin | B symmetric3 | C symmetric2 | D majority2 |
+| Type | gated Agree | with a decisive human vote | A margin | B symmetric3 | C symmetric2 | D majority2 |
 |---|---:|---:|---:|---:|---:|---:|
 | Crosswalk | 1,911 | 1,147 | 0.998 (630) | 1.000 (629) | 0.999 (864) | 0.998 [0.992, 0.999] (885) |
 | CurbRamp | 10,980 | 3,629 | 0.994 (154) | 1.000 (153) | 0.999 (821) | 0.998 [0.991, 0.999] (834) |
@@ -141,11 +142,18 @@ What the observed column can and cannot say:
 - Each rule reads the same votes differently, so the columns are not independent estimates. B confirms 1.000
   everywhere because it calls a label incorrect only at three net Disagree votes, which no gated Agree label has yet;
   D decides the most labels, 2–1 splits included, so it is the noisiest reading and the one the prior now uses.
-- **Obstacle is the exception.** 0.945 [0.904, 0.969] contains the A map's test claim (0.959) and sits just under
-  its unseen-deployment claim (0.970), but the D map would claim 0.974 and 0.981 for the very same verdicts, both
-  above the interval. By severity the shortfall is even (0.946 / 0.942 / 0.937 at severities 1 / 2 / 3).
-  For Obstacle the majority prior makes the map more optimistic than production supports; that is a reason to fit
-  Obstacle's next map on production outcomes rather than on any vote-rule prior.
+- **Obstacle is the exception, but it does not pick between A and D.** Under D, 0.945 [0.904, 0.969] (199 decided):
+  the A map's claims (0.959 test, 0.970 unseen deployments) and the D map's (0.974, 0.981) for the same verdicts all
+  sit at or above the top of the interval, and the A−D gap (about 0.015) is smaller than the interval's width (about
+  0.065). Read under rule A instead, the observed rate is 0.974 (78 decided), equal to D's test claim. The shortfall is
+  thin-margin: 9 of the 11 unconfirmed labels are 1 Agree / 2 Disagree splits (the other 2 are 0 / 2), and the
+  unanimous decided labels are confirmed 166 of 168. It is even across severities (0.946 / 0.942 / 0.937 at 1 / 2 /
+  3). That is a reason to fit Obstacle's next map on production outcomes rather than on any vote-rule prior.
+- **Untested caveat: queue settling.** If SidewalkWebpage counts the AI's vote toward settling a label, then a label
+  with an AI Agree and one human Disagree stays in the validation queue and draws more votes, while one with an AI
+  Agree and a human Agree settles and leaves it. Contested labels would then be over-represented among the decided
+  ones, which pulls every observed share down, the most where the AI and the crowd disagree most (Obstacle). This
+  pull cannot test it (the votes are not timed and the queue rule was not checked).
 
 ## Slices
 
@@ -205,8 +213,11 @@ refinement for the refit PR; it is not done here.
   (without `voted` its output is unchanged); `--prior-rule` (default `majority2`).
 - `calibration/calibrate.py`: `--prior-rule` / `load_prior(rule=)` read `rules[rule]`; `calibration_report.json`
   records `prior_rule`.
-- `analysis/retrain_report.py`: `correct_weight` uses the margin counts.
-- `hf_cards.py`: the dataset and model cards name the rule the prior was counted under.
+- `analysis/retrain_report.py`: `correct_weight` uses the margin counts, and the gate tables reweight to the prior
+  the map was fitted under (`prior_rule` in its `calibration_report.json`, `margin` when absent), not to the file's top
+  level.
+- `hf_cards.py`: the dataset and model cards name the rule the prior was counted under (or NoSidewalk's face-size
+  method).
 - `analysis/prior_rules.py`: this report (`shares`, `gate`, `slices`, `observed`).
 
 ## Replicating

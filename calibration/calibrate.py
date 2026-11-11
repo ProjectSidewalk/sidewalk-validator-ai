@@ -66,6 +66,8 @@ from calibration import _isotonic_map as im
 from calibration._plots import plot_reliability
 
 CLASSES = im.API_CLASSES
+# data_generation.PRIOR_RULES, repeated so this module does not import the generator (a test keeps them equal).
+PRIOR_RULES = ("margin", "symmetric3", "symmetric2", "majority2")
 
 
 def load_prior(priors_path, label_type, rule=None):
@@ -232,7 +234,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--predictions", required=True, help="<label_type>/predictions.csv from evaluate.py")
     p.add_argument("--priors", required=True, help="deployment_priors.json")
-    p.add_argument("--prior-rule", default=None,
+    p.add_argument("--prior-rule", default=None, choices=PRIOR_RULES,
                    help="vote rule whose counts to reweight to, from the entry's \"rules\" (margin, symmetric3, "
                         "symmetric2, majority2; issue #56). Default: the entry's top level (majority2 in a file written "
                         "since #56, margin in an older one). Recorded in calibration_report.json as prior_rule")

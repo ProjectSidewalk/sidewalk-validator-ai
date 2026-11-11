@@ -58,6 +58,36 @@ def _old_eligible(all_labels, label_type):
     return df[df['label_class'] != ''].copy(), dropped
 
 
+def _old_eligible_with_experts(all_labels, label_type, experts):
+    """The pre-refactor expert branch, applied to :func:`_old_eligible`'s rows before the class filter."""
+    df = all_labels[all_labels['label_type'] == label_type]
+    keep, dropped = dg.valid_geometry(df)
+    df = df[keep].copy()
+    df['author'] = df['user_id'].map(dg.label_author) if 'user_id' in df else 'human'
+    counts = df['validations'].apply(dg.human_vote_counts)
+    df['human_agree'] = [a for a, _ in counts]
+    df['human_disagree'] = [d for _, d in counts]
+    net = df['human_agree'] - df['human_disagree']
+    df['label_class'] = np.where(net > 2, 'correct', np.where(-net > 1, 'incorrect', ''))
+    df['class_source'] = np.where(df['label_class'] != '', 'margin', '')
+    verdict = df['validations'].apply(dg.expert_verdict, experts=experts)
+    by_expert = (df['label_class'] == '') & (verdict != '')
+    df.loc[by_expert, 'label_class'] = verdict[by_expert]
+    df.loc[by_expert, 'class_source'] = 'expert'
+    return df[df['label_class'] != ''].copy(), dropped
+
+
+def test_voted_labels_refactor_keeps_eligible_with_experts(tmp_path):
+    labels = _prior_fixture(tmp_path)
+    experts = dg.parse_experts("someone=ex")
+    old, _ = _old_eligible_with_experts(labels, "CurbRamp", experts)
+    assert (old.class_source == "expert").any()
+    for new, _ in (dg.eligible_labels(labels, "CurbRamp", experts),
+                   dg.eligible_labels(labels, "CurbRamp", experts, voted=dg.voted_labels(labels, "CurbRamp"))):
+        pd.testing.assert_frame_equal(new, old)
+        assert new.to_csv(index=False) == old.to_csv(index=False)
+
+
 def test_voted_labels_refactor_keeps_eligible(tmp_path):
     labels = fixture_labels(tmp_path)
     old, old_dropped = _old_eligible(labels, "CurbRamp")
@@ -182,6 +212,27 @@ def test_correct_weight_uses_margin_counts():
         rr.correct_weight(sp, {"correct": 30, "incorrect": 1, "rule": "majority2"})
 
 
+def test_card_names_the_face_size_prior():
+    text = hf_cards.prior_sentence({"correct": 7, "incorrect": 3, "method": "face_size", "p_correct": 0.7})
+    assert "face-size method" in text and "margin" not in text
+
+
+def test_calibrate_prior_rules_match_data_generation(tmp_path):
+    assert cal.PRIOR_RULES == dg.PRIOR_RULES
+    with pytest.raises(SystemExit):
+        cal.main(["--predictions", "x", "--priors", "y", "--label-type", "CurbRamp", "--out", str(tmp_path / "m.json"),
+                  "--prior-rule", "symmetric"])
+
+
+def test_retrain_report_reweights_to_the_maps_rule(tmp_path):
+    p = _priors_file(tmp_path, {"correct": 90, "incorrect": 10, "rule": "majority2",
+                                "rules": {"margin": {"correct": 60, "incorrect": 40},
+                                          "majority2": {"correct": 90, "incorrect": 10}}})
+    for report, inc in (({}, 0.4), ({"prior_rule": "margin"}, 0.4), ({"prior_rule": "majority2"}, 0.1)):
+        pi, _ = cal.load_prior(p, "CurbRamp", rr.map_prior_rule(report))
+        assert pi["incorrect"] == pytest.approx(inc)
+
+
 def test_dataset_card_names_the_prior_rule():
     old = hf_cards.prior_sentence({"correct": 60, "incorrect": 40, "source": "s", "measured_on": "d"})
     assert "training margin rule" in old and "0.600 correct" in old
@@ -246,6 +297,15 @@ def test_gate_rows_match_calibrate():
     assert pr.check_report(rows["test"], report, "test") == []
     report["eval"] = {v: dict(rows["test"][v], gate_n=rows["test"][v]["gate_n"] + 1) for v in cal.CLASSES}
     assert len(pr.check_report(rows["test"], report, "test")) == 2
+    # a missing statistic matches only a missing one: None/NaN on exactly one side is a mismatch
+    nan_side = {"gate_coverage": 0.0, "gate_precision": float("nan"), "gate_n": 0}
+    none_side = {"gate_coverage": 0.0, "gate_precision": None, "gate_n": 0}
+    real_side = {"gate_coverage": 0.0, "gate_precision": 0.95, "gate_n": 0}
+    rep = lambda r: {"eval_split": "test", "eval": {"correct": r, "incorrect": r}, "hold_back": {"verdicts": []}}
+    mine = {"correct": nan_side, "incorrect": nan_side}
+    assert pr.check_report(mine, rep(none_side), "test") == []
+    assert len(pr.check_report(mine, rep(real_side), "test")) == 2
+    assert len(pr.check_report({"correct": real_side, "incorrect": real_side}, rep(none_side), "test")) == 2
 
 
 def test_observed_keys_by_schema_and_label_and_splits_periods(tmp_path):
@@ -257,6 +317,7 @@ def test_observed_keys_by_schema_and_label_and_splits_periods(tmp_path):
         ("sidewalk_a", 4, "CurbRamp", "f", "Agree", 0.95, "2026-10-01", 2, 1),  # older model
         ("sidewalk_a", 5, "CurbRamp", "t", "Agree", 0.95, "2026-10-30", 3, 0),  # deleted
         ("sidewalk_a_bak_2026_11", 1, "CurbRamp", "f", "Agree", 0.95, "2026-10-30", 3, 0),  # backup schema
+        ("sidewalk_a", 6, "Obstacle", "f", "Agree", 0.95, "2026-10-30", 3, 0),  # retyped: CurbRamp model's vote
     ]
     d = pd.DataFrame(rows, columns=["schema", "label_id", "label_type", "deleted", "ai_result", "ai_accuracy",
                                     "ai_date", "h_agree", "h_dis"])
@@ -264,7 +325,8 @@ def test_observed_keys_by_schema_and_label_and_splits_periods(tmp_path):
     path = tmp_path / "a.csv"
     d.to_csv(path, index=False)
     df, counts = pr.load_assessments(path)
-    assert counts["backup_schema_rows"] == 1 and counts["deleted_rows"] == 1
+    assert counts["backup_schema_rows"] == 1 and counts["deleted_rows"] == 1 and counts["model_type_mismatch"] == 1
+    assert not ((df.label_type == "Obstacle")).any()
     assert counts["periods"] == {"round3": 3, "changeover": 1, "older": 1}
     res = pr.observed_tables(df)
     r3 = res["gated_agree"]["round3"]["CurbRamp"]

@@ -322,6 +322,16 @@ def parse_prior(spec):
     return out
 
 
+def map_prior_rule(report):
+    """The vote rule a map's ``calibration_report.json`` was fitted under: its ``prior_rule`` (reports since issue
+    #56), else ``margin`` (every earlier report was fitted to a margin-rule prior).
+
+    >>> map_prior_rule({"prior_rule": "majority2"}), map_prior_rule({})
+    ('majority2', 'margin')
+    """
+    return report.get("prior_rule") or "margin"
+
+
 def load_map(run_dir, label_type, variant=""):
     d = os.path.join(run_dir, label_type, "calibration", variant)
     fn = [x for x in os.listdir(d) if x.endswith(".json") and "report" not in x and "provenance" not in x]
@@ -656,7 +666,9 @@ def main():
     slice_list, vs_prod_list = [], []
     for t in TYPES:
         df, split_all = preds[t], splits[t]
-        pi, entry = cal.load_prior(priors_path, t)
+        amap, rep = load_map(args.run_dir, t)
+        # Reweight to the prior the served map was fitted under, not whatever rule the priors file has on top.
+        pi, entry = cal.load_prior(priors_path, t, map_prior_rule(rep))
         k_correct = correct_weight(split_all, entry)
         headline += headline_rows(df, t, args)
         per_city += per_city_rows(df, t, public, names, args)
@@ -664,7 +676,6 @@ def main():
         a, b = metrics_rows(args.run_dir, t, df, args)
         rp += a
         hard += b
-        amap, _ = load_map(args.run_dir, t)
         calib.append(calibration_rows(args.run_dir, t, df, k_correct))
         gate += gate_rows(df, k_correct, amap, pi, "file", t, public, names, args.min_city_n)
         sat.append(saturation_row(df, t, amap))

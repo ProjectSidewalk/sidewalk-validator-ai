@@ -253,19 +253,21 @@ PRIOR_RULE_TEXT = {  # data_generation.PRIOR_RULES, as the dataset card words th
     "symmetric3": "a symmetric rule (net human votes beyond 2 either way)",
     "symmetric2": "a symmetric rule (net human votes of at least 2 either way)",
     "majority2": "the human majority among labels with at least two Agree/Disagree votes (ties left out)",
+    "face_size": "the face-size method (NoSidewalk precision by labels on the block face; issue #42)",
 }
 
 
 def prior_sentence(prior, n_experts=0):
     """The dataset card's deployment-prior sentence, naming the vote rule the counts were taken under: the entry's
-    ``rule`` (files since issue #56), else the margin rule (older files). Expert votes never enter the prior.
+    ``rule`` (files since issue #56), else its ``method`` (NoSidewalk's ``face_size``), else the margin rule (older
+    files). Expert votes never enter the prior.
 
     >>> prior_sentence({"correct": 9, "incorrect": 1, "rule": "majority2", "source": "s", "measured_on": "d"})[:83]
     'Before downsampling, 9 labels were correct and 1 incorrect under the human majority'
     >>> "at least two" in prior_sentence({"correct": 9, "incorrect": 1, "rule": "majority2"})
     True
     """
-    rule = prior.get("rule") or "margin"
+    rule = prior.get("rule") or prior.get("method") or "margin"
     how = PRIOR_RULE_TEXT.get(rule, f"the `{rule}` rule")
     extra = " (expert votes are not counted)" if n_experts else ""
     text = (f"Before downsampling, {fmt(prior.get('correct'))} labels were correct and {fmt(prior.get('incorrect'))} "

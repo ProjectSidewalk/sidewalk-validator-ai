@@ -18,7 +18,8 @@ it the incorrect share was 37 / 36 / 32% for NoCurbRamp / Obstacle / SurfaceProb
 same labels gives 22 / 25 / 18%. The majority is what the website treats as a settled label. Under the majority prior
 the round-3 NoCurbRamp Agree gate covers 0.71 of the test split instead of 0.44, and NoCurbRamp Disagree no longer
 clears at all. On production outcomes since round 3 went live, the human majority confirms 94.5–100% of the gated
-Agree votes; Obstacle's 94.5% is below what a majority-prior map would claim for it. Numbers:
+Agree votes; for Obstacle (94.5%, interval 0.904–0.969) the margin-prior and majority-prior maps both claim at or
+above the interval's top, and their gap is smaller than its width, so production does not separate them there. Numbers:
 [`deployment-prior-2026-11.md`](deployment-prior-2026-11.md).
 
 **What would change it.** A map fitted on the revision's own production outcomes (`calibrate_from_production.py`)

@@ -4,7 +4,7 @@ Production pull `ai_assessments_2026-11-11.csv` (sha256 `6891a1c150685975`), 53 
 
 ## round3
 
-| Type | gated Agree | with a human vote | margin | symmetric3 | symmetric2 | majority2 |
+| Type | gated Agree | with a decisive human vote | margin | symmetric3 | symmetric2 | majority2 |
 |---|---:|---:|---:|---:|---:|---:|
 | Crosswalk | 1,911 | 1,147 | 0.998 [0.991, 1.000] (630) | 1.000 [0.994, 1.000] (629) | 0.999 [0.993, 1.000] (864) | 0.998 [0.992, 0.999] (885) |
 | CurbRamp | 10,980 | 3,629 | 0.994 [0.964, 0.999] (154) | 1.000 [0.976, 1.000] (153) | 0.999 [0.993, 1.000] (821) | 0.998 [0.991, 0.999] (834) |
@@ -14,7 +14,7 @@ Production pull `ai_assessments_2026-11-11.csv` (sha256 `6891a1c150685975`), 53 
 
 ## older
 
-| Type | gated Agree | with a human vote | margin | symmetric3 | symmetric2 | majority2 |
+| Type | gated Agree | with a decisive human vote | margin | symmetric3 | symmetric2 | majority2 |
 |---|---:|---:|---:|---:|---:|---:|
 | Crosswalk | 80,739 | 43,360 | 0.997 [0.996, 0.997] (14,059) | 0.999 [0.998, 0.999] (14,025) | 0.998 [0.997, 0.998] (22,799) | 0.996 [0.995, 0.997] (23,095) |
 | CurbRamp | 278,781 | 161,365 | 0.990 [0.988, 0.991] (24,375) | 0.998 [0.998, 0.999] (24,166) | 0.996 [0.995, 0.996] (58,616) | 0.992 [0.991, 0.992] (60,944) |
