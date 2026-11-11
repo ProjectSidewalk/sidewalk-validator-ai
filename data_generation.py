@@ -42,7 +42,9 @@ already, so Mapillary crops are NOT corrected (beta 0); their pose is still read
 levels only when both stored angles are non-zero; those crops are corrected with beta 1.0 (unmeasured), a pitch-only
 pose shifts the click by ``pers:pitch`` instead, and the rest are rig-frame. Both website viewers store pitch positive
 nose UP, so their pitch is negated (measured on pixels: tests/test_pose_levelling.py). A label with no usable pose is
-rendered uncorrected and counted by reason. The manifest records ``pose_source``, the pose in the package's sign
+rendered uncorrected and counted by reason, except that a Panoramax label is skipped with its own status when its pose
+is past ``crop_pose.MAX_POSE_TILT_DEG`` (``panoramax_over_tilt``) or its pitch-only click is past a pole
+(``panoramax_pitch_offset_past_pole``). The manifest records ``pose_source``, the pose in the package's sign
 (``pose_pitch``/``pose_roll``), the beta used (``tilt_beta``) and any ``click_lat_offset_deg``. Labels authored by the AI account (RampNet,
 Vancouver WA / Richmond VA / Laurens IA) were placed on the rig-frame image directly, so they are rendered without
 it. They are excluded from the training selection by default anyway: production never sends them to the validator
@@ -1557,10 +1559,15 @@ def main(argv=None):
                     else:
                         consecutive_missing = 0
                 pano_bgr = last_pano[1]
-                y_norm = row['pano_y'] / row['pano_height'] + (pose.click_lat_offset_deg or 0.0) / 180.0
+                y_norm = crop_pose.rig_y_norm(row['pano_y'] / row['pano_height'], pose)  # None: past a pole
+                # A Panoramax pose past the tilt cap, or a pitch-only click past a pole, is skipped with its own status
+                # (#72). The job-window crop uses neither the pose nor y_norm, so it is never skipped for them.
+                skip = None if args.job_window_crops else crop_pose.skip_status(pose, y_norm)
                 rec.update(last_pano[2])
                 if isinstance(pano_bgr, str):
                     rec['status'] = pano_bgr
+                elif skip is not None:
+                    rec['status'] = skip
                 elif args.job_window_crops:  # issue #53: the backend's crop-job window from the native file
                     crop, info = job_crop.crop_for_row(rec['pano_path'], row, rec['label_uid'],
                                                        os.path.join(base_dir, job_crop.SIDECAR_FILE))

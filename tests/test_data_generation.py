@@ -591,6 +591,17 @@ def _pose_row(src, pitch=None, roll=None, author="human", pano="p1"):
      (-5.0, None, "panoramax_db", 0.0, "panoramax_pitch_only_click_offset", 5.0)),
     (_pose_row("panoramax", 0.0, 2.0), None,
      (None, 2.0, "panoramax_db", 0.0, "panoramax_roll_only_click_rig_frame", 0.0)),
+    # Panoramax past MAX_POSE_TILT_DEG (45, combined tilt, strict >): refused whichever angles are set (#72); the label
+    # is then skipped by data_generation. Bayonne's largest pose (20.2, 8.5) and 44 degrees are still levelled.
+    (_pose_row("panoramax", 50.0, 3.0), None, (None, None, "none", None, "panoramax_db_over_tilt", 0.0)),
+    (_pose_row("panoramax", 40.0, 40.0), None, (None, None, "none", None, "panoramax_db_over_tilt", 0.0)),
+    (_pose_row("panoramax", 80.0, None), None, (None, None, "none", None, "panoramax_db_over_tilt", 0.0)),
+    (_pose_row("panoramax", 0.0, 60.0), None, (None, None, "none", None, "panoramax_db_over_tilt", 0.0)),
+    (_pose_row("panoramax", 190.0, 3.0), None, (None, None, "none", None, "panoramax_db_over_tilt", 0.0)),  # -170
+    (_pose_row("panoramax", 20.2, 8.5), None,
+     (pytest.approx(-20.2), 8.5, "panoramax_db", 1.0, "level_frame_click", 0.0)),         # wrap180 rounds 20.2
+    (_pose_row("panoramax", 44.0, 3.0), None, (-44.0, 3.0, "panoramax_db", 1.0, "level_frame_click", 0.0)),
+    (_pose_row("panoramax", 316.0, 3.0), None, (44.0, 3.0, "panoramax_db", 1.0, "level_frame_click", 0.0)),  # -44
     # AI labels were placed on the rig image: never corrected, whatever the provider.
     (_pose_row("mapillary", 2.0, 1.0, author="ai"), None, (None, None, "rig_frame", None, "ai_label", 0.0)),
     (_pose_row("gsv", 2.0, author="ai"), None, (None, None, "rig_frame", None, "ai_label", 0.0)),
@@ -598,6 +609,19 @@ def _pose_row(src, pitch=None, roll=None, author="human", pano="p1"):
 ])
 def test_pose_for_row(row, rotations, want):
     assert tuple(crop_pose.pose_for_row(row, 0.95, rotations)) == want
+
+
+def test_rig_y_norm_refuses_a_click_past_a_pole():
+    """A pitch-only Panoramax offset that leaves [0, 1] is None (skipped, not clipped); no offset never changes y."""
+    off = lambda d: crop_pose.Pose(-d, None, "panoramax_db", 0.0, "panoramax_pitch_only_click_offset", d)  # noqa: E731
+    assert crop_pose.rig_y_norm(0.5, off(5.0)) == pytest.approx(0.5 + 5.0 / 180)
+    assert crop_pose.rig_y_norm(0.99, off(5.0)) is None
+    assert crop_pose.rig_y_norm(0.01, off(-5.0)) is None
+    assert crop_pose.rig_y_norm(1.0, off(0.0)) == 1.0 and crop_pose.rig_y_norm(0.0, off(0.0)) == 0.0
+    gsv = crop_pose.Pose(1.5, None, "gsv_db", 0.95, "db")
+    assert crop_pose.rig_y_norm(2600 / 4096, gsv) == 2600 / 4096 + 0.0 / 180.0  # GSV: the same float as before #72
+    assert crop_pose.skip_status(off(5.0), None) == crop_pose.PAST_POLE_STATUS
+    assert crop_pose.skip_status(gsv, 0.5) is None
 
 
 def test_check_resume_rejects_changed_source_beta_and_mapillary_api(tmp_path):
