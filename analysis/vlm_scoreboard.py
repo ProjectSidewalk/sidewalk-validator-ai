@@ -482,6 +482,9 @@ def slice_rows(legs, splits, train, by, n_boot=N_BOOT, seed=SEED, within_min_n=1
     ``reference`` on the same crops and the same panorama resamples (blank for the reference itself). The within-city
     AUC (``vlm_baseline.within_city_auc``, cities with ``within_min_n`` rows) is shown only where the pooled AUC is.
     Every AUC is blank under ``slices.MIN_N`` crops or ``slices.MIN_CLASS_FOR_CI`` of a class."""
+    if "pano_id" not in splits.columns or splits.pano_id.isna().any():
+        raise ValueError("slices need pano_id in the staged splits (the intervals resample whole panoramas); "
+                         "re-run `stage`")
     ref = legs.get(reference)
     rows = []
     for t in LABEL_TYPES:
@@ -623,7 +626,25 @@ END = "<!-- END GENERATED: {name} -->"
 
 
 def f3(v):
-    return "—" if v is None or v == "" or (isinstance(v, float) and np.isnan(v)) else f"{float(v):.3f}"
+    """Three decimals, ``—`` when blank; a value that rounds to zero is ``0.000``, never ``-0.000``."""
+    if v is None or v == "" or (isinstance(v, float) and np.isnan(v)):
+        return "—"
+    s = f"{float(v):.3f}"
+    return "0.000" if s == "-0.000" else s
+
+
+def signed(v):
+    """A difference with its sign, as ``slices.delta_markdown`` writes it (``+0.012``, ``-0.074``, ``+0.000``).
+
+    >>> signed(-0.00001), signed(0.0123), signed(float("nan"))
+    ('+0.000', '+0.012', '—')
+    """
+    s = f3(v)
+    return s if s == "—" or s.startswith("-") else "+" + s
+
+
+def signed_interval(lo, hi):
+    return "" if f3(lo) == "—" else f" [{signed(lo)}, {signed(hi)}]"
 
 
 def interval(lo, hi):
@@ -888,7 +909,7 @@ def render_slice_table(df, b, by):
             aucs.append(f"{f3(x.auc)}{interval(x.auc_lo, x.auc_hi)}")
             within.append(f3(x.within_city_auc))
             if k != REFERENCE and has_delta:
-                deltas[k] = f"{f3(x.delta_vs_round3)}{interval(x.delta_lo, x.delta_hi)}"
+                deltas[k] = f"{signed(x.delta_vs_round3)}{signed_interval(x.delta_lo, x.delta_hi)}"
         aucs, within = bold_best(aucs), bold_best(within)
         train = "—" if f3(r.n_train) == "—" else _int(r.n_train) + (" ⚠ thin" if _thin(r) else "")
         cells = [r.label_type, getattr(r, by), _int(r.n), f"{r.incorrect_share:.0%}", f"{r.top_deployment_share:.0%}",
@@ -1626,6 +1647,10 @@ def run_build(args):
     with open(os.path.join(out_dir, "provenance.json"), "w") as f:
         json.dump(provenance(args.scores_dir, public, src, args), f, indent=1, sort_keys=True)
         f.write("\n")
+    problems = consistency_problems(committed)
+    if problems:
+        print("\n".join(problems))
+        raise SystemExit("consistency check failed: the aggregates contradict themselves")
     problems = privacy_problems(out_dir, doc, public, readme)
     if problems:
         print("\n".join(problems))
@@ -1658,7 +1683,10 @@ def main(argv=None):
     b.add_argument("--seed", type=int, default=SEED)
     b.add_argument("--min-city-n", type=int, default=30)
     b.add_argument("--no-figures", action="store_true")
-    b.add_argument("--check", action="store_true", help="write nothing; exit 1 on drift or a privacy problem")
+    b.add_argument("--check", action="store_true",
+                   help="write nothing; exit 1 on drift or a privacy problem. With the staging dir present it "
+                        "regenerates with this command line's --n-boot, --slice-boot and --seed (not the values in "
+                        "provenance.json), so pass the ones the committed board was built with (the defaults)")
     args = ap.parse_args(argv)
     if args.command == "stage":
         run_stage(args)

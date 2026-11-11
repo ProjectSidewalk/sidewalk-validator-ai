@@ -26,7 +26,7 @@ def _splits(n_per=60):
             rows.append({"label_uid": f"{c}:{sb.LABEL_TYPES.index(t)}{i:04d}", "city": c, "label_type": t,
                          "label_class": "incorrect" if (i // len(CITIES)) % 2 else "correct",
                          "split": "test_heldout" if c in ("tucson-az", *PRIVATE_HELDOUT) else "test",
-                         "severity": [1.0, 2.0, 3.0, None][i % 4], "tags": TAGS[i % len(TAGS)]})
+                         "pano_id": f"pano{sb.LABEL_TYPES.index(t)}{i // 2:04d}", "severity": [1.0, 2.0, 3.0, None][i % 4], "tags": TAGS[i % len(TAGS)]})
     return pd.DataFrame(rows)
 
 
@@ -426,7 +426,8 @@ def test_slice_names_and_rows_on_a_small_frame(monkeypatch):
                       "severity": [1, 1, 1, 1, 2, None, 2, 2],
                       "tags": ['["a","b"]', '["a"]', '["a","b"]', '["a","b"]', '["b"]', "[]", '["c"]', '["b"]']})
     # tag "a" (rows 0-3) is all test, three of its four crops in city p
-    s = s.assign(city=["p", "p", "p", "q", "p", "q", "q", "q"], split=["test"] * 4 + ["test_heldout"] * 4)
+    s = s.assign(city=["p", "p", "p", "q", "p", "q", "q", "q"], split=["test"] * 4 + ["test_heldout"] * 4,
+                 pano_id=[f"pano{i}" for i in range(8)])
     legs = {"good": s.assign(p_incorrect=s.y * 0.8 + 0.1), "bad": s.assign(p_incorrect=1 - (s.y * 0.8 + 0.1))}
     rows = pd.DataFrame(sb.slice_rows(legs, s, None, "tag", n_boot=20, seed=1, within_min_n=2, reference="good"))
     assert rows[rows.leg == "good"].tag.tolist() == ["b", "a", "(none)"]   # slices.slice_names; "c" is too thin
@@ -488,6 +489,27 @@ def test_slice_delta_vs_round3_is_paired():
     assert nz.delta_hi - nz.delta_lo < (nz.auc_hi - nz.auc_lo) + (r3.auc_hi - r3.auc_lo)
 
 
+def test_slice_delta_is_exactly_zero_for_a_monotone_copy_of_round3():
+    """Independent of paired_delta_table's own code path: a strictly increasing transform of round 3's scores ranks
+    every resample identically, so a truly paired difference is 0 at the point and at both interval ends."""
+    s, m = _slice_frame()
+    s = pd.concat([s, s.assign(label_uid=s.label_uid + "b", pano_id=s.pano_id + "b", severity=3)], ignore_index=True)
+    m = s.assign(p_incorrect=np.random.default_rng(4).random(len(s)) + 0.4 * s.y)
+    rows = pd.DataFrame(sb.slice_rows({"round3": m, "copy": m.assign(p_incorrect=2 * m.p_incorrect + 0.1)}, s, None,
+                                      "severity", n_boot=100, seed=3))
+    c = rows[(rows.leg == "copy") & rows.auc.notna()]
+    assert len(c) == 2
+    assert (c.delta_vs_round3 == 0).all() and (c.delta_lo == 0).all() and (c.delta_hi == 0).all()
+
+
+def test_slices_need_pano_id():
+    """No silent fallback to a label bootstrap: sliced splits without pano_id (or with a gap) raise."""
+    s, m = _slice_frame()
+    for bad in (s.drop(columns="pano_id"), s.assign(pano_id=s.pano_id.where(s.index > 0))):
+        with pytest.raises(ValueError, match="pano_id"):
+            sb.slice_rows({"m": m}, bad, None, "severity", n_boot=10)
+
+
 def test_slice_interval_same_for_shuffled_leg():
     s, m = _slice_frame()
     rows = sb.slice_rows({"m": m, "shuffled": m.sample(frac=1, random_state=1)}, s, None, "severity", 200, 7)
@@ -534,6 +556,12 @@ def test_per_type_split_auc_blank_when_thin():
             label_class=lambda d: np.where(d.y == 1, "incorrect", "correct"), p_incorrect=lambda d: rng.random(40))])
     r = sb.per_type_rows("m", big, 20, 1)[0][0]
     assert np.isnan(r["auc_test_heldout"]) and r["n_test_heldout"] == 40     # 7 incorrect: under 8 of a class
+    edge = pd.concat([df[df.split == "test"]] + [
+        pd.DataFrame({"label_uid": [f"e:{i}" for i in range(30)], "split": "test_heldout", "y": [1] * 8 + [0] * 22,
+                      "label_type": "CurbRamp", "city": "p"}).assign(
+            label_class=lambda d: np.where(d.y == 1, "incorrect", "correct"), p_incorrect=lambda d: rng.random(30))])
+    r = sb.per_type_rows("m", edge, 20, 1)[0][0]
+    assert not np.isnan(r["auc_test_heldout"]) and r["n_test_heldout"] == 30  # exactly 30 crops, 8 incorrect: scored
 
 
 def test_check_catches_an_edited_slice_cell_in_both_modes(board, monkeypatch):
