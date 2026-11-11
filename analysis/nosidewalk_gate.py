@@ -14,8 +14,9 @@ test: 758 rows in 450 face groups) into K face-grouped folds and scores every ro
    ``k`` is fitted on the other folds' out-of-fold predictions under the face-size prior, with the Disagree verdict
    held back as the pilot did. So each row's verdict and served accuracy are both out of sample, for the model and
    for the map. The bar is then read on all pooled rows: within-city AUC >= 0.85 and the Agree verdict's gate
-   precision, reweighted to the deployment prior as the map is, with a Wilson 95 % lower bound (on the Kish
-   effective n) >= 0.92 on a raw count of >= 100 passing labels; the unweighted precision is reported beside it.
+   precision, reweighted to the deployment prior as the map is, with a Wilson 95 % lower bound (the raw bound on
+   the passing count, mapped through the two-class weight ratio) >= 0.92 on a raw count of >= 100 passing labels;
+   the unweighted precision is reported beside it.
    ``test_heldout`` is reported per fold model under a map fitted on all pooled rows, plus the 5-model mean
    (descriptive only). A missing fold fails the bar whatever the numbers say.
 
@@ -229,28 +230,34 @@ def served_out_of_fold(pooled, pi_deploy):
     return df.assign(served=served)
 
 
-def kish_n(w):
-    """Kish effective sample size of weights ``w`` (``(sum w)^2 / sum w^2``); 0 for no weights.
+def reweight_precision(p, ratio):
+    """Precision ``p`` on rows of one class mix, re-expressed under prior weights that give an incorrect row
+    ``ratio`` times the weight of a correct one: ``p / (p + ratio * (1 - p))``. Monotone in ``p``, so a Wilson
+    bound on the raw precision maps to a bound on the weighted one with the same coverage (the two weights are
+    fixed by the class, so this is exact, where an effective-sample-size bound would be far too conservative).
 
-    >>> kish_n(np.array([1.0, 1.0, 1.0])), round(kish_n(np.array([1.0, 3.0])), 3)
-    (3.0, 1.6)
+    >>> round(reweight_precision(2 / 3, 0.4 / 1.2), 3), reweight_precision(1.0, 0.3), reweight_precision(0.0, 0.3)
+    (0.857, 1.0, 0.0)
     """
-    w = np.asarray(w, dtype=float)
-    return float(w.sum() ** 2 / (w ** 2).sum()) if len(w) and (w ** 2).sum() > 0 else 0.0
+    p = float(p)
+    return p / (p + ratio * (1.0 - p)) if 0.0 < p < 1.0 else p
 
 
 def gate_stats(df, pi_deploy=None, gate=GATE):
     """The Agree verdict at ``gate`` on rows that carry ``verdict`` and ``served``: raw count, coverage and
     precision on the rows as they are, and, with ``pi_deploy``, the precision reweighted to the deployment prior
-    (``calibrate.prior_weights``, the weighting the map itself was fitted under) with its Wilson 95 % lower bound on
-    the Kish effective n. The bar reads the weighted bound and the raw count. The weighted fields are NaN when the
-    rows lack a class (a city with only correct labels cannot be reweighted).
+    (``calibrate.prior_weights``, the weighting the map itself was fitted under) with its Wilson 95 % lower bound,
+    which is the raw bound on ``n_pass`` mapped through :func:`reweight_precision`. The bar reads the weighted bound
+    and the raw count. The weighted fields are NaN when the rows lack a class (a city with only correct labels cannot
+    be reweighted).
 
     >>> d = pd.DataFrame({"verdict": ["correct"] * 4, "served": [0.95, 0.93, 0.5, 0.99],
     ...                   "true": ["correct", "incorrect", "correct", "correct"]})
     >>> g = gate_stats(d, {"correct": 0.9, "incorrect": 0.1})
-    >>> g["n_pass"], round(g["precision"], 3), round(g["precision_weighted"], 3), round(g["kish_n"], 1)
-    (3, 0.667, 0.857, 2.6)
+    >>> g["n_pass"], round(g["precision"], 3), round(g["precision_weighted"], 3), round(g["weight_ratio"], 3)
+    (3, 0.667, 0.857, 0.333)
+    >>> round(g["precision_weighted_wilson95_lower"], 3) == round(reweight_precision(g["precision_wilson95_lower"], g["weight_ratio"]), 3)
+    True
     """
     passed = ((df["verdict"] == "correct") & (df["served"] >= gate)).to_numpy()
     correct = (df["true"].to_numpy() == "correct").astype(float)
@@ -260,16 +267,18 @@ def gate_stats(df, pi_deploy=None, gate=GATE):
            "precision": float(correct[passed].mean()) if n_pass else float("nan"),
            "precision_wilson95_lower": float(im.wilson_lower(correct[passed].mean(), n_pass, z=Z95)) if n_pass
            else float("nan"),
-           "precision_weighted": float("nan"), "kish_n": float("nan"), "precision_weighted_wilson95_lower": float("nan")}
+           "precision_weighted": float("nan"), "weight_ratio": float("nan"),
+           "precision_weighted_wilson95_lower": float("nan")}
     if pi_deploy is not None and n_pass:
         try:
             w = cal.prior_weights(df["true"], pi_deploy)
         except ValueError:  # a class is absent from these rows
             return out
+        true = df["true"].to_numpy()
+        ratio = float(w[true == "incorrect"][0] / w[true == "correct"][0])
         out["precision_weighted"] = float(np.average(correct[passed], weights=w[passed]))
-        out["kish_n"] = kish_n(w[passed])
-        out["precision_weighted_wilson95_lower"] = float(im.wilson_lower(out["precision_weighted"], out["kish_n"],
-                                                                         z=Z95))
+        out["weight_ratio"] = ratio
+        out["precision_weighted_wilson95_lower"] = reweight_precision(out["precision_wilson95_lower"], ratio)
     return out
 
 
@@ -314,7 +323,8 @@ def bar_verdict(block, complete=True):
     auc = block["within_city_auc"]
     lower = g["precision_weighted_wilson95_lower"]
     out = {"within_city_auc_min": BAR_AUC, "gate_precision_min": BAR_PRECISION, "gate_n_min": BAR_N,
-           "precision_basis": "prior-weighted (calibrate.prior_weights), Wilson 95 % on the Kish effective n",
+           "precision_basis": "prior-weighted (calibrate.prior_weights); the raw Wilson 95 % bound on n_pass mapped "
+                              "through the two-class weight ratio",
            "complete": bool(complete),
            "auc_ok": bool(auc >= BAR_AUC) if auc is not None and np.isfinite(auc) else False,
            "gate_ok": bool(g["n_pass"] >= BAR_N and lower is not None and np.isfinite(lower)
@@ -365,16 +375,16 @@ def _fmt(x, digits=3):
     return f"{x:.{digits}f}"
 
 
-GATE_HEAD = ("Agree gate n (coverage) | precision, prior-weighted (Wilson 95 % lower; Kish n) | "
+GATE_HEAD = ("Agree gate n (coverage) | precision, prior-weighted (Wilson 95 % lower) | "
              "precision, unweighted (Wilson 95 % lower)")
 
 
 def _gate_cell(g):
-    """Three cells: raw count (coverage), the weighted precision with its bound and Kish n, the unweighted one."""
+    """Three cells: raw count (coverage), the weighted precision with its bound, the unweighted one with its bound."""
     if not g["n_pass"]:
         return "0 | n/a | n/a"
-    weighted = (f"{_fmt(g['precision_weighted'])} ({_fmt(g['precision_weighted_wilson95_lower'])}; "
-                f"{_fmt(g['kish_n'], 0)})") if np.isfinite(g.get("precision_weighted", float("nan"))) else "n/a (one class)"
+    weighted = (f"{_fmt(g['precision_weighted'])} ({_fmt(g['precision_weighted_wilson95_lower'])})"
+                if np.isfinite(g.get("precision_weighted", float("nan"))) else "n/a (one class)")
     return (f"{g['n_pass']} ({_fmt(g['coverage'])}) | {weighted} | "
             f"{_fmt(g['precision'])} ({_fmt(g['precision_wilson95_lower'])})")
 
@@ -397,7 +407,8 @@ def markdown(rep):
               f"{'met' if bar['gate_ok'] else 'NOT met'} ({g['n_pass']} labels pass of {g['n_agree_verdicts']} Agree "
               f"verdicts; weighted lower bound {_fmt(g['precision_weighted_wilson95_lower'])}, unweighted "
               f"{_fmt(g['precision_wilson95_lower'])})."
-              + ("" if bar["complete"] else " **Incomplete: a fold's predictions are missing, so the bar fails.**")
+              + ("" if bar["complete"] else " **Incomplete: a fold's predictions are missing or pooled rows are "
+                                              "unscored, so the bar fails.**")
               + f" **{'PASSES' if bar['passes'] else 'DOES NOT PASS'}.**", "",
               "Per fold (each fold's map fitted on the other folds):", "",
               f"| fold | rows | {GATE_HEAD} |", "|---|---|---|---|---|"]

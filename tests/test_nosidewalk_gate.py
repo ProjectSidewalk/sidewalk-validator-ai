@@ -122,9 +122,12 @@ def test_gate_stats_raw_and_prior_weighted():
     g = gate.gate_stats(df, pi)
     # rows are 3 correct : 2 incorrect; weights 0.9/0.6 = 1.5 for correct, 0.1/0.4 = 0.25 for incorrect
     assert g["precision_weighted"] == pytest.approx(2 * 1.5 / (2 * 1.5 + 0.25))
-    assert g["kish_n"] == pytest.approx((2 * 1.5 + 0.25) ** 2 / (2 * 1.5 ** 2 + 0.25 ** 2))
-    assert g["precision_weighted_wilson95_lower"] == pytest.approx(
-        float(im.wilson_lower(g["precision_weighted"], g["kish_n"], z=1.96)))
+    assert g["weight_ratio"] == pytest.approx(0.25 / 1.5)
+    raw_lower = float(im.wilson_lower(2 / 3, 3, z=1.96))
+    assert g["precision_weighted_wilson95_lower"] == pytest.approx(raw_lower / (raw_lower + g["weight_ratio"] * (1 - raw_lower)))
+    # the transform of the raw precision is the weighted precision itself (two weights, fixed by class)
+    assert gate.reweight_precision(g["precision"], g["weight_ratio"]) == pytest.approx(g["precision_weighted"])
+    assert g["precision_weighted_wilson95_lower"] <= g["precision_weighted"]
     assert g["precision"] == pytest.approx(2 / 3)  # the raw numbers are unchanged
     one_class = gate.gate_stats(df[df["true"] == "correct"], pi)
     assert one_class["n_pass"] == 2 and np.isnan(one_class["precision_weighted"])
@@ -168,6 +171,22 @@ def test_load_predictions_refuses_a_label_scored_twice(tmp_path):
         gate.load_predictions(str(out))
 
 
+def test_report_with_an_unscored_row_cannot_pass(tmp_path):
+    split = write_pilot_split(tmp_path)
+    out = tmp_path / "gate"
+    gate.main(["folds", "--split", split, "--out", str(out)])
+    write_fold_predictions(str(out))
+    p2 = pd.read_csv(gate.predictions_path(str(out), 2))
+    p2 = p2.drop(p2[p2["split"] == "test"].index[:1])  # one pooled row never scored
+    p2.to_csv(gate.predictions_path(str(out), 2), index=False)
+    gate.main(["report", "--gate", str(out), "--priors", str(tmp_path / "whole" / "deployment_priors.json"),
+               "--out-json", str(out / "r.json"), "--out-md", str(out / "r.md"), "--n-boot", "20"])
+    rep = json.loads((out / "r.json").read_text())
+    assert rep["missing"] == [] and rep["unscored_pooled_rows"] == 1
+    assert rep["pooled"]["bar"]["complete"] is False and rep["pooled"]["bar"]["passes"] is False
+    assert "unscored" in (out / "r.md").read_text()
+
+
 def test_report_with_a_missing_fold_cannot_pass(tmp_path):
     split = write_pilot_split(tmp_path)
     out = tmp_path / "gate"
@@ -202,7 +221,8 @@ def test_report_end_to_end_and_splice(tmp_path):
     g = pooled["agree_gate"]
     assert pooled["bar"]["gate_ok"] == (g["n_pass"] >= 100 and g["precision_weighted_wilson95_lower"] >= 0.92)
     assert pooled["bar"]["complete"] is True and rep["unscored_pooled_rows"] == 0
-    assert np.isfinite(g["precision_weighted"]) and g["kish_n"] <= g["n_pass"] + 1e-6
+    assert np.isfinite(g["precision_weighted"]) and g["precision_weighted_wilson95_lower"] <= g["precision_weighted"]
+    assert gate.reweight_precision(g["precision"], g["weight_ratio"]) == pytest.approx(g["precision_weighted"])
     assert pooled["within_city_n_cities"] == 2 and pooled["bar"]["auc_ok"] == (pooled["within_city_auc"] >= 0.85)
     assert pooled["bar"]["passes"] == (pooled["bar"]["auc_ok"] and pooled["bar"]["gate_ok"])
     held = rep["heldout"]
