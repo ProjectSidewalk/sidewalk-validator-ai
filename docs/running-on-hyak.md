@@ -107,7 +107,8 @@ at most one kept label in and one out.
 end if more than 20% of attempted labels ended `no_pano`/`bad_pano` (`--max-missing-frac`). A panorama not in the
 store is `no_pano`; a file that cannot be decoded, or is not 2:1, is `bad_pano`, never a stretched crop. A Panoramax
 label whose pose is past 45° of tilt is `panoramax_over_tilt`, and a pitch-only Panoramax click past a pole is
-`panoramax_pitch_offset_past_pole`; both are skips, not errors, and count toward neither stop.
+`panoramax_pitch_offset_past_pole`; both are skips, decided before the panorama is read, and count toward none of
+these three stops.
 
 **The split.** The job then runs `split_data.py`, which writes `<label_type>/split.csv` (the `ok` manifest rows
 plus `hard`, joined by `label_uid` from `--hard-examples`, and `split` ∈ `train`/`val`/`test`/`test_heldout`),

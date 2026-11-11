@@ -148,8 +148,10 @@ with reason `panoramax_db_over_tilt`, and the label is skipped with status `pano
 Mapillary pose it is not rendered uncorrected, because the viewer did level (or offset) the click by that pose. A
 pitch-only click within `pers:pitch` of a pole would land outside [0, 1] once the offset is taken out (`label_view`
 raised, and the row counted as `error:`); it is skipped with status `panoramax_pitch_offset_past_pole` instead of
-being clipped. Neither status is `ok`, `error:*` or a missing-pano status, so they print no traceback, do not count
-toward the consecutive-error stop or `--max-missing-frac`, and a resume retries (and skips) them again. Bayonne tops out
+being clipped. Both are decided before the panorama is read, so a skip costs no decode and wins over a missing
+panorama. Neither status is `ok`, `error:*` or a missing-pano status, so they print no traceback, do not count toward
+the consecutive-error or consecutive-missing stops or `--max-missing-frac`, and a resume retries (and skips) them
+again. `retype.py crops` applies the same skips. Bayonne tops out
 at |pitch| 20.2° and |roll| 8.5° (about 21.9° combined) and has no pitch-only pose, so neither guard changes a row
 today; `--job-window-crops`, which uses neither the pose nor the offset, is never skipped by them.
 

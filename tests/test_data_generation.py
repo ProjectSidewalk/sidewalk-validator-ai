@@ -569,6 +569,9 @@ def _pose_row(src, pitch=None, roll=None, author="human", pano="p1"):
     (_pose_row("mapillary", 2.0, -6.0), {"p1": [0.0, 0.0, 0.0]},
      (-2.0, -6.0, "mapillary_db", 0.0, "mapillary_click_rig_frame", 0.0)),                      # DB wins
     (_pose_row("mapillary", 40.0, 40.0), None, (None, None, "none", None, "mapillary_db_over_tilt", 0.0)),
+    # Wrapped for the cap only, as Panoramax is: 315 is -45, exactly at the cap, so kept (it was refused by float
+    # noise before); the recorded pose is the stored value.
+    (_pose_row("mapillary", 315.0, 0.0), None, (-315.0, 0.0, "mapillary_db", 0.0, "mapillary_click_rig_frame", 0.0)),
     (_pose_row("mapillary", 2.0, None), None, (None, None, "none", None, "mapillary_no_db_pose_api_off", 0.0)),
     (_pose_row("mapillary", None, -6.0), {"p1": ROTATION},                                     # one angle: not a pose
      (pytest.approx(-2.2318, abs=1e-4), pytest.approx(-6.355, abs=1e-4), "mapillary_api", 0.0,
@@ -618,10 +621,12 @@ def test_rig_y_norm_refuses_a_click_past_a_pole():
     assert crop_pose.rig_y_norm(0.99, off(5.0)) is None
     assert crop_pose.rig_y_norm(0.01, off(-5.0)) is None
     assert crop_pose.rig_y_norm(1.0, off(0.0)) == 1.0 and crop_pose.rig_y_norm(0.0, off(0.0)) == 0.0
+    # GSV (no offset): every row of the panorama, both edges included, comes back as exactly y / h (never None).
     gsv = crop_pose.Pose(1.5, None, "gsv_db", 0.95, "db")
-    assert crop_pose.rig_y_norm(2600 / 4096, gsv) == 2600 / 4096 + 0.0 / 180.0  # GSV: the same float as before #72
+    assert all(crop_pose.rig_y_norm(y / 4096, gsv) == y / 4096 for y in range(4097))
     assert crop_pose.skip_status(off(5.0), None) == crop_pose.PAST_POLE_STATUS
     assert crop_pose.skip_status(gsv, 0.5) is None
+    assert crop_pose.skip_status(gsv, None) is None  # only a Panoramax pitch-only pose can be past a pole
 
 
 def test_check_resume_rejects_changed_source_beta_and_mapillary_api(tmp_path):
