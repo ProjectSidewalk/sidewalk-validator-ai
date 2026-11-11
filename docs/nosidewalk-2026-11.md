@@ -277,6 +277,20 @@ The largest arm difference anywhere is on held-out labels tagged "street has no 
 average over seeds, 36 labels, 13 incorrect): the tag that asserts the absence along the whole stretch is the one
 the wider view helps most. It is a small slice; read it as consistent with the crop recommendation, not as proof.
 
+### The 5-fold out-of-fold gate (step (a), run 2026-11-11)
+
+The bar's own test. `analysis/nosidewalk_gate.py` pools the whole-view crops of train, val and test (758 rows on
+443 faces) into five face-grouped folds; fold k's model trains on three folds, selects its checkpoint on one and
+scores the fifth, so every pooled row is scored once by a model that never saw its face. The map that serves a fold
+is fitted on the other four folds' out-of-fold predictions (leave-one-fold-out calibration under the face-size prior,
+Disagree held back, thin-block guard on), so each row's served accuracy is out of sample for the model and for the
+map. Job files `nosidewalk_gate.slurm` / `nosidewalk_gate_submit.sh`; the two held-out cities are scored by every fold
+model under a map fitted on all pooled rows.
+
+<!-- gate-results:start -->
+(not yet run)
+<!-- gate-results:end -->
+
 ### Cost and jobs
 
 klone, `gpu-l40s` (one L40S) for data and training, `ckpt-all` CPU for staging and the report. Staging 829
