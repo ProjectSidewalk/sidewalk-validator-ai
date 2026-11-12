@@ -47,7 +47,7 @@ def make_root(tmp_path, label_type=T, rows=ROWS, max_steps=2, epochs=2, pano_sou
                         "label_type": label_type, "label_class": cls, "author": "human", "human_agree": 3,
                         "human_disagree": 0, "image_capture_date": date,
                         "pano_source": (pano_sources or {}).get(i, "gsv"),
-                        "pano_path": f"/secret/store/{city}/pa/pano{i}.jpg", "depth_m": 5.0, "clipped": 0,
+                        "pano_path": f"/secret/store/{city}/pa/pano{i}.jpg", "depth_m": 10.0, "crop_half_px": 610, "clipped": 0,
                         "crop_path": crop, "status": "ok", "split": split})
     manifest = pd.DataFrame(records).drop(columns="split")
     failed = manifest.iloc[[0]].assign(label_uid="teaneck:99", label_id=99, status="no_pano",
@@ -1640,3 +1640,238 @@ def test_cards_refuse_job_window_crop_runs():
     assert hf_cards.job_window_crops({"settings": {"job_window_crops": True}})
     assert not hf_cards.job_window_crops({"job_window_crops": False}, None, {"settings": None})
     assert doctest.testmod(hf_cards).failed == 0
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Issue #21: every published crop is depth-sized by the served rule (the row backstop behind the JSON records)
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _rewrite_csv(root, name, edit, label_type=T):
+    """Apply ``edit`` (DataFrame -> DataFrame) to ``<root>/<label_type>/<name>``; after a ``split.csv`` edit, refresh
+    ``dinov2/run_key.json`` so only the depth checks can object."""
+    base = os.path.join(root, label_type)
+    path = os.path.join(base, name)
+    edit(pd.read_csv(path, dtype={"pano_id": str})).to_csv(path, index=False)
+    if name == "split.csv":
+        key_path = os.path.join(base, "dinov2", "run_key.json")
+        key = json.loads(_read(key_path))
+        key["split_sha256"] = hashlib.sha256(open(path, "rb").read()).hexdigest()
+        with open(key_path, "w") as f:
+            json.dump(key, f)
+
+
+def _set(column, value, rows=None):
+    """An ``edit`` for :func:`_rewrite_csv` setting ``column`` to ``value`` on ``rows`` (index labels; all if None)."""
+    def edit(df):
+        df[column] = df[column].astype(object)
+        df.loc[df.index if rows is None else rows, column] = value
+        return df
+    return edit
+
+
+def _drop(column):
+    return lambda df: df.drop(columns=column)
+
+
+def _both_blank(root):
+    for name in ("split.csv", "manifest.csv"):
+        _rewrite_csv(root, name, _set("depth_m", ""))
+
+
+def test_the_depth_sized_fixture_stages_and_pushes(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)                  # depth_m 10.0, crop_half_px 610 = int(6100 / 10.0) on every row
+    pub.check_depth_sized(root, T)
+    model_dir, dataset_dir = pub.stage(root, T)
+    assert pub.verify_staged(root, T) == (model_dir, dataset_dir)
+    assert pub.main(["--label_type", T, "--out", root, "--push-staged"]) == 0     # dry run
+
+
+def test_a_dataset_with_no_depth_and_no_records_is_refused(tmp_path, capsys):
+    """The gap of issue #21: a fixed-crop or whole-view dataset staged without generation_run.json, with a model
+    trained before the fixed_crop_half_px key existed, passed the JSON check."""
+    root, *_ = make_root(tmp_path)
+    _both_blank(root)
+    os.remove(os.path.join(root, T, "generation_run.json"))
+    assert "fixed_crop_half_px" not in _read(os.path.join(root, T, "dinov2", "training_run.json"))
+    with pytest.raises(pub.PublishError, match="no row has a depth_m"):
+        pub.stage(root, T)
+    assert not os.path.exists(os.path.join(root, T, "publish"))  # refused before anything is staged
+    assert pub.main(["--label_type", T, "--out", root]) == pub.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "no row has a depth_m" in err and "split.csv" in err
+
+
+def test_no_depth_column_is_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _rewrite_csv(root, "split.csv", _drop("depth_m"))
+    with pytest.raises(pub.PublishError, match="split.csv has no depth_m column"):
+        pub.check_depth_sized(root, T)
+
+
+def test_one_blank_depth_among_many_is_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _rewrite_csv(root, "split.csv", _set("depth_m", "", rows=[3]))
+    with pytest.raises(pub.PublishError, match=f"1 of {len(ROWS)} rows have no depth_m"):
+        pub.stage(root, T)
+
+
+@pytest.mark.parametrize("value", [0, -2.5, "nan", "inf", "-inf", "deep"])
+def test_a_depth_that_is_not_a_positive_number_is_refused(tmp_path, value):
+    root, *_ = make_root(tmp_path)
+    _rewrite_csv(root, "split.csv", _set("depth_m", value, rows=[0]))
+    with pytest.raises(pub.PublishError, match=f"1 of {len(ROWS)} rows have no depth_m"):
+        pub.check_depth_sized(root, T)
+
+
+def test_crop_half_px_within_one_pixel_is_accepted_and_beyond_it_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    for name in ("split.csv", "manifest.csv"):
+        _rewrite_csv(root, name, _set("crop_half_px", 611, rows=[0]))
+        _rewrite_csv(root, name, _set("crop_half_px", 609, rows=[1]))
+    pub.check_depth_sized(root, T)                                       # 4-dp depth: one pixel either way is fine
+    pub.stage(root, T)
+    _rewrite_csv(root, "split.csv", _set("crop_half_px", 612, rows=[0]))
+    with pytest.raises(pub.PublishError, match=f"1 of {len(ROWS)} rows were not cut at int\\(6100 / depth_m\\)"):
+        pub.check_depth_sized(root, T)
+
+
+def test_another_constant_or_a_missing_size_is_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _rewrite_csv(root, "split.csv", _set("crop_half_px", 400))           # int(4000 / 10.0): the 4000 sweep arm
+    with pytest.raises(pub.PublishError, match=f"{len(ROWS)} of {len(ROWS)} rows were not cut"):
+        pub.check_depth_sized(root, T)
+    _rewrite_csv(root, "split.csv", _set("crop_half_px", "", rows=[2]))
+    _rewrite_csv(root, "split.csv", _set("crop_half_px", 610, rows=[i for i in range(len(ROWS)) if i != 2]))
+    with pytest.raises(pub.PublishError, match=f"1 of {len(ROWS)} rows were not cut"):   # a blank size is off
+        pub.check_depth_sized(root, T)
+    _rewrite_csv(root, "split.csv", _drop("crop_half_px"))
+    with pytest.raises(pub.PublishError, match="split.csv has no crop_half_px column"):
+        pub.check_depth_sized(root, T)
+
+
+def test_manifest_rows_count_only_when_ok(tmp_path):
+    root, *_ = make_root(tmp_path)
+    failed = len(ROWS)                                                    # make_root's one no_pano row
+    _rewrite_csv(root, "manifest.csv", _set("depth_m", "", rows=[failed]))
+    _rewrite_csv(root, "manifest.csv", _set("crop_half_px", "", rows=[failed]))
+    assert pd.read_csv(os.path.join(root, T, "manifest.csv"))["status"].iloc[failed] == "no_pano"
+    pub.check_depth_sized(root, T)                                        # no crop was cut for it: not checked
+    _rewrite_csv(root, "manifest.csv", _set("depth_m", "", rows=[0]))     # an ok row, while split.csv is clean
+    with pytest.raises(pub.PublishError, match=f"manifest.csv: 1 of {len(ROWS)} rows have no depth_m"):
+        pub.check_depth_sized(root, T)
+
+
+def test_depth_rows_edge_cases():
+    pub.check_depth_rows(pd.DataFrame({"depth_m": [], "crop_half_px": []}), "empty.csv")      # nothing to refuse
+    pub.check_depth_rows(pd.DataFrame({"depth_m": ["2.4400", "80"], "crop_half_px": [2500, 76]}), "x.csv")
+    manifest = pd.DataFrame({"status": ["ok", "no_depth"], "depth_m": [10.0, None], "crop_half_px": [610, None]})
+    assert len(pub._ok_rows(manifest)) == 1
+    pub.check_depth_rows(pub._ok_rows(manifest), "manifest.csv")
+
+
+def test_model_only_staging_is_refused_without_depth(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    _remove_crops(root)
+    _both_blank(root)
+    with pytest.raises(pub.PublishError, match="no row has a depth_m"):
+        pub.stage(root, T, what="model")
+    assert pub.main(["--label_type", T, "--out", root, "--what", "model"]) == pub.EXIT_ERROR
+    assert "no row has a depth_m" in capsys.readouterr().err
+
+
+def _set_record(root, place, **values):
+    """Write ``values`` into generation_run.json at top level, under ``settings``, or both."""
+    path = os.path.join(root, T, "generation_run.json")
+    run = json.loads(_read(path))
+    for d in ({"top": [run], "settings": [run["settings"]], "both": [run, run["settings"]]}[place]):
+        d.update(values)
+    with open(path, "w") as f:
+        json.dump(run, f)
+
+
+@pytest.mark.parametrize("place", ["top", "settings", "both"])
+def test_a_recorded_non_served_encoder_is_refused_though_rows_agree(tmp_path, place):
+    """A ViT-L-sized dataset is self-consistent row by row (its depth_m is ViT-L's), so only the record shows it."""
+    root, *_ = make_root(tmp_path)
+    _set_record(root, place, depth_encoder="vitl")
+    with pytest.raises(pub.PublishError, match="records depth encoder vitl/vkitti, but serving sizes crops with "
+                                               "vitb/vkitti"):
+        pub.stage(root, T)
+    assert not os.path.exists(os.path.join(root, T, "publish"))
+
+
+def test_a_recorded_non_served_depth_dataset_is_refused(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _set_record(root, "settings", depth_dataset="hypersim")
+    with pytest.raises(pub.PublishError, match="depth encoder vitb/hypersim"):
+        pub.check_depth_sized(root, T)
+
+
+def test_a_record_without_the_encoder_or_no_record_leaves_it_to_the_rows(tmp_path):
+    root, *_ = make_root(tmp_path)
+    path = os.path.join(root, T, "generation_run.json")
+    run = json.loads(_read(path))
+    for d in (run, run["settings"]):
+        d.pop("depth_encoder", None)
+        d.pop("depth_dataset", None)
+    with open(path, "w") as f:
+        json.dump(run, f)
+    pub.check_depth_sized(root, T)
+    _set_record(root, "both", depth_encoder=None, depth_dataset=None)
+    pub.check_depth_sized(root, T)
+    os.remove(path)
+    pub.check_depth_sized(root, T)
+    _rewrite_csv(root, "split.csv", _set("depth_m", "", rows=[0]))
+    with pytest.raises(pub.PublishError, match="1 of"):                  # the rows still decide
+        pub.check_depth_sized(root, T)
+
+
+@pytest.mark.parametrize("name", ["split.csv", "manifest.csv"])
+def test_push_staged_checks_the_staged_rows(tmp_path, name):
+    root, *_ = make_root(tmp_path)
+    _, dataset_dir = pub.stage(root, T)
+    staged_csv = os.path.join(dataset_dir, name)
+    pd.read_csv(staged_csv).assign(depth_m="").to_csv(staged_csv, index=False)
+    with pytest.raises(pub.PublishError, match=re.escape(os.path.join("publish", "dataset", name)) +
+                       ": no row has a depth_m"):
+        pub.verify_staged(root, T)
+
+
+def test_push_staged_rechecks_the_root_rows(tmp_path):
+    root, *_ = make_root(tmp_path)
+    pub.stage(root, T)
+    _rewrite_csv(root, "split.csv", _set("depth_m", "", rows=[0]))
+    with pytest.raises(pub.PublishError, match=f"1 of {len(ROWS)} rows have no depth_m"):
+        pub.verify_staged(root, T)
+
+
+def test_depth_refusals_carry_counts_only_and_say_what_fixes_them(tmp_path):
+    """No label uid, label id or city in any message (the check runs before the public list is known), and every
+    row refusal says a serving change, not an edited record, is what publishes a non-depth-sized model."""
+    root, *_ = make_root(tmp_path)
+
+    def private(df):
+        df["city"] = "zurich"
+        df["label_id"] = 4242 + np.arange(len(df))
+        df["label_uid"] = "zurich:" + df["label_id"].astype(str)
+        return df
+
+    for name in ("split.csv", "manifest.csv"):
+        _rewrite_csv(root, name, private)
+    cases = [("depth_m", "", [0]), ("depth_m", "", None), ("depth_m", -1, [1]), ("crop_half_px", 999, [2])]
+    messages = []
+    for column, value, rows in cases:
+        case_root = tmp_path / f"case{len(messages)}"
+        shutil.copytree(root, case_root)
+        _rewrite_csv(str(case_root), "split.csv", _set(column, value, rows))
+        with pytest.raises(pub.PublishError) as e:
+            pub.check_depth_sized(str(case_root), T)
+        messages.append(str(e.value))
+    _rewrite_csv(root, "split.csv", _drop("depth_m"))
+    with pytest.raises(pub.PublishError) as e:
+        pub.check_depth_sized(root, T)
+    messages.append(str(e.value))
+    for msg in messages:
+        assert "zurich" not in msg.lower() and "4242" not in msg and "4243" not in msg
+        assert "serving change" in msg and "not an edited record" in msg
+    assert re.search(r"\d+ of \d+ rows", messages[0])

@@ -29,7 +29,11 @@ names the same label type; ``split.csv`` still has the sha256 recorded in ``dino
 ``predictions.csv`` covers exactly the split's evaluation rows; the dataset's content hash differs from every other
 staged label type's; neither ``generation_run.json`` nor ``dinov2/training_run.json`` records ``fixed_crop_half_px``
 (the fixed-size ablation of issue #21, which serving does not reproduce: it sizes every crop by depth) or
-``job_window_crops`` (the backend crop-job windows of issue #53, likewise not what serving renders). A train-size
+``job_window_crops`` (the backend crop-job windows of issue #53, likewise not what serving renders);
+``generation_run.json`` records no depth encoder other than the served ``vitb``/``vkitti``; and, whatever the records
+say, every row of ``split.csv`` and every ``ok`` row of ``manifest.csv`` has a positive ``depth_m`` and a
+``crop_half_px`` within 1 px of ``int(6100 / depth_m)`` (issue #21; checked again on the staged copies before
+``--push-staged``). A whole-view or fixed-size model needs a serving change before it can be published. A train-size
 cross-check against ``trainer_state.json`` and out-of-order file times only warn.
 
 **Card overrides.** Facts the pipeline does not record (per-type failure modes, the split seed, the dataset
@@ -98,10 +102,11 @@ import re
 import shutil
 import sys
 
+import numpy as np
 import pandas as pd
 
 import hf_cards
-from data_generation import PANO_ID_DTYPE
+from data_generation import CROP_DEPTH_CONSTANT, DEPTH_DATASET, PANO_ID_DTYPE
 
 LABEL_TYPES = ("CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk")
 CLASSES = ("correct", "incorrect")
@@ -144,6 +149,14 @@ MIN_TERM_LEN = 4
 """Non-public display names shorter than this are not gated as substrings (too many false hits); ids always are."""
 TEXT_SUFFIXES = (".md", ".json", ".jsonld", ".csv", ".txt", ".yaml", ".yml", ".html")
 """Staged files the survivor gate reads; everything else staged is weights or images."""
+DEPTH_HALF_TOLERANCE_PX = 1
+"""How far a row's ``crop_half_px`` may sit from ``int(CROP_DEPTH_CONSTANT / depth_m)``: ``depth_m`` is stored to
+4 dp, so the recomputed size can land one pixel off the one cut (17 of 64,465 round-3 rows; none by more than 1)."""
+SERVED_DEPTH_ENCODER = "vitb"
+"""The Depth Anything V2 encoder sidewalk-ai-api sizes crops with (its ``DepthAnythingPredictor`` default). Change it
+together with serving; a dataset made under the old encoder is then refused, as intended."""
+SERVED_DEPTH_DATASET = DEPTH_DATASET
+"""The metric checkpoint's training set (``vkitti``), likewise served."""
 
 
 def city_lists(cities_api=CITIES_API, public_cities_file=None):
@@ -644,7 +657,10 @@ def check_depth_sized(root, label_type):
     """Raise ``PublishError`` if ``<root>/<label_type>``'s ``generation_run.json`` or ``dinov2/training_run.json``
     records ``fixed_crop_half_px`` or ``job_window_crops``: those crops come from the fixed-size ablation (issue #21)
     or the crop-job-window experiment (issue #53), serving renders a depth-sized view of every label, and the cards
-    say so. Checked before anything is staged, and again before ``--push-staged``."""
+    say so. Then, in this order, if ``generation_run.json`` records a depth model other than the served one
+    (:func:`check_depth_encoder`), or if ``split.csv`` or the ``ok`` rows of ``manifest.csv`` (each when present)
+    hold a row not cut at ``int(CROP_DEPTH_CONSTANT / depth_m)`` (:func:`check_depth_rows`): the records are optional,
+    the rows are not. Checked before anything is staged, and again before ``--push-staged``."""
     base = os.path.join(root, label_type)
     runs = [_read_json(os.path.join(base, "generation_run.json")),
             _read_json(os.path.join(base, "dinov2", "training_run.json"))]
@@ -653,6 +669,95 @@ def check_depth_sized(root, label_type):
     except ValueError as e:
         raise PublishError(f"{base}: {e}. Retrain on depth-sized crops (data_generation.py without "
                            f"--fixed-crop-half-px or --job-window-crops) to publish") from e
+    if runs[0] is not None:
+        check_depth_encoder(runs[0], os.path.join(base, "generation_run.json"))
+    for name in ("split.csv", "manifest.csv"):
+        path = os.path.join(base, name)
+        if os.path.exists(path):          # a missing file is reported by read_dataset_context with its own message
+            check_depth_rows(_ok_rows(pd.read_csv(path, dtype=PANO_ID_DTYPE, low_memory=False)), path)
+
+
+NOT_SERVED = (f"Serving sizes every crop by int({CROP_DEPTH_CONSTANT} / depth_m) with the {SERVED_DEPTH_ENCODER}/"
+              f"{SERVED_DEPTH_DATASET} depth model; a fixed-size, whole-view or job-window model needs a serving "
+              f"change in sidewalk-ai-api before it can be published, not an edited record")
+"""Tail of every depth-row refusal (issue #21): blanking a record or a column is not the fix."""
+
+
+def _ok_rows(df):
+    """The rows of a manifest whose crop was cut (``status == "ok"``); a frame without ``status`` (``split.csv``) is
+    returned whole."""
+    if "status" not in df.columns:
+        return df
+    return df[df["status"].astype(str) == "ok"]
+
+
+def check_depth_encoder(generation_run, what):
+    """Raise ``PublishError`` if ``generation_run`` (a parsed ``generation_run.json``) records, at top level or under
+    ``settings``, a ``depth_encoder`` other than :data:`SERVED_DEPTH_ENCODER` or a ``depth_dataset`` other than
+    :data:`SERVED_DEPTH_DATASET`. A dataset sized by another depth model is self-consistent row by row, so only the
+    record can show it. An absent record, absent keys or null values pass: :func:`check_depth_rows` is the backstop.
+
+    Example::
+
+        check_depth_encoder({"settings": {"depth_encoder": "vitb", "depth_dataset": "vkitti"}}, "gen.json")  # passes
+        check_depth_encoder({"depth_encoder": "vitl"}, "gen.json")                                  # PublishError
+    """
+    found = {}
+    for d in (generation_run or {}, (generation_run or {}).get("settings") or {}):
+        for key, served in (("depth_encoder", SERVED_DEPTH_ENCODER), ("depth_dataset", SERVED_DEPTH_DATASET)):
+            value = d.get(key)
+            if value is not None and str(value) != served:
+                found[key] = str(value)
+    if found:
+        enc = found.get("depth_encoder", SERVED_DEPTH_ENCODER)
+        ds = found.get("depth_dataset", SERVED_DEPTH_DATASET)
+        raise PublishError(f"{what} records depth encoder {enc}/{ds}, but serving sizes crops with "
+                           f"{SERVED_DEPTH_ENCODER}/{SERVED_DEPTH_DATASET}; a dataset sized by another depth model is "
+                           f"not published")
+
+
+def check_depth_rows(df, what):
+    """Raise ``PublishError`` unless every row of ``df`` shows a crop sized by depth at the served constant: a
+    ``depth_m`` that is a finite number above 0, and a ``crop_half_px`` within :data:`DEPTH_HALF_TOLERANCE_PX` of
+    ``int(CROP_DEPTH_CONSTANT / depth_m)``. ``df`` is a ``split.csv``, or the ``ok`` rows of a ``manifest.csv``
+    (:func:`_ok_rows`); an empty frame passes. This is the backstop behind the JSON records of
+    :func:`check_depth_sized`: a fixed-size or whole-view dataset staged without its ``generation_run.json`` still has
+    no depth (or the wrong ``crop_half_px``) on its rows. Messages carry counts only, never a label or a city.
+
+    TODO(#14): this checks the crops listed in ``split.csv``, not what a context-input model actually consumed; a
+    model trained on wider views of depth-sized rows would pass.
+
+    Example::
+
+        check_depth_rows(pd.DataFrame({"depth_m": [10.0], "crop_half_px": [610]}), "split.csv")   # passes
+        check_depth_rows(pd.DataFrame({"depth_m": [None], "crop_half_px": [1024]}), "split.csv")  # PublishError
+    """
+    if "depth_m" not in df.columns:
+        raise PublishError(f"{what} has no depth_m column, so nothing shows its crops were sized by depth; refusing "
+                           f"to publish it. {NOT_SERVED}")
+    n = len(df)
+    if n == 0:
+        return
+    depth = pd.to_numeric(df["depth_m"], errors="coerce").astype(float)
+    good = np.isfinite(depth) & (depth > 0)
+    n_bad = int((~good).sum())
+    if n_bad == n:
+        raise PublishError(f"{what}: no row has a depth_m (0 of {n} rows have a finite depth above 0), so the crops "
+                           f"were not sized by depth; refusing to publish them. {NOT_SERVED}")
+    if n_bad:
+        raise PublishError(f"{what}: {n_bad} of {n} rows have no depth_m (blank, non-numeric, non-finite or <= 0), so "
+                           f"those crops were not sized by depth; refusing to publish them. {NOT_SERVED}")
+    if "crop_half_px" not in df.columns:
+        raise PublishError(f"{what} has no crop_half_px column, so nothing shows its crops were cut at "
+                           f"int({CROP_DEPTH_CONSTANT} / depth_m); refusing to publish it. {NOT_SERVED}")
+    half = pd.to_numeric(df["crop_half_px"], errors="coerce").astype(float)
+    expected = np.floor(CROP_DEPTH_CONSTANT / depth)
+    off = ~((half - expected).abs() <= DEPTH_HALF_TOLERANCE_PX)       # a blank or non-numeric crop_half_px is off
+    n_off = int(off.sum())
+    if n_off:
+        raise PublishError(f"{what}: {n_off} of {n} rows were not cut at int({CROP_DEPTH_CONSTANT} / depth_m) (within "
+                           f"{DEPTH_HALF_TOLERANCE_PX} px); the crops come from another constant or sizing rule, which "
+                           f"serving does not reproduce. {NOT_SERVED}")
 
 
 def read_dataset_context(root, label_type):
@@ -1180,7 +1285,8 @@ def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None, what="
     Re-runs ``assert_publishable`` and ``check_bindings``; refuses if any staged file other than the two cards
     differs from ``staging.json``, if the crops differ from ``SHA256SUMS`` or its hash from the recorded content
     hash, if the dataset card does not state that hash, or if the best checkpoint's weights changed since staging
-    (a retrain), or if the run is the fixed-size ablation (``check_depth_sized``). Returns
+    (a retrain), if the run is the fixed-size ablation or its rows are not depth-sized (``check_depth_sized``), or if
+    the staged ``split.csv`` or ``manifest.csv`` has a row that is not (``check_depth_rows``). Returns
     ``(model_dir, dataset_dir)``; ``dataset_dir`` is None for a model-only staging, which can only be pushed with
     ``--what model`` (a full staging can be pushed with any ``--what``).
     """
@@ -1207,6 +1313,11 @@ def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None, what="
             raise PublishError(f"{pub} holds a model-only staging; pass --what model, or restage with the crops "
                                f"present to publish the dataset")
         dataset_dir = None
+    if dataset_dir is not None:              # the staged copies, not only the root they were staged from (issue #21)
+        for name in ("split.csv", "manifest.csv"):
+            path = os.path.join(dataset_dir, name)
+            if os.path.exists(path):
+                check_depth_rows(_ok_rows(pd.read_csv(path, dtype=PANO_ID_DTYPE, low_memory=False)), path)
     terms = set(lists["non_public_terms"])
     for folder in (model_dir, dataset_dir):
         if folder is not None:

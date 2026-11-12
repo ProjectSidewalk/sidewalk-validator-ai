@@ -112,3 +112,24 @@ Two practical points for a dataset upload. Make it a private test round with the
 (`--push --yes --create-repo --repo-prefix <user>/test-validator`), since a commit of ~5,000 additions and
 deletions is not exercised offline. Then push CurbRamp before Crosswalk: while the CurbRamp repo still holds the
 Crosswalk crops, an unchanged Crosswalk set is refused at 100% overlap against it, as it should be.
+
+## Depth-sized crops only
+
+Serving (sidewalk-ai-api) sizes every crop as `int(6100 / depth_m)` around the label, with the Depth Anything V2
+ViT-B (vKITTI) metric depth. Staging, and `--push-staged` again, refuses a run that was not cut that way
+([#21](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/21)):
+
+- `generation_run.json` or `dinov2/training_run.json` records `fixed_crop_half_px` (the fixed-size ablation of
+  [#51](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/51)) or `job_window_crops` (the crop-job
+  windows of [#53](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/53));
+- `generation_run.json` records a `depth_encoder` other than `vitb` or a `depth_dataset` other than `vkitti`;
+- whatever the records say, any row of `split.csv`, or any `ok` row of `manifest.csv`, has no `depth_m` (blank,
+  non-numeric, non-finite or ≤ 0), or a `crop_half_px` more than 1 px from `int(6100 / depth_m)`; a file without
+  either column is refused too. The staged copies in `publish/dataset/` are checked again before upload.
+
+The records are optional; the rows are not, so a fixed-size or whole-view dataset staged without its
+`generation_run.json` is still refused. The 1 px tolerance covers `depth_m` stored to 4 decimals (17 of 64,465
+round-3 rows are off by one, none by more). Refusals give row counts, never a label or a city.
+
+A whole-view or fixed-size model (the NoSidewalk pilot's better arm, for example) is refused by design.
+Publishing one needs a serving change in sidewalk-ai-api first; blanking a record is not a fix.
