@@ -323,3 +323,16 @@ def test_score_frame_never_imports_the_sdk(tmp_path):
     vg.main(_args(root, tmp_path, limit=2), post=_Stub())
     assert ("google.genai" in sys.modules) == before
     assert np.isfinite(pd.read_csv(tmp_path / "scores" / "gemini-3.8-flash" / "CurbRamp.csv").p_incorrect).all()
+
+
+def test_a_meta_with_no_scored_rows_does_not_bind_the_leg(tmp_path):
+    """A run that fails before scoring anything leaves a meta and no CSV; the retry with other settings must go
+    through (seen on the first pilot: ``minimal`` thinking was refused by the API). With a scored row it binds."""
+    path, meta_path = str(tmp_path / "CurbRamp.csv"), str(tmp_path / "CurbRamp.meta.json")
+    vg.vb._write_meta(meta_path, {"backend": vg.BACKEND, "binding": {"thinking_level": "minimal"}})
+    vg.check_owned(path, meta_path, {"thinking_level": "low"})          # no CSV: allowed
+    row = {c: "" for c in vg.SCORE_COLUMNS}
+    row["label_uid"] = "x:1"
+    vg.append_rows(path, [row])
+    with pytest.raises(SystemExit, match="other settings"):
+        vg.check_owned(path, meta_path, {"thinking_level": "low"})

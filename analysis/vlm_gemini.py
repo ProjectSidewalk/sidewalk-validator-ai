@@ -459,7 +459,9 @@ def check_owned(path, meta_path, binding):
         if meta.get("backend") != BACKEND:
             raise SystemExit(f"{meta_path} was not written by vlm_gemini; use another --out-dir or --name")
         old = meta.get("binding")
-        if old is not None and old != binding:
+        # A meta with no scored row beside it binds nothing: a run that failed on its first request (a setting the
+        # API refused, say) must not block the retry with corrected settings.
+        if old is not None and old != binding and vv.done_uids(path):
             diff = sorted(k for k in set(old) | set(binding) if old.get(k) != binding.get(k))
             raise SystemExit(f"{meta_path}: this leg was scored with other settings ({', '.join(diff)}); "
                              f"use another --out-dir or --name")
