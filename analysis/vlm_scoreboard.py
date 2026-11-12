@@ -12,8 +12,8 @@ private deployments, so they live in a staging directory outside the checkout (`
 ``~/Data/sidewalk-validator-ai-vlm-scoreboard-2026-10``)::
 
     <scores-dir>/
-      splits/<Type>.csv                # label_uid, city, label_type, label_class, split, severity, tags
-                                       #   (test + test_heldout rows)
+      splits/<Type>.csv                # label_uid, city, label_type, label_class, split, pano_id, severity, tags
+                                       #   (test + test_heldout rows; the slices need pano_id, severity, tags)
       train/<Type>.csv                 # label_type, label_class, severity, tags of the round-3 train rows (no ids)
       scores/<leg>/<Type>.csv          # label_uid, p_incorrect, ... (vlm_baseline score CSV, or round3/production)
       scores/<leg>/<Type>.meta.json    # optional: repo, revision, gpu, batch_size, ...
