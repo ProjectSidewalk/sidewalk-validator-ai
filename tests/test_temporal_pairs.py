@@ -826,3 +826,135 @@ def test_user_keys_are_salted_and_no_user_id_reaches_the_run_files(tmp_path):
         text = (gzip.decompress(raw) if name.endswith(".gz") else raw).decode()
         assert uid not in text, name
 
+
+def test_angular_sep_shrinks_longitude_by_the_cosine_of_latitude():
+    # 10 degrees of longitude at 60 degrees below the horizon is about 5 degrees on the sphere
+    want = 2 * math.degrees(math.asin(math.cos(math.radians(60.0)) * math.sin(math.radians(5.0))))
+    assert float(tp.angular_sep_deg(0.0, -60.0, 10.0, -60.0)) == pytest.approx(want, abs=1e-9)
+    assert 4.9 < want < 5.0
+
+
+def test_geometry_qc_boundaries():
+    good = {"has_camera": True, "photosphere": False, "dep_a": 20.0, "baseline_m": 2.0, "d_b": 6.0, "r_a": 6.4,
+            "dep_b": 21.0, "parallax_deg": 10.0}
+    for change, want in [({"dep_a": 5.0}, "ok"), ({"dep_a": 4.99}, "near_horizon"),
+                         ({"baseline_m": 5.0}, "ok"), ({"baseline_m": 5.01}, "baseline"),
+                         ({"d_b": 3.0, "r_a": 3.0}, "ok"), ({"d_b": 2.99, "r_a": 3.0}, "b_range"),
+                         ({"d_b": 25.0, "r_a": 25.0}, "ok"), ({"d_b": 25.1, "r_a": 25.0}, "b_range"),
+                         ({"d_b": 6.0, "r_a": 10.0}, "ok"), ({"d_b": 5.9, "r_a": 10.0}, "range_ratio"),
+                         ({"d_b": 16.0, "r_a": 10.0}, "ok"), ({"d_b": 16.1, "r_a": 10.0}, "range_ratio"),
+                         ({"dep_b": 5.0}, "ok"), ({"dep_b": 4.99}, "b_near_horizon"),
+                         ({"parallax_deg": 25.0}, "ok"), ({"parallax_deg": 25.1}, "parallax"),
+                         ({"parallax_deg": float("nan")}, "parallax")]:
+        assert tp.geometry_qc({**good, **change}) == want, change
+
+
+def test_residual_and_contradicting_skip_rejected_candidates_and_far_labels():
+    c = _cands([{"label_uid": "c:1", "pano_b": "B1", "lon_b": 0.0, "lat_b": -20.0, "user_key": "u"},
+                {"label_uid": "c:2", "pano_b": "B1", "lon_b": 0.0, "lat_b": -20.0, "user_key": "u", "qc": "parallax"},
+                {"label_uid": "c:3", "pano_b": "B2", "lon_b": 0.0, "lat_b": -20.0, "user_key": "u"}])
+    labels = pd.DataFrame([_blabel("c:7", "B1", 1.0, -20.0), _blabel("c:8", "B1", 2.0, -20.0, t="NoCurbRamp"),
+                           _blabel("c:9", "B2", 20.0, -20.0, t="NoCurbRamp")])   # 18.8 degrees away: not "at P"
+    assert tp.residuals(c, labels)["cand_uid"].tolist() == ["c:1|B1"]
+    assert tp.contradicting_on_b(c, labels).to_dict() == {"c:1|B1": True, "c:3|B2": False}
+
+
+def test_census_counts_vote_correct_clean_pairs_at_the_primary_baseline():
+    def pair(uid, **kw):
+        return {"label_uid": uid, "label_type": "CurbRamp", "city": "c", "arm": "long_newer",
+                "label_class": "correct", "baseline_m": 2.0, "clean": True, "negative_control": True,
+                "contradicting": False, "n_labels": 2, "n_labels_b": 2, "qc": "ok", **kw}
+    pairs = pd.DataFrame([pair("c:1"),
+                          pair("c:2", clean=False),                  # leaked: in the pair count, not in the clean one
+                          pair("c:3", baseline_m=4.0),               # beyond 3 m: only in the 5 m column
+                          pair("c:4", label_class="incorrect"),      # not vote-correct: nowhere
+                          pair("c:5", negative_control=False, contradicting=True, n_labels_b=1),
+                          pair("c:6", arm="control")])
+    anc = pd.DataFrame({"label_uid": [f"c:{i}" for i in range(1, 8)], "city": "c", "label_type": "CurbRamp",
+                        "label_class": ["correct"] * 3 + ["incorrect"] + ["correct"] * 3})
+    row = tp.census_tables(anc, pairs, pairs)["census_by_type"].set_index("label_type").loc["CurbRamp"]
+    assert row["decided_anchors"] == 7 and row["vote_correct_anchors"] == 6
+    assert row["long_newer_le3m"] == 3 and row["long_newer_le5m"] == 4 and row["long_newer_le3m_clean"] == 2
+    assert row["negative_control_pool"] == 1      # clean AND confirmed by another user's click: c:1 only
+    assert row["contradicting_on_b"] == 1 and row["control_le3m"] == 1
+    assert row["unchecked_inversion_share"] == pytest.approx(0.333)
+
+
+def _typed_gate_inputs(type_rows, clean, neg=None, wide=None):
+    """Gate inputs with per-type control: ``type_rows = {type: (n, median_px)}`` for ``long_newer``,
+    ``clean = {type: pairs}``, ``wide = {arm: within_240}`` for the 3-5 m bin."""
+    row = lambda arm, m=60.0, n=500, w=0.9: {"arm": arm, "n": n, "median_px": m, "within_240": w}  # noqa: E731
+    tables = {"by_arm": pd.DataFrame([row("same_month", 55.0), row("control"), row("long_newer")]),
+              "by_arm_type": pd.DataFrame([{**row("long_newer", m, n), "label_type": t}
+                                           for t, (n, m) in type_rows.items()]),
+              "by_arm_baseline": pd.DataFrame([{**row(a, w=(wide or {}).get(a, 0.9)), "baseline_bin": "3-5"}
+                                               for a in ("long_newer", "control")])}
+    census = pd.DataFrame([{"label_type": t, "long_newer_le3m_clean": clean.get(t, 0),
+                            "negative_control_pool": (neg or {}).get(t, 100)} for t in tp.TYPES])
+    return tables, census
+
+
+def test_gate0_type_rules_and_yield_details():
+    gates = _confirmed_gates()
+    rule = lambda out, name: [r for r in out["rules"] if r["rule"] == name][0]  # noqa: E731
+    ok_types = {t: (200, 60.0) for t in tp.TYPES}
+    # a type under type_min_n (50) is not judged, however bad its median
+    out = tp.gate0(*_typed_gate_inputs({**ok_types, "Obstacle": (49, 400.0)}, {t: 300 for t in tp.TYPES}), gates,
+                   {"db"})
+    assert out["types_dropped"] == [] and out["verdict"] == "pass"
+    # a dropped type's pairs do not count toward the yield: 4 x 150 = 600 < 800 once Obstacle (300) is out
+    clean = {"CurbRamp": 150, "NoCurbRamp": 150, "SurfaceProblem": 150, "Crosswalk": 150, "Obstacle": 300}
+    out = tp.gate0(*_typed_gate_inputs({**ok_types, "Obstacle": (200, 400.0)}, clean), gates, {"db"})
+    assert out["types_dropped"] == ["Obstacle"] and out["verdict"] == "fail"
+    assert rule(out, "G0c yield: clean vote-correct long_newer pairs")["value"] == 600
+    # enough pairs in total but only one type with 150: the per-type rule fails
+    out = tp.gate0(*_typed_gate_inputs(ok_types, {"CurbRamp": 700, "Crosswalk": 149}), gates, {"db"})
+    types_rule = rule(out, "G0c yield: types with enough pairs")
+    assert types_rule["value"] == ["CurbRamp"] and types_rule["pass"] is False and out["verdict"] == "fail"
+    assert rule(out, "G0c yield: clean vote-correct long_newer pairs")["pass"] is True
+    # the negative-control pool counts the presence types only: Obstacle's and SurfaceProblem's do not help
+    neg = {"CurbRamp": 60, "NoCurbRamp": 60, "Crosswalk": 60, "Obstacle": 500, "SurfaceProblem": 500}
+    out = tp.gate0(*_typed_gate_inputs(ok_types, {t: 300 for t in tp.TYPES}, neg=neg), gates, {"db"})
+    assert rule(out, "G0c yield: negative-control pool (presence types)")["value"] == 180
+    assert out["verdict"] == "fail"
+    # the cap stays at 3 m when the 3-5 m bin of either arm misses the residual rule
+    out = tp.gate0(*_typed_gate_inputs(ok_types, {t: 300 for t in tp.TYPES}, wide={"control": 0.7}), gates, {"db"})
+    assert out["verdict"] == "pass" and out["baseline_cap_m"] == 3.0
+
+
+def test_panos_from_db_keeps_gsv_rows_with_a_position_and_a_month(tmp_path):
+    f = tmp_path / "panos.csv"
+    pd.DataFrame({"schema": "sidewalk_x", "pano_id": ["A" * 22, "B" * 22, "C" * 22, "D" * 22],
+                  "lat": [47.6, 47.6, None, 47.6], "lng": [-122.3] * 4, "camera_heading": [10.0] * 4,
+                  "camera_pitch": [0.0] * 4, "camera_roll": [None] * 4,
+                  "capture_date": ["2019-07", "2019-07", "2019-07", "2019"], "width": [16384] * 4,
+                  "height": [8192] * 4, "source": ["gsv", "mapillary", "gsv", "gsv"], "expired": ["f"] * 4,
+                  "has_backup": ["f"] * 4, "n_labels": [1] * 4}).to_csv(f, index=False)
+    got = tp.panos_from_db(str(f), {"sidewalk_x": "x-city"})
+    assert got["pano_id"].tolist() == ["A" * 22] and got["position_source"].tolist() == ["db"]
+    assert got["city"].tolist() == ["x-city"] and got["capture_month"].tolist() == [tp.capture_month("2019-07")]
+    with pytest.raises(ValueError, match="without a city_id"):
+        tp.panos_from_db(str(f), {})
+
+
+def test_positions_skips_cached_deployments_that_are_not_public_and_can_keep_approximation3_only(tmp_path):
+    cache, listing, r3, _ = _tiny_inputs(tmp_path)
+    hidden = pd.read_csv(cache / "tiny-city.csv").assign(city="hidden-city")
+    hidden.to_csv(cache / "hidden-city.csv", index=False)       # cached, but private in the listing
+    listing.write_text(json.dumps({"cities": [{"city_id": "tiny-city", "visibility": "public"},
+                                              {"city_id": "hidden-city", "visibility": "private"}]}))
+    out = tmp_path / "run" / "panos.csv"
+    tp.main(["positions", "--rawlabels", str(cache), "--listing", str(listing), "--out", str(out)])
+    assert set(pd.read_csv(out)["city"]) == {"tiny-city"}
+    assert "hidden-city" not in (tmp_path / "run" / "panos.json").read_text()
+    # --db-methods: only approximation3 labels are inverted (labels 1 and 2 are panorama A's)
+    conf = tmp_path / "cityparams.conf"
+    conf.write_text('city-params {\n  db-schema {\n    tiny-city = "sidewalk_tiny"\n  }\n  landing-page-url {\n'
+                    '    prod {\n      tiny-city = "https://sidewalk-tiny.example.org"\n    }\n  }\n}\n')
+    methods = tmp_path / "methods.csv"
+    pd.DataFrame({"schema": "sidewalk_tiny", "label_id": [1, 2, 10, 11],
+                  "computation_method": ["approximation3", "approximation3", "depth", "depth"]}).to_csv(
+        methods, index=False)
+    tp.main(["positions", "--rawlabels", str(cache), "--listing", str(listing), "--db-methods", str(methods),
+             "--cityparams", str(conf), "--out", str(out)])
+    assert pd.read_csv(out)["pano_id"].tolist() == ["A" * 22]
