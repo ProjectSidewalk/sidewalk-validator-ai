@@ -1,5 +1,5 @@
 # PREVIEW (not the gate): camera positions inverted from public rawLabels, not read from the database; no gate verdict is given on these numbers.
-era_pair,n,median_px,p75_px,p90_px,within_100,within_240,abs_az_median_px,abs_el_median_px,el_median_px
-2012-15 -> 2020-,60,95.4,141.3,234.9,0.55,0.917,64.8,42.6,41.9
-2016-19 -> 2020-,259,72.2,146.7,346.6,0.633,0.849,56.2,22.4,-1.2
-2020- -> 2020-,109,73.0,132.8,312.0,0.606,0.844,57.1,21.3,0.2
+era_pair,n,n_anchors,median_px,p75_px,p90_px,within_100,within_240,within_240_lo,within_240_hi,abs_az_median_px,abs_el_median_px,el_median_px
+2012-15 -> 2020-,60,60,95.4,141.3,234.9,0.55,0.917,0.819,0.964,64.8,42.6,41.9
+2016-19 -> 2020-,259,245,72.2,146.7,346.6,0.633,0.849,0.801,0.888,56.2,22.4,-1.2
+2020- -> 2020-,109,109,73.0,132.8,312.0,0.606,0.844,0.764,0.9,57.1,21.3,0.2

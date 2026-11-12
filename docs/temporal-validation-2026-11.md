@@ -5,6 +5,12 @@
 > [`temporal-validation-2026-11/gates.json`](temporal-validation-2026-11/gates.json) (dated, `confirmed_on: null`),
 > so a later change shows in its diff. The Stage 0 numbers in this page come from camera positions *inverted* from the
 > public rawLabels, not read from the database, and are marked **Preview (not the gate)**.
+>
+> **The preview was read before the thresholds were confirmed.** One proposed threshold sits right next to a preview
+> value (yield: 744 pairs against a proposed 800), so confirming, raising or lowering it now is a choice made with
+> the data in view; section 11 says what that costs. No preview value is a gate result: the code gives a pass or fail
+> only on database positions with a recorded pull, with `confirmed_on` set in `gates.json`, on the vote-decided
+> anchor pool (section 5).
 
 Issue: [#17](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/17). Code:
 [`analysis/temporal_pairs.py`](../analysis/temporal_pairs.py) (Stage 0),
@@ -42,8 +48,10 @@ sensitivity. A `changed` value can never come from a single-image API request (s
 
 ## 2. Data and scope
 
-- **Deployments:** public ones only, checked against the live `/v3/api/cities` listing at run time (the module
-  refuses to write tables naming a deployment that is not public in the listing it is given).
+- **Deployments:** public ones only, checked against the live `/v3/api/cities` listing at run time: `residual`
+  refuses to write its tables if any deployment of the run (with a candidate pair, an anchor, a label, or just a
+  place in the run's city list) is not public in the listing it is given, or if that listing is more than a day
+  old (visibility has changed within days before).
 - **Imagery:** GSV only. The world bearing of a raster column is documented and replayed for GSV only (`ps_math`); the
   stored click is rig-frame on Mapillary and conditionally levelled on Panoramax (`crop_pose.py`), and nobody has
   measured their heading convention.
@@ -157,6 +165,14 @@ that failed are published as the result.
 | G0c yield (public deployments) | >= **800** clean vote-correct `long_newer` pairs; >= **2** types with >= **150**; a negative-control pool >= **200** over CurbRamp, NoCurbRamp and Crosswalk |
 | cap | 5 m instead of 3 m if the 3-5 m baseline bin of both arms also passes G0a |
 
+`residual` prints every rule's value on any run but gives **pass or fail only when nothing blocks a verdict**; each
+blocker is written into `gate0.json` (`refused`) and the first line of every table. The blockers: a camera position
+that is not from the database (the preview); `confirmed_on` still null in `gates.json`; a thresholds file other than
+the committed one; the exploratory `--anchor-pool all`; positions marked `db` with no database pull on record, or a
+`panos.csv` that is not the file `positions` wrote. The anchor pool of the gate is the margin rule; whether the
+expert rule (`EXPERTS`) is also on is recorded in `gate0.json` and is a choice to fix before the gate run (the
+preview ran without it).
+
 **Gate 1** (Stage 1). 400 vote-correct, A0-verdict-correct, test-split anchors per surviving type, one jittered crop
 each. A type passes if the Wilson upper 95% bound of its flip rate is <= **0.10** (about 7.0% observed at n = 400).
 Continue if >= **2** types pass, with those types only. The stage publishes the implied floor `f` and the minimum true
@@ -186,6 +202,13 @@ Two biases point in opposite directions and both are reported: two people click 
 which inflates the residual (the click floor shows by how much); and the uniqueness filter keeps isolated features,
 which are easier, which deflates it (the `matched_any` table shows the residual without it).
 
+**What the gate's share is a share of.** "Within 240 px" is among unique matches. A candidate whose B has a
+same-type label but none inside the 30 degree window is in no residual row: usually B's label is another feature
+(the other corner), sometimes the re-projection missed by more than 30 degrees, and the data cannot tell which. The
+`coverage` table gives the floor, every unmatched candidate counted as a miss (`within_240_if_unmatched_missed`).
+The tables give a Wilson 95% interval on the share (`within_240_lo`, `within_240_hi`); it treats rows as independent,
+and rows are candidates, not anchors (`n` against `n_anchors`: an anchor with two labelled partners counts twice).
+
 ### 6.1 Preview (not the gate)
 
 **What this is and what it is not.** Camera positions are inverted from the public rawLabels (section 2), not read
@@ -195,8 +218,14 @@ from the database, so the module prints the Gate 0 values but no verdict. Limits
   (about a fifth of the gate-population pairs have at least one such panorama; `by_arm_positions_checked`), and
   panoramas whose labels disagree by more than 5 cm are excluded: 43,404 of 422,896 labelled GSV panoramas over the
   41 deployments, of them **26,178 in seattle-wa** (the pre-2021 `depth` rows evolution 352 left untouched), 7,027 in
-  spgg, 4,203 in columbus-oh, and **4,183 in newberg-or, where 95% of multi-label panoramas disagree (median 1.7 m)**,
-  for a reason not checked (its labels may not have been recomputed);
+  spgg, 4,203 in columbus-oh, and **4,183 in newberg-or, where 95% of multi-label panoramas disagree (median 1.7 m)**.
+  newberg-or is a depth-era deployment, not an anomaly: 60% of its stored label positions are single-precision
+  values (exactly representable as float32), as are 59% of the labels on seattle-wa's failing panoramas, against
+  0.3% on seattle-wa's passing ones and under 0.05% in chicago-il, and its panoramas are 2012-2018 captures. Those
+  are the pre-2021 rows evolution 352 left alone;
+- the exclusion **under-counts yield**, and not at random: 11,056 of the 66,810 vote-decided anchors (16.5%) are
+  dropped for having no camera position. They sit in the depth-era deployments and on older labels, which have had
+  the longest to collect votes. The database run gets them back, so its yield will be higher than the preview's;
 - residuals are **truncated** at the 30 degree window (591 px); the planner's preview truncated at 15 degrees;
 - the gate statistic is on **unique-candidate matches** only;
 - 41 deployments: every public deployment with a CSV in the 2026-10-17 cache. Five deployments public today are not in
@@ -212,11 +241,11 @@ all 41 named here among them); round-3 `split.csv` files from `~/Data/sidewalk-v
 
 **Residual by arm** (unique matches, vote-decided anchors, baseline <= 3 m):
 
-| arm | n | median_px | p75_px | p90_px | within_100 | within_240 | abs_az_median_px | abs_el_median_px | el_median_px |
-|---|---|---|---|---|---|---|---|---|---|
-| same_month | 306 | 74.5 | 154.6 | 260.0 | 0.647 | 0.873 | 59.1 | 26.9 | 1.1 |
-| control | 104 | 88.6 | 160.8 | 345.6 | 0.558 | 0.837 | 76.4 | 20.2 | -1.9 |
-| long_newer | 463 | 76.5 | 146.3 | 322.1 | 0.607 | 0.86 | 57.9 | 26.9 | 4.4 |
+| arm | n | n_anchors | median_px | p75_px | p90_px | within_100 | within_240 | within_240_lo | within_240_hi | abs_az_median_px | abs_el_median_px | el_median_px |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| same_month | 306 | 303 | 74.5 | 154.6 | 260.0 | 0.647 | 0.873 | 0.831 | 0.905 | 59.1 | 26.9 | 1.1 |
+| control | 104 | 103 | 88.6 | 160.8 | 345.6 | 0.558 | 0.837 | 0.754 | 0.895 | 76.4 | 20.2 | -1.9 |
+| long_newer | 463 | 448 | 76.5 | 146.3 | 322.1 | 0.607 | 0.86 | 0.825 | 0.888 | 57.9 | 26.9 | 4.4 |
 
 **By type** (exploratory; Obstacle and SurfaceProblem are thin):
 
@@ -234,14 +263,32 @@ all 41 named here among them); round-3 `split.csv` files from `~/Data/sidewalk-v
 | long_newer | SurfaceProblem | 37 | 123.0 | 284.4 | 452.3 | 0.432 | 0.703 |
 
 **Era and camera generation, `long_newer`** (exploratory): B's click sits about 40 px *above* the prediction when A
-is a 13,312 px panorama (the older camera) and B a 16,384 px one, against about 7 px below for 16,384 to 16,384. A
-camera-height difference between generations would do this; the gate run's elevation split will show whether it
-holds on database positions.
+is a 13,312 px panorama (the older camera) and B a 16,384 px one, against about 7 px below for 16,384 to 16,384.
+This is a camera-height difference between generations, not a pixel-scaling error: each click is normalised by its
+own panorama's width and height and the residual is an angle. Over all arms the 13,312 -> 16,384 pairs (n = 128, 12
+deployments) imply an older camera 1.18 times as high (the median of `tan(predicted depression) / tan(clicked
+depression)`; elevation median 42 px, bootstrap 95% interval 36 to 47 px, against -7 to +1 px for 16,384 -> 16,384
+and +5 px for the 29 pairs of two 13,312 px panoramas). The site's range estimator was fitted with one height,
+2.34 m; [label-latlng-estimation](https://github.com/ProjectSidewalk/label-latlng-estimation)'s GBM-transfer report
+(2026-08-10) found from depth data that the older truth implies 2.80 m at 6,656 px panoramas (the height of a
+13,312 px wide one) against 2.35 m at 8,192 px, a ratio of 1.19. These pairs alone cannot tell a height ratio from a constant scale on latitude (both fit);
+the independent report is what settles it. A per-generation height would remove most of the offset; it is not
+applied here, because it would change the estimator after the preview was read (a decision for the gate's
+confirmation).
 
-| width_pair | n | median_px | p75_px | p90_px | within_100 | within_240 | abs_az_median_px | abs_el_median_px | el_median_px |
-|---|---|---|---|---|---|---|---|---|---|
-| 13312 -> 16384 | 125 | 98.4 | 159.5 | 236.5 | 0.512 | 0.904 | 66.4 | 43.6 | 42.1 |
-| 16384 -> 16384 | 332 | 67.5 | 138.0 | 344.0 | 0.639 | 0.84 | 55.1 | 20.5 | -6.6 |
+| width_pair | n | n_anchors | median_px | p75_px | p90_px | within_100 | within_240 | within_240_lo | within_240_hi | abs_az_median_px | abs_el_median_px | el_median_px |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 13312 -> 16384 | 125 | 123 | 98.4 | 159.5 | 236.5 | 0.512 | 0.904 | 0.84 | 0.944 | 66.4 | 43.6 | 42.1 |
+| 16384 -> 16384 | 332 | 319 | 67.5 | 138.0 | 344.0 | 0.639 | 0.84 | 0.797 | 0.876 | 55.1 | 20.5 | -6.6 |
+
+**Coverage** (candidates at baseline <= 3 m whose B carries a same-type label; the last-but-one column is the floor of
+the share within 240 px if every unmatched candidate were a miss):
+
+| arm | with_same_type_b_label | matched_30deg | unique | unmatched_share | within_240_if_unmatched_missed | same_user_share_of_unique |
+|---|---|---|---|---|---|---|
+| same_month | 806 | 507 | 306 | 0.371 | 0.441 | 0.16 |
+| control | 248 | 148 | 104 | 0.403 | 0.426 | 0.24 |
+| long_newer | 983 | 681 | 463 | 0.307 | 0.52 | 0.149 |
 
 **Click floor** (two users, same panorama, same type, within 15 degrees; no uniqueness filter): median 49 px, p75
 113, p90 197 (n = 76,865 pairs); by type, CurbRamp 36, Crosswalk 66, SurfaceProblem 66, Obstacle 71, NoCurbRamp 73.
@@ -304,8 +351,16 @@ anchors). Stepping from its settings to this module's, on the same three cities:
 
 So the two implementations agree, the 15 degree truncation flattered the tail (p90 about 170 px becomes about 280-340
 px), and restricting anchors to vote-decided labels, as the gate requires, cuts n by an order of magnitude and, in
-Seattle, raises the median to about 100 px. Why Seattle's vote-decided anchors re-project worse is not known; they
-are older on average, and Seattle is where the inversion is weakest.
+Seattle, raises the median to about 100 px.
+
+**Why Seattle's vote-decided anchors re-project worse** (step 5 to step 6: 70 px for the 1,717 undecided anchors,
+101 px for the 142 decided ones). About half of the gap is type mix: the undecided anchors are 73% CurbRamp, the
+type people click most consistently (62 px here; click floor 36 px), while the vote-decided ones are 26% CurbRamp
+and 63% NoCurbRamp and Crosswalk. Re-weighting the undecided anchors to the decided type mix gives 84 px. The other
+17 px is not explained and may be noise: within type the decided anchors differ by +17 (CurbRamp), +10 (Crosswalk),
++9 (NoCurbRamp), -13 (SurfaceProblem) and -19 px (Obstacle) on 6 to 50 pairs each. It is not the inversion (pairs
+with both positions checked: 90 px, n = 106) and not age (A's median capture year is 2019 and its median label
+count 5 in both pools). chicago-il shows no gap (66 px in both pools).
 
 ## 7. Stages 1-3 (specified, not implemented)
 
@@ -407,10 +462,17 @@ Stage 3 passing and on the flag beating both baselines of section 1.
 - **Two raters**, one of them a project lead.
 - **Yield per type** may end the study at Gate 0 (section 6.1).
 - **The preview was read before the thresholds were confirmed.** Thresholds chosen after seeing it could be fitted to
-  it; the gate run uses database positions and fresh rawLabels, which limits but does not remove that risk.
+  it; the gate run uses database positions and fresh rawLabels, which limits but does not remove that risk. The
+  same goes for two rules the preview suggests changing: the partner of an anchor is its nearest one whether or not
+  it is clean (taking the nearest *clean* partner would give 759 clean vote-correct long-gap pairs, not 744), and
+  one camera height for every panorama generation (section 6.1). Neither was changed.
+- **The share within 240 px is conditional on a match** inside the 30 degree window; the floor with every unmatched
+  candidate counted as a miss is 0.52 for `long_newer` (section 6, `coverage`).
 - **Unverified:** that `pano_data.lat/lng` is the provider-reported camera position unchanged since the label was
-  placed; that every schema is at the evolutions the pull script needs (298, 306, 319, 352); why newberg-or's labels do
-  not invert; whether the 2026-10-17 cache reflects evolution 352 in every deployment.
+  placed; that every schema is at the evolutions the pull script needs (298, 306, 319, 352); whether the 2026-10-17
+  cache reflects evolution 352 in every deployment; that a single-precision stored position always means a
+  `depth` row (it matches the failing panoramas closely but not completely: 18% of seattle-wa's multi-label
+  panoramas with no such label still disagree).
 
 ## 12. Reproduce the preview
 
@@ -424,6 +486,9 @@ python analysis/temporal_pairs.py census --rawlabels $C --listing $L --panos $R/
 python analysis/temporal_pairs.py residual --run $R --listing $L --out docs/temporal-validation-2026-11/preview
 ```
 
-No sampling in Stage 0 (the seed, 20261112, is recorded for the later stages). The per-label run files (`$R`) hold
-label ids and stay outside the repo; only aggregates are committed. Every input's sha256, the settings and the git
+`residual` refuses a listing more than a day old, so a later rerun needs a fresh one (`curl -s
+https://sidewalk-teaneck.cs.washington.edu/v3/api/cities > $L`); the numbers depend on it only through the list of
+public deployments. No sampling in Stage 0 (the seed, 20261112, is recorded for the later stages). The per-label run
+files (`$R`) hold label ids and stay outside the repo; they tell users apart by a key salted afresh in every run, so
+it cannot be traced back to a user id. Only aggregates are committed. Every input's sha256, the settings and the git
 commit are in [`preview/provenance.json`](temporal-validation-2026-11/preview/provenance.json).

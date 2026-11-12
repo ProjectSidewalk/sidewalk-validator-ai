@@ -1,5 +1,5 @@
 # PREVIEW (not the gate): camera positions inverted from public rawLabels, not read from the database; no gate verdict is given on these numbers.
-arm,with_same_type_b_label,matched_30deg,unique,unmatched_share,same_user_share_of_unique
-same_month,806,507,306,0.371,0.16
-control,248,148,104,0.403,0.24
-long_newer,983,681,463,0.307,0.149
+arm,with_same_type_b_label,matched_30deg,unique,unmatched_share,within_240_if_unmatched_missed,same_user_share_of_unique
+same_month,806,507,306,0.371,0.441,0.16
+control,248,148,104,0.403,0.426,0.24
+long_newer,983,681,463,0.307,0.52,0.149

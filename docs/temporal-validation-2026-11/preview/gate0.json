@@ -98,5 +98,7 @@
   }
  ],
  "verdict": null,
- "refused": "camera positions are not all from the database (pano_data): PREVIEW, not the gate"
+ "refused": "camera positions are not all from the database (pano_data): PREVIEW, not the gate; the thresholds are not confirmed (gates.json confirmed_on is null)",
+ "anchor_pool": "decided",
+ "experts_set": false
 }

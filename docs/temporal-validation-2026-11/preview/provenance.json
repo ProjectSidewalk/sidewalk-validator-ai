@@ -1,10 +1,10 @@
 {
  "banner": "PREVIEW (not the gate): camera positions inverted from public rawLabels, not read from the database; no gate verdict is given on these numbers.",
  "made_on": "2026-11-12",
- "git_head": "44b249ebb861c592a1f1441fd4419effde5ae640",
+ "git_head": "241d19e684cdc6af86ef89200180dd4952ea1f24",
  "run_selection": {
   "made_on": "2026-11-12",
-  "git_head": "44b249ebb861c592a1f1441fd4419effde5ae640",
+  "git_head": "241d19e684cdc6af86ef89200180dd4952ea1f24",
   "cities": [
    "amsterdam",
    "bayonne-fr",
@@ -99,7 +99,7 @@
   "panos_sha256": "9a4a2e24f3f45e2fff7f178656b748f063fd029e0a539095f197e4c25d48a34b",
   "positions_info": {
    "made_on": "2026-11-12",
-   "git_head": "44b249ebb861c592a1f1441fd4419effde5ae640",
+   "git_head": "241d19e684cdc6af86ef89200180dd4952ea1f24",
    "cities": [
     "amsterdam",
     "bayonne-fr",
@@ -484,7 +484,8 @@
      "share_multi_label_dropped": 0.0011
     }
    },
-   "agree_tol_m": 0.05
+   "agree_tol_m": 0.05,
+   "panos_sha256": "9a4a2e24f3f45e2fff7f178656b748f063fd029e0a539095f197e4c25d48a34b"
   },
   "round3_split_sha256": {
    "CurbRamp": "f2ec89f8032c9b6b7c1533bea7ac82d82b7c139847b14286dd53d932a2195610",
@@ -558,7 +559,12 @@
    "RESIDUAL_WINDOW_DEG": 30.0,
    "FLOOR_WINDOW_DEG": 15.0,
    "CONTRA_WINDOW_DEG": 15.0,
+   "WITHIN_PX": [
+    100,
+    240
+   ],
    "SEED": 20261112,
+   "LISTING_MAX_AGE_DAYS": 1,
    "ARMS": [
     "same_month",
     "control",
@@ -570,6 +576,7 @@
   "listing": "cities-2026-11-12.json",
   "sha256": "a4a2fab7379cada5d583f1bffa329a5b1f065741af3f51123b0a15403ceb5aca",
   "fetched_on": null,
+  "listing_age_days": 0,
   "all_named_deployments_public": true
  },
  "gates_sha256": "4ff94f3374b1db94c19bcf1e9bf77a69c3880f30ba44caa2e76d691d51003077"
