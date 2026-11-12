@@ -1,10 +1,9 @@
 # Round 2: the population recounted without excluded authors' labels (#85)
 
-<!-- recount-status: pending -->
-**Status: pending the `pull_author_excluded.sh` pull.** The pull has not been made yet; the tooling and the
-acceptance checks below are in place. The tables below are filled by `gt_rounds.py recount` once the pull is run;
-until then the round-2 numbers in [`../ai-disagree-relabel-2026-10.md`](../ai-disagree-relabel-2026-10.md) (Round 2)
-are the counts before the exclusion.
+**Status: done.** The flags were pulled once, on 2026-11-12 at 18:34:48–18:34:53 UTC (10:34 Pacific), and passed
+every acceptance check. The tables below are `gt_rounds.py recount` and `score` output on that pull; the round-2
+counts in [`../ai-disagree-relabel-2026-10.md`](../ai-disagree-relabel-2026-10.md) (Round 2) quote them, with the
+counts before the exclusion in parentheses.
 
 ## Why
 
@@ -88,40 +87,144 @@ the pin `a85a573c...` in the main doc is of the decompressed CSV. The flags file
 
 ## Results
 
-<!-- Filled from `recount` output after the pull. Before the exclusion (from the committed pool, reproduced by
-`tests/test_gt_rounds.py::test_recount_population_reproduces_the_committed_round2_manifest`): Seattle 17,284 eligible
-AI Disagrees, 8,611 in no stratum; Chicago 10,769, 3,853 in no stratum. -->
+`recount` output, verbatim (`$D/round2_recount_tables.md`; the same counts are in
+[`round2_recount.json`](round2_recount.json)). The authors' exclusion is `user_stat.excluded` as read on 2026-11-12.
+"Before" is the committed pool as built, reproduced by
+`tests/test_gt_rounds.py::test_recount_population_reproduces_the_committed_round2_manifest`.
 
-| City (schema) | Excluded-author labels | Eligible AI Disagrees, before -> after | Unsampled, before -> after |
+| City (schema) | Excluded-author labels | Eligible AI Disagrees, before -> after | Unsampled, before -> after (one decisive / Unsure only / tie, after) |
 |---|---:|---|---|
-| sidewalk_seattle | pending | 17,284 -> pending | 8,611 -> pending |
-| sidewalk_chicago | pending | 10,769 -> pending | 3,853 -> pending |
+| sidewalk_seattle | 3,042 | 17,284 -> 16,840 | 8,611 -> 8,608 (6,698 / 371 / 1,539) |
+| sidewalk_chicago | 70 | 10,769 -> 10,751 | 3,853 -> 3,847 (2,996 / 145 / 706) |
+
+Population of rater jon's city (before -> after):
+
+| Stratum | CurbRamp | NoCurbRamp | Obstacle | SurfaceProblem | Crosswalk | all |
+|---|---:|---:|---:|---:|---:|---:|
+| lone | 2,753 -> 2,737 | 404 -> 396 | 417 -> 63 | 507 -> 445 | 289 -> 288 | 4,370 -> 3,929 |
+| light_voted | 669 -> 669 | 557 -> 557 | 160 -> 160 | 565 -> 565 | 15 -> 15 | 1,966 -> 1,966 |
+| margin_incorrect | 627 -> 627 | 580 -> 580 | 261 -> 261 | 607 -> 607 | 48 -> 48 | 2,123 -> 2,123 |
+| margin_correct | 66 -> 66 | 65 -> 65 | 21 -> 21 | 53 -> 53 | 9 -> 9 | 214 -> 214 |
+
+Population of rater mikey's city (before -> after):
+
+| Stratum | CurbRamp | NoCurbRamp | Obstacle | SurfaceProblem | Crosswalk | all |
+|---|---:|---:|---:|---:|---:|---:|
+| lone | 1,143 -> 1,142 | 530 -> 527 | 34 -> 34 | 474 -> 474 | 1,131 -> 1,131 | 3,312 -> 3,308 |
+| light_voted | 405 -> 405 | 361 -> 360 | 84 -> 84 | 246 -> 246 | 201 -> 201 | 1,297 -> 1,296 |
+| margin_incorrect | 267 -> 267 | 1,247 -> 1,242 | 278 -> 276 | 216 -> 216 | 57 -> 57 | 2,065 -> 2,058 |
+| margin_correct | 61 -> 61 | 103 -> 103 | 18 -> 18 | 27 -> 27 | 33 -> 33 | 242 -> 242 |
+
+Cross-check against the public rawLabels export (absent labels are an upper bound on excluded authors' labels; never used for weights):
+
+| City (schema) | AI Disagrees absent from the export | of which flagged excluded | flagged excluded but present in the export |
+|---|---:|---:|---:|
+| sidewalk_seattle | 476 | 444 | 0 |
+| sidewalk_chicago | 78 | 9 | 13 |
+
+0 pool labels are not in the flags and count as not excluded.
+
+Where the removed labels sit. Of Seattle's 3,042 excluded-author pool labels, 444 are eligible AI Disagrees: 441 in
+`lone` (Obstacle 354, SurfaceProblem 62, CurbRamp 16, NoCurbRamp 8, Crosswalk 1) and 3 unsampled (one decisive
+vote). No Seattle label leaves `light_voted`, `margin_incorrect` or `margin_correct`. Seattle's lone Obstacle cell
+goes from 417 to 63, and lone SurfaceProblem from 507 to 445. Of Chicago's 70, 18 are eligible AI Disagrees: 7
+`margin_incorrect`, 4 `lone`, 1 `light_voted` and 6 unsampled. All 444 removed Seattle Disagrees are among the 476
+absent from the public export; in Chicago, 9 of the 18 are absent and 13 Disagrees flagged excluded are present in
+the export of 2026-10-18 (see the exclusion log below).
+
+Every count above was recomputed a second way, from `pool.csv.gz` and the flags with a separate pandas script that
+re-implements eligibility and the strata from the pool columns (merge on `(schema, label_id)`,
+`validate="one_to_one"`): the eligible counts, the unsampled partition, all 40 (stratum, type) population cells of
+both halves, and the excluded-label counts agree exactly.
 
 ### Pins
 
-Pending: `remote_bundle.sh` (the script that ran), `author_excluded.csv` (rows per schema), the two rawLabels files,
-`cityparams.conf` (sha256 and SidewalkWebpage commit), the design and the pool.
+| File | sha256 |
+|---|---|
+| `remote_bundle.sh` (the script that ran on the host; built by `round2_flags_pull.sh` at 1f84317) | `fd90605257d78da161e52f4b241d4b7d34ebfa86309a54505a0bdc736760b620` |
+| `author_excluded.csv` (pulled 2026-11-12; Seattle 270,408 rows, 6,383 `t`; Chicago 173,023 rows, 134 `t`; not committed, label ids) | `767c3d5b0fca35b57deb09e28995549bd382c383fd4f1634b55e14e6c469bfd7` |
+| `exclusion_changes.csv` (same connection; counts only, kept in `~/Data`) | `731685e523d2510c3b776210557ccbba71ab83acf09e093aff247edde3ab07f7` |
+| rawLabels `seattle-wa.csv` (fetched 2026-10-18; `--rawlabels-proxy` only) | `1a2d575cbaabc1d247ce29492c99e1939d6b64d3d619f3e2872152be4d9d53af` |
+| rawLabels `chicago-il.csv` (fetched 2026-10-18; `--rawlabels-proxy` only) | `b7c1783dcca10c8ef87e621cf9ac0a2ddc10011dbc19020aaf808c399ed0f6d9` |
+| `cityparams.conf` (SidewalkWebpage f741590d7 plus 17 local added lines, none for `seattle-wa` or `chicago-il`; `--rawlabels-proxy` only) | `eed92cfd7658762f981c082f135fa1474041d688c7b3ef63f21278263026a899` |
+| `analysis/gt_rounds/round2.json` (design) | `499fb9dfe5d976651f08d932d9a0c47477386e119080ae2107c91fc5c7404e57` |
+| `data/relabel-2026-10/round2/pool.csv.gz` (as committed; the JSON's `pool_sha256`) | `8dd0c178ba88e2000886a42aaf1157f12ec4e48e3995f57d3a6753dec7f74959` |
+| [`round2_flags_check.json`](round2_flags_check.json) (the checker's counts) | `b51ccbabb4ebac53e7cdf609ce178a610aad964f209d508a5dafe71d22673719` |
 
 ### Acceptance
 
-Pending: the result of the whole-key check, and the pool labels missing from the flags per city.
+`check_author_excluded.py` passed every check ([`round2_flags_check.json`](round2_flags_check.json)). The whole key
+(500 items) joined onto the flags: the key items flagged excluded are exactly the 11 in `unmasked.csv`, no other key
+item is flagged, and no key item is missing from the flags. No pool label is missing from the flags (0 of 200,362 in
+Seattle, 0 of 146,373 in Chicago), so no deleted label had to be counted as not excluded.
 
 ### Exclusion log
 
-Pending: toggles before, inside and after the rating window, with the labels they touch, and the
-`author_mismatch` counts.
+The exclusion-log query ran in the same connection without an error (its stderr section is empty) and returned one
+change row and both `author_mismatch` rows. Toggles logged since 2026-10-18, by Pacific day:
+
+| Schema | Day | New value | Authors | Their labels at the pull (whole schema) |
+|---|---|---|---:|---:|
+| sidewalk_seattle | none logged | | | |
+| sidewalk_chicago | 2026-11-03 | excluded | 2 | 31 |
+
+- **Before the rating window (2026-10-18 to 2026-10-27):** nothing logged in either city.
+- **Inside the rating window (2026-10-28 to 2026-11-02):** nothing logged in either city.
+- **After it (2026-11-03 to the pull):** two Chicago authors were excluded on 2026-11-03, the day after the last
+  rating sheet was pinned. So nothing logged changed what Gallery showed during the round. It does mean the Chicago
+  recount may remove labels that were visible and eligible during the round. The log has no label ids, so how many
+  of Chicago's 18 removed eligible AI Disagrees belong to those two authors is not known; 18 is the upper bound.
+  The 13 Chicago Disagrees that are flagged excluded but present in the 2026-10-18 export fit an exclusion after that
+  date, and this toggle is the only one logged; the counts cannot show that they are the same labels.
+- **Seattle:** no toggle is logged since 2026-10-18, so the 3,042 excluded-author labels come from exclusions made
+  before then (or by an unlogged route). That agrees with the 11 unmasked items found excluded on 2026-11-02.
+- **Limits.** Logging began on 2026-09-14; a change made by direct SQL is not logged; and the rows are a dated list,
+  not a net state (an author toggled twice is in two rows). The labels column counts each author's non-deleted,
+  non-tutorial labels in the whole schema at the pull, not only pool labels.
+- **`author_mismatch`** (labels whose `label.user_id` differs from their `audit_task.user_id`; prod joins
+  `user_stat` through the audit task, the pull through the label): Seattle 0, Chicago 68, whole schema. For those 68
+  the flag may differ from what Gallery and Validate apply; not checked further.
 
 ### Effect of the recount on `score`'s weighted rows
 
-Pending: per rater, the four Disagree strata's population-weighted "all" rows before and after the recount, with
-decided n and the cells that get no weight. This is not the round-2 per-rater result.
+This is the effect of the new denominators on `score`'s population-weighted "all" rows, before and after, from
+`score --pool` and `score --pool --author-excluded` on the committed sheets. **It is not the round-2 per-rater
+result**: that analysis, with type x severity and type x tag slices, is a separate step. The unweighted columns
+(rate, n, can't tell) are identical before and after; only the population and the weighted rate can move.
+
+| Rater (own city) | Stratum | Decided n | Population, before -> after | Weighted, before | Weighted, after |
+|---|---|---:|---|---|---|
+| jon (Seattle, 239 items) | lone | 48 | 4,370 -> 3,929 | 57.2% [38.7, 75.8] | 57.8% [39.0, 76.5] |
+| jon (Seattle) | light_voted | 22 | 1,966 -> 1,966 | 73.1% [45.4, 100.0] | 73.1% [45.4, 100.0] |
+| jon (Seattle) | margin_incorrect | 52 | 2,123 -> 2,123 | 74.9% [61.0, 88.8] | 74.9% [61.0, 88.8] |
+| jon (Seattle) | margin_correct | 30 | 214 -> 214 | 22.7% [1.3, 44.1] | 22.7% [1.3, 44.1] |
+| mikey (Chicago, 250 items) | lone | 55 | 3,312 -> 3,308 | 43.7% [29.8, 57.6] | 43.7% [29.8, 57.6] |
+| mikey (Chicago) | light_voted | 24 | 1,297 -> 1,296 | 43.8% [20.1, 67.6] | 43.8% [20.0, 67.6] |
+| mikey (Chicago) | margin_incorrect | 53 | 2,065 -> 2,058 | 89.4% [74.2, 100.0] | 89.4% [74.2, 100.0] |
+| mikey (Chicago) | margin_correct | 30 | 242 -> 242 | 29.0% [7.7, 50.3] | 29.0% [7.7, 50.3] |
+
+Two printed values move: Seattle `lone` from 57.2% [38.7, 75.8] to 57.8% [39.0, 76.5], and the lower bound of
+Chicago `light_voted` from 20.1 to 20.0. Seattle's lone population falls by 441 (10.1%), but nearly all of that is
+lone Obstacle (417 -> 63), a cell with 1 decided item that already carried no weight; the cells that carry weight
+lose 87 labels (CurbRamp 16, NoCurbRamp 8, SurfaceProblem 62, Crosswalk 1). The point estimates were checked by hand
+as the population-weighted mean of the cell rates (lone, Seattle: 0.5724 before, 0.5777 after); the intervals were
+not recomputed independently.
 
 ### Cells under the minimum n
 
-Pending: the (stratum, type) cells with fewer than 5 decided items (`--min-cell 5`) after the recount, which carry no
-weight.
+With `--min-cell 5`, the cells with fewer than 5 decided items carry no weight. After the recount they are the same
+cells as before, with the same n, and every one still has a population above zero, so each is still named:
+
+- jon (Seattle): lone Obstacle (n=1; population 417 -> 63); light_voted Obstacle (n=4) and SurfaceProblem (n=3);
+  margin_correct SurfaceProblem (n=4).
+- mikey (Chicago): light_voted Obstacle (n=4) and SurfaceProblem (n=4); margin_correct SurfaceProblem (n=4).
+
+No stratum is unestimable: every stratum keeps at least one cell with 5 or more decided items.
 
 ### Unsampled partition
 
-Pending: the AI Disagrees in no stratum after the recount (one decisive vote / only Unsure / tie), which no round-2
-rate covers.
+The AI Disagrees in no stratum after the recount, which no round-2 rate covers (one decisive vote / only Unsure /
+tie):
+
+- Seattle: 8,608 of 16,840 eligible (6,698 / 371 / 1,539), before 8,611 of 17,284 (6,701 / 371 / 1,539).
+- Chicago: 3,847 of 10,751 eligible (2,996 / 145 / 706), before 3,853 of 10,769 (3,002 / 145 / 706).
