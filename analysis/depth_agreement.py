@@ -884,6 +884,7 @@ PUBLIC_SAMPLE_COLUMNS = ["label_uid", "city", "label_type", "label_class", "rank
 
 
 def cmd_sample(args):
+    commit, dirty = git_commit()        # before sample_public.csv (a tracked file) is rewritten
     public, listing_rec = resolve_public(args.public_cities, args.cities_json)
     frame = load_frame(args.root, args.rawlabels_dir)
     sample = draw_sample(frame, public, args.seed, args.n_per_type, args.oversample)
@@ -901,7 +902,6 @@ def cmd_sample(args):
     os.makedirs(args.public_out, exist_ok=True)
     pub_path = os.path.join(args.public_out, "sample_public.csv")
     sample[PUBLIC_SAMPLE_COLUMNS].to_csv(pub_path, index=False, float_format="%.12f")
-    commit, dirty = git_commit()
     counts = sample.groupby("label_type").agg(candidates=("set_a", "size"), set_a=("set_a", "sum"),
                                               cities=("city", "nunique"))
     write_json(os.path.join(args.public_out, "sample.json"), {
@@ -1603,12 +1603,12 @@ def cmd_report(args):
         with open(p) as f:
             compare_out = json.load(f)
         inputs["compare_tables.json"] = sha256_file(p)
+    commit, dirty = git_commit()        # before anything is written: the outputs are tracked files themselves
     os.makedirs(args.assets, exist_ok=True)
     md = report_markdown(trig_out, clipping, compare_out)
     with open(os.path.join(args.assets, "tables.md"), "w") as f:
         f.write(md)
     figs = report_figures(trig_out, args.assets) if trig_out and not args.no_figures else []
-    commit, dirty = git_commit()
     write_json(os.path.join(args.assets, "provenance.json"), {
         "stage": "report", "git_commit": commit, "git_dirty": dirty, "inputs": inputs,
         "outputs": {os.path.basename(p): sha256_file(p) for p in [os.path.join(args.assets, "tables.md")] + figs}})

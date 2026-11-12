@@ -1187,6 +1187,28 @@ def test_r_compare_reads_the_rules_from_the_right_rows():
     assert stats["r2"]["beta_yx"] == pytest.approx(1.0, abs=1e-6) and readout["R2"]["verdict"] == "inside"
 
 
+def test_r_provenance_reads_the_repo_state_before_writing_tracked_outputs(r3, tmp_path, monkeypatch):
+    """report and sample rewrite files that are committed (tables.md, sample_public.csv). Asking git afterwards
+    would always answer "dirty", so git_dirty would say nothing about the code that produced them."""
+    pub = tmp_path / "public.json"
+    pub.write_text(json.dumps(sorted(PUBLIC)))
+    da.main(["trig", "--root", r3, "--rawlabels-dir", os.path.join(r3, "rawlabels"), "--out-dir",
+             str(tmp_path / "trig"), "--public-cities", str(pub), "--n-boot", "0"])
+    assets, public_out = tmp_path / "assets", tmp_path / "public"
+    seen = []
+
+    def fake_git_commit():
+        seen.append((assets / "tables.md").exists() or (public_out / "sample_public.csv").exists())
+        return "c0ffee", False
+    monkeypatch.setattr(da, "git_commit", fake_git_commit)
+    da.main(["report", "--trig-dir", str(tmp_path / "trig"), "--assets", str(assets), "--no-figures"])
+    da.main(["sample", "--root", r3, "--rawlabels-dir", os.path.join(r3, "rawlabels"), "--out-dir",
+             str(tmp_path / "s"), "--public-out", str(public_out), "--public-cities", str(pub), "--n-per-type", "5"])
+    assert seen == [False, False]
+    assert json.loads((assets / "provenance.json").read_text())["git_dirty"] is False
+    assert json.loads((public_out / "sample.json").read_text())["git_commit"] == "c0ffee"
+
+
 VITL_GATE = r'^VITL_(REV|SHA256)=|^\[\[ "\$VITL_'
 
 
