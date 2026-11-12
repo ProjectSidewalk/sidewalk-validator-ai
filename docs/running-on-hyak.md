@@ -250,3 +250,13 @@ Three things the first run (2026-11-05) needed that the launcher does not do for
   resubmitting; the first attempt queued a duplicate chain that had to be cancelled and its outputs wiped.
 
 Design, bar and results: [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md).
+
+## Depth agreement (issue #21)
+
+Two jobs, run from `/gscratch/scrubbed/$USER/depth-ablation-2026-11` (both refuse any other directory):
+`analysis/depth_agreement_stage.slurm` (one rsync connection for the sample's `.depth.npz` artifacts, no requeue),
+then `analysis/depth_agreement.slurm` (ViT-B and ViT-L depth on round 3's render plus Google's depth, one GPU,
+about 1 GPU-h). The ViT-L checkpoint is `depth_anything_v2_metric_vkitti_vitl.pth` from
+`depth-anything/Depth-Anything-V2-Metric-VKITTI-Large`. **Its revision is not pinned yet** (TODO(#21)): read it on a
+login node and pin it here and in the job file. Recipe and expected outputs:
+[`depth-ablation-2026-11.md`](depth-ablation-2026-11.md), "Reproduce".
