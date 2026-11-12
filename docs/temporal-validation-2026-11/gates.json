@@ -1,0 +1,35 @@
+{
+  "design": "Temporal validation, issue #17 (docs/temporal-validation-2026-11.md)",
+  "proposed_on": "2026-11-12",
+  "status": "proposed, to be confirmed by Jon before any data is read for the gate",
+  "confirmed_on": null,
+  "note": "Every threshold of the four stages lives here and nowhere else; analysis/temporal_pairs.py reads gate0 from this file. A change after confirmation must show in this file's diff, with the date.",
+  "gate0": {
+    "primary_baseline_m": 3.0,
+    "wide_baseline_m": 5.0,
+    "residual_median_px_max": 100,
+    "residual_within_px": 240,
+    "residual_within_share_min": 0.8,
+    "type_min_n": 50,
+    "era_ratio_max": 1.5,
+    "yield_long_newer_min": 800,
+    "yield_types_min": 2,
+    "yield_per_type_min": 150,
+    "negative_control_min": 200
+  },
+  "gate1": {
+    "anchors_per_type": 400,
+    "flip_wilson_upper_max": 0.10,
+    "types_min": 2
+  },
+  "gate2": {
+    "changed_c2i_min": 60,
+    "net_rate_lower_bound_min": 0.0
+  },
+  "stage3": {
+    "items": 200,
+    "primary_wilson_lower_min": 0.5,
+    "overlap_items": 50,
+    "kappa_min": 0.6
+  }
+}
