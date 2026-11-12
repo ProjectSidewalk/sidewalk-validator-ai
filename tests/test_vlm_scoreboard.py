@@ -375,6 +375,23 @@ def test_unscored_vllm_rows_are_dropped_and_explained(board):
     assert unscored == {"gemma4-31b": {"CurbRamp": 3}} and len(legs["round3"]) == int(r.n_total)
 
 
+def test_unscored_self_reported_rows_are_dropped_and_explained(board):
+    """A self-reported leg (vlm_gemini.py) writes an unusable reply as a row with no p_incorrect and an
+    unscored_reason; the leg drops it (never a 0.5), shows as partial, and the coverage table says so."""
+    d = board["stage"] / "scores" / "gemma4-31b"
+    df = pd.read_csv(d / "Obstacle.csv").assign(unscored_reason="")
+    df.loc[df.index[:2], ["unscored_reason", "p_incorrect"]] = ["not JSON", np.nan]
+    df.to_csv(d / "Obstacle.csv", index=False)
+    sb.main(board["base"] + ["--no-figures"])
+    a = sb.read_aggregates(str(board["out"]))
+    r = a["board"].set_index("leg").loc["gemma4-31b"]
+    assert not bool(r.full) and int(r.n) == int(r.n_total) - 2 and np.isfinite(r.macro_auc)
+    c = a["coverage"].set_index(["leg", "label_type"])
+    assert c.loc[("gemma4-31b", "Obstacle"), "why"] == "2 rows unscored: no valid yes/no answer with a confidence"
+    _, unscored = sb.load_scores(str(board["stage"]), sb.load_splits(str(board["stage"])))
+    assert unscored == {"gemma4-31b": {"self-reported:Obstacle": 2}}
+
+
 def test_run_speed_prefers_the_full_run_with_most_crops_on_a_tie():
     t = pd.DataFrame([
         {"model": "m", "gpu": "g-full-big", "batch_size": 1, "n_crops": 13144, "median_s_per_crop": 0.26,

@@ -176,14 +176,17 @@ def load_splits(scores_dir):
 
 
 UNSCORED_WHY = "{n} rows unscored: neither yes nor no in the top-20 log-probs"
+UNSCORED_SELF_WHY = "{n} rows unscored: no valid yes/no answer with a confidence"
+SELF_KEY = "self-reported:{t}"   # key of a type's self-reported unscored count in a leg's ``unscored`` dict
 
 
 def load_leg(leg_dir):
     """All ``<Type>.csv`` of one leg as ``(frame, unscored)``: the frame is ``label_uid, p_incorrect`` (definition
     variant only); ``unscored`` is ``{Type: n}`` for rows dropped because the vLLM client found neither answer in the
-    top 20 (``answer_floor == "both"``, scored 0.5 as a placeholder; the column is absent for other backends). Exact
-    duplicate rows (a resumed run that re-wrote a chunk) are dropped; conflicting duplicates raise. ``(None, {})``
-    when the leg has no CSV."""
+    top 20 (``answer_floor == "both"``, scored 0.5 as a placeholder; the column is absent for other backends), and
+    ``{SELF_KEY: n}`` for rows of a self-reported leg (``vlm_gemini.py``) with a non-empty ``unscored_reason`` (no
+    score at all). Exact duplicate rows (a resumed run that re-wrote a chunk) are dropped; conflicting duplicates
+    raise. ``(None, {})`` when the leg has no CSV."""
     frames, unscored = [], {}
     for t in LABEL_TYPES:
         p = os.path.join(leg_dir, f"{t}.csv")
@@ -196,6 +199,11 @@ def load_leg(leg_dir):
                 if both.any():
                     unscored[t] = int(both.sum())
                     d = d[~both]
+            if "unscored_reason" in d:
+                bad = d.unscored_reason.fillna("").astype(str).ne("")
+                if bad.any():
+                    unscored[SELF_KEY.format(t=t)] = int(bad.sum())
+                    d = d[~bad]
             frames.append(d[["label_uid", "p_incorrect"]])
     if not frames:
         return None, {}
@@ -450,10 +458,13 @@ def coverage_rows(legs, splits, notes, unscored=None):
             tot = int(totals.get(t, 0))
             why = note.get(t) or note.get("*") or ""
             nu = unscored.get(leg, {}).get(t, 0)
-            if n + nu < tot and not why:
-                why = DEFAULT_WHY.get(leg, "not run yet" if n == 0 else f"partial: run incomplete ({n + nu} of {tot})")
-            if nu:
-                why = "; ".join(w for w in (UNSCORED_WHY.format(n=nu), why) if w)
+            ns = unscored.get(leg, {}).get(SELF_KEY.format(t=t), 0)
+            if n + nu + ns < tot and not why:
+                why = DEFAULT_WHY.get(leg, "not run yet" if n == 0 else
+                                      f"partial: run incomplete ({n + nu + ns} of {tot})")
+            if nu or ns:
+                why = "; ".join(w for w in (UNSCORED_WHY.format(n=nu) if nu else "",
+                                            UNSCORED_SELF_WHY.format(n=ns) if ns else "", why) if w)
             rows.append({"leg": leg, "display": "8-shot arm" if leg == "fewshot8" else leg_info(leg)[0],
                          "label_type": t, "n": n, "total": tot, "complete": n == tot, "why": "" if n == tot else why})
     return rows
