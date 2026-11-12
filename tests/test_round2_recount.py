@@ -6,7 +6,10 @@ The recount has two committed states, and this test fails in any state between t
   the docs quote only the counts before the exclusion;
 * done: the marker is gone, ``round2_recount.json`` and ``round2_flags_check.json`` are committed (counts only), the
   "before" half reproduces the committed pool, the known removal is in it (the 11 Seattle items rated unmasked are
-  eligible lone AI Disagrees of an excluded author), and the docs quote the "after" numbers.
+  eligible lone AI Disagrees of an excluded author), and the docs quote the JSONs' numbers: the recount tables row by
+  row, the pins, the unsampled partition, where the removed labels sit, and the weighted rows of the effect table,
+  which are recomputed here from the committed key and sheets. Not bound: the exclusion-log counts and the split of
+  Chicago's removed labels by exclusion date, whose sources (``exclusion_changes.csv``, the flags) are not committed.
 
 It never skips because the JSON is missing (that would hide a deleted result); it skips only when the committed pool
 is absent, as ``tests/test_gt_rounds.py`` does.
@@ -148,3 +151,106 @@ def _check_done(r, chk):
         after_n = r["after"]["eligible_disagrees"][s]
         assert f"| {s} | {excl:,} | {eligible:,} -> {after_n:,} |" in md, s
         assert f"{after_n:,}" in bullet and f"{sum(r['after']['unsampled'][s].values()):,}" in bullet, s
+    _check_doc_numbers(r, chk, design, md, bullet)
+    _check_weighted_rows(r, md)
+
+
+def _flat(text):
+    """Text with every run of whitespace as one space, so a check does not depend on where a line wraps."""
+    return " ".join(text.split())
+
+
+def _check_doc_numbers(r, chk, design, md, bullet):
+    """Every count the two docs quote from the two JSONs: the `recount` tables row by row, the pins, the unsampled
+    partition, and where the removed labels sit."""
+    # line by line: the JSON is written with sorted keys, so the rows come back in another order than `recount` printed
+    md_lines = set(md.splitlines())
+    missing = [ln for ln in gr.recount_markdown(r, design).splitlines() if ln and ln not in md_lines]
+    assert missing == [], f"recount table lines in round2_recount.md that are not the JSON's: {missing}"
+    main = _read(MAIN_DOC)
+    flags_sha = r["author_excluded_sha256"]
+    assert f"`{flags_sha}`" in md and f"`{flags_sha}`" in main
+    for sha in (r["pool_sha256"], r["design_sha256"], rl.sha256_file(CHECK_JSON)):
+        assert f"`{sha}`" in md, sha
+    for s in BEFORE:
+        assert chk["rows"][s] == chk["flagged_t"][s] + chk["flagged_f"][s], s
+        assert r["excluded_labels"][s] <= chk["pool_labels"][s] <= chk["rows"][s], s
+    sea, chi = "sidewalk_seattle", "sidewalk_chicago"
+    assert (f"Seattle {chk['rows'][sea]:,} rows, {chk['flagged_t'][sea]:,} `t`; "
+            f"Chicago {chk['rows'][chi]:,} rows, {chk['flagged_t'][chi]:,} `t`") in md
+
+    def part(half, s):
+        u = r[half]["unsampled"][s]
+        return (f"{sum(u.values()):,} of {r[half]['eligible_disagrees'][s]:,}",
+                f"({u['one_decisive']:,} / {u['unsure_only']:,} / {u['tie']:,})")
+
+    flat_md, flat_bullet = _flat(md), _flat(bullet)
+    for name, s in (("Seattle", sea), ("Chicago", chi)):
+        (a_of, a_parts), (b_of, b_parts) = part("after", s), part("before", s)
+        assert f"- {name}: {a_of} eligible {a_parts}, before {b_of} {b_parts}." in flat_md, s
+        assert f"{b_of} {b_parts}" in flat_bullet, s  # the counts `build` printed
+    ua, uc = r["after"]["unsampled"][sea], r["after"]["unsampled"][chi]
+    assert (f"({ua['one_decisive']:,} with one decisive vote, {ua['unsure_only']:,} with only Unsure votes, "
+            f"{ua['tie']:,} ties)") in flat_bullet
+    assert f"({uc['one_decisive']:,} / {uc['unsure_only']:,} / {uc['tie']:,})" in flat_bullet
+
+    # where the removed labels sit: per stratum and, for Seattle's lone stratum, per type
+    def removed(rater, s):
+        pb, pa = r["before"]["population"][rater], r["after"]["population"][rater]
+        by = {st: {t: pb[st][t] - pa[st][t] for t in pa[st]} for st in pa}
+        return by, (sum(r["before"]["unsampled"][s].values()) - sum(r["after"]["unsampled"][s].values()))
+
+    by, uns = removed("jon", sea)
+    n_sea, n_chi = r["excluded_eligible_disagrees"][sea], r["excluded_eligible_disagrees"][chi]
+    lone = sum(by["lone"].values())
+    types = ", ".join(f"{t} {n}" for t, n in sorted(by["lone"].items(), key=lambda kv: -kv[1]) if n)
+    assert f"{n_sea} are eligible AI Disagrees: {lone} in `lone` ({types}) and {uns} unsampled" in flat_md
+    assert sum(sum(c.values()) for st, c in by.items() if st != "lone") == 0  # "No Seattle label leaves ..."
+    assert f"removes {n_sea} Seattle and {n_chi} Chicago AI Disagrees, {lone} of the Seattle ones from `lone`" \
+        in flat_bullet
+    by, uns = removed("mikey", chi)
+    assert (f"{n_chi} are eligible AI Disagrees: {sum(by['margin_incorrect'].values())} `margin_incorrect`, "
+            f"{sum(by['lone'].values())} `lone`, {sum(by['light_voted'].values())} `light_voted` and {uns} "
+            "unsampled") in flat_md
+
+
+def _check_weighted_rows(r, md):
+    """The effect table, recomputed: ``score_table`` on the committed key and sheets (unmasked items left out), once
+    with each half's population. Binds the decided n, both populations, the population in cells that carry weight,
+    and both weighted rates with their intervals; and the main doc's sentence on what moved."""
+    import pandas as pd
+    pre = os.path.join(ROUND2, "pre-consensus-2026-11-02")
+    key = pd.read_csv(os.path.join(ROUND2, "key", "key.csv"), dtype={"tags": str})
+    unmasked = gr.unmasked_ids(pd.read_csv(os.path.join(pre, "unmasked.csv"), dtype=str), key)
+    moved = []
+    for rater in ("jon", "mikey"):
+        m = rl.unmask(gr.rater_items(key, rater), gr._read_sheet(os.path.join(pre, f"votes_{rater}.csv")))
+        own = m[(m.rater == rater) & ~m.packet_id.isin(unmasked)]
+        decided = own[own.verdict.isin(["correct", "incorrect"])]
+        halves = {h: gr.score_table(own, r[h]["population"][rater]) for h in ("before", "after")}
+        for st in gr.DISAGREE_STRATA:
+            cells, pcts = [], []
+            for h in ("before", "after"):
+                pop = r[h]["population"][rater][st]
+                row = halves[h][(halves[h].stratum == st) & (halves[h].label_type == "all")].iloc[0]
+                small = {x.split("(")[0] for x in row.w_excluded.split(", ") if x}
+                assert all(pop[t] > 0 for t in small), (rater, st, h)  # a no-weight cell is still named
+                cells.append((sum(pop.values()), sum(n for t, n in pop.items() if t not in small)))
+                pcts.append(rl._pct(row.w_rate, row.w_lo, row.w_hi))
+            n = int((decided.stratum == st).sum())
+            want = (f"| {st} | {n} | {cells[0][0]:,} -> {cells[1][0]:,} | {cells[0][1]:,} -> {cells[1][1]:,} | "
+                    f"{pcts[0]} | {pcts[1]} |")
+            rows = [ln for ln in md.splitlines() if ln.startswith(f"| {rater} (") and f"| {st} |" in ln]
+            assert len(rows) == 1 and rows[0].endswith(want), (rater, st, want, rows)
+            if pcts[0] != pcts[1]:
+                moved.append((rater, st, pcts[0], pcts[1]))
+    # exactly the rows the docs say move, with the values they quote
+    assert [(a, b) for a, b, _, _ in moved] == [("jon", "lone"), ("mikey", "light_voted")], moved
+    (_, _, b0, a0), (_, _, b1, a1) = moved
+    flat_md, flat_main = _flat(md), _flat(_read(MAIN_DOC))
+    assert f"Seattle `lone` from {b0} to {a0}" in flat_md
+    lo = [x.split("[")[1].split(",")[0] for x in (b1, a1)]
+    assert b1.split("[")[0] == a1.split("[")[0] and b1.split(", ")[1] == a1.split(", ")[1]  # only the lower bound
+    assert f"the lower bound of Chicago `light_voted` from {lo[0]} to {lo[1]}" in flat_md
+    assert (f"(Seattle lone {b0.split(' ')[0]} -> {a0.split(' ')[0]}; the lower bound of Chicago light_voted "
+            f"{lo[0]} -> {lo[1]}; no other printed value moves)") in flat_main

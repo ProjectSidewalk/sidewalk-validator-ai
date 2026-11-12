@@ -358,7 +358,8 @@ with the design file [`analysis/gt_rounds/round2.json`](../analysis/gt_rounds/ro
   ([#85](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/85)) joins `user_stat.excluded` onto this
   same pinned pool, so eligibility otherwise stays as of the round. The exclusion log shows no toggle in either city
   between 2026-10-18 and the end of rating (2026-11-02); two Chicago authors, with 31 labels in the whole schema, were
-  excluded on 2026-11-03, after rating. Details in
+  excluded on 2026-11-03, after rating. 12 of the 18 Chicago AI Disagrees the recount removes are theirs and were
+  visible during the round; none of them is a rated item. Details in
   [`ai-disagree-relabel-2026-10/round2_recount.md`](ai-disagree-relabel-2026-10/round2_recount.md). The counts `build`
   printed, before the exclusion, were 8,611 of 17,284 (6,701 / 371 / 1,539) and 3,853 of 10,769 (3,002 / 145 /
   706); the recount removes 444 Seattle and 18 Chicago AI Disagrees, 441 of the Seattle ones from `lone`. A design
@@ -549,7 +550,8 @@ margin_correct SurfaceProblem 4). In Chicago, three cells get no weight, none of
 recount. `score --pool --author-excluded` weights by the recount; its effect on the weighted rows is in
 [`round2_recount.md`](ai-disagree-relabel-2026-10/round2_recount.md#effect-of-the-recount-on-scores-weighted-rows)
 (Seattle lone 57.2% -> 57.8%; the lower bound of Chicago light_voted 20.1 -> 20.0; no other printed value
-moves).
+moves). A weighted rate covers only the cells that carry weight: Seattle's lone rate covers 3,866 of the stratum's
+3,929 labels after the recount, and says nothing about lone Obstacle (population 63).
 
 | File (in `data/relabel-2026-10/round2/`) | sha256 |
 |---|---|
