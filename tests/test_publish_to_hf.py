@@ -1921,3 +1921,57 @@ def test_push_staged_checks_every_staged_split_row_whatever_its_status(tmp_path)
     with pytest.raises(pub.PublishError, match=re.escape(os.path.join("publish", "dataset", "split.csv")) +
                        ": no row has a depth_m"):
         pub.verify_staged(root, T)
+
+
+def _set_training_record(root, **values):
+    path = os.path.join(root, T, "dinov2", "training_run.json")
+    run = json.loads(_read(path))
+    run.update(values)
+    with open(path, "w") as f:
+        json.dump(run, f)
+
+
+@pytest.mark.parametrize("with_generation_run", [True, False])
+def test_a_non_served_encoder_in_the_training_record_is_refused(tmp_path, with_generation_run):
+    """fine_tune_classifier.py copies ``depth_encoder`` into dinov2/training_run.json, so a model whose
+    generation_run.json is gone (a model-only staging away from where the crops were cut) still shows it."""
+    root, *_ = make_root(tmp_path)
+    _set_training_record(root, depth_encoder="vitl")
+    if not with_generation_run:
+        os.remove(os.path.join(root, T, "generation_run.json"))
+    with pytest.raises(pub.PublishError, match=re.escape(os.path.join("dinov2", "training_run.json")) +
+                       " records depth encoder vitl/vkitti"):
+        pub.stage(root, T, what="model")
+    assert not os.path.exists(os.path.join(root, T, "publish"))
+
+
+def test_the_served_or_a_null_encoder_in_the_training_record_passes(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _set_training_record(root, depth_encoder="vitb")
+    pub.check_depth_sized(root, T)
+    _set_training_record(root, depth_encoder=None)          # what an old imagefolder dataset's training run records
+    pub.check_depth_sized(root, T)
+
+
+def test_the_generation_record_is_named_first_when_both_records_disagree_with_serving(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _set_record(root, "top", depth_encoder="vits")
+    _set_training_record(root, depth_encoder="vitl")
+    with pytest.raises(pub.PublishError, match="generation_run.json records depth encoder vits/vkitti"):
+        pub.check_depth_sized(root, T)
+
+
+def test_a_depth_encoder_refusal_names_what_was_recorded():
+    with pytest.raises(pub.PublishError, match="g.json records depth encoder vitl/hypersim, but serving sizes crops "
+                                               "with vitb/vkitti"):
+        pub.check_depth_encoder({"depth_encoder": "vitl", "settings": {"depth_dataset": "hypersim"}}, "g.json")
+    with pytest.raises(pub.PublishError, match="depth encoder vitl/hypersim"):    # both keys of one record are named
+        pub.check_depth_encoder({"depth_encoder": "vitl", "depth_dataset": "hypersim"}, "g.json")
+    with pytest.raises(pub.PublishError, match="depth encoder vitb/hypersim"):
+        pub.check_depth_encoder({"depth_dataset": "hypersim", "depth_encoder": "vitb"}, "g.json")
+    pub.check_depth_encoder({"depth_encoder": "vitb", "settings": {"depth_dataset": "vkitti"}}, "g.json")
+    pub.check_depth_encoder(None, "g.json")
+    assert pub.SERVED_DEPTH_ENCODER == "vitb" and pub.SERVED_DEPTH_DATASET == "vkitti"
+    for near_miss in ("vits", "VITB", "vit"):
+        with pytest.raises(pub.PublishError):
+            pub.check_depth_encoder({"depth_encoder": near_miss}, "g.json")

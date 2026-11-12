@@ -122,7 +122,8 @@ ViT-B (vKITTI) metric depth. Staging, and `--push-staged` again, refuses a run t
 - `generation_run.json` or `dinov2/training_run.json` records `fixed_crop_half_px` (the fixed-size ablation of
   [#51](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/51)) or `job_window_crops` (the crop-job
   windows of [#53](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/53));
-- `generation_run.json` records a `depth_encoder` other than `vitb` or a `depth_dataset` other than `vkitti`;
+- either record names a `depth_encoder` other than `vitb` or a `depth_dataset` other than `vkitti`
+  (`fine_tune_classifier.py` copies the encoder into `training_run.json`, so it is read there too);
 - whatever the records say, any row of `split.csv`, or any `ok` row of `manifest.csv`, has no `depth_m` (blank,
   non-numeric, non-finite or ≤ 0), or a `crop_half_px` more than 1 px from `int(6100 / depth_m)`; a file without
   either column is refused too. The staged copies in `publish/dataset/` are checked again before upload.

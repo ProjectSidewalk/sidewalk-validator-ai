@@ -30,7 +30,7 @@ names the same label type; ``split.csv`` still has the sha256 recorded in ``dino
 staged label type's; neither ``generation_run.json`` nor ``dinov2/training_run.json`` records ``fixed_crop_half_px``
 (the fixed-size ablation of issue #21, which serving does not reproduce: it sizes every crop by depth) or
 ``job_window_crops`` (the backend crop-job windows of issue #53, likewise not what serving renders);
-``generation_run.json`` records no depth encoder other than the served ``vitb``/``vkitti``; and, whatever the records
+neither record names a depth encoder other than the served ``vitb``/``vkitti``; and, whatever the records
 say, every row of ``split.csv`` and every ``ok`` row of ``manifest.csv`` has a positive ``depth_m`` and a
 ``crop_half_px`` within 1 px of ``int(6100 / depth_m)`` (issue #21; checked again on the staged copies before
 ``--push-staged``). A whole-view or fixed-size model needs a serving change before it can be published. A train-size
@@ -657,7 +657,7 @@ def check_depth_sized(root, label_type):
     """Raise ``PublishError`` if ``<root>/<label_type>``'s ``generation_run.json`` or ``dinov2/training_run.json``
     records ``fixed_crop_half_px`` or ``job_window_crops``: those crops come from the fixed-size ablation (issue #21)
     or the crop-job-window experiment (issue #53), serving renders a depth-sized view of every label, and the cards
-    say so. Then, in this order, if ``generation_run.json`` records a depth model other than the served one
+    say so. Then, in this order, if either record names a depth model other than the served one
     (:func:`check_depth_encoder`), or if ``split.csv`` (every row) or the ``ok`` rows of ``manifest.csv`` (each file
     when present) hold a row not cut at ``int(CROP_DEPTH_CONSTANT / depth_m)`` (:func:`check_depth_rows`): the records are optional,
     the rows are not. Checked before anything is staged, and again before ``--push-staged``."""
@@ -669,8 +669,9 @@ def check_depth_sized(root, label_type):
     except ValueError as e:
         raise PublishError(f"{base}: {e}. Retrain on depth-sized crops (data_generation.py without "
                            f"--fixed-crop-half-px or --job-window-crops) to publish") from e
-    if runs[0] is not None:
-        check_depth_encoder(runs[0], os.path.join(base, "generation_run.json"))
+    for run, name in zip(runs, ("generation_run.json", os.path.join("dinov2", "training_run.json"))):
+        if run is not None:               # fine_tune_classifier.py copies depth_encoder into training_run.json
+            check_depth_encoder(run, os.path.join(base, name))
     for name in DEPTH_ROW_FILES:
         path = os.path.join(base, name)
         if os.path.exists(path):          # a missing file is reported by read_dataset_context with its own message
@@ -703,8 +704,8 @@ def _rows_to_check(path):
 
 
 def check_depth_encoder(generation_run, what):
-    """Raise ``PublishError`` if ``generation_run`` (a parsed ``generation_run.json``) records, at top level or under
-    ``settings``, a ``depth_encoder`` other than :data:`SERVED_DEPTH_ENCODER` or a ``depth_dataset`` other than
+    """Raise ``PublishError`` if ``generation_run`` (a parsed ``generation_run.json``, or the ``training_run.json``
+    that copies its ``depth_encoder``) records, at top level or under ``settings``, a ``depth_encoder`` other than :data:`SERVED_DEPTH_ENCODER` or a ``depth_dataset`` other than
     :data:`SERVED_DEPTH_DATASET`. A dataset sized by another depth model is self-consistent row by row, so only the
     record can show it. An absent record, absent keys or null values pass: :func:`check_depth_rows` is the backstop.
 
