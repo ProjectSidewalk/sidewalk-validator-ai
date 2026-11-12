@@ -39,7 +39,7 @@ Usage (``D`` outside the repo; the full run order is in ``docs/nosidewalk-2026-1
     python analysis/nosidewalk_round.py build --design analysis/gt_rounds/nosidewalk_b.json --pool $D/pool \\
         --manifest $D/scored/manifest.csv --predictions $D/scored --gate <gate2 dir> --priors <deployment_priors.json> \\
         --seed $SEED --key-dir $D/private-key-do-not-share
-    python analysis/gt_rounds.py gallery --key $D/private-key-do-not-share/key.csv --rater jon --out $D/gallery_jon
+    python analysis/nosidewalk_round.py gallery --key $D/private-key-do-not-share/key.csv --out $D/gallery_jon
     python analysis/gt_rounds.py votes --key ... --rater jon --rater-id <uuid> --out $D/votes_jon.csv
     python analysis/nosidewalk_round.py report --key ... --sheet $D/votes_jon.csv --scores .../scores.csv \\
         --out-json docs/nosidewalk-2026-11/round_b.json --out-md docs/nosidewalk-2026-11/round_b.md \\
@@ -406,6 +406,19 @@ def cmd_build(args):
     print(f"key -> {kpath} (sha256 {man['key_sha256']})")
 
 
+def cmd_gallery(args):
+    """The rater's Gallery review lists, exactly as ``gt_rounds.py gallery`` writes and pins them, with this round's
+    rating rule on the index page in place of the five-type rule."""
+    from analysis import gt_rounds as gr
+    man = json.load(open(args.manifest or rl.default_manifest(args.key)))
+    old, gr.RATING_RULE_HTML = gr.RATING_RULE_HTML, RATING_RULE_HTML
+    try:
+        gr.cmd_gallery(argparse.Namespace(key=args.key, rater=man["design_json"]["rater"], out=args.out,
+                                          cityparams=args.cityparams, manifest=args.manifest, repin=args.repin))
+    finally:
+        gr.RATING_RULE_HTML = old
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # report
 # ---------------------------------------------------------------------------------------------------------------------
@@ -632,6 +645,13 @@ def build_parser():
     b.add_argument("--seed", required=True)
     b.add_argument("--key-dir", required=True, help="private; outside any git checkout")
     b.set_defaults(func=cmd_build)
+    g = sub.add_parser("gallery", help="the rater's Gallery lists (gt_rounds.py gallery) with this round's rating rule")
+    g.add_argument("--key", required=True)
+    g.add_argument("--out", required=True, help="outside any git checkout")
+    g.add_argument("--cityparams", default=rl.DEFAULT_CITYPARAMS)
+    g.add_argument("--manifest")
+    g.add_argument("--repin", action="store_true")
+    g.set_defaults(func=cmd_gallery)
     r = sub.add_parser("report", help="the rater's pinned votes against the key: the bar and every table")
     r.add_argument("--key", required=True)
     r.add_argument("--sheet", required=True, help="gt_rounds.py votes output (pinned)")

@@ -181,6 +181,20 @@ def test_build_one_per_face_weights_and_pins(run, monkeypatch):
         build(run, pool, run["tmp"] / "scored", key_dir="key3", seed="other")
 
 
+def test_gallery_lists_carry_this_rounds_rule(run, monkeypatch):
+    pool = make_pool(run, monkeypatch)
+    key_dir = build(run, pool, score_pool(run, pool))
+    out = run["tmp"] / "gallery"
+    assert nr.main(["gallery", "--key", str(key_dir / "key.csv"), "--out", str(out), "--cityparams", run["conf"]]) == 0
+    page = (out / "index.html").read_text()
+    assert "no sidewalk on the labeled side" in page and "faded crosswalk" not in page
+    urls = pd.read_csv(out / "gallery_urls.csv")
+    assert urls["n"].sum() == 50 and urls["url"].str.contains("/gallery\\?labelIds=").all()
+    assert "gallery" in json.loads((key_dir / "manifest.json").read_text())
+    from analysis import gt_rounds as gr
+    assert "faded crosswalk" in gr.RATING_RULE_HTML  # restored
+
+
 def test_build_refuses_predictions_that_miss_a_crop(run, monkeypatch):
     pool = make_pool(run, monkeypatch)
     scored = score_pool(run, pool)

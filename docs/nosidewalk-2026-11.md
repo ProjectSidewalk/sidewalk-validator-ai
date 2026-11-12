@@ -442,7 +442,45 @@ the same fold files with the same seed (`KEEP_BEST=1 ./nosidewalk_gate_submit.sh
 checkpoint). Retrained weights are not bit-identical, so the run has its own out-of-fold predictions, map and
 report; it is also a replication of step (a).
 
-<!-- gate2-summary -->
+It agrees with step (a) and is a little stronger (run 2026-11-11, jobs 43156012–43156017, one A40 or L40 per
+fold, 11–15 minutes each):
+
+| run | pooled AUC [95 % CI] | within-city AUC | Agree gate n (coverage) | precision, prior-weighted (lower) | precision, unweighted (lower) |
+|---|---|---|---|---|---|
+| step (a) | 0.928 [0.894, 0.956] | 0.924 | 240 (0.317) | 0.979 (0.966) | 0.929 (0.890) |
+| `gate2` | 0.936 [0.907, 0.961] | 0.939 | 265 (0.350) | 0.985 (0.974) | 0.947 (0.913) |
+
+Fold 1 is again the weakest model (31 passing rows of 152; 2 in step (a)); the others pass 53–71. On the 127
+held-out rows the five models reach within-city AUC 0.78–0.82 and pass 18–45 labels at a weighted precision of
+0.94–0.97 (lower bounds 0.89–0.93), the same picture as step (a). Best checkpoints: fold 0 step 150, 1 step 75,
+2 step 270, 3 step 120, 4 step 165.
+
+**Phase 1 as scored** (2026-11-11, jobs 43156311 staging, 43156312 crops and scores, 32 minutes): 1,197 of the
+1,200 labels (3 panoramas are missing from the store). Labels per stratum, and the items picked for rating:
+
+| city | scored | pass | agree-below | model-incorrect | rated: pass / agree-below / model-incorrect |
+|---|---|---|---|---|---|
+| chicago-il | 400 | 179 (45 %) | 166 | 55 | 53 / 16 / 21 |
+| tucson-az | 299 | 88 (29 %) | 155 | 56 | 31 / 12 / 12 |
+| oradell-nj | 249 | 204 (82 %) | 36 | 9 | 33 / 11 / 6 |
+| cdmx | 249 | 38 (15 %) | 175 | 36 | 33 / 11 / 11 |
+
+Two cells fell short under the one-label-per-face rule and were topped up from Chicago: Tucson's pass cell (31 of
+36; its 88 passing labels sit on few faces) and Oradell's model-incorrect cell (6 of 11). The rated set is 250
+items on 250 faces, 150 / 50 / 50 over the strata; each city's weights sum to its eligible count. A face is used
+once, in the stratum of its first-ranked label, so the cell weights (scored / picked) are approximate where
+faces repeat, which is mainly Tucson.
+
+**Pins** (per-label files stay outside the repo, under `~/Data/sidewalk-validator-ai-nosidewalk-2026-11/`):
+`round-b/pool/pool.json` `f973f826fa20fb61d2bc339153596d4070a11049ccd023df3ac4ca7e6fa78807` (it pins the rawLabels
+pulls, the excluded-author pull, the pilot split and the seed's hash), `pool/labels.csv`
+`e41ea4501ded5bbc3fc06ffaf20d857c6b88a9ffd3413836bcd4f0a7fa95ac2f`, `scored/manifest.csv`
+`88430ecb40691b6833f6b4768625800b2491b6891ec2faace583f18539c7f2d1`, `gate2/report/gate.json`
+`cbb7ea06aacc6a3ed68fb7611123186c4ab16103320581ee56b001aee840077f`, the key
+`d2d30d05912e1a12cd75f56822a32413cb250dd048a5c17ff5bc13ae949172a8`, the Gallery lists
+`0fd1e0554e262760e200d64bbb7e5ddba5f24556b97281338afa6d0f6f3d7c6f`; the key's `manifest.json` pins the ten
+prediction files. `gate2` folds: `folds.csv` sha256 unchanged from step (a) (`895d00b4…`). Code: branch
+`nosidewalk-round-b` at 7649325 for the fold models, crops and scores. Job logs in `klone-logs/round-b/`.
 
 **Results.**
 
