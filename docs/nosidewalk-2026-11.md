@@ -372,12 +372,83 @@ a Wilson 95 % lower bound of 0.966. Four things qualify that:
   even more; and these are the sharper-than-fold-model caveats in reverse: a model that has never seen a city is
   not what the pooled estimate describes. Step (b), more negatives outside Seattle, is still the lever for this.
 
+**Decision (2026-11-11, [#42](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/42)).** The bar is
+read on the **prior-weighted** basis, the one the maps are fitted under; the unweighted number stays in every report
+as the pessimistic view. On that basis the pooled gate passes. Serving still waits: step (b) below comes first, because
+the pass is an aggregate one and the held-out cities do not clear it.
+
 What the pooled number is: the map serving fold k was fitted on four *other* fold models' out-of-fold predictions,
 so this is the precision of the recipe (a whole-view NoSidewalk model of this size plus a pooled out-of-fold map),
 not of one deployed model with its own map. A deployed model would be trained on all 758 rows (sharper than the
 fold models' 450) with a map fitted on the pooled out-of-fold predictions, which is the configuration step (c)
 would ship; its gate precision is expected at or above this estimate on the training cities and is unmeasured on
 new ones.
+
+### The masked expert round outside Seattle (step (b), design fixed 2026-11-11)
+
+Step (a) scored labels that already had a settled verdict, and most of its evidence is Seattle's. Step (b) samples
+the **deployment population** of four other cities instead: every human-placed NoSidewalk label with a block face,
+whatever its votes. One expert rates 250 of them in production Gallery with the votes masked
+(`analysis/nosidewalk_round.py`, design `analysis/gt_rounds/nosidewalk_b.json`; the Gallery lists, the vote pull and
+the pins are `analysis/gt_rounds.py`'s). Because the labels are drawn at random from the labels the gate would pass,
+the Agree verdict's precision is read directly on the natural class mix, with a plain Wilson bound and no prior; the
+round also measures the share of correct labels that the face-size prior assumes (0.831).
+
+**Two phases, so the model chooses what is rated without biasing the estimate.**
+
+1. *Eligible labels* (rawLabels pull of 2026-11-11): NoSidewalk, human-placed, with a block face and a usable pano
+   point, author not excluded (Gallery hides those), never placed or voted on by the rater, and on no face or
+   panorama among the 758 rows the fold models trained on. Labels with crowd votes stay in. Chicago and Tucson were
+   never trained on; Oradell and CDMX were.
+
+   | city | NoSidewalk labels | no face | placed by the rater | voted on by the rater | trained face or panorama | eligible | phase 1 |
+   |---|---|---|---|---|---|---|---|
+   | chicago-il | 14,741 | 416 | 195 | 59 | 0 | 14,071 | 400 |
+   | tucson-az | 1,215 | 11 | 335 | 9 | 0 | 860 | 300 |
+   | oradell-nj | 5,679 | 188 | 2,063 | 1,145 | 852 | 1,431 | 250 |
+   | cdmx | 5,744 | 827 | 0 | 5 | 336 | 4,576 | 250 |
+
+   No label was AI-placed, had an unusable pano point or had an excluded author. In Oradell and Tucson the rater
+   placed a large share of the labels (36 % and 28 %), so the eligible population there is the *other* labelers'
+   labels; the round says nothing about the rater's own.
+2. *Phase 1*: a seeded simple random sample of each city's eligible labels (the counts above, 1,200 in all) is
+   cropped whole-view and scored by each of the five fold models of a second gate run (below), served through the
+   map fitted on all 758 of that run's out-of-fold predictions, as the held-out table above is.
+3. *Strata*: **pass** when at least 3 of the 5 models give Agree at served accuracy >= 0.92; **agree-below** when
+   not, with a median `p_correct` >= 0.5; **model-incorrect** otherwise.
+4. *Phase 2*, the 250 rated items: Chicago 80, Tucson 60, Oradell 55, CDMX 55, each split 60 / 20 / 20 over the
+   strata (150 / 50 / 50 in all), at most one label per face, in a seeded shuffled order. A short cell is topped up
+   from the same stratum of another city. Each item carries its inclusion weight (eligible / scored in its city,
+   times scored / picked in its cell), so every estimate can be reweighted to the population.
+
+**The rating rule.** Agree: no sidewalk on the labeled side of the street at that spot. Disagree: a sidewalk is
+there, or the label marks something else. Unsure: only when the imagery cannot show it. Gallery's vote counts,
+comments and AI icons are hidden by the masking CSS; the rater cannot tell an item's stratum.
+
+**What is read, fixed before any rating.**
+
+- **The bar:** in the pass stratum as sampled, correct / decided with a Wilson 95 % lower bound >= 0.92 on >= 100
+  decided labels. Unsure votes leave the denominator and are counted. With 150 items the bound clears 0.92 from 145
+  correct (0.967) up, so a true precision near 0.96 would be a coin flip; that is the price of 250 ratings.
+- Beside it: the same rate reweighted to the four cities' eligible population (bootstrap interval), per city, and
+  per fold model on its own gate verdicts (weighted precision, coverage, AUC, within-city AUC).
+- The population share of correct labels against the prior's 0.831; severity and tag slices with training counts;
+  the crowd majority against the expert.
+
+The same ratings can later score the final all-rows model of step (c) by reweighting.
+
+**The second gate run (`gate2`).** Step (a) deleted its fold checkpoints, so the five fold models were retrained on
+the same fold files with the same seed (`KEEP_BEST=1 ./nosidewalk_gate_submit.sh`, which keeps each fold's best
+checkpoint). Retrained weights are not bit-identical, so the run has its own out-of-fold predictions, map and
+report; it is also a replication of step (a).
+
+<!-- gate2-summary -->
+
+**Results.**
+
+<!-- round-b-results:start -->
+Not rated yet.
+<!-- round-b-results:end -->
 
 ### Cost and jobs
 
@@ -408,12 +479,12 @@ unweighted (0.890) and not on the held-out cities; see "The 5-fold out-of-fold g
    rows stay held out), calibrating on the pooled out-of-fold predictions, so each fold's Agree map is fitted on
    350–365 Agree verdicts instead of about 70 and the bar's Wilson lower bound on ≥ 100 labels can be computed.
    Five training runs of this size are well under an hour of GPU time. **Done 2026-11-11**: see "The 5-fold
-   out-of-fold gate" above. Open: which precision basis the bar means (weighted passes, unweighted does not).
-- (b) **More negatives:** a masked expert round on NoSidewalk faces outside Seattle (300–500 faces, run like
-   [#78](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/78)), so test is not one city and the
-   held-out drop can be measured on more than Chicago.
-- (c) **Cross-repository work** (sidewalk-ai-api, SidewalkWebpage; listed above) once the basis decision is taken
-   and if the aggregate pass is accepted with the held-out caveat; a final model on all 758 rows with a map fitted on
+   out-of-fold gate" above. The basis is decided: prior-weighted (2026-11-11).
+- (b) **A masked expert round outside Seattle**, before any serving work (decided 2026-11-11): one rater, 250
+   labels chosen score-first from four cities' deployment population, so the gate is read where step (a) could
+   not reach. Design and results in "The masked expert round outside Seattle" above.
+- (c) **Cross-repository work** (sidewalk-ai-api, SidewalkWebpage; listed above) after step (b), if its bar is
+   met; a final model on all 758 rows with a map fitted on
    the pooled out-of-fold predictions is the configuration to ship, gated per deployment as
    [#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52) asks.
 
