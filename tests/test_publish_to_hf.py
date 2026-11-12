@@ -1875,3 +1875,49 @@ def test_depth_refusals_carry_counts_only_and_say_what_fixes_them(tmp_path):
         assert "zurich" not in msg.lower() and "4242" not in msg and "4243" not in msg
         assert "serving change" in msg and "not an edited record" in msg
     assert re.search(r"\d+ of \d+ rows", messages[0])
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Issue #21, review of PR #101: split rows whatever their status, the training record's encoder, near depths
+# ---------------------------------------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("status", ["OK", "no_pano", ""])
+def test_every_split_row_is_checked_whatever_its_status(tmp_path, status):
+    """split.csv carries the manifest's ``status`` column, and stage_dataset publishes a crop for every split row
+    whatever it says, so the ``ok`` filter is for manifest.csv only: a whole-view split whose status is not exactly
+    ``ok`` must not get through on zero checked rows."""
+    root, *_ = make_root(tmp_path)
+    assert "status" in pd.read_csv(os.path.join(root, T, "split.csv")).columns
+
+    def whole_view(df):
+        df["status"] = status
+        df["depth_m"] = ""
+        df["crop_half_px"] = 1024
+        return df
+
+    for name in ("split.csv", "manifest.csv"):
+        _rewrite_csv(root, name, whole_view)
+    os.remove(os.path.join(root, T, "generation_run.json"))
+    with pytest.raises(pub.PublishError, match="split.csv: no row has a depth_m"):
+        pub.check_depth_sized(root, T)
+    with pytest.raises(pub.PublishError, match="split.csv: no row has a depth_m"):
+        pub.stage(root, T)
+    assert not os.path.exists(os.path.join(root, T, "publish"))
+
+
+def test_one_split_row_with_another_status_is_still_checked(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _rewrite_csv(root, "split.csv", _set("status", "error:ValueError", rows=[4]))
+    _rewrite_csv(root, "split.csv", _set("depth_m", "", rows=[4]))
+    with pytest.raises(pub.PublishError, match=f"split.csv: 1 of {len(ROWS)} rows have no depth_m"):
+        pub.check_depth_sized(root, T)
+
+
+def test_push_staged_checks_every_staged_split_row_whatever_its_status(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _, dataset_dir = pub.stage(root, T)
+    staged_csv = os.path.join(dataset_dir, "split.csv")
+    pd.read_csv(staged_csv).assign(depth_m="", status="skipped").to_csv(staged_csv, index=False)
+    with pytest.raises(pub.PublishError, match=re.escape(os.path.join("publish", "dataset", "split.csv")) +
+                       ": no row has a depth_m"):
+        pub.verify_staged(root, T)

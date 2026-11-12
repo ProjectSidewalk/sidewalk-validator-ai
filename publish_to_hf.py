@@ -658,8 +658,8 @@ def check_depth_sized(root, label_type):
     records ``fixed_crop_half_px`` or ``job_window_crops``: those crops come from the fixed-size ablation (issue #21)
     or the crop-job-window experiment (issue #53), serving renders a depth-sized view of every label, and the cards
     say so. Then, in this order, if ``generation_run.json`` records a depth model other than the served one
-    (:func:`check_depth_encoder`), or if ``split.csv`` or the ``ok`` rows of ``manifest.csv`` (each when present)
-    hold a row not cut at ``int(CROP_DEPTH_CONSTANT / depth_m)`` (:func:`check_depth_rows`): the records are optional,
+    (:func:`check_depth_encoder`), or if ``split.csv`` (every row) or the ``ok`` rows of ``manifest.csv`` (each file
+    when present) hold a row not cut at ``int(CROP_DEPTH_CONSTANT / depth_m)`` (:func:`check_depth_rows`): the records are optional,
     the rows are not. Checked before anything is staged, and again before ``--push-staged``."""
     base = os.path.join(root, label_type)
     runs = [_read_json(os.path.join(base, "generation_run.json")),
@@ -671,24 +671,35 @@ def check_depth_sized(root, label_type):
                            f"--fixed-crop-half-px or --job-window-crops) to publish") from e
     if runs[0] is not None:
         check_depth_encoder(runs[0], os.path.join(base, "generation_run.json"))
-    for name in ("split.csv", "manifest.csv"):
+    for name in DEPTH_ROW_FILES:
         path = os.path.join(base, name)
         if os.path.exists(path):          # a missing file is reported by read_dataset_context with its own message
-            check_depth_rows(_ok_rows(pd.read_csv(path, dtype=PANO_ID_DTYPE, low_memory=False)), path)
+            check_depth_rows(_rows_to_check(path), path)
 
 
 NOT_SERVED = (f"Serving sizes every crop by int({CROP_DEPTH_CONSTANT} / depth_m) with the {SERVED_DEPTH_ENCODER}/"
               f"{SERVED_DEPTH_DATASET} depth model; a fixed-size, whole-view or job-window model needs a serving "
               f"change in sidewalk-ai-api before it can be published, not an edited record")
 """Tail of every depth-row refusal (issue #21): blanking a record or a column is not the fix."""
+DEPTH_ROW_FILES = ("split.csv", "manifest.csv")
+"""The per-row files :func:`check_depth_rows` reads, in a pipeline root and in a staged ``publish/dataset/``."""
 
 
 def _ok_rows(df):
-    """The rows of a manifest whose crop was cut (``status == "ok"``); a frame without ``status`` (``split.csv``) is
-    returned whole."""
+    """The rows of a manifest whose crop was cut (``status == "ok"``); a frame without ``status`` is returned
+    whole."""
     if "status" not in df.columns:
         return df
     return df[df["status"].astype(str) == "ok"]
+
+
+def _rows_to_check(path):
+    """The rows of ``path`` (one of :data:`DEPTH_ROW_FILES`) that :func:`check_depth_rows` must pass: the ``ok`` rows
+    of a ``manifest.csv`` (the others have no crop), and **every** row of a ``split.csv``. A split carries the
+    manifest's ``status`` column too, but ``stage_dataset`` publishes a crop for each of its rows whatever that column
+    says, so it is not filtered: a split whose ``status`` is not exactly ``ok`` would otherwise be checked on no row."""
+    df = pd.read_csv(path, dtype=PANO_ID_DTYPE, low_memory=False)
+    return _ok_rows(df) if os.path.basename(path) == "manifest.csv" else df
 
 
 def check_depth_encoder(generation_run, what):
@@ -720,7 +731,7 @@ def check_depth_rows(df, what):
     """Raise ``PublishError`` unless every row of ``df`` shows a crop sized by depth at the served constant: a
     ``depth_m`` that is a finite number above 0, and a ``crop_half_px`` within :data:`DEPTH_HALF_TOLERANCE_PX` of
     ``int(CROP_DEPTH_CONSTANT / depth_m)``. ``df`` is a ``split.csv``, or the ``ok`` rows of a ``manifest.csv``
-    (:func:`_ok_rows`); an empty frame passes. This is the backstop behind the JSON records of
+    (:func:`_rows_to_check`); an empty frame passes. This is the backstop behind the JSON records of
     :func:`check_depth_sized`: a fixed-size or whole-view dataset staged without its ``generation_run.json`` still has
     no depth (or the wrong ``crop_half_px``) on its rows. Messages carry counts only, never a label or a city.
 
@@ -1314,10 +1325,10 @@ def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None, what="
                                f"present to publish the dataset")
         dataset_dir = None
     if dataset_dir is not None:              # the staged copies, not only the root they were staged from (issue #21)
-        for name in ("split.csv", "manifest.csv"):
+        for name in DEPTH_ROW_FILES:
             path = os.path.join(dataset_dir, name)
             if os.path.exists(path):
-                check_depth_rows(_ok_rows(pd.read_csv(path, dtype=PANO_ID_DTYPE, low_memory=False)), path)
+                check_depth_rows(_rows_to_check(path), path)
     terms = set(lists["non_public_terms"])
     for folder in (model_dir, dataset_dir):
         if folder is not None:

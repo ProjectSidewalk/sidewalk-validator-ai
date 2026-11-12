@@ -128,7 +128,8 @@ ViT-B (vKITTI) metric depth. Staging, and `--push-staged` again, refuses a run t
   either column is refused too. The staged copies in `publish/dataset/` are checked again before upload.
 
 The records are optional; the rows are not, so a fixed-size or whole-view dataset staged without its
-`generation_run.json` is still refused. The 1 px tolerance covers `depth_m` stored to 4 decimals (17 of 64,465
+`generation_run.json` is still refused. Every row of `split.csv` counts, whatever its `status` column says, because
+a crop is published for each of them; in `manifest.csv` only the `ok` rows have a crop. The 1 px tolerance covers `depth_m` stored to 4 decimals (17 of 64,465
 round-3 rows are off by one, none by more). Refusals give row counts, never a label or a city.
 
 A whole-view or fixed-size model (the NoSidewalk pilot's better arm, for example) is refused by design.
