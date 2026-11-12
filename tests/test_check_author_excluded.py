@@ -117,6 +117,30 @@ def test_check3_label_id_not_an_integer(files, capsys):
     _fails(files, capsys, _flag_rows(extra=["sidewalk_a,12a,f"]), r"check 3")
 
 
+def test_check1_not_utf8(files, capsys, tmp_path):
+    rc, out = files(_flag_rows())
+    with open(tmp_path / "flags.csv", "ab") as f:
+        f.write(b"sidewalk_a,999,\xff\n")
+    argv = ["--flags", str(tmp_path / "flags.csv"), "--pool", str(tmp_path / "pool.csv.gz"), "--key",
+            str(tmp_path / "key.csv"), "--unmasked", str(tmp_path / "unmasked.csv"), "--schemas", *SCHEMAS]
+    capsys.readouterr()
+    assert cae.main(argv) == 1
+    assert "check 1: the file is not UTF-8" in capsys.readouterr().err
+
+
+def test_check1_and_3_carriage_returns(files, capsys, tmp_path):
+    """psql on the host writes bare newlines; a CRLF file or one stray CR is not what was pulled."""
+    crlf = [r + "\r" for r in _flag_rows()]
+    _fails(files, capsys, crlf, r"check 1: header", header="schema,label_id,author_excluded\r")
+    rows = _flag_rows()
+    rows[3] += "\r"
+    _fails(files, capsys, rows, r"check 3: 1 row\(s\).*line 5")
+
+
+def test_check3_label_id_beyond_int64(files, capsys):
+    _fails(files, capsys, _flag_rows(extra=["sidewalk_a,99999999999999999999999,f"]), r"check 3")
+
+
 def test_check4_and_6_missing_schema(files, capsys):
     rows = [r for r in _flag_rows() if not r.startswith("sidewalk_b,")]
     err = _fails(files, capsys, rows, r"check 4: .*missing: \['sidewalk_b'\]")
@@ -134,6 +158,32 @@ def test_check5_repeated_key(files, capsys):
 def test_check6_two_percent_of_one_city_missing(files, capsys):
     drop = {f"sidewalk_b:{i}" for i in range(100, 104)}  # 4 of 200 = 2%
     _fails(files, capsys, _flag_rows(drop=drop), r"check 6: 4 of 200 pool labels of sidewalk_b \(2\.00%\)")
+
+
+def test_check6_exactly_the_limit_fails(files, capsys):
+    """"Under 1%" excludes 1% itself: 2 of 200."""
+    _fails(files, capsys, _flag_rows(drop={"sidewalk_b:100", "sidewalk_b:101"}),
+           r"check 6: 2 of 200 pool labels of sidewalk_b \(1\.00%\)")
+
+
+def test_check6_a_pool_city_left_out_of_schemas(files, capsys):
+    """--schemas is what the pull was asked for. A pull of one city, checked against that one city, is consistent
+    with itself and still does not cover the round: only the pool can show it."""
+    rows = [r for r in _flag_rows() if r.startswith("sidewalk_a,")]
+    _fails(files, capsys, rows, r"check 6: the pool has labels of \['sidewalk_b'\], not in --schemas",
+           schemas=["sidewalk_a"])
+
+
+def test_check6_a_schema_with_no_pool_labels(files, capsys):
+    _fails(files, capsys, _flag_rows(extra=["sidewalk_c,1,f"]), r"check 6: the pool has no labels of sidewalk_c",
+           schemas=SCHEMAS + ["sidewalk_c"])
+
+
+def test_check7_unmasked_item_not_in_the_key(files, capsys, tmp_path):
+    files(_flag_rows())  # writes the fixtures; then list an item the key does not hold as unmasked
+    pd.DataFrame({"label_uid": UNMASKED + ["sidewalk_b:150"]}).to_csv(tmp_path / "unmasked.csv", index=False)
+    capsys.readouterr()
+    _fails(files, capsys, _flag_rows(), r"check 7: 1 unmasked item\(s\) not in the key: b:150")
 
 
 def test_check7_key_item_flagged_but_not_unmasked(files, capsys):

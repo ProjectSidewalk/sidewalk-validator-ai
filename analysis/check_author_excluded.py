@@ -5,13 +5,15 @@ schemas. ``gt_rounds.py recount`` / ``score --author-excluded`` join that file o
 a pool label missing from it as *not* excluded, so a partial or garbled pull would silently give wrong weights. This
 script refuses such a file. Checks, in order (1-3 on the raw lines, before any parsing library sees them):
 
-1. the header is exactly ``schema,label_id,author_excluded``;
+1. the file is UTF-8 and its header is exactly ``schema,label_id,author_excluded``;
 2. every row has exactly 3 fields (a stray ``COPY n`` tag or a truncated last line does not);
-3. the third field is ``t`` or ``f`` and ``label_id`` is a non-negative integer;
+3. the third field is ``t`` or ``f`` and ``label_id`` is a non-negative integer of at most 18 digits (it fits
+   int64). Lines end in a bare newline, as psql writes them: a carriage return fails check 1 (header) or 3 (row);
 4. the set of schemas is exactly ``--schemas`` (no city missing, none extra);
 5. ``(schema, label_id)`` is unique;
-6. per schema, the share of the pool's labels missing from the flags is under ``--max-missing`` (a city whose query
-   failed shows up as 100%);
+6. every schema of the pool is in ``--schemas`` (``--schemas`` is what the pull was asked for, so only the pool can
+   show that a whole city was left out), and per schema the share of the pool's labels missing from the flags is
+   under ``--max-missing`` (a city whose query failed shows up as 100%);
 7. the whole key: every key item is joined onto the flags on ``(schema, label_id)`` (one-to-one), and the key items
    flagged ``t`` must be exactly the items of ``--unmasked`` (rated unmasked because their author is excluded). A
    key item missing from the flags is counted; an unmasked item missing is a failure.
@@ -39,7 +41,7 @@ import sys
 import pandas as pd
 
 HEADER = "schema,label_id,author_excluded"
-_INT = re.compile(r"[0-9]+")
+_INT = re.compile(r"[0-9]{1,18}")  # at most 18 digits: always fits int64
 _SHOW = 5  # bad lines / label refs named per failure before "... and N more"
 
 
@@ -74,6 +76,7 @@ def sha256_file(path):
 def read_flags_lines(path):
     """``(rows, failures)``: the data rows as ``(schema, label_id, value)`` tuples if checks 1-3 pass, else ``None``
     and the failures. A final newline is allowed; any other empty line counts as a row with the wrong field count.
+    Nothing is stripped: a carriage return, a space or a quote makes its line fail.
 
     >>> import io, tempfile, os
     >>> d = tempfile.mkdtemp(); p = os.path.join(d, "f.csv")
@@ -81,12 +84,15 @@ def read_flags_lines(path):
     >>> read_flags_lines(p)[1]
     ['check 2: 1 row(s) without exactly 3 fields: line 3']
     """
-    with open(path, encoding="utf-8", newline="") as f:
-        text = f.read()
+    with open(path, "rb") as f:
+        raw = f.read()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as e:
+        return None, [f"check 1: the file is not UTF-8 text ({e.reason} at byte {e.start})"]
     lines = text.split("\n")
     if lines and lines[-1] == "":
         lines.pop()
-    lines = [ln.removesuffix("\r") for ln in lines]
     if not lines or lines[0] != HEADER:
         got = repr(lines[0]) if lines else "an empty file"
         return None, [f"check 1: header is {got}, expected {HEADER!r}"]
@@ -144,9 +150,13 @@ def check(flags_path, pool_path, key_path, unmasked_path, schemas, max_missing=0
         return failures, summary  # the joins below need unique keys
     fkeys = flags[["schema", "label_id", "author_excluded"]]
 
-    # 6. per schema, pool labels missing from the flags
+    # 6. every pool schema is covered, and per schema few pool labels are missing from the flags
     pool = pd.read_csv(pool_path, usecols=["schema", "label_id"])
     pool["label_id"] = pool.label_id.astype(int)
+    uncovered = sorted(set(pool.schema) - set(schemas))
+    if uncovered:
+        failures.append(f"check 6: the pool has labels of {uncovered}, not in --schemas: the pull does not cover "
+                        f"the round")
     pool = pool[pool.schema.isin(schemas)]
     m = pool.merge(fkeys, on=["schema", "label_id"], how="left", validate="one_to_one", indicator=True)
     for s in schemas:
