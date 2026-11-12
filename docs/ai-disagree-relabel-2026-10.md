@@ -354,7 +354,8 @@ with the design file [`analysis/gt_rounds/round2.json`](../analysis/gt_rounds/ro
   only Unsure votes, 1,539 ties) and 3,853 of Chicago's 10,769 (3,002 / 145 / 706). The ties are the labels where
   the AI's Disagree breaks the tie in prod. No rate from this round, the population-weighted ones in `score`
   included, covers them; a later round needs a stratum for them. `build` prints these counts. The eligible counts
-  still include excluded authors' labels (the pool predates the `author_excluded` column). The recount without them
+  still include labels whose authors are excluded in `user_stat` (Gallery and Validate hide them; the pool predates
+  the `author_excluded` column). The recount without them
   ([#85](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/85)) joins `user_stat.excluded` onto this
   same pinned pool, so eligibility stays as of the round; it goes in
   [`ai-disagree-relabel-2026-10/round2_recount.md`](ai-disagree-relabel-2026-10/round2_recount.md), pending the
@@ -541,7 +542,7 @@ no cell left is reported as unestimable. With the 11 unmasked items left out, Se
 decided item, so it gets no weight; so do three other Seattle cells (light_voted Obstacle 4 and SurfaceProblem 3,
 margin_correct SurfaceProblem 4). In Chicago, three cells get no weight, none of them lone
 (light_voted Obstacle 4 and SurfaceProblem 4, margin_correct SurfaceProblem 4). `score --pool --author-excluded`
-weights by the recount above.
+weights by the recount once it is run (pending).
 
 | File (in `data/relabel-2026-10/round2/`) | sha256 |
 |---|---|
