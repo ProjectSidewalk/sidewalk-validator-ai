@@ -843,6 +843,350 @@ def test_report_figure_is_written(r3, tmp_path):
 # Review round (PR #104): tests for mutations the suite above did not catch, and for the review's fixes
 # ---------------------------------------------------------------------------------------------------------------------
 
+def _pose(pitch=None, roll=None, beta=None, offset=0.0):
+    import crop_pose
+    return crop_pose.Pose(pitch, roll, "test", beta, "test", offset)
+
+
+def test_r_click_lat_offset_moves_the_ray_down_as_the_generation_loop_does(monkeypatch):
+    """A positive click_lat_offset_deg is subtracted from the stored latitude, so y GROWS: the same expression as
+    data_generation's loop (``y_norm = pano_y / H + offset / 180``). No round-3 row exercises it (all offsets 0)."""
+    pytest.importorskip("sidewalk_panorama_tools")
+    import crop_pose
+    monkeypatch.setattr(crop_pose, "pose_for_row", lambda row, beta: _pose(offset=10.0))
+    x, y = da.crop_ray_pixel(_row(100.0, H / 2))                 # stored on the horizon, the rig pixel is 10 deg below
+    assert (x, y) == (100.0, pytest.approx(H / 2 + 10.0 / 180.0 * H))
+    assert da.depression_deg(y, H) == pytest.approx(10.0)
+    # with a tilt as well, the ray is the centre of the view the loop would render at that y_norm
+    monkeypatch.setattr(crop_pose, "pose_for_row", lambda row, beta: _pose(2.0, None, 1.0, 10.0))
+    lx, ly = da.crop_ray_pixel(_row(12000.0, 5200.0))
+    cx, cy = _centre_of_view(12000.0, 5200.0 + 10.0 / 180.0 * H, 2.0, None, beta=1.0)
+    assert abs((lx - cx + W / 2) % W - W / 2) < 0.01 and abs(ly - cy) < 0.01
+
+
+def test_r_depth_pass_passes_pose_offset_and_channel_order_like_the_loop(tmp_path, monkeypatch):
+    """depth_pass hands ``render`` an RGB panorama, ``y_norm`` with the offset ADDED, ``apply_tilt`` only when the
+    pose has a beta, and hands the model a BGR view; a fatal error (an assertion) is raised, not written as a row."""
+    import crop_pose
+    poses = {"pub-a:0": _pose(2.0, None, 0.95, 0.0), "pub-a:1": _pose(None, None, None, 0.0),
+             "pub-b:2": _pose(1.0, None, 1.0, 9.0)}
+    monkeypatch.setattr(crop_pose, "pose_for_row", lambda row, beta: poses[row["label_uid"]])
+    seen = []
+
+    def reader(store, city, pano_id):
+        pano = np.zeros((4, 8, 3), np.uint8)
+        pano[..., 0], pano[..., 1], pano[..., 2] = 1, 2, 3            # BGR, as cv2 reads it
+        return pano, {}
+
+    def render(pano_rgb, x_norm, y_norm, camera_pitch=None, camera_roll=None, apply_tilt=True, beta=0.95,
+               device=None):
+        assert pano_rgb[0, 0].tolist() == [3, 2, 1]                   # RGB in
+        seen.append((round(y_norm, 9), apply_tilt, beta))
+        view = np.zeros((8, 8, 3), np.uint8)
+        view[..., 0], view[..., 1], view[..., 2] = 10, 20, 30         # RGB out
+        return view, apply_tilt
+
+    class Model:
+        def infer_image(self, bgr):
+            assert bgr[0, 0].tolist() == [30, 20, 10]                 # BGR to the depth model
+            return np.full((64, 64), 12.0)
+
+    rows = _sample_rows().iloc[:3]
+    out = str(tmp_path / "d.csv")
+    da.depth_pass(rows, out, ("vitb",), "cuda", reader, lambda enc, device: Model(), render)
+    y0 = 5000.0 / H
+    assert seen == [(round(y0, 9), True, 0.95), (round(y0, 9), False, 0.0), (round(y0 + 9.0 / 180.0, 9), True, 1.0)]
+    d = pd.read_csv(out)
+    assert d.status.eq("ok").all() and d.tilt_applied.tolist() == [1, 0, 1]
+
+    def broken(*a, **k):
+        raise AssertionError("an invariant broke")
+    with pytest.raises(AssertionError):
+        da.depth_pass(rows, str(tmp_path / "fatal.csv"), ("vitb",), "cuda", reader, lambda e, d: Model(), broken)
+
+
+def test_r_depth_pass_resume_survives_a_cut_off_last_line(tmp_path):
+    """A job killed mid-write leaves a last line without a newline. On resume that fragment is removed (the next
+    row is not glued onto it), its label is run again, and a row with a blank status is not taken as done."""
+    reads = []
+
+    def reader(store, city, pano_id):
+        reads.append(pano_id)
+        return np.zeros((4, 8, 3), np.uint8), {}
+
+    def render(pano_rgb, x_norm, y_norm, camera_pitch=None, camera_roll=None, apply_tilt=True, beta=0.95,
+               device=None):
+        return np.zeros((8, 8, 3), np.uint8), True
+
+    rows = _sample_rows().iloc[:3]
+    out = tmp_path / "d.csv"
+    loader = lambda enc, device: FakeModel(20.0)  # noqa: E731
+    da.depth_pass(rows, str(out), ("vitb",), "cuda", reader, loader, render)
+    full = out.read_text()
+    assert full.endswith("\n") and len(full.splitlines()) == 4
+    lines = full.splitlines(keepends=True)
+    out.write_text("".join(lines[:3]) + "pub-b:2,ok,tor")              # the third row cut off, no newline
+    reads.clear()
+    da.depth_pass(rows, str(out), ("vitb",), "cuda", reader, loader, render)
+    assert reads == ["BBy"]                                            # only the cut-off label is run again
+    assert out.read_text() == full                                     # and the file is whole again
+    out.write_text("".join(lines[:3]) + "pub-b:2,,torch,,,\n")         # a complete row with a blank status
+    reads.clear()
+    da.depth_pass(rows, str(out), ("vitb",), "cuda", reader, loader, render)
+    assert reads == ["BBy"] and da.load_depths(str(out)).set_index("label_uid").loc["pub-b:2", "status"] == "ok"
+    out.write_text("")                                                 # an empty file gets its header back
+    da.depth_pass(rows, str(out), ("vitb",), "cuda", reader, loader, render)
+    assert out.read_text() == full
+
+
+def test_r_load_depths_keeps_the_later_row():
+    d = pd.DataFrame({"label_uid": ["a:1", "a:2", "a:1"], "status": ["error:X", "ok", "ok"],
+                      "d_vitb_m": [np.nan, 2.0, 7.0]})
+    out = da.load_depths_frame(d).set_index("label_uid")
+    assert out.loc["a:1", "status"] == "ok" and out.loc["a:1", "d_vitb_m"] == 7.0
+
+
+def test_r_plane_sign_handles_the_other_payload_convention():
+    """The tests above build planes as ``p . n = d``. A payload written as ``n . p + d = 0`` (d negated, n kept)
+    must give the same distances: sigma is what absorbs the convention, and a constant sigma would not."""
+    g = make_artifact([GROUND, FACADE_8M], h=128, w=256)
+    other = g._replace(planes_d=-g.planes_d)
+    for dep, bearing in ((10.0, 0.0), (30.0, 120.0), (2.5, 0.0), (45.0, -90.0)):
+        a = da.google_depth(g, *at(dep, bearing), W, H, dep)
+        b = da.google_depth(other, *at(dep, bearing), W, H, dep)
+        assert a["g_status"] == b["g_status"] in ("ground", "facade")
+        assert b["g_ray_m"] == pytest.approx(a["g_ray_m"], rel=1e-12)
+    assert da.plane_sign(g, 1) == 1.0 and da.plane_sign(other, 1) == -1.0
+    # a hit behind the camera stays out of range under both conventions
+    idx = g.plane_indices.copy()
+    idx[60:63, 40:43] = 1                                              # ground painted just above the horizon row 64
+    depth = np.where(idx > 0, np.where(g.depth > 0, g.depth, 5.0), -1.0)
+    for grid in (g._replace(plane_indices=idx, depth=depth), other._replace(plane_indices=idx, depth=depth)):
+        out = da.google_depth(grid, *_pixel_of_cell(61, 41, 128, 256), W, H)
+        assert out["g_status"] == "out_of_range" and out["plane"] == 1 and out["g_ray_abs_m"] > 0
+
+
+def test_r_ground_facade_threshold_camera_height_and_range():
+    def tilted(vert):                                                  # a plane whose normal has |n_z| / |n| = vert
+        return ((0.0, math.sqrt(1 - vert * vert), vert), 2.5)
+    for vert, status in ((0.75, "ground"), (0.65, "facade")):          # looking back (+y), 40 degrees down
+        out = da.google_depth(make_artifact([tilted(vert)]), *at(40.0, 180.0), W, H, 40.0)
+        assert out["g_status"] == status and out["verticality"] == pytest.approx(vert)
+    # a non-unit normal: the camera height is |d| / |n|, and the intersection is unchanged
+    unit = da.google_depth(make_artifact([GROUND]), *at(20.0), W, H, 20.0)
+    scaled = da.google_depth(make_artifact([((0.0, 0.0, 4.0), 10.0)]), *at(20.0), W, H, 20.0)
+    assert scaled["cam_height_m"] == pytest.approx(2.5) and scaled["g_ray_m"] == pytest.approx(unit["g_ray_m"])
+    assert scaled["trig_cam_m"] == pytest.approx(scaled["g_ray_m"])
+    # the lower end of RANGE_M: ground 0.3 m below the camera, looking almost straight down
+    near = da.google_depth(make_artifact([((0.0, 0.0, 1.0), 0.3)]), *at(80.0), W, H, 80.0)
+    assert near["g_status"] == "out_of_range" and near["g_ray_abs_m"] == pytest.approx(0.3 / math.sin(math.radians(80)))
+
+
+def test_r_lookup_cell_centre_plane_wins_and_index_zero_never_counts():
+    h, w = 64, 128
+    g = make_artifact([GROUND, ((0.0, 0.0, 1.0), 4.0)])               # plane 2 never wins the raster (farther)
+    r, c = 50, 30
+    idx = g.plane_indices.copy()
+    idx[r, c] = 2                                                      # the centre cell alone carries plane 2
+    out = da.google_depth(g._replace(plane_indices=idx), *_pixel_of_cell(r, c), W, H)
+    assert out["plane"] == 2 and out["n_valid"] == 9                   # the centre cell's plane, not the majority's
+    # truncation, not rounding: 0.9 of a cell further down and right is still the same cell
+    x, y = (c + 0.9) / w * W, (r + 0.9) / h * H
+    assert (da.google_depth(g, x, y, W, H)["row"], da.google_depth(g, x, y, W, H)["col"]) == (r, c)
+    # a slightly negative x belongs to the last column, not column 0
+    assert da.google_depth(g, -5.0, y, W, H)["col"] == w - 1
+    # cells with a depth but plane index 0 do not count
+    idx0 = g.plane_indices.copy()
+    idx0[r - 1:r + 2, c - 1:c + 2] = 0
+    idx0[r, c] = 1
+    out = da.google_depth(g._replace(plane_indices=idx0), *_pixel_of_cell(r, c), W, H)
+    assert out["n_valid"] == 1 and out["g_status"] == "no_plane"
+
+
+def test_r_slope_sign_ci_level_and_bootstrap_strata():
+    b = np.log(np.arange(1.0, 60.0))
+    s = da.slope_bracket(-0.8 * b + 0.01 * np.sin(np.arange(59.0)), b)
+    assert s["rma"] < 0 and s["r"] < 0 and s["beta_yx"] < 0
+    assert da._ci(np.arange(101.0)) == pytest.approx((2.5, 97.5))
+    # within-stratum resampling draws exactly as many clusters from each stratum as it has
+    cluster = np.array([f"k{i}" for i in range(10)])
+    strata = np.array(["a"] * 3 + ["b"] * 7)
+    for wts in da.boot_weights(cluster, strata, n_boot=50, seed=1):
+        assert wts[:3].sum() == 3 and wts[3:].sum() == 7
+    free = [wts[:3].sum() for wts in da.boot_weights(cluster, None, n_boot=50, seed=1)]
+    assert len(set(free)) > 1 and all(wts.sum() == 10 for wts in da.boot_weights(cluster, None, n_boot=5, seed=1))
+
+
+def test_r_crop_moved_is_log_symmetric_and_wilson_uses_the_effective_n():
+    # 10.3 % larger: ln(1.103) = 0.098 lies between ln(1.10) = 0.0953 and 0.10, so the log form counts it as moved
+    s = da.crop_moved_shares(np.log([1.103, 1 / 1.103, 1.09, 1.0]))
+    assert s["t=0.1"]["count"] == 2 and s["t=0.1"]["share"] == 0.5
+    wts = np.array([10.0, 1.0, 1.0, 1.0])
+    u = da.crop_moved_shares(np.log([1.3, 1.0, 1.0, 1.3]), weights=wts)
+    assert u["n_eff"] == pytest.approx(169 / 103)
+    lo, hi = da.wilson(u["t=0.1"]["share"], u["n_eff"])
+    assert (u["t=0.1"]["lo"], u["t=0.1"]["hi"]) == (pytest.approx(lo), pytest.approx(hi))
+    assert hi - lo > np.subtract(*da.wilson(u["t=0.1"]["share"], 4)[::-1])     # wider than with the plain n
+
+
+def test_r_summarize_small_cell_boundary_and_clip_boundary(tmp_path):
+    d = pd.DataFrame({"t": ["a"] * da.MIN_CELL_N + ["b"] * (da.MIN_CELL_N - 1), "x": 1.0})
+    s = da.summarize(d, ["t"], ["x"]).set_index("t")
+    assert not s.loc["a", "small"] and s.loc["b", "small"]             # exactly MIN_CELL_N is shown
+    root = str(tmp_path / "r")
+    for t in da.LABEL_TYPES:
+        os.makedirs(os.path.join(root, t))
+        pd.DataFrame({"depth_m": [8.0, 7.99], "clipped": [0, 1], "status": "ok"}).to_csv(
+            os.path.join(root, t, "split.csv"), index=False)
+    tb = da.clipping_table(root, constants=(8192,)).set_index("label_type")
+    assert tb.loc["CurbRamp", "c8192_clipped"] == 1                    # a half-width of exactly 1024 px is not clipped
+
+
+def test_r_trig_tables_yardstick_train_n_intervals_and_notes(tmp_path, monkeypatch):
+    def extra(t, df):
+        if t == "CurbRamp":
+            df.loc[df.index[:4], "author"] = "ai"                      # rows 0 and 1 are train rows
+        return df
+    root = make_round3(str(tmp_path / "r"), extra_rows=extra)
+    tf = da.trig_frame(da.load_frame(root, os.path.join(root, "rawlabels")))
+    calls = []
+    real = da.median_with_ci
+    monkeypatch.setattr(da, "median_with_ci", lambda v, cluster, strata, *a: (calls.append((list(cluster), strata)),
+                                                                                real(v, cluster, strata, *a))[1])
+    out = da.trig_tables(tf, PUBLIC, n_boot=20)
+    # the #51 yardstick and train_n cover every round-3 row, AI-authored ones included
+    assert _t(out, "yardstick_51")["rows"][0]["n"] == 90
+    head = {r["label_type"]: r for r in _t(out, "by_type")["rows"]}
+    assert head["CurbRamp"]["n"] == 86 and head["CurbRamp"]["train_n"] == 48
+    split = {(r["label_type"], r["split"]): r for r in _t(out, "type_split")["rows"]}
+    row = split[("CurbRamp", "train")]
+    assert row["train_n"] == 48 > row["n"] == 46                       # train_n can exceed n ...
+    for name in ("by_type", "type_severity", "type_tag", "type_class", "type_year", "type_split", "city"):
+        assert "train_n can" in _t(out, name)["note"] and "exceed n" in _t(out, name)["note"]   # ... and says so
+    # two intervals per row: panoramas within deployment, then whole deployments
+    use = tf[tf.usable]
+    cluster, strata = calls[0]
+    assert set(cluster) <= set(use.city + ":" + use.pano_id) and len(set(cluster)) < len(cluster)
+    assert strata is not None and list(strata) == list(use[use.label_type == "CurbRamp"].city)
+    cluster, strata = calls[1]
+    assert strata is None and set(cluster) == set(tf.city)
+    for r in head.values():
+        assert r["ratio_med_city_lo"] <= r["ratio_med"] <= r["ratio_med_city_hi"]
+    # figure data: thin bins are blanked
+    v = np.r_[np.zeros(50), np.linspace(1, 2, 12)]                    # 50 labels in one bin, 6 in each of two others
+    raw, _, _ = np.histogram2d(v, v, bins=4, range=[np.quantile(v, [0.005, 0.995])] * 2)
+    assert ((raw > 0) & (raw < 10)).sum() == 2
+    counts = np.array(da.hist2d_counts(v, v, bins=4, min_count=10)["counts"])
+    assert counts.sum() == counts.max() == raw.max() >= 50             # the two thin bins are gone
+
+
+def test_r_exclusion_bound_brackets_the_median(tmp_path):
+    def extra(t, df):
+        if t == "Obstacle":
+            df.loc[df.index[:10], "author"] = "ai"
+        return df
+    root = make_round3(str(tmp_path / "r"), extra_rows=extra)
+    tf = da.trig_frame(da.load_frame(root, os.path.join(root, "rawlabels")))
+    out = da.trig_tables(tf, PUBLIC, n_boot=0)
+    b = {r["label_type"]: r for r in _t(out, "exclusion_bound")["rows"]}
+    assert b["Obstacle"]["n_excluded"] == 10 and b["all types"]["n_excluded"] == 10 and b["CurbRamp"]["n_excluded"] == 0
+    assert b["CurbRamp"]["if_all_below"] == b["CurbRamp"]["ratio_med"] == b["CurbRamp"]["if_all_above"]
+    used = np.sort(tf[tf.usable & tf.label_type.eq("Obstacle")].ratio.to_numpy())
+    assert b["Obstacle"]["if_all_below"] == pytest.approx(np.median(np.r_[np.zeros(10), used]), abs=5e-4)
+    assert b["Obstacle"]["if_all_above"] == pytest.approx(np.median(np.r_[used, np.full(10, 99.0)]), abs=5e-4)
+    assert b["Obstacle"]["if_all_below"] < b["Obstacle"]["ratio_med"] < b["Obstacle"]["if_all_above"]
+    assert b["all types"]["ratio_med"] == pytest.approx(out["headline"]["ratio_median"], abs=5e-4)
+
+
+def test_r_a_pool_of_one_or_two_private_deployments_shows_counts_only(tmp_path):
+    """One unnamed deployment's median is still that deployment's statistic. Below MIN_POOL_DEPLOYMENTS the pooled
+    row keeps n and train_n (derivable from the totals anyway) and shows no statistic."""
+    def city_table(cities):
+        root = make_round3(str(tmp_path / f"r{len(cities)}"), cities=cities)
+        tf = da.trig_frame(da.load_frame(root, os.path.join(root, "rawlabels")))
+        out = da.trig_tables(tf, PUBLIC, n_boot=0)
+        return out, {r["city"]: r for r in _t(out, "city")["rows"]}
+    out, one = city_table(("pub-a", "pub-b", "secret-town"))
+    pooled = one["non-public deployments (1)"]
+    assert pooled["small"] and pooled["ratio_med"] is None and pooled["n"] == 150 and pooled["train_n"] == 80
+    assert not one["pub-a"]["small"] and one["pub-a"]["ratio_med"] is not None
+    md = da.table_markdown(_t(out, "city"))
+    assert re.search(r"\| non-public deployments \(1\) \| 150 \| 80 \| n too small \|", md)
+    _, three = city_table(("pub-a", "pub-b", "s1", "s2", "s3"))
+    assert not three["non-public deployments (3)"]["small"] and three["non-public deployments (3)"]["ratio_med"]
+
+
+def test_r_sample_keeps_the_lowest_ranked_label_of_a_panorama(tmp_path):
+    _, f = big_frame(tmp_path)
+    pub = {"pub-a", "pub-b", "pub-c"}
+    s = da.draw_sample(f, pub, n_per_type=1000, oversample=1)         # everything that survives the one-per-pano rule
+    ranks = pd.Series([da.rank(da.SEED, u) for u in f.label_uid], index=f.index)
+    best = f[f.city.isin(pub)].assign(rank=ranks).groupby(["label_type", "city", "pano_id"])["rank"].min()
+    got = s.set_index(["label_type", "city", "pano_id"])["rank"]
+    assert len(got) == len(best) and (got.sort_index() == best.sort_index()).all()
+
+
+def test_r_rule_edges_r1_marginal_band_jitter_and_r2_band_edges():
+    def r1(overall, types, jitter=0.01):
+        cell = {"overall": overall, "weighted": overall, "by_type": types}
+        return {"jitter_share_10": jitter, "t=0.1": cell, "t=0.25": {**cell, "overall": 0.99}}
+    # R1's marginal band is [0.86, 0.94], both ends included; it is a flag and never changes `met`
+    types = {"A": 0.86, "B": 0.94, "C": 0.9401, "D": 0.90, "E": 0.8599}
+    out = da.rule_readout({"r1": r1(0.96, types)})["R1"]
+    assert out["marginal_types"] == ["A", "B", "D"] and out["types_below_90"] == ["A", "E"] and not out["met"]
+    out = da.rule_readout({"r1": r1(0.96, {"B": 0.94, "D": 0.90})})["R1"]
+    assert out["met"] and out["marginal_types"] == ["B", "D"]          # met at exactly 90 %, flagged marginal
+    # the jitter clause needs MORE than 5 %
+    assert da.rule_readout({"r1": r1(0.96, {"D": 0.95}, jitter=0.05)})["R1"]["tolerance"] == 0.1
+    assert da.rule_readout({"r1": r1(0.96, {"D": 0.95}, jitter=0.0501)})["R1"]["tolerance"] == 0.25
+    # R2: the band's edges are inside; an end exactly on an edge with the other end beyond it straddles
+    assert da.bracket_verdict(0.9, 1.1) == "inside"
+    assert da.bracket_verdict(0.8, 0.9) == "straddles" and da.bracket_verdict(1.1, 1.3) == "straddles"
+    assert da.bracket_verdict(0.8, 0.8999) == "outside" and da.bracket_verdict(1.1001, 1.3) == "outside"
+
+
+def test_r_compare_reads_the_rules_from_the_right_rows():
+    """R0 on GPU-rendered Set A rows at 0.1 %; R1 scale-matched, log-symmetric, weighted by inclusion weight, its
+    jitter from ViT-B; R2 on ground hits of the four ground types in Set G only."""
+    m = _synthetic_merged()
+    n = len(m)
+    i = np.arange(n)
+    a = m.set_a.to_numpy()
+    # R0: Set A rows off by 0.5 % (inside 1 %, outside 0.1 %) on every 4th row; numpy-rendered rows way off
+    m["d_vitb_m"] = m.depth_m * np.where(i % 4 == 0, 1.005, 1.0)
+    m.loc[i % 10 == 1, "renderer"] = "numpy"
+    m.loc[i % 10 == 1, "d_vitb_m"] = m.depth_m * 2
+    # non-Set-A rows would wreck every Set A statistic if they were read
+    m.loc[~a, "d_vitb_m"] = m.depth_m * 3
+    # R1: ViT-L = 1.2 x ViT-B, except every 5th Set A row 10.3 % larger still; those rows carry weight 9
+    m["d_vitl_m"] = m.d_vitb_m * 1.2 * np.where(i % 5 == 0, 1.103, 1.0)
+    m["inclusion_weight"] = np.where(i % 5 == 0, 9.0, 1.0)
+    m["d_vitb_box_m"] = m.d_vitb_m * np.where(i % 3 == 0, 1.2, 1.0)    # ViT-B jitter: a third of the rows
+    m["d_vitl_box_m"] = m.d_vitl_m                                     # ViT-L jitter: none
+    # R2: off-design rows (Obstacle, facade hits, non-Set-G) get a Google distance unrelated to ViT-B
+    design = m.set_g & m.g_status.eq("ground") & m.label_type.isin(da.GROUND_TYPES)
+    rng = np.random.default_rng(5)
+    m["g_ray_m"] = np.where(design, m.depth_m / 2.7, rng.uniform(1, 80, n))
+    _, readout, stats = da.compare(m, n_boot=20)
+
+    gpu = a & m.status.eq("ok").to_numpy() & m.renderer.eq("torch").to_numpy()
+    assert stats["r0"] == {"n": int(gpu.sum()), "within": int((gpu & (i % 4 != 0)).sum())}
+    assert not readout["R0"]["met"]
+    ok = a & np.isfinite(np.log(m.d_vitl_m.to_numpy()))
+    off = ok & (i % 5 == 0)
+    assert stats["vitl_vitb"]["s"] == pytest.approx(1.2)               # the median is the 1.2 rows
+    r1 = stats["r1"]
+    assert r1["t=0.1"]["overall"] == pytest.approx(1 - off.sum() / ok.sum())      # 10.3 % is outside +-10 % in ln
+    assert r1["t=0.25"]["overall"] == 1.0
+    w = m.inclusion_weight.to_numpy()
+    assert r1["t=0.1"]["weighted"] == pytest.approx(1 - w[off].sum() / w[ok].sum())
+    assert r1["t=0.1"]["weighted"] < r1["t=0.1"]["overall"]
+    assert r1["jitter_share_10"] == pytest.approx((ok & (i % 3 == 0)).sum() / ok.sum())
+    assert readout["R1"]["jitter_fallback"] and readout["R1"]["tolerance"] == 0.25
+    assert stats["vitb_google"]["n"] == int(design.sum())
+    assert stats["r2"]["beta_yx"] == pytest.approx(1.0, abs=1e-6) and readout["R2"]["verdict"] == "inside"
+
+
 VITL_GATE = r'^VITL_(REV|SHA256)=|^\[\[ "\$VITL_'
 
 

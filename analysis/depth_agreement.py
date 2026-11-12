@@ -79,6 +79,8 @@ F_PX = dg.VIEW_SIZE / 2                     # focal length in view px: a 90 degr
 YEAR_BANDS = ((2007, 2012), (2013, 2017), (2018, 2019), (2020, 2022), (2023, 2026))
 HIST_MIN_COUNT = 10                         # 2-D histogram bins with fewer labels are blanked in the figure data
 POOLED_LABEL = "non-public deployments ({k})"
+MIN_POOL_DEPLOYMENTS = 3                    # a smaller pool shows its counts only: its statistics would describe one or two
+                                            # unnamed deployments
 NONE = "(none)"
 
 #: sha256 of round 3's inputs (docs/depth-ablation-2026-11.md, "Reproduce"). ``rawlabels/*.csv`` is the combined
@@ -575,6 +577,36 @@ def hist2d_counts(x, y, bins=24, min_count=HIST_MIN_COUNT):
             "counts": counts.astype(int).tolist(), "min_count": min_count}
 
 
+#: Said under every table that carries train_n, so that train_n > n in a row is not read as an error.
+TRAIN_N_NOTE = ("train_n counts every round-3 train-split row of the slice, including the AI-authored and "
+                "near-horizon rows that n leaves out; n counts the usable rows of all splits. So train_n can "
+                "exceed n (it does in the train rows of the split table).")
+
+
+def exclusion_bound(sl):
+    """How far the excluded rows could move the median ratio: per label type and overall, the median of the used
+    rows, and the median had every excluded row of the group fallen below every used one (``if_all_below``) or
+    above (``if_all_above``). No assumption about the excluded rows' true ratios is needed.
+
+    >>> d = pd.DataFrame({"label_type": "CurbRamp", "usable": [True] * 5 + [False] * 2,
+    ...                   "ratio": [1.0, 2.0, 3.0, 4.0, 5.0, np.nan, 9.0]})
+    >>> r = exclusion_bound(d).iloc[0]
+    >>> r.label_type, [float(v) for v in r.iloc[1:]]     # n, n_excluded, median, if_all_below, if_all_above
+    ('CurbRamp', [5.0, 2.0, 3.0, 2.0, 4.0])
+    """
+    rows = []
+    groups = [(t, sl[sl.label_type == t]) for t in LABEL_TYPES if (sl.label_type == t).any()] + [("all types", sl)]
+    for t, g in groups:
+        used = np.sort(g.ratio[g.usable].to_numpy(float))
+        k = int((~g.usable).sum())
+        lo = float(np.median(np.concatenate([np.full(k, -np.inf), used]))) if len(used) else np.nan
+        hi = float(np.median(np.concatenate([used, np.full(k, np.inf)]))) if len(used) else np.nan
+        rows.append({"label_type": t, "n": int(len(used)), "n_excluded": k,
+                     "ratio_med": float(np.median(used)) if len(used) else np.nan,
+                     "if_all_below": lo, "if_all_above": hi})
+    return pd.DataFrame(rows)
+
+
 def trig_tables(tf, public, n_boot=N_BOOT, seed=SEED):
     """The aggregate tables of the trig arm from a :func:`trig_frame` (nominal height): a list of :func:`table`
     dicts plus figure data. Only cities in ``public`` are named; all others are pooled into one row."""
@@ -595,16 +627,18 @@ def trig_tables(tf, public, n_boot=N_BOOT, seed=SEED):
         g = use if r.label_type == "all types" else ground if r.label_type == "ground types" else \
             use[use.label_type == r.label_type]
         _, lo, hi = median_with_ci(g.ratio.to_numpy(), g.city + ":" + g.pano_id, g.city, n_boot, seed)
-        cis.append((lo, hi))
-    head["ratio_med_lo"], head["ratio_med_hi"] = zip(*cis)
+        _, clo, chi = median_with_ci(g.ratio.to_numpy(), g.city, None, n_boot, seed + 1)
+        cis.append((lo, hi, clo, chi))
+    head["ratio_med_lo"], head["ratio_med_hi"], head["ratio_med_city_lo"], head["ratio_med_city_hi"] = zip(*cis)
     tables.append(table("by_type", "ViT-B / flat-ground ratio, implied crop width and distances by label type",
                         head[["label_type", "n", "train_n", "ratio_med", "ratio_med_lo", "ratio_med_hi",
-                              "ratio_p05", "ratio_p95", "width_m_med", "width_m_p05", "width_m_p95", "trig_m_med",
+                              "ratio_med_city_lo", "ratio_med_city_hi", "ratio_p05", "ratio_p95", "width_m_med", "width_m_p05", "width_m_p95", "trig_m_med",
                               "depth_m_med", "depression_deg_med", "small"]],
-                        note="Usable rows: human-authored, depression > 2 deg. Interval: 95 % bootstrap of the "
-                             "median over panoramas within city. train_n, here and in every slice: rows of the "
-                             "slice in the round-3 train split, used here or not (AI-authored and near-horizon "
-                             "rows included), i.e. what the classifier trained on."))
+                        note="Usable rows: human-authored, depression > 2 deg. Two 95 % bootstrap intervals of "
+                             "the median: ratio_med_lo/hi resamples panoramas within each deployment (these "
+                             "deployments held fixed); ratio_med_city_lo/hi resamples whole deployments (what "
+                             "another set of deployments could show) and is the wider, more honest one. " +
+                             TRAIN_N_NOTE))
 
     heights = []
     for h in CAMERA_HEIGHTS_M:
@@ -627,19 +661,25 @@ def trig_tables(tf, public, n_boot=N_BOOT, seed=SEED):
             ("type_split", "By label type x round-3 split", ["label_type", "split"], False)):
         s = _type_order(summarize(use, keys, ["ratio", "width_m"], train, explode_tags=explode))
         tables.append(table(name, title, s[keys + ["n", "train_n", "ratio_med", "ratio_p05", "ratio_p95",
-                                                  "width_m_med", "small"]]))
+                                                  "width_m_med", "small"]], note=TRAIN_N_NOTE))
 
     k_private = len(set(sl.city) - set(public))
     pooled = pool_cities(use, public, k=k_private)
     ptrain = pool_cities(train, public, k=k_private)
     s = summarize(pooled, ["city"], ["ratio", "width_m", "depression_deg"], ptrain)
     is_pool = s.city.str.startswith("non-public")
+    if 0 < k_private < MIN_POOL_DEPLOYMENTS:       # one or two unnamed deployments: counts only, no statistics
+        stat_cols = [c for c in s.columns if c.endswith(("_med", "_p05", "_p95"))]
+        s.loc[is_pool, stat_cols] = np.nan
+        s.loc[is_pool, "small"] = True
     s = pd.concat([s[~is_pool].sort_values("city"), s[is_pool]], ignore_index=True)
     tables.append(table("city", "By deployment (public deployments named; all others pooled)",
                         s[["city", "n", "train_n", "ratio_med", "ratio_p05", "ratio_p95", "width_m_med",
                            "depression_deg_med", "small"]],
                         note="Hilly deployments break the flat-ground assumption; a deployment far from the "
-                             "pooled median is where to look first."))
+                             "pooled median is where to look first. A pool of fewer than "
+                             f"{MIN_POOL_DEPLOYMENTS} non-public deployments shows its counts only. " +
+                             TRAIN_N_NOTE))
 
     slopes = []
     for t, g in [("all types", use), ("ground types", ground)] + [(t, use[use.label_type == t]) for t in LABEL_TYPES]:
@@ -684,6 +724,10 @@ def trig_tables(tf, public, n_boot=N_BOOT, seed=SEED):
     excl = sl.groupby(["label_type", "why_excluded"]).size().rename("n").reset_index()
     excl["why_excluded"] = excl.why_excluded.replace("", "used")
     tables.append(table("rows", "Rows used and excluded, by reason", _type_order(excl)))
+    tables.append(table("exclusion_bound", "Bound on what the excluded rows could change: the median ratio had "
+                        "every excluded row fallen below it, or above it", exclusion_bound(sl),
+                        note="Excluded rows have no trustworthy ratio (AI-authored: rig-frame pixel; near the "
+                             "horizon: 1 / sin explodes), so they are bounded, not estimated."))
     ai = sl[sl.why_excluded.eq("ai_authored")]
     if len(ai):
         med, p05, p95 = _quantiles(ai.ratio)
@@ -1026,7 +1070,7 @@ def google_depth(grid, lookup_x, lookup_y, pano_width, pano_height, depression=n
     if gp is not None:
         out["cam_height_m"] = abs(float(grid.planes_d[gp])) / float(np.linalg.norm(grid.planes_n[gp]))
         out["trig_cam_m"] = float(trig_m(np.array([depression]), out["cam_height_m"])[0])
-    col = int(lookup_x / pano_width * w) % w
+    col = int(math.floor(lookup_x / pano_width * w)) % w     # floor, so a slightly negative x wraps to the last column
     row = min(max(int(lookup_y / pano_height * h), 0), h - 1)
     out.update(row=row, col=col, g_cell_m=float(grid.depth[row, col]))
     rows = [r for r in (row - 1, row, row + 1) if 0 <= r < h]
@@ -1097,7 +1141,8 @@ def cmd_google_depth(args):
 # depth pass (GPU on klone)
 # ---------------------------------------------------------------------------------------------------------------------
 
-DEPTH_PASS_RETRY = ("error",)       # statuses re-tried on resume (prefix match); ok/no_pano/bad_pano are final
+DEPTH_PASS_FINAL = ("ok", "no_pano", "bad_pano")    # statuses not re-tried on resume; anything else (error:*, a
+                                                    # blank or cut-off status) is tried again
 
 
 def centre_depths(depth, box_half=BOX_HALF_PX):
@@ -1113,18 +1158,36 @@ def centre_depths(depth, box_half=BOX_HALF_PX):
     return float(depth[c, c]), float(np.median(box))
 
 
+def _drop_partial_last_line(out_csv):
+    """Cut a last line that has no newline off ``out_csv`` (a job killed in the middle of a write, which ckpt-all
+    preemption can do). Returns True when something was cut. Without this the next appended row would be glued
+    onto the fragment."""
+    with open(out_csv, "rb+") as f:
+        data = f.read()
+        if not data or data.endswith(b"\n"):
+            return False
+        f.truncate(data.rfind(b"\n") + 1)
+        return True
+
+
 def _done_uids(out_csv):
-    if not os.path.exists(out_csv):
+    """The label_uids ``out_csv`` already holds with a final status (:data:`DEPTH_PASS_FINAL`). A missing or
+    header-less file has none; a cut-off last line is removed first."""
+    if not os.path.exists(out_csv) or not os.path.getsize(out_csv):
+        return set()
+    if _drop_partial_last_line(out_csv):
+        print(f"depth-pass: removed a cut-off last line from {out_csv}")
+    if not os.path.getsize(out_csv):
         return set()
     prev = pd.read_csv(out_csv, dtype={"label_uid": str, "status": str})
-    final = ~prev.status.astype(str).str.startswith(DEPTH_PASS_RETRY)
-    return set(prev.label_uid[final])
+    return set(prev.label_uid[prev.status.isin(DEPTH_PASS_FINAL)])
 
 
 def depth_pass(sample, out_csv, encoders=("vitb", "vitl"), device="cuda", pano_reader=dg.read_store_panorama,
                model_loader=dg.load_depth_model, render=dg.render_label_view, pano_store=None, gsv_beta=GSV_BETA):
     """Depth at every sampled label, for each encoder, from the view round 3 rendered. Append-only and resumable
-    (labels already written with a final status are skipped; ``error:*`` rows are retried and the later row wins).
+    (labels already written with a final status, :data:`DEPTH_PASS_FINAL`, are skipped; every other row is
+    retried and the later row wins; a last line cut off by a killed job is removed before appending).
 
     Per panorama: ``pano_reader(store, city, pano_id)``, i.e. ``read_store_panorama`` and its 8192 x 4096 resize,
     with ``store`` the row's own store root (:func:`store_root`) unless ``pano_store`` overrides it (a fresh
@@ -1142,7 +1205,7 @@ def depth_pass(sample, out_csv, encoders=("vitb", "vitl"), device="cuda", pano_r
     models = {enc: model_loader(enc, device) for enc in encoders}
     fields = ["label_uid", "status", "renderer", "tilt_applied"] + \
         [f"d_{e}_{k}" for e in encoders for k in ("m", "box_m")]
-    new = not os.path.exists(out_csv)
+    new = not os.path.exists(out_csv) or not os.path.getsize(out_csv)
     renderer = "torch" if device is not None else "numpy"
     last = (None, None)
     with open(out_csv, "a", newline="") as f:
@@ -1280,8 +1343,11 @@ def rule_readout(stats):
          "r2": {"beta_yx": float, "beta_xy": float}}
 
     R1 at a tolerance: met when the overall share >= 0.95, every type >= 0.90 (point estimates), and the
-    row-mix-weighted share is not on the other side of 0.95. Types in [0.86, 0.94) are listed as marginal. When
-    the jitter share exceeds 5 %, R1 is read at 25 % instead of 10 %.
+    row-mix-weighted share is not on the other side of 0.95. Types in [0.86, 0.94] (both ends included; the
+    Wilson half-width around 0.90 at n = 200) are listed in ``marginal_types``: a flag for the reader, which
+    never changes ``met``. When the jitter share exceeds 5 % (strictly), R1 is read at 25 % instead of 10 %.
+    R2 (:func:`bracket_verdict`): the band's edges count as inside, and a bracket end exactly on an edge with
+    the other end beyond it is "straddles".
 
     >>> r = rule_readout({"r0": {"n": 100, "within": 99},
     ...     "r1": {"jitter_share_10": 0.01, "t=0.1": {"overall": 0.95, "weighted": 0.96,
@@ -1300,7 +1366,7 @@ def rule_readout(stats):
         cell = r1[f"t={tol:g}"]
         types = cell["by_type"]
         failing = sorted(t for t, v in types.items() if not v >= 0.90)
-        marginal = sorted(t for t, v in types.items() if 0.86 <= v < 0.94)
+        marginal = sorted(t for t, v in types.items() if 0.86 <= v <= 0.94)
         weighted_ok = cell.get("weighted") is None or (cell["weighted"] >= 0.95) == (cell["overall"] >= 0.95)
         met = bool(cell["overall"] >= 0.95 and not failing and weighted_ok)
         out["R1"] = {"tolerance": tol, "jitter_fallback": tol == 0.25, "overall": cell["overall"],
@@ -1312,12 +1378,6 @@ def rule_readout(stats):
     if r2:
         out["R2"] = {**r2, "verdict": bracket_verdict(r2["beta_yx"], r2["beta_xy"])}
     return out
-
-
-def _within_share(L):
-    x = np.asarray(L, float)
-    x = x[np.isfinite(x)]
-    return {t: float((np.abs(x) <= math.log1p(t)).mean()) if len(x) else np.nan for t in CROP_DIFF_THRESHOLDS}
 
 
 def compare(merged, n_boot=N_BOOT, seed=SEED):
@@ -1448,8 +1508,8 @@ def _fmt(v):
 def table_markdown(t, small_note="n too small"):
     """One stored table as Markdown; a row flagged ``small`` shows its counts and "n too small" for its numbers."""
     cols = [c for c in t["columns"] if c != "small"]
-    count_cols = {"n", "train_n", "label_type", "city", "severity_s", "tag", "label_class", "year_band", "split",
-                  "trig_decile"}
+    count_cols = {"n", "train_n", "n_excluded", "label_type", "city", "severity_s", "tag", "label_class",
+                  "year_band", "split", "trig_decile"}
     lines = [f"**{t['title']}**", ""]
     if t.get("note"):
         lines += [t["note"], ""]
