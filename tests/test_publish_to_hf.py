@@ -2019,3 +2019,16 @@ def test_a_tiny_positive_depth_is_a_depth_and_zero_is_not():
         pub.check_depth_rows(_rows([10.0, None, -1], [610, 610, 610]), "x.csv")
     with pytest.raises(pub.PublishError, match="2 of 3 rows were not cut"):
         pub.check_depth_rows(_rows([10.0, 10.0, 10.0], [610, 400, 1024]), "x.csv")
+
+
+def test_the_manifest_is_checked_when_the_split_is_clean_and_the_refusal_names_the_next_step(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _rewrite_csv(root, "manifest.csv", _set("crop_half_px", 1024, rows=[1]))
+    with pytest.raises(pub.PublishError, match=f"manifest.csv: 1 of {len(ROWS)} rows were not cut") as e:
+        pub.check_depth_sized(root, T)
+    msg = str(e.value)
+    assert "serving change in sidewalk-ai-api" in msg and "reviewed change to this check" in msg
+    assert "docs/publishing.md" in msg and "not an edited record" in msg
+    with pytest.raises(pub.PublishError) as e:
+        pub.check_depth_rows(_rows([10.0], [610]).drop(columns="crop_half_px"), "x.csv")
+    assert "reviewed change to this check" in str(e.value)

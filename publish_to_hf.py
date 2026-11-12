@@ -685,7 +685,8 @@ def check_depth_sized(root, label_type):
 
 NOT_SERVED = (f"Serving sizes every crop by int({CROP_DEPTH_CONSTANT} / depth_m) with the {SERVED_DEPTH_ENCODER}/"
               f"{SERVED_DEPTH_DATASET} depth model; a fixed-size, whole-view or job-window model needs a serving "
-              f"change in sidewalk-ai-api before it can be published, not an edited record")
+              f"change in sidewalk-ai-api, and then a reviewed change to this check (docs/publishing.md), before it "
+              f"can be published, not an edited record")
 """Tail of every depth-row refusal (issue #21): blanking a record or a column is not the fix."""
 DEPTH_ROW_FILES = ("split.csv", "manifest.csv")
 """The per-row files :func:`check_depth_rows` reads, in a pipeline root and in a staged ``publish/dataset/``."""

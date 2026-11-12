@@ -134,5 +134,17 @@ a crop is published for each of them; in `manifest.csv` only the `ok` rows have 
 round-3 rows are off by one, none by more). Under about 0.55 m that rounding moves the size by more than 1 px, and
 any size the rounding allows is accepted (no round-3 depth is under 2.4 m). Refusals give row counts, never a label or a city.
 
-A whole-view or fixed-size model (the NoSidewalk pilot's better arm, for example) is refused by design.
-Publishing one needs a serving change in sidewalk-ai-api first; blanking a record is not a fix.
+### Publishing a model that is not depth-sized
+
+A whole-view or fixed-size model is refused by design, with or without its records. That includes NoSidewalk, whose
+crop is the whole view (`--fixed-crop-half-px 1024`, [nosidewalk-2026-11.md](nosidewalk-2026-11.md)); it is also not
+among this script's `--label_type` choices. Publishing such a model takes, in this order:
+
+1. sidewalk-ai-api renders that crop for that label type, released and deployed;
+2. a reviewed pull request here that adds the label type to `LABEL_TYPES` if it is new and gives `check_depth_sized`
+   the served rule for that type alone (for NoSidewalk: `fixed_crop_half_px` 1024 recorded, and every row's
+   `crop_half_px` 1024), with tests, leaving the depth rule in force for every other type;
+3. cards that describe that crop (`hf_cards.py` writes the depth-sized description today).
+
+Deleting or editing a record, filling in `depth_m`, widening the tolerance or skipping the check is not a fix: the
+published model would be fed crops in serving that it was not trained on.
