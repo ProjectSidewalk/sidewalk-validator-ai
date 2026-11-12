@@ -11,6 +11,8 @@
 # (3.5 GB each, so scratch). Fold checkpoints are deleted once the fold's predictions are written: they exist only for
 # their out-of-fold scores. Restartable: ckpt may preempt and requeue; fine_tune_classifier.py resumes from its last
 # complete checkpoint, and a requeue after the weights were deleted skips straight to "nothing to do".
+# KEEP_BEST=1 keeps each fold's best checkpoint (and deletes the others), for a run whose models go on to score
+# other labels (step (b), analysis/nosidewalk_round.py); the default deletes every checkpoint as before.
 #SBATCH --account=makelab
 #SBATCH --partition=ckpt-all
 #SBATCH --requeue
@@ -32,6 +34,7 @@ ENV="${ENV:-/gscratch/makelab/$USER/envs/sidewalk-validator-ai}"
 LT=NoSidewalk
 EPOCHS="${EPOCHS:-25}"
 SEED="${SEED:-42}"
+KEEP_BEST="${KEEP_BEST:-0}"
 [ -f .gitmodules ] || { echo "Submit this job from the repo root." >&2; exit 1; }
 module load conda
 eval "$(conda shell.bash hook)"
@@ -47,9 +50,12 @@ case "$STEP" in
     RUN="$RUNS/fold$FOLD"
     PRED="$GATE/fold$FOLD/predictions.csv"
     [ -f "$SPLIT" ] || { echo "no $SPLIT (run nosidewalk_gate.py folds first)" >&2; exit 2; }
-    if [ -f "$PRED" ] && [ "$PRED" -nt "$SPLIT" ] && [ -f "$RUN/training_run.json" ] \
-       && ! ls -d "$RUN"/checkpoint-* >/dev/null 2>&1; then
-      echo "$(date) fold $FOLD already scored ($PRED); nothing to do"; exit 0
+    # Done = scored, and the checkpoints already tidied: none left, or with KEEP_BEST=1 exactly the best one.
+    if [ -f "$PRED" ] && [ "$PRED" -nt "$SPLIT" ] && [ -f "$RUN/training_run.json" ]; then
+      LEFT=$(ls -d "$RUN"/checkpoint-* 2>/dev/null | wc -l)
+      if [ "$LEFT" -eq 0 ] || { [ "$KEEP_BEST" = 1 ] && [ "$LEFT" -eq 1 ] && [ -f "$RUN/trainer_state.best.json" ]; }; then
+        echo "$(date) fold $FOLD already scored ($PRED); nothing to do"; exit 0
+      fi
     fi
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
     echo "$(date) train fold $FOLD on $SPLIT -> $RUN"
@@ -61,8 +67,13 @@ case "$STEP" in
     # Keep the training record, drop the weights: the fold models exist only for their out-of-fold scores.
     BEST=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['best_model_checkpoint'])" "$RUN/training_run.json")
     cp "$RUN/$BEST/trainer_state.json" "$RUN/trainer_state.best.json" 2>/dev/null || true
-    rm -rf "$RUN"/checkpoint-*
-    echo "$(date) wrote $PRED; removed $RUN/checkpoint-*"
+    if [ "$KEEP_BEST" = 1 ]; then
+      for C in "$RUN"/checkpoint-*; do [ "$C" = "$RUN/$BEST" ] || rm -rf "$C"; done
+      echo "$(date) wrote $PRED; kept $RUN/$BEST"
+    else
+      rm -rf "$RUN"/checkpoint-*
+      echo "$(date) wrote $PRED; removed $RUN/checkpoint-*"
+    fi
     ;;
   report)
     python -u analysis/nosidewalk_gate.py report --gate "$GATE" --priors "$DATA/whole/deployment_priors.json" \
