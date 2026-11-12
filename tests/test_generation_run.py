@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 from PIL import Image
 
+import crop_pose
 import data_generation as dg
 import split_data
 
@@ -665,6 +666,72 @@ def test_each_rows_pose_and_beta_reach_the_renderer(non_gsv):
         assert got[x][:4] == want[x][:4] and got[x][4] == pytest.approx(want[x][4]), x
 
 
+def _guard_run(tmp_path, monkeypatch, panoramax):
+    """Two correct and two incorrect labels (so the downsample keeps all four): three GSV and the Panoramax label
+    ``panoramax`` (label 3, correct), each on its own panorama, with the non_gsv fixture's renderer spy."""
+    rows = [label(1, 4, 0, pano="g1"), label(2, 0, 3, pano="g2"), {**label(3, 4, 0, pano="pmx3"), **panoramax},
+            label(4, 0, 3, pano="g4")]
+    write_city(tmp_path, rows)
+    make_store(tmp_path, rows)
+    monkeypatch.setattr(dg, "PANO_SIZE", (2048, 1024))
+    monkeypatch.setattr(dg, "load_depth_model", lambda e, d: FakeDepth())
+    calls = {}
+    real = dg.create_perspective_crop
+
+    def spy(depth_model, pano_rgb, x, y, **kw):
+        calls[round(x * 8192)] = y
+        return real(depth_model, pano_rgb, x, y, **kw)
+    monkeypatch.setattr(dg, "create_perspective_crop", spy)
+    return calls
+
+
+def test_panoramax_pose_past_the_tilt_cap_is_skipped_not_rendered(tmp_path, monkeypatch):
+    """A Panoramax pose past MAX_POSE_TILT_DEG is not a rig pose, and the viewer levelled the click by it, so the
+    label is skipped with its own status (not rendered uncorrected as ok) and the reason is counted (#72)."""
+    calls = _guard_run(tmp_path, monkeypatch, {"pano_source": "panoramax", "camera_pitch": 50.0, "camera_roll": 3.0})
+    m = run_main(tmp_path).set_index("label_uid")
+    assert m.loc["toy-city:3", "status"] == crop_pose.OVER_TILT_STATUS
+    assert (m.drop("toy-city:3").status == "ok").all() and len(m) == 4
+    assert 3030 not in calls and sorted(calls) == [3010, 3020, 3040]
+    assert not (tmp_path / "out" / "CurbRamp" / "correct" / "toy-city_3.webp").exists()
+    assert (tmp_path / "out" / "CurbRamp" / "correct" / "toy-city_1.webp").exists()
+    run = json.loads((tmp_path / "out" / "CurbRamp" / "generation_run.json").read_text())
+    assert run["pose_counts"]["panoramax"] == {"none/panoramax_db_over_tilt": 1}
+
+
+def test_pitch_only_click_past_a_pole_is_skipped_without_an_error(tmp_path, monkeypatch, capsys):
+    """A pitch-only offset that moves the click past a pole would make label_view raise; the label is skipped with
+    its own status instead, so it never counts toward MAX_CONSECUTIVE_ERRORS and prints no traceback (#72)."""
+    calls = _guard_run(tmp_path, monkeypatch, {"pano_source": "panoramax", "pano_y": 4090, "camera_pitch": 5.0,
+                                               "camera_roll": None})
+    monkeypatch.setattr(dg, "MAX_CONSECUTIVE_ERRORS", 1)
+    m = run_main(tmp_path).set_index("label_uid")
+    assert m.loc["toy-city:3", "status"] == crop_pose.PAST_POLE_STATUS
+    assert (m.drop("toy-city:3").status == "ok").all() and len(m) == 4
+    assert 3030 not in calls and sorted(calls) == [3010, 3020, 3040]
+    assert not (tmp_path / "out" / "CurbRamp" / "correct" / "toy-city_3.webp").exists()
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_a_skip_is_decided_before_the_panorama_is_read(tmp_path, monkeypatch):
+    """A skipped label reads no panorama: its status is the skip even when its panorama is missing, so it never counts
+    toward --max-missing-frac or the consecutive-missing stop, and a skip costs no decode (#72, PR #96 review)."""
+    _guard_run(tmp_path, monkeypatch, {"pano_source": "panoramax", "camera_pitch": 50.0, "camera_roll": 3.0})
+    remove_panos(tmp_path / "store", ["pmx3"])
+    reads = []
+    real_read = dg.read_store_panorama
+
+    def spy(store_dir, city, pano_id):
+        reads.append(pano_id)
+        return real_read(store_dir, city, pano_id)
+    monkeypatch.setattr(dg, "read_store_panorama", spy)
+    m = run_main(tmp_path, "--max-missing-frac", "0").set_index("label_uid")
+    assert m.loc["toy-city:3", "status"] == crop_pose.OVER_TILT_STATUS
+    assert pd.isna(m.loc["toy-city:3", "pano_path"])  # nothing recorded from another label's panorama
+    assert "pmx3" not in reads and sorted(reads) == ["g1", "g2", "g4"]
+    assert (m.drop("toy-city:3").status == "ok").all()
+
+
 def test_numeric_mapillary_pano_ids_beside_a_gsv_city(tmp_path, monkeypatch):
     """A city whose every pano_id is digits (all Mapillary) next to a GSV city: the ids stay strings, so the frame
     sorts by pano_id and the store path can take pano_id[:2] (review B1)."""
@@ -1162,3 +1229,22 @@ def test_depth_rerun_of_a_job_dir_removes_the_stale_sidecar(job_store, monkeypat
     m = run_main(tmp, "--force-reselect")
     assert (m.status == "ok").all() and m.depth_m.notna().all()
     assert not (_job_out(tmp) / "job_crops.csv").exists()
+
+
+def test_job_window_crops_are_never_skipped_for_a_panoramax_pose(tmp_path, monkeypatch):
+    """--job-window-crops cuts the backend's window from the native file and uses neither the pose nor the click
+    offset, so a Panoramax pose past the tilt cap is cut like any other label there (#72, decision 4)."""
+    import job_crop
+    rows = [job_label(1, 4, 0, pano="g1"), job_label(2, 0, 3, pano="g2"),
+            {**job_label(3, 4, 0, pano="pmx3"), "pano_source": "panoramax", "camera_pitch": 50.0, "camera_roll": 3.0},
+            job_label(4, 0, 3, pano="g4")]
+    write_city(tmp_path, rows)
+    store = mark_store(tmp_path / "store")
+    for pano_id in {r["pano_id"] for r in rows}:
+        write_pano(store, CITY, pano_id, size=(JOB_W, JOB_H))
+    monkeypatch.setattr(dg, "PANO_SIZE", (JOB_W, JOB_H))
+    monkeypatch.setattr(job_crop, "_NATIVE_CACHE", {"path": None, "img": None})
+    m = run_main(tmp_path, "--job-window-crops").set_index("label_uid")
+    assert (m.status == "ok").all() and len(m) == 4
+    assert m.loc["toy-city:3", "pose_source"] == "none"  # the pose was still refused, and recorded as such
+    assert (_job_out(tmp_path) / "correct" / "toy-city_3.webp").exists()

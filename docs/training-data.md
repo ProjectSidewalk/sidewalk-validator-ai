@@ -53,7 +53,9 @@ and frame (`pose_source` in the manifest; the per-provider table, the pixel-meas
 are in [`decisions.md`](decisions.md)). Mapillary's viewer stores the click in the rig frame, so Mapillary crops are
 not tilt-corrected; Panoramax crops are corrected (beta 1.0, unmeasured) only when both stored angles are non-zero,
 the only case its viewer levels the panorama, and a pitch-only Panoramax pose instead moves the click back by
-`pers:pitch`, which the viewer adds to it (`click_lat_offset_deg`). Labels on any other provider (e.g. Infra3D) are
+`pers:pitch`, which the viewer adds to it (`click_lat_offset_deg`). A Panoramax label whose levelled pose (both angles
+non-zero) is past 45° of tilt (`panoramax_over_tilt`) or whose pitch-only click is past a pole (`panoramax_pitch_offset_past_pole`) is skipped
+rather than cropped (none today). Labels on any other provider (e.g. Infra3D) are
 dropped and counted as `unsupported_source`. Rows with unusable pano geometry and legacy labels
 with unconverted coordinates (negative `pano_y`: Seattle 193, CDMX 14, Pittsburgh 8, SPGG 1) are excluded, and so
 are labels placed by the `SidewalkAI` account (RampNet curb ramps in Vancouver WA, Richmond VA and Laurens IA),
