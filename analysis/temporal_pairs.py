@@ -23,7 +23,8 @@ Pipeline (three subcommands, each writing into a run directory outside the repo,
         --out docs/temporal-validation-2026-11/preview
 
 Every output of ``residual`` says PREVIEW or GATE in its first line, from the camera positions it was given, and
-:func:`gate0` refuses a verdict unless every position came from the database.
+:func:`gate0` refuses a verdict unless every position came from the database, the thresholds are confirmed and the
+run is the pre-registered one (:func:`run_blockers`).
 
 Frames and units (the same as ``sidewalk_panorama_tools.geometry`` and the site):
 
@@ -53,6 +54,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import data_generation as dg  # noqa: E402
+from analysis.ai_labels_eval import wilson  # noqa: E402
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Constants. Geometry constants carry their provenance; gate thresholds are NOT here (gates.json).
@@ -92,13 +94,16 @@ QC_ORDER = ("no_camera_position", "photosphere", "near_horizon", "baseline", "b_
 RESIDUAL_WINDOW_DEG = 30.0  # B's same-type clicks within this of the re-projected point are candidates
 FLOOR_WINDOW_DEG = 15.0     # click floor: two users' same-type clicks on one panorama within this
 CONTRA_WINDOW_DEG = 15.0    # a contradicting label on B (CurbRamp vs NoCurbRamp) within this
+WITHIN_PX = (100, 240)      # the residual tables' "share within" columns; gates.json's residual_within_px must be one
 SEED = 20261112             # no sampling in Stage 0; recorded for the later stages' jitter draws
+LISTING_MAX_AGE_DAYS = 1    # `residual` names deployments in files meant for the repo: the listing must be today's
 
 GATES_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                           "docs", "temporal-validation-2026-11", "gates.json")
 PREVIEW_BANNER = ("PREVIEW (not the gate): camera positions inverted from public rawLabels, not read from the "
                   "database; no gate verdict is given on these numbers.")
 GATE_BANNER = "GATE: camera positions read from the database (pano_data)."
+NO_VERDICT_BANNER = "NOT THE GATE: camera positions read from the database, but no gate verdict is given: "
 
 LABEL_COLUMNS = ["label_id", "user_id", "pano_id", "pano_source", "label_type", "severity", "tags", "validations",
                  "image_capture_date", "pano_x", "pano_y", "pano_width", "pano_height", "camera_heading",
@@ -379,9 +384,21 @@ def arm_of(dt_months):
     return np.where(out == "", None, out).astype(object)
 
 
+_USER_SALT = os.urandom(16).hex()  # never written anywhere: a fresh one per process
+
+
 def user_key(user_id):
-    """A short one-way key for a user id, so the run files can tell two users apart without holding their ids."""
-    return hashlib.sha256(f"temporal-pairs:{user_id}".encode()).hexdigest()[:12]
+    """A short key that tells two users apart inside ONE run's files without holding their ids.
+
+    User ids are public (rawLabels carries them), so an unsalted hash could be reversed by hashing every known id.
+    The salt is random per process and never saved: a key cannot be traced back to an id, and keys from two runs do
+    not match each other. Nothing needs them to: ``census`` writes every key it uses in one process, and
+    ``residual`` only ever compares keys read from that run's files.
+
+    >>> user_key("a") == user_key("a"), user_key("a") == user_key("b"), len(user_key("a"))
+    (True, False, 12)
+    """
+    return hashlib.sha256(f"{_USER_SALT}:{user_id}".encode()).hexdigest()[:12]
 
 
 def sha256_file(path):
@@ -745,11 +762,15 @@ def _q(s, p):
 
 
 def summarize(res_px, az_px=None, el_px=None):
-    """n, median, p75, p90 of residual pixels, shares within 100 and 240 px, and the azimuth/elevation split."""
+    """n, median, p75, p90 of residual pixels, shares within 100 and 240 px (:data:`WITHIN_PX`) with a Wilson 95%
+    interval on the second (the gate's share), and the azimuth/elevation split. The interval treats rows as
+    independent; the tables' ``n_anchors`` column shows how nearly they are."""
     r = pd.Series(res_px, dtype=float).dropna()
+    lo, hi = wilson(int((r <= WITHIN_PX[1]).sum()), len(r))
     out = {"n": int(len(r)), "median_px": _r(r.median()), "p75_px": _r(r.quantile(0.75)),
-           "p90_px": _r(r.quantile(0.9)), "within_100": _r(np.mean(r <= 100), 3),
-           "within_240": _r(np.mean(r <= 240), 3)}
+           "p90_px": _r(r.quantile(0.9)), f"within_{WITHIN_PX[0]}": _r(np.mean(r <= WITHIN_PX[0]), 3),
+           f"within_{WITHIN_PX[1]}": _r(np.mean(r <= WITHIN_PX[1]), 3),
+           f"within_{WITHIN_PX[1]}_lo": _r(lo, 3), f"within_{WITHIN_PX[1]}_hi": _r(hi, 3)}
     if az_px is not None:
         out["abs_az_median_px"] = _r(pd.Series(az_px, dtype=float).abs().median())
         out["abs_el_median_px"] = _r(pd.Series(el_px, dtype=float).abs().median())
@@ -814,7 +835,9 @@ def residual_tables(rf, floor, primary_m=3.0, min_n=30):
         out = []
         for k, g in df.groupby(keys, sort=True):
             k = k if isinstance(k, tuple) else (k,)
-            out.append({**dict(zip(keys, k)), **summarize(g["res_px"], g["az_px"], g["el_px"])})
+            s = summarize(g["res_px"], g["az_px"], g["el_px"])
+            # Rows are candidates (anchor, partner panorama); an anchor with two labelled partners counts twice.
+            out.append({**dict(zip(keys, k)), "n": s.pop("n"), "n_anchors": int(g["label_uid"].nunique()), **s})
         return pd.DataFrame(out)
 
     def arm_sorted(df):
@@ -841,8 +864,9 @@ def residual_tables(rf, floor, primary_m=3.0, min_n=30):
         other = []
         for arm in small["arm"].unique():
             g = gate[(gate["arm"] == arm) & gate["city"].isin(small.loc[small["arm"] == arm, "city"])]
+            sm = summarize(g["res_px"], g["az_px"], g["el_px"])
             other.append({"arm": arm, "city": f"other ({small['arm'].eq(arm).sum()} deployments, n<{min_n} each)",
-                          **summarize(g["res_px"], g["az_px"], g["el_px"])})
+                          "n": sm.pop("n"), "n_anchors": int(g["label_uid"].nunique()), **sm})
         byc = pd.concat([byc[byc["n"] >= min_n], pd.DataFrame(other)], ignore_index=True)
     t["by_arm_city"] = arm_sorted(byc)
     ln = gate[gate["arm"] == "long_newer"]
@@ -854,8 +878,13 @@ def residual_tables(rf, floor, primary_m=3.0, min_n=30):
     t["matched_any_by_arm"] = arm_sorted(rows(anym, ["arm"]))
     cov = []
     for arm, g in rf[rf["baseline_m"] <= primary_m].groupby("arm"):
+        u, unmatched = g[g["unique"]], int((~g["matched"]).sum())
         cov.append({"arm": arm, "with_same_type_b_label": len(g), "matched_30deg": int(g["matched"].sum()),
                     "unique": int(g["unique"].sum()), "unmatched_share": _r(1 - g["matched"].mean(), 3),
+                    # The gate's share is among unique matches. Its floor: every unmatched candidate counted as a
+                    # miss (some are: the re-projection landed more than the window away; most are another feature).
+                    f"within_{WITHIN_PX[1]}_if_unmatched_missed":
+                        _r((u["res_px"] <= WITHIN_PX[1]).sum() / max(len(u) + unmatched, 1), 3),
                     "same_user_share_of_unique": _r(g.loc[g["unique"], "same_user"].mean(), 3)})
     t["coverage"] = arm_sorted(pd.DataFrame(cov))
     fl = []
@@ -914,13 +943,17 @@ def load_gates(path=GATES_PATH):
         return json.load(f)
 
 
-def gate0(tables, census, gates, position_sources):
-    """Gate 0 from the Stage 0 tables: every rule's value and threshold, and pass/fail only on database positions.
+def gate0(tables, census, gates, position_sources, blockers=()):
+    """Gate 0 from the Stage 0 tables: every rule's value and threshold, and pass/fail only when nothing blocks a
+    verdict.
 
     ``tables`` are :func:`residual_tables` at the primary baseline (plus ``by_arm_baseline`` for the cap call),
     ``census`` is :func:`census_tables`' ``census_by_type``, ``gates`` the parsed ``gates.json``,
-    ``position_sources`` the set of ``position_source`` values behind the pairs. With anything but ``{"db"}`` the
-    result has ``verdict = None`` and every rule's ``pass = None``: a preview cannot pass or fail the gate.
+    ``position_sources`` the set of ``position_source`` values behind the pairs, ``blockers`` further reasons the
+    caller found (:func:`run_blockers`). A verdict is refused (``verdict = None``, every rule's ``pass = None``,
+    the reasons in ``refused``) when any position is not from the database, when the thresholds are not confirmed
+    (``gates["confirmed_on"]`` empty: a pass or fail against thresholds nobody has agreed to is not a gate result),
+    or when the caller names a blocker.
 
     Rules (thresholds from ``gates["gate0"]``): G0a residual on unique matches, for ``long_newer`` and ``control``
     pooled and per type with ``n >= type_min_n`` (a failing type is dropped, listed in ``types_dropped``); G0b
@@ -929,7 +962,15 @@ def gate0(tables, census, gates, position_sources):
     when the 3-5 m bin of both arms passes G0a too, else the primary one.
     """
     g = gates["gate0"]
-    preview = set(position_sources) != {"db"}
+    if g["residual_within_px"] != WITHIN_PX[1]:
+        raise ValueError(f"gates.json residual_within_px is {g['residual_within_px']}, but the tables report the "
+                         f"share within {WITHIN_PX[1]} px (WITHIN_PX): change both together")
+    refusals = []
+    if set(position_sources) != {"db"}:
+        refusals.append("camera positions are not all from the database (pano_data): PREVIEW, not the gate")
+    if not gates.get("confirmed_on"):
+        refusals.append("the thresholds are not confirmed (gates.json confirmed_on is null)")
+    refusals += list(blockers)
 
     def res_ok(row):
         return (row["median_px"] is not None and row["median_px"] <= g["residual_median_px_max"]
@@ -985,11 +1026,10 @@ def gate0(tables, census, gates, position_sources):
            "thresholds_confirmed_on": gates.get("confirmed_on"), "position_sources": sorted(position_sources),
            "types_kept": kept, "types_dropped": types_dropped,
            "baseline_cap_m": g["wide_baseline_m"] if wide_ok else g["primary_baseline_m"], "rules": rules}
-    if preview:
+    if refusals:
         for r in rules:
             r["pass"] = None
-        out.update(verdict=None, baseline_cap_m=None,
-                   refused="camera positions are not all from the database (pano_data): PREVIEW, not the gate")
+        out.update(verdict=None, baseline_cap_m=None, refused="; ".join(refusals))
     else:
         # Per-type residual rules only drop types; the pooled residual, era and yield rules decide.
         deciding = [r for r in rules if r["rule"].endswith("pooled") or r["rule"].startswith(("G0b", "G0c"))]
@@ -1000,6 +1040,42 @@ def gate0(tables, census, gates, position_sources):
 # ---------------------------------------------------------------------------------------------------------------------
 # I/O and subcommands
 # ---------------------------------------------------------------------------------------------------------------------
+
+def run_blockers(sel, gates_path):
+    """Reasons a run cannot give a Gate 0 verdict even on database positions, from its ``selection.json`` (``sel``)
+    and the thresholds file it was pointed at: the anchors are not the vote-decided pool, the thresholds are not
+    the committed ``gates.json``, or the positions file has no record of a database pull behind it (a ``panos.csv``
+    whose ``position_source`` column was written by hand has none) or is not the file ``positions`` wrote.
+    """
+    out = []
+    if sel.get("anchor_pool") != "decided":
+        out.append(f"anchors are not the vote-decided pool (--anchor-pool {sel.get('anchor_pool')} is exploratory)")
+    if os.path.realpath(gates_path) != os.path.realpath(GATES_PATH):
+        out.append(f"thresholds were read from {os.path.basename(gates_path)}, not the committed gates.json")
+    if sel.get("position_sources") == ["db"]:
+        if not (sel.get("positions_info") or {}).get("db_panos_sha256"):
+            out.append("no record of a database pull behind the positions (panos.json has no db_panos_sha256)")
+        elif not sel.get("panos_as_written"):
+            out.append("panos.csv is not the file `positions` wrote (its sha256 differs from panos.json's)")
+    return out
+
+
+def listing_age_days(listing_path, fetched_on=None, today=None):
+    """How old a saved ``/v3/api/cities`` response is, in days: from its ``fetched_on`` date when it has one and
+    from the file's modification time otherwise (whichever is older).
+
+    >>> listing_age_days(__file__, fetched_on="2026-11-10", today=date(2026, 11, 12)) >= 2
+    True
+    """
+    today = today or date.today()
+    age = (today - date.fromtimestamp(os.path.getmtime(listing_path))).days
+    if isinstance(fetched_on, str) and fetched_on[:10]:
+        try:
+            age = max(age, (today - date.fromisoformat(fetched_on[:10])).days)
+        except ValueError:
+            pass
+    return age
+
 
 def public_cities(listing_path):
     """``(public city_ids, listing sha256, fetched_on)`` from a saved ``/v3/api/cities`` response."""
@@ -1074,6 +1150,7 @@ def cmd_positions(a):
         panos = dbp
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     panos.to_csv(a.out, index=False)
+    info["panos_sha256"] = sha256_file(a.out)  # census checks the file it reads is this one (run_blockers)
     with open(os.path.splitext(a.out)[0] + ".json", "w") as f:
         json.dump(info, f, indent=1, default=str)
     print(f"{len(panos)} panoramas ({panos['position_source'].iloc[0] if len(panos) else '-'}) -> {a.out}")
@@ -1109,10 +1186,12 @@ def cmd_census(a):
     choose_partners(cands)[keep + ["pair_uid"]].to_csv(os.path.join(a.out, "pairs.csv"), index=False)
     labels[["label_uid", "city", "pano_id", "label_type", "lon", "lat", "author", "vote_class", "user_key"]].to_csv(
         os.path.join(a.out, "labels.csv.gz"), index=False)
+    pinfo = _read_json(os.path.splitext(a.panos)[0] + ".json")
+    panos_sha = sha256_file(a.panos)
     sel = {"made_on": date.today().isoformat(), "git_head": git_head(), "cities": cities,
            "listing": {"path": os.path.basename(a.listing), "sha256": listing_sha, "fetched_on": fetched},
-           "rawlabels_sha256": shas, "panos_sha256": sha256_file(a.panos), "round3_split_sha256": split_shas,
-           "positions_info": _read_json(os.path.splitext(a.panos)[0] + ".json"),
+           "rawlabels_sha256": shas, "panos_sha256": panos_sha, "round3_split_sha256": split_shas,
+           "positions_info": pinfo, "panos_as_written": bool(pinfo and pinfo.get("panos_sha256") == panos_sha),
            "anchor_pool": a.anchor_pool, "experts_set": bool(experts), "label_drops": dict(drops),
            "anchor_drops": dict(adrops), "position_sources": sorted(panos["position_source"].unique().tolist()),
            "settings": {k: v for k, v in globals().items() if k.isupper() and isinstance(v, (int, float, tuple, str))
@@ -1129,8 +1208,19 @@ def cmd_residual(a):
     cands = pd.read_csv(os.path.join(a.run, "candidates.csv.gz"), dtype={"pano_id": str, "pano_b": str})
     labels = pd.read_csv(os.path.join(a.run, "labels.csv.gz"), dtype={"pano_id": str})
     labels["vote_class"] = labels["vote_class"].fillna("")
-    not_public = sorted(set(cands["city"]) - set(pub))
-    if not_public:  # the committed tables name deployments: re-check against today's listing
+    anc = pd.read_csv(os.path.join(a.run, "anchors.csv.gz"), usecols=["label_uid", "city", "label_type",
+                                                                        "label_class"])
+    # The tables are meant for the repo and name deployments: the per-city census names every city with an anchor,
+    # the click floor every city with labels and provenance.json every city of the run, so all of them are checked,
+    # against a listing fetched today.
+    age = listing_age_days(a.listing, fetched)
+    if age > LISTING_MAX_AGE_DAYS:
+        raise SystemExit(f"{a.listing} is {age} days old: visibility changes within days, so fetch today's "
+                         f"/v3/api/cities before writing tables that name deployments")
+    named = (set(cands["city"]) | set(labels["city"]) | set(anc["city"]) | set(sel.get("cities") or [])
+             | set((sel.get("positions_info") or {}).get("cities") or []))  # the last two go into provenance.json
+    not_public = sorted(named - set(pub))
+    if not_public:
         raise SystemExit(f"deployments not public in {a.listing}: {not_public}")
     gates = load_gates(a.gates)
     primary = gates["gate0"]["primary_baseline_m"]
@@ -1143,12 +1233,17 @@ def cmd_residual(a):
     pairs = choose_partners(cands)
     rf = residual_frame(cands, res)
     tables = residual_tables(rf, floor, primary_m=primary)
-    anc = pd.read_csv(os.path.join(a.run, "anchors.csv.gz"), usecols=["label_uid", "city", "label_type",
-                                                                        "label_class"])
     census = census_tables(anc, cands, pairs, primary_m=primary, wide_m=gates["gate0"]["wide_baseline_m"])
     sources = set(cands["position_source"]) | set(cands["position_source_b"])
-    g0 = gate0(tables, census["census_by_type"], gates, sources)
-    banner = GATE_BANNER if sources == {"db"} else PREVIEW_BANNER
+    g0 = gate0(tables, census["census_by_type"], gates, sources, blockers=run_blockers(sel, a.gates))
+    g0.update(anchor_pool=sel.get("anchor_pool"), experts_set=sel.get("experts_set"))
+    if g0["verdict"] is not None:
+        banner = GATE_BANNER
+    elif sources == {"db"}:
+        banner = NO_VERDICT_BANNER + g0["refused"]
+    else:
+        banner = PREVIEW_BANNER
+    pool = "vote-decided anchors" if sel.get("anchor_pool") == "decided" else "ALL anchors (EXPLORATORY pool)"
     os.makedirs(a.out, exist_ok=True)
     for name, df in {**tables, **census}.items():
         with open(os.path.join(a.out, f"{name}.csv"), "w") as f:
@@ -1157,8 +1252,11 @@ def cmd_residual(a):
     with open(os.path.join(a.out, "residual.md"), "w") as f:
         f.write(f"**{banner}**\n\nGenerated by `analysis/temporal_pairs.py residual` on {date.today().isoformat()}. "
                 f"Gate population: unique matches (one same-type B click within {RESIDUAL_WINDOW_DEG:g} deg) of "
-                f"vote-decided anchors, baseline <= {primary:g} m, unless a table says otherwise. Exploratory per "
-                f"cell; residuals truncated at {RESIDUAL_WINDOW_DEG:g} deg ({view_px(RESIDUAL_WINDOW_DEG):.0f} px).\n")
+                f"{pool}, baseline <= {primary:g} m, unless a table says otherwise. Exploratory per "
+                f"cell; residuals truncated at {RESIDUAL_WINDOW_DEG:g} deg ({view_px(RESIDUAL_WINDOW_DEG):.0f} px): a "
+                f"candidate with no same-type B click inside the window is in no residual row (`coverage`). "
+                f"`n` counts candidates (anchor, partner panorama), `n_anchors` distinct anchors; the Wilson 95% "
+                f"interval `within_{WITHIN_PX[1]}_lo/hi` treats rows as independent.\n")
         for name, df in tables.items():
             f.write(f"\n### {name}\n\n{md_table(df)}")
     with open(os.path.join(a.out, "census.md"), "w") as f:
@@ -1173,7 +1271,7 @@ def cmd_residual(a):
                                                       "anchor_pool", "experts_set", "label_drops", "anchor_drops",
                                                       "position_sources", "settings")},
             "public_check": {"listing": os.path.basename(a.listing), "sha256": listing_sha, "fetched_on": fetched,
-                             "all_named_deployments_public": True},
+                             "listing_age_days": age, "all_named_deployments_public": True},
             "gates_sha256": sha256_file(a.gates)}
     with open(os.path.join(a.out, "provenance.json"), "w") as f:
         json.dump(prov, f, indent=1, default=str)
@@ -1216,7 +1314,8 @@ def build_parser():
     s.add_argument("--panos", required=True)
     s.add_argument("--round3", required=True, help="round-3 run root with <Type>/split.csv")
     s.add_argument("--anchor-pool", choices=("decided", "all"), default="decided",
-                   help="decided (the gate's population) or all labels (exploratory)")
+                   help="decided (the gate's population) or all labels (EXPLORATORY: `residual` gives such a\n"
+                        "run no verdict; kept for the cross-check in the doc's section 6.2)")
     s.add_argument("--out", required=True, help="RUN directory (outside the repo)")
     s = sub.add_parser("residual", help="residual, click floor, census tables and Gate 0 (aggregates only)")
     s.add_argument("--run", required=True)

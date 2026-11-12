@@ -84,7 +84,7 @@ def test_invert_camera_recovers_the_camera_from_the_sites_formula(lat, pano_y):
     lab = _site_label_position(*cam, 12000.0, pano_y, 16384, 8192, 217.3)
     got = tp.invert_camera(lab[0], lab[1], 12000.0, pano_y, 16384, 8192, 217.3)
     e, n = tp.enu_delta(cam[0], cam[1], got[0], got[1])
-    assert math.hypot(e, n) < 1e-3
+    assert math.hypot(e, n) < 1e-6  # without the iteration the first guess is ~0.2 mm off at 70 N
 
 
 def test_destination_matches_the_sites_formula():
@@ -340,12 +340,17 @@ def test_leakage_is_keyed_on_pano_id_across_cities(tmp_path):
         os.makedirs(tmp_path / t)
         pd.DataFrame({"label_uid": ["hackensack-nj:1", "x:2"], "pano_id": ["SHARED" + "x" * 16, "TEST" + "y" * 18],
                       "split": ["train", "test"]}).to_csv(tmp_path / t / "split.csv", index=False)
+    pd.DataFrame({"label_uid": ["x:3"], "pano_id": ["VAL" + "v" * 19], "split": ["val"]}).to_csv(
+        tmp_path / "CurbRamp" / "split.csv", mode="a", header=False, index=False)
     leak, shas = tp.leakage_panos(str(tmp_path))
-    pairs = pd.DataFrame({"label_type": ["CurbRamp", "CurbRamp", "CurbRamp"],
-                          "pano_id": ["SHARED" + "x" * 16, "OTHER" + "z" * 17, "OTHER" + "z" * 17],
-                          "pano_b": ["Q" * 22, "SHARED" + "x" * 16, "TEST" + "y" * 18],
-                          "city": ["teaneck-nj"] * 3})  # a different deployment from the training row
-    assert tp.mark_clean(pairs, leak).tolist() == [False, False, True]
+    pairs = pd.DataFrame({"label_type": ["CurbRamp", "CurbRamp", "CurbRamp", "CurbRamp", "Obstacle"],
+                          "pano_id": ["SHARED" + "x" * 16, "OTHER" + "z" * 17, "OTHER" + "z" * 17,
+                                      "OTHER" + "z" * 17, "OTHER" + "z" * 17],
+                          "pano_b": ["Q" * 22, "SHARED" + "x" * 16, "TEST" + "y" * 18, "VAL" + "v" * 19,
+                                     "VAL" + "v" * 19],
+                          "city": ["teaneck-nj"] * 5})  # a different deployment from the training row
+    # train on either side leaks; a test panorama does not; a val panorama does, but only for its own type
+    assert tp.mark_clean(pairs, leak).tolist() == [False, False, True, False, True]
     assert set(shas) == set(tp.TYPES)
 
 
@@ -377,6 +382,7 @@ def test_residual_planted_offset_and_flags():
     assert not r1["same_user"] and r1["n_within_other_user"] == 1
     r2 = res.loc["c:2|B2"]
     assert r2["matched"] and not r2["unique"] and r2["n_within"] == 2 and r2["same_user"]
+    assert r2["n_within_other_user"] == 1  # the anchor's own user's click on B is not an independent confirmation
     expected_az = 1024 * math.tan(math.radians(3.0 * math.cos(math.radians(20.0))))
     assert r2["az_px"] == pytest.approx(expected_az, rel=1e-6)
     assert not res.loc["c:3|B3", "matched"]
@@ -418,8 +424,13 @@ def _gate_inputs(ln_median=60.0, ctl_median=70.0, sm_median=55.0, within=0.9, cl
     return tables, census
 
 
+def _confirmed_gates():
+    """The committed thresholds as they will be once Jon confirms them (a verdict needs ``confirmed_on``)."""
+    return {**tp.load_gates(), "confirmed_on": "2099-01-01"}
+
+
 def test_gate0_passes_and_each_rule_fails():
-    gates = tp.load_gates()
+    gates = _confirmed_gates()
     tables, census = _gate_inputs()
     ok = tp.gate0(tables, census, gates, {"db"})
     assert ok["verdict"] == "pass" and ok["baseline_cap_m"] == 5.0 and ok["types_dropped"] == []
@@ -435,7 +446,7 @@ def test_gate0_passes_and_each_rule_fails():
 
 
 def test_gate0_drops_a_failing_type():
-    gates = tp.load_gates()
+    gates = _confirmed_gates()
     tables, census = _gate_inputs()
     tables["by_arm_type"].loc[tables["by_arm_type"]["label_type"] == "Obstacle", "median_px"] = 150.0
     out = tp.gate0(tables, census, gates, {"db"})
@@ -445,8 +456,8 @@ def test_gate0_drops_a_failing_type():
 @pytest.mark.parametrize("sources", [{"inverted"}, {"db", "inverted"}])
 def test_gate0_refuses_a_verdict_on_inverted_positions(sources):
     tables, census = _gate_inputs()
-    out = tp.gate0(tables, census, tp.load_gates(), sources)
-    assert out["verdict"] is None and "refused" in out and out["baseline_cap_m"] is None
+    out = tp.gate0(tables, census, _confirmed_gates(), sources)
+    assert out["verdict"] is None and "PREVIEW" in out["refused"] and out["baseline_cap_m"] is None
     assert all(r["pass"] is None for r in out["rules"])
 
 
@@ -498,7 +509,10 @@ def test_end_to_end_refuses_a_private_deployment(tmp_path):
     (run / "selection.json").write_text("{}")
     pd.DataFrame({"city": ["secret-city"], "pano_id": ["A" * 22], "pano_b": ["B" * 22]}).to_csv(
         run / "candidates.csv.gz", index=False)
-    pd.DataFrame({"pano_id": ["A" * 22], "vote_class": [""]}).to_csv(run / "labels.csv.gz", index=False)
+    pd.DataFrame({"city": ["secret-city"], "pano_id": ["A" * 22], "vote_class": [""]}).to_csv(
+        run / "labels.csv.gz", index=False)
+    pd.DataFrame({"label_uid": ["secret-city:1"], "city": ["secret-city"], "label_type": ["CurbRamp"],
+                  "label_class": ["correct"]}).to_csv(run / "anchors.csv.gz", index=False)
     listing = tmp_path / "cities.json"
     listing.write_text(json.dumps({"cities": [{"city_id": "secret-city", "visibility": "private"}]}))
     with pytest.raises(SystemExit, match="not public"):
@@ -538,3 +552,277 @@ def test_pull_script_queries_each_schema_read_only(tmp_path):
     assert "sidewalk_a.pano_data" in sql.read_text() and "user_id" not in sql.read_text()
     p = subprocess.run(["bash", SCRIPT], env={**env, "MODE": "methods"}, capture_output=True, text=True)
     assert p.returncode == 0 and p.stdout.startswith("schema,label_id,computation_method")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Added in the review of PR #103: survivors of a mutation pass, and the holes the review closed
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _votes(agree=0, disagree=0, ai_agree=0):
+    return json.dumps([{"user_id": f"a{i}", "validation": "Agree", "validator_type": "Human"} for i in range(agree)]
+                      + [{"user_id": f"d{i}", "validation": "Disagree", "validator_type": "Human"}
+                         for i in range(disagree)]
+                      + [{"user_id": "bot", "validation": "Agree", "validator_type": "AI"} for _ in range(ai_agree)])
+
+
+def test_prepare_labels_vote_thresholds_and_gsv_only():
+    rows = _labels_on_pano("c", "A" * 22, (47.6, -122.3), 30.0, [(1000 + 500 * i, 5000) for i in range(6)])
+    for r, v in zip(rows, [_votes(3), _votes(2), _votes(0, 2), _votes(0, 1), _votes(2, 0, ai_agree=5), _votes(3)]):
+        r["validations"] = v
+    rows[5]["pano_source"] = "mapillary"  # valid_geometry keeps it; this module is GSV only
+    labels, drops = tp.prepare_labels(pd.DataFrame(rows))
+    # net agree > 2 is correct, net disagree > 1 is incorrect, AI votes never count
+    assert labels.sort_values("label_id")["vote_class"].tolist() == ["correct", "", "incorrect", "", ""]
+    assert drops["non_gsv"] == 1 and len(labels) == 5
+
+
+def test_anchors_drops_each_rule_once_and_the_exploratory_pool_keeps_undecided_labels():
+    import data_generation as dg
+    cam = (47.6, -122.3)
+    rows = (_labels_on_pano("c", "A" * 22, cam, 30.0, [(1000, 5000), (2000, 5000), (3000, 5000)])   # ids 1, 2, 3
+            + _labels_on_pano("c", "B" * 22, cam, 30.0, [(1000, 5000)], first_id=4, month="2019")   # no month
+            + _labels_on_pano("c", "P" * 10, cam, 30.0, [(1000, 5000)], first_id=5)                 # photosphere
+            + _labels_on_pano("c", "N" * 22, cam, 30.0, [(1000, 5000)], first_id=6))                # no position
+    for r in rows:
+        r["validations"] = _votes(4)
+    rows[1]["validations"] = _votes(1)          # id 2: undecided
+    rows[2]["user_id"] = dg.AI_USER_ID          # id 3: placed by the AI account
+    labels, _ = tp.prepare_labels(pd.DataFrame(rows))
+    panos = pd.DataFrame({"city": "c", "pano_id": ["A" * 22, "B" * 22, "P" * 10]})
+    anc, drops = tp.anchors(labels, panos)
+    assert anc["label_uid"].tolist() == ["c:1"] and anc["label_class"].tolist() == ["correct"]
+    assert dict(drops) == {"not_vote_decided": 1, "ai_authored": 1, "no_capture_month": 1, "photosphere": 1,
+                           "no_camera_position": 1}
+    explore, _ = tp.anchors(labels, panos, pool="all")
+    assert sorted(explore["label_uid"]) == ["c:1", "c:2"]
+    assert explore.set_index("label_uid").loc["c:2", "label_class"] == ""
+
+
+def test_candidate_pairs_uses_bs_heading_the_a_to_b_offset_and_the_gap_from_a_to_b():
+    cam_a = (47.6, -122.3)
+    cam_b = tp.destination(*cam_a, 2.0, 90.0)            # B stands 2 m east of A
+    heading_a, heading_b, width = 10.0, 250.0, 16384
+    dep = math.degrees(math.atan(H / 8.0))               # a ground point 8 m from A at bearing 40 (lon 30 on A)
+    base = {"city": "c", "label_type": "CurbRamp", "label_class": "correct", "class_source": "margin",
+            "severity": 1, "tags": "[]", "user_key": "u", "pano_width": width, "photosphere": False}
+    anc = pd.DataFrame([
+        {**base, "label_uid": "c:1", "label_id": 1, "pano_id": "A" * 22, "lon": 30.0, "lat": -dep,
+         "capture_month": tp.capture_month("2015-06"), "camera_heading": heading_a},
+        {**base, "label_uid": "c:2", "label_id": 2, "pano_id": "B" * 22, "lon": 0.0, "lat": -20.0,
+         "capture_month": tp.capture_month("2019-06"), "camera_heading": heading_b}])
+    panos = pd.DataFrame({"city": "c", "pano_id": ["A" * 22, "B" * 22], "lat": [cam_a[0], cam_b[0]],
+                          "lng": [cam_a[1], cam_b[1]], "camera_heading": [heading_a, heading_b],
+                          "camera_pitch": [0.0, 0.0], "pano_width": [width, width], "n_labels": [2, 2],
+                          "capture_month": pd.array([tp.capture_month("2015-06"), tp.capture_month("2019-06")],
+                                                    dtype="Int64"),
+                          "agreement_m": [0.0, 0.0], "position_source": ["inverted", "inverted"]})
+    cands = tp.candidate_pairs(anc, panos, tp.neighbours(panos, tp.B_SEARCH_M))
+    # Only the older panorama's label gets a long_newer partner; the newer one's gap is -48 months: no arm.
+    assert cands["label_uid"].tolist() == ["c:1"]
+    c = cands.iloc[0]
+    assert c["arm"] == "long_newer" and c["dt_months"] == 48 and c["qc"] == "ok"
+    pe, pn = 8.0 * math.sin(math.radians(40.0)), 8.0 * math.cos(math.radians(40.0))
+    ve, vn = pe - 2.0, pn                                 # the point seen from B
+    assert c["d_b"] == pytest.approx(math.hypot(ve, vn), abs=1e-3)
+    want_lon = float(tp.wrap180(math.degrees(math.atan2(ve, vn)) - heading_b))
+    assert c["lon_b"] == pytest.approx(want_lon, abs=1e-3)
+    assert c["lat_b"] == pytest.approx(-math.degrees(math.atan(H / math.hypot(ve, vn))), abs=1e-3)
+    assert c["dep_b"] == pytest.approx(-c["lat_b"])
+
+
+def test_summarize_gives_a_wilson_interval_on_the_gate_share():
+    s = tp.summarize([10.0] * 60 + [150.0] * 26 + [300.0] * 14)
+    z, n, p_hat = 1.96, 100, 0.86
+    centre = (p_hat + z * z / (2 * n)) / (1 + z * z / n)
+    half = z * math.sqrt(p_hat * (1 - p_hat) / n + z * z / (4 * n * n)) / (1 + z * z / n)
+    assert s["n"] == 100 and s["within_240"] == 0.86 and s["within_100"] == 0.6
+    assert s["within_240_lo"] == pytest.approx(centre - half, abs=6e-4)
+    assert s["within_240_hi"] == pytest.approx(centre + half, abs=6e-4)
+
+
+def test_residual_tables_count_anchors_and_bound_the_share_by_the_unmatched():
+    row = {"arm": "long_newer", "label_type": "CurbRamp", "city": "c", "baseline_m": 2.0, "baseline_bin": "1.5-3",
+           "range_bin": "6-10", "positions_checked": "both", "era_pair": "2016-19 -> 2020-",
+           "width_pair": "16384 -> 16384", "az_px": 5.0, "el_px": 5.0, "same_user": False, "matched": True,
+           "unique": True}
+    rf = pd.DataFrame([{**row, "label_uid": "c:1", "res_px": 10.0}, {**row, "label_uid": "c:1", "res_px": 20.0},
+                       {**row, "label_uid": "c:2", "res_px": 300.0},
+                       {**row, "label_uid": "c:3", "res_px": 900.0, "matched": False, "unique": False},
+                       {**row, "label_uid": "c:4", "res_px": 10.0, "baseline_m": 4.0, "baseline_bin": "3-5"}])
+    t = tp.residual_tables(rf, pd.DataFrame(columns=["city", "label_type", "res_px"]), primary_m=3.0)
+    by_arm = t["by_arm"].iloc[0]
+    # the gate population: unique matches at the primary baseline (the 4 m row and the unmatched one are out)
+    assert by_arm["n"] == 3 and by_arm["n_anchors"] == 2 and by_arm["within_240"] == pytest.approx(0.667)
+    cov = t["coverage"].iloc[0]
+    assert cov["with_same_type_b_label"] == 4 and cov["unique"] == 3 and cov["unmatched_share"] == 0.25
+    assert cov["within_240_if_unmatched_missed"] == 0.5  # 2 of (3 unique + 1 unmatched)
+    assert t["by_arm_baseline"]["n"].sum() == 4          # the baseline table is the one that goes past the cap
+
+
+def test_gate0_refuses_unconfirmed_thresholds_and_named_blockers():
+    tables, census = _gate_inputs()
+    unconfirmed = {**tp.load_gates(), "confirmed_on": None}
+    out = tp.gate0(tables, census, unconfirmed, {"db"})
+    assert out["verdict"] is None and "not confirmed" in out["refused"] and "PREVIEW" not in out["refused"]
+    assert all(r["pass"] is None for r in out["rules"])
+    out = tp.gate0(tables, census, _confirmed_gates(), {"db"}, blockers=["anchors are not the vote-decided pool"])
+    assert out["verdict"] is None and out["refused"] == "anchors are not the vote-decided pool"
+    out = tp.gate0(tables, census, unconfirmed, {"inverted"})
+    assert "PREVIEW" in out["refused"] and "not confirmed" in out["refused"]
+
+
+def test_gate0_refuses_a_share_threshold_the_tables_do_not_report():
+    gates = _confirmed_gates()
+    gates["gate0"] = {**gates["gate0"], "residual_within_px": 300}
+    with pytest.raises(ValueError, match="residual_within_px"):
+        tp.gate0(*_gate_inputs(), gates, {"db"})
+
+
+def test_run_blockers():
+    ok = {"anchor_pool": "decided", "position_sources": ["db"], "panos_as_written": True,
+          "positions_info": {"db_panos_sha256": "ab" * 32}}
+    assert tp.run_blockers(ok, tp.GATES_PATH) == []
+    assert "exploratory" in tp.run_blockers({**ok, "anchor_pool": "all"}, tp.GATES_PATH)[0]
+    assert "not the committed gates.json" in tp.run_blockers(ok, "/tmp/looser-gates.json")[0]
+    assert "no record of a database pull" in tp.run_blockers({**ok, "positions_info": {}}, tp.GATES_PATH)[0]
+    assert "no record of a database pull" in tp.run_blockers({**ok, "positions_info": None}, tp.GATES_PATH)[0]
+    assert "not the file" in tp.run_blockers({**ok, "panos_as_written": False}, tp.GATES_PATH)[0]
+
+
+def _tiny_inputs(tmp_path, user="u"):
+    """A two-panorama public city (labels four years apart, 2 m apart), its listing and an empty round 3."""
+    cache, r3 = tmp_path / "cache", tmp_path / "r3"
+    os.makedirs(cache)
+    cam_a, cam_b = (47.6, -122.3), tp.destination(47.6, -122.3, 2.0, 90.0)
+    rows = _labels_on_pano("tiny-city", "A" * 22, cam_a, 0.0, [(8192, 5500), (2000, 5000)], month="2015-06",
+                           user=user)
+    rows += _labels_on_pano("tiny-city", "B" * 22, cam_b, 0.0, [(7500, 5600), (3000, 5000)], month="2019-06",
+                            first_id=10, user="w")
+    for r in rows:
+        r["validations"] = _votes(4)
+    pd.DataFrame(rows).to_csv(cache / "tiny-city.csv", index=False)
+    listing = tmp_path / "cities.json"
+    listing.write_text(json.dumps({"cities": [{"city_id": "tiny-city", "visibility": "public",
+                                               "url": "https://sidewalk-tiny.example.org"}]}))
+    for t in tp.TYPES:
+        os.makedirs(r3 / t)
+        pd.DataFrame({"label_uid": ["z:1"], "pano_id": ["Z" * 22], "split": ["train"]}).to_csv(
+            r3 / t / "split.csv", index=False)
+    return cache, listing, r3, (cam_a, cam_b)
+
+
+def _census_and_residual(cache, listing, r3, run, out, gates=None, pool="decided"):
+    tp.main(["census", "--rawlabels", str(cache), "--listing", str(listing), "--panos", str(run / "panos.csv"),
+             "--round3", str(r3), "--anchor-pool", pool, "--out", str(run)])
+    tp.main(["residual", "--run", str(run), "--listing", str(listing), "--out", str(out)]
+            + (["--gates", str(gates)] if gates else []))
+    return json.loads((out / "gate0.json").read_text())
+
+
+def test_end_to_end_database_run_gives_a_verdict_only_when_nothing_blocks(tmp_path, monkeypatch):
+    cache, listing, r3, (cam_a, cam_b) = _tiny_inputs(tmp_path)
+    run, out = tmp_path / "run", tmp_path / "out"
+    gates = tmp_path / "gates.json"                       # the committed thresholds, as if confirmed
+    gates.write_text(json.dumps(_confirmed_gates()))
+    monkeypatch.setattr(tp, "GATES_PATH", str(gates))
+    conf = tmp_path / "cityparams.conf"
+    conf.write_text('city-params {\n  db-schema {\n    tiny-city = "sidewalk_tiny"\n  }\n  landing-page-url {\n'
+                    '    prod {\n      tiny-city = "https://sidewalk-tiny.example.org"\n    }\n  }\n}\n')
+    db = tmp_path / "db_panos.csv"
+    pd.DataFrame({"schema": "sidewalk_tiny", "pano_id": ["A" * 22, "B" * 22], "lat": [cam_a[0], cam_b[0]],
+                  "lng": [cam_a[1], cam_b[1]], "camera_heading": [0.0, 0.0], "camera_pitch": [0.5, 0.5],
+                  "camera_roll": [None, None], "capture_date": ["2015-06", "2019-06"], "width": [16384, 16384],
+                  "height": [8192, 8192], "source": ["gsv", "gsv"], "expired": ["f", "f"],
+                  "has_backup": ["f", "f"], "n_labels": [2, 2]}).to_csv(db, index=False)
+    positions = ["positions", "--rawlabels", str(cache), "--listing", str(listing), "--out", str(run / "panos.csv")]
+    from_db = positions + ["--db-panos", str(db), "--cityparams", str(conf)]
+
+    tp.main(from_db)
+    info = json.loads((run / "panos.json").read_text())
+    assert info["compare_positions"][0]["median_m"] < 0.001   # the inversion agrees with the database here
+    g0 = _census_and_residual(cache, listing, r3, run, out)
+    assert g0["verdict"] in ("pass", "fail") and g0["banner"].startswith("GATE:") and "refused" not in g0
+    assert g0["position_sources"] == ["db"] and g0["anchor_pool"] == "decided"
+
+    # the committed (unconfirmed) thresholds: values, no verdict, and the banner says why
+    g0 = _census_and_residual(cache, listing, r3, run, out, gates=os.path.join(REPO, "docs",
+                              "temporal-validation-2026-11", "gates.json"))
+    assert g0["verdict"] is None and g0["banner"].startswith("NOT THE GATE") and "gates.json" in g0["refused"]
+
+    # the exploratory anchor pool never gets a verdict
+    g0 = _census_and_residual(cache, listing, r3, run, out, pool="all")
+    assert g0["verdict"] is None and "exploratory" in g0["refused"]
+    assert "EXPLORATORY" in (out / "residual.md").read_text()
+
+    # panos.csv edited after `positions` wrote it
+    with open(run / "panos.csv", "a") as f:
+        f.write("\n")
+    g0 = _census_and_residual(cache, listing, r3, run, out)
+    assert g0["verdict"] is None and "not the file" in g0["refused"]
+
+    # inverted positions relabelled "db" by hand (and panos.json rewritten to match): no database pull on record
+    tp.main(positions)
+    text = (run / "panos.csv").read_text()
+    assert "inverted" in text
+    (run / "panos.csv").write_text(text.replace("inverted", "db"))
+    info = json.loads((run / "panos.json").read_text())
+    info["panos_sha256"] = tp.sha256_file(str(run / "panos.csv"))
+    (run / "panos.json").write_text(json.dumps(info))
+    g0 = _census_and_residual(cache, listing, r3, run, out)
+    assert g0["verdict"] is None and "no record of a database pull" in g0["refused"]
+    assert not g0["banner"].startswith("GATE:")
+
+
+@pytest.mark.parametrize("where", ["labels", "anchors", "selection", "positions_info"])
+def test_residual_refuses_a_private_deployment_that_has_no_candidates(tmp_path, where):
+    """The per-city census names every city with an anchor, the click floor every city with labels and
+    provenance.json every city of the run, so a deployment gone private must stop the run even when it has no
+    candidate pair."""
+    cache, listing, r3, _ = _tiny_inputs(tmp_path)
+    run = tmp_path / "run"
+    tp.main(["positions", "--rawlabels", str(cache), "--listing", str(listing), "--out", str(run / "panos.csv")])
+    tp.main(["census", "--rawlabels", str(cache), "--listing", str(listing), "--panos", str(run / "panos.csv"),
+             "--round3", str(r3), "--out", str(run)])
+    if where in ("labels", "anchors"):
+        f = run / f"{where}.csv.gz"
+        df = pd.read_csv(f, dtype={"pano_id": str})
+        extra = df.iloc[[0]].assign(city="secret-city", label_uid="secret-city:1")
+        pd.concat([df, extra], ignore_index=True).to_csv(f, index=False)
+    else:
+        sel = json.loads((run / "selection.json").read_text())
+        (sel if where == "selection" else sel["positions_info"])["cities"].append("secret-city")
+        (run / "selection.json").write_text(json.dumps(sel))
+    with pytest.raises(SystemExit, match="not public.*secret-city"):
+        tp.main(["residual", "--run", str(run), "--listing", str(listing), "--out", str(tmp_path / "out")])
+    assert not (tmp_path / "out").exists()
+
+
+def test_residual_refuses_a_stale_listing(tmp_path):
+    cache, listing, r3, _ = _tiny_inputs(tmp_path)
+    run = tmp_path / "run"
+    tp.main(["positions", "--rawlabels", str(cache), "--listing", str(listing), "--out", str(run / "panos.csv")])
+    tp.main(["census", "--rawlabels", str(cache), "--listing", str(listing), "--panos", str(run / "panos.csv"),
+             "--round3", str(r3), "--out", str(run)])
+    three_days_ago = os.path.getmtime(listing) - 3 * 86400
+    os.utime(listing, (three_days_ago, three_days_ago))
+    with pytest.raises(SystemExit, match="days old"):
+        tp.main(["residual", "--run", str(run), "--listing", str(listing), "--out", str(tmp_path / "out")])
+    assert not (tmp_path / "out").exists()
+
+
+def test_user_keys_are_salted_and_no_user_id_reaches_the_run_files(tmp_path):
+    import gzip
+    import hashlib
+    uid = "11111111-2222-3333-4444-555555555555"
+    assert tp.user_key(uid) != hashlib.sha256(f"temporal-pairs:{uid}".encode()).hexdigest()[:12]
+    assert tp.user_key(uid) == tp.user_key(uid) != tp.user_key(uid + "x")
+    cache, listing, r3, _ = _tiny_inputs(tmp_path, user=uid + "-")   # authors "<uid>-0", "<uid>-1"
+    run = tmp_path / "run"
+    tp.main(["positions", "--rawlabels", str(cache), "--listing", str(listing), "--out", str(run / "panos.csv")])
+    tp.main(["census", "--rawlabels", str(cache), "--listing", str(listing), "--panos", str(run / "panos.csv"),
+             "--round3", str(r3), "--out", str(run)])
+    for name in os.listdir(run):
+        raw = (run / name).read_bytes()
+        text = (gzip.decompress(raw) if name.endswith(".gz") else raw).decode()
+        assert uid not in text, name
+
