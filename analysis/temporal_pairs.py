@@ -1194,8 +1194,10 @@ def cmd_census(a):
            "positions_info": pinfo, "panos_as_written": bool(pinfo and pinfo.get("panos_sha256") == panos_sha),
            "anchor_pool": a.anchor_pool, "experts_set": bool(experts), "label_drops": dict(drops),
            "anchor_drops": dict(adrops), "position_sources": sorted(panos["position_source"].unique().tolist()),
-           "settings": {k: v for k, v in globals().items() if k.isupper() and isinstance(v, (int, float, tuple, str))
-                        and k not in ("PREVIEW_BANNER", "GATE_BANNER", "GATES_PATH")}}
+           # Public constants only: a leading underscore (the user-key salt) keeps a name out of the record.
+           "settings": {k: v for k, v in globals().items()
+                        if k.isupper() and not k.startswith("_") and isinstance(v, (int, float, tuple, str))
+                        and k not in ("PREVIEW_BANNER", "GATE_BANNER", "NO_VERDICT_BANNER", "GATES_PATH")}}
     with open(os.path.join(a.out, "selection.json"), "w") as f:
         json.dump(sel, f, indent=1, default=str)
     print(f"{len(anc)} anchors, {len(cands)} candidates ({int((cands['qc'] == 'ok').sum())} pass QC) -> {a.out}")

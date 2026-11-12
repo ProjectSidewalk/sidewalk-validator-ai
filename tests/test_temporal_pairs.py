@@ -821,10 +821,16 @@ def test_user_keys_are_salted_and_no_user_id_reaches_the_run_files(tmp_path):
     tp.main(["positions", "--rawlabels", str(cache), "--listing", str(listing), "--out", str(run / "panos.csv")])
     tp.main(["census", "--rawlabels", str(cache), "--listing", str(listing), "--panos", str(run / "panos.csv"),
              "--round3", str(r3), "--out", str(run)])
-    for name in os.listdir(run):
-        raw = (run / name).read_bytes()
-        text = (gzip.decompress(raw) if name.endswith(".gz") else raw).decode()
-        assert uid not in text, name
+    tp.main(["residual", "--run", str(run), "--listing", str(listing), "--out", str(tmp_path / "out")])
+    files = [run / n for n in os.listdir(run)] + [tmp_path / "out" / n for n in os.listdir(tmp_path / "out")]
+    assert len(files) > 20
+    for f in files:
+        raw = f.read_bytes()
+        text = (gzip.decompress(raw) if f.name.endswith(".gz") else raw).decode()
+        assert uid not in text, f.name
+        assert tp._USER_SALT not in text and "SALT" not in text, f.name   # the salt is never written anywhere
+    settings = json.loads((run / "selection.json").read_text())["settings"]
+    assert "RESIDUAL_WINDOW_DEG" in settings and "WITHIN_PX" in settings
 
 
 def test_angular_sep_shrinks_longitude_by_the_cosine_of_latitude():
