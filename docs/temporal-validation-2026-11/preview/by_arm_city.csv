@@ -1,0 +1,14 @@
+# PREVIEW (not the gate): camera positions inverted from public rawLabels, not read from the database; no gate verdict is given on these numbers.
+arm,city,n,median_px,p75_px,p90_px,within_100,within_240,abs_az_median_px,abs_el_median_px,el_median_px
+same_month,chicago-il,52,72.7,169.2,339.9,0.635,0.808,64.3,24.5,1.3
+same_month,mendota-il,42,53.0,70.3,106.1,0.881,0.952,45.8,20.6,4.9
+same_month,"other (14 deployments, n<30 each)",50,70.5,129.5,218.7,0.66,0.9,59.0,27.9,1.3
+same_month,seattle-wa,102,89.4,191.4,320.1,0.52,0.804,82.6,30.6,7.2
+same_month,teaneck-nj,60,82.2,103.6,179.5,0.7,0.967,55.8,30.0,-10.9
+control,"other (8 deployments, n<30 each)",64,68.4,143.6,324.3,0.641,0.844,46.5,15.8,-1.9
+control,seattle-wa,40,110.9,203.8,356.0,0.425,0.825,104.1,23.2,-1.8
+long_newer,chicago-il,107,66.1,109.5,336.0,0.701,0.869,52.0,22.4,9.6
+long_newer,oradell-nj,36,54.3,92.7,323.2,0.75,0.861,46.7,12.4,-10.3
+long_newer,"other (14 deployments, n<30 each)",119,77.4,148.8,244.9,0.58,0.882,54.6,32.7,11.8
+long_newer,seattle-wa,142,100.5,178.3,366.9,0.493,0.831,84.8,29.9,-0.2
+long_newer,teaneck-nj,59,76.0,129.6,289.0,0.678,0.864,51.7,38.1,0.2

@@ -1,0 +1,102 @@
+{
+ "banner": "PREVIEW (not the gate): camera positions inverted from public rawLabels, not read from the database; no gate verdict is given on these numbers.",
+ "gate": "0",
+ "thresholds": {
+  "primary_baseline_m": 3.0,
+  "wide_baseline_m": 5.0,
+  "residual_median_px_max": 100,
+  "residual_within_px": 240,
+  "residual_within_share_min": 0.8,
+  "type_min_n": 50,
+  "era_ratio_max": 1.5,
+  "yield_long_newer_min": 800,
+  "yield_types_min": 2,
+  "yield_per_type_min": 150,
+  "negative_control_min": 200
+ },
+ "thresholds_status": "proposed, to be confirmed by Jon before any data is read for the gate",
+ "thresholds_confirmed_on": null,
+ "position_sources": [
+  "inverted"
+ ],
+ "types_kept": [
+  "CurbRamp",
+  "NoCurbRamp",
+  "Obstacle",
+  "SurfaceProblem",
+  "Crosswalk"
+ ],
+ "types_dropped": [],
+ "baseline_cap_m": null,
+ "rules": [
+  {
+   "rule": "G0a residual long_newer pooled",
+   "n": 463,
+   "median_px": 76.5,
+   "within_240": 0.86,
+   "threshold": "median <= 100 px and >= 80% within 240 px",
+   "pass": null
+  },
+  {
+   "rule": "G0a residual control pooled",
+   "n": 104,
+   "median_px": 88.6,
+   "within_240": 0.837,
+   "threshold": "median <= 100 px and >= 80% within 240 px",
+   "pass": null
+  },
+  {
+   "rule": "G0a residual long_newer CurbRamp",
+   "n": 235,
+   "median_px": 68.2,
+   "within_240": 0.894,
+   "threshold": "as pooled; a failing type is dropped",
+   "pass": null
+  },
+  {
+   "rule": "G0a residual long_newer NoCurbRamp",
+   "n": 77,
+   "median_px": 91.1,
+   "within_240": 0.896,
+   "threshold": "as pooled; a failing type is dropped",
+   "pass": null
+  },
+  {
+   "rule": "G0a residual long_newer Crosswalk",
+   "n": 97,
+   "median_px": 79.9,
+   "within_240": 0.835,
+   "threshold": "as pooled; a failing type is dropped",
+   "pass": null
+  },
+  {
+   "rule": "G0b era",
+   "value": 1.027,
+   "threshold": "long_newer / same_month median <= 1.5",
+   "pass": null
+  },
+  {
+   "rule": "G0c yield: clean vote-correct long_newer pairs",
+   "value": 744,
+   "threshold": ">= 800",
+   "pass": null
+  },
+  {
+   "rule": "G0c yield: types with enough pairs",
+   "value": [
+    "CurbRamp",
+    "Crosswalk"
+   ],
+   "threshold": ">= 2 types with >= 150",
+   "pass": null
+  },
+  {
+   "rule": "G0c yield: negative-control pool (presence types)",
+   "value": 305,
+   "threshold": ">= 200",
+   "pass": null
+  }
+ ],
+ "verdict": null,
+ "refused": "camera positions are not all from the database (pano_data): PREVIEW, not the gate"
+}

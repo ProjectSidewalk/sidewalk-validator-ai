@@ -1,0 +1,8 @@
+# PREVIEW (not the gate): camera positions inverted from public rawLabels, not read from the database; no gate verdict is given on these numbers.
+arm,positions_checked,n,median_px,p75_px,p90_px,within_100,within_240,abs_az_median_px,abs_el_median_px,el_median_px
+same_month,both,260,74.5,151.6,265.9,0.646,0.877,61.4,26.9,0.3
+same_month,not both,46,74.5,165.1,243.9,0.652,0.848,50.4,26.8,2.8
+control,both,82,88.6,154.8,278.5,0.573,0.854,76.4,18.7,-3.5
+control,not both,22,92.4,234.6,504.2,0.5,0.773,75.9,23.8,2.1
+long_newer,both,364,74.2,134.0,309.9,0.637,0.871,56.4,26.6,4.4
+long_newer,not both,99,100.1,185.1,325.8,0.495,0.818,70.6,29.5,4.9
