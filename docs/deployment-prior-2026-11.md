@@ -111,7 +111,7 @@ schemas (`_bak_` in the name; none had assessments), and 29,554 deleted labels w
 **Separating round-3 votes.** The pull's `model_id` names the type's model repo only, with no revision, so the
 revision is told apart by date: the round-3 revisions went live on 2026-10-27 at about 12:36 PDT (sidewalk-ai-api
 1.2.0), and the pull stores the assessment's date only. Round 3 = assessments dated 2026-10-28 or later (23,932 labels);
-older models = before 2026-10-27 (990,299); the changeover day itself (1,929) is in neither group. The split is
+older models = before 2026-10-27 (990,298, after dropping one row whose label type differs from the model's); the changeover day itself (1,929) is in neither group. The split is
 confirmed by replaying the round-3 confidences through the round-3 Agree maps: for every one of the 19,565 round-3
 Agree rows the map's lookup equals the served accuracy exactly (`served_check` in `observed.json`). The pull keeps each
 label's LATEST assessment, so a label the old model assessed and round 3 re-assessed counts as round 3.
