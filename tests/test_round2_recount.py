@@ -76,6 +76,9 @@ def _check_pending():
         assert f"{eligible:,}" in bullet and f"{unsampled:,}" in bullet
     assert "pending" in bullet
     assert not os.path.exists(CHECK_JSON)
+    md = _read(RECOUNT_MD)
+    for s, (eligible, unsampled) in BEFORE.items():  # the table rows exactly: no count typed in ahead of the JSON
+        assert f"| {s} | pending | {eligible:,} -> pending | {unsampled:,} -> pending |" in md, s
     for path in (RECOUNT_MD, MAIN_DOC):
         rows = [ln for ln in _read(path).splitlines() if ln.startswith("|") and re.search(r"->\s*[0-9]", ln)]
         assert rows == [], f"{os.path.basename(path)} has an after-number while the recount is pending: {rows}"
@@ -93,12 +96,18 @@ def _check_done(r, chk):
     assert r["before"] == gr.recount_population(rl.load_pool(POOL), design)
     assert r["author_excluded_sha256"] == chk["author_excluded_sha256"]
     assert chk["checks_passed"] is True
+    assert sorted(chk["schemas"]) == sorted(BEFORE)
 
     # the pull was complete (a failed city would be 146k or 200k labels missing)
     assert r["pool_labels_missing_from_flags"] < 0.01 * POOL_ROWS
     for s in BEFORE:
         assert chk["pool_labels_missing"][s]["share"] < 0.01, s
     assert chk["key_items_flagged"] == chk["unmasked_items"] == 11
+    # the two JSONs describe the same flags file: same missing count, and the pool cannot hold more excluded
+    # authors' labels than the file has t rows
+    assert r["pool_labels_missing_from_flags"] == sum(chk["pool_labels_missing"][s]["n"] for s in BEFORE)
+    for s in BEFORE:
+        assert r["excluded_labels"][s] <= chk["flagged_t"][s], s
 
     # the known removal: 10 of the 11 unmasked items are lone Obstacle, 1 lone SurfaceProblem (Seattle)
     assert r["excluded_labels"]["sidewalk_seattle"] >= 11
@@ -111,6 +120,14 @@ def _check_done(r, chk):
     assert before.keys() == after.keys()
     for path, n in after.items():
         assert n <= before[path], path
+    # each half adds up: every eligible AI Disagree is in one stratum of its city's rater or in the unsampled rest
+    for half in ("before", "after"):
+        for rater, s in design["raters"].items():
+            in_strata = sum(sum(cells.values()) for cells in r[half]["population"][rater].values())
+            assert in_strata + sum(r[half]["unsampled"][s].values()) == r[half]["eligible_disagrees"][s], (half, s)
+    for s in BEFORE:
+        assert (r["excluded_eligible_disagrees"][s]
+                == r["before"]["eligible_disagrees"][s] - r["after"]["eligible_disagrees"][s]), s
 
     # counts only
     for path in (RECOUNT_JSON, CHECK_JSON):
@@ -121,6 +138,11 @@ def _check_done(r, chk):
     md = _read(RECOUNT_MD)
     bullet = _not_sampled_bullet()
     assert "pending" not in bullet
+    # nothing left unfilled: no placeholder section, no pending cell, and the main doc's score sentence is updated
+    left = [ln for ln in md.splitlines() if ln.startswith("Pending:") or "-> pending" in ln or "| pending |" in ln]
+    assert left == [], left
+    assert "**Status: pending" not in md
+    assert "once it is run (pending)" not in _read(MAIN_DOC)
     for s, (eligible, _) in BEFORE.items():
         excl = r["excluded_labels"][s]
         after_n = r["after"]["eligible_disagrees"][s]

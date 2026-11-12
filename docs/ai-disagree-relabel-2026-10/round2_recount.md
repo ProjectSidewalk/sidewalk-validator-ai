@@ -27,26 +27,30 @@ newer labels are absent too). The proxy is never used for weights.
   excluded or re-included between the round and the pull moves with the flag.
 - **Acceptance checks.** `analysis/check_author_excluded.py` must pass before the flags are used
   (`analysis/round2_flags_pull.sh` runs it and accepts nothing otherwise): exact header and three fields per row;
-  only `t` / `f`; exactly the two schemas; `(schema, label_id)` unique; per city, under 1% of the pool's labels
-  missing from the flags; and the **whole key** joined onto the flags, where the key items flagged excluded must be
-  exactly the 11 rated unmasked, in both directions (an item whose author was excluded after it was rated masked
-  would otherwise stay in the sample while its label left the population). The check's counts are committed as
-  `round2_flags_check.json`.
+  only `t` / `f`; exactly the two schemas, and no schema of the pool left out; `(schema, label_id)` unique; per
+  city, under 1% of the pool's labels missing from the flags; and the **whole key** joined onto the flags, where
+  the key items flagged excluded must be exactly the 11 rated unmasked, in both directions (an item whose author
+  was excluded after it was rated masked would otherwise stay in the sample while its label left the population).
+  The check's counts are committed as `round2_flags_check.json`.
 - **Exclusion log.** SidewalkWebpage logs every exclusion toggle made on the admin page to the city's
   `webpage_activity` table. `analysis/pull_exclusion_changes.sh` reads it in the same connection, counts only (toggles
   per Pacific day and new value since the rawLabels export of 2026-10-18, with the labels those authors hold), so
-  changes can be placed before, inside or after the rating window (2026-10-28 to 2026-11-02) and the pull. Its two
-  limits: logging began on 2026-09-14, and a change made by direct SQL is not logged. It also counts labels whose
-  `label.user_id` differs from their `audit_task.user_id` (prod joins `user_stat` through the audit task; the pull
-  joins through the label).
-- **Where the recount bites.** Excluded authors' labels are hidden from Validate as well as Gallery, so the crowd
-  never votes on them: they collect no human votes and fall in the `lone` stratum. That is where the recount is
-  expected to change the population, and why the items rated unmasked were all `lone`.
+  changes can be placed before, inside or after the rating window (2026-10-28 to 2026-11-02) and the pull. Its rows
+  are a dated list of changes, not a net change: an author toggled more than once is counted in each row, with the
+  same labels, so the rows must not be summed. Its two limits: logging began on 2026-09-14, and a change made by
+  direct SQL is not logged. It also counts labels whose `label.user_id` differs from their `audit_task.user_id`
+  (prod joins `user_stat` through the audit task; the pull joins through the label).
+- **Where the recount bites.** Excluded authors' labels are hidden from Validate as well as Gallery, so from the
+  day an author is excluded the crowd cannot vote on their labels. Labels placed after that day, or not yet voted
+  on by then, have no human votes and fall in the `lone` stratum. That is where the recount is expected to change
+  the population most, and the items rated unmasked were all `lone`. Labels that were voted on before their author
+  was excluded sit in the other strata and leave those.
 
 ## Reproducing
 
 The pull is one ssh call to the database host, run once; if it fails in any way, stop and do not retry. Everything
-else runs locally. The block runs in bash or zsh (`py` is a function because zsh does not word-split `$VAR`).
+else runs locally. Run the block from the repository root, in bash or zsh (`py` is a function because zsh does not
+word-split `$VAR`).
 
 ```bash
 D=~/Data/sidewalk-validator-ai-relabel-2026-10/round2
@@ -55,6 +59,7 @@ DOC=docs/ai-disagree-relabel-2026-10
 py() { uv run --no-project --python 3.10 --with 'pandas<3' --with numpy --with scikit-learn --with matplotlib python "$@"; }
 
 # 1. pull + accept (the only remote step): writes $D/remote_bundle.sh, $D/author_excluded.csv, $D/exclusion_changes.csv
+#    (or $D/exclusion_changes.csv.incomplete if the log could not be read in full: say so below, do not use it)
 PYTHON="uv run --no-project --python 3.10 --with pandas<3 python" bash analysis/round2_flags_pull.sh --connect \
     --pool $R/pool.csv.gz --key $R/key/key.csv --unmasked $R/pre-consensus-2026-11-02/unmasked.csv \
     --check-out $DOC/round2_flags_check.json
