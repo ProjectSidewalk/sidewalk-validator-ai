@@ -1198,13 +1198,13 @@ def test_r_provenance_reads_the_repo_state_before_writing_tracked_outputs(r3, tm
     seen = []
 
     def fake_git_commit():
-        seen.append((assets / "tables.md").exists() or (public_out / "sample_public.csv").exists())
+        seen.append(((assets / "tables.md").exists(), (public_out / "sample_public.csv").exists()))
         return "c0ffee", False
     monkeypatch.setattr(da, "git_commit", fake_git_commit)
     da.main(["report", "--trig-dir", str(tmp_path / "trig"), "--assets", str(assets), "--no-figures"])
     da.main(["sample", "--root", r3, "--rawlabels-dir", os.path.join(r3, "rawlabels"), "--out-dir",
              str(tmp_path / "s"), "--public-out", str(public_out), "--public-cities", str(pub), "--n-per-type", "5"])
-    assert seen == [False, False]
+    assert seen == [(False, False), (True, False)]        # asked before tables.md, then before sample_public.csv
     assert json.loads((assets / "provenance.json").read_text())["git_dirty"] is False
     assert json.loads((public_out / "sample.json").read_text())["git_commit"] == "c0ffee"
 
