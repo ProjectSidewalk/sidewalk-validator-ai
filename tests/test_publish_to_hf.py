@@ -433,7 +433,7 @@ def test_dataset_card_states_the_expert_rule_only_when_used(tmp_path, staged):
     card = _read(os.path.join(d, "README.md"))
     assert "expert account voted for" in card and "2 project-team accounts" in card
     assert "9 margin and 3 expert" in card
-    assert "under the training margin rule" in card and "expert votes are not counted" in card
+    assert "under the training margin rule" in card and "decided only by the expert rule are not counted" in card
 
 
 def test_dataset_card_states_non_gsv_imagery_from_what_was_published(tmp_path, staged):

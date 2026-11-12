@@ -38,7 +38,8 @@ in this repo, so the four rules are named apart here.
 | D | `majority2` (**the new default prior**) | ≥ 2 Agree/Disagree votes, more Agree | ≥ 2 Agree/Disagree votes, more Disagree; ties out |
 
 Votes are human votes only (`validator_type == "Human"`), Unsure is not counted, and only human-authored labels with a
-usable panorama point count (`data_generation.voted_labels`), as for the old prior. Expert votes never enter any rule.
+usable panorama point count (`data_generation.voted_labels`), as for the old prior. The expert rule (one expert
+vote deciding a label) never enters any of them; an expert's vote is tallied as one human vote like any other.
 
 Incorrect share (correct / incorrect labels), round-3 rawLabels of the 54 deployments in the round-3 prior entry
 ([`deployment-prior-2026-11/shares.md`](deployment-prior-2026-11/shares.md)):

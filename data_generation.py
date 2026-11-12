@@ -676,7 +676,8 @@ def deployment_prior_entry(eligible, cities, n_rows, measured_on=None, city_sour
     With ``voted`` (:func:`voted_labels` of the same rows; issue #56), the entry also records ``rule`` and ``rules``,
     the counts under every rule in :data:`PRIOR_RULES`, and its top-level ``correct``/``incorrect`` are those of
     ``rule``. ``rules["margin"]`` must equal the legacy counts from ``eligible`` (``ValueError`` otherwise: the two
-    frames are not the same rows). Expert votes never enter any rule's counts.
+    frames are not the same rows). The expert rule never enters any rule's counts; an expert's vote is tallied as one
+    human vote like any other.
 
     Example::
 

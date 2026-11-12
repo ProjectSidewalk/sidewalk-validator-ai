@@ -23,7 +23,8 @@ aggregate columns would train the model on its own output.
 repo; unset, only the margin rule applies. A single non-expert vote is a weak signal (on labels the experts also
 voted on, a lone Disagree was right 24–78% of the time depending on the type), which is why the margin rule stays
 for the crowd. The manifest's `class_source` column records which rule decided each label, and the deployment prior
-never counts expert votes, since experts do not vote on a random sample.
+never applies the expert rule (an expert's vote is tallied there as one human vote like any other), since experts do
+not vote on a random sample.
 
 **The margin rule is asymmetric.** A label is `incorrect` at net Disagree > 1 but `correct` only at net Agree > 2, so
 two Disagree votes decide a label and two Agree votes do not. That is deliberate for training targets (an Agree
