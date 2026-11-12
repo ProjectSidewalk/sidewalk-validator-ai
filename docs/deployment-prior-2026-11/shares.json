@@ -1,0 +1,1266 @@
+{
+  "types": {
+    "Crosswalk": {
+      "n_rows": 120966,
+      "dropped_geometry": {},
+      "n_voted_human": 120966,
+      "rules": {
+        "margin": {
+          "correct": 19671,
+          "incorrect": 1281,
+          "share_incorrect": 0.061139747995418096
+        },
+        "symmetric3": {
+          "correct": 19671,
+          "incorrect": 771,
+          "share_incorrect": 0.037716466099207514
+        },
+        "symmetric2": {
+          "correct": 32628,
+          "incorrect": 1281,
+          "share_incorrect": 0.037777581173139875
+        },
+        "majority2": {
+          "correct": 33136,
+          "incorrect": 1524,
+          "share_incorrect": 0.04396999422965955
+        }
+      },
+      "check": {
+        "file_margin": {
+          "correct": 19671,
+          "incorrect": 1281
+        },
+        "ok": true,
+        "file_n_rows": 120966,
+        "n_rows_ok": true
+      }
+    },
+    "CurbRamp": {
+      "n_rows": 586144,
+      "dropped_geometry": {
+        "bad_pano_size": 1020
+      },
+      "n_voted_human": 505773,
+      "rules": {
+        "margin": {
+          "correct": 28470,
+          "incorrect": 3797,
+          "share_incorrect": 0.11767440419003936
+        },
+        "symmetric3": {
+          "correct": 28470,
+          "incorrect": 1255,
+          "share_incorrect": 0.04222035323801514
+        },
+        "symmetric2": {
+          "correct": 68886,
+          "incorrect": 3797,
+          "share_incorrect": 0.052240551435686476
+        },
+        "majority2": {
+          "correct": 72228,
+          "incorrect": 5291,
+          "share_incorrect": 0.06825423444574878
+        }
+      },
+      "check": {
+        "file_margin": {
+          "correct": 28470,
+          "incorrect": 3797
+        },
+        "ok": true,
+        "file_n_rows": 586144,
+        "n_rows_ok": true
+      }
+    },
+    "NoCurbRamp": {
+      "n_rows": 129889,
+      "dropped_geometry": {
+        "bad_pano_size": 139
+      },
+      "n_voted_human": 129750,
+      "rules": {
+        "margin": {
+          "correct": 13030,
+          "incorrect": 7774,
+          "share_incorrect": 0.3736781388194578
+        },
+        "symmetric3": {
+          "correct": 13030,
+          "incorrect": 4790,
+          "share_incorrect": 0.26879910213243546
+        },
+        "symmetric2": {
+          "correct": 29864,
+          "incorrect": 7774,
+          "share_incorrect": 0.20654657526967427
+        },
+        "majority2": {
+          "correct": 32677,
+          "incorrect": 9479,
+          "share_incorrect": 0.22485529936426607
+        }
+      },
+      "check": {
+        "file_margin": {
+          "correct": 13030,
+          "incorrect": 7774
+        },
+        "ok": true,
+        "file_n_rows": 129889,
+        "n_rows_ok": true
+      }
+    },
+    "Obstacle": {
+      "n_rows": 203465,
+      "dropped_geometry": {
+        "bad_pano_size": 103
+      },
+      "n_voted_human": 203362,
+      "rules": {
+        "margin": {
+          "correct": 12247,
+          "incorrect": 6822,
+          "share_incorrect": 0.3577534217840474
+        },
+        "symmetric3": {
+          "correct": 12247,
+          "incorrect": 2304,
+          "share_incorrect": 0.15833963301491308
+        },
+        "symmetric2": {
+          "correct": 24068,
+          "incorrect": 6822,
+          "share_incorrect": 0.22084817092910328
+        },
+        "majority2": {
+          "correct": 28084,
+          "incorrect": 9555,
+          "share_incorrect": 0.2538590291984378
+        }
+      },
+      "check": {
+        "file_margin": {
+          "correct": 12247,
+          "incorrect": 6822
+        },
+        "ok": true,
+        "file_n_rows": 203465,
+        "n_rows_ok": true
+      }
+    },
+    "SurfaceProblem": {
+      "n_rows": 218979,
+      "dropped_geometry": {
+        "bad_pano_size": 118
+      },
+      "n_voted_human": 218861,
+      "rules": {
+        "margin": {
+          "correct": 13790,
+          "incorrect": 6484,
+          "share_incorrect": 0.3198184867317747
+        },
+        "symmetric3": {
+          "correct": 13790,
+          "incorrect": 1792,
+          "share_incorrect": 0.11500449236298294
+        },
+        "symmetric2": {
+          "correct": 38080,
+          "incorrect": 6484,
+          "share_incorrect": 0.14549860874248272
+        },
+        "majority2": {
+          "correct": 42761,
+          "incorrect": 9101,
+          "share_incorrect": 0.17548494080444255
+        }
+      },
+      "check": {
+        "file_margin": {
+          "correct": 13790,
+          "incorrect": 6484
+        },
+        "ok": true,
+        "file_n_rows": 218979,
+        "n_rows_ok": true
+      }
+    }
+  },
+  "slices": {
+    "Crosswalk": {
+      "severity": [
+        {
+          "slice": "1",
+          "n_labels": 97845,
+          "n_margin": 18849,
+          "incorrect_margin": 0.02307814738182397,
+          "n_symmetric3": 18643,
+          "incorrect_symmetric3": 0.012283430778308213,
+          "n_symmetric2": 30565,
+          "incorrect_symmetric2": 0.014231964665467037,
+          "n_majority2": 31103,
+          "incorrect_majority2": 0.01806899655981738
+        },
+        {
+          "slice": "2",
+          "n_labels": 10785,
+          "n_margin": 880,
+          "incorrect_margin": 0.25113636363636366,
+          "n_symmetric3": 794,
+          "incorrect_symmetric3": 0.17002518891687657,
+          "n_symmetric2": 1538,
+          "incorrect_symmetric2": 0.14369310793237972,
+          "n_majority2": 1602,
+          "incorrect_majority2": 0.15792759051186017
+        },
+        {
+          "slice": "3",
+          "n_labels": 4777,
+          "n_margin": 618,
+          "incorrect_margin": 0.7572815533980582,
+          "n_symmetric3": 468,
+          "incorrect_symmetric3": 0.6794871794871795,
+          "n_symmetric2": 826,
+          "incorrect_symmetric2": 0.5665859564164649,
+          "n_majority2": 925,
+          "incorrect_majority2": 0.5772972972972973
+        },
+        {
+          "slice": "(none)",
+          "n_labels": 7559,
+          "n_margin": 605,
+          "incorrect_margin": 0.25950413223140495,
+          "n_symmetric3": 537,
+          "incorrect_symmetric3": 0.16573556797020483,
+          "n_symmetric2": 980,
+          "incorrect_symmetric2": 0.16020408163265307,
+          "n_majority2": 1030,
+          "incorrect_majority2": 0.16990291262135923
+        }
+      ],
+      "tag": [
+        {
+          "slice": "(none)",
+          "n_labels": 87991,
+          "n_margin": 16558,
+          "incorrect_margin": 0.05024761444618915,
+          "n_symmetric3": 16263,
+          "incorrect_symmetric3": 0.03301973805570928,
+          "n_symmetric2": 26580,
+          "incorrect_symmetric2": 0.03130173062452972,
+          "n_majority2": 27082,
+          "incorrect_majority2": 0.03648179602688132
+        },
+        {
+          "slice": "paint fading",
+          "n_labels": 24007,
+          "n_margin": 2780,
+          "incorrect_margin": 0.10071942446043165,
+          "n_symmetric3": 2637,
+          "incorrect_symmetric3": 0.051952976867652635,
+          "n_symmetric2": 4825,
+          "incorrect_symmetric2": 0.058031088082901555,
+          "n_majority2": 4988,
+          "incorrect_majority2": 0.0673616680032077
+        },
+        {
+          "slice": "very long crossing",
+          "n_labels": 5161,
+          "n_margin": 663,
+          "incorrect_margin": 0.06334841628959276,
+          "n_symmetric3": 646,
+          "incorrect_symmetric3": 0.03869969040247678,
+          "n_symmetric2": 1109,
+          "incorrect_symmetric2": 0.03787195671776375,
+          "n_majority2": 1135,
+          "incorrect_majority2": 0.044933920704845816
+        },
+        {
+          "slice": "broken surface",
+          "n_labels": 3203,
+          "n_margin": 680,
+          "incorrect_margin": 0.05588235294117647,
+          "n_symmetric3": 668,
+          "incorrect_symmetric3": 0.038922155688622756,
+          "n_symmetric2": 1026,
+          "incorrect_symmetric2": 0.037037037037037035,
+          "n_majority2": 1053,
+          "incorrect_majority2": 0.04083570750237417
+        },
+        {
+          "slice": "bumpy",
+          "n_labels": 2022,
+          "n_margin": 420,
+          "incorrect_margin": 0.11666666666666667,
+          "n_symmetric3": 402,
+          "incorrect_symmetric3": 0.07711442786069651,
+          "n_symmetric2": 578,
+          "incorrect_symmetric2": 0.0847750865051903,
+          "n_majority2": 599,
+          "incorrect_majority2": 0.09515859766277128
+        },
+        {
+          "slice": "uneven surface",
+          "n_labels": 1887,
+          "n_margin": 341,
+          "incorrect_margin": 0.17888563049853373,
+          "n_symmetric3": 312,
+          "incorrect_symmetric3": 0.10256410256410256,
+          "n_symmetric2": 569,
+          "incorrect_symmetric2": 0.10720562390158173,
+          "n_majority2": 599,
+          "incorrect_majority2": 0.11853088480801335
+        },
+        {
+          "slice": "brick/cobblestone",
+          "n_labels": 1795,
+          "n_margin": 141,
+          "incorrect_margin": 0.3829787234042553,
+          "n_symmetric3": 104,
+          "incorrect_symmetric3": 0.16346153846153846,
+          "n_symmetric2": 316,
+          "incorrect_symmetric2": 0.17088607594936708,
+          "n_majority2": 333,
+          "incorrect_majority2": 0.1831831831831832
+        },
+        {
+          "slice": "too close to traffic",
+          "n_labels": 1078,
+          "n_margin": 239,
+          "incorrect_margin": 0.012552301255230125,
+          "n_symmetric3": 236,
+          "incorrect_symmetric3": 0.0,
+          "n_symmetric2": 320,
+          "incorrect_symmetric2": 0.009375,
+          "n_majority2": 325,
+          "incorrect_majority2": 0.018461538461538463
+        },
+        {
+          "slice": "no pedestrian priority",
+          "n_labels": 846,
+          "n_margin": 241,
+          "incorrect_margin": 0.14937759336099585,
+          "n_symmetric3": 228,
+          "incorrect_symmetric3": 0.10087719298245613,
+          "n_symmetric2": 313,
+          "incorrect_symmetric2": 0.11501597444089456,
+          "n_majority2": 327,
+          "incorrect_majority2": 0.13149847094801223
+        },
+        {
+          "slice": "rail/tram track",
+          "n_labels": 559,
+          "n_margin": 155,
+          "incorrect_margin": 0.06451612903225806,
+          "n_symmetric3": 152,
+          "incorrect_symmetric3": 0.046052631578947366,
+          "n_symmetric2": 247,
+          "incorrect_symmetric2": 0.04048582995951417,
+          "n_majority2": 257,
+          "incorrect_majority2": 0.038910505836575876
+        },
+        {
+          "slice": "level with sidewalk",
+          "n_labels": 55,
+          "n_margin": 0,
+          "incorrect_margin": null,
+          "n_symmetric3": 0,
+          "incorrect_symmetric3": null,
+          "n_symmetric2": 3,
+          "incorrect_symmetric2": null,
+          "n_majority2": 3,
+          "incorrect_majority2": null
+        }
+      ]
+    },
+    "CurbRamp": {
+      "severity": [
+        {
+          "slice": "1",
+          "n_labels": 410819,
+          "n_margin": 26987,
+          "incorrect_margin": 0.09056212250342757,
+          "n_symmetric3": 25337,
+          "incorrect_symmetric3": 0.031337569562300195,
+          "n_symmetric2": 61395,
+          "incorrect_symmetric2": 0.03980780193826859,
+          "n_majority2": 64917,
+          "incorrect_majority2": 0.05354529630143106
+        },
+        {
+          "slice": "2",
+          "n_labels": 43104,
+          "n_margin": 3002,
+          "incorrect_margin": 0.19853431045969352,
+          "n_symmetric3": 2588,
+          "incorrect_symmetric3": 0.07032457496136012,
+          "n_symmetric2": 6777,
+          "incorrect_symmetric2": 0.08794451822340268,
+          "n_majority2": 7508,
+          "incorrect_majority2": 0.10974960042621204
+        },
+        {
+          "slice": "3",
+          "n_labels": 13826,
+          "n_margin": 1414,
+          "incorrect_margin": 0.35007072135785006,
+          "n_symmetric3": 1095,
+          "incorrect_symmetric3": 0.16073059360730593,
+          "n_symmetric2": 2666,
+          "incorrect_symmetric2": 0.18567141785446362,
+          "n_majority2": 3099,
+          "incorrect_majority2": 0.2155534043239755
+        },
+        {
+          "slice": "(none)",
+          "n_labels": 38024,
+          "n_margin": 864,
+          "incorrect_margin": 0.30324074074074076,
+          "n_symmetric3": 705,
+          "incorrect_symmetric3": 0.14609929078014183,
+          "n_symmetric2": 1845,
+          "incorrect_symmetric2": 0.14200542005420055,
+          "n_majority2": 1995,
+          "incorrect_majority2": 0.1619047619047619
+        }
+      ],
+      "tag": [
+        {
+          "slice": "(none)",
+          "n_labels": 387217,
+          "n_margin": 20009,
+          "incorrect_margin": 0.09295816882402919,
+          "n_symmetric3": 18735,
+          "incorrect_symmetric3": 0.03127835601814785,
+          "n_symmetric2": 46485,
+          "incorrect_symmetric2": 0.040012907389480476,
+          "n_majority2": 48903,
+          "incorrect_majority2": 0.052103142956464836
+        },
+        {
+          "slice": "missing tactile warning",
+          "n_labels": 61715,
+          "n_margin": 6617,
+          "incorrect_margin": 0.1338975366480278,
+          "n_symmetric3": 5995,
+          "incorrect_symmetric3": 0.044036697247706424,
+          "n_symmetric2": 14494,
+          "incorrect_symmetric2": 0.06112874292810818,
+          "n_majority2": 15883,
+          "incorrect_majority2": 0.08184851728262922
+        },
+        {
+          "slice": "points into traffic",
+          "n_labels": 33567,
+          "n_margin": 2919,
+          "incorrect_margin": 0.14182939362795477,
+          "n_symmetric3": 2675,
+          "incorrect_symmetric3": 0.06355140186915888,
+          "n_symmetric2": 6436,
+          "incorrect_symmetric2": 0.06432566811684276,
+          "n_majority2": 6873,
+          "incorrect_majority2": 0.08206023570493234
+        },
+        {
+          "slice": "narrow",
+          "n_labels": 19182,
+          "n_margin": 1850,
+          "incorrect_margin": 0.1545945945945946,
+          "n_symmetric3": 1655,
+          "incorrect_symmetric3": 0.05498489425981873,
+          "n_symmetric2": 3988,
+          "incorrect_symmetric2": 0.07171514543630893,
+          "n_majority2": 4433,
+          "incorrect_majority2": 0.09767651703135574
+        },
+        {
+          "slice": "surface problem",
+          "n_labels": 14983,
+          "n_margin": 1884,
+          "incorrect_margin": 0.12420382165605096,
+          "n_symmetric3": 1742,
+          "incorrect_symmetric3": 0.05281285878300804,
+          "n_symmetric2": 3743,
+          "incorrect_symmetric2": 0.06251669783596046,
+          "n_majority2": 4112,
+          "incorrect_majority2": 0.08317120622568093
+        },
+        {
+          "slice": "not level with street",
+          "n_labels": 14361,
+          "n_margin": 1558,
+          "incorrect_margin": 0.3177150192554557,
+          "n_symmetric3": 1218,
+          "incorrect_symmetric3": 0.1272577996715928,
+          "n_symmetric2": 2662,
+          "incorrect_symmetric2": 0.1859504132231405,
+          "n_majority2": 3073,
+          "incorrect_majority2": 0.22290920924178328
+        },
+        {
+          "slice": "not enough landing space",
+          "n_labels": 13050,
+          "n_margin": 1380,
+          "incorrect_margin": 0.1565217391304348,
+          "n_symmetric3": 1237,
+          "incorrect_symmetric3": 0.05901374292643492,
+          "n_symmetric2": 3159,
+          "incorrect_symmetric2": 0.06837606837606838,
+          "n_majority2": 3487,
+          "incorrect_majority2": 0.09549756237453398
+        },
+        {
+          "slice": "debris / pooled water",
+          "n_labels": 4855,
+          "n_margin": 390,
+          "incorrect_margin": 0.04871794871794872,
+          "n_symmetric3": 376,
+          "incorrect_symmetric3": 0.013297872340425532,
+          "n_symmetric2": 1011,
+          "incorrect_symmetric2": 0.018793273986152326,
+          "n_majority2": 1076,
+          "incorrect_majority2": 0.02695167286245353
+        },
+        {
+          "slice": "steep",
+          "n_labels": 4673,
+          "n_margin": 668,
+          "incorrect_margin": 0.36676646706586824,
+          "n_symmetric3": 524,
+          "incorrect_symmetric3": 0.19274809160305342,
+          "n_symmetric2": 1058,
+          "incorrect_symmetric2": 0.23156899810964082,
+          "n_majority2": 1243,
+          "incorrect_majority2": 0.2590506838294449
+        },
+        {
+          "slice": "not aligned with crosswalk",
+          "n_labels": 1297,
+          "n_margin": 306,
+          "incorrect_margin": 0.0196078431372549,
+          "n_symmetric3": 302,
+          "incorrect_symmetric3": 0.006622516556291391,
+          "n_symmetric2": 389,
+          "incorrect_symmetric2": 0.015424164524421594,
+          "n_majority2": 401,
+          "incorrect_majority2": 0.02743142144638404
+        },
+        {
+          "slice": "tactile warning",
+          "n_labels": 1144,
+          "n_margin": 2,
+          "incorrect_margin": null,
+          "n_symmetric3": 2,
+          "incorrect_symmetric3": null,
+          "n_symmetric2": 34,
+          "incorrect_symmetric2": 0.0,
+          "n_majority2": 34,
+          "incorrect_majority2": 0.0
+        },
+        {
+          "slice": "parallel lines",
+          "n_labels": 792,
+          "n_margin": 17,
+          "incorrect_margin": null,
+          "n_symmetric3": 16,
+          "incorrect_symmetric3": null,
+          "n_symmetric2": 149,
+          "incorrect_symmetric2": 0.006711409395973154,
+          "n_majority2": 149,
+          "incorrect_majority2": 0.006711409395973154
+        },
+        {
+          "slice": "not visible",
+          "n_labels": 5,
+          "n_margin": 0,
+          "incorrect_margin": null,
+          "n_symmetric3": 0,
+          "incorrect_symmetric3": null,
+          "n_symmetric2": 0,
+          "incorrect_symmetric2": null,
+          "n_majority2": 0,
+          "incorrect_majority2": null
+        }
+      ]
+    },
+    "NoCurbRamp": {
+      "severity": [
+        {
+          "slice": "1",
+          "n_labels": 13835,
+          "n_margin": 2946,
+          "incorrect_margin": 0.5987780040733197,
+          "n_symmetric3": 2349,
+          "incorrect_symmetric3": 0.49680715197956576,
+          "n_symmetric2": 4256,
+          "incorrect_symmetric2": 0.4144736842105263,
+          "n_majority2": 4968,
+          "incorrect_majority2": 0.42008856682769724
+        },
+        {
+          "slice": "2",
+          "n_labels": 39998,
+          "n_margin": 5883,
+          "incorrect_margin": 0.3659697433282339,
+          "n_symmetric3": 4946,
+          "incorrect_symmetric3": 0.24585523655479175,
+          "n_symmetric2": 11665,
+          "incorrect_symmetric2": 0.1845692241748821,
+          "n_majority2": 13089,
+          "incorrect_majority2": 0.20421728168691267
+        },
+        {
+          "slice": "3",
+          "n_labels": 64860,
+          "n_margin": 10955,
+          "incorrect_margin": 0.29402099497946144,
+          "n_symmetric3": 9793,
+          "incorrect_symmetric3": 0.2102522209741652,
+          "n_symmetric2": 20182,
+          "incorrect_symmetric2": 0.1595976612823308,
+          "n_majority2": 22287,
+          "incorrect_majority2": 0.17741284156683268
+        },
+        {
+          "slice": "(none)",
+          "n_labels": 11057,
+          "n_margin": 1020,
+          "incorrect_margin": 0.6235294117647059,
+          "n_symmetric3": 732,
+          "incorrect_symmetric3": 0.47540983606557374,
+          "n_symmetric2": 1535,
+          "incorrect_symmetric2": 0.41433224755700326,
+          "n_majority2": 1812,
+          "incorrect_majority2": 0.42218543046357615
+        }
+      ],
+      "tag": [
+        {
+          "slice": "(none)",
+          "n_labels": 54570,
+          "n_margin": 7744,
+          "incorrect_margin": 0.44201962809917356,
+          "n_symmetric3": 6529,
+          "incorrect_symmetric3": 0.3381834890488589,
+          "n_symmetric2": 13072,
+          "incorrect_symmetric2": 0.2618574051407589,
+          "n_majority2": 14641,
+          "incorrect_majority2": 0.2792842018987774
+        },
+        {
+          "slice": "no alternate route",
+          "n_labels": 53450,
+          "n_margin": 8131,
+          "incorrect_margin": 0.23699421965317918,
+          "n_symmetric3": 7329,
+          "incorrect_symmetric3": 0.15349979533360622,
+          "n_symmetric2": 16604,
+          "incorrect_symmetric2": 0.1160563719585642,
+          "n_majority2": 18195,
+          "incorrect_majority2": 0.13388293487221764
+        },
+        {
+          "slice": "alternate route present",
+          "n_labels": 18182,
+          "n_margin": 3932,
+          "incorrect_margin": 0.448880976602238,
+          "n_symmetric3": 3178,
+          "incorrect_symmetric3": 0.3181246066708622,
+          "n_symmetric2": 6609,
+          "incorrect_symmetric2": 0.2670600696020578,
+          "n_majority2": 7691,
+          "incorrect_majority2": 0.2803276557014692
+        },
+        {
+          "slice": "unclear if needed",
+          "n_labels": 5549,
+          "n_margin": 1405,
+          "incorrect_margin": 0.6434163701067616,
+          "n_symmetric3": 1071,
+          "incorrect_symmetric3": 0.5322128851540616,
+          "n_symmetric2": 1973,
+          "incorrect_symmetric2": 0.4581855043081602,
+          "n_majority2": 2374,
+          "incorrect_majority2": 0.46166807076663857
+        }
+      ]
+    },
+    "Obstacle": {
+      "severity": [
+        {
+          "slice": "1",
+          "n_labels": 51580,
+          "n_margin": 5763,
+          "incorrect_margin": 0.5328821794204407,
+          "n_symmetric3": 3756,
+          "incorrect_symmetric3": 0.2832800851970181,
+          "n_symmetric2": 8468,
+          "incorrect_symmetric2": 0.36265942371280113,
+          "n_majority2": 10655,
+          "incorrect_majority2": 0.3762552792116377
+        },
+        {
+          "slice": "2",
+          "n_labels": 58170,
+          "n_margin": 5149,
+          "incorrect_margin": 0.28937657797630606,
+          "n_symmetric3": 4145,
+          "incorrect_symmetric3": 0.1172496984318456,
+          "n_symmetric2": 8658,
+          "incorrect_symmetric2": 0.17209517209517208,
+          "n_majority2": 10494,
+          "incorrect_majority2": 0.20726129216695255
+        },
+        {
+          "slice": "3",
+          "n_labels": 81800,
+          "n_margin": 7010,
+          "incorrect_margin": 0.2340941512125535,
+          "n_symmetric3": 5877,
+          "incorrect_symmetric3": 0.08643865917985366,
+          "n_symmetric2": 11977,
+          "incorrect_symmetric2": 0.13701260749770394,
+          "n_majority2": 14201,
+          "incorrect_majority2": 0.17808605027814942
+        },
+        {
+          "slice": "(none)",
+          "n_labels": 11812,
+          "n_margin": 1147,
+          "incorrect_margin": 0.5405405405405406,
+          "n_symmetric3": 773,
+          "incorrect_symmetric3": 0.3182406209573092,
+          "n_symmetric2": 1787,
+          "incorrect_symmetric2": 0.3469501958589815,
+          "n_majority2": 2289,
+          "incorrect_majority2": 0.36784622105723025
+        }
+      ],
+      "tag": [
+        {
+          "slice": "pole",
+          "n_labels": 49256,
+          "n_margin": 3713,
+          "incorrect_margin": 0.39402100727174794,
+          "n_symmetric3": 2738,
+          "incorrect_symmetric3": 0.17823228634039445,
+          "n_symmetric2": 6401,
+          "incorrect_symmetric2": 0.22855803780659273,
+          "n_majority2": 7838,
+          "incorrect_majority2": 0.2605256442970145
+        },
+        {
+          "slice": "(none)",
+          "n_labels": 46022,
+          "n_margin": 3067,
+          "incorrect_margin": 0.5027714378871861,
+          "n_symmetric3": 2052,
+          "incorrect_symmetric3": 0.25682261208577,
+          "n_symmetric2": 4628,
+          "incorrect_symmetric2": 0.3331892826274849,
+          "n_majority2": 5881,
+          "incorrect_majority2": 0.35793232443462
+        },
+        {
+          "slice": "tree",
+          "n_labels": 26730,
+          "n_margin": 1405,
+          "incorrect_margin": 0.43629893238434164,
+          "n_symmetric3": 999,
+          "incorrect_symmetric3": 0.2072072072072072,
+          "n_symmetric2": 2453,
+          "incorrect_symmetric2": 0.24989808397880148,
+          "n_majority2": 2898,
+          "incorrect_majority2": 0.27915804002760525
+        },
+        {
+          "slice": "vegetation",
+          "n_labels": 17800,
+          "n_margin": 1970,
+          "incorrect_margin": 0.29796954314720814,
+          "n_symmetric3": 1581,
+          "incorrect_symmetric3": 0.1252371916508539,
+          "n_symmetric2": 3275,
+          "incorrect_symmetric2": 0.17923664122137403,
+          "n_majority2": 4060,
+          "incorrect_majority2": 0.21822660098522167
+        },
+        {
+          "slice": "parked car",
+          "n_labels": 15107,
+          "n_margin": 2256,
+          "incorrect_margin": 0.33156028368794327,
+          "n_symmetric3": 1769,
+          "incorrect_symmetric3": 0.14754098360655737,
+          "n_symmetric2": 3538,
+          "incorrect_symmetric2": 0.21141888072357265,
+          "n_majority2": 4457,
+          "incorrect_majority2": 0.26048911824096926
+        },
+        {
+          "slice": "narrow",
+          "n_labels": 13194,
+          "n_margin": 1712,
+          "incorrect_margin": 0.20619158878504673,
+          "n_symmetric3": 1489,
+          "incorrect_symmetric3": 0.08730691739422432,
+          "n_symmetric2": 2922,
+          "incorrect_symmetric2": 0.12080766598220397,
+          "n_majority2": 3409,
+          "incorrect_majority2": 0.14784394250513347
+        },
+        {
+          "slice": "trash/recycling can",
+          "n_labels": 12173,
+          "n_margin": 2088,
+          "incorrect_margin": 0.21886973180076627,
+          "n_symmetric3": 1818,
+          "incorrect_symmetric3": 0.10286028602860287,
+          "n_symmetric2": 3205,
+          "incorrect_symmetric2": 0.14258970358814352,
+          "n_majority2": 3802,
+          "incorrect_majority2": 0.1749079431877959
+        },
+        {
+          "slice": "sign",
+          "n_labels": 9779,
+          "n_margin": 956,
+          "incorrect_margin": 0.39644351464435146,
+          "n_symmetric3": 681,
+          "incorrect_symmetric3": 0.1527165932452276,
+          "n_symmetric2": 1562,
+          "incorrect_symmetric2": 0.24263764404609475,
+          "n_majority2": 1893,
+          "incorrect_majority2": 0.26677231907025883
+        },
+        {
+          "slice": "garage entrance",
+          "n_labels": 8969,
+          "n_margin": 117,
+          "incorrect_margin": 0.5726495726495726,
+          "n_symmetric3": 62,
+          "incorrect_symmetric3": 0.1935483870967742,
+          "n_symmetric2": 195,
+          "incorrect_symmetric2": 0.3435897435897436,
+          "n_majority2": 236,
+          "incorrect_majority2": 0.3644067796610169
+        },
+        {
+          "slice": "parked scooter/motorcycle",
+          "n_labels": 7456,
+          "n_margin": 1066,
+          "incorrect_margin": 0.199812382739212,
+          "n_symmetric3": 905,
+          "incorrect_symmetric3": 0.057458563535911604,
+          "n_symmetric2": 1809,
+          "incorrect_symmetric2": 0.11774461028192372,
+          "n_majority2": 2117,
+          "incorrect_majority2": 0.14407179971658007
+        },
+        {
+          "slice": "construction",
+          "n_labels": 4696,
+          "n_margin": 879,
+          "incorrect_margin": 0.15130830489192265,
+          "n_symmetric3": 781,
+          "incorrect_symmetric3": 0.04481434058898848,
+          "n_symmetric2": 1458,
+          "incorrect_symmetric2": 0.09122085048010974,
+          "n_majority2": 1654,
+          "incorrect_majority2": 0.11668681983071343
+        },
+        {
+          "slice": "litter/garbage",
+          "n_labels": 3596,
+          "n_margin": 437,
+          "incorrect_margin": 0.2562929061784897,
+          "n_symmetric3": 364,
+          "incorrect_symmetric3": 0.10714285714285714,
+          "n_symmetric2": 752,
+          "incorrect_symmetric2": 0.14893617021276595,
+          "n_majority2": 879,
+          "incorrect_majority2": 0.17633674630261661
+        },
+        {
+          "slice": "stairs",
+          "n_labels": 3565,
+          "n_margin": 119,
+          "incorrect_margin": 0.453781512605042,
+          "n_symmetric3": 79,
+          "incorrect_symmetric3": 0.17721518987341772,
+          "n_symmetric2": 247,
+          "incorrect_symmetric2": 0.21862348178137653,
+          "n_majority2": 272,
+          "incorrect_majority2": 0.22794117647058823
+        },
+        {
+          "slice": "height difference",
+          "n_labels": 3363,
+          "n_margin": 100,
+          "incorrect_margin": 0.5,
+          "n_symmetric3": 58,
+          "incorrect_symmetric3": 0.13793103448275862,
+          "n_symmetric2": 170,
+          "incorrect_symmetric2": 0.29411764705882354,
+          "n_majority2": 210,
+          "incorrect_majority2": 0.3142857142857143
+        },
+        {
+          "slice": "street vendor",
+          "n_labels": 3277,
+          "n_margin": 218,
+          "incorrect_margin": 0.0963302752293578,
+          "n_symmetric3": 200,
+          "incorrect_symmetric3": 0.015,
+          "n_symmetric2": 451,
+          "incorrect_symmetric2": 0.04656319290465632,
+          "n_majority2": 508,
+          "incorrect_majority2": 0.08267716535433071
+        },
+        {
+          "slice": "fire hydrant",
+          "n_labels": 3070,
+          "n_margin": 592,
+          "incorrect_margin": 0.3935810810810811,
+          "n_symmetric3": 452,
+          "incorrect_symmetric3": 0.20575221238938052,
+          "n_symmetric2": 890,
+          "incorrect_symmetric2": 0.26179775280898876,
+          "n_majority2": 1118,
+          "incorrect_majority2": 0.2960644007155635
+        },
+        {
+          "slice": "parked bike",
+          "n_labels": 2722,
+          "n_margin": 419,
+          "incorrect_margin": 0.4033412887828162,
+          "n_symmetric3": 315,
+          "incorrect_symmetric3": 0.20634920634920634,
+          "n_symmetric2": 608,
+          "incorrect_symmetric2": 0.2779605263157895,
+          "n_majority2": 729,
+          "incorrect_majority2": 0.3045267489711934
+        },
+        {
+          "slice": "utility cabinet",
+          "n_labels": 2111,
+          "n_margin": 474,
+          "incorrect_margin": 0.04219409282700422,
+          "n_symmetric3": 458,
+          "incorrect_symmetric3": 0.008733624454148471,
+          "n_symmetric2": 774,
+          "incorrect_symmetric2": 0.025839793281653745,
+          "n_majority2": 823,
+          "incorrect_majority2": 0.041312272174969626
+        },
+        {
+          "slice": "outdoor dining area",
+          "n_labels": 331,
+          "n_margin": 133,
+          "incorrect_margin": 0.8947368421052632,
+          "n_symmetric3": 51,
+          "incorrect_symmetric3": 0.7254901960784313,
+          "n_symmetric2": 156,
+          "incorrect_symmetric2": 0.7628205128205128,
+          "n_majority2": 182,
+          "incorrect_majority2": 0.7637362637362637
+        },
+        {
+          "slice": "mailbox",
+          "n_labels": 237,
+          "n_margin": 91,
+          "incorrect_margin": 0.42857142857142855,
+          "n_symmetric3": 73,
+          "incorrect_symmetric3": 0.2876712328767123,
+          "n_symmetric2": 116,
+          "incorrect_symmetric2": 0.33620689655172414,
+          "n_majority2": 128,
+          "incorrect_majority2": 0.3359375
+        },
+        {
+          "slice": "drainage",
+          "n_labels": 171,
+          "n_margin": 4,
+          "incorrect_margin": null,
+          "n_symmetric3": 0,
+          "incorrect_symmetric3": null,
+          "n_symmetric2": 14,
+          "incorrect_symmetric2": null,
+          "n_majority2": 15,
+          "incorrect_majority2": null
+        },
+        {
+          "slice": "cart",
+          "n_labels": 14,
+          "n_margin": 0,
+          "incorrect_margin": null,
+          "n_symmetric3": 0,
+          "incorrect_symmetric3": null,
+          "n_symmetric2": 1,
+          "incorrect_symmetric2": null,
+          "n_majority2": 1,
+          "incorrect_majority2": null
+        },
+        {
+          "slice": "electrical box",
+          "n_labels": 8,
+          "n_margin": 0,
+          "incorrect_margin": null,
+          "n_symmetric3": 0,
+          "incorrect_symmetric3": null,
+          "n_symmetric2": 1,
+          "incorrect_symmetric2": null,
+          "n_majority2": 1,
+          "incorrect_majority2": null
+        }
+      ]
+    },
+    "SurfaceProblem": {
+      "severity": [
+        {
+          "slice": "1",
+          "n_labels": 101458,
+          "n_margin": 10139,
+          "incorrect_margin": 0.35062629450636157,
+          "n_symmetric3": 7513,
+          "incorrect_symmetric3": 0.12365233595101824,
+          "n_symmetric2": 21847,
+          "incorrect_symmetric2": 0.16272257060465967,
+          "n_majority2": 25590,
+          "incorrect_majority2": 0.18870652598671356
+        },
+        {
+          "slice": "2",
+          "n_labels": 64453,
+          "n_margin": 5804,
+          "incorrect_margin": 0.27894555478980015,
+          "n_symmetric3": 4682,
+          "incorrect_symmetric3": 0.10615121742844938,
+          "n_symmetric2": 13217,
+          "incorrect_symmetric2": 0.1224937580388893,
+          "n_majority2": 15456,
+          "incorrect_majority2": 0.1598731884057971
+        },
+        {
+          "slice": "3",
+          "n_labels": 43388,
+          "n_margin": 3215,
+          "incorrect_margin": 0.24261275272161742,
+          "n_symmetric3": 2613,
+          "incorrect_symmetric3": 0.06812093379257558,
+          "n_symmetric2": 7545,
+          "incorrect_symmetric2": 0.10337972166998012,
+          "n_majority2": 8476,
+          "incorrect_majority2": 0.13060405851816895
+        },
+        {
+          "slice": "(none)",
+          "n_labels": 9562,
+          "n_margin": 1116,
+          "incorrect_margin": 0.47491039426523296,
+          "n_symmetric3": 774,
+          "incorrect_symmetric3": 0.24289405684754523,
+          "n_symmetric2": 1955,
+          "incorrect_symmetric2": 0.2710997442455243,
+          "n_majority2": 2340,
+          "incorrect_majority2": 0.2965811965811966
+        }
+      ],
+      "tag": [
+        {
+          "slice": "cracks",
+          "n_labels": 75469,
+          "n_margin": 6053,
+          "incorrect_margin": 0.1635552618536263,
+          "n_symmetric3": 5274,
+          "incorrect_symmetric3": 0.04000758437618506,
+          "n_symmetric2": 14968,
+          "incorrect_symmetric2": 0.06614110101549973,
+          "n_majority2": 16620,
+          "incorrect_majority2": 0.0865222623345367
+        },
+        {
+          "slice": "grass",
+          "n_labels": 59612,
+          "n_margin": 5258,
+          "incorrect_margin": 0.1791555724610118,
+          "n_symmetric3": 4461,
+          "incorrect_symmetric3": 0.03250392288724501,
+          "n_symmetric2": 12390,
+          "incorrect_symmetric2": 0.07602905569007264,
+          "n_majority2": 13831,
+          "incorrect_majority2": 0.09529318198250307
+        },
+        {
+          "slice": "bumpy",
+          "n_labels": 32652,
+          "n_margin": 3964,
+          "incorrect_margin": 0.26286579212916245,
+          "n_symmetric3": 3208,
+          "incorrect_symmetric3": 0.08915211970074813,
+          "n_symmetric2": 8039,
+          "incorrect_symmetric2": 0.129618111705436,
+          "n_majority2": 9336,
+          "incorrect_majority2": 0.16013281919451586
+        },
+        {
+          "slice": "uneven/slanted",
+          "n_labels": 31182,
+          "n_margin": 2887,
+          "incorrect_margin": 0.199861447869761,
+          "n_symmetric3": 2437,
+          "incorrect_symmetric3": 0.05211325400082068,
+          "n_symmetric2": 7465,
+          "incorrect_symmetric2": 0.07729403884795713,
+          "n_majority2": 8370,
+          "incorrect_majority2": 0.103584229390681
+        },
+        {
+          "slice": "narrow sidewalk",
+          "n_labels": 26526,
+          "n_margin": 2163,
+          "incorrect_margin": 0.3786407766990291,
+          "n_symmetric3": 1541,
+          "incorrect_symmetric3": 0.12783906554185595,
+          "n_symmetric2": 5202,
+          "incorrect_symmetric2": 0.157439446366782,
+          "n_majority2": 6641,
+          "incorrect_majority2": 0.21020930582743563
+        },
+        {
+          "slice": "(none)",
+          "n_labels": 24782,
+          "n_margin": 2371,
+          "incorrect_margin": 0.5904681568958245,
+          "n_symmetric3": 1476,
+          "incorrect_symmetric3": 0.3421409214092141,
+          "n_symmetric2": 4208,
+          "incorrect_symmetric2": 0.33269961977186313,
+          "n_majority2": 4868,
+          "incorrect_majority2": 0.35373870172555466
+        },
+        {
+          "slice": "height difference",
+          "n_labels": 21035,
+          "n_margin": 1560,
+          "incorrect_margin": 0.12884615384615383,
+          "n_symmetric3": 1417,
+          "incorrect_symmetric3": 0.040931545518701484,
+          "n_symmetric2": 3423,
+          "incorrect_symmetric2": 0.058720420683610865,
+          "n_majority2": 3805,
+          "incorrect_majority2": 0.08252299605781865
+        },
+        {
+          "slice": "very broken",
+          "n_labels": 15865,
+          "n_margin": 1326,
+          "incorrect_margin": 0.11161387631975868,
+          "n_symmetric3": 1237,
+          "incorrect_symmetric3": 0.047696038803556995,
+          "n_symmetric2": 2650,
+          "incorrect_symmetric2": 0.05584905660377359,
+          "n_majority2": 2919,
+          "incorrect_majority2": 0.08256252141144227
+        },
+        {
+          "slice": "utility panel",
+          "n_labels": 15705,
+          "n_margin": 1855,
+          "incorrect_margin": 0.4339622641509434,
+          "n_symmetric3": 1304,
+          "incorrect_symmetric3": 0.19478527607361965,
+          "n_symmetric2": 3285,
+          "incorrect_symmetric2": 0.2450532724505327,
+          "n_majority2": 4183,
+          "incorrect_majority2": 0.26870666985417163
+        },
+        {
+          "slice": "sand/gravel",
+          "n_labels": 6273,
+          "n_margin": 619,
+          "incorrect_margin": 0.22617124394184168,
+          "n_symmetric3": 533,
+          "incorrect_symmetric3": 0.10131332082551595,
+          "n_symmetric2": 1313,
+          "incorrect_symmetric2": 0.10662604722010663,
+          "n_majority2": 1491,
+          "incorrect_majority2": 0.12944332662642521
+        },
+        {
+          "slice": "brick/cobblestone",
+          "n_labels": 5722,
+          "n_margin": 982,
+          "incorrect_margin": 0.5468431771894093,
+          "n_symmetric3": 665,
+          "incorrect_symmetric3": 0.3308270676691729,
+          "n_symmetric2": 1492,
+          "incorrect_symmetric2": 0.3599195710455764,
+          "n_majority2": 1965,
+          "incorrect_majority2": 0.37709923664122136
+        },
+        {
+          "slice": "debris",
+          "n_labels": 2923,
+          "n_margin": 221,
+          "incorrect_margin": 0.13574660633484162,
+          "n_symmetric3": 198,
+          "incorrect_symmetric3": 0.03535353535353535,
+          "n_symmetric2": 481,
+          "incorrect_symmetric2": 0.062370062370062374,
+          "n_majority2": 527,
+          "incorrect_majority2": 0.09297912713472485
+        },
+        {
+          "slice": "construction",
+          "n_labels": 1182,
+          "n_margin": 122,
+          "incorrect_margin": 0.2459016393442623,
+          "n_symmetric3": 103,
+          "incorrect_symmetric3": 0.10679611650485436,
+          "n_symmetric2": 335,
+          "incorrect_symmetric2": 0.08955223880597014,
+          "n_majority2": 394,
+          "incorrect_majority2": 0.1319796954314721
+        },
+        {
+          "slice": "rail/tram track",
+          "n_labels": 637,
+          "n_margin": 116,
+          "incorrect_margin": 0.13793103448275862,
+          "n_symmetric3": 104,
+          "incorrect_symmetric3": 0.038461538461538464,
+          "n_symmetric2": 196,
+          "incorrect_symmetric2": 0.08163265306122448,
+          "n_majority2": 213,
+          "incorrect_majority2": 0.10328638497652583
+        },
+        {
+          "slice": "uncovered manhole",
+          "n_labels": 122,
+          "n_margin": 0,
+          "incorrect_margin": null,
+          "n_symmetric3": 0,
+          "incorrect_symmetric3": null,
+          "n_symmetric2": 1,
+          "incorrect_symmetric2": null,
+          "n_majority2": 1,
+          "incorrect_majority2": null
+        }
+      ]
+    }
+  },
+  "_source": {
+    "n_cities": 54,
+    "cities_sha256": "950f40e9d843aa00b9830bb8ffddb52c5e40dfb7fd4d38fa34314cd1455dcd14",
+    "rawlabels_files_sha256": "966e7391c77a6007efab785fc9cc65d9aa479335e7a40fb72323ba9a68ca43e6",
+    "rawlabels_cache": "rawlabels",
+    "priors_file": "deployment_priors.json",
+    "priors_sha256": "80d4e685bbce500643c4e3a0c7ed615f769052ec0021c7947a5be4efeb0b01a9",
+    "rows": 1667379,
+    "min_n": 30
+  }
+}

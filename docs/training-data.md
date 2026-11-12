@@ -23,13 +23,24 @@ aggregate columns would train the model on its own output.
 repo; unset, only the margin rule applies. A single non-expert vote is a weak signal (on labels the experts also
 voted on, a lone Disagree was right 24–78% of the time depending on the type), which is why the margin rule stays
 for the crowd. The manifest's `class_source` column records which rule decided each label, and the deployment prior
-counts margin-rule labels only, since experts do not vote on a random sample.
+never applies the expert rule (an expert's vote is tallied there as one human vote like any other), since experts do
+not vote on a random sample.
+
+**The margin rule is asymmetric.** A label is `incorrect` at net Disagree > 1 but `correct` only at net Agree > 2, so
+two Disagree votes decide a label and two Agree votes do not. That is deliberate for training targets (an Agree
+target should be confident, and the thin-margin labels are left out), but it makes the rule a poor estimate of how
+often labels are wrong: counted under it, the incorrect share is 10–15 points too high for NoCurbRamp, Obstacle and
+SurfaceProblem ([#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56)). The training set still
+uses it; whether it should be symmetric is a retrain question, still open on #56.
 
 The 55:45 ratio is a training-balance choice, not the real prior: among labels the crowd decided in Teaneck the
-balance is roughly 90:10, a proxy for production traffic rather than a measurement of it. `data_generation.py`
-therefore writes the pre-downsampling class counts to `deployment_priors.json`, which `calibration/calibrate.py`
-reweights to ([#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4)); whether that prior is the
-right one is [#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56).
+balance is roughly 90:10, a proxy for production traffic rather than a measurement of it. `data_generation.py` therefore writes the
+pre-downsampling class counts to `deployment_priors.json`, which `calibration/calibrate.py` reweights to
+([#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4)). Because of the asymmetry, those counts are
+recorded under four vote rules (`data_generation.PRIOR_RULES`: `margin`, `symmetric3`, `symmetric2`, `majority2`),
+and since #56 the top level, which calibration reads, is `majority2`: at least two decisive human votes, majority
+wins, ties left out (`--prior-rule` picks another). Files written before #56 carry the margin counts only. Numbers and
+the effect on the 0.92 gate: [`deployment-prior-2026-11.md`](deployment-prior-2026-11.md).
 
 > [!WARNING]
 > Counting human votes only shrinks the classes, most of all CurbRamp `incorrect`, because the AI's disagree votes
@@ -84,7 +95,7 @@ keeps the label rule and adds, for the labels it leaves undecided, the verdict o
 Distinct people, not votes; AI votes never count. At most `--max-labels-per-face` (default 5) labels per face and
 class are kept, by `label_rank`, before the 55:45 downsample. The manifest records `face_id`, and
 `split_data.py --group-col face_id` keeps each face (with every panorama that sees it) on one side of the split. The
-deployment prior still counts margin-rule labels only; NoSidewalk's is replaced by the face-size prior of
+deployment prior never counts face rows; NoSidewalk's is replaced by the face-size prior of
 `calibration/nosidewalk_prior.py`. Counts, evidence and the pilot: [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md).
 A type-filtered cache (`analysis/fetch_all.py --label-types NoSidewalk`) holds no other type, so use it only for the
 types it was pulled for.
