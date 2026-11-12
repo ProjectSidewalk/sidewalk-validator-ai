@@ -20,7 +20,8 @@ Two-phase sampling, so the model can choose what is rated without biasing the es
    ``gt_rounds.py`` form, so ``gt_rounds.py gallery`` / ``votes`` / ``comments`` run on it unchanged.
 3. ``report``: the rater's pinned votes against the key. The bar is read on the ``pass`` stratum as it was
    sampled: correct / decided with a Wilson 95 % lower bound >= the gate on >= 100 decided labels (Unsure votes
-   leave the denominator and are counted). Beside it: the same rate reweighted to the cities' population, per
+   leave the denominator and are counted). That rate is for the design's city mix (the per-city quotas), not the
+   cities' population; the population-weighted rate is reported beside it and has a much smaller effective n. Beside it: the same rate reweighted to the cities' population, per
    city, per fold model (weighted precision, coverage and AUC), the population share of correct labels against
    the deployment prior, severity and tag slices, and the crowd's majority against the expert.
 
@@ -486,6 +487,8 @@ def build_report(m, design, prior_correct, n_boot=1000, seed=0, train=None):
     passed = decided[decided["stratum"] == "pass"]
     primary = rate(int((passed["verdict"] == "correct").sum()), len(passed))
     primary["bar_met"] = bool(primary["n"] >= MIN_DECIDED and primary["wilson95_lower"] >= gate)
+    n_unsure = int(((m["stratum"] == "pass") & (m["verdict"] == "cant_tell")).sum())
+    primary["unsure_as_incorrect"] = rate(primary["k"], primary["n"] + n_unsure)  # sensitivity, not the bar
     primary["weighted"] = weighted_share(passed)
     primary["weighted_ci95"] = boot_ci(passed, weighted_share, n_boot, seed) if len(passed) else [None, None]
     rep = {"items": int(len(m)), "unanswered": int((m["verdict"] == "").sum()),
@@ -545,9 +548,11 @@ def markdown(rep):
         f"**Bar:** in the pass stratum, {_rate_cell(p)}; a lower bound >= {rep['gate']} on >= {MIN_DECIDED} decided "
         f"labels is {'met' if p['bar_met'] else 'not met'}. **{'PASSES' if p['bar_met'] else 'DOES NOT PASS'}.** "
         f"Reweighted to the cities' population: {_f(p['weighted'])} [{_f(p['weighted_ci95'][0])}, "
-        f"{_f(p['weighted_ci95'][1])}].", "",
+        f"{_f(p['weighted_ci95'][1])}] (the interval holds the weights fixed, so it is somewhat narrow). With every "
+        f"Unsure in the pass stratum counted as incorrect: {_rate_cell(p['unsure_as_incorrect'])}.", "",
         f"Share of correct NoSidewalk labels in these cities' eligible population: {_f(pc['share'])} "
-        f"[{_f(pc['ci95'][0])}, {_f(pc['ci95'][1])}] (the deployment prior assumes {_f(rep['prior_correct'])}).", "",
+        f"[{_f(pc['ci95'][0])}, {_f(pc['ci95'][1])}] (the deployment prior assumes {_f(rep['prior_correct'])} over "
+        f"every label with a face; this population leaves out the rater's own labels and trained faces).", "",
         "| stratum | items | Unsure | correct / decided (Wilson 95 % lower) |", "|---|---|---|---|"]
     lines += [f"| {s} | {r['items']} | {r['cant_tell']} | {_rate_cell(r)} |" for s, r in rep["strata"].items()]
     lines += ["", "| city | decided (incorrect) | pass stratum (Wilson 95 % lower) | population share correct |",
@@ -555,7 +560,7 @@ def markdown(rep):
     lines += [f"| {c} | {r['decided']} ({r['incorrect']}) | {_rate_cell(r['pass'])} | {_f(r['population_correct'])} |"
               for c, r in rep["cities"].items()]
     lines += ["", "Per fold model, on its own gate verdicts (weights are the items' inverse inclusion probabilities):",
-              "", "| model | gate passes, raw (Wilson 95 % lower) | precision, weighted | coverage, weighted | AUC, "
+              "", "| model | gate passes, rated items unweighted (Wilson 95 % lower) | precision, weighted | coverage, weighted | AUC, "
               "weighted | within-city AUC, weighted (cities) |", "|---|---|---|---|---|---|"]
     lines += [f"| fold {k} | {_rate_cell(r)} | {_f(r['precision_weighted'])} | {_f(r['coverage_weighted'])} | "
               f"{_f(r['auc_weighted'])} | {_f(r['within_city_auc_weighted'])} ({r['auc_cities']}) |"

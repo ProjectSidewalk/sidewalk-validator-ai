@@ -50,10 +50,12 @@ case "$STEP" in
     RUN="$RUNS/fold$FOLD"
     PRED="$GATE/fold$FOLD/predictions.csv"
     [ -f "$SPLIT" ] || { echo "no $SPLIT (run nosidewalk_gate.py folds first)" >&2; exit 2; }
-    # Done = scored, and the checkpoints already tidied: none left, or with KEEP_BEST=1 exactly the best one.
+    # Done = scored, and the checkpoints already tidied: none left, or exactly the kept best one. A kept checkpoint
+    # counts as done whatever KEEP_BEST says now: a rerun without the flag must not resume from it, overwrite the
+    # pinned predictions and delete the weights.
     if [ -f "$PRED" ] && [ "$PRED" -nt "$SPLIT" ] && [ -f "$RUN/training_run.json" ]; then
       LEFT=$(ls -d "$RUN"/checkpoint-* 2>/dev/null | wc -l)
-      if [ "$LEFT" -eq 0 ] || { [ "$KEEP_BEST" = 1 ] && [ "$LEFT" -eq 1 ] && [ -f "$RUN/trainer_state.best.json" ]; }; then
+      if [ "$LEFT" -eq 0 ] || { [ "$LEFT" -eq 1 ] && [ -f "$RUN/trainer_state.best.json" ]; }; then
         echo "$(date) fold $FOLD already scored ($PRED); nothing to do"; exit 0
       fi
     fi

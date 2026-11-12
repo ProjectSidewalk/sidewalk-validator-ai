@@ -252,6 +252,7 @@ def test_report_end_to_end(run, monkeypatch, capsys):
     rep = json.loads((run["tmp"] / "r.json").read_text())
     p = rep["primary"]
     assert (p["k"], p["n"]) == (27, 28) and rep["cant_tell"] == 2 and not p["bar_met"]  # 28 decided is under 100
+    assert (p["unsure_as_incorrect"]["k"], p["unsure_as_incorrect"]["n"]) == (27, 30)
     assert rep["strata"]["model_incorrect"]["rate"] == 0 and rep["strata"]["agree_below"]["rate"] == 1
     assert 0 < rep["population_correct"]["share"] < 1 and rep["prior_correct"] == pytest.approx(0.8306, abs=1e-3)
     assert set(rep["models"]) == {"0", "1", "2", "3", "4"} and rep["models"]["0"]["auc_weighted"] > 0.9

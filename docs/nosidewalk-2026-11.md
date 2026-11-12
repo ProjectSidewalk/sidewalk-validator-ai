@@ -390,9 +390,10 @@ Step (a) scored labels that already had a settled verdict, and most of its evide
 the **deployment population** of four other cities instead: every human-placed NoSidewalk label with a block face,
 whatever its votes. One expert rates 250 of them in production Gallery with the votes masked
 (`analysis/nosidewalk_round.py`, design `analysis/gt_rounds/nosidewalk_b.json`; the Gallery lists, the vote pull and
-the pins are `analysis/gt_rounds.py`'s). Because the labels are drawn at random from the labels the gate would pass,
-the Agree verdict's precision is read directly on the natural class mix, with a plain Wilson bound and no prior; the
-round also measures the share of correct labels that the face-size prior assumes (0.831).
+the pins are `analysis/gt_rounds.py`'s). Within a city the rated pass-stratum labels are a random sample of the
+labels the gate would pass, so that city's Agree precision is read directly on its natural class mix, with a plain
+Wilson bound and no prior. Across cities the rated set follows the design's quotas, not the population (see "What is
+read" below). The round also measures the share of correct labels that the face-size prior assumes (0.831).
 
 **Two phases, so the model chooses what is rated without biasing the estimate.**
 
@@ -428,12 +429,22 @@ comments and AI icons are hidden by the masking CSS; the rater cannot tell an it
 **What is read, fixed before any rating.**
 
 - **The bar:** in the pass stratum as sampled, correct / decided with a Wilson 95 % lower bound >= 0.92 on >= 100
-  decided labels. Unsure votes leave the denominator and are counted. With 150 items the bound clears 0.92 from 145
+  decided labels. Unsure votes leave the denominator and are counted; the same rate with every Unsure counted as
+  incorrect is printed beside it as a sensitivity check. With 150 items the bound clears 0.92 from 145
   correct (0.967) up, so a true precision near 0.96 would be a coin flip; that is the price of 250 ratings.
-- Beside it: the same rate reweighted to the four cities' eligible population (bootstrap interval), per city, and
-  per fold model on its own gate verdicts (weighted precision, coverage, AUC, within-city AUC).
-- The population share of correct labels against the prior's 0.831; severity and tag slices with training counts;
-  the crowd majority against the expert.
+- **What that rate is.** It is the precision under the design's city mix, which spreads the pass items almost
+  evenly (Chicago 35 %, Tucson 21 %, Oradell 22 %, CDMX 22 % of them), where the four cities' pass population is
+  about 75 % Chicago, 3 % Tucson, 14 % Oradell and 8 % CDMX. The bar therefore asks that the gate hold across
+  cities, not that it hold in a Chicago-dominated average. The population-weighted rate is reported beside it with
+  a bootstrap interval; its effective sample size is about 88, under the bar's 100, so it is not the bar. Where the
+  two differ, the per-city rows say why.
+- Beside those: per city, and per fold model on its own gate verdicts (weighted precision, coverage, AUC,
+  within-city AUC).
+- The population share of correct labels against the prior's 0.831 (this population leaves out the rater's own
+  labels and trained faces, which the prior does not); severity and tag slices with training counts; the crowd
+  majority against the expert.
+- At the vote pull, the timestamp of each vote is checked against the pool pull of 2026-11-11: a vote on a key label
+  cast before the lists existed would not be a masked rating.
 
 The same ratings can later score the final all-rows model of step (c) by reweighting.
 
