@@ -23,14 +23,20 @@
 # --no-requeue: ckpt-all requeues preempted jobs, and a requeue would open a second rsync connection.
 # The job writes its own .pano-store marker after the pull, saying it is a staged copy.
 set -uo pipefail
-W=$(pwd)
+W=$(pwd -P)
 # Only ever write under this study's scrubbed directory: never /gscratch/makelab, never another study's directory.
-case "$W/" in /gscratch/scrubbed/*/depth-ablation-2026-11/*|/mmfs1/gscratch/scrubbed/*/depth-ablation-2026-11/*) ;; *) echo "refusing to write under $W"; exit 2;; esac
+# The physical path (symlinks resolved) must be <scrubbed>/<one user dir>/depth-ablation-2026-11 or a child of it.
+[[ "$W" =~ ^(/mmfs1)?/gscratch/scrubbed/[^/]+/depth-ablation-2026-11(/.*)?$ ]] || { echo "refusing to write under $W"; exit 2; }
 LIST=$W/stage_files.txt
 DEST=$W/store
 SSH="ssh -o BatchMode=yes -o IdentitiesOnly=yes -i $HOME/.ssh/pano_store_ro -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=4"
 test -s "$LIST" || { echo "no $LIST"; exit 2; }
+# Store-relative paths only: nothing absolute and no "..", so rsync cannot be pointed outside the store or $DEST.
+if grep -qE '^/|(^|/)\.\.(/|$)' "$LIST"; then echo "refusing: $LIST has an absolute path or a '..'"; exit 2; fi
 mkdir -p "$DEST"
+# A real write, not touch, BEFORE the one rsync connection: scrubbed has refused data writes while touch succeeded.
+if ! dd if=/dev/zero of="$W/.write_test.$$" bs=1M count=8 status=none; then echo "refusing to run: cannot write 8 MiB under $W"; exit 2; fi
+rm -f "$W/.write_test.$$"
 rm -f "$DEST/.pano-store"
 echo "$(date +%T) pulling $(wc -l < "$LIST") files"
 timeout 3000 rsync -e "$SSH" -a --timeout=300 --files-from="$LIST" jonf@makelab2.cs.washington.edu:/ "$DEST/"

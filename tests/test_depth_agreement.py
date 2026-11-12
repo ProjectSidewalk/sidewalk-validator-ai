@@ -640,11 +640,17 @@ def test_20_slurm_parses_and_guards_cwd(name):
     r = subprocess.run(["bash", "-n", path], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     text = open(path).read()
-    guard = next(ln for ln in text.splitlines() if ln.startswith('case "$W/"'))
+    assert "W=$(pwd -P)" in text                                  # the physical path, symlinks resolved
+    guard = next(ln for ln in text.splitlines() if ln.startswith('[[ "$W" =~'))
     for w, ok in (("/gscratch/scrubbed/jfroehli/depth-ablation-2026-11", True),
+                  ("/mmfs1/gscratch/scrubbed/jfroehli/depth-ablation-2026-11", True),
                   ("/gscratch/scrubbed/jfroehli/depth-ablation-2026-11/sub", True),
                   ("/gscratch/makelab/jfroehli/sidewalk-validator-ai", False),
-                  ("/gscratch/scrubbed/jfroehli/nosidewalk-gate", False), ("/tmp", False)):
+                  ("/gscratch/scrubbed/jfroehli/nosidewalk-gate", False),
+                  # a same-named directory inside another study's directory, or a look-alike name, is refused
+                  ("/gscratch/scrubbed/jfroehli/nosidewalk-gate/depth-ablation-2026-11", False),
+                  ("/gscratch/scrubbed/jfroehli/depth-ablation-2026-11-old", False),
+                  ("/gscratch/makelab/x/gscratch/scrubbed/u/depth-ablation-2026-11", False), ("/tmp", False)):
         r = subprocess.run(["bash", "-c", f'W="{w}"; {guard}; echo passed'], capture_output=True, text=True)
         assert ("passed" in r.stdout) == ok, (w, r.stdout)
     assert "#SBATCH --account=makelab" in text and "#SBATCH --partition=ckpt-all" in text
@@ -831,3 +837,54 @@ def test_report_figure_is_written(r3, tmp_path):
     assert (tmp_path / "a" / "trig_hist.png").stat().st_size > 1000
     prov = json.loads((tmp_path / "a" / "provenance.json").read_text())
     assert set(prov["outputs"]) == {"tables.md", "trig_hist.png"}
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Review round (PR #104): tests for mutations the suite above did not catch, and for the review's fixes
+# ---------------------------------------------------------------------------------------------------------------------
+
+VITL_GATE = r'^VITL_(REV|SHA256)=|^\[\[ "\$VITL_'
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+@pytest.mark.parametrize("env,passes", [
+    ({}, False), ({"VITL_REV": "main"}, False), ({"VITL_REV": "TODO-pin-revision"}, False),
+    ({"VITL_REV": "0123456789abcdef0123456789abcdef01234567"}, False),                       # no checkpoint sha256
+    ({"VITL_REV": "0123456789ABCDEF0123456789abcdef01234567", "VITL_SHA256": "a" * 64}, False),
+    ({"VITL_REV": "0123456789abcdef0123456789abcdef01234567", "VITL_SHA256": "a" * 63}, False),
+    ({"VITL_REV": "0123456789abcdef0123456789abcdef01234567", "VITL_SHA256": "a" * 64}, True)])
+def test_r_gpu_job_refuses_to_run_until_vitl_is_pinned(env, passes):
+    """The ViT-L checkpoint is not pinned in the PR. The job must stop, not run on whatever file is there."""
+    text = open(os.path.join(ANALYSIS, "depth_agreement.slurm")).read()
+    gate = [ln for ln in text.splitlines() if re.search(VITL_GATE, ln)]
+    assert len(gate) == 4
+    r = subprocess.run(["bash", "-c", "\n".join(gate) + "\necho gate-passed"], capture_output=True, text=True,
+                       env={"PATH": os.environ["PATH"], **env})
+    assert ("gate-passed" in r.stdout) == passes, r.stdout
+    assert passes or ("refusing to run" in r.stdout and r.returncode == 2)
+    lines = text.splitlines()
+    first_python = next(k for k, ln in enumerate(lines) if ln.startswith("python "))
+    assert max(lines.index(g) for g in gate) < first_python            # the gate comes before any work
+    assert any("sha256sum --check" in ln and "VITL_SHA256" in ln for ln in lines[:first_python])
+    assert 'VITL_REV=${VITL_REV:-}' in text and "TRANSFORMERS_OFFLINE=1" in text
+
+
+@pytest.mark.parametrize("name", SLURM)
+def test_r_jobs_test_a_real_write_before_any_work(name):
+    lines = open(os.path.join(ANALYSIS, name)).read().splitlines()
+    dd = next(k for k, ln in enumerate(lines) if "dd if=/dev/zero" in ln and 'of="$W/.write_test' in ln)
+    work = next(k for k, ln in enumerate(lines) if ln.startswith(("python ", "timeout ")))
+    guard = next(k for k, ln in enumerate(lines) if ln.startswith('[[ "$W" =~'))
+    assert guard < dd < work
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+def test_r_stage_list_must_be_store_relative(tmp_path):
+    text = open(os.path.join(ANALYSIS, "depth_agreement_stage.slurm")).read()
+    check = next(ln for ln in text.splitlines() if ln.startswith("if grep -qE"))
+    for body, ok in (("a/bc/bcd.depth.npz\n", True), ("/etc/passwd\n", False), ("a/../../x.jpg\n", False),
+                     ("../x\n", False), ("a/b..c/x..y.jpg\n", True)):
+        lst = tmp_path / "list.txt"
+        lst.write_text(body)
+        r = subprocess.run(["bash", "-c", f'LIST="{lst}"; {check}; echo passed'], capture_output=True, text=True)
+        assert ("passed" in r.stdout) == ok, (body, r.stdout)
