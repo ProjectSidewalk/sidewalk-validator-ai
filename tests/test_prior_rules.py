@@ -239,7 +239,7 @@ def test_dataset_card_names_the_prior_rule():
     new = hf_cards.prior_sentence({"correct": 90, "incorrect": 10, "rule": "majority2", "source": "s",
                                    "measured_on": "d", "rules": {"margin": {"correct": 60, "incorrect": 40}}})
     assert "at least two Agree/Disagree votes" in new and "margin rule, under which 60 labels" in new
-    assert "expert votes are not counted" in hf_cards.prior_sentence({"correct": 1, "incorrect": 1}, n_experts=2)
+    assert "decided only by the expert rule are not counted" in hf_cards.prior_sentence({"correct": 1, "incorrect": 1}, n_experts=2)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -278,7 +278,12 @@ def test_gate_join_is_one_to_one():
     pred = pd.DataFrame({"label_uid": ["a:1", "a:2"], "split": "test", "true": "correct", "p_correct": 0.9,
                          "p_incorrect": 0.1})
     split = pd.DataFrame({"label_uid": ["a:1", "a:2"], "severity": ["1", None], "tags": ["[]", '["x"]']})
-    assert pr.join_split(pred, split)["severity"].tolist() == ["1", None]
+    joined = pr.join_split(pred, split)
+    # A missing severity is None under pandas 2 (object column) and NaN under pandas 3 (str column). Either way it is
+    # missing, and the slicer puts it in the "(none)" slice, never in a "nan" one.
+    assert joined["severity"].iloc[0] == "1" and pd.isna(joined["severity"].iloc[1])
+    assert pr.sl.with_slice(joined, "severity")["slice"].tolist() == ["1", pr.sl.NONE]
+    assert pr.sl.with_slice(joined, "tag")["slice"].tolist() == [pr.sl.NONE, "x"]
     with pytest.raises(pd.errors.MergeError):
         pr.join_split(pred, pd.concat([split, split.iloc[:1]]))
     with pytest.raises(pd.errors.MergeError):
