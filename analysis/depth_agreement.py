@@ -1504,8 +1504,14 @@ def report_figures(trig_out, out_dir):
     ax.plot(lim, lim, color="0.4", lw=1, ls="--", label="equal")
     ax.plot(lim, [v * trig_out["headline"]["ratio_median"] for v in lim], color="C3", lw=1,
             label=f"{trig_out['headline']['ratio_median']:.2f} x")
+    from matplotlib.ticker import FixedLocator, FuncFormatter, NullFormatter
     ax.set_xscale("log")
     ax.set_yscale("log")
+    ticks = [2, 3, 4, 5, 6, 8, 10, 15, 20, 30, 40, 60, 80]
+    for axis in (ax.xaxis, ax.yaxis):
+        axis.set_major_locator(FixedLocator(ticks))
+        axis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
+        axis.set_minor_formatter(NullFormatter())
     ax.set_xlim(*np.exp([hst["x_edges"][0], hst["x_edges"][-1]]))
     ax.set_ylim(*np.exp([hst["y_edges"][0], hst["y_edges"][-1]]))
     ax.set_xlabel(f"flat-ground distance at {trig_out['headline']['camera_height_m']} m camera (m)")
