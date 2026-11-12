@@ -64,6 +64,7 @@ from analysis import nosidewalk_gate as ng  # noqa: E402
 from analysis import slices  # noqa: E402
 from analysis.nosidewalk_pilot import without_nan  # noqa: E402
 from calibration import _isotonic_map as im  # noqa: E402
+from calibration import calibrate as cal  # noqa: E402
 
 LABEL_TYPE = "NoSidewalk"
 STRATA = ("pass", "agree_below", "model_incorrect")
@@ -361,8 +362,7 @@ def cmd_build(args):
     pooled, _, n_folds, missing = ng.load_predictions(args.gate)
     if missing:
         sys.exit(f"the gate run is incomplete: {missing}")
-    with open(args.priors) as f:
-        pi = json.load(f)[LABEL_TYPE]["prior"]
+    pi, _ = cal.load_prior(args.priors, LABEL_TYPE)
     api_map = ng.fit_map(pooled, pi)
     preds, pred_shas = {}, {}
     for k in range(n_folds):
@@ -502,7 +502,9 @@ def build_report(m, design, prior_correct, n_boot=1000, seed=0, train=None):
     rep["slices"] = {}
     for by in slices.BY:
         d = slices.with_slice(decided, by)
-        tr = slices.with_slice(train, by)["slice"].value_counts().to_dict() if train is not None else {}
+        col = "severity" if by == "severity" else "tags"
+        tr = (slices.with_slice(train, by)["slice"].value_counts().to_dict()
+              if train is not None and col in train else {})
         rep["slices"][by] = {str(name): dict(rate(int(((g["stratum"] == "pass") & (g["verdict"] == "correct")).sum()),
                                                   int((g["stratum"] == "pass").sum())),
                                              decided=int(len(g)), population_correct=weighted_share(g),
