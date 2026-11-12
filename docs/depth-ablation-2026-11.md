@@ -9,10 +9,14 @@ Code: [`analysis/depth_agreement.py`](../analysis/depth_agreement.py). Generated
 
 - **Done (CPU, every round-3 row).** The served depth model (Depth Anything V2 metric, vKITTI, ViT-B) was compared
   with a flat-ground reference, `h / sin(depression)`, on 63,672 human-authored round-3 labels. **The reference is an
-  assumption, not a measurement** (section 4.1). Against it, at a nominal 2.5 m camera height, ViT-B's depth is
-  **2.66×** the flat-ground distance at the median (95 % interval 2.65 to 2.67; 5th to 95th percentile 1.76 to
-  3.43). That puts the constant 6100 at a crop about **4.5 m wide** at the label, not the 11.9 m the formula
-  would give with true metric depth. With a 2.3 m or a 2.9 m camera the median is 2.89× or 2.29×.
+  assumption, not a measurement** (section 4.1): an assumed camera height, level ground and a label on the ground.
+  The number that follows is the ratio of ViT-B to that reference. It is not a measured error of ViT-B, and it
+  does not say which of the two is off. Against the reference, at a nominal 2.5 m camera height, ViT-B's depth is
+  **2.66×** the flat-ground distance at the median (95 % interval 2.65 to 2.67 when panoramas are resampled within
+  these deployments, 2.61 to 2.72 when whole deployments are resampled; 5th to 95th percentile of labels
+  1.76 to 3.43). **If the reference is about right**, the constant 6100 gives a crop about **4.5 m wide** at the
+  label, not the 11.9 m the formula would give with true metric depth. With a 2.3 m or a 2.9 m camera the median
+  is 2.89× or 2.29×.
 - The four ground types agree with each other (2.67 to 2.73). Obstacle is lower (2.42), as expected for labels
   that are not on the ground. In log space the slope of ViT-B against the reference lies somewhere between 0.75
   and 0.97 (both OLS directions; reduced-major-axis 0.85). That bracket straddles the [0.9, 1.1] band, so the
@@ -22,7 +26,8 @@ Code: [`analysis/depth_agreement.py`](../analysis/depth_agreement.py). Generated
 - **Designed, not run.** These arms need a GPU and Google's depth artifacts on klone: ViT-L against ViT-B on the
   same rendered views, Google's plane-model depth along each crop's centre ray, and the constant sweep
   (4000 / 6100 / 8000, a later PR). The decision rules R0 to R3 for those runs are in section 7. They were fixed
-  before any of those numbers existed.
+  **after** the flat-ground numbers above were known and **before** any ViT-L, Google or sweep number existed;
+  section 7 says which rule was written with knowledge of which data.
 
 ## 2. The question
 
@@ -66,34 +71,52 @@ For these technical reasons it is a reference here, never a candidate sizing sou
 
 So the ratio `depth_m / trig_m` is **ViT-B relative to this reference, not ViT-B's error.** The honest reading is
 "ViT-B's metric scale and the 2.5 m flat-ground geometry differ by a factor near 2.7 on typical labels", not
-"ViT-B is 2.7× wrong". The camera height multiplies every ratio by one factor (`ratio ∝ 1 / h`). It changes no slope,
-no spread and no ranking.
+"ViT-B is 2.7× wrong". Every ratio, width and constant in sections 4 and 5 that is derived from `trig_m` carries
+this condition, whether or not the sentence repeats it. The camera height multiplies every ratio by one factor
+(`ratio ∝ 1 / h`). It changes no slope, no spread and no ranking.
+
+Both quantities are distances **along the label's ray**, so like is compared with like. `trig_m` is the slant
+distance to the ground point, not its horizontal distance. Depth Anything returns z-depth, but `depth_m` is read at
+the centre of a view that is centred on the label, where z-depth and ray length are the same.
 
 Rows: all five round-3 `split.csv` files, 64,465 rows over 50 deployments, every one GSV, joined one-to-one on
 `label_uid` to the rawLabels exports for `pano_x`/`pano_y`. Excluded from the headline, and counted: the 220
 AI-authored rows, whose stored pixel is in the rig frame so their depression is off by the tilt (their own median
-ratio is 2.61), and 573 rows within 2° of the horizon or above it, where `1 / sin δ` explodes.
+ratio is 2.61), and 573 rows within 2° of the horizon or above it, where `1 / sin δ` explodes. The exclusions cannot
+move the headline: had all 793 excluded rows fallen below the median it would be 2.655, and had all fallen above
+it, 2.668 (`tables.md`, "Bound on what the excluded rows could change"). Rows of every split are pooled; the
+split table in `tables.md` gives each type and split on its own, and the gap that shows there is between the
+training deployments and the held-out ones (section 4.4).
 
 ### 4.2 Headline, by label type (h = 2.5 m)
 
-`n`: rows used. `train n`: rows of the type in the round-3 train split, whether used here or not.
+Every number in this table is relative to the assumed reference of section 4.1. `n`: rows used. `train n`: rows
+of the type in the round-3 train split, whether used here or not.
 
-| label type | n | train n | ViT-B / flat ground, median [95 % CI] | 5th–95th pct | implied crop width, median (5th–95th), m |
-|---|---|---|---|---|---|
-| CurbRamp | 10,179 | 6,925 | 2.73 [2.72, 2.74] | 2.09–3.45 | 4.37 (3.45–5.70) |
-| NoCurbRamp | 18,078 | 12,199 | 2.71 [2.70, 2.71] | 2.06–3.36 | 4.40 (3.54–5.78) |
-| Obstacle | 16,600 | 10,554 | 2.42 [2.39, 2.44] | 1.39–3.35 | 4.92 (3.56–8.56) |
-| SurfaceProblem | 15,715 | 10,500 | 2.73 [2.72, 2.74] | 2.00–3.58 | 4.37 (3.33–5.97) |
-| Crosswalk | 3,100 | 2,089 | 2.67 [2.66, 2.68] | 2.10–3.23 | 4.46 (3.69–5.68) |
-| four ground types | 47,072 | 31,713 | 2.71 [2.71, 2.72] | 2.05–3.46 | 4.39 (3.45–5.82) |
-| all types | 63,672 | 42,267 | **2.66 [2.65, 2.67]** | 1.76–3.43 | **4.48 (3.47–6.77)** |
+| label type | n | train n | ViT-B / flat ground, median | 95 % CI, panoramas within deployments | 95 % CI, whole deployments | 5th–95th pct of labels | implied crop width, median (5th–95th), m |
+|---|---|---|---|---|---|---|---|
+| CurbRamp | 10,179 | 6,925 | 2.73 | [2.72, 2.74] | [2.67, 2.79] | 2.09–3.45 | 4.37 (3.45–5.70) |
+| NoCurbRamp | 18,078 | 12,199 | 2.71 | [2.70, 2.71] | [2.65, 2.75] | 2.06–3.36 | 4.40 (3.54–5.78) |
+| Obstacle | 16,600 | 10,554 | 2.42 | [2.39, 2.44] | [2.35, 2.51] | 1.39–3.35 | 4.92 (3.56–8.56) |
+| SurfaceProblem | 15,715 | 10,500 | 2.73 | [2.72, 2.74] | [2.67, 2.79] | 2.00–3.58 | 4.37 (3.33–5.96) |
+| Crosswalk | 3,100 | 2,089 | 2.67 | [2.66, 2.68] | [2.64, 2.72] | 2.10–3.23 | 4.46 (3.69–5.68) |
+| four ground types | 47,072 | 31,713 | 2.71 | [2.71, 2.72] | [2.67, 2.77] | 2.05–3.46 | 4.39 (3.45–5.82) |
+| all types | 63,672 | 42,267 | **2.66** | [2.65, 2.67] | **[2.61, 2.72]** | 1.76–3.43 | **4.48 (3.47–6.77)** |
 
-Interval: 2,000 bootstrap resamples of panoramas within each deployment. Implied crop width is the crop's physical
-width at the flat-ground distance, `(2 · 6100 / 1024) · trig_m / depth_m`, where 1024 px is the view's focal length.
-The median depression is 15.1°, which is 9.6 m of flat-ground distance against a ViT-B median of 24.9 m.
+Two 95 % intervals, each from 2,000 bootstrap resamples. The first resamples **panoramas within each deployment**
+(labels on one panorama stay together; the deployments are held fixed). It says how well the median is known
+for these deployments, and it is narrow because n is large. The second resamples **whole deployments** and says
+what another set of deployments could show; it is the one to quote when the number is carried to a new city.
+Neither interval covers the reference's own assumptions (the camera height alone moves the median from 2.29 to
+2.89). Implied crop width is the crop's physical width at the flat-ground distance,
+`(2 · 6100 / 1024) · trig_m / depth_m`, where 1024 px is the view's focal length; it is as conditional on the
+reference as the ratio is. The median depression is 15.1°, which is 9.6 m of flat-ground distance against a ViT-B
+median of 24.9 m.
 
 **Camera height.** The all-types median is 2.89 at 2.3 m, 2.66 at 2.5 m and 2.29 at 2.9 m (ground types 2.95, 2.71,
-2.34). The implied median width is 4.12, 4.48 and 5.19 m. No plausible car-roof height brings the ratio near 1.
+2.34). The implied median width is 4.12, 4.48 and 5.19 m. No plausible car-roof height brings the ratio near 1
+(that would take a camera about 6.7 m up). A wrong height therefore cannot account for the offset on its own.
+Which of ViT-B's scale and the level-ground assumption accounts for the rest is what the Google arm is for.
 
 ![2-D histogram of ln ViT-B depth against ln flat-ground distance at 2.5 m, 63,672 labels; bins with fewer than 10 labels blank. The mass lies along the 2.66× line, well above the equality line, and is flatter than it.](depth-ablation-2026-11/trig_hist.png)
 
@@ -127,7 +150,10 @@ reference produces a falling ratio even under exact proportionality.
 Full tables, all with `n` and `train n`, cells under 20 labels marked "n too small", are in
 [`tables.md`](depth-ablation-2026-11/tables.md): type × severity, type × tag, type × label class, type ×
 capture-year band, type × round-3 split, and by deployment (public deployments named; the 8 others pooled into
-one row). What they show:
+one row; a pool of fewer than 3 would show its counts only). `n` counts the usable rows of every split, and
+`train n` counts every train-split row of the slice, including the AI-authored and near-horizon rows that `n`
+leaves out. So `train n` can exceed `n`: it does in the train rows of the split table (CurbRamp: 6,925 train rows,
+6,749 of them usable) and for CurbRamp labels with no severity (454 against 436). What the tables show:
 
 - **Severity and class barely move the ratio** within a ground type (CurbRamp severity 1 to 3: 2.72 to 2.80;
   correct against incorrect within 0.11 for every type).
@@ -149,17 +175,19 @@ one row). What they show:
 
 ### 4.5 What this settles and what it does not
 
-Settled without Google:
+Established without Google, **all of it relative to the reference**:
 
 - the scale offset between ViT-B and a car-height flat-ground geometry is large (2.3 to 2.9× over plausible
   heights) and nearly the same across the four ground types;
-- `6100 / depth_m` therefore sizes crops at about 4.5 m of scene at the label, varying 3.5 to 6.8 m between the 5th
-  and 95th percentiles;
+- if that geometry is about right, `6100 / depth_m` sizes crops at about 4.5 m of scene at the label, varying 3.5 to
+  6.8 m between the 5th and 95th percentiles;
 - the constant that would give the reference the same median crop is `6100 / 2.66 ≈ 2,292`. Sized by the reference at
   6100 itself, 13.4 % of crops would clip, against 0.06 % today.
 
-Not settled: whether the residual spread is ViT-B or the reference (camera height, terrain, off-ground clicks).
-The Google arm addresses exactly that.
+Not settled: **which side the offset belongs to** (ViT-B's metric scale, or the reference's height and level-ground
+assumptions), and whether the residual spread is ViT-B or the reference (camera height, terrain, off-ground
+clicks). Nothing here measures ViT-B's error. The Google arm addresses exactly that, with a camera height per
+panorama and a plane model in place of the level-ground assumption.
 
 ## 5. Clipping at the view edge
 
@@ -247,11 +275,31 @@ Figures are binned only. No per-label scatter is committed.
 
 ## 7. Decision rules R0 to R3 (pre-registered)
 
-**Fixed on 2026-11-12**, in the commit that added this file (branch `depth-agreement`; the numbers of section 4
-came from code at b2756eb). **They were written after the flat-ground results of section 4 were known, and before
-any ViT-L, Google or sweep number existed.** They are pre-registered with respect to those arms, not with respect
-to the ViT-B / flat-ground relation. Any later change to this section shows in `git log -p`. **Pending Jon's
-confirmation** of the thresholds (section 11).
+**Fixed on 2026-11-12, before the klone run**, in commit `b58f433`, the commit that added this file (branch
+`depth-agreement`; the numbers of section 4 came from code at `b2756eb`). **They were written after the flat-ground
+results of section 4 were known, and before any ViT-L, Google or sweep number existed.** They are pre-registered
+with respect to those arms, not with respect to the ViT-B / flat-ground relation. **Pending Jon's confirmation** of
+the thresholds (section 11).
+
+What each rule was written with knowledge of:
+
+| rule | data already seen when it was written | data not yet in existence |
+|---|---|---|
+| R0 | the serving-parity result (≤ 1.8 mm across torch versions) | any re-run ViT-B depth on these labels |
+| R1 | round 3's `crop_half_px` (the 82.4 / 60.2 / 33.5 % anchor of #51's contrast) | any ViT-L depth; the centre-versus-box jitter |
+| R2 | **the flat-ground bracket [0.747, 0.968], already known to straddle the band**, and the spread of ViT-B depth (1.40 in ln) used to justify the band | any Google depth |
+| R3 | #51's result (+0.014 AUC in the training deployments) | any sweep arm |
+
+So R2 was not written in ignorance of its own likely outcome: the band and the three-way reading were chosen
+knowing that the flat-ground reference lands in "straddles". What is pre-registered is the reading of the
+**Google** bracket.
+
+Changes to this section after `b58f433`, each visible in `git log -p -- docs/depth-ablation-2026-11.md`:
+
+- 2026-11-12, review of PR #104, still before the klone run and before any ViT-L, Google or sweep number: (a) R1's
+  "marginal" sentence now says what the code and its tests do (a flag on [86 %, 94 %], which never changes the
+  verdict); (b) R2 says how a bracket end exactly on a band edge is read; (c) the table above was added, and
+  R2's "1.37 in ln" was corrected to 1.40 (the 15 % it leads to is unchanged). No threshold changed.
 
 - **R0, parity.** At least 99 % of GPU-rendered Set A labels have `|d_vitb / depth_m − 1| < 0.001`. The threshold's
   source: serving parity found depth maps reproducing to ≤ 1.8 mm across torch versions
@@ -259,8 +307,10 @@ confirmation** of the thresholds (section 11).
   explain the drift before reading anything else.
 - **R1, encoder (ViT-L against ViT-B).** Quantity: on Set A, city-balanced, after the scale match, the share of
   labels with `|ln(d_vitb / (d_vitl / s))| ≤ ln(1.10)`. Rule: **at least 95 % overall and at least 90 % in every
-  label type, judged on the point estimates.** Wilson intervals are reported. At n = 200 their half-width is about 4
-  points, so a type between 86 % and 94 % is reported as marginal.
+  label type, judged on the point estimates.** A type at exactly 90 % meets the rule. Wilson intervals are reported.
+  At n = 200 their half-width is about 4 points, so a type from 86 % to 94 % (both ends included) is **flagged as
+  marginal** in the read-out. The flag is for the reader and never changes the verdict: a type at 91 % passes and
+  is flagged, and a type at 88 % fails and is flagged.
   - Met: the encoders are interchangeable for sizing. **ViT-B stays**, and the encoder question closes without a
     retrain.
   - Not met, or the row-mix-weighted estimate falls on the other side of 95 %: the encoder becomes a sweep arm
@@ -274,7 +324,7 @@ confirmation** of the thresholds (section 11).
     and the doc says the 10 % reading was not informative.
 - **R2, proportionality against the reference.** Quantity: the slope bracket `[β_yx, β_xy]` of ViT-B against
   Google's `g_ray_m`, on `ground` hits of the four ground types in Set G (point estimates of the two ends). The band
-  is [0.9, 1.1]. Its rationale: over the 5th to 95th percentile of ViT-B depth (1.37 in ln), a slope of 0.9 changes
+  is [0.9, 1.1]. Its rationale: over the 5th to 95th percentile of ViT-B depth (1.40 in ln), a slope of 0.9 changes
   the relative crop size by 15 % end to end, about ±7 % around the middle, which is inside R1's ±10 %. A slope
   outside the band moves crops by more than the tolerance R1 calls negligible.
   - **Bracket inside the band:** proportional. The constant is the only knob, and the sweep is the whole
@@ -283,6 +333,8 @@ confirmation** of the thresholds (section 11).
     reference (`trig_cam_m` where a camera height exists, at the constant matching the median crop).
   - **Bracket straddles a band edge:** not resolved by this sample. No new arm is added; the sweep goes ahead as
     planned, and the doc reports the bracket.
+  - Edges: 0.9 and 1.1 themselves count as inside the band. A bracket with one end exactly on an edge and the
+    other end beyond it straddles.
   - Known now, on the flat-ground reference: [0.747, 0.968], RMA 0.850, which straddles. The Google arm has to
     narrow the bracket to change anything, and "not resolved" is a likely outcome.
   - Google depth itself is **not** a candidate default whatever the numbers say, for technical reasons only. It
@@ -307,8 +359,9 @@ confirmation** of the thresholds (section 11).
 - A change of default means retraining all five types plus a serving change, and it lands with a round.
 
 `compare` prints the R0 to R2 read-out mechanically (`rule_readout` in the module, tested at the boundaries:
-exactly 95 % / 90 % is met, 89.5 % in one type is not, the jitter switch, a weighted estimate on the other side of
-95 %, the three R2 verdicts).
+exactly 95 % / 90 % is met, 89.5 % in one type is not, the marginal flag at 86 % and 94 %, the jitter switch at more
+than 5 %, a weighted estimate on the other side of 95 %, the three R2 verdicts and their edges). The read-out
+also reports how many rows each rule was read on; the rules set no minimum (section 11).
 
 ## 8. Results of the klone arms
 
@@ -355,9 +408,16 @@ until replaced by the existing runs' `train_runtime`. R1 and R2 may add one arm 
 Decisions owed by Jon: the go for the klone run (about 1 GPU-h, free, and one rsync connection to makelab2); the
 thresholds of R0 to R3; R1's estimand (city-balanced with the weighted share as a veto, as written, or the weighted
 share as the rule); the sweep scope (CurbRamp + SurfaceProblem with three seeds, CurbRamp only, or one seed); the
-2.5 m headline height; whether `camera_roll` gets its own issue. **One reading needs confirming.** The plan's R1 text
-said a type between 86 % and 94 % "counts as not met", but its boundary test says exactly 90 % is met. The module
-implements the boundary test: a type is met at ≥ 90 %, and 86 to 94 % is flagged as marginal.
+2.5 m headline height; whether `camera_roll` gets its own issue. **Two readings need confirming.**
+
+1. *R1's marginal band.* The plan's R1 text said a type between 86 % and 94 % "counts as not met", but its boundary
+   test says exactly 90 % is met. Those cannot both hold. This note, the module and the tests now say one thing:
+   a type is met at ≥ 90 % on the point estimate, and [86 %, 94 %] is a flag that changes no verdict. The stricter
+   alternative (any type under 94 % fails) is Jon's to choose; it would be a one-line change, made before the run.
+2. *No minimum n.* R0 is read on whatever Set A rows the GPU pass rendered, and R2 on however many ground hits
+   Set G has. If the panoramas or the artifacts are mostly missing, a rule could be read on a few dozen labels.
+   The read-out reports each n. Whether a floor belongs in the rules (for example "under 200 ground hits, R2 is
+   not resolved") is a decision to make before the run.
 
 ## 12. Reproduce
 
@@ -397,14 +457,17 @@ own hash.
 | file | sha256 |
 |---|---|
 | `$D/trig/trig.csv` (per label, local) | `7a7d5a8f7d6dc6e8d80ffa522d1779437e5f718ccb45106d04f8579adf16109d` |
-| `$D/trig/trig_tables.json` | `3937871a8e2c8099174c28237f743e2eb8860e24306a228b6bb84376e2cd7386` |
+| `$D/trig/trig_tables.json` | `701e74286f6ca464d9973dade3b5cd1a8f58787b5a87622c755a0ef595d56336` |
 | `$D/clipping.csv` | `dc1dd988e084f363a6fa75e9ac366b6811ea6c7bc2f6c0546735f32c1e05ccc8` |
 | `$D/sample.csv` (per label with `pano_path`, local) | `b87374268a0005ae4c13739065e192c32327353f6bcd8bbdde796f8f9d47fdf4` |
 | `$D/stage_files.txt` | `9e689aaff2130d60b7beb31f8626b03ff58a1add9a4f32375247c2dacdc7d61c` |
 | `data/depth-agreement-2026-11/sample_public.csv` | `efd5a3e9fd6c9da8e966836b57b58c54b94a476ac99bf1392a941ff1c0b249dc` |
 
-`trig_tables.json` reproduces byte for byte: two runs gave the same hash. `docs/depth-ablation-2026-11/provenance.json`
-records the hashes of `tables.md` and the figure.
+`trig_tables.json` reproduces byte for byte: three runs of the code at `64c7f7e` gave the same hash, and `trig.csv`
+is unchanged from the first run at `b2756eb`. `docs/depth-ablation-2026-11/provenance.json` records the hashes of
+`tables.md` and the figure. Regenerated on 2026-11-12 in the review of PR #104: `trig_tables.json` and `tables.md`
+gained the whole-deployment interval, the exclusion-bound table and the `train_n` notes (before:
+`3937871a…` and `b02be221…`). No number that was already in them moved, and the figure is byte-identical.
 
 ### klone recipe (Jon or the parent session; needs a live klone master)
 
@@ -418,14 +481,18 @@ Scrubbed purges after 21 days.
    `git clone --recurse-submodules -b depth-agreement https://github.com/ProjectSidewalk/sidewalk-validator-ai $W/sidewalk-validator-ai`
    and copy `sample.csv` and `stage_files.txt` from `$D` into `$W`. Check that round 3's staged panoramas still
    exist (`pano_path` of a few rows of `sample.csv`). Download both checkpoints into the clone; the URLs are in
-   `analysis/depth_agreement.slurm`. **The ViT-L revision is not pinned yet** (`TODO(#21)` there): read it from the
-   HF model API on the login node and pin it, then record both sha256s here.
+   `analysis/depth_agreement.slurm`. **The ViT-L revision is not pinned yet** (`TODO(#21)` there), and **the GPU job
+   refuses to start until it is**: read the commit from the HF model API on the login node, download at that commit,
+   and pass `VITL_REV` (the 40-hex commit, never a branch name) and `VITL_SHA256` (the file's sha256, which the job
+   verifies) or write them into the job file. Record both sha256s here.
 2. `cd $W && sbatch $W/sidewalk-validator-ai/analysis/depth_agreement_stage.slurm`: one rsync connection to
    makelab2. Exit 23 is expected, because a missing artifact is the coverage measurement. On one timeout or any
    other failure, stop and do not resubmit. If step 1 showed the panoramas are gone, re-run `sample --stage-panos`
    first and submit step 3 with `PANO_STORE=$W/store`.
-3. `cd $W && sbatch $W/sidewalk-validator-ai/analysis/depth_agreement.slurm`: `depth-pass` (ViT-B and ViT-L) and
-   `google-depth`, on one GPU on `ckpt-all`, resumable. **Estimated 50 to 75 GPU-minutes** for 3,000 labels (one
+3. `cd $W && sbatch --export=ALL,VITL_REV=<commit>,VITL_SHA256=<sha256> $W/sidewalk-validator-ai/analysis/depth_agreement.slurm`:
+   `depth-pass` (ViT-B and ViT-L) and `google-depth`, on one GPU on `ckpt-all`, resumable (a row cut off by a
+   preemption is removed and run again). Both jobs write 8 MiB into `$W` before doing anything else and stop if
+   that fails. **Estimated 50 to 75 GPU-minutes** for 3,000 labels (one
    decode and resize, one torch render and two inferences each, at 1 to 1.5 s); 3 h is requested. Free (klone,
    not Tillicum). Storage: artifacts up to about 0.75 GB, checkpoints 1.7 GB, outputs a few MB. Staging the
    panoramas as well would take up to about 45 GB. All estimates are unverified.

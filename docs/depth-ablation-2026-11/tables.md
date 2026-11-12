@@ -8,17 +8,17 @@ Camera height 2.5 m nominal; 63672 usable rows; median ViT-B / flat ground 2.661
 
 **ViT-B / flat-ground ratio, implied crop width and distances by label type**
 
-Usable rows: human-authored, depression > 2 deg. Interval: 95 % bootstrap of the median over panoramas within city. train_n, here and in every slice: rows of the slice in the round-3 train split, used here or not (AI-authored and near-horizon rows included), i.e. what the classifier trained on.
+Usable rows: human-authored, depression > 2 deg. Two 95 % bootstrap intervals of the median: ratio_med_lo/hi resamples panoramas within each deployment (these deployments held fixed); ratio_med_city_lo/hi resamples whole deployments (what another set of deployments could show) and is the wider, more honest one. train_n counts every round-3 train-split row of the slice, including the AI-authored and near-horizon rows that n leaves out; n counts the usable rows of all splits. So train_n can exceed n (it does in the train rows of the split table).
 
-| label_type | n | train_n | ratio_med | ratio_med_lo | ratio_med_hi | ratio_p05 | ratio_p95 | width_m_med | width_m_p05 | width_m_p95 | trig_m_med | depth_m_med | depression_deg_med |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| CurbRamp | 10179 | 6925 | 2.728 | 2.718 | 2.738 | 2.090 | 3.454 | 4.367 | 3.449 | 5.701 | 9.439 | 25.359 | 15.359 |
-| NoCurbRamp | 18078 | 12199 | 2.707 | 2.700 | 2.712 | 2.060 | 3.364 | 4.402 | 3.542 | 5.784 | 9.335 | 24.793 | 15.535 |
-| Obstacle | 16600 | 10554 | 2.424 | 2.386 | 2.443 | 1.391 | 3.349 | 4.915 | 3.558 | 8.564 | 10.926 | 25.754 | 13.228 |
-| SurfaceProblem | 15715 | 10500 | 2.728 | 2.719 | 2.736 | 1.997 | 3.579 | 4.368 | 3.329 | 5.965 | 8.871 | 23.800 | 16.370 |
-| Crosswalk | 3100 | 2089 | 2.673 | 2.657 | 2.684 | 2.099 | 3.225 | 4.458 | 3.694 | 5.677 | 9.668 | 25.212 | 14.985 |
-| ground types | 47072 | 31713 | 2.713 | 2.709 | 2.718 | 2.046 | 3.455 | 4.391 | 3.449 | 5.823 | 9.195 | 24.602 | 15.776 |
-| all types | 63672 | 42267 | 2.661 | 2.653 | 2.668 | 1.761 | 3.433 | 4.477 | 3.471 | 6.766 | 9.569 | 24.863 | 15.144 |
+| label_type | n | train_n | ratio_med | ratio_med_lo | ratio_med_hi | ratio_med_city_lo | ratio_med_city_hi | ratio_p05 | ratio_p95 | width_m_med | width_m_p05 | width_m_p95 | trig_m_med | depth_m_med | depression_deg_med |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| CurbRamp | 10179 | 6925 | 2.728 | 2.718 | 2.738 | 2.670 | 2.792 | 2.090 | 3.454 | 4.367 | 3.449 | 5.701 | 9.439 | 25.359 | 15.359 |
+| NoCurbRamp | 18078 | 12199 | 2.707 | 2.700 | 2.712 | 2.655 | 2.751 | 2.060 | 3.364 | 4.402 | 3.542 | 5.784 | 9.335 | 24.793 | 15.535 |
+| Obstacle | 16600 | 10554 | 2.424 | 2.386 | 2.443 | 2.345 | 2.512 | 1.391 | 3.349 | 4.915 | 3.558 | 8.564 | 10.926 | 25.754 | 13.228 |
+| SurfaceProblem | 15715 | 10500 | 2.728 | 2.719 | 2.736 | 2.668 | 2.791 | 1.997 | 3.579 | 4.368 | 3.329 | 5.965 | 8.871 | 23.800 | 16.370 |
+| Crosswalk | 3100 | 2089 | 2.673 | 2.657 | 2.684 | 2.641 | 2.716 | 2.099 | 3.225 | 4.458 | 3.694 | 5.677 | 9.668 | 25.212 | 14.985 |
+| ground types | 47072 | 31713 | 2.713 | 2.709 | 2.718 | 2.665 | 2.765 | 2.046 | 3.455 | 4.391 | 3.449 | 5.823 | 9.195 | 24.602 | 15.776 |
+| all types | 63672 | 42267 | 2.661 | 2.653 | 2.668 | 2.610 | 2.720 | 1.761 | 3.433 | 4.477 | 3.471 | 6.766 | 9.569 | 24.863 | 15.144 |
 
 **Camera-height sensitivity: the ratio scales as 1 / h, nothing else moves**
 
@@ -48,6 +48,8 @@ Usable rows: human-authored, depression > 2 deg. Interval: 95 % bootstrap of the
 
 **By label type x severity**
 
+train_n counts every round-3 train-split row of the slice, including the AI-authored and near-horizon rows that n leaves out; n counts the usable rows of all splits. So train_n can exceed n (it does in the train rows of the split table).
+
 | label_type | severity_s | n | train_n | ratio_med | ratio_p05 | ratio_p95 | width_m_med |
 |---|---|---|---|---|---|---|---|
 | CurbRamp | (none) | 436 | 454 | 2.683 | 1.978 | 3.365 | 4.440 |
@@ -72,6 +74,8 @@ Usable rows: human-authored, depression > 2 deg. Interval: 95 % bootstrap of the
 | Crosswalk | 3 | 541 | 369 | 2.653 | 2.144 | 3.257 | 4.491 |
 
 **By label type x tag (a label with several tags counts in each)**
+
+train_n counts every round-3 train-split row of the slice, including the AI-authored and near-horizon rows that n leaves out; n counts the usable rows of all splits. So train_n can exceed n (it does in the train rows of the split table).
 
 | label_type | tag | n | train_n | ratio_med | ratio_p05 | ratio_p95 | width_m_med |
 |---|---|---|---|---|---|---|---|
@@ -138,6 +142,8 @@ Usable rows: human-authored, depression > 2 deg. Interval: 95 % bootstrap of the
 
 **By label type x label class**
 
+train_n counts every round-3 train-split row of the slice, including the AI-authored and near-horizon rows that n leaves out; n counts the usable rows of all splits. So train_n can exceed n (it does in the train rows of the split table).
+
 | label_type | label_class | n | train_n | ratio_med | ratio_p05 | ratio_p95 | width_m_med |
 |---|---|---|---|---|---|---|---|
 | CurbRamp | correct | 5546 | 3795 | 2.684 | 2.126 | 3.327 | 4.439 |
@@ -152,6 +158,8 @@ Usable rows: human-authored, depression > 2 deg. Interval: 95 % bootstrap of the
 | Crosswalk | incorrect | 1387 | 933 | 2.671 | 2.082 | 3.294 | 4.461 |
 
 **By label type x capture-year band**
+
+train_n counts every round-3 train-split row of the slice, including the AI-authored and near-horizon rows that n leaves out; n counts the usable rows of all splits. So train_n can exceed n (it does in the train rows of the split table).
 
 | label_type | year_band | n | train_n | ratio_med | ratio_p05 | ratio_p95 | width_m_med |
 |---|---|---|---|---|---|---|---|
@@ -183,6 +191,8 @@ Usable rows: human-authored, depression > 2 deg. Interval: 95 % bootstrap of the
 
 **By label type x round-3 split**
 
+train_n counts every round-3 train-split row of the slice, including the AI-authored and near-horizon rows that n leaves out; n counts the usable rows of all splits. So train_n can exceed n (it does in the train rows of the split table).
+
 | label_type | split | n | train_n | ratio_med | ratio_p05 | ratio_p95 | width_m_med |
 |---|---|---|---|---|---|---|---|
 | CurbRamp | test | 1441 | 0 | 2.735 | 2.103 | 3.461 | 4.356 |
@@ -208,7 +218,7 @@ Usable rows: human-authored, depression > 2 deg. Interval: 95 % bootstrap of the
 
 **By deployment (public deployments named; all others pooled)**
 
-Hilly deployments break the flat-ground assumption; a deployment far from the pooled median is where to look first.
+Hilly deployments break the flat-ground assumption; a deployment far from the pooled median is where to look first. A pool of fewer than 3 non-public deployments shows its counts only. train_n counts every round-3 train-split row of the slice, including the AI-authored and near-horizon rows that n leaves out; n counts the usable rows of all splits. So train_n can exceed n (it does in the train rows of the split table).
 
 | city | n | train_n | ratio_med | ratio_p05 | ratio_p95 | width_m_med | depression_deg_med |
 |---|---|---|---|---|---|---|---|
@@ -319,6 +329,19 @@ Binning on a noisy reference produces a falling ratio even under exact proportio
 | SurfaceProblem | near_horizon | 137 |
 | Crosswalk | used | 3100 |
 | Crosswalk | near_horizon | 20 |
+
+**Bound on what the excluded rows could change: the median ratio had every excluded row fallen below it, or above it**
+
+Excluded rows have no trustworthy ratio (AI-authored: rig-frame pixel; near the horizon: 1 / sin explodes), so they are bounded, not estimated.
+
+| label_type | n | n_excluded | ratio_med | if_all_below | if_all_above |
+|---|---|---|---|---|---|
+| CurbRamp | 10179 | 258 | 2.728 | 2.715 | 2.741 |
+| NoCurbRamp | 18078 | 84 | 2.707 | 2.705 | 2.708 |
+| Obstacle | 16600 | 294 | 2.424 | 2.410 | 2.435 |
+| SurfaceProblem | 15715 | 137 | 2.728 | 2.723 | 2.732 |
+| Crosswalk | 3100 | 20 | 2.673 | 2.669 | 2.674 |
+| all types | 63672 | 793 | 2.661 | 2.655 | 2.668 |
 
 **AI-authored rows on their own (rig-frame pixel: depression off by the tilt)**
 

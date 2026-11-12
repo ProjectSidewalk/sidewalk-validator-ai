@@ -267,10 +267,13 @@ column) so the new rows can be ablated.
 
 **Why.** On CurbRamp, depth sizing beat a fixed size in the training deployments (+0.014 AUC [+0.007, +0.021],
 [#51](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/51)); this was not shown for unseen
-deployments (+0.009 [−0.006, +0.025]). Against a flat-ground reference at a 2.5 m camera height, the ViT-B depth is
-2.66× larger at the median (n = 63,672), so 6100 corresponds to a crop about 4.5 m wide at the label; the reference
-is an assumption, not a measurement. The encoder, the constant and Google's depth map as a reference are compared
-in [`depth-ablation-2026-11.md`](depth-ablation-2026-11.md) under rules written before those runs.
+deployments (+0.009 [−0.006, +0.025]). The depth model's scale has been compared with one thing so far, a
+flat-ground reference that is an assumption and not a measurement (a 2.5 m camera, level ground, a label on the
+ground). Relative to that reference, the ViT-B depth is 2.66× the flat-ground distance at the median
+(n = 63,672); if the reference is about right, 6100 corresponds to a crop about 4.5 m wide at the label. This is a
+ratio to a reference, not a measured error of the depth model. The encoder, the constant and Google's depth map as
+a second reference are compared in [`depth-ablation-2026-11.md`](depth-ablation-2026-11.md) under rules written
+after that flat-ground result was known and before those runs.
 
 **Clipping at the view edge is not studied further:** with label-centred views it needs `depth_m` under about
 5.95 m, 38 of 64,465 round-3 crops (0.06 %).
