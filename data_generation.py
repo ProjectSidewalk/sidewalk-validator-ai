@@ -43,7 +43,9 @@ already, so Mapillary crops are NOT corrected (beta 0); their pose is still read
 levels only when both stored angles are non-zero; those crops are corrected with beta 1.0 (unmeasured), a pitch-only
 pose shifts the click by ``pers:pitch`` instead, and the rest are rig-frame. Both website viewers store pitch positive
 nose UP, so their pitch is negated (measured on pixels: tests/test_pose_levelling.py). A label with no usable pose is
-rendered uncorrected and counted by reason. The manifest records ``pose_source``, the pose in the package's sign
+rendered uncorrected and counted by reason, except that a Panoramax label is skipped with its own status when its pose
+has both angles non-zero and is past ``crop_pose.MAX_POSE_TILT_DEG`` (``panoramax_over_tilt``) or its pitch-only click is past a pole
+(``panoramax_pitch_offset_past_pole``). The manifest records ``pose_source``, the pose in the package's sign
 (``pose_pitch``/``pose_roll``), the beta used (``tilt_beta``) and any ``click_lat_offset_deg``. Labels authored by the AI account (RampNet,
 Vancouver WA / Richmond VA / Laurens IA) were placed on the rig-frame image directly, so they are rendered without
 it. They are excluded from the training selection by default anyway: production never sends them to the validator
@@ -1636,9 +1638,15 @@ def main(argv=None):
                 status_counts['skipped (already ok)'] += 1
                 continue
             try:
+                y_norm = crop_pose.rig_y_norm(row['pano_y'] / row['pano_height'], pose)  # None: past a pole
+                # A Panoramax pose past the tilt cap, or a pitch-only click past a pole, is skipped with its own status
+                # (#72), decided before the panorama is read: a skip costs no decode, and wins over a missing
+                # panorama (so it never counts toward --max-missing-frac). The job-window crop uses neither the pose
+                # nor y_norm, so it is never skipped for them.
+                skip = None if args.job_window_crops else crop_pose.skip_status(pose, y_norm)
                 # Keyed on (city, pano_id): the store path includes the city, so the same pano_id in two cities is
                 # two reads (the sort is by pano_id, so they can be adjacent).
-                if last_pano[0] != (row['city'], row['pano_id']):
+                if skip is None and last_pano[0] != (row['city'], row['pano_id']):
                     if row['city'] in absent_cities:  # --allow-missing-cities; not a store failure
                         read, pano_info = "no_pano", {"pano_path": None}
                     else:
@@ -1658,9 +1666,11 @@ def main(argv=None):
                     else:
                         consecutive_missing = 0
                 pano_bgr = last_pano[1]
-                y_norm = row['pano_y'] / row['pano_height'] + (pose.click_lat_offset_deg or 0.0) / 180.0
-                rec.update(last_pano[2])
-                if isinstance(pano_bgr, str):
+                if skip is None:  # a skipped label read no panorama (last_pano may be another label's)
+                    rec.update(last_pano[2])
+                if skip is not None:
+                    rec['status'] = skip
+                elif isinstance(pano_bgr, str):
                     rec['status'] = pano_bgr
                 elif args.job_window_crops:  # issue #53: the backend's crop-job window from the native file
                     crop, info = job_crop.crop_for_row(rec['pano_path'], row, rec['label_uid'],
@@ -1728,7 +1738,8 @@ def main(argv=None):
                  f"above --max-missing-frac {args.max_missing_frac}: the dataset would shrink silently.")
     if n_ok == 0:
         # e.g. a store without these cities' panos: fail the SLURM job instead of an empty dataset with exit 0
-        sys.exit(f"No crops in {manifest_path}: every label failed (no_pano/bad_pano or error; check --pano-store "
+        sys.exit(f"No crops in {manifest_path}: every label failed or was skipped (no_pano/bad_pano, a panoramax_* "
+                 f"skip, or error; check --pano-store "
                  f"{args.pano_store}).")
 
 

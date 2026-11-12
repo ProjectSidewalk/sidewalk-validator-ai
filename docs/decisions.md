@@ -141,6 +141,8 @@ pixel by beta · T(b), T(b) = pitch cos b + roll sin b.
 | panoramax | `panoramax_db` | DB (−`camera_pitch`, +`camera_roll`), both non-zero | beta 1.0, **unmeasured** | the only case the viewer levels the sphere |
 | panoramax | `panoramax_db` | pitch only: (−`camera_pitch`, —) | latitude shifted back by `pers:pitch` (`click_lat_offset_deg`), no tilt | not levelled, but the viewer adds `pers:pitch` to the click |
 | panoramax | `panoramax_db` | roll only: (—, +`camera_roll`) | none | not levelled, click rig-frame |
+| panoramax | `none` | both non-zero and past 45° combined tilt (`panoramax_db_over_tilt`) | **label skipped**, status `panoramax_over_tilt` | not a rig pose, but the viewer levelled the click by it, so neither a levelled nor an uncorrected crop would be on the feature |
+| panoramax | `panoramax_db` | pitch only, click within `pers:pitch` of a pole | **label skipped**, status `panoramax_pitch_offset_past_pole` | the rig latitude is past the pole, so the crop has no centre |
 | any | `image_estimate` | *reserved* for the image-based tilt estimator (ProjectSidewalk/RampNet PR 273) | — | not implemented |
 | any | `none` | no usable pose (Panoramax 0/0 or absent, Mapillary with no pose or a refused one, …); reason counted | none | |
 | (AI label) | `rig_frame` | — | none, as before | placed on the rig image |
@@ -164,6 +166,21 @@ No Bayonne label has a pitch-only pose today (75 labels: 31 pitch 0 with roll NU
 both non-zero). A roll-only pose adds nothing: the click is rig-frame. A 0/0 or absent pose (the viewer stores absent
 as pitch 0, roll NULL) is no measurement and gets `none/panoramax_zero_or_absent_pose`. Angles are wrapped to
 [−180, 180).
+
+**Panoramax guards (November 2026).** A Panoramax pose with both angles non-zero past `MAX_POSE_TILT_DEG` (45°, the
+Mapillary cap, strict `>` on the combined tilt `acos(cos p cos r)`) is refused with reason `panoramax_db_over_tilt`,
+and the label is skipped with status `panoramax_over_tilt`. That is the only case the viewer levels, so it is the only
+one an implausible pose can corrupt: levelling by it would put the crop into the sky, and unlike a refused Mapillary
+pose the click is not rig-frame, so an uncorrected crop would be off the feature too. Pitch-only and roll-only poses
+are not capped (Jon's decision on PR #96): a roll-only click is rig-frame whatever the angle, and a pitch-only pose is
+an exact latitude shift at any size, backstopped by the pole guard. A pitch-only click within `pers:pitch` of a pole would land outside [0, 1] once the offset is taken out (`label_view`
+raised, and the row counted as `error:`); it is skipped with status `panoramax_pitch_offset_past_pole` instead of
+being clipped. Both are decided before the panorama is read, so a skip costs no decode and wins over a missing
+panorama. Neither status is `ok`, `error:*` or a missing-pano status, so they print no traceback, do not count toward
+the consecutive-error or consecutive-missing stops or `--max-missing-frac`, and a resume retries (and skips) them
+again. `retype.py crops` applies the same skips. Bayonne tops out
+at |pitch| 20.2° and |roll| 8.5° (about 21.9° combined) and has no pitch-only pose, so neither guard changes a row
+today; `--job-window-crops`, which uses neither the pose nor the offset, is never skipped by them.
 
 **The signs were measured on pixels** (`tests/test_pose_levelling.py` with its fixtures, and
 `analysis/pose_levelling.py` for the wider Mapillary set). Each panorama is resampled into the gravity frame through
@@ -221,6 +238,10 @@ reports label type × severity and label type × tag next to its comparative bas
 - **Retrain reports.** `analysis/retrain_report.py` gives them for the new model and, from `predictions_prod.csv`
   (`evaluate.py --checkpoint <served model> --tag prod`), round 3 against production on the same rows, with a
   panorama-resampled interval on the difference.
+- **Scoreboard.** `analysis/vlm_scoreboard.py` takes its slice rows, gates, panorama-bootstrap intervals and paired
+  differences against round 3 from `analysis/slices.py`
+  ([#70](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/70)), and adds per-split and within-city
+  AUC. Its tag rows keep every tag with at least 30 crops of the type.
 - **Production measurements.** They report the same slices against human votes.
 
 **How the slices are counted.**

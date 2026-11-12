@@ -66,8 +66,8 @@ against 0.97, and are near chance on Obstacle, 0.51–0.61 against 0.87.
 
 Round 3 is ahead of every VLM in every scoreable severity slice. The VLMs lose ground as severity rises on
 CurbRamp (the 8-shot Gemma leg falls from 0.87 at severity 1 to 0.76 at severity 3, where round 3 stays above
-0.91) and are near chance on Obstacle at every severity (0.50–0.70). Crosswalk severity 3 and Crosswalk with no
-severity are too thin to score.
+0.91) and are near chance on Obstacle at every severity (0.50–0.70). Crosswalk severity 3 is too thin to score
+(five correct crops of 96).
 
 ![Heatmap: AUC by model, label type and severity](docs/vlm-scoreboard/by_severity.png)
 
