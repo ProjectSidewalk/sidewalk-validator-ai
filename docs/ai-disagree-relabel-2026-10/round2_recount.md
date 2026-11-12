@@ -187,8 +187,9 @@ change row and both `author_mismatch` rows. Toggles logged since 2026-10-18, by 
     0 by the export's author field).
   - *What follows.* With exclusion as of the round, Chicago would lose 6 eligible AI Disagrees, not 18: 10,763
     eligible, 3,849 unsampled, `lone` 3,308, and `light_voted` (1,297) and `margin_incorrect` (2,065) unchanged.
-    The tables on this page use the flags as read on 2026-11-12, so they remove the 12 as well, and every Chicago
-    change in `score` below comes from those 12 labels.
+    The tables on this page use the flags as read on 2026-11-12, so they remove the 12 as well. In `score` below,
+    Chicago's `light_voted` and `margin_incorrect` changes come from those 12 labels alone; its `lone` change
+    (4 labels) does not.
   - *Not known.* Whether the 6 absent labels' authors were excluded for the whole round. Their absence from the
     export and the empty log say so, as far as the log can see (limits below).
 - **Seattle:** no toggle is logged since 2026-10-18, and all 3,042 excluded-author pool labels are absent from the
