@@ -1975,3 +1975,47 @@ def test_a_depth_encoder_refusal_names_what_was_recorded():
     for near_miss in ("vits", "VITB", "vit"):
         with pytest.raises(pub.PublishError):
             pub.check_depth_encoder({"depth_encoder": near_miss}, "g.json")
+
+
+def _rows(depth_m, crop_half_px):
+    return pd.DataFrame({"depth_m": depth_m, "crop_half_px": crop_half_px})
+
+
+def test_a_near_depth_is_judged_by_what_its_rounding_allows():
+    """``depth_m`` is ``round(depth, 4)`` and the crop was cut at the unrounded depth. At 0.3 m that is a span of
+    int(6100 / 0.30005) = 20329 to int(6100 / 0.29995) = 20336 px, wider than the 1 px tolerance."""
+    for true_depth in (0.30004, 0.29996, 0.20004, 0.5004, 1.00004, 2.44036, 79.88):
+        cut = int(6100 / true_depth)                                # data_generation.depth_sized_crop
+        pub.check_depth_rows(_rows([round(true_depth, 4)], [cut]), "x.csv")
+    pub.check_depth_rows(_rows([0.3, 0.3], [20329, 20336]), "x.csv")              # both ends of the span
+    for off in (20328, 20337):                                                    # one pixel outside it
+        with pytest.raises(pub.PublishError, match="1 of 2 rows were not cut"):
+            pub.check_depth_rows(_rows([0.3, 10.0], [off, 610]), "x.csv")
+    with pytest.raises(pub.PublishError, match="1 of 1 rows were not cut"):       # the whole view is not in the span
+        pub.check_depth_rows(_rows([0.3], [1024]), "x.csv")
+    pub.check_depth_rows(_rows([0.0001, 0.00005], [61000000, 10 ** 9]), "x.csv")  # no upper bound at the last place
+    with pytest.raises(pub.PublishError, match="1 of 1 rows were not cut"):
+        pub.check_depth_rows(_rows([0.0001], [1024]), "x.csv")                    # but still a lower one
+
+
+def test_the_one_pixel_tolerance_is_symmetric_and_inclusive_at_ordinary_depths():
+    """At 10 m the rounding span is the single value 610, so only the 1 px tolerance admits 609 and 611."""
+    pub.check_depth_rows(_rows([10.0, 10.0, 10.0], [609, 610, 611]), "x.csv")
+    for off in (608, 612, 0, -610):
+        with pytest.raises(pub.PublishError, match="1 of 3 rows were not cut"):
+            pub.check_depth_rows(_rows([10.0, 10.0, 10.0], [610, off, 610]), "x.csv")
+    pub.check_depth_rows(_rows([10.5], [580]), "x.csv")              # int(580.95): floor, not round (581) or ceil
+    with pytest.raises(pub.PublishError, match="1 of 1 rows were not cut"):
+        pub.check_depth_rows(_rows([10.5], [582]), "x.csv")          # 1 px from the rounded 581, 2 px from int()
+    with pytest.raises(pub.PublishError, match="1 of 1 rows were not cut"):
+        pub.check_depth_rows(_rows([10.5], [578]), "x.csv")
+
+
+def test_a_tiny_positive_depth_is_a_depth_and_zero_is_not():
+    pub.check_depth_rows(_rows([0.0001], [61000000]), "x.csv")
+    with pytest.raises(pub.PublishError, match="no row has a depth_m"):
+        pub.check_depth_rows(_rows([0.0], [1024]), "x.csv")
+    with pytest.raises(pub.PublishError, match="2 of 3 rows have no depth_m"):    # each bad row is counted
+        pub.check_depth_rows(_rows([10.0, None, -1], [610, 610, 610]), "x.csv")
+    with pytest.raises(pub.PublishError, match="2 of 3 rows were not cut"):
+        pub.check_depth_rows(_rows([10.0, 10.0, 10.0], [610, 400, 1024]), "x.csv")

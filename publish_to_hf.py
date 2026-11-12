@@ -152,6 +152,11 @@ TEXT_SUFFIXES = (".md", ".json", ".jsonld", ".csv", ".txt", ".yaml", ".yml", ".h
 DEPTH_HALF_TOLERANCE_PX = 1
 """How far a row's ``crop_half_px`` may sit from ``int(CROP_DEPTH_CONSTANT / depth_m)``: ``depth_m`` is stored to
 4 dp, so the recomputed size can land one pixel off the one cut (17 of 64,465 round-3 rows; none by more than 1)."""
+DEPTH_M_ROUNDING = 0.5e-4
+"""Half a unit in the last stored place of ``depth_m`` (``round(depth, 4)`` in ``data_generation.py``). The crop was
+cut at the unrounded depth, so its size lies between ``int(C / (depth_m + this))`` and ``int(C / (depth_m - this))``.
+Under about 0.55 m that span is wider than :data:`DEPTH_HALF_TOLERANCE_PX` (at 0.3 m it is 7 px), and a size inside
+it is accepted too; above it the 1 px tolerance is the wider of the two."""
 SERVED_DEPTH_ENCODER = "vitb"
 """The Depth Anything V2 encoder sidewalk-ai-api sizes crops with (its ``DepthAnythingPredictor`` default). Change it
 together with serving; a dataset made under the old encoder is then refused, as intended."""
@@ -731,7 +736,8 @@ def check_depth_encoder(generation_run, what):
 def check_depth_rows(df, what):
     """Raise ``PublishError`` unless every row of ``df`` shows a crop sized by depth at the served constant: a
     ``depth_m`` that is a finite number above 0, and a ``crop_half_px`` within :data:`DEPTH_HALF_TOLERANCE_PX` of
-    ``int(CROP_DEPTH_CONSTANT / depth_m)``. ``df`` is a ``split.csv``, or the ``ok`` rows of a ``manifest.csv``
+    ``int(CROP_DEPTH_CONSTANT / depth_m)``, or, for a very near depth, anywhere in the span that the 4-dp rounding of
+    ``depth_m`` allows (:data:`DEPTH_M_ROUNDING`). ``df`` is a ``split.csv``, or the ``ok`` rows of a ``manifest.csv``
     (:func:`_rows_to_check`); an empty frame passes. This is the backstop behind the JSON records of
     :func:`check_depth_sized`: a fixed-size or whole-view dataset staged without its ``generation_run.json`` still has
     no depth (or the wrong ``crop_half_px``) on its rows. Messages carry counts only, never a label or a city.
@@ -743,6 +749,8 @@ def check_depth_rows(df, what):
 
         check_depth_rows(pd.DataFrame({"depth_m": [10.0], "crop_half_px": [610]}), "split.csv")   # passes
         check_depth_rows(pd.DataFrame({"depth_m": [None], "crop_half_px": [1024]}), "split.csv")  # PublishError
+        check_depth_rows(pd.DataFrame({"depth_m": [0.3], "crop_half_px": [20330]}), "split.csv")  # passes: cut at
+        # a depth of 0.30004 m, stored as 0.3; int(6100 / 0.3) is 20333, and the rounding span is 20329 to 20336
     """
     if "depth_m" not in df.columns:
         raise PublishError(f"{what} has no depth_m column, so nothing shows its crops were sized by depth; refusing "
@@ -764,11 +772,16 @@ def check_depth_rows(df, what):
                            f"int({CROP_DEPTH_CONSTANT} / depth_m); refusing to publish it. {NOT_SERVED}")
     half = pd.to_numeric(df["crop_half_px"], errors="coerce").astype(float)
     expected = np.floor(CROP_DEPTH_CONSTANT / depth)
-    off = ~((half - expected).abs() <= DEPTH_HALF_TOLERANCE_PX)       # a blank or non-numeric crop_half_px is off
+    # The sizes the unrounded depth could have given; a stored depth at or under the rounding step has no upper bound.
+    lowest = np.floor(CROP_DEPTH_CONSTANT / (depth + DEPTH_M_ROUNDING))
+    bounded = depth > DEPTH_M_ROUNDING
+    highest = np.floor(CROP_DEPTH_CONSTANT / (depth - DEPTH_M_ROUNDING).where(bounded)).where(bounded, np.inf)
+    within = ((half - expected).abs() <= DEPTH_HALF_TOLERANCE_PX) | ((half >= lowest) & (half <= highest))
+    off = ~within                                                     # a blank or non-numeric crop_half_px is off
     n_off = int(off.sum())
     if n_off:
         raise PublishError(f"{what}: {n_off} of {n} rows were not cut at int({CROP_DEPTH_CONSTANT} / depth_m) (within "
-                           f"{DEPTH_HALF_TOLERANCE_PX} px); the crops come from another constant or sizing rule, which "
+                           f"{DEPTH_HALF_TOLERANCE_PX} px, or the rounding of depth_m); the crops come from another constant or sizing rule, which "
                            f"serving does not reproduce. {NOT_SERVED}")
 
 
