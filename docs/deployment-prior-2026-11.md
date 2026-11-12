@@ -148,7 +148,8 @@ What the observed column can and cannot say:
   0.065). Read under rule A instead, the observed rate is 0.974 (78 decided), equal to D's test claim. The shortfall is
   thin-margin: 9 of the 11 unconfirmed labels are 1 Agree / 2 Disagree splits (the other 2 are 0 / 2), and the
   unanimous decided labels are confirmed 166 of 168. It is even across severities (0.946 / 0.942 / 0.937 at 1 / 2 /
-  3). That is a reason to fit Obstacle's next map on production outcomes rather than on any vote-rule prior.
+  3). Jon's decision (2026-11-12): Obstacle takes the `majority2` prior like the other four types; it is the first
+  type to refit on production outcomes (`calibrate_from_production.py`) once enough human votes have accumulated.
 - **Untested caveat: queue settling.** If SidewalkWebpage counts the AI's vote toward settling a label, then a label
   with an AI Agree and one human Disagree stays in the validation queue and draws more votes, while one with an AI
   Agree and a human Agree settles and leaves it. Contested labels would then be over-represented among the decided
@@ -263,9 +264,10 @@ The plan (by Fable 5.2) was followed with these changes, each for the reason giv
 ## Follow-ups
 
 - **The refit PR.** Regenerate `deployment_priors.json` with `data_generation.py --select-only` (it now writes every
-  rule, `majority2` on top), refit the five maps with the Disagree hold-back, and decide per type: NoCurbRamp gains the
-  most and its outcomes support it; Obstacle should not move to a more optimistic map until it is fitted on
-  production outcomes (`calibrate_from_production.py` once round 3 has enough decided votes).
+  rule, `majority2` on top), refit all five maps under `majority2` with the Disagree hold-back (Jon's decision, 2026-11-12: every type,
+  Obstacle included). NoCurbRamp gains the most and its outcomes support it.
+- **Obstacle on production outcomes.** Obstacle is the first type to refit with `calibrate_from_production.py` once
+  round 3 has enough decided human votes; that map then supersedes its `majority2` one.
 - **sidewalk-ai-api re-pin**, after the refit publishes new map revisions.
 - The second box of #56 (should the TRAINING rule be symmetric?) is a retrain question and stays open; the
   confident-learning run ([`confident-learning-2026-10.md`](confident-learning-2026-10.md)) found that rule B alone,

@@ -10,7 +10,8 @@ Issue [#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56).
 **Decision.** `deployment_priors.json` records the pre-downsampling class counts under four vote rules
 (`data_generation.PRIOR_RULES`: `margin`, `symmetric3`, `symmetric2`, `majority2`), and its top level, which
 `calibration/calibrate.py` reweights to by default, is `majority2`: at least two decisive human votes, majority wins,
-ties left out. The training set keeps the margin rule. The Disagree hold-back stays. This change records and reports;
+ties left out, for all five validated types, Obstacle included (Jon, 2026-11-12). The training set keeps the
+margin rule. The Disagree hold-back stays. This change records and reports;
 the served maps are refitted in a separate PR after the numbers are read.
 
 **Why.** The margin rule is asymmetric (`incorrect` at net Disagree > 1, `correct` at net Agree > 2), so counted under
@@ -23,7 +24,8 @@ above the interval's top, and their gap is smaller than its width, so production
 [`deployment-prior-2026-11.md`](deployment-prior-2026-11.md).
 
 **What would change it.** A map fitted on the revision's own production outcomes (`calibrate_from_production.py`)
-supersedes any vote-rule prior for that type; Obstacle is the first candidate. A symmetric TRAINING rule would also
+supersedes any vote-rule prior for that type; Obstacle is the first type to get one, once enough human votes on
+its round-3 verdicts have accumulated. A symmetric TRAINING rule would also
 change the val classes the reweighting assumes, which is #56's second, still open, question.
 
 ## AI-placed labels: included only tagged, with a held-out evaluation slice (November 2026)
