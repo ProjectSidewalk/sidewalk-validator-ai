@@ -145,7 +145,7 @@ separately written script, with the same result, and also recomputed the proxy t
 |---|---|
 | `remote_bundle.sh` (the script that ran on the host; built by `round2_flags_pull.sh` at 1f84317) | `fd90605257d78da161e52f4b241d4b7d34ebfa86309a54505a0bdc736760b620` |
 | `author_excluded.csv` (pulled 2026-11-12; Seattle 270,408 rows, 6,383 `t`; Chicago 173,023 rows, 134 `t`; not committed, label ids) | `767c3d5b0fca35b57deb09e28995549bd382c383fd4f1634b55e14e6c469bfd7` |
-| `exclusion_changes.csv` (same connection; counts only, kept in `~/Data`) | `731685e523d2510c3b776210557ccbba71ab83acf09e093aff247edde3ab07f7` |
+| [`exclusion_changes.csv`](../../data/relabel-2026-10/round2/exclusion_changes.csv) (same connection; counts only: schema, Pacific day, new value, authors, labels; committed as pulled) | `731685e523d2510c3b776210557ccbba71ab83acf09e093aff247edde3ab07f7` |
 | rawLabels `seattle-wa.csv` (fetched 2026-10-18; `--rawlabels-proxy` only) | `1a2d575cbaabc1d247ce29492c99e1939d6b64d3d619f3e2872152be4d9d53af` |
 | rawLabels `chicago-il.csv` (fetched 2026-10-18; `--rawlabels-proxy` only) | `b7c1783dcca10c8ef87e621cf9ac0a2ddc10011dbc19020aaf808c399ed0f6d9` |
 | `cityparams.conf` (SidewalkWebpage f741590d7 plus 17 local added lines, none for `seattle-wa` or `chicago-il`; `--rawlabels-proxy` only) | `eed92cfd7658762f981c082f135fa1474041d688c7b3ef63f21278263026a899` |

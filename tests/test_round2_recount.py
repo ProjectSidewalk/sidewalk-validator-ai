@@ -8,8 +8,9 @@ The recount has two committed states, and this test fails in any state between t
   "before" half reproduces the committed pool, the known removal is in it (the 11 Seattle items rated unmasked are
   eligible lone AI Disagrees of an excluded author), and the docs quote the JSONs' numbers: the recount tables row by
   row, the pins, the unsampled partition, where the removed labels sit, and the weighted rows of the effect table,
-  which are recomputed here from the committed key and sheets. Not bound: the exclusion-log counts and the split of
-  Chicago's removed labels by exclusion date, whose sources (``exclusion_changes.csv``, the flags) are not committed.
+  which are recomputed here from the committed key and sheets; and the exclusion-log table, from the committed
+  ``exclusion_changes.csv`` (counts only). Not bound: the split of Chicago's removed labels by exclusion date, whose
+  source (the flags, label ids) is not committed.
 
 It never skips because the JSON is missing (that would hide a deleted result); it skips only when the committed pool
 is absent, as ``tests/test_gt_rounds.py`` does.
@@ -31,6 +32,7 @@ RECOUNT_MD = os.path.join(DOC_DIR, "round2_recount.md")
 RECOUNT_JSON = os.path.join(DOC_DIR, "round2_recount.json")
 CHECK_JSON = os.path.join(DOC_DIR, "round2_flags_check.json")
 MAIN_DOC = os.path.join(ROOT, "docs", "ai-disagree-relabel-2026-10.md")
+CHANGES_CSV = os.path.join(ROUND2, "exclusion_changes.csv")
 MARKER = "<!-- recount-status: pending -->"
 POOL_ROWS = 346_735
 BEFORE = {"sidewalk_seattle": (17_284, 8_611), "sidewalk_chicago": (10_769, 3_853)}  # eligible, unsampled
@@ -152,6 +154,7 @@ def _check_done(r, chk):
         assert f"| {s} | {excl:,} | {eligible:,} -> {after_n:,} |" in md, s
         assert f"{after_n:,}" in bullet and f"{sum(r['after']['unsampled'][s].values()):,}" in bullet, s
     _check_doc_numbers(r, chk, design, md, bullet)
+    _check_exclusion_log(md)
     _check_weighted_rows(r, md)
 
 
@@ -212,6 +215,35 @@ def _check_doc_numbers(r, chk, design, md, bullet):
     assert (f"{n_chi} are eligible AI Disagrees: {sum(by['margin_incorrect'].values())} `margin_incorrect`, "
             f"{sum(by['lone'].values())} `lone`, {sum(by['light_voted'].values())} `light_voted` and {uns} "
             "unsampled") in flat_md
+
+
+def _check_exclusion_log(md):
+    """The exclusion-log table and the author-mismatch counts, from the committed ``exclusion_changes.csv`` as pulled
+    (its sha256 is pinned in the doc): one table row per logged toggle, "none logged" for a city without one, and
+    nothing but counts, a day, a schema and true/false in the file."""
+    assert f"`{rl.sha256_file(CHANGES_CSV)}`" in md
+    changes, mismatch = {s: [] for s in BEFORE}, {}
+    for ln in _read(CHANGES_CSV).splitlines():
+        f = ln.split(",")
+        if f[0] == "change":
+            assert re.fullmatch(r"change,sidewalk_[a-z_]+,\d{4}-\d\d-\d\d,(true|false),\d+,\d+", ln), ln
+            changes[f[1]].append((f[2], "excluded" if f[3] == "true" else "not excluded", int(f[4]), int(f[5])))
+        else:
+            assert re.fullmatch(r"author_mismatch,sidewalk_[a-z_]+,\d+", ln), ln
+            mismatch[f[1]] = int(f[2])
+    assert sorted(mismatch) == sorted(BEFORE)
+    rows = [ln for ln in md.splitlines() if re.match(r"\| sidewalk_[a-z_]+ \| (none logged|\d{4}-\d\d-\d\d) \|", ln)]
+    want = []
+    for s in ("sidewalk_seattle", "sidewalk_chicago"):
+        want += [f"| {s} | {day} | {value} | {authors} | {labels:,} |" for day, value, authors, labels in changes[s]]
+        if not changes[s]:
+            want.append(f"| {s} | none logged | | | |")
+    assert sorted(rows) == sorted(want), (rows, want)
+    n = sum(len(v) for v in changes.values())
+    word = {0: "no", 1: "one", 2: "two", 3: "three"}.get(n, str(n))
+    assert f"returned {word} change row{'' if n == 1 else 's'} and both `author_mismatch` rows" in _flat(md)
+    assert (f"Seattle {mismatch['sidewalk_seattle']:,}, Chicago {mismatch['sidewalk_chicago']:,}, whole schema"
+            in _flat(md))
 
 
 def _check_weighted_rows(r, md):
