@@ -211,7 +211,9 @@ def ranked(df, seed):
 
 def crop_labels(rows):
     """``rows`` (rawLabels rows with ``label_uid``, ``city`` and ``author``) with the columns ``ai_labels_eval.py
-    crops`` reads: the human vote counts, and every other ``ale.LABEL_COLUMNS`` column empty (the class is unknown)."""
+    crops`` reads: the human vote counts, and every other ``ale.LABEL_COLUMNS`` column empty (the class is unknown).
+    Returns a new frame."""
+    rows = rows.copy()
     votes = rows["validations"].map(dg.human_vote_counts)
     rows["human_agree"], rows["human_disagree"] = [v[0] for v in votes], [v[1] for v in votes]
     rows["n_votes"] = rows["human_agree"] + rows["human_disagree"]
@@ -230,8 +232,8 @@ def write_stage_files(rows, path):
 
 
 def read_city_inputs(args, design):
-    """What ``pool`` and ``neighbours`` both read: ``(city -> schema, excluded authors' schema:label_id set, the
-    author-excluded frame, the pilot split)``."""
+    """What ``pool`` and ``neighbours`` both read: ``(city -> schema, the schema:label_id set of labels whose author
+    is excluded)``. Stops when the author-excluded pull has no rows for a city of the design."""
     schema_city, _ = rl.cityparams(open(args.cityparams).read())
     city_schema = {c: s for s, c in schema_city.items()}
     ex = pd.read_csv(args.author_excluded, dtype=str)
@@ -450,13 +452,14 @@ def face_neighbours(raw, rated_uids, scored_uids, excluded, trained_panos, heldo
     >>> raw = pd.DataFrame({"label_id": ["1", "2", "3", "4", "5"], "user_id": ["u1", "u2", "u1", "u1", "u3"],
     ...     "label_type": "NoSidewalk", "city": "a", "schema": "s", "street_edge_id": [7, 7, 7, 8, 7],
     ...     "street_side": ["left", "left", "left", "left", "right"], "pano_id": list("pqrst"), "validations": v,
-    ...     "time_created": [3, 1, 2, 1, 1], "pano_source": "gsv", "pano_x": 1.0, "pano_y": 1.0, "pano_width": 9.0,
+    ...     "time_created": ["2026-01-03T00:00:00Z", "2026-01-01T00:00:00.5Z", "2026-01-01T00:00:00.12Z",
+    ...                      "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"], "pano_source": "gsv", "pano_x": 1.0, "pano_y": 1.0, "pano_width": 9.0,
     ...     "pano_height": 9.0})
     >>> f = face_neighbours(raw, {"a:1"}, {"a:1"}, set(), {"q"}, set(), "me").set_index("label_uid")
     >>> f.index.tolist(), f["new"].tolist(), f["same_labeler"].tolist(), f["labeler_idx"].tolist()
-    (['a:2', 'a:3', 'a:1'], [1, 1, 0], [0, 1, 1], [0, 1, 1])
+    (['a:3', 'a:2', 'a:1'], [1, 1, 0], [1, 0, 1], [0, 1, 0])
     >>> f["trained_pano"].tolist()
-    [1, 0, 0]
+    [0, 1, 0]
     """
     df = raw[raw["label_type"] == LABEL_TYPE].copy()
     df["label_uid"] = df["city"] + ":" + df["label_id"].astype(str)
@@ -468,6 +471,8 @@ def face_neighbours(raw, rated_uids, scored_uids, excluded, trained_panos, heldo
     if (rated["face_id"] == "").any() or rated["face_id"].duplicated().any():
         raise ValueError("a rated label has no face, or two rated labels share one")
     df = df[df["face_id"].isin(set(rated["face_id"]))].copy()
+    if df["user_id"].isna().any():
+        raise ValueError("a label on a rated face has no user_id: its labeler cannot be numbered")
     df["author"] = df["user_id"].map(dg.label_author)
     geometry_ok, _ = dg.valid_geometry(df)
     placed, voted = rater_touched(df, rater_id)
@@ -481,7 +486,10 @@ def face_neighbours(raw, rated_uids, scored_uids, excluded, trained_panos, heldo
     df["new"] = ((df["scored"] == 0) & (df["ai_placed"] == 0) & (df["bad_geometry"] == 0)).astype(int)
     rated_user = dict(zip(rated["face_id"], rated["user_id"].astype(str)))
     df["same_labeler"] = (df["user_id"].astype(str) == df["face_id"].map(rated_user)).astype(int)
-    df = df.sort_values(["face_id", "time_created", "label_id"], kind="mergesort").reset_index(drop=True)
+    # Parsed, not as text: the export writes 0 to 3 fractional digits, and "Z" sorts after a digit.
+    df["_t"] = pd.to_datetime(df["time_created"], utc=True, format="ISO8601")
+    df["_id"] = pd.to_numeric(df["label_id"])
+    df = df.sort_values(["face_id", "_t", "_id"], kind="mergesort").drop(columns=["_t", "_id"]).reset_index(drop=True)
     first = df.drop_duplicates(["face_id", "user_id"])
     idx = first.assign(labeler_idx=first.groupby("face_id").cumcount())[["face_id", "user_id", "labeler_idx"]]
     return df.merge(idx, on=["face_id", "user_id"], how="left", validate="many_to_one")
@@ -498,6 +506,16 @@ def cmd_neighbours(args):
     for name, want in (("key.csv", kman["key_sha256"]), ("scores.csv", kman["scores_sha256"])):
         if rl.sha256_file(os.path.join(args.key_dir, name)) != want:
             sys.exit(f"{name} is not the file the key's manifest pins")
+    ppath = os.path.join(args.pool, "pool.json")  # the same pulls the round was drawn from, or faces and votes drift
+    if rl.sha256_file(ppath) != kman["pool_json_sha256"]:
+        sys.exit(f"{ppath} is not the pool the key was built from")
+    pool_json = json.load(open(ppath))
+    for path, want in ((args.author_excluded, pool_json["author_excluded_sha256"]),
+                       (args.pilot_split, pool_json["pilot_split_sha256"]),
+                       *((os.path.join(args.rawlabels, f"{c}.csv"), pool_json["rawlabels_sha256"][c])
+                         for c in design["cities"])):
+        if rl.sha256_file(path) != want:
+            sys.exit(f"{path} is not the file the pool was drawn from")
     key = pd.read_csv(os.path.join(args.key_dir, "key.csv"), dtype=str)
     scores = pd.read_csv(os.path.join(args.key_dir, "scores.csv"), dtype=str, usecols=["label_uid"])
     split = pd.read_csv(args.pilot_split, dtype=str, usecols=["label_uid", "pano_id", "split"])
@@ -550,6 +568,18 @@ def read_fold_predictions(directory, n_folds, pins=None):
     return preds, shas
 
 
+def model_shas(directory, n_folds):
+    """``{fold: sha256 of the weights}`` from the ``predictions_fold<k>_provenance.json`` files ``ai_labels_eval.py
+    score`` writes beside each prediction file."""
+    out = {}
+    for k in range(n_folds):
+        path = os.path.join(directory, f"predictions_fold{k}_provenance.json")
+        if not os.path.exists(path):
+            sys.exit(f"{path} is missing: cannot tell which weights made predictions_fold{k}.csv")
+        out[str(k)] = json.load(open(path))["model_sha256"]
+    return out
+
+
 def pass_summary(df):
     """Counts and gate-pass shares of scored labels: by label, and as the mean over faces of each face's share (a few
     long faces hold a large part of the labels, so the two differ).
@@ -576,17 +606,59 @@ def neighbour_report(face_scores, min_n=slices.MIN_N):
                   "other_labeler": pass_summary(s[(s["rated"] == 0) & (s["same_labeler"] == 0)]),
                   **{flag: pass_summary(s[s[flag] == 1]) for flag in NEIGHBOUR_FLAGS}},
            "unscored": {c: int(n) for c, n in face_scores[~face_scores.index.isin(s.index)].groupby("city").size().items()}}
-    multi = s.groupby("face_id")["stratum"].agg(n="size", passing=lambda x: int((x == "pass").sum()))
+    # The faces were chosen through their rated label, 60 % of them from the pass stratum, so the shares above are
+    # of this sample and not of any population; the split by the rated label's stratum shows how far they follow it.
+    rated_stratum = s[s["rated"] == 1].set_index("face_id")["stratum"]
+    others = s[s["rated"] == 0]
+    rep["not_rated_by_rated_stratum"] = {
+        st: pass_summary(others[others["face_id"].map(rated_stratum) == st]) for st in STRATA}
+    is_pass = (s["stratum"] == "pass").astype(int)
+    multi = pd.DataFrame({"n": is_pass.groupby(s["face_id"]).size(), "passing": is_pass.groupby(s["face_id"]).sum(),
+                          "city": s.groupby("face_id")["city"].first()})
     multi = multi[multi["n"] >= 2]
+    mixed = multi[(multi["passing"] > 0) & (multi["passing"] < multi["n"])]
+    minority = np.minimum(mixed["passing"], mixed["n"] - mixed["passing"]) / mixed["n"]
+    p_city = multi["city"].map(is_pass.groupby(s["city"]).mean())  # the benchmark: verdicts independent within a city
     rep["faces_with_2plus_scored"] = {
         "faces": int(len(multi)), "all_pass": int((multi["passing"] == multi["n"]).sum()),
-        "none_pass": int((multi["passing"] == 0).sum()),
-        "mixed": int(((multi["passing"] > 0) & (multi["passing"] < multi["n"])).sum())}
+        "none_pass": int((multi["passing"] == 0).sum()), "mixed": int(len(mixed)),
+        "mixed_expected_if_independent": float((1 - p_city ** multi["n"] - (1 - p_city) ** multi["n"]).sum()),
+        "mixed_minority_at_most_20pct": int((minority <= 0.2).sum()),
+        "median_labels_mixed": float(mixed["n"].median()) if len(mixed) else None,
+        "two_label_faces": int((multi["n"] == 2).sum()), "two_label_faces_mixed": int((mixed["n"] == 2).sum())}
     rep["slices"] = {}
     for by in slices.BY:
         d = slices.with_slice(s, by)
         rep["slices"][by] = {name: pass_summary(d[d["slice"] == name]) for name in slices.slice_names(s, by, min_n)}
     return rep
+
+
+def rater_touched_report(rated, face_scores, gate):
+    """The round's rates on rated labels whose face carries a label the rater placed or voted on, and on the rest.
+    The pool keeps the rater's own labels and votes out of the round, but not the faces they sit on, so the rater
+    may know such a face. ``rated`` is the unmasked key (``face_id``, ``stratum``, ``verdict``); Unsure votes leave
+    the denominator, as in the round's report.
+
+    >>> r = pd.DataFrame({"face_id": list("abcd"), "stratum": ["pass"] * 3 + ["agree_below"],
+    ...                   "verdict": ["correct", "incorrect", "correct", "cant_tell"]})
+    >>> f = pd.DataFrame({"face_id": list("aabcd"), "rater_placed": [0, 1, 0, 0, 0], "rater_voted": 0})
+    >>> t = rater_touched_report(r, f, 0.92)
+    >>> t["faces_touched"], t["touched"]["pass"]["n"], (t["untouched"]["pass"]["k"], t["untouched"]["pass"]["n"])
+    (1, 1, (1, 2))
+    """
+    touched_faces = set(face_scores.loc[(face_scores["rater_placed"] == 1) | (face_scores["rater_voted"] == 1),
+                                        "face_id"])
+    decided = rated[rated["verdict"].isin(["correct", "incorrect"])]
+    is_touched = decided["face_id"].isin(touched_faces)
+
+    def rates(d):
+        return {st: rate(int((d.loc[d["stratum"] == st, "verdict"] == "correct").sum()),
+                         int((d["stratum"] == st).sum())) for st in STRATA}
+    out = {"faces_touched": int(rated["face_id"].isin(touched_faces).sum()), "faces": int(len(rated)),
+           "touched": rates(decided[is_touched]), "untouched": rates(decided[~is_touched])}
+    bar = out["untouched"]["pass"]
+    out["bar_met_without_touched"] = bool(bar["n"] >= MIN_DECIDED and bar["wilson95_lower"] >= gate)
+    return out
 
 
 def neighbour_markdown(rep):
@@ -597,9 +669,26 @@ def neighbour_markdown(rep):
     head = "| {} | Scored labels | Faces | Pass the gate | Share | Mean share per face |\n|---|---|---|---|---|---|"
     out = [head.format("City"), *[row(c, v) for c, v in rep["cities"].items()], row("all", rep["all"]), "",
            head.format("Group"), *[row(k.replace("_", " "), v) for k, v in rep["by"].items()], ""]
+    out += ["Labels beside the rated one, by the stratum of the face's rated label (the faces were chosen through that "
+            "label, 60 % of them from the pass stratum, so every share on this page describes this sample only):", "",
+            head.format("Rated label's stratum"),
+            *[row(k.replace("_", " "), v) for k, v in rep["not_rated_by_rated_stratum"].items()], ""]
     f = rep["faces_with_2plus_scored"]
     out += [f"Faces with at least two scored labels: {f['faces']}. The model's gate verdict is pass for every label on "
-            f"{f['all_pass']}, for none on {f['none_pass']}, and mixed on {f['mixed']}.", ""]
+            f"{f['all_pass']}, for none on {f['none_pass']}, and mixed on {f['mixed']}; independent verdicts at each "
+            f"city's pass share would leave about {f['mixed_expected_if_independent']:.0f} mixed, so the verdict "
+            f"clusters by face. Mixed faces are the long ones (median {f['median_labels_mixed']:.0f} labels); on "
+            f"{f['mixed_minority_at_most_20pct']} of them at most a fifth of the labels differ from the rest. Of the "
+            f"{f['two_label_faces']} two-label faces, {f['two_label_faces_mixed']} are mixed.", ""]
+    if "rater_touched_faces" in rep:
+        t = rep["rater_touched_faces"]
+        out += [f"{t['faces_touched']} of the {t['faces']} rated faces carry a label the rater placed or voted on. "
+                "Correct / decided = rate (Wilson 95 % lower bound) on the rated labels:", "",
+                "| Stratum | Faces the rater had touched | Other faces |", "|---|---|---|",
+                *[f"| {st.replace('_', ' ')} | {_rate_cell(t['touched'][st])} | {_rate_cell(t['untouched'][st])} |"
+                  for st in STRATA], "",
+                "Without the touched faces the bar on the pass stratum is "
+                + ("still met." if t["bar_met_without_touched"] else "**not met**."), ""]
     for by, table in rep["slices"].items():
         out += [head.format(by.capitalize()), *[row(k, v) for k, v in table.items()], ""]
     return "\n".join(out)
@@ -612,6 +701,8 @@ def cmd_neighbour_scores(args):
     gate, n_pass = float(design["gate"]), int(design["pass_models"])
     kman = json.load(open(os.path.join(args.key_dir, "manifest.json")))
     nman = json.load(open(os.path.join(args.neighbours, "neighbours.json")))
+    if (nman["key_sha256"], nman["scores_sha256"]) != (kman["key_sha256"], kman["scores_sha256"]):
+        sys.exit("neighbours.json was made from a different key or scores file")
     pooled, _, n_folds, missing = ng.load_predictions(args.gate)
     if missing:
         sys.exit(f"the gate run is incomplete: {missing}")
@@ -644,6 +735,9 @@ def cmd_neighbour_scores(args):
         sys.exit(f"{args.manifest} does not cover exactly the labels of {lpath}")
     ok = set(manifest.loc[manifest["status"] == "ok", "label_uid"])
     preds, pred_shas = read_fold_predictions(args.predictions, n_folds)
+    weights = model_shas(args.pinned_predictions, n_folds)
+    if model_shas(args.predictions, n_folds) != weights:  # a retrained fold model is a different model
+        sys.exit("the neighbours were not scored with the weights that scored the round")
     for k, pred in preds.items():
         if set(pred["label_uid"]) != ok:
             sys.exit(f"predictions_fold{k}.csv does not cover exactly the manifest's ok crops")
@@ -664,7 +758,14 @@ def cmd_neighbour_scores(args):
     rep["pins"] = {"neighbours_json_sha256": rl.sha256_file(os.path.join(args.neighbours, "neighbours.json")),
                    "manifest_sha256": rl.sha256_file(args.manifest), "predictions_sha256": pred_shas,
                    "face_scores_sha256": rl.sha256_file(opath), "key_sha256": kman["key_sha256"],
-                   "gate_predictions_sha256": kman["gate_predictions_sha256"]}
+                   "gate_predictions_sha256": kman["gate_predictions_sha256"], "model_sha256": weights}
+    if args.sheet:
+        rater = kman["design_json"]["rater"]
+        rl.check_pin(os.path.join(args.key_dir, "manifest.json"), f"votes_{rater}", args.sheet, False)
+        key = pd.read_csv(os.path.join(args.key_dir, "key.csv"), dtype={"tags": str, "label_id": str})
+        rated = rl.unmask(key, pd.read_csv(args.sheet, dtype=str, keep_default_na=False))
+        rep["rater_touched_faces"] = rater_touched_report(rated, out, gate)
+        rep["pins"]["sheet_sha256"] = rl.sha256_file(args.sheet)
     rep["crops"] = {c: {s: int(n) for s, n in g["status"].value_counts().items()}
                     for c, g in manifest.groupby("city")}
     rep["selection"] = nman["cities"]
@@ -943,6 +1044,7 @@ def build_parser():
     n.add_argument("--design", required=True)
     n.add_argument("--rawlabels", required=True, help="the directory the pool was drawn from")
     n.add_argument("--key-dir", required=True, help="holds key.csv, scores.csv and manifest.json")
+    n.add_argument("--pool", required=True, help="the directory `pool` wrote; its pool.json pins the inputs")
     n.add_argument("--author-excluded", required=True)
     n.add_argument("--pilot-split", required=True)
     n.add_argument("--cityparams", default=rl.DEFAULT_CITYPARAMS)
@@ -957,6 +1059,8 @@ def build_parser():
     ns.add_argument("--neighbours", required=True, help="the directory `neighbours` wrote; face_scores.csv goes here")
     ns.add_argument("--manifest", required=True, help="manifest.csv of the neighbour crops")
     ns.add_argument("--predictions", required=True, help="directory of the neighbours' predictions_fold<k>.csv")
+    ns.add_argument("--sheet", help="the rater's pinned votes: adds the round's rates with and without the faces "
+                                    "that carry a label the rater placed or voted on")
     ns.add_argument("--out-json", help="aggregates only (safe for the repo)")
     ns.add_argument("--out-md")
     ns.set_defaults(func=cmd_neighbour_scores)

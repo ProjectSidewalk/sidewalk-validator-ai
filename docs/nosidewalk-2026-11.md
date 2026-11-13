@@ -609,24 +609,46 @@ The pool's other eligibility rules are **flags** here, not exclusions, because t
 rated: 480 of the new labels were placed by the rater (Tucson 182, Oradell 298), 112 carry a vote of the rater's,
 26 sit on a panorama the fold models trained on (no face is a trained face) and 9 are held-out rows of the pilot
 split. A labeler's run on a face is `(face_id, labeler_idx)`; the files hold no `user_id`. There are 493 such runs,
-and 1,533 of the 2,638 labels come from the labeler of the face's rated label.
+and 1,283 of the 2,388 labels beside a rated one come from that rated label's labeler.
 
-**The map is the round's map.** Before scoring, `neighbour-scores` checks that the gate run is the one the key was
-built with (the five out-of-fold prediction files against the key manifest) and that the refitted map reproduces
-every pinned served accuracy, pass and stratum of the round (1,197 labels by 5 models). Both held.
+**The map and the models are the round's.** `neighbours` refuses inputs other than the files `pool.json` pins.
+Before scoring, `neighbour-scores` checks that the gate run is the one the key was built with (the five
+out-of-fold prediction files against the key manifest), that the refitted map reproduces every pinned served
+accuracy, pass and stratum of the round (1,197 labels by 5 models), and that the neighbours' prediction files name
+the same five weight files (sha256) as the round's. All held.
 
-**Aggregates** ([`nosidewalk-2026-11/neighbours.md`](nosidewalk-2026-11/neighbours.md), `neighbours.json`): 1,559
-of the 2,635 scored labels pass the gate under the round's rule (at least 3 of 5 models), 59.2 %. A few long faces
-hold much of the data (the ten largest hold 646 labels), so the mean of the per-face shares, 52.7 %, is the fairer
-figure. By tag the pass share runs from 67 % (`street has no sidewalks`) to 26 % (`ends abruptly`) and 31 %
-(`shared pedestrian/car space`); NoSidewalk labels carry no severity. On the 222 faces with at least two scored
-labels the model's verdict is pass for every label on 38, for none on 38 and **mixed on 146**: the per-label
-verdict often changes along one face.
+**Aggregates** ([`nosidewalk-2026-11/neighbours.md`](nosidewalk-2026-11/neighbours.md), `neighbours.json`). Every
+share here describes **this sample of faces, not a population**: the 250 faces were chosen through their rated
+label, 60 % of those labels came from the pass stratum by design, and the labels beside a rated one follow it. Of
+the labels beside a pass-stratum rated label 72.9 % pass the gate (mean of the per-face shares 67.3 %, 139
+faces); beside an agree-below one 40.7 % (35.7 %, 44 faces); beside a model-incorrect one 19.1 % (17.0 %, 39
+faces). Over all 2,635 scored labels that comes to 1,559 passing, 59.2 % (52.7 % as a mean over faces; the ten
+largest faces hold 646 labels), a figure that mostly reflects the 60 / 20 / 20 design. The same holds for the
+city and tag rows; within the sample, the pass share runs from 67 % (`street has no sidewalks`) to 26 % (`ends
+abruptly`) and 31 % (`shared pedestrian/car space`). NoSidewalk labels carry no severity.
 
-**What this does and does not answer.** That last number is about the model's verdict only. Whether the labels of
-a run are right or wrong together (#102, item 1) needs several *rated* labels per face, and the round has one; it
-is not answered here. The scores are the input for pooling the image score over a run or a face (#102, item 2) and
-for the neighbour features of item 3. Labels on other faces within a distance along the street are not scored.
+**The model's verdict clusters by face.** On the 222 faces with at least two scored labels the verdict is pass
+for every label on 38, for none on 38 and mixed on 146. Verdicts drawn independently at each city's pass share
+would leave about 192 faces mixed, so labels on one face tend to get the same verdict, but most faces with
+several labels still hold some disagreement. Mixed faces are the long ones (median 9 labels, up to 135); on 42 of
+them at most a fifth of the labels differ from the rest, and a verdict of "3 of 5 models" flips on small score
+changes. Of the 27 two-label faces, 11 are mixed.
+
+**Faces the rater already knew.** The pool kept the rater's own labels and votes out of the round, but not the
+faces they sit on: 42 of the 250 rated faces carry another label the rater had placed (26 faces) or voted on (22).
+On those faces the rater judged all 42 rated labels correct, 11 of them outside the pass stratum, where the other
+faces have 51 correct of 80. That is unlikely to be chance (about 0.007 at that rate), so either those faces
+really are without sidewalks more often (the rater placed NoSidewalk labels there) or knowing the street helped
+the label; the round cannot tell which. It does not change the bar: without the 42 faces the pass stratum is
+**111 / 113 = 0.982, Wilson lower bound 0.938**, on more than 100 decided labels, so the bar is still met
+(`neighbour-scores --sheet`; table in `neighbours.md`). A later round should exclude a face the rater has
+touched, not only the labels.
+
+**What this does and does not answer.** The clustering above is about the model's verdict only. Whether the
+labels of a run are right or wrong together (#102, item 1) needs several *rated* labels per face, and the round
+has one; it is not answered here. The scores are the input for pooling the image score over a run or a face (#102,
+item 2) and for the neighbour features of item 3. Labels on other faces within a distance along the street are
+not scored. A "run" here is all of one labeler's labels on a face, contiguous or not.
 
 **Kept off scrubbed storage.** A retrained fold model is not the same model (above: fold 1 passed 31 rows in one
 run and 2 in the other), so the step (b) ratings are evidence about the exact gate2 weights. Those and the crops
@@ -648,7 +670,8 @@ five prediction files. Kept archives: `pilot_whole.tar`
 `964333705291a7f1e318c05903ed9dacea1c4723f10e2498ba63f293b92fcd93`, `neighbour_crops.tar`
 `e64bda5aec092ccd73863693b20502565758be84696d67209bf25a50ab0fd895`; the fold weights' sha256s are in the keep
 directory's `SHA256SUMS` and in each `predictions_fold<k>_provenance.json`. Crops and scores were made on klone
-with the code that scored the round (branch `nosidewalk-round-b` at 7649325); jobs 43217966 (copy), 43218083
+with the code that scored the round (the klone clone was on branch `nosidewalk-round-b` at 7649325; the
+provenance files record the weights and the manifest, not the commit); jobs 43217966 (copy), 43218083
 (staging, 4 min) and 43218084 (crops and five scores, 49 min on one GPU, `ckpt-all`). Logs in
 `klone-logs/round-b-neighbours/`.
 

@@ -105,11 +105,39 @@
   "chicago-il": 1,
   "tucson-az": 2
  },
+ "not_rated_by_rated_stratum": {
+  "pass": {
+   "labels": 1579,
+   "faces": 139,
+   "pass": 1151,
+   "pass_share": 0.7289423685877138,
+   "pass_share_per_face": 0.6726740466072508
+  },
+  "agree_below": {
+   "labels": 482,
+   "faces": 44,
+   "pass": 196,
+   "pass_share": 0.4066390041493776,
+   "pass_share_per_face": 0.3567625325023695
+  },
+  "model_incorrect": {
+   "labels": 324,
+   "faces": 39,
+   "pass": 62,
+   "pass_share": 0.19135802469135801,
+   "pass_share_per_face": 0.17010242479178536
+  }
+ },
  "faces_with_2plus_scored": {
   "faces": 222,
   "all_pass": 38,
   "none_pass": 38,
-  "mixed": 146
+  "mixed": 146,
+  "mixed_expected_if_independent": 192.44955014460027,
+  "mixed_minority_at_most_20pct": 42,
+  "median_labels_mixed": 9.0,
+  "two_label_faces": 27,
+  "two_label_faces_mixed": 11
  },
  "slices": {
   "severity": {
@@ -184,7 +212,60 @@
    "2": "c6306f54914bca59daae87892665c630c8dcd64a46457ca49f9842219c7d4ede",
    "3": "a2a9270f17b3ad26627794ee81e12cc111b84d15bf5e497bc454656cbc1a70e8",
    "4": "f36ed206947435bfbcc4acdad8fd15675f2efdc35db4161436724bf13d217b4f"
-  }
+  },
+  "model_sha256": {
+   "0": "546403993c5e6a2d0ab6d8a2d36541bb1638b90e88cfa1c148210a359203f7f4",
+   "1": "e309789dca10e3afb0ae248360d5e0502c065e500e95bcca721adf2de5ef5174",
+   "2": "57607ba98ae7635abfcc7859e7a60a4526b4317653abfdd0f63db9b8fe24eddb",
+   "3": "36c870211075b650fddc19aab2bc5bc5af68b9e2f95135deee22c30fae226c53",
+   "4": "6db6671eb1ab016a05dd4485fb2200e4a1b6c1db81bd46bedb7d0f0304c15574"
+  },
+  "sheet_sha256": "09a2624f93ff5ca203dfd8f0a4038129252d12334d863046986931e99ce957c9"
+ },
+ "rater_touched_faces": {
+  "faces_touched": 42,
+  "faces": 250,
+  "touched": {
+   "pass": {
+    "k": 31,
+    "n": 31,
+    "rate": 1.0,
+    "wilson95_lower": 0.889740999265246
+   },
+   "agree_below": {
+    "k": 7,
+    "n": 7,
+    "rate": 1.0,
+    "wilson95_lower": 0.6456611570247934
+   },
+   "model_incorrect": {
+    "k": 4,
+    "n": 4,
+    "rate": 1.0,
+    "wilson95_lower": 0.5100999795960008
+   }
+  },
+  "untouched": {
+   "pass": {
+    "k": 111,
+    "n": 113,
+    "rate": 0.9823008849557522,
+    "wilson95_lower": 0.9377540468123469
+   },
+   "agree_below": {
+    "k": 35,
+    "n": 41,
+    "rate": 0.8536585365853658,
+    "wilson95_lower": 0.7155624473141075
+   },
+   "model_incorrect": {
+    "k": 16,
+    "n": 39,
+    "rate": 0.41025641025641024,
+    "wilson95_lower": 0.2707908943540048
+   }
+  },
+  "bar_met_without_touched": true
  },
  "crops": {
   "cdmx": {
