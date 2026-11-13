@@ -347,9 +347,13 @@ files and asserts they equal `expert_agreement` summed over types:
 | `cl-drop` / `cl-flip` | 13 | 4 | 118 | 19 |
 
 The flagged rows are wrong 4 times in 13 against 19 in 118 for the rest: +14.7 points [-10.1, +43.2], Fisher p
-0.242. That rules out acting on the flags unread (9 of the 13 flagged targets are right) and cannot tell whether the
-flags are enriched for wrong targets. The rules drop wrong targets at roughly the rate of the ones they keep, as
-with 37 rows; split by target class and with intervals in the scoreboard doc.
+0.242, which cannot tell whether the flags are enriched for wrong targets. Flipping the flags unread pays off only
+if more than half the flagged targets are wrong: the point estimate is well under half (4 of 13, 30.8%), but its
+Wilson interval [12.7, 57.6] does not exclude a majority, so these rows neither license nor rule out acting on the
+flags unread. About 30 rated flagged rows would settle it if the share stays near 31%. The rules touch rows whose
+target is wrong about twice as often as the rows they leave alone: `symmetric` 14/61 (23.0%) against 9/70 (12.9%),
++10.1 points [-3.3, +23.0]; `unanimous3` 19/90 against 4/41, +11.4 points [-1.9, +23.3]. Neither interval excludes
+0, and neither excludes a difference of about 23 points. Split by target class in the scoreboard doc.
 
 ## The deployment prior under each rule
 
@@ -402,7 +406,8 @@ retrain under either rule would write to the file.
    [#77](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/77) and for a round-3 re-label, where a
    rated flag becomes either a fixed target or a hard example to keep. With 131 rated train rows (rounds 1 + 2,
    "Rounds 1 + 2 together" above) 4 of 13 flagged targets are wrong against 19 of 118 unflagged: too few to say the
-   flags are enriched, enough to rule out flipping or dropping them unread.
+   flags are enriched, and too few to rule acting on them unread in or out (the flagged-wrong share's interval,
+   [12.7, 57.6], reaches past one half). Sending them to an expert is a judgement on the point estimate (30.8%).
 4. **A variant worth one more batch:** `cl-drop` that keeps the expert-sourced and hard-slice rows whatever
    the fold models say (the rules already spare expert-sourced rows), to find out whether the transfer gain
    comes from dropping crowd targets or from dropping hard crops.

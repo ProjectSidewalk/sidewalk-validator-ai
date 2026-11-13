@@ -542,6 +542,13 @@ def test_doc_prose_quotes_the_json():
         assert f"{r['a']['k']}/{r['a']['n']}" in prose and f"{r['b']['k']}/{r['b']['n']}" in prose
         assert f"{100 * r['diff']:+.1f}" in prose and f"{100 * r['lo']:+.1f}" in prose and f"{100 * r['hi']:+.1f}" in prose
     assert f"{100 * p1['b']['lo']:.1f}%" in prose  # the dropped-row lower bound the reading rests on
+    gain = p1["gain"]
+    assert f"{100 * gain['gain']:+.1f} pts [{100 * gain['lo']:+.1f}, {100 * gain['hi']:+.1f}]" in prose
+    assert f"[{100 * p2['a']['lo']:.1f}, {100 * p2['a']['hi']:.1f}]" in prose  # the flagged-wrong share's interval
+    assert j["primary"]["roles"] == {"P1": "primary", "P2": "primary", "P1_unanimous3": "descriptive"}
+    assert "Weighting does not change the reading" not in prose
+    assert all(not j["weighted"][r]["shared"]["estimable"] or j["weighted"][r]["shared"]["diff"] is not None
+               for r in ("1", "2"))
     assert str(j["gold_counts"]["n_ai_disagree_masked"]) in prose
     assert not re.search(r"\bbl[i]nd", doc, re.I)  # the house word is "masked"
 

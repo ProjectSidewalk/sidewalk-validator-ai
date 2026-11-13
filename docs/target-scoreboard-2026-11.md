@@ -15,16 +15,25 @@ paired bar. Its rows join this scoreboard in the PR that brings its klone scores
 
 ## Short answer
 
+Both primaries are the pooled rows (rounds 1 + 2), the pre-stated estimate; the per-round rows and a heterogeneity
+check are in Results.
+
 - **`symmetric` against the training margin rule (P1).** On the AI Disagrees whose margin target is `incorrect`,
   the expert says incorrect on 54/65 rows `symmetric` keeps and 68/85 rows it drops: kept minus dropped
-  +3.1 pts [-9.4, +15.9]. The data rule out that the dropped two-vote Disagrees are mostly wrong: the expert
-  confirms them at least 70.3% of the time (Wilson lower bound). They cannot rule out a gain of up to about 16
-  points from the stricter rule, or a loss of about 9. This is not evidence that stricter rules do not help; it is
-  a difference this gold set is too small to resolve.
+  +3.1 pts [-9.4, +15.9]. Applying the rule (keeping the 65, dropping the 85) changes the share of `incorrect`
+  targets the expert confirms from 122/150 to 54/65: +1.7 pts [-5.2, +8.6]. The data are compatible with a gain of
+  up to about 9 points, with no change, and with a loss of about 5. The dropped two-vote Disagrees are not mostly
+  wrong: the expert confirms them at least 70.3% of the time (Wilson lower bound of 68/85). This is not evidence
+  that stricter rules do not help; it is a difference this gold set is too small to resolve.
 - **Confident learning (P2).** On the 131 decided round-3 train rows, 4/13 flagged rows have a wrong target against
-  19/118 unflagged: +14.7 pts [-10.1, +43.2], Fisher p 0.242. The flags catch 4 of the 23 wrong targets. The data
-  rule out using the flags as an automatic relabeller (flipping all 13 would fix 4 targets and break 9). They
-  cannot tell whether flagged rows are more often wrong than the rest.
+  19/118 unflagged: +14.7 pts [-10.1, +43.2], Fisher p 0.242. The flags catch 4 of the 23 wrong targets. Flipping
+  the flagged targets unread pays off only if more than half of them are wrong. The point estimate is well under
+  half (4 of 13, 30.8%), but its interval [12.7, 57.6] does not exclude a majority, so the gold set neither
+  licenses nor rules out acting on the flags unread; sending them to an expert is a judgement on the point
+  estimate. (Dropping is a different trade: a dropped right target loses a row rather than being broken.) About
+  30 rated flagged rows would settle it if the share stays near 31% (Wilson's upper bound then falls under 50%).
+  The data also cannot tell whether flagged rows are more often wrong than the rest. 11 of the 13 flagged rows are
+  from round 2, so the pooled P2 is essentially round 2's.
 - **Coverage is a property of the pool, not of the gold set.** Of 91,626 AI Disagrees in the pool, 28.0% have one
   decisive vote and 6.6% are ties. No gold item comes from either, so every rate below is silent on them, and they
   are 47% of what an any-majority rule decides.
@@ -32,7 +41,8 @@ paired bar. Its rows join this scoreboard in the PR that brings its klone scores
 ## Why
 
 The training margin rule (`incorrect` at net Disagree >= 2, `correct` at net Agree >= 3) matches an expert about
-three times in four on contested labels. #74 asks which method should replace or filter it, scored on one gold set
+three times in four on contested labels. [#74](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/74)
+asks which method should replace or filter it, scored on one gold set
 by one protocol. The gold set it waited for has been complete since 2026-11-02; three docs each promised the
 comparison and none had it ([`confident-learning-2026-10.md`](confident-learning-2026-10.md),
 [`adjudicator-2026-11.md`](adjudicator-2026-11.md), [`ai-disagree-relabel-2026-10.md`](ai-disagree-relabel-2026-10.md)).
@@ -80,11 +90,21 @@ rule is stated only in terms of the intervals, not of any threshold chosen after
 - **P3, later.** The VLM adjudicator against the crowd majority: the paired bar of
   [`adjudicator-2026-11.md`](adjudicator-2026-11.md#the-bar), scored there once klone has run.
 
-Each primary is shown per round first; the pooled row is a sample rate printed beside a heterogeneity check (round
-1's difference minus round 2's, resampled within round). **Reading rule:** an interval that excludes 0 is a
-difference; one that spans 0 is reported as what it rules out at each end, never as "no effect". No correction for
-multiplicity: there are two primaries, and every other table is labelled descriptive. A difference interval is not
-printed when either group has fewer than 5 items.
+**Which row is primary.** For each primary the pooled row (rounds 1 + 2, a sample rate) is the pre-stated estimate:
+it is the value the review fixed and computed by hand, and the one the Short answer reports. The per-round rows are
+printed above it as its check, with a heterogeneity check (round 1's difference minus round 2's, resampled within
+round). For P2 that check cannot be computed: round 1 has 2 flagged rows, so the pooled P2 is essentially round 2
+(11 of its 13 flagged rows). The tables label the primary pooled rows "pooled (primary estimate)" and every other
+pooled row "descriptive".
+
+**Reading rule:** an interval that excludes 0 is a difference; one that spans 0 is reported as what it rules out at
+each end, never as "no effect". No correction for multiplicity: there are two primaries, and every other table is
+labelled descriptive. A difference interval is not printed when either group has fewer than 5 items.
+
+**The bootstrap** resamples labels iid over the pooled set, ignoring round and stratum. That is slightly
+conservative here: a bootstrap stratified by round x stratum gives P1 about [-9.0, +15.4] and P2 about
+[-10.2, +41.4], against [-9.4, +15.9] and [-10.1, +43.2]. Panorama clustering does not matter: P1's 150 rows sit on
+149 panoramas and P2's 131 on 130.
 
 ### Choices
 
@@ -101,14 +121,17 @@ printed when either group has fewer than 5 items.
   draws them). With the tallies as pulled they give the same verdict on every gold AI Disagree; after the expert
   votes are removed two round-1 items fall to a single decisive vote, so the rules table keeps both rows.
 - **Population weighting.** Each round is weighted on its own: round 1 by its manifest's population per (group,
-  type), round 2 by the #85 recount per (city, stratum, type). A domain inside a cell (kept or dropped rows) is
+  type), round 2 by the [#85](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/85) recount per
+  (city, stratum, type). A domain inside a cell (all margin-`incorrect` rows, or the kept or dropped ones) is
   weighted by the cell's population times its share of the cell's decided items. A cell with fewer than 5 domain
-  items gets no weight (the rule of `gt_rounds.score`). The rounds are never weighted together: round 2's two
-  cities are part of round 1's population.
+  items gets no weight (the rule of `gt_rounds.score`). Kept minus dropped is weighted only over the cells where
+  both groups reach 5, so both shares average the same cells, with an interval from the stratified variance (not
+  clipped at 0 or 100%); it is not estimable with fewer than 2 such cells. The rounds are never weighted together:
+  round 2's two cities are part of round 1's population.
 - **Slices.** The standing type x severity and type x tag rule is met on the method-independent quantity (the
   share of AI Disagrees the expert calls incorrect, with the round-3 train rows of each slice) at a minimum of 20
   items per cell, and P1 is sliced by severity pooled over types. Method-by-slice tables would mostly measure which
-  strata each method covers.
+  strata each method covers. P2 is not sliced: with 13 flagged rows no severity or tag cell can reach 20.
 
 ### What the numbers are not
 
@@ -163,27 +186,31 @@ all of the difference is two-vote Disagrees (16.3% of the pool get an `incorrect
 
 <!-- BEGIN GENERATED: primary (analysis/target_scoreboard.py) -->
 
-**P1. `symmetric` kept against dropped** (decided AI Disagrees whose margin target is `incorrect`; outcome: the expert says incorrect):
+**P1. `symmetric` kept against dropped** (decided AI Disagrees whose margin target is `incorrect`; outcome: the expert says incorrect; pooled row: primary):
 
 | Rows | kept: net Disagree >= 3 | dropped: net Disagree = 2 | kept minus dropped [95%] | Fisher p |
 |---|---|---|---|---:|
 | round 1 | 12/17 (70.6% [46.9, 86.7]) | 22/29 (75.9% [57.9, 87.8]) | -5.3 pts [-31.3, +21.1] | 0.737 |
 | round 2 | 42/48 (87.5% [75.3, 94.1]) | 46/56 (82.1% [70.2, 90.0]) | +5.4 pts [-8.4, +18.9] | 0.588 |
-| pooled (sample rate; descriptive) | 54/65 (83.1% [72.2, 90.3]) | 68/85 (80.0% [70.3, 87.1]) | +3.1 pts [-9.4, +15.9] | 0.677 |
+| **pooled (primary estimate)** | 54/65 (83.1% [72.2, 90.3]) | 68/85 (80.0% [70.3, 87.1]) | +3.1 pts [-9.4, +15.9] | 0.677 |
 
 Heterogeneity check (round 1's difference minus round 2's, resampled within round): -10.6 pts [-40.7, +21.2].
 
-**P2. Confident-learning flag** (decided round-3 train rows, both target classes; outcome: the target differs from the expert):
+Kept minus all rows of the margin rule (what applying the stricter rule changes in the share of `incorrect` targets the expert confirms; P1 rescaled by the dropped share): round 1 -3.3 pts [-20.1, +14.1]; round 2 +2.9 pts [-4.5, +10.5]; pooled +1.7 pts [-5.2, +8.6].
+
+**P2. Confident-learning flag** (decided round-3 train rows, both target classes; outcome: the target differs from the expert; pooled row: primary):
 
 | Rows | flagged | unflagged | flagged minus unflagged [95%] | Fisher p | Recall | False alarms |
 |---|---|---|---|---:|---|---|
 | round 1 | 0/2 (0.0% [0.0, 65.8]) | 9/35 (25.7% [14.2, 42.1]) | -25.7 pts | 1 | 0/9 (0.0% [0.0, 29.9]) | 2/28 (7.1% [2.0, 22.6]) |
 | round 2 | 4/11 (36.4% [15.2, 64.6]) | 10/83 (12.0% [6.7, 20.8]) | +24.3 pts [-4.1, +56.4] | 0.0559 | 4/14 (28.6% [11.7, 54.6]) | 7/80 (8.8% [4.3, 17.0]) |
-| pooled (sample rate; descriptive) | 4/13 (30.8% [12.7, 57.6]) | 19/118 (16.1% [10.6, 23.8]) | +14.7 pts [-10.1, +43.2] | 0.242 | 4/23 (17.4% [7.0, 37.1]) | 9/108 (8.3% [4.4, 15.1]) |
+| **pooled (primary estimate)** | 4/13 (30.8% [12.7, 57.6]) | 19/118 (16.1% [10.6, 23.8]) | +14.7 pts [-10.1, +43.2] | 0.242 | 4/23 (17.4% [7.0, 37.1]) | 9/108 (8.3% [4.4, 15.1]) |
 
-Heterogeneity check (round 1's difference minus round 2's, resampled within round): n/a.
+Heterogeneity check (round 1's difference minus round 2's, resampled within round): not computable (a group in one round has 2 rows; it needs 5).
 
-Descriptive twin of P1, `unanimous3` (same rows):
+The pooled P2 is mostly round 2: 11 of its 13 flagged rows are from round 2, and with 2 flagged round-1 rows the rounds cannot be compared.
+
+Descriptive twin of P1, `unanimous3` (same rows; pooled row: descriptive):
 
 | Rows | kept: unanimous | dropped | kept minus dropped [95%] | Fisher p |
 |---|---|---|---|---:|
@@ -193,35 +220,53 @@ Descriptive twin of P1, `unanimous3` (same rows):
 
 Heterogeneity check (round 1's difference minus round 2's, resampled within round): +6.0 pts [-26.5, +35.9].
 
+Kept minus all rows of the margin rule (what applying the stricter rule changes in the share of `incorrect` targets the expert confirms; P1 rescaled by the dropped share): round 1 +3.0 pts [-18.3, +22.1]; round 2 -1.3 pts [-13.3, +8.9]; pooled +0.1 pts [-10.2, +10.6].
+
 <!-- END GENERATED: primary -->
 
-**P1.** Pooled, kept 54/65 against dropped 68/85, +3.1 pts [-9.4, +15.9]; neither round's interval excludes 0
-(round 1 -5.3, round 2 +5.4), and the rounds do not differ detectably (heterogeneity -10.6 pts [-40.7, +21.2]).
-What this rules out: that the two-vote Disagrees `symmetric` drops are mostly wrong targets (the expert confirms
-68/85, lower bound 70.3%), and a gain from the stricter rule larger than about 16 points. What it cannot rule out:
-a real gain of 5 to 15 points, or a loss of up to 9. About 200 rows per group would resolve a 10-point difference
-at these rates; this set has 65 and 85. `unanimous3` gives the same picture (+0.1 pts [-14.5, +13.2]).
+**P1.** Pooled (the primary estimate), kept 54/65 against dropped 68/85: kept minus dropped +3.1 pts
+[-9.4, +15.9]. Neither round's interval excludes 0 (round 1 -5.3, round 2 +5.4), and the heterogeneity check
+(-10.6 pts [-40.7, +21.2]) is too wide to say whether the rounds agree. Kept minus dropped is not the gain from the
+rule: applying `symmetric` keeps the 65 rows and drops the 85, which moves the expert-confirmed share of the
+margin rule's `incorrect` targets from 122/150 to 54/65, +1.7 pts [-5.2, +8.6] (kept minus all rows, the line under
+the table). What the data rule out: that the two-vote Disagrees `symmetric` drops are mostly wrong targets (the
+expert confirms 68/85, Wilson lower bound 70.3%), and a gain from applying the rule larger than about 9 points. What
+they cannot rule out: any gain from 0 to about 9 points, or a loss of up to about 5. At 200 rows per group a
+10-point kept-minus-dropped difference would be detected with about 80% power at 80% against 90%, and about 70% at
+75% against 85%; this set has 65 and 85. The `unanimous3` twin's interval also spans 0 (+0.1 pts [-14.5, +13.2]).
 
-**P2.** Pooled, flagged 4/13 against unflagged 19/118, +14.7 pts [-10.1, +43.2], Fisher p 0.242. Round 1 has 2
-flagged rows, so no round-1 interval and no heterogeneity check; round 2 alone is 4/11 against 10/83. Recall is
-4/23 wrong targets, and 9 of the 13 flagged targets are right. What this rules out: flipping or dropping the flags
-unread (it would remove or break more right targets than wrong ones). What it cannot rule out: that flagged rows
-are enriched for wrong targets, which the point estimate suggests and the interval does not settle.
+**P2.** Pooled (the primary estimate), flagged 4/13 against unflagged 19/118, +14.7 pts [-10.1, +43.2], Fisher p
+0.242. Round 1 has 2 flagged rows, so no round-1 interval and no heterogeneity check, and the pooled P2 is
+essentially round 2's (4/11 against 10/83 there). Recall is 4/23 wrong targets, and 9 of the 13 flagged targets are
+right. Flipping a flagged target unread helps only when it is wrong, so flipping all of them pays off only if more
+than half are wrong: the point estimate (30.8%) is well under half, but the interval [12.7, 57.6] does not exclude
+a majority, so the gold set neither licenses nor rules out acting on the flags unread. Dropping is a different
+trade (a dropped right target loses a row, it is not broken) and is not tested here. Recommending an expert look
+at the flags is a judgement on the point estimate. About 30 rated flagged rows would settle it if the share stays
+near 31% (Wilson's upper bound falls under 50% from about 30); at this gold set's flag rate (13 of 131) that is
+about 300 rated train rows, or fewer from a round that oversamples flags. What the data also cannot rule out: that
+flagged rows are enriched for wrong targets, which the point estimate suggests and the interval does not settle.
 
 ### Population-weighted P1, each round on its own
 
 <!-- BEGIN GENERATED: weighted (analysis/target_scoreboard.py) -->
 
-| Round | margin-`incorrect` AI Disagrees | kept by `symmetric` | dropped | kept minus dropped [95%, normal approx.] | cells left without weight (n < 5) |
-|---|---|---|---|---|---|
-| 1 | 73.1% [58.3, 87.9] (n 43) | 72.8% [42.3, 100.0] (n 12) | 70.3% [48.9, 91.6] (n 20) | +2.6 pts [-33.3, +38.5] | all: 1; kept: 3; dropped: 3 |
-| 2 | 82.0% [71.7, 92.4] (n 104) | 90.3% [71.9, 100.0] (n 34) | 84.4% [69.6, 99.3] (n 42) | +5.8 pts [-14.6, +26.3] | all: 0; kept: 5; dropped: 5 |
+| Round | margin-`incorrect` AI Disagrees, expert says incorrect (cells without weight) | cells with >= 5 kept / >= 5 dropped / both, of all | kept minus dropped over the shared cells [95%, unclipped normal approx.] |
+|---|---|---|---|
+| 1 | 73.1% [58.3, 87.9] (n 43; 1 without weight) | 2 / 2 / 0, of 5 | not estimable: 0 shared cells (needs 2) |
+| 2 | 82.0% [71.7, 92.4] (n 104; 0 without weight) | 5 / 5 / 1, of 10 | not estimable: 1 shared cell (needs 2) |
+
+A kept-minus-dropped difference is computed only over cells where both groups hold at least 5 rows, so the two shares average the same cells; with fewer than 2 such cells it is not estimable. Its interval uses the stratified variance of both groups, not clipped at 0 or 100%.
 
 <!-- END GENERATED: weighted -->
 
-Weighting does not change the reading: round 2 is +5.8 pts [-14.6, +26.3]. Round 1's estimate rests on few cells
-(round 1 drew 20 voted Disagrees per type, so most type cells hold under 5 kept or dropped rows) and is not
-informative.
+What the weighted analysis can say: the margin rule's `incorrect` targets on the AI Disagrees are confirmed by the
+expert 73.1% [58.3, 87.9] of the time in round 1's population and 82.0% [71.7, 92.4] in round 2's. What it cannot
+say: a population-weighted kept-minus-dropped difference. Kept and dropped rows fall in different cells (round 1
+drew 20 voted Disagrees per type, so no type holds 5 of both; round 2 has one city-type cell with 5 of both), so
+no common set of cells exists to average over, and P1 rests on the unweighted sample rates above. An earlier
+version of this table printed weighted kept and dropped shares averaged over different cells, and an interval from
+clipped bounds; both are gone.
 
 ### The vote rules on the gold set (descriptive)
 
@@ -282,8 +327,9 @@ informative.
 <!-- END GENERATED: rules -->
 
 Coverage is left out on purpose (see Choices). The margin rule's `incorrect` targets agree with the expert 73.9% of
-the time in round 1 and 84.6% in round 2; the rules nested inside it (`symmetric3`, `unanimous3`) stay within a few
-points of it in each round, which is P1 seen from the other side. Every rule's `correct` target on an AI Disagree
+the time in round 1 and 84.6% in round 2; the point estimates of the rules nested inside it (`symmetric3`,
+`unanimous3`) are within about 3 points of it in each round, with intervals 20 to 40 points wide. That is P1 seen
+from the other side, and the gain line under the P1 table is its test. Every rule's `correct` target on an AI Disagree
 is right 67 to 90% of the time: those are the AI's errors the crowd caught. On the decoys every rule's `correct`
 target is right at least 88% of the time.
 
@@ -313,8 +359,11 @@ Rounds pooled (round 1 has 37 train rows); per-round rows of every cell are in `
 Split by the target's class, because the strata oversample `incorrect` targets (round 2 capped `margin_correct`),
 so a pooled recall or false-alarm rate reflects the sample's mix. Inside `incorrect` targets, `cl-drop` touches 5
 rows and 3 are wrong (17/100 among the rest), Fisher p 0.047, the only Fisher p under 0.05 in the table (`cl-flip`
-touches the same rows); it is a descriptive cell of 5 rows among 12 rows of comparisons, not a finding. These are the counts the confident-learning report's `--gold` rerun promised
-(131 rated train rows instead of 37); they equal `confident_learning.expert_agreement` summed over types (check B,
+touches the same rows); it is a descriptive cell of 5 rows among 12 rows of comparisons, not a finding. The two
+rule variants touch rows with a wrong target about twice as often as the rows they leave (`symmetric` 23.0% against
+12.9%, +10.1 pts [-3.3, +23.0]; `unanimous3` +11.4 pts [-1.9, +23.3]); neither interval excludes 0, and neither
+excludes a difference of about 23 points. These are the counts the confident-learning report's `--gold` rerun
+promised (131 rated train rows instead of 37); they equal `confident_learning.expert_agreement` summed over types (check B,
 asserted in the code).
 
 ### Does a score rank wrong targets? (descriptive)
@@ -334,8 +383,9 @@ No interval when the smaller class has fewer than 8 items.
 
 Within `incorrect` targets the out-of-fold probability of the opposite class ranks the 20 wrong targets above the
 85 right ones with AUC 0.769 [0.642, 0.890], while the binary flag (a threshold on the same score) catches 3 of
-them. The size of the vote lead does not rank wrong targets (0.543 [0.441, 0.640] within `incorrect`, 0.477
-within `correct`), which is P1's reading in continuous form. The out-of-fold score is a candidate for a
+them. The vote lead's AUC intervals span 0.5 (0.543 [0.441, 0.640] within `incorrect`, 0.477 [0.337, 0.607]
+within `correct`): this set cannot tell whether a larger lead marks a more reliable target, and does not exclude a
+modest ranking (up to 0.64), which matches P1's unresolved reading. The out-of-fold score is a candidate for a
 pre-stated test on the next gold round, not a result here: this AUC was not a primary.
 
 ### Slices (descriptive)
@@ -357,7 +407,7 @@ pre-stated test on the next gold round, not a result here: this AUC was not a pr
 | Crosswalk | 2 | 10/22 (45.5% [26.9, 65.3]) | 187 |
 | Crosswalk | 3 | 15/24 (62.5% [42.7, 78.8]) | 369 |
 
-Below 20 items (10 cells, counts only): CurbRamp 3 3/8; CurbRamp (none) 4/5; NoCurbRamp (none) 17/19; Obstacle 2 13/17; Obstacle 3 15/18; Obstacle (none) 5/6; SurfaceProblem 2 13/18; SurfaceProblem 3 3/10; SurfaceProblem (none) 4/6; Crosswalk (none) 9/13.
+Below 20 items: 10 cells holding 120 items, not shown (no rate is read from them; their counts are in `scoreboard.json`).
 
 **Decided AI Disagrees by type x tag: the expert says incorrect** (rounds pooled; rate blank under 20 items; train = round-3 train rows of the slice; 6 of 48 cells reach 20)
 
@@ -370,24 +420,28 @@ Below 20 items (10 cells, counts only): CurbRamp 3 3/8; CurbRamp (none) 4/5; NoC
 | Crosswalk | paint fading | 11/40 (27.5% [16.1, 42.8]) | 339 |
 | Crosswalk | (none) | 34/56 (60.7% [47.6, 72.4]) | 1,557 |
 
-Below 20 items (42 cells, counts only): CurbRamp not level with street 9/13; CurbRamp points into traffic 3/10; CurbRamp surface problem 2/10; CurbRamp narrow 1/5; CurbRamp not enough landing space 1/4; CurbRamp steep 1/3; NoCurbRamp alternate route present 10/18; NoCurbRamp unclear if needed 9/11; Obstacle pole 18/19; Obstacle tree 14/17; Obstacle vegetation 7/12; Obstacle narrow 8/9; Obstacle sign 6/7; Obstacle parked car 4/4; Obstacle construction 3/3; Obstacle parked scooter/motorcycle 1/3; Obstacle trash/recycling can 2/3; Obstacle garage entrance 2/2; Obstacle fire hydrant 1/1; Obstacle height difference 1/1; Obstacle litter/garbage 1/1; Obstacle stairs 0/1; Obstacle (none) 9/10; SurfaceProblem grass 6/19; SurfaceProblem cracks 7/17; SurfaceProblem narrow sidewalk 11/17; SurfaceProblem bumpy 4/9; SurfaceProblem uneven/slanted 2/8; SurfaceProblem brick/cobblestone 1/6; SurfaceProblem utility panel 4/6; SurfaceProblem debris 0/3; SurfaceProblem height difference 0/2; SurfaceProblem sand/gravel 0/2; SurfaceProblem very broken 1/2; SurfaceProblem construction 1/1; SurfaceProblem (none) 8/8; Crosswalk broken surface 4/10; Crosswalk brick/cobblestone 3/9; Crosswalk bumpy 4/9; Crosswalk uneven surface 2/6; Crosswalk very long crossing 1/4; Crosswalk rail/tram track 0/1.
+Below 20 items: 42 cells holding 306 items, not shown (no rate is read from them; their counts are in `scoreboard.json`).
 
-**P1 by severity** (types pooled; rates blank under 20 items in a group)
+**P1 by severity** (types pooled; a group under 20 items shows its size only)
 
-| Severity | kept by `symmetric` | dropped |
-|---|---|---|
-| 1 | 27/29 (93.1% [78.0, 98.1]) | 30/41 (73.2% [58.1, 84.3]) |
-| 2 | 7/12 | 18/20 (90.0% [69.9, 97.2]) |
-| 3 | 14/17 | 13/16 |
-| (none) | 6/7 | 7/8 |
+| Severity | kept by `symmetric` | dropped | kept minus dropped (Fisher p) |
+|---|---|---|---|
+| 1 | 27/29 (93.1% [78.0, 98.1]) | 30/41 (73.2% [58.1, 84.3]) | +19.9 pts (0.0587) |
+| 2 | n 12 | 18/20 (90.0% [69.9, 97.2]) |  |
+| 3 | n 17 | n 16 |  |
+| (none) | n 7 | n 8 |  |
 
 <!-- END GENERATED: slices -->
 
-The AI's Disagrees are least often right where the feature is present but degraded: CurbRamp tagged `missing
-tactile warning` (31.2%), Crosswalk tagged `paint fading` (27.5%), low-severity Crosswalk (33.3%) and
-SurfaceProblem (44.4%). That is the rating-rule question of #74's first decision box, seen in the gold set, and the
-pattern round 1 reported. P1 by severity has one row where both groups reach 20 (severity 1: kept 27/29 against
-dropped 30/41); the rows are descriptive and their intervals overlap.
+Among the 16 cells that reach 20, the AI's Disagrees are least often right where the feature is present but
+degraded: CurbRamp tagged `missing tactile warning` (31.2% [18.0, 48.6]), Crosswalk tagged `paint fading` (27.5%
+[16.1, 42.8]), low-severity Crosswalk (33.3% [22.0, 47.0]) and SurfaceProblem (44.4% [30.9, 58.8]). These cells
+were picked by looking, so they are a pattern to test, not a finding; it is the rating-rule question of
+[#74](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/74)'s first decision box, seen in the gold
+set, and the pattern round 1 reported. P1 by severity has one row where both groups reach 20 (severity 1: kept
+27/29 against dropped 30/41, +19.9 pts, Fisher p 0.059). That is a descriptive slice among four, not pre-stated,
+and it does not reach 0.05; it is a reason to slice P1 by severity in the next round's pre-stated analysis, not a
+result.
 
 ### Sensitivity
 
@@ -430,19 +484,26 @@ the same point with a different resampling stream.
 
 ## What this means
 
-- **#75, the stricter rules.** No target-accuracy reason to adopt or reject them: P1 cannot separate them from the
-  margin rule. The training-set result already argues against filtering with them without rebalancing
-  ([`confident-learning-2026-10.md`](confident-learning-2026-10.md), Recommendation 2). Settling the target question
-  needs about three times the margin-`incorrect` rows of rounds 1 + 2.
-- **#76, confident learning.** Recommendation 3 of the confident-learning doc stands with 131 rated rows instead of
-  37: send flags to an expert, do not flip or drop them unread. The continuous out-of-fold score looks more useful
+- **[#75](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/75), the stricter rules.** No
+  target-accuracy reason to adopt or reject them: P1 cannot separate them from the margin rule, and the gain from
+  applying `symmetric` is +1.7 pts [-5.2, +8.6]. The training-set result already argues against filtering with them
+  without rebalancing ([`confident-learning-2026-10.md`](confident-learning-2026-10.md), Recommendation 2). Settling
+  the target question needs about three times the margin-`incorrect` rows of rounds 1 + 2 (about 200 per group for
+  70 to 80% power against a 10-point kept-minus-dropped difference).
+- **[#76](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/76), confident learning.** Recommendation 3
+  of the confident-learning doc (send flags to an expert rather than flip or drop them unread) is kept, with 131
+  rated rows instead of 37, as a judgement on the point estimate: 4 of 13 flagged targets are wrong (30.8%), but
+  the interval [12.7, 57.6] does not exclude a majority, so the data neither license nor rule out acting on the
+  flags unread. About 30 rated flagged rows would settle it. The continuous out-of-fold score looks more useful
   than the flag as a ranking for that expert packet (descriptive).
-- **#12, reliability weighting.** Not re-scored here. [`adjudicator-2026-11.md`](adjudicator-2026-11.md) records
+- **[#12](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/12), reliability weighting.** Not re-scored
+  here. [`adjudicator-2026-11.md`](adjudicator-2026-11.md) records
   that the weights reverse 0 of 142,275 Seattle majorities and only break ties, and the gold set has no tied AI
   Disagree, so it cannot score the one thing the weights change.
-- **#77, the VLM adjudicator.** The only remaining candidate that could change round 4's targets, and the only one
-  that gives a verdict on the 80% of the pool the margin rule leaves without a target. It needs the klone run.
-- **#106, the next stratum.** One-vote labels and ties are 34.6% of the AI-Disagree pool and 47% of what an
+- **[#77](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/77), the VLM adjudicator.** The only
+  remaining candidate that could change round 4's targets, and the only one that gives a verdict on the 80% of the
+  pool the margin rule leaves without a target. It needs the klone run.
+- **[#106](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/106), the next stratum.** One-vote labels and ties are 34.6% of the AI-Disagree pool and 47% of what an
   any-majority rule decides; no rate here covers them.
 
 ## Provenance
@@ -457,9 +518,9 @@ the same point with a different resampling stream.
 | round-2 recount / design | `5e9a18e193b970ad79809b4ce034001a79009fc75a11454a964a846e74c9de47` / `499fb9dfe5d976651f08d932d9a0c47477386e119080ae2107c91fc5c7404e57` |
 | round-3 splits, noisy targets and variant splits (sha256 of the sorted per-file list) | `761fb89088deea286859cfbe7c600a92f2894ed4e5fb5bd2aebcd9cf66e1dcff` (30 files) |
 | verdicts.csv (private) | `e17a408a5db6c49dbe7e7ee2deef83c230a84068f383a32be033f5af6382e4f1` |
-| code | commit `ebf10bde7ff20ad9c69204d8422298f369cd6a7f`; Python 3.10.19, pandas 2.3.3, numpy 2.2.6 |
+| code | commit `0f1a324698473d632b1ce35e01e51f36d714f769`; Python 3.10.19, pandas 2.3.3, numpy 2.2.6 |
 | intervals | 2000 label-level resamples (AUC: 1,000 panorama resamples), seed 0 |
-| public-deployment list | live `/v3/api/cities`, read 2026-11-13T14:56:33+00:00 (46 public) |
+| public-deployment list | live `/v3/api/cities`, read 2026-11-13T15:39:45+00:00 (46 public) |
 
 <!-- END GENERATED: provenance -->
 
