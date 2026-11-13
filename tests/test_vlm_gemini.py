@@ -155,7 +155,8 @@ def test_scores_listed_deployments_only_and_resumes(tmp_path):
     meta = json.load(open(leg / "CurbRamp.meta.json"))
     assert meta["backend"] == vg.BACKEND and meta["model"] == "gemini-3.8-flash" and meta["temperature"] == 0.0
     assert meta["json_sentence"] == vg.JSON_SENTENCE and meta["response_schema"] == vg.RESPONSE_SCHEMA
-    assert meta["thinking_level"] == "minimal" and meta["score_source"] == "self_reported"
+    assert meta["thinking_level"] == "low" and meta["score_source"] == "self_reported"     # the default (#105 review)
+    assert {r["config"]["thinking_level"] for r in stub.requests} == {"low"}
     assert meta["prompt"] == vb.build_prompt("CurbRamp") and meta["n_cities"] == 1
     assert meta["n_crops_listed"] == 24 and meta["n_crops_heldout"] == 48 and len(meta["cities_sha256"]) == 64
     assert meta["finish_reasons"] == {"STOP": 24} and meta["n_unscored"] == 2 and meta["runs"][0]["n_failed"] == 0

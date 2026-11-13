@@ -9,6 +9,10 @@ temperature 0.0). The score is
 
     ``p_incorrect = confidence / 100`` when the answer is ``no``, else ``1 - confidence / 100``.
 
+**Thinking** (``--thinking-level``, default ``low``) is the model's own reasoning before it answers. It is not
+matched to the open-weight legs, which answer with any thinking switch turned off (``vlm_baseline.chat_kwargs``),
+so a difference between this leg and those is not a difference of model alone.
+
 It is **self-reported**: every row carries ``score_source = "self_reported"`` and the meta file says so. The
 log-probability columns of the shared score layout (``LOGPROB_COLUMNS``) are left empty. A reply that is empty, not
 JSON, or outside the schema (answer not yes/no, confidence not a number in 0-100) is written as an **unscored** row:
@@ -49,8 +53,8 @@ Usage (a 50-crop pilot: ``--limit 10`` is five crops per class per type)::
 
     D=~/Data/sidewalk-validator-ai-retrain-2026-10/round3; O=~/Data/sidewalk-validator-ai-vlm-scoreboard-2026-10/scores
     export GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT=<project> GOOGLE_CLOUD_LOCATION=global
-    python analysis/vlm_gemini.py score --model gemini-3.8-flash --data-root $D --out-dir $O \\
-        --cities-file ~/Data/public_cities.txt --usage-log ~/Data/vlm-gemini-usage.jsonl --limit 10
+    python analysis/vlm_gemini.py score --model gemini-3.8-flash --thinking-level low --data-root $D \\
+        --out-dir $O --cities-file ~/Data/public_cities.txt --usage-log ~/Data/vlm-gemini-usage.jsonl --limit 10
     python analysis/vlm_gemini.py score ... --fewshot 8      # the in-context arm (leg gemini-3.8-flash-fewshot8)
 
 Example (the score from a reply)::
@@ -93,6 +97,7 @@ RESPONSE_SCHEMA = {
 }
 TEMPERATURE = 0.0
 THINKING_LEVELS = ("minimal", "low", "medium", "high")
+DEFAULT_THINKING_LEVEL = "low"   # the first leg's level; Vertex refused "minimal" for gemini-3.8-flash
 DEFAULT_LOCATION = "global"
 RETRY_CODES = (408, 429, 500, 502, 503, 504)
 SCORE_SOURCE = "self_reported"
@@ -717,8 +722,9 @@ def main(argv=None, post=None):
     s.add_argument("--label-types", default=",".join(vb.LABEL_TYPES))
     s.add_argument("--variant", default="definition", choices=vb.VARIANTS)
     s.add_argument("--fewshot", type=int, default=0, help="in-context train examples per prompt (0 or 8)")
-    s.add_argument("--thinking-level", default="minimal", choices=THINKING_LEVELS + ("default",),
-                   help="Gemini thinking level; 'default' sends no thinking config (the model's own default)")
+    s.add_argument("--thinking-level", default=DEFAULT_THINKING_LEVEL, choices=THINKING_LEVELS + ("default",),
+                   help=f"Gemini thinking level (default {DEFAULT_THINKING_LEVEL}; gemini-3.8-flash on Vertex refused "
+                        f"'minimal'); 'default' sends no thinking config (the model's own default)")
     s.add_argument("--concurrency", type=int, default=6)
     s.add_argument("--retries", type=int, default=6, help="retries per request on 429 / 5xx / timeouts")
     s.add_argument("--chunk", type=int, default=0, help="rows per CSV append (default max(4 x concurrency, 16))")
