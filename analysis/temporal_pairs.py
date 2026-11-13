@@ -1047,7 +1047,8 @@ def run_blockers(sel, gates_path):
     """Reasons a run cannot give a Gate 0 verdict even on database positions, from its ``selection.json`` (``sel``)
     and the thresholds file it was pointed at: the anchors are not the vote-decided pool, the thresholds are not
     the committed ``gates.json``, or the positions file has no record of a database pull behind it (a ``panos.csv``
-    whose ``position_source`` column was written by hand has none) or is not the file ``positions`` wrote.
+    whose ``position_source`` column was written by hand has none) or is not the file ``positions`` wrote, or the
+    pull lacks a deployment that has labels (its anchors would silently drop out of the yield).
     """
     out = []
     if sel.get("anchor_pool") != "decided":
@@ -1059,6 +1060,10 @@ def run_blockers(sel, gates_path):
             out.append("no record of a database pull behind the positions (panos.json has no db_panos_sha256)")
         elif not sel.get("panos_as_written"):
             out.append("panos.csv is not the file `positions` wrote (its sha256 differs from panos.json's)")
+        missing = (sel.get("positions_info") or {}).get("cities_without_db_positions")
+        if missing:
+            out.append(f"the database pull has no camera positions for {len(missing)} deployment(s) with labels "
+                       f"({', '.join(missing)}): missing from SCHEMAS or a failed query")
     return out
 
 
@@ -1148,6 +1153,12 @@ def cmd_positions(a):
         dbp = panos_from_db(a.db_panos, sc)
         dbp = dbp[dbp["city"].isin(cities)]
         info["db_panos_sha256"] = sha256_file(a.db_panos)
+        # A public deployment with GSV labels but no database row was left out of SCHEMAS (or its query failed):
+        # its anchors would all drop as no_camera_position and the yield rule would be judged on fewer deployments.
+        info["cities_without_db_positions"] = sorted(set(labels["city"]) - set(dbp["city"]))
+        if info["cities_without_db_positions"]:
+            print(f"WARNING: no database camera positions for {info['cities_without_db_positions']}: re-pull with "
+                  f"their schemas in SCHEMAS; until then `residual` gives no verdict", file=sys.stderr)
         info["compare_positions"] = compare_positions(inv, dbp).to_dict("records")
         panos = dbp
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)

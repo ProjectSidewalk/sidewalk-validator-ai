@@ -699,6 +699,10 @@ def test_run_blockers():
     assert "no record of a database pull" in tp.run_blockers({**ok, "positions_info": {}}, tp.GATES_PATH)[0]
     assert "no record of a database pull" in tp.run_blockers({**ok, "positions_info": None}, tp.GATES_PATH)[0]
     assert "not the file" in tp.run_blockers({**ok, "panos_as_written": False}, tp.GATES_PATH)[0]
+    gap = {**ok, "positions_info": {"db_panos_sha256": "ab" * 32, "cities_without_db_positions": ["x-city"]}}
+    assert "no camera positions for 1 deployment(s) with labels (x-city)" in tp.run_blockers(gap, tp.GATES_PATH)[0]
+    assert tp.run_blockers({**ok, "positions_info": {**ok["positions_info"], "cities_without_db_positions": []}},
+                           tp.GATES_PATH) == []
 
 
 def _tiny_inputs(tmp_path, user="u"):
@@ -976,3 +980,26 @@ def test_positions_skips_cached_deployments_that_are_not_public_and_can_keep_app
     tp.main(["positions", "--rawlabels", str(cache), "--listing", str(listing), "--db-methods", str(methods),
              "--cityparams", str(conf), "--out", str(out)])
     assert pd.read_csv(out)["pano_id"].tolist() == ["A" * 22]
+
+
+def test_positions_records_public_deployments_the_database_pull_left_out(tmp_path):
+    cache, listing, r3, (cam_a, cam_b) = _tiny_inputs(tmp_path)
+    pd.read_csv(cache / "tiny-city.csv").assign(city="other-city").to_csv(cache / "other-city.csv", index=False)
+    listing.write_text(json.dumps({"cities": [{"city_id": "tiny-city", "visibility": "public"},
+                                              {"city_id": "other-city", "visibility": "public"}]}))
+    conf = tmp_path / "cityparams.conf"
+    conf.write_text('city-params {\n  db-schema {\n    tiny-city = "sidewalk_tiny"\n  }\n  landing-page-url {\n'
+                    '    prod {\n      tiny-city = "https://sidewalk-tiny.example.org"\n    }\n  }\n}\n')
+    db = tmp_path / "db_panos.csv"   # SCHEMAS held only sidewalk_tiny
+    pd.DataFrame({"schema": "sidewalk_tiny", "pano_id": ["A" * 22, "B" * 22], "lat": [cam_a[0], cam_b[0]],
+                  "lng": [cam_a[1], cam_b[1]], "camera_heading": [0.0, 0.0], "camera_pitch": [0.5, 0.5],
+                  "camera_roll": [None, None], "capture_date": ["2015-06", "2019-06"], "width": [16384, 16384],
+                  "height": [8192, 8192], "source": ["gsv", "gsv"], "expired": ["f", "f"],
+                  "has_backup": ["f", "f"], "n_labels": [2, 2]}).to_csv(db, index=False)
+    out = tmp_path / "run" / "panos.csv"
+    tp.main(["positions", "--rawlabels", str(cache), "--listing", str(listing), "--db-panos", str(db),
+             "--cityparams", str(conf), "--out", str(out)])
+    info = json.loads((tmp_path / "run" / "panos.json").read_text())
+    assert info["cities_without_db_positions"] == ["other-city"]
+    sel = {"anchor_pool": "decided", "position_sources": ["db"], "panos_as_written": True, "positions_info": info}
+    assert any("other-city" in b for b in tp.run_blockers(sel, tp.GATES_PATH))
