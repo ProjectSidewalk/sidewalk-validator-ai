@@ -664,8 +664,8 @@ def check_depth_sized(root, label_type):
     or the crop-job-window experiment (issue #53), serving renders a depth-sized view of every label, and the cards
     say so. Then, in this order, if either record names a depth model other than the served one
     (:func:`check_depth_encoder`), or if ``split.csv`` (every row) or the ``ok`` rows of ``manifest.csv`` (each file
-    when present) hold a row not cut at ``int(CROP_DEPTH_CONSTANT / depth_m)`` (:func:`check_depth_rows`): the records are optional,
-    the rows are not. Checked before anything is staged, and again before ``--push-staged``."""
+    when present) hold a row not cut at ``int(CROP_DEPTH_CONSTANT / depth_m)`` (:func:`check_depth_rows`): the
+    records are optional, the rows are not. Checked before anything is staged, and again before ``--push-staged``."""
     base = os.path.join(root, label_type)
     runs = [_read_json(os.path.join(base, "generation_run.json")),
             _read_json(os.path.join(base, "dinov2", "training_run.json"))]
@@ -711,9 +711,10 @@ def _rows_to_check(path):
 
 def check_depth_encoder(generation_run, what):
     """Raise ``PublishError`` if ``generation_run`` (a parsed ``generation_run.json``, or the ``training_run.json``
-    that copies its ``depth_encoder``) records, at top level or under ``settings``, a ``depth_encoder`` other than :data:`SERVED_DEPTH_ENCODER` or a ``depth_dataset`` other than
-    :data:`SERVED_DEPTH_DATASET`. A dataset sized by another depth model is self-consistent row by row, so only the
-    record can show it. An absent record, absent keys or null values pass: :func:`check_depth_rows` is the backstop.
+    that copies its ``depth_encoder``) records, at top level or under ``settings``, a ``depth_encoder`` other than
+    :data:`SERVED_DEPTH_ENCODER` or a ``depth_dataset`` other than :data:`SERVED_DEPTH_DATASET`. A dataset sized by
+    another depth model is self-consistent row by row, so only the record can show it. An absent record, absent keys
+    or null values pass: :func:`check_depth_rows` is the backstop.
 
     Example::
 
