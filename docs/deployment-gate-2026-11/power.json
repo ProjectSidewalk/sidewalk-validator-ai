@@ -15,6 +15,15 @@
     "reference": "majority2"
   },
   "up_to": 2000,
+  "notes": [
+    "ever_pass is the chance of passing at ANY look, i.e. of a sticky rule (a pass is kept). A rule that re-judges each stratum at its current checkpoint can lose a pass later; ever_pass bounds how often it passes at some point, not how often it is passing at the end.",
+    "The rates assume NESTED looks: the rows judged at one checkpoint are the first rows of those judged at the next. Real re-runs are not nested. The rule takes the first C decided rows ordered by (ai_date, label_id) within a deployment, which is deterministic for one pull, but a label assessed early and decided late (contested labels get extra votes) enters that prefix in a later pull and pushes another row out. Over real re-runs the false-pass rate is therefore at least the stated rate, not exactly it: each figure here is a lower bound.",
+    "ever_pass is by n = 2,000; the checkpoints keep doubling past it and the rate keeps growing (ever_pass_checkpoints_at_gate_longer)."
+  ],
+  "ever_pass_checkpoints_at_gate_longer": {
+    "6400": 0.1018805966430924,
+    "25600": 0.12753525916763905
+  },
   "errors_allowed": {
     "50": 0,
     "67": 1,

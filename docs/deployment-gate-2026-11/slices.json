@@ -2,8 +2,8 @@
   "kind": "slices",
   "reference": "majority2",
   "min_n": 30,
+  "deployments": "public only",
   "tag_coverage": {
-    "rows": 1006578,
     "public_rows": 808584,
     "exported": 794881
   },
@@ -55,41 +55,41 @@
         "previous": [
           {
             "slice": "1",
-            "n": 21574,
-            "confirmed": 0.9972188745712431,
-            "ci_lo": 0.996422118482081,
-            "ci_hi": 0.9978385864440317,
-            "max_deployment_share": 0.42782979512376007,
+            "n": 6504,
+            "confirmed": 0.9978474784747847,
+            "ci_lo": 0.9963898658294962,
+            "ci_hi": 0.998717329158163,
+            "max_deployment_share": 0.37915129151291516,
             "train_correct": 1073,
             "train_incorrect": 321
           },
           {
             "slice": "2",
-            "n": 746,
-            "confirmed": 0.9865951742627346,
-            "ci_lo": 0.9755016650223636,
-            "ci_hi": 0.9927028197648236,
-            "max_deployment_share": 0.2680965147453083,
+            "n": 366,
+            "confirmed": 0.994535519125683,
+            "ci_lo": 0.9802972171767171,
+            "ci_hi": 0.9985001923088572,
+            "max_deployment_share": 0.38524590163934425,
             "train_correct": 44,
             "train_incorrect": 143
           },
           {
             "slice": "3",
-            "n": 163,
-            "confirmed": 0.9631901840490797,
-            "ci_lo": 0.9220273437401498,
-            "ci_hi": 0.9830227157174434,
-            "max_deployment_share": 0.22085889570552147,
+            "n": 115,
+            "confirmed": 0.991304347826087,
+            "ci_lo": 0.952382104532502,
+            "ci_hi": 0.9984633906476369,
+            "max_deployment_share": 0.3130434782608696,
             "train_correct": 12,
             "train_incorrect": 357
           },
           {
             "slice": "(none)",
-            "n": 580,
-            "confirmed": 0.9862068965517241,
-            "ci_lo": 0.9730207434875009,
-            "ci_hi": 0.9929946963167199,
-            "max_deployment_share": 0.46551724137931033,
+            "n": 239,
+            "confirmed": 0.9916317991631799,
+            "ci_lo": 0.9700068143347776,
+            "ci_hi": 0.9977021778642524,
+            "max_deployment_share": 0.29707112970711297,
             "train_correct": 27,
             "train_incorrect": 112
           }
@@ -189,16 +189,6 @@
           }
         ],
         "previous": [
-          {
-            "slice": "(not exported)",
-            "n": 15839,
-            "confirmed": 0.9958962055685334,
-            "ci_lo": 0.9947732281941144,
-            "ci_hi": 0.9967786913807176,
-            "max_deployment_share": 0.6140539175452996,
-            "train_correct": 0,
-            "train_incorrect": 0
-          },
           {
             "slice": "(none)",
             "n": 5193,
@@ -349,41 +339,41 @@
         "previous": [
           {
             "slice": "1",
-            "n": 53152,
-            "confirmed": 0.9931329018663456,
-            "ci_lo": 0.9923943043037164,
-            "ci_hi": 0.993800221492297,
-            "max_deployment_share": 0.28858744732089103,
+            "n": 40504,
+            "confirmed": 0.9941240371321352,
+            "ci_lo": 0.9933314055925078,
+            "ci_hi": 0.9948229472180354,
+            "max_deployment_share": 0.3787033379419317,
             "train_correct": 3062,
             "train_incorrect": 2021
           },
           {
             "slice": "2",
-            "n": 4848,
-            "confirmed": 0.9857673267326733,
-            "ci_lo": 0.9820276020926659,
-            "ci_hi": 0.9887378078910402,
-            "max_deployment_share": 0.2700082508250825,
+            "n": 3862,
+            "confirmed": 0.9857586742620404,
+            "ci_lo": 0.981509864150891,
+            "ci_hi": 0.9890420591353607,
+            "max_deployment_share": 0.3389435525634386,
             "train_correct": 377,
             "train_incorrect": 460
           },
           {
             "slice": "3",
-            "n": 1510,
-            "confirmed": 0.9728476821192052,
-            "ci_lo": 0.9633729785952018,
-            "ci_hi": 0.9799225418872582,
-            "max_deployment_share": 0.27483443708609273,
+            "n": 1252,
+            "confirmed": 0.9712460063897763,
+            "ci_lo": 0.9604499600048044,
+            "ci_hi": 0.9791589843079178,
+            "max_deployment_share": 0.3314696485623003,
             "train_correct": 144,
             "train_incorrect": 407
           },
           {
             "slice": "(none)",
-            "n": 1372,
-            "confirmed": 0.9832361516034985,
-            "ci_lo": 0.9749699614238532,
-            "ci_hi": 0.9888037753202604,
-            "max_deployment_share": 0.25583090379008744,
+            "n": 1117,
+            "confirmed": 0.9856759176365264,
+            "ci_lo": 0.9768585085791511,
+            "ci_hi": 0.9911640915812996,
+            "max_deployment_share": 0.3142345568487019,
             "train_correct": 212,
             "train_incorrect": 242
           }
@@ -494,16 +484,6 @@
             "train_incorrect": 1552
           },
           {
-            "slice": "(not exported)",
-            "n": 14150,
-            "confirmed": 0.9891872791519435,
-            "ci_lo": 0.9873455120193565,
-            "ci_hi": 0.99076349832876,
-            "max_deployment_share": 0.438303886925795,
-            "train_correct": 0,
-            "train_incorrect": 0
-          },
-          {
             "slice": "missing tactile warning",
             "n": 7213,
             "confirmed": 0.9861361430750034,
@@ -602,6 +582,16 @@
             "max_deployment_share": 1.0,
             "train_correct": 0,
             "train_incorrect": 0
+          },
+          {
+            "slice": "(not exported)",
+            "n": 3,
+            "confirmed": null,
+            "ci_lo": null,
+            "ci_hi": null,
+            "max_deployment_share": 1.0,
+            "train_correct": 0,
+            "train_incorrect": 0
           }
         ]
       }
@@ -653,41 +643,41 @@
         "previous": [
           {
             "slice": "1",
-            "n": 2226,
-            "confirmed": 0.9110512129380054,
-            "ci_lo": 0.8985061182946079,
-            "ci_hi": 0.9221799788703207,
-            "max_deployment_share": 0.5907457322551662,
+            "n": 1892,
+            "confirmed": 0.9238900634249472,
+            "ci_lo": 0.9110635147410393,
+            "ci_hi": 0.9349987301216118,
+            "max_deployment_share": 0.695031712473573,
             "train_correct": 614,
             "train_incorrect": 1225
           },
           {
             "slice": "2",
-            "n": 9165,
-            "confirmed": 0.9501363884342607,
-            "ci_lo": 0.9454884293790702,
-            "ci_hi": 0.9544071473969534,
-            "max_deployment_share": 0.7172940534642662,
+            "n": 8480,
+            "confirmed": 0.9522405660377359,
+            "ci_lo": 0.9474931856901031,
+            "ci_hi": 0.9565783849059345,
+            "max_deployment_share": 0.7752358490566038,
             "train_correct": 2044,
             "train_incorrect": 1551
           },
           {
             "slice": "3",
-            "n": 16051,
-            "confirmed": 0.9627437542832222,
-            "ci_lo": 0.9597013398113043,
-            "ci_hi": 0.9655647182480913,
-            "max_deployment_share": 0.5790293439661081,
+            "n": 14364,
+            "confirmed": 0.9649122807017544,
+            "ci_lo": 0.9617766879322888,
+            "ci_hi": 0.9677992617357533,
+            "max_deployment_share": 0.6470342522974102,
             "train_correct": 3863,
             "train_incorrect": 2211
           },
           {
             "slice": "(none)",
-            "n": 833,
-            "confirmed": 0.9339735894357744,
-            "ci_lo": 0.9150386465169688,
-            "ci_hi": 0.9489241392718831,
-            "max_deployment_share": 0.5078031212484994,
+            "n": 768,
+            "confirmed": 0.9348958333333334,
+            "ci_lo": 0.9151920378162871,
+            "ci_hi": 0.9502705130490718,
+            "max_deployment_share": 0.55078125,
             "train_correct": 217,
             "train_incorrect": 474
           }
@@ -758,16 +748,6 @@
             "train_incorrect": 1171
           },
           {
-            "slice": "(not exported)",
-            "n": 2777,
-            "confirmed": 0.9258192293842276,
-            "ci_lo": 0.9154728353733154,
-            "ci_hi": 0.934989125494934,
-            "max_deployment_share": 0.5412315448325531,
-            "train_correct": 0,
-            "train_incorrect": 0
-          },
-          {
             "slice": "unclear if needed",
             "n": 785,
             "confirmed": 0.89171974522293,
@@ -776,6 +756,16 @@
             "max_deployment_share": 0.5528662420382165,
             "train_correct": 246,
             "train_incorrect": 614
+          },
+          {
+            "slice": "(not exported)",
+            "n": 6,
+            "confirmed": null,
+            "ci_lo": null,
+            "ci_hi": null,
+            "max_deployment_share": 0.6666666666666666,
+            "train_correct": 0,
+            "train_incorrect": 0
           }
         ]
       }
@@ -827,23 +817,13 @@
         "previous": [
           {
             "slice": "2",
-            "n": 3,
-            "confirmed": null,
-            "ci_lo": null,
-            "ci_hi": null,
-            "max_deployment_share": 0.6666666666666666,
-            "train_correct": 1818,
-            "train_incorrect": 1026
-          },
-          {
-            "slice": "3",
-            "n": 1,
+            "n": 2,
             "confirmed": null,
             "ci_lo": null,
             "ci_hi": null,
             "max_deployment_share": 1.0,
-            "train_correct": 2627,
-            "train_incorrect": 1272
+            "train_correct": 1818,
+            "train_incorrect": 1026
           }
         ]
       },
@@ -1000,16 +980,6 @@
             "max_deployment_share": 1.0,
             "train_correct": 782,
             "train_incorrect": 1151
-          },
-          {
-            "slice": "(not exported)",
-            "n": 2,
-            "confirmed": null,
-            "ci_lo": null,
-            "ci_hi": null,
-            "max_deployment_share": 1.0,
-            "train_correct": 0,
-            "train_incorrect": 0
           }
         ]
       }
@@ -1061,41 +1031,41 @@
         "previous": [
           {
             "slice": "1",
-            "n": 11006,
-            "confirmed": 0.961293839723787,
-            "ci_lo": 0.957526128958123,
-            "ci_hi": 0.9647396373359172,
-            "max_deployment_share": 0.26530983100127203,
+            "n": 9691,
+            "confirmed": 0.960272417707151,
+            "ci_lo": 0.9561977338427897,
+            "ci_hi": 0.9639823338748715,
+            "max_deployment_share": 0.30131049427303686,
             "train_correct": 2641,
             "train_incorrect": 2409
           },
           {
             "slice": "2",
-            "n": 7151,
-            "confirmed": 0.96350160816669,
-            "ci_lo": 0.958900328938754,
-            "ci_hi": 0.9676051579192638,
-            "max_deployment_share": 0.28527478674311285,
+            "n": 6143,
+            "confirmed": 0.9625590102555754,
+            "ci_lo": 0.9575152406200529,
+            "ci_hi": 0.9670246076168043,
+            "max_deployment_share": 0.3320853003418525,
             "train_correct": 1768,
             "train_incorrect": 1191
           },
           {
             "slice": "3",
-            "n": 3966,
-            "confirmed": 0.9798285426122038,
-            "ci_lo": 0.9749662948653833,
-            "ci_hi": 0.9837621339968665,
-            "max_deployment_share": 0.2102874432677761,
+            "n": 3610,
+            "confirmed": 0.9797783933518005,
+            "ci_lo": 0.974650858341279,
+            "ci_hi": 0.9838858965624223,
+            "max_deployment_share": 0.23102493074792244,
             "train_correct": 1191,
             "train_incorrect": 642
           },
           {
             "slice": "(none)",
-            "n": 790,
-            "confirmed": 0.9430379746835443,
-            "ci_lo": 0.9246290563759787,
-            "ci_hi": 0.9571589476792385,
-            "max_deployment_share": 0.2481012658227848,
+            "n": 725,
+            "confirmed": 0.9462068965517242,
+            "ci_lo": 0.9273077066996805,
+            "ci_hi": 0.9604023252194636,
+            "max_deployment_share": 0.27034482758620687,
             "train_correct": 239,
             "train_incorrect": 419
           }
@@ -1276,16 +1246,6 @@
             "train_incorrect": 804
           },
           {
-            "slice": "(not exported)",
-            "n": 2745,
-            "confirmed": 0.9690346083788707,
-            "ci_lo": 0.9618702895302493,
-            "ci_hi": 0.9748879434650605,
-            "max_deployment_share": 0.3285974499089253,
-            "train_correct": 0,
-            "train_incorrect": 0
-          },
-          {
             "slice": "height difference",
             "n": 2284,
             "confirmed": 0.9846760070052539,
@@ -1384,6 +1344,16 @@
             "max_deployment_share": 0.7083333333333334,
             "train_correct": 21,
             "train_incorrect": 4
+          },
+          {
+            "slice": "(not exported)",
+            "n": 1,
+            "confirmed": null,
+            "ci_lo": null,
+            "ci_hi": null,
+            "max_deployment_share": 1.0,
+            "train_correct": 0,
+            "train_incorrect": 0
           }
         ]
       }
@@ -1399,189 +1369,199 @@
   "within_strata": {
     "seattle-wa": {
       "Crosswalk": {
-        "status": "pass",
-        "severity": [
-          {
-            "slice": "1",
-            "n": 810,
-            "confirmed": 0.9987654320987654,
-            "ci_lo": 0.9930401496553285,
-            "ci_hi": 0.9997820408053214,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "2",
-            "n": 42,
-            "confirmed": 0.9761904761904762,
-            "ci_lo": 0.8767851883475175,
-            "ci_hi": 0.9957847045008997,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "3",
-            "n": 11,
-            "confirmed": null,
-            "ci_lo": null,
-            "ci_hi": null,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "(none)",
-            "n": 20,
-            "confirmed": null,
-            "ci_lo": null,
-            "ci_hi": null,
-            "max_deployment_share": 1.0
-          }
-        ]
+        "unrecorded": {
+          "status": "pass",
+          "severity": [
+            {
+              "slice": "1",
+              "n": 810,
+              "confirmed": 0.9987654320987654,
+              "ci_lo": 0.9930401496553285,
+              "ci_hi": 0.9997820408053214,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "2",
+              "n": 42,
+              "confirmed": 0.9761904761904762,
+              "ci_lo": 0.8767851883475175,
+              "ci_hi": 0.9957847045008997,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "3",
+              "n": 11,
+              "confirmed": null,
+              "ci_lo": null,
+              "ci_hi": null,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "(none)",
+              "n": 20,
+              "confirmed": null,
+              "ci_lo": null,
+              "ci_hi": null,
+              "max_deployment_share": 1.0
+            }
+          ]
+        }
       },
       "CurbRamp": {
-        "status": "pass",
-        "severity": [
-          {
-            "slice": "1",
-            "n": 745,
-            "confirmed": 0.9986577181208054,
-            "ci_lo": 0.9924361302531951,
-            "ci_hi": 0.9997630210760048,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "2",
-            "n": 49,
-            "confirmed": 1.0,
-            "ci_lo": 0.9272997032640948,
-            "ci_hi": 1.0,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "3",
-            "n": 9,
-            "confirmed": null,
-            "ci_lo": null,
-            "ci_hi": null,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "(none)",
-            "n": 28,
-            "confirmed": null,
-            "ci_lo": null,
-            "ci_hi": null,
-            "max_deployment_share": 1.0
-          }
-        ]
+        "unrecorded": {
+          "status": "pass",
+          "severity": [
+            {
+              "slice": "1",
+              "n": 745,
+              "confirmed": 0.9986577181208054,
+              "ci_lo": 0.9924361302531951,
+              "ci_hi": 0.9997630210760048,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "2",
+              "n": 49,
+              "confirmed": 1.0,
+              "ci_lo": 0.9272997032640948,
+              "ci_hi": 1.0,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "3",
+              "n": 9,
+              "confirmed": null,
+              "ci_lo": null,
+              "ci_hi": null,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "(none)",
+              "n": 28,
+              "confirmed": null,
+              "ci_lo": null,
+              "ci_hi": null,
+              "max_deployment_share": 1.0
+            }
+          ]
+        }
       },
       "NoCurbRamp": {
-        "status": "pass",
-        "severity": [
-          {
-            "slice": "1",
-            "n": 19,
-            "confirmed": null,
-            "ci_lo": null,
-            "ci_hi": null,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "2",
-            "n": 39,
-            "confirmed": 1.0,
-            "ci_lo": 0.910330146399761,
-            "ci_hi": 1.0,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "3",
-            "n": 67,
-            "confirmed": 1.0,
-            "ci_lo": 0.9457719757882372,
-            "ci_hi": 1.0,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "(none)",
-            "n": 4,
-            "confirmed": null,
-            "ci_lo": null,
-            "ci_hi": null,
-            "max_deployment_share": 1.0
-          }
-        ]
+        "unrecorded": {
+          "status": "pass",
+          "severity": [
+            {
+              "slice": "1",
+              "n": 19,
+              "confirmed": null,
+              "ci_lo": null,
+              "ci_hi": null,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "2",
+              "n": 39,
+              "confirmed": 1.0,
+              "ci_lo": 0.910330146399761,
+              "ci_hi": 1.0,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "3",
+              "n": 67,
+              "confirmed": 1.0,
+              "ci_lo": 0.9457719757882372,
+              "ci_hi": 1.0,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "(none)",
+              "n": 4,
+              "confirmed": null,
+              "ci_lo": null,
+              "ci_hi": null,
+              "max_deployment_share": 1.0
+            }
+          ]
+        }
       },
       "Obstacle": {
-        "status": "undecided",
-        "severity": [
-          {
-            "slice": "1",
-            "n": 49,
-            "confirmed": 0.9387755102040817,
-            "ci_lo": 0.8347925657791228,
-            "ci_hi": 0.9789602350444708,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "2",
-            "n": 50,
-            "confirmed": 0.96,
-            "ci_lo": 0.8653966212204532,
-            "ci_hi": 0.9889613473391734,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "3",
-            "n": 73,
-            "confirmed": 0.9452054794520548,
-            "ci_lo": 0.8674081222635519,
-            "ci_hi": 0.9784878507510653,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "(none)",
-            "n": 12,
-            "confirmed": null,
-            "ci_lo": null,
-            "ci_hi": null,
-            "max_deployment_share": 1.0
-          }
-        ]
+        "unrecorded": {
+          "status": "undecided",
+          "severity": [
+            {
+              "slice": "1",
+              "n": 49,
+              "confirmed": 0.9387755102040817,
+              "ci_lo": 0.8347925657791228,
+              "ci_hi": 0.9789602350444708,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "2",
+              "n": 50,
+              "confirmed": 0.96,
+              "ci_lo": 0.8653966212204532,
+              "ci_hi": 0.9889613473391734,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "3",
+              "n": 73,
+              "confirmed": 0.9452054794520548,
+              "ci_lo": 0.8674081222635519,
+              "ci_hi": 0.9784878507510653,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "(none)",
+              "n": 12,
+              "confirmed": null,
+              "ci_lo": null,
+              "ci_hi": null,
+              "max_deployment_share": 1.0
+            }
+          ]
+        }
       },
       "SurfaceProblem": {
-        "status": "pass",
-        "severity": [
-          {
-            "slice": "1",
-            "n": 101,
-            "confirmed": 0.9900990099009901,
-            "ci_lo": 0.9460315253904807,
-            "ci_hi": 0.9982501337982381,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "2",
-            "n": 70,
-            "confirmed": 1.0,
-            "ci_lo": 0.9479751251327164,
-            "ci_hi": 1.0,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "3",
-            "n": 40,
-            "confirmed": 1.0,
-            "ci_lo": 0.9123754607496077,
-            "ci_hi": 1.0,
-            "max_deployment_share": 1.0
-          },
-          {
-            "slice": "(none)",
-            "n": 11,
-            "confirmed": null,
-            "ci_lo": null,
-            "ci_hi": null,
-            "max_deployment_share": 1.0
-          }
-        ]
+        "unrecorded": {
+          "status": "pass",
+          "severity": [
+            {
+              "slice": "1",
+              "n": 101,
+              "confirmed": 0.9900990099009901,
+              "ci_lo": 0.9460315253904807,
+              "ci_hi": 0.9982501337982381,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "2",
+              "n": 70,
+              "confirmed": 1.0,
+              "ci_lo": 0.9479751251327164,
+              "ci_hi": 1.0,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "3",
+              "n": 40,
+              "confirmed": 1.0,
+              "ci_lo": 0.9123754607496077,
+              "ci_hi": 1.0,
+              "max_deployment_share": 1.0
+            },
+            {
+              "slice": "(none)",
+              "n": 11,
+              "confirmed": null,
+              "ci_lo": null,
+              "ci_hi": null,
+              "max_deployment_share": 1.0
+            }
+          ]
+        }
       }
     }
   }
