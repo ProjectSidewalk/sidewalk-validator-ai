@@ -1851,9 +1851,9 @@ def test_depth_refusals_carry_counts_only_and_say_what_fixes_them(tmp_path):
     root, *_ = make_root(tmp_path)
 
     def private(df):
-        df["city"] = "zurich"
+        df["city"] = "some-private-city"
         df["label_id"] = 4242 + np.arange(len(df))
-        df["label_uid"] = "zurich:" + df["label_id"].astype(str)
+        df["label_uid"] = "some-private-city:" + df["label_id"].astype(str)
         return df
 
     for name in ("split.csv", "manifest.csv"):
@@ -1872,7 +1872,7 @@ def test_depth_refusals_carry_counts_only_and_say_what_fixes_them(tmp_path):
         pub.check_depth_sized(root, T)
     messages.append(str(e.value))
     for msg in messages:
-        assert "zurich" not in msg.lower() and "4242" not in msg and "4243" not in msg
+        assert "some-private-city" not in msg.lower() and "4242" not in msg and "4243" not in msg
         assert "serving change" in msg and "not an edited record" in msg
     assert re.search(r"\d+ of \d+ rows", messages[0])
 
