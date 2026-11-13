@@ -588,6 +588,10 @@ def run_score(args, post=None):
             raise SystemExit(f"refusing {what} inside a git checkout (per-crop data and costs stay outside): {p}")
     if args.usage_log != "none" and os.path.isdir(args.usage_log):
         raise SystemExit(f"--usage-log is a directory: {args.usage_log}")
+    if args.usage_log != "none":
+        # Open the ledger before anything is sent, so a bad path fails now and not after a type's requests are billed
+        os.makedirs(os.path.dirname(os.path.abspath(args.usage_log)), exist_ok=True)
+        open(args.usage_log, "a", encoding="utf-8").close()
     if bool(args.crop_root_from) != bool(args.crop_root_to):
         raise SystemExit("--crop-root-from and --crop-root-to go together")
     if args.fewshot % 2:
@@ -656,12 +660,18 @@ def run_score(args, post=None):
         meta.setdefault("runs", []).append(run)
         vb._write_meta(meta_path, meta)
         results, t0 = [], time.perf_counter()
-        if len(todo):
-            if scorer is None:
-                post = post or VertexGemini()
-                scorer = Scorer(post, retries=args.retries)
-            meta.update(location=getattr(post, "location", None), sdk_version=getattr(post, "sdk_version", None))
-            results = score_frame(scorer, todo, args, t, leg, path, examples)
+        try:
+            if len(todo):
+                if scorer is None:
+                    post = post or VertexGemini()
+                    scorer = Scorer(post, retries=args.retries)
+                meta.update(location=getattr(post, "location", None), sdk_version=getattr(post, "sdk_version", None))
+                score_frame(scorer, todo, args, t, leg, path, examples, results)
+        finally:
+            # Every completed request is billed, so its ledger line is written even when the run stops early (an
+            # interrupt, a crash), including requests whose rows never reached the CSV.
+            if results and args.usage_log != "none":
+                append_usage(args.usage_log, usage_record(args.model, leg, t, results, time.perf_counter() - t0))
         wall = time.perf_counter() - t0
         failed = [r for r in results if "error" in r]
         run.update(end=datetime.datetime.now().isoformat(timespec="seconds"), n_failed=len(failed),
@@ -670,8 +680,6 @@ def run_score(args, post=None):
         if os.path.exists(path) and os.path.getsize(path) > 0:
             meta.update(summarize_scores(path))
         vb._write_meta(meta_path, meta)
-        if results and args.usage_log != "none":
-            append_usage(args.usage_log, usage_record(args.model, leg, t, results, wall))
         fatal = [r for r in failed if not r["retryable"]]
         if fatal:
             raise SystemExit(f"{t}: stopped on a non-retryable error ({fatal[0]['error']}); rows scored before it "
@@ -681,30 +689,41 @@ def run_score(args, post=None):
                   f"run retries them), e.g. {failed[0]['error']}", flush=True)
 
 
-def score_frame(scorer, todo, args, label_type, leg, path, examples):
+def score_frame(scorer, todo, args, label_type, leg, path, examples, results=None):
     """Score ``todo`` with ``args.concurrency`` requests in flight, appending each chunk's written rows in input
-    order. Returns every result (failed ones carry ``error``). Stops after the first chunk with a non-retryable
-    error, once that chunk's good rows are on disk."""
+    order. Every result (failed ones carry ``error``) is appended to ``results`` as soon as its request completes,
+    so a caller still holds the completed ones when the run stops mid-chunk; returns ``results``. Stops after the
+    first chunk with a non-retryable error, once that chunk's good rows are on disk; on an interrupt, requests not
+    yet started are cancelled."""
     chunk = args.chunk or max(4 * args.concurrency, 16)
     rows = list(todo.itertuples())
-    results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as pool:
+    results = [] if results is None else results
+
+    def one(req):
+        out = scorer.score(req)
+        results.append(out)      # list.append is atomic; read only after the pool has shut down
+        return out
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency)
+    try:
         for start in range(0, len(rows), chunk):
             part = rows[start:start + chunk]
             reqs = [build_request(args.model, label_type, r.image, args.variant, examples(r), args.thinking_level)
                     for r in part]
-            got = list(pool.map(scorer.score, reqs))
+            got = list(pool.map(one, reqs))
             out = [{"label_uid": r.label_uid, "model": leg, "variant": args.variant, "batch_size": args.concurrency,
                     **{k: v for k, v in s.items() if not k.startswith("_")}}
                    for r, s in zip(part, got) if "error" not in s]
             if out:
                 append_rows(path, out)
-            results += got
             print(f"  {label_type} {start + len(part)}/{len(rows)}  written {len(out)}  "
                   f"unscored {sum(bool(o['unscored_reason']) for o in out)}  "
                   f"failed {sum('error' in s for s in got)}", flush=True)
             if any("error" in s and not s["retryable"] for s in got):
                 break
+    except BaseException:
+        pool.shutdown(wait=True, cancel_futures=True)
+        raise
+    pool.shutdown(wait=True)
     return results
 
 

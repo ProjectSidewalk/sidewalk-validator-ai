@@ -426,3 +426,29 @@ def test_summarize_scores_reads_all_empty_text_columns_without_a_pandas4_warning
         s = vg.summarize_scores(path)
     assert (s["n_rows"], s["n_scored"], s["n_unscored"]) == (3, 3, 0) and s["unscored_reasons"] == {}
     assert s["finish_reasons"] == {"": 3} and s["answers"] == {"": 3}
+
+
+# ---- the usage ledger (#105 review) --------------------------------------------------------------------------------
+
+def test_usage_ledger_in_a_new_directory_is_created_before_anything_is_sent(tmp_path):
+    root, _ = _data_root(tmp_path)
+    ledger = tmp_path / "not-yet" / "deeper" / "usage.jsonl"
+    vg.main(_args(root, tmp_path, limit=2, **{"usage-log": ledger}), post=_Stub())
+    assert [json.loads(x)["label_type"] for x in open(ledger)] == ["CurbRamp", "Obstacle"]
+
+
+def test_usage_ledger_line_is_written_when_the_run_is_interrupted(tmp_path):
+    """Ctrl-C in the third chunk: the rows of the first two chunks are on disk, and the ledger still counts every
+    request that completed (billed), including those of the interrupted chunk that never reached the CSV."""
+    root, _ = _data_root(tmp_path)
+
+    def interrupt(req):
+        if len(stub.requests) == 10:
+            raise KeyboardInterrupt
+    stub = _Stub(fail=interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        vg.main(_args(root, tmp_path, concurrency=1, chunk=4, **{"label-types": "CurbRamp"}), post=stub)
+    assert len(pd.read_csv(tmp_path / "scores" / "gemini-3.8-flash" / "CurbRamp.csv")) == 8
+    (u,) = [json.loads(x) for x in open(tmp_path / "usage.jsonl")]
+    assert u["label_type"] == "CurbRamp" and u["n_calls"] == len(stub.requests) - 1 >= 9
+    assert u["input_tokens"] == 300 * u["n_calls"]
