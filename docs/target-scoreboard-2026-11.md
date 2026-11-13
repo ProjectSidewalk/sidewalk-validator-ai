@@ -457,9 +457,9 @@ the same point with a different resampling stream.
 | round-2 recount / design | `5e9a18e193b970ad79809b4ce034001a79009fc75a11454a964a846e74c9de47` / `499fb9dfe5d976651f08d932d9a0c47477386e119080ae2107c91fc5c7404e57` |
 | round-3 splits, noisy targets and variant splits (sha256 of the sorted per-file list) | `761fb89088deea286859cfbe7c600a92f2894ed4e5fb5bd2aebcd9cf66e1dcff` (30 files) |
 | verdicts.csv (private) | `e17a408a5db6c49dbe7e7ee2deef83c230a84068f383a32be033f5af6382e4f1` |
-| code | commit `9fa3b4b7203c47bd16de771ff231fd3f7c1820d1`; Python 3.10.19, pandas 2.3.3, numpy 2.2.6 |
+| code | commit `ebf10bde7ff20ad9c69204d8422298f369cd6a7f`; Python 3.10.19, pandas 2.3.3, numpy 2.2.6 |
 | intervals | 2000 label-level resamples (AUC: 1,000 panorama resamples), seed 0 |
-| public-deployment list | live `/v3/api/cities`, read 2026-11-13T14:43:48+00:00 (46 public) |
+| public-deployment list | live `/v3/api/cities`, read 2026-11-13T14:56:33+00:00 (46 public) |
 
 <!-- END GENERATED: provenance -->
 

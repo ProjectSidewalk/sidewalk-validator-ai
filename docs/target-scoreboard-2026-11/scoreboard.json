@@ -2193,8 +2193,8 @@
   }
  },
  "provenance": {
-  "cities_read_at": "2026-11-13T14:43:48+00:00",
-  "git_commit": "9fa3b4b7203c47bd16de771ff231fd3f7c1820d1",
+  "cities_read_at": "2026-11-13T14:56:33+00:00",
+  "git_commit": "ebf10bde7ff20ad9c69204d8422298f369cd6a7f",
   "gold_matches_pin": true,
   "gold_sha256": "2b472651cb01011a8640b86eb4103e1794ab482186ba3a3471e7d019273edcae",
   "n_boot": 2000,
