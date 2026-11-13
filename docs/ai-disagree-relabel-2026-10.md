@@ -560,6 +560,9 @@ moves). A weighted rate covers only the cells that carry weight: Seattle's lone 
 | `adjudication/meeting_record.md` | `5f17737b09214780554bfb5e1c09e19830b2a76fb370659db5399fc4dffc367e` |
 | `adjudication/gold_shared.csv` (100 shared items) | `c560bdc612ca1a156691d25857bab3961a818abdc4488cedf32267e3e9e585ab` |
 
+Rounds 1 and 2 together are the gold set that [`target-scoreboard-2026-11.md`](target-scoreboard-2026-11.md) scores
+the target-cleaning methods of [#74](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/74) against.
+
 ## Severity and tags, against the crowd
 
 How often a human majority of at least two decisive votes confirms the AI's Agree and Disagree votes:
