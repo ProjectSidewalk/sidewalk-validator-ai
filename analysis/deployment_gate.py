@@ -1363,9 +1363,10 @@ def _git_commit():
 
 
 def _git_dirty():
-    """True when the code (``analysis/``, ``calibration/``, the two top-level modules) differs from HEAD or is
-    untracked; the generated docs do not count."""
-    out = _git("status", "--porcelain", "--", "analysis", "calibration", "data_generation.py", "regions.py")
+    """True when the code (Python and shell files of ``analysis/`` and ``calibration/``, the two top-level modules)
+    differs from HEAD or is untracked; READMEs and the generated docs do not count."""
+    out = _git("status", "--porcelain", "--", "analysis/*.py", "analysis/*.sh", "calibration/*.py",
+               "data_generation.py", "regions.py")
     return bool(out)
 
 
