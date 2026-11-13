@@ -182,11 +182,10 @@ def _yaml_lines(obj, indent):
     return lines
 
 
-def yaml_front_matter(meta, comments=()):
+def yaml_front_matter(meta):
     """Render ``meta`` (nested dicts, lists and scalars) as a ``---`` delimited YAML block.
 
-    A minimal emitter, so publishing does not need PyYAML. ``comments`` are emitted as ``# ...`` lines at the top
-    (used for TODOs that have no valid metadata value yet).
+    A minimal emitter, so publishing does not need PyYAML.
 
     Example::
 
@@ -199,8 +198,7 @@ def yaml_front_matter(meta, comments=()):
         ---
         <BLANKLINE>
     """
-    body = [f"# {c}" for c in comments] + _yaml_lines(meta, 0)
-    return "---\n" + "\n".join(body) + "\n---\n"
+    return "---\n" + "\n".join(_yaml_lines(meta, 0)) + "\n---\n"
 
 
 def fmt(x, nd=3):
