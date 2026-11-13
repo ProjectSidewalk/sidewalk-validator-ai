@@ -1,0 +1,39 @@
+{
+ "author_excluded_sha256": "767c3d5b0fca35b57deb09e28995549bd382c383fd4f1634b55e14e6c469bfd7",
+ "checks_passed": true,
+ "flagged_f": {
+  "sidewalk_chicago": 172889,
+  "sidewalk_seattle": 264025
+ },
+ "flagged_t": {
+  "sidewalk_chicago": 134,
+  "sidewalk_seattle": 6383
+ },
+ "key_items": 500,
+ "key_items_flagged": 11,
+ "key_items_missing": 0,
+ "max_missing": 0.01,
+ "pool_labels": {
+  "sidewalk_chicago": 146373,
+  "sidewalk_seattle": 200362
+ },
+ "pool_labels_missing": {
+  "sidewalk_chicago": {
+   "n": 0,
+   "share": 0.0
+  },
+  "sidewalk_seattle": {
+   "n": 0,
+   "share": 0.0
+  }
+ },
+ "rows": {
+  "sidewalk_chicago": 173023,
+  "sidewalk_seattle": 270408
+ },
+ "schemas": [
+  "sidewalk_seattle",
+  "sidewalk_chicago"
+ ],
+ "unmasked_items": 11
+}
