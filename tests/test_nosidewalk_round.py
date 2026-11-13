@@ -46,7 +46,7 @@ def raw_city(n, start=1000):
                      "street_edge_id": i // 2, "street_side": "left", "validations": json.dumps(
                          [vote("v1", "Agree")] if i % 4 == 0 else []), "pano_x": 100, "pano_y": 50,
                      "pano_width": 1000, "pano_height": 500, "camera_pitch": 0.0, "camera_roll": 0.0,
-                     "time_created": "2026-01-01"})
+                     "time_created": "2026-01-01", "latitude": 41.0 + i / 1e4, "longitude": -87.0})
     rows[0]["user_id"] = ME                                         # rater placed
     rows[1]["validations"] = json.dumps([vote(ME, "Unsure")])       # rater voted (Unsure counts)
     rows[2]["street_side"] = ""                                     # no face
@@ -273,6 +273,118 @@ def test_bar_needs_the_count_and_the_bound():
     assert nr.build_report(m(150, 3), DESIGN, 0.83, n_boot=20)["primary"]["bar_met"]
     assert not nr.build_report(m(150, 8), DESIGN, 0.83, n_boot=20)["primary"]["bar_met"]   # bound under the gate
     assert not nr.build_report(m(90, 0), DESIGN, 0.83, n_boot=20)["primary"]["bar_met"]    # too few decided
+
+
+def make_neighbours(run, key_dir):
+    out = run["tmp"] / "neighbours"
+    assert nr.main(["neighbours", "--design", run["design"], "--rawlabels", run["raw"], "--key-dir", str(key_dir),
+                    "--author-excluded", run["ex"], "--pilot-split", run["split"], "--cityparams", run["conf"],
+                    "--out", str(out)]) == 0
+    return out
+
+
+def score_neighbours(run, nb):
+    """A manifest (first label without a panorama) and five prediction files for the neighbour labels."""
+    labels = pd.read_csv(nb / "labels.csv", dtype=str)
+    d = run["tmp"] / "nb_scored"
+    d.mkdir(exist_ok=True)
+    labels.assign(status=["no_pano" if i == 0 else "ok" for i in range(len(labels))])[
+        ["label_uid", "city", "status"]].to_csv(d / "manifest.csv", index=False)
+    ok = labels.iloc[1:]
+    p = np.where(ok["label_id"].astype(int) % 2 == 0, 0.97, 0.2)
+    for k in range(5):
+        pd.DataFrame({"label_uid": ok["label_uid"], "split": "test", "true": "", "p_correct": p,
+                      "p_incorrect": 1 - p}).to_csv(d / f"predictions_fold{k}.csv", index=False)
+    return d
+
+
+def test_neighbours_are_the_other_labels_on_the_rated_faces(run, monkeypatch):
+    pool = make_pool(run, monkeypatch)
+    scored = score_pool(run, pool)
+    key_dir = build(run, pool, scored)
+    key = pd.read_csv(key_dir / "key.csv", dtype=str)
+    scores = pd.read_csv(key_dir / "scores.csv", dtype=str)
+    nb = make_neighbours(run, key_dir)
+    faces = pd.read_csv(nb / "faces.csv", dtype=str)
+    labels = pd.read_csv(nb / "labels.csv", dtype=str)
+    raw = pd.concat([pd.read_csv(os.path.join(run["raw"], f"{c}.csv"), dtype=str).assign(city=c)
+                     for c in DESIGN["cities"]])
+    raw = raw[raw["label_type"] == "NoSidewalk"]
+    raw_face = raw["city"] + ":" + raw["street_edge_id"] + ":" + raw["street_side"]
+    assert set(faces["face_id"]) == set(key["face_id"]) and faces["label_uid"].is_unique
+    assert len(faces) == int(raw_face.isin(set(key["face_id"])).sum())          # every label on a rated face
+    assert set(faces.loc[faces["rated"] == "1", "label_uid"]) == set(key["label_uid_city"])
+    new = faces[faces["new"] == "1"]
+    assert set(labels["label_uid"]) == set(new["label_uid"]) and len(new) > 0
+    assert not new["label_uid"].isin(scores["label_uid"]).any()                 # phase-1 labels are not scored again
+    assert (faces.loc[faces["scored"] == "1", "label_uid"].isin(scores["label_uid"])).all()
+    # a rule that keeps a label out of the pool is a flag here, except the two that make a crop impossible or moot
+    assert (new["ai_placed"] == "0").all() and (new["bad_geometry"] == "0").all()
+    assert set(nr.NEIGHBOUR_FLAGS) <= set(faces.columns) and "user_id" not in faces and "user_id" not in labels
+    assert (faces["same_labeler"] == "1").mean() > 0.9                           # the fixture has one labeler
+    man = json.loads((nb / "neighbours.json").read_text())
+    assert man["labels"] == len(labels) and man["labels_sha256"] == rl.sha256_file(str(nb / "labels.csv"))
+    assert sum(c["new"] for c in man["cities"].values()) == len(labels)
+    assert len((nb / "stage_files.txt").read_text().split()) == labels["pano_id"].nunique()
+    for name in os.listdir(nb):
+        assert ME not in (nb / name).read_text()
+    monkeypatch.setattr(rl, "inside_git_checkout", lambda p: True)
+    with pytest.raises(SystemExit, match="inside a git checkout"):
+        make_neighbours(run, key_dir)
+
+
+def test_pool_is_unchanged_by_the_crop_labels_refactor(run, monkeypatch):
+    """``crop_labels`` and ``write_stage_files`` were factored out of ``pool``; the files must be what the inline
+    code wrote (the real pinned pool was also reproduced byte for byte when this changed)."""
+    pool = make_pool(run, monkeypatch)
+    labels = pd.read_csv(pool / "labels.csv", dtype=str, keep_default_na=False)
+    assert list(labels.columns) == nr.ale.LABEL_COLUMNS + ["schema", "face_id", "rank"]
+    assert (labels["label_class"] == "").all() and (labels["n_votes"].astype(int)
+                                                    == labels["human_agree"].astype(int)
+                                                    + labels["human_disagree"].astype(int)).all()
+    stage = (pool / "stage_files.txt").read_text().split()
+    assert stage == sorted(set(stage)) and all(p.endswith(".jpg") for p in stage)
+
+
+def test_neighbour_scores_reproduces_the_pinned_scores_first(run, monkeypatch, capsys):
+    pool = make_pool(run, monkeypatch)
+    scored = score_pool(run, pool)
+    key_dir = build(run, pool, scored)
+    nb = make_neighbours(run, key_dir)
+    d = score_neighbours(run, nb)
+    out_json = run["tmp"] / "nb.json"
+    args = ["neighbour-scores", "--design", run["design"], "--key-dir", str(key_dir), "--gate", run["gate"],
+            "--priors", run["priors"], "--pinned-predictions", str(scored), "--neighbours", str(nb),
+            "--manifest", str(d / "manifest.csv"), "--predictions", str(d), "--out-json", str(out_json),
+            "--out-md", str(run["tmp"] / "nb.md")]
+    assert nr.main(args) == 0
+    fs = pd.read_csv(nb / "face_scores.csv", dtype=str, keep_default_na=False)
+    faces = pd.read_csv(nb / "faces.csv", dtype=str)
+    assert len(fs) == len(faces) and "user_id" not in fs
+    new = fs[fs["new"] == "1"]
+    assert (new["crop_status"] == "no_pano").sum() == 1 and (new.loc[new["crop_status"] == "no_pano", "stratum"] == "").all()
+    ok = new[new["crop_status"] == "ok"]
+    assert (ok["stratum"] == np.where(ok["label_id"].astype(int) % 2 == 0, "pass", "model_incorrect")).all()
+    pinned = pd.read_csv(key_dir / "scores.csv", dtype=str).set_index("label_uid")
+    old = fs[fs["crop_status"] == "phase1"].set_index("label_uid")
+    assert len(old) > 0 and (old["stratum"] == pinned.loc[old.index, "stratum"]).all()
+    rep = json.loads(out_json.read_text())
+    assert rep["all"]["labels"] == int((fs["stratum"] != "").sum()) and set(rep["slices"]) == {"severity", "tag"}
+    assert set(rep["cities"]) == set(DESIGN["cities"]) and "label_uid" not in out_json.read_text()
+    f = rep["faces_with_2plus_scored"]
+    assert f["faces"] == f["all_pass"] + f["none_pass"] + f["mixed"]
+    assert "Mean share per face" in (run["tmp"] / "nb.md").read_text()
+    # a prediction file that does not cover the ok crops, then a different gate run, both stop the run
+    short = pd.read_csv(d / "predictions_fold2.csv")
+    short.iloc[1:].to_csv(d / "predictions_fold2.csv", index=False)
+    with pytest.raises(SystemExit, match="does not cover exactly"):
+        nr.main(args)
+    short.to_csv(d / "predictions_fold2.csv", index=False)
+    gp = os.path.join(run["gate"], "fold0", "predictions.csv")
+    g = pd.read_csv(gp)
+    g.assign(p_correct=g["p_correct"] * 0.999).to_csv(gp, index=False)
+    with pytest.raises(SystemExit, match="not the gate run the key was built with"):
+        nr.main(args)
 
 
 def test_design_file_and_job_file():
