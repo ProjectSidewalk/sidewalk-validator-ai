@@ -112,3 +112,40 @@ Two practical points for a dataset upload. Make it a private test round with the
 (`--push --yes --create-repo --repo-prefix <user>/test-validator`), since a commit of ~5,000 additions and
 deletions is not exercised offline. Then push CurbRamp before Crosswalk: while the CurbRamp repo still holds the
 Crosswalk crops, an unchanged Crosswalk set is refused at 100% overlap against it, as it should be.
+
+## Depth-sized crops only
+
+Serving (sidewalk-ai-api) sizes every crop as `int(6100 / depth_m)` around the label, with the Depth Anything V2
+ViT-B (vKITTI) metric depth. Staging, and `--push-staged` again, refuses a run that was not cut that way
+([#21](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/21)):
+
+- `generation_run.json` or `dinov2/training_run.json` records `fixed_crop_half_px` (the fixed-size ablation of
+  [#51](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/51)) or `job_window_crops` (the crop-job
+  windows of [#53](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/53));
+- either record names a `depth_encoder` other than `vitb` or a `depth_dataset` other than `vkitti`
+  (`fine_tune_classifier.py` copies the encoder into `training_run.json`, so it is read there too);
+- whatever the records say, any row of `split.csv`, or any `ok` row of `manifest.csv`, has no `depth_m` (blank,
+  non-numeric, non-finite or ≤ 0), or a `crop_half_px` more than 1 px from `int(6100 / depth_m)`; a file without
+  either column is refused too. The staged copies in `publish/dataset/` are checked again before upload.
+
+The records are optional; the rows are not, so a fixed-size or whole-view dataset staged without its
+`generation_run.json` is still refused. Every row of `split.csv` counts, whatever its `status` column says, because
+a crop is published for each of them; in `manifest.csv` only the `ok` rows have a crop. The 1 px tolerance covers
+`depth_m` stored to 4 decimals (17 of 64,465 round-3 rows are off by one, none by more). Under about 0.55 m that
+rounding moves the size by more than 1 px, and any size the rounding allows is accepted (no round-3 depth is under
+2.4 m). Refusals give row counts, never a label or a city.
+
+### Publishing a model that is not depth-sized
+
+A whole-view or fixed-size model is refused by design, with or without its records. That includes NoSidewalk, whose
+crop is the whole view (`--fixed-crop-half-px 1024`, [nosidewalk-2026-11.md](nosidewalk-2026-11.md)); it is also not
+among this script's `--label_type` choices. Publishing such a model takes, in this order:
+
+1. sidewalk-ai-api renders that crop for that label type, released and deployed;
+2. a reviewed pull request here that adds the label type to `LABEL_TYPES` if it is new and gives `check_depth_sized`
+   the served rule for that type alone (for NoSidewalk: `fixed_crop_half_px` 1024 recorded, and every row's
+   `crop_half_px` 1024), with tests, leaving the depth rule in force for every other type;
+3. cards that describe that crop (`hf_cards.py` writes the depth-sized description today).
+
+Deleting or editing a record, filling in `depth_m`, widening the tolerance or skipping the check is not a fix: the
+published model would be fed crops in serving that it was not trained on.

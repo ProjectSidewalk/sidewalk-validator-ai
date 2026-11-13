@@ -266,3 +266,14 @@ RUN=$RUN RUNS=/gscratch/scrubbed/$USER/nosidewalk-runs/gate2 STORE=/gscratch/scr
 Copy `manifest.csv`, `crops_run.json` and `predictions_fold<k>.csv` back for `nosidewalk_round.py build`.
 
 Design, bar and results: [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md).
+
+## Depth agreement (issue #21)
+
+Two jobs, run from `/gscratch/scrubbed/$USER/depth-ablation-2026-11` (both refuse any other directory):
+`analysis/depth_agreement_stage.slurm` (one rsync connection for the sample's `.depth.npz` artifacts, no requeue),
+then `analysis/depth_agreement.slurm` (ViT-B and ViT-L depth on round 3's render plus Google's depth, one GPU,
+about 1 GPU-h). The ViT-L checkpoint is `depth_anything_v2_metric_vkitti_vitl.pth` from
+`depth-anything/Depth-Anything-V2-Metric-VKITTI-Large`. **Its revision is not pinned yet** (TODO(#21)), and the GPU
+job refuses to start until `VITL_REV` (a 40-hex commit) and `VITL_SHA256` (verified against the file) are set: read
+the commit on a login node and pin both here and in the job file. Recipe and expected outputs:
+[`depth-ablation-2026-11.md`](depth-ablation-2026-11.md), "Reproduce".
