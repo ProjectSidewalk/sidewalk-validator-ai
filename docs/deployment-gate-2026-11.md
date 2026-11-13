@@ -16,7 +16,9 @@ Tool: [`analysis/deployment_gate.py`](../analysis/deployment_gate.py). Generated
   comparison; nothing applies it, and a person would apply any change to the website's city settings.
 - **Every figure here covers public deployments only.** Non-public deployments are left out of every public number,
   pooled ones included, so no public figure minus the listed public rows says anything about them; their figures are
-  only in a private file outside the repository.
+  only in a private file outside the repository. Two exceptions, both open (see "Pooled counts that include
+  non-public deployments" below): the acceptance check's expected counts, which this doc and the provenance repeat,
+  and the pooled counts of the same pull that `deployment-prior-2026-11/observed.md` on master already publishes.
 - **Under the round-3 models, per-deployment evidence exists in one deployment only.** Two weeks after the round-3
   revisions went live, almost all decided gated rows of the public deployments come from one deployment (headline
   below). Four of its five Agree strata pass; Obstacle is undecided: 0.970 [0.915, 0.990] on the first 100 decided
@@ -95,10 +97,17 @@ A **stratum** is one deployment x label type x verdict (Agree, Disagree) x evide
   (2026-10-28, the first full day of the round-3 revisions) or later, previous = before `--before` (2026-10-27), the
   days between in neither. The assessment table does record the revision (`validator_revision`, SidewalkWebpage
   evolution 420); this PR changes `analysis/pull_ai_assessments.sh` to select it, and with it the tool keys the era on
-  each model's newest revision instead of a date. An EMPTY revision is never read as the previous era: it is also what
+  each model's current revision instead of a date. The current revision is the one on the newest day of the PUBLIC
+  deployments' rows, so a non-public deployment scored later, or by another revision on the same day, moves no public
+  row between eras. If two revisions of one model appear on that day the run stops and asks for
+  `--current-revision MODEL=REVISION`; no tie is broken on `label_id`, which is numbered per deployment. The
+  provenance records each model's current revision and whether it came from the public rows or the flag. Whether the
+  revision and vote-cast columns are used at all is also decided on the public rows: a column that is present but
+  empty on every public row is treated as absent, and the output says "present but empty". An EMPTY revision is never read as the previous era: it is also what
   a schema missing the column looks like, so such rows go to an `unknown` era, excluded from both and counted (and
   the tool warns). `--unrevisioned-before DAY` is the explicit exception: empty-revision rows assessed before that day
-  (when revisions began to be recorded) are previous. The pull script now exits 1 when any schema's table or column
+  (when revisions began to be recorded) are previous; the stderr warning counts the public deployments' rows only. Days
+  are given as YYYY-MM-DD and refused otherwise. The pull script now exits 1 when any schema's table or column
   check or query fails, so a partial pull is not mistaken for a complete one. Status uses the current era only; the
   previous era's status is reported as context.
 - **Regime**: `vote` when the assessment is linked to a vote (`ai_vote_cast`), `shadow` when it was scored without
@@ -108,7 +117,7 @@ A **stratum** is one deployment x label type x verdict (Agree, Disagree) x evide
   SidewalkWebpage evolution 355 removed the vote link of AI votes it voided (the off-target-marker repair), so those
   vote-mode rows read `shadow`; they predate the current era. The pull carries no field that recovers them.
 - **Every value is a flag** (`--min-n`, `--gate`, `--z`, `--schedule`, `--reference`, `--since`, `--before`,
-  `--unrevisioned-before`) and is recorded in `deployment_status.json` or the provenance.
+  `--unrevisioned-before`, `--current-revision`) and is recorded in `deployment_status.json` or the provenance.
 
 Per stratum the report also carries: `n_assessed`, `n_gated`, `n` (decided), `k`, the precision and interval at the
 checkpoint, `precision_all` and its interval (all decided rows), `first_pass_checkpoint`, `more_needed_if_perfect`
@@ -129,7 +138,10 @@ previous era's status, whether the deployment has previous-era assessments of th
   deployments are left out of every figure in the file.
 - `summary`: over the public strata only: strata by status, how many change status under each sensitivity reference,
   the largest one-deployment share of the decided rows, the acceptance counts, and the outcome of the acceptance
-  check (`{"ok": true, "against": ...}`; the counts it compares are private-inclusive and stay in the private file).
+  check (`{"ok": true, "against": ...}`). The counts the check computes include non-public deployments and are
+  written only to the private file, but the counts it compares them with are the `--expect` flag, which the
+  provenance records, and since the check passes the two are equal (see "Pooled counts that include non-public
+  deployments" below).
 - `pull`, `exclusions`: the pull's file name and sha256, and its counts over public deployments only.
 
 It contains no `mode`. The private `deployment_status_all.json` (under `~/Data`, never committed) lists every
@@ -381,7 +393,7 @@ Past n = 2,000 the checkpoints keep doubling and the rate keeps growing: at true
 ## Severity and tag slices
 
 The standing rule (every performance study reports type x severity and type x tag against a baseline, with training
-counts). Pooled over deployments, so in the current era these are in effect one deployment's numbers (the `largest`
+counts). Pooled over public deployments, so in the current era these are in effect one deployment's numbers (the `largest`
 column). The baseline is the previous era. The slice that bears on the status is the last table: the severity mix
 inside each stratum that passes or is undecided, so a stratum that passes overall but is weak at high severity is
 visible.
@@ -585,8 +597,12 @@ python analysis/deployment_gate.py doc --public-out $O --doc docs/deployment-gat
 `--expect` is the acceptance check: the pooled current-era decided gated Agree counts per type, before the re-label
 exclusions and over EVERY deployment, must equal those of
 [`deployment-prior-2026-11/observed.md`](deployment-prior-2026-11/observed.md) (same pull, same rule), or the command
-exits 1. Because those counts include non-public deployments, the public file records only the outcome; the counts
-are in the private file. `tests/test_deployment_gate.py` asserts the committed outcome.
+exits 1. Those counts include non-public deployments. `deployment_status.json` records only the outcome and the
+counts the check computes go to the private file, but the expected counts themselves are public: they are the
+`--expect` value in the command above, in `deployment-gate-2026-11/provenance.json` and so in the flags table below,
+and in the docstrings of `analysis/deployment_gate.py`, and they are the counts `observed.md` already publishes. See
+"Pooled counts that include non-public deployments" under the open decisions. `tests/test_deployment_gate.py`
+asserts the committed outcome.
 `--extra-terms` is a private file of further non-public terms (for example a deployment being onboarded that the
 listing does not show yet) that every public file is checked against.
 
@@ -628,6 +644,16 @@ rawLabels cache: 54 files, sha256 of the sorted file hashes `99e286e784c01f5a`; 
 - **The reference**: `majority2` binds, with `tie_half` and `any_vote` as sensitivities.
 - **Previous-era evidence**: context only today.
 - **NoSidewalk**: per-deployment masked rounds, or a pooled rule.
+- **Pooled counts that include non-public deployments.** `docs/deployment-prior-2026-11/observed.md` and
+  `observed.json` on master pool every deployment of the same pull. Set against this PR's public files they give, per
+  label type, the non-public deployments' current-era gated Agree counts and their current-era decided counts, and
+  their previous-era decided and confirmed counts, so their pooled previous-era precision; they also give a
+  deleted-label total and the number of schemas in the pull. The current-era part comes from very few deployments.
+  This PR also repeats the private-inclusive acceptance counts itself: the `--expect` value in
+  `deployment-gate-2026-11/provenance.json` and the generated flags table, the Replicating command, and the module
+  and `acceptance_counts` docstrings in `analysis/deployment_gate.py`. Nothing here changes `observed.*`. The option,
+  if the owner decides to close it: regenerate `observed.*` over public deployments only, read the expected counts
+  from a private file under `~/Data`, and keep them out of the provenance flags.
 
 ## Follow-ups
 

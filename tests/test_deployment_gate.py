@@ -3,6 +3,7 @@ and the privacy guards. Synthetic frames only: no network (the listing is stubbe
 import doctest
 import json
 import os
+import re
 
 import numpy as np
 import pandas as pd
@@ -101,6 +102,37 @@ def test_pass_lost_at_a_later_checkpoint_is_reported_both_ways():
     assert public["deployments"]["alpha-wa"]["CurbRamp"]["Agree"]["unrecorded"]["first_pass_checkpoint"] == 50
     assert private["strata"][0]["first_pass_checkpoint"] == 50
     assert g.status_from_outcomes([1.0] * 40, r)["first_pass_checkpoint"] is None
+
+
+def test_first_pass_is_the_first_of_several_passing_checkpoints():
+    """Passing at 50 and at 100 reports 50, the first look, not the last (#111 final review, N4)."""
+    s = g.status_from_outcomes([1.0] * 100, g.Rule())
+    assert (s["checkpoint"], s["status"], s["first_pass_checkpoint"]) == (100, "pass", 50)
+    d, _ = loaded(frame(rows("sidewalk_alpha", "CurbRamp", "Agree", 230, 230)))
+    rec = g.compute_strata(d, g.Rule(), "x")[0][("sidewalk_alpha", "CurbRamp", "Agree", "unrecorded")]
+    assert (rec["checkpoint"], rec["first_pass_checkpoint"]) == (200, 50)
+
+
+def test_never_voting_strata_have_no_first_pass():
+    """``never_votes``, ``not_served`` and ``no_gated`` strata carry a null ``first_pass_checkpoint`` even when their
+    rows would pass, and ``validate_report`` refuses one that does not (#111 final review, N3)."""
+    df = frame(rows("sidewalk_alpha", "NoSidewalk", "Disagree", 60, 60),
+               rows("sidewalk_alpha", "Other", "Agree", 60, 60, start=100),
+               rows("sidewalk_alpha", "CurbRamp", "Disagree", 60, 60, acc=0.5, start=200))
+    d, _ = loaded(df)
+    strata = g.compute_strata(d, g.Rule(), "x")[0]
+    for t, v, status in (("NoSidewalk", "Disagree", "never_votes"), ("Other", "Agree", "not_served"),
+                         ("CurbRamp", "Disagree", "no_gated")):
+        rec = strata[("sidewalk_alpha", t, v, "unrecorded")]
+        assert (rec["status"], rec["first_pass_checkpoint"]) == (status, None)
+    public, private, _ = _report(df)
+    g.validate_report(public)
+    assert {r["first_pass_checkpoint"] for r in private["strata"]} == {None}
+    for t, v in (("NoSidewalk", "Disagree"), ("Other", "Agree"), ("CurbRamp", "Disagree")):
+        bad = json.loads(json.dumps(public))
+        bad["deployments"]["alpha-wa"][t][v]["unrecorded"]["first_pass_checkpoint"] = 50
+        with pytest.raises(ValueError, match="first pass"):
+            g.validate_report(bad)
 
 
 def test_precision_all_and_its_interval_beside_the_checkpoint():
@@ -352,8 +384,9 @@ def test_public_pooled_figures_are_sums_of_the_public_strata():
     assert private["summary_all"]["acceptance"]["CurbRamp"]["decided"] == 230
 
 
-def _run_public(tmp_path, df, name):
-    """Run gate, backtest and slices on ``df`` and return the public files' text with the pull's sha256 masked."""
+def _run_public(tmp_path, df, name, extra=()):
+    """Run gate, backtest and slices on ``df`` (with the further flags ``extra``) and return the public files' text
+    with the pull's sha256 masked."""
     import hashlib
     work = tmp_path / name
     work.mkdir()
@@ -365,7 +398,7 @@ def _run_public(tmp_path, df, name):
     key = work / "key.csv"
     pd.DataFrame({"label_uid": ["alpha-wa:3", "sidewalk_hidden:1003", "sidewalk_gone:1"]}).to_csv(key, index=False)
     out = work / "public"
-    common = ["--assessments", str(p), "--public-out", str(out), "--exclude-items", str(key)]
+    common = ["--assessments", str(p), "--public-out", str(out), "--exclude-items", str(key), *extra]
     assert g.main(["gate"] + common, fetch=fetch_ok) == 0
     assert g.main(["backtest"] + common, fetch=fetch_ok) == 0
     assert g.main(["slices"] + common + ["--rawlabels-cache", str(cache)], fetch=fetch_ok) == 0
@@ -403,6 +436,137 @@ def test_no_public_output_changes_when_the_private_strata_change(tmp_path):
     for k in ("one", "many"):
         for f, t in texts["none"].items():
             assert texts[k][f] == t, f"{f} changed when the private strata changed ({k})"
+
+
+def rev_rows(part, revision, cast):
+    """``part`` (from :func:`rows`) with a ``validator_revision`` and an ``ai_vote_cast`` (None = empty)."""
+    return [{**r, "validator_revision": revision, "ai_vote_cast": cast} for r in part]
+
+
+def test_no_public_output_changes_when_the_private_strata_change_by_revision(tmp_path, capsys):
+    """The same property for a pull with ``validator_revision`` and ``ai_vote_cast`` (#111 final review, N1): the
+    current revision is taken from the public rows only, so non-public rows on a later day with a newer revision, or
+    on the same day with another revision and a higher ``label_id``, change no public file; neither do non-public rows
+    with an empty revision, nor a model only non-public rows have, even one with two revisions on its newest day."""
+    public_rows = [rev_rows(rows("sidewalk_alpha", "CurbRamp", "Agree", 120, 118, date="2026-11-01"), "r3", "t"),
+                   rev_rows(rows("sidewalk_alpha", "CurbRamp", "Agree", 150, 140, date="2026-09-01", start=200),
+                            "r2", "t"),
+                   rev_rows(rows("sidewalk_alpha", "CurbRamp", "Agree", 5, 5, date="2026-08-01", start=400), None, "t"),
+                   rev_rows(rows("sidewalk_alpha", "Obstacle", "Disagree", 20, 20, acc=0.5, start=500), "o3", "f"),
+                   rev_rows(rows("sidewalk_beta", "Crosswalk", "Agree", 60, 60, date="2026-11-02"), "c3", "f")]
+    hid = "sidewalk_hidden"
+    variants = {
+        "none": frame(*public_rows),
+        "earlier": frame(*public_rows, rev_rows(rows(hid, "CurbRamp", "Agree", 80, 60, date="2026-08-15",
+                                                     start=1000), "r1", "t")),
+        "later_newer": frame(*public_rows,
+                             rev_rows(rows(hid, "CurbRamp", "Agree", 60, 60, date="2026-11-09", start=1000), "r4", "t"),
+                             rev_rows(rows(hid, "Crosswalk", "Agree", 60, 30, date="2026-11-10", start=2000),
+                                      "c4", "f")),
+        "same_day_other": frame(*public_rows, rev_rows(rows(hid, "CurbRamp", "Agree", 1, 1, date="2026-11-01",
+                                                            start=99_999), "r9", "t")),
+        "empty": frame(*public_rows, rev_rows(rows(hid, "CurbRamp", "Agree", 70, 70, date="2026-11-05", start=1000),
+                                              None, None)),
+        "private_only_model": frame(*public_rows,
+                                    rev_rows(rows(hid, "NoCurbRamp", "Agree", 60, 60, date="2026-11-03", start=3000),
+                                             "n1", "t"),
+                                    rev_rows(rows(hid, "NoCurbRamp", "Agree", 1, 1, date="2026-11-03", start=4000),
+                                             "n2", "t")),
+    }
+    texts, streams = {}, {}
+    for k, df in variants.items():
+        texts[k] = _run_public(tmp_path, df, k)
+        o = capsys.readouterr()
+        streams[k] = tuple(re.sub(r"\b[0-9a-f]{16,64}\b", "SHA", x) for x in (o.out, o.err))   # the pull's sha256
+    # the warning counts the public rows with an empty revision only
+    assert "WARNING: 5 rows of the public deployments have an empty model revision" in streams["none"][1]
+    st = json.loads(texts["none"]["deployment_status.json"])
+    assert st["rule"]["era_key"].startswith("validator_revision")
+    assert "public deployments' rows" in st["rule"]["era_key"]
+    assert st["rule"]["regime_source"] == "ai_vote_cast"
+    assert set(st["deployments"]["alpha-wa"]["CurbRamp"]["Agree"]) == {"vote"}
+    pv = json.loads(texts["none"]["provenance.json"])["gate"]["pull"]
+    assert pv["current_revisions"] == {"sidewalk-validator-ai-crosswalk": "c3", "sidewalk-validator-ai-curbramp": "r3",
+                                       "sidewalk-validator-ai-obstacle": "o3"}
+    assert set(pv["current_revision_source"].values()) == {"public deployments' rows"}
+    assert pv["unknown_revision_rows"] == 5
+    for k in variants:
+        assert streams[k] == streams["none"], f"stdout or stderr changed when the private strata changed ({k})"
+        for f, t in texts["none"].items():
+            assert texts[k][f] == t, f"{f} changed when the private strata changed ({k})"
+
+
+def test_column_use_is_decided_on_the_public_rows(tmp_path):
+    """Revision and vote-cast columns empty on every public row: the public files read the date split and
+    ``unrecorded``, whether or not non-public rows fill the columns, and the messages say the columns are present but
+    empty."""
+    public_rows = [rev_rows(rows("sidewalk_alpha", "CurbRamp", "Agree", 60, 60), None, None)]
+    a = _run_public(tmp_path, frame(*public_rows), "a")
+    b = _run_public(tmp_path, frame(*public_rows, rev_rows(rows("sidewalk_hidden", "CurbRamp", "Agree", 60, 60,
+                                                                start=1000), "r9", "t")), "b")
+    assert a == b
+    st = json.loads(a["deployment_status.json"])
+    assert st["rule"]["era_key"].startswith("date (validator_revision present but empty on all the public")
+    assert st["rule"]["regime_source"].startswith("none (ai_vote_cast present but empty on all the public")
+    _, c = g.load_pull(frame(rev_rows(rows("sidewalk_alpha", "CurbRamp", "Agree", 1, 1), None, None)))
+    assert "present but empty" in c["era_key"] and "present but empty" in c["regime_source"]
+
+
+def test_two_revisions_on_the_newest_public_day_are_refused(tmp_path, capsys):
+    """No tie is broken on ``label_id``: two revisions of one model on the newest public day stop the run (nothing
+    written) until ``--current-revision`` names the current one, which the provenance records."""
+    df = frame(rev_rows(rows("sidewalk_alpha", "CurbRamp", "Agree", 60, 60, date="2026-11-01"), "r3", "t"),
+               rev_rows(rows("sidewalk_beta", "CurbRamp", "Agree", 60, 60, date="2026-11-01"), "r4", "t"))
+    p = tmp_path / "pull.csv"
+    df.to_csv(p, index=False)
+    out = tmp_path / "public"
+    base = ["--assessments", str(p), "--public-out", str(out)]
+    for cmd in ("gate", "backtest", "slices"):
+        assert g.main([cmd] + base, fetch=fetch_ok) == 2
+    assert "--current-revision" in capsys.readouterr().err and not out.exists()
+    with pytest.raises(g.EraError):
+        g.load_pull(df)
+    assert g.main(["gate"] + base + ["--current-revision", "CurbRamp=r4"], fetch=fetch_ok) == 0
+    pv = json.loads((out / "provenance.json").read_text())["gate"]["pull"]
+    assert pv["current_revisions"] == {"sidewalk-validator-ai-curbramp": "r4"}
+    assert pv["current_revision_source"] == {"sidewalk-validator-ai-curbramp": "--current-revision"}
+    assert pv["eras_public"] == {"current": 60, "previous": 60}
+
+
+def test_unrevisioned_before_and_before_reach_every_command(tmp_path):
+    """``--unrevisioned-before`` and ``--before`` take effect through the command line, including the acceptance
+    check's reload in ``gate``; a day not in YYYY-MM-DD form is refused."""
+    df = frame(rev_rows(rows("sidewalk_alpha", "CurbRamp", "Agree", 60, 60, date="2026-11-01"), "r3", "t"),
+               rev_rows(rows("sidewalk_alpha", "CurbRamp", "Agree", 60, 60, date="2026-08-01", start=100), None, "t"))
+    p = tmp_path / "pull.csv"
+    df.to_csv(p, index=False)
+
+    def eras(name, *extra):
+        out = tmp_path / name
+        for cmd in ("gate", "backtest", "slices"):
+            assert g.main([cmd, "--assessments", str(p), "--public-out", str(out), *extra], fetch=fetch_ok) == 0
+        pv = json.loads((out / "provenance.json").read_text())
+        return {cmd: pv[cmd]["pull"]["eras_public"] for cmd in ("gate", "backtest", "slices")}
+
+    assert set(map(str, eras("a").values())) == {str({"current": 60, "unknown": 60})}
+    assert set(map(str, eras("b", "--unrevisioned-before", "2026-09-01").values())) == {
+        str({"current": 60, "previous": 60})}
+    bt = json.loads((tmp_path / "b" / "backtest.json").read_text())
+    assert bt["public_deployments"]["alpha-wa"]["CurbRamp"]["Agree"]["vote"]["n"] == 60
+    with pytest.raises(SystemExit):
+        g.main(["gate", "--assessments", str(p), "--public-out", str(tmp_path / "c"),
+                "--unrevisioned-before", "2026-9-1"], fetch=fetch_ok)
+    with pytest.raises(ValueError, match="YYYY-MM-DD"):
+        g.load_pull(df, unrevisioned_before="2026-9-1")
+    # --before reaches the acceptance reload: with a --since before the default --before, a reload that dropped it
+    # would refuse the eras
+    dated = frame(rows("sidewalk_alpha", "Crosswalk", "Agree", 60, 60, date="2026-10-22"))
+    q = tmp_path / "dated.csv"
+    dated.to_csv(q, index=False)
+    args = ["gate", "--assessments", str(q), "--public-out", str(tmp_path / "d"), "--since", "2026-10-20",
+            "--before", "2026-10-15"]
+    assert g.main(args + ["--expect", "60,0,0,0,0"], fetch=fetch_ok) == 0
+    assert g.main(args + ["--expect", "0,0,0,0,0"], fetch=fetch_ok) == 1
 
 
 def test_public_report_has_no_mode_and_validates():

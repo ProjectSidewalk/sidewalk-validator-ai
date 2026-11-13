@@ -40,11 +40,15 @@ The rule (defaults; every value is a flag and is recorded in the output)
   ======================  =================================================================================
 
 * **Era**: with a ``validator_revision`` column (pulls after this PR's change to ``pull_ai_assessments.sh``), the
-  current era is each model's newest revision and the previous era every other row. Without it (the 2026-11-11
-  pull), the era is a DATE split: current = ``ai_date >= --since`` (2026-10-28, the first full day of the round-3
-  revisions), previous = before 2026-10-27, the changeover day in neither. Status uses the current era only.
+  current era is each model's revision on the newest day of the PUBLIC deployments' rows (or the one
+  ``--current-revision`` names; two revisions on that day stop the run) and the previous era every other recorded
+  revision; an empty revision is ``unknown`` (see :func:`assign_era`). Without it (the 2026-11-11 pull), the era is a
+  DATE split: current = ``ai_date >= --since`` (2026-10-28, the first full day of the round-3 revisions), previous =
+  before 2026-10-27, the changeover day in neither. Status uses the current era only.
 * **Evidence regime**: with an ``ai_vote_cast`` column, a row is ``vote`` (the AI's vote was cast) or ``shadow``
-  (scored, no vote); the two are separate strata, never pooled. Without it every row is ``unrecorded``.
+  (scored, no vote); the two are separate strata, never pooled. Without it (or with it empty on every public
+  deployment's row) every row is ``unrecorded``. Both column choices, like the current revision, are made on the
+  public deployments' rows only, so no public figure depends on a non-public row.
 
 Evidence beyond production votes
 --------------------------------
@@ -61,7 +65,8 @@ Subcommands
               recovered by subtraction) and, under ``--private-out``, ``deployment_status_all.json`` / ``.csv`` with
               every deployment, the pooled figures that include non-public ones, and the mode each stratum would get
               under each policy. Also the acceptance check (every deployment's current-era decided gated Agree counts
-              against ``--expect``; only its outcome is public).
+              against ``--expect``; only its outcome is in the status file, but the ``--expect`` value is recorded in
+              the provenance flags, so the counts are public wherever the check passes).
 ``backtest``  count-based sequential replay of the rule on the previous era, split by evidence regime (votes as of the
               pull's end; no dates, no waiting times), with the items of masked re-label rounds excluded; public
               deployments only in the public file.
@@ -134,6 +139,7 @@ EVIDENCE = ("production_votes", "masked_expert_round")
 BASES = ("raw", "prior_weighted")
 REGIMES = ("vote", "shadow", "unrecorded")
 STATUSES = ("pass", "undecided", "fail", "insufficient", "no_gated", "never_votes", "not_served")
+NEVER_VOTING = ("no_gated", "never_votes", "not_served")  # statuses no evidence can turn into a vote
 MODES = ("off", "shadow", "vote")  # SidewalkWebpage#5832's vocabulary; private decision file only
 POLICIES = ("strict", "grandfather")
 EXCLUDED_SCHEMAS = pc.EXCLUDED_SCHEMAS  # the internal test deployment
@@ -281,16 +287,71 @@ def read_pull(path):
                        low_memory=False)
 
 
-def load_pull(path_or_frame, since=SINCE, before=BEFORE, unrevisioned_before=None):
+class EraError(ValueError):
+    """The model era cannot be assigned without a choice the data does not make (two revisions of one model on the
+    newest day of the rows that decide it)."""
+
+
+def iso_day(day):
+    """``day`` (``YYYY-MM-DD`` text or a ``datetime.date``) as ``YYYY-MM-DD``. Days are compared with the pull's
+    ``ai_date`` text, so anything else (``2026-9-1``) would silently misorder; it raises instead.
+
+    >>> iso_day("2026-09-01"), iso_day(datetime.date(2026, 9, 1))
+    ('2026-09-01', '2026-09-01')
+    """
+    if isinstance(day, datetime.date):
+        return day.isoformat()
+    try:
+        return datetime.date.fromisoformat(str(day)).isoformat()
+    except ValueError:
+        raise ValueError(f"not a YYYY-MM-DD day: {day!r}") from None
+
+
+def _arg_day(text):
+    try:
+        return iso_day(text)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e)) from None
+
+
+def parse_current_revisions(items):
+    """``{model_id: revision}`` from ``--current-revision`` values ``MODEL=REVISION``, where MODEL is a model id or a
+    label type (``CurbRamp`` means ``sidewalk-validator-ai-curbramp``).
+
+    >>> parse_current_revisions(["CurbRamp=abc123"])
+    {'sidewalk-validator-ai-curbramp': 'abc123'}
+    """
+    out = {}
+    for it in items or []:
+        model, sep, rev = str(it).partition("=")
+        model, rev = model.strip(), rev.strip()
+        if not sep or not model or not rev:
+            raise ValueError(f"--current-revision takes MODEL=REVISION, got {it!r}")
+        model = model.lower()
+        out[model if model.startswith(MODEL_PREFIX) else MODEL_PREFIX + model] = rev
+    return out
+
+
+def load_pull(path_or_frame, since=SINCE, before=BEFORE, unrevisioned_before=None, public=None,
+              current_revisions=None):
     """The pull (``analysis/pull_ai_assessments.sh``) as one row per AI-assessed label, with ``label_uid``
     (``schema:label_id``, asserted unique), ``era`` (``current`` / ``previous`` / ``changeover`` by date; ``current``
-    / ``previous`` / ``unknown`` by revision, see :func:`assign_era`), ``model_revision`` and ``regime``. Dropped, with counts: backup schemas (``_bak_``), the internal ``sidewalk_validation`` schema,
-    deleted labels, and rows whose ``model_id`` is not ``sidewalk-validator-ai-<label type>`` (a label retyped after
-    its assessment). Returns ``(df, counts)``.
+    / ``previous`` / ``unknown`` by revision, see :func:`assign_era`), ``model_revision`` and ``regime``. Dropped,
+    with counts: backup schemas (``_bak_``), the internal ``sidewalk_validation`` schema, deleted labels, and rows
+    whose ``model_id`` is not ``sidewalk-validator-ai-<label type>`` (a label retyped after its assessment). Returns
+    ``(df, counts)``.
+
+    ``public`` (the public deployments' schemas) makes every choice that applies to all rows depend on the public
+    rows only: whether the era is keyed on the revision, each model's current revision, and whether the regime is
+    recorded. The command line always passes it, so no public figure depends on a non-public row; ``None`` (library
+    use, tests) decides on every row. ``current_revisions`` (``{model_id: revision}``) overrides the derived current
+    revision of the models it names.
 
     ``label_id`` is per schema, so ``(schema, label_id)`` is the key; the same ``label_id`` in two schemas is two
     labels.
     """
+    since, before = iso_day(since), iso_day(before)
+    unrevisioned_before = iso_day(unrevisioned_before) if unrevisioned_before else None
     if before > since:
         raise ValueError(f"the previous era must end ({before}) on or before the current one starts ({since})")
     d = path_or_frame.copy() if isinstance(path_or_frame, pd.DataFrame) else read_pull(path_or_frame)
@@ -313,18 +374,22 @@ def load_pull(path_or_frame, since=SINCE, before=BEFORE, unrevisioned_before=Non
         d[c] = pd.to_numeric(d[c], errors="coerce").fillna(0).astype(int)
     d["ai_accuracy"] = pd.to_numeric(d["ai_accuracy"], errors="coerce")
     d["ai_date"] = pd.to_datetime(d["ai_date"]).dt.strftime("%Y-%m-%d")
-    assign_era(d, since, before, counts, unrevisioned_before)
+    basis = d["schema"].isin(public) if public is not None else pd.Series(True, index=d.index)
+    assign_era(d, since, before, counts, unrevisioned_before, basis=basis, current_revisions=current_revisions,
+               basis_name=_basis_name(public))
     # Regime = whether AI validation was ON for the label's deployment when it was assessed. ``ai_vote_cast`` is
     # ``label_validation_id IS NOT NULL``: in vote mode the website casts a vote for EVERY assessment, the verdict when
     # the served accuracy reaches the gate and an Unsure below it, so for a gated row ``vote`` also means the verdict
     # was counted, and for an ungated row it means an Unsure was cast. Known limit: SidewalkWebpage evolution 355
     # nulled the link of AI votes it voided (the off-target-marker repair), so those vote-mode rows read ``shadow``.
-    if "ai_vote_cast" in d.columns and d["ai_vote_cast"].notna().any():
+    # Whether the column is used is decided on the public rows (``basis``) only, like the era key.
+    if "ai_vote_cast" in d.columns and d.loc[basis, "ai_vote_cast"].notna().any():
         d["regime"] = np.where(_truthy(d["ai_vote_cast"]), "vote", "shadow")
         counts["regime_source"] = "ai_vote_cast"
     else:
         d["regime"] = "unrecorded"
-        counts["regime_source"] = "none (the pull has no ai_vote_cast column)"
+        counts["regime_source"] = ("none (the pull has no ai_vote_cast column)" if "ai_vote_cast" not in d.columns
+                                   else f"none (ai_vote_cast present but empty on all the {_basis_name(public)})")
     counts["eras"] = {k: int(v) for k, v in d["era"].value_counts().items()}
     counts["n_schemas"] = int(d["schema"].nunique())
     counts["ai_date_min"], counts["ai_date_max"] = str(d["ai_date"].min()), str(d["ai_date"].max())
@@ -332,38 +397,103 @@ def load_pull(path_or_frame, since=SINCE, before=BEFORE, unrevisioned_before=Non
     return d.reset_index(drop=True), counts
 
 
-def assign_era(d, since=SINCE, before=BEFORE, counts=None, unrevisioned_before=None):
-    """Set ``era`` and ``model_revision`` in place. With a populated ``validator_revision`` column, each model's
-    current revision is the one of its newest assessment and the era follows the revision: ``current`` for that
-    revision, ``previous`` for any other recorded revision, and ``unknown`` for an EMPTY revision, which is excluded
-    from both eras and counted (``unknown_revision_rows``). An empty revision is never read as the previous era: it is
-    what an assessment before API 1.0.2 looks like, but also what a schema whose column is missing looks like, and the
-    two cannot be told apart from the row. ``unrevisioned_before`` (a date) is the explicit exception: empty-revision
-    rows assessed before it are ``previous`` (pass the date revisions began to be recorded). Without the column, the
-    date split.
+def _basis_name(public):
+    return "rows" if public is None else "public deployments' rows"
+
+
+def _newest_day_revision(days, revs, model, where):
+    """The one revision on the newest day of ``days``; :class:`EraError` when that day has more than one (the rows
+    give no order within a day that means anything across deployments: ``label_id`` is per schema)."""
+    day = days.max()
+    on = sorted(set(revs[days == day]))
+    if len(on) > 1:
+        raise EraError(f"{model}: {len(on)} revisions ({', '.join(on)}) on {day}, the newest day of the {where}; "
+                       f"name the current one with --current-revision {model}=<revision>")
+    return on[0]
+
+
+def assign_era(d, since=SINCE, before=BEFORE, counts=None, unrevisioned_before=None, basis=None,
+               current_revisions=None, basis_name=None):
+    """Set ``era`` and ``model_revision`` in place.
+
+    With a ``validator_revision`` column populated on the ``basis`` rows (default every row; the command line passes
+    the public deployments' rows), the era follows the revision. Each model's current revision is the one on the
+    newest day of its ``basis`` rows that carry a revision, or the one ``current_revisions`` names; two revisions on
+    that day raise :class:`EraError` (no tie is broken on ``label_id``, which is per schema). A model with no such
+    ``basis`` row takes it from its other rows the same way, and when their newest day is ambiguous it has no current
+    revision (its rows are ``unknown``); no ``basis`` row is of that model, so no figure over the ``basis`` rows
+    changes. The era is then ``current`` for the current revision, ``previous`` for any other recorded revision, and
+    ``unknown`` for an EMPTY revision, which is excluded from both eras and counted (``unknown_revision_rows``). An
+    empty revision is never read as the previous era: it is what an assessment before API 1.0.2 looks like, but also
+    what a schema whose column is missing looks like, and the two cannot be told apart from the row.
+    ``unrevisioned_before`` (a day) is the explicit exception: empty-revision rows assessed before it are ``previous``
+    (pass the day revisions began to be recorded). Otherwise (no column, or no revision on any ``basis`` row), the date
+    split. ``basis_name`` names the ``basis`` rows in ``era_key`` (it is never inferred from the rows, so the text
+    does not depend on which other rows exist).
+
+    ``counts`` gets ``era_key``, and by revision ``current_revisions`` (every model), ``current_revision_source``
+    (per model: ``--current-revision``, ``basis rows`` or ``other rows``), ``current_revisions_basis`` (the models
+    decided by the flag or by the ``basis`` rows, the only ones a public file may list) and ``unknown_revision_rows``.
+
+    >>> d = pd.DataFrame({"schema": ["a", "a", "b"], "label_id": [1, 2, 1], "model_id": ["m", "m", "m"],
+    ...                   "ai_date": ["2026-11-01", "2026-11-02", "2026-11-09"],
+    ...                   "validator_revision": ["r1", "r2", "r3"]})
+    >>> assign_era(d, basis=d["schema"].eq("a"))["era"].tolist()   # b's later row does not move a's current era
+    ['previous', 'current', 'previous']
     """
     counts = {} if counts is None else counts
-    if "validator_revision" in d.columns and d["validator_revision"].notna().any():
+    basis = (pd.Series(True, index=d.index) if basis is None else basis).to_numpy(dtype=bool)
+    where = basis_name or "rows"
+    has_col = "validator_revision" in d.columns
+    if has_col:
         rev = d["validator_revision"].astype("string").str.strip()
         rev = rev.mask(rev == "")
         has = rev.notna().to_numpy(dtype=bool)
-        dated = d.assign(_rev=rev).dropna(subset=["_rev"]).sort_values(["ai_date", "label_id"], kind="mergesort")
-        current = dated.groupby("model_id")["_rev"].last().to_dict()
-        is_cur = (rev == d["model_id"].map(current)).fillna(False).to_numpy(dtype=bool) & has
-        era = np.where(is_cur, "current", np.where(has, "previous", "unknown"))
+    if has_col and (has & basis).any():
+        explicit = dict(current_revisions or {})
+        days, models = d["ai_date"].to_numpy(), d["model_id"].astype(str).to_numpy()
+        revs = rev.fillna("").to_numpy(dtype=str)
+        current, source = {}, {}
+        for model in sorted(set(models[has]) | set(explicit)):
+            if model in explicit:
+                current[model], source[model] = explicit[model], "--current-revision"
+                continue
+            m_b = (models == model) & has & basis
+            if m_b.any():
+                current[model] = _newest_day_revision(days[m_b], revs[m_b], model, where)
+                source[model] = "basis rows"
+                continue
+            m_o = (models == model) & has
+            try:
+                current[model] = _newest_day_revision(days[m_o], revs[m_o], model, "rows")
+                source[model] = "other rows"
+            except EraError:
+                source[model] = "other rows: none (two revisions on the newest day)"
+        cur_of_row = pd.Series(models).map(current).fillna("").to_numpy(dtype=str)
+        is_cur = has & (revs == cur_of_row)
+        known = has & (cur_of_row != "")
+        era = np.where(is_cur, "current", np.where(known, "previous", "unknown"))
         if unrevisioned_before:
             era = np.where(~has & (d["ai_date"].to_numpy() < unrevisioned_before), "previous", era)
         d["era"] = era
         d["model_revision"] = rev.fillna("unrecorded").astype(str)
-        counts["era_key"] = "validator_revision" + (f"; empty revision before {unrevisioned_before} = previous"
-                                                    if unrevisioned_before else "; empty revision = unknown (excluded)")
+        decided_on = "each model's revision on the newest day of the " + where
+        counts["era_key"] = ("validator_revision; current = " + decided_on
+                             + ("" if not explicit else " or --current-revision")
+                             + (f"; empty revision before {unrevisioned_before} = previous" if unrevisioned_before
+                                else "; empty revision = unknown (excluded)"))
         counts["current_revisions"] = {str(k): str(v) for k, v in sorted(current.items())}
+        counts["current_revision_source"] = dict(sorted(source.items()))
+        counts["current_revisions_basis"] = {k: v for k, v in counts["current_revisions"].items()
+                                             if source[k] in ("--current-revision", "basis rows")}
         counts["unknown_revision_rows"] = int((era == "unknown").sum())
     else:
         d["era"] = np.where(d["ai_date"] >= since, "current", np.where(d["ai_date"] < before, "previous", "changeover"))
         d["model_revision"] = np.where(d["era"] == "current", f"unrecorded; current era by date (ai_date >= {since})",
                                        f"unrecorded; previous era by date (ai_date < {before})")
-        counts["era_key"] = f"date (no validator_revision in the pull): current >= {since}, previous < {before}"
+        why = ("no validator_revision in the pull" if not has_col else
+               f"validator_revision present but empty on all the {where}")
+        counts["era_key"] = f"date ({why}): current >= {since}, previous < {before}"
     return d
 
 
@@ -575,8 +705,11 @@ def stratum_record(g, rule, evidence_ref, base, label_type, verdict):
     elif len(gated) == 0:
         rec["status"] = "no_gated"
     # None where no number of decided rows can help: the verdict never votes, the type is not served, or no
-    # assessment reaches the gate (no_gated).
-    rec["more_needed_if_perfect"] = (None if rec["status"] in ("never_votes", "not_served", "no_gated")
+    # assessment reaches the gate (no_gated). A first pass is null there too: a sticky rule acts on that field, and
+    # these strata must never vote.
+    if rec["status"] in NEVER_VOTING:
+        rec["first_pass_checkpoint"] = None
+    rec["more_needed_if_perfect"] = (None if rec["status"] in NEVER_VOTING
                                      else more_needed_if_perfect(dec[f"out_{ref}"].to_numpy(), rule))
     rec["sensitivity"] = {}
     for other in REFERENCES + ("majority2_no_excluded",):
@@ -584,7 +717,7 @@ def stratum_record(g, rule, evidence_ref, base, label_type, verdict):
             continue
         o = gated[gated[f"out_{other}"].notna()][f"out_{other}"].to_numpy()
         s = status_from_outcomes(o, rule)
-        if rec["status"] in ("no_gated", "never_votes", "not_served"):
+        if rec["status"] in NEVER_VOTING:
             s["status"] = rec["status"]
         rec["sensitivity"][other] = {k: s[k] for k in ("n", "k", "checkpoint", "precision", "ci_lo", "ci_hi", "status")}
     want = CLASS_FOR_VERDICT[verdict]
@@ -809,7 +942,8 @@ REQUIRED_STRATUM = ("evidence", "evidence_ref", "basis", "min_n", "model_revisio
 
 def validate_report(report, gate=None):
     """Raise ``ValueError`` unless ``report`` is a well-formed public status report: required keys, known vocabulary,
-    no ``mode`` key anywhere, every ``pass`` with n at or above its ``min_n`` and a lower bound at the gate, and a
+    no ``mode`` key anywhere, every ``pass`` with n at or above its ``min_n`` and a lower bound at the gate, no
+    ``first_pass_checkpoint`` on a stratum that must never vote (``no_gated``, ``never_votes``, ``not_served``), and a
     ``types`` entry for every type."""
     for k in ("schema_version", "kind", "rule", "types", "deployments", "private", "summary"):
         if k not in report:
@@ -834,6 +968,8 @@ def validate_report(report, gate=None):
                         n_eval = rec["checkpoint"] if rec.get("checkpoint") else rec["n"]
                         if n_eval < rec["min_n"] or rec["ci_lo"] < g:
                             raise ValueError(f"{city}/{t}/{v}/{regime}: pass without the bar")
+                    if rec["status"] in NEVER_VOTING and rec.get("first_pass_checkpoint") is not None:
+                        raise ValueError(f"{city}/{t}/{v}/{regime}: {rec['status']} with a first pass")
     return True
 
 
@@ -1420,6 +1556,11 @@ def render_provenance(pv):
                       f"`{e['file']}` sha256 `{e['sha256'][:16]}` ({e['in_pull_public']})"
                       for e in first["exclusions"]["files"])
                   + f"; {first['exclusions']['rows_removed_public']} rows removed."]
+        if p.get("current_revisions") is not None:
+            lines.append("Current revision per model: " + (", ".join(
+                f"`{m.replace(MODEL_PREFIX, '')}` `{r}` ({p['current_revision_source'][m]})"
+                for m, r in p["current_revisions"].items()) or "none") + f"; rows with an empty revision, "
+                f"excluded: {p.get('unknown_revision_rows', 0):,}.")
     if "slices" in pv:
         sv = pv["slices"]
         lines.append(f"rawLabels cache: {sv.get('rawlabels_n_files')} files, sha256 of the sorted file hashes "
@@ -1510,9 +1651,9 @@ def update_provenance(out_dir, section, payload, terms):
     write_public_json(dict(sorted(pv.items())), path, terms)
 
 
-def _public_pull_counts(raw, d, pub, revision_mode=False):
+def _public_pull_counts(raw, d, pub, counts):
     """The pull's counts over the PUBLIC deployments' schemas only (``raw`` = the CSV as read, ``d`` = loaded and
-    after the exclusions)."""
+    after the exclusions, ``counts`` = :func:`load_pull`'s, of which only the public-derived entries are copied)."""
     rp = raw[raw["schema"].isin(pub)]
     deleted = _truthy(rp["deleted"])
     nd = rp[~deleted]
@@ -1523,7 +1664,12 @@ def _public_pull_counts(raw, d, pub, revision_mode=False):
            "ai_date_max": str(dp["ai_date"].max()) if len(dp) else None,
            "dropped_public": {"deleted_rows": int(deleted.sum()), "model_type_mismatch": int(mismatch.sum())},
            "eras_public": {k: int(v) for k, v in dp["era"].value_counts().sort_index().items()}}
-    if revision_mode:
+    if "unknown_revision_rows" in counts:   # era by revision: each model's current revision and where it came from,
+        # for the models decided by the public rows or by the flag only
+        out["current_revisions"] = counts["current_revisions_basis"]
+        out["current_revision_source"] = {k: counts["current_revision_source"][k]
+                                          .replace("basis rows", "public deployments' rows")
+                                          for k in counts["current_revisions_basis"]}
         out["unknown_revision_rows"] = int((dp["era"] == "unknown").sum())
     return out
 
@@ -1534,9 +1680,12 @@ def _prepare(args, fetch=None):
     one (every deployment), ``raw`` the pull as read (for the acceptance check)."""
     listing = fetch_listing(fetch)
     raw = read_pull(args.assessments)
-    d, counts = load_pull(raw, args.since, args.before, args.unrevisioned_before)
-    d = add_outcomes(d)
     cities = listing_cities(listing)
+    # Every choice made over all rows (era key, current revisions, regime source) is made on the public rows only.
+    pub0 = public_schemas(raw["schema"].dropna().unique(), cities)
+    d, counts = load_pull(raw, args.since, args.before, args.unrevisioned_before, public=set(pub0),
+                          current_revisions=parse_current_revisions(getattr(args, "current_revision", None)))
+    d = add_outcomes(d)
     # The term list comes from the UNFILTERED pull, so a private schema whose rows are all dropped or excluded is
     # still checked for.
     terms = private_terms(listing, raw["schema"].dropna().unique(), _read_terms(getattr(args, "extra_terms", None)))
@@ -1552,7 +1701,7 @@ def _prepare(args, fetch=None):
     listing_meta = {"source": dg.CITIES_API, "sha256": pr.sha256_of_text(listing_text), "n": len(entries),
                     "n_public": sum(1 for c in entries if c.get("visibility") == "public")}
     pull_pub = {"file": os.path.basename(args.assessments), "sha256": sha,
-                **_public_pull_counts(raw, d, pub, "unknown_revision_rows" in counts)}
+                **_public_pull_counts(raw, d, pub, counts)}
     meta = {"pull": pull_pub,
             "exclusions": {"files": [{k: e[k] for k in ("file", "sha256", "in_pull_public")} for e in per_file],
                            "rows_removed_public": int(n0_pub - n_pub)},
@@ -1562,16 +1711,18 @@ def _prepare(args, fetch=None):
                          "ai_date_min": counts["ai_date_min"], "ai_date_max": counts["ai_date_max"],
                          "dropped": {k: counts[k] for k in ("backup_schema_rows", "internal_schema_rows",
                                                             "deleted_rows", "model_type_mismatch")},
-                         "eras": counts["eras"], "unknown_revision_rows": counts.get("unknown_revision_rows")},
+                         "eras": counts["eras"], "unknown_revision_rows": counts.get("unknown_revision_rows"),
+                         "current_revisions": counts.get("current_revisions"),
+                         "current_revision_source": counts.get("current_revision_source")},
                 "exclusions": {"files": per_file, "rows_removed": int(n0 - len(d))},
                 "listing": {**listing_meta, "n_non_public_terms": len(terms)}}
     if getattr(args, "private_out", None):
         os.makedirs(args.private_out, exist_ok=True)
         with open(os.path.join(args.private_out, "cities_listing.json"), "w") as f:
             f.write(listing_text)
-    if counts.get("unknown_revision_rows"):
-        print(f"WARNING: {counts['unknown_revision_rows']} rows have an empty model revision and are excluded from "
-              "both eras (see --unrevisioned-before)", file=sys.stderr)
+    if pull_pub.get("unknown_revision_rows"):   # the public count only; the count over every row is private
+        print(f"WARNING: {pull_pub['unknown_revision_rows']} rows of the public deployments have an empty model "
+              "revision and are excluded from both eras (see --unrevisioned-before)", file=sys.stderr)
     return d, counts, listing, terms, meta, meta_all, raw
 
 
@@ -1613,16 +1764,21 @@ def cmd_gate(args, fetch=None):
     except dg.ListingError as e:
         print(f"listing fetch failed, nothing written: {e}", file=sys.stderr)
         return 2
+    except EraError as e:
+        print(f"model era undetermined, nothing written: {e}", file=sys.stderr)
+        return 2
     ref = f"{meta['pull']['file']}@{meta['pull']['sha256'][:16]}"
     public, private, strata = build_report(d, counts, listing, rule, ref, meta["pull"], meta["exclusions"])
     private["pull"], private["exclusions"] = meta_all["pull"], meta_all["exclusions"]
     validate_report(public)
     # The acceptance check compares EVERY deployment's counts before the exclusions (a private-inclusive total) with
-    # the ones observed.md states for the same pull. Only its outcome goes into the public file; the counts go to the
-    # private one.
+    # the ones observed.md states for the same pull. Only its outcome goes into the status file and the computed counts
+    # go to the private one, but the expected counts are the --expect flag, which the public provenance records.
     acc = None
     if args.expect:
-        d0, _ = load_pull(raw, args.since, args.before, args.unrevisioned_before)
+        d0, _ = load_pull(raw, args.since, args.before, args.unrevisioned_before,
+                          public=set(public_schemas(raw["schema"].dropna().unique(), listing_cities(listing))),
+                          current_revisions=parse_current_revisions(args.current_revision))
         a0 = acceptance_counts(add_outcomes(d0), rule)
         want = [int(x) for x in args.expect.split(",")]
         got = [a0[t]["decided"] for t in SERVED_TYPES]
@@ -1654,6 +1810,9 @@ def cmd_backtest(args, fetch=None):
     except dg.ListingError as e:
         print(f"listing fetch failed, nothing written: {e}", file=sys.stderr)
         return 2
+    except EraError as e:
+        print(f"model era undetermined, nothing written: {e}", file=sys.stderr)
+        return 2
     public, private = backtest(d, listing, rule)
     public["exclusions"] = meta["exclusions"]
     write_public_json(public, os.path.join(args.public_out, "backtest.json"), terms)
@@ -1683,6 +1842,9 @@ def cmd_slices(args, fetch=None):
         d, counts, listing, terms, meta, meta_all, _ = _prepare(args, fetch)
     except dg.ListingError as e:
         print(f"listing fetch failed, nothing written: {e}", file=sys.stderr)
+        return 2
+    except EraError as e:
+        print(f"model era undetermined, nothing written: {e}", file=sys.stderr)
         return 2
     s = slices_report(d, listing, rule, args.rawlabels_cache, args.train_root, public_only=True)
     if args.private_out:
@@ -1741,14 +1903,15 @@ def cmd_privacy_check(args, fetch=None):
 
 
 def _rule_flags(p):
-    p.add_argument("--since", default=SINCE, help="first day of the current era when the pull has no revision column")
-    p.add_argument("--before", default=BEFORE,
+    p.add_argument("--since", default=SINCE, type=_arg_day,
+                   help="first day of the current era when the pull has no revision column")
+    p.add_argument("--before", default=BEFORE, type=_arg_day,
                    help="the previous era is assessments BEFORE this day when the pull has no revision column; days "
                         "from --before up to --since are the changeover, in neither era")
-    p.add_argument("--unrevisioned-before", default=None,
-                   help="with a revision column: rows with an EMPTY revision assessed before this day are the "
-                        "previous era (pass the day revisions began to be recorded); every other empty-revision row "
-                        "is excluded as unknown")
+    p.add_argument("--unrevisioned-before", default=None, type=_arg_day,
+                   help="with a revision column: rows with an EMPTY revision assessed before this day (YYYY-MM-DD) "
+                        "are the previous era (pass the day revisions began to be recorded); every other "
+                        "empty-revision row is excluded as unknown")
     p.add_argument("--min-n", type=int, default=50)
     p.add_argument("--gate", type=float, default=im.GATE)
     p.add_argument("--z", type=float, default=pc.Z95, help="Wilson z (1.96 = 95%%)")
@@ -1767,6 +1930,10 @@ def build_parser():
         s.add_argument("--private-out", default=None, help="directory for the private files (under ~/Data)")
         s.add_argument("--exclude-items", nargs="*", default=[], help="masked re-label round keys to drop")
         s.add_argument("--extra-terms", default=None, help="file of extra non-public terms, one per line (private)")
+        s.add_argument("--current-revision", action="append", default=None, metavar="MODEL=REVISION",
+                       help="with a revision column: the current revision of MODEL (a model id or a label type), "
+                            "instead of the one on the newest day of the public deployments' rows; needed when that "
+                            "day has two (repeatable)")
         _rule_flags(s)
         s.set_defaults(func=fn)
         if name == "gate":
