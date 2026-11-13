@@ -3,6 +3,7 @@ google-genai SDK is never imported except by the one adapter test that skips wit
 import doctest
 import json
 import os
+import shutil
 import sys
 import warnings
 from types import SimpleNamespace
@@ -40,7 +41,9 @@ def test_score_mapping(answer, conf, p):
     ('{"answer": "yes", "confidence": "80"}', "confidence not a number"),
     ('{"answer": "yes", "confidence": true}', "confidence not a number"),
     ('{"answer": "no", "confidence": 100.5}', "confidence outside 0-100"),
-    ('{"answer": "no", "confidence": -1}', "confidence outside 0-100")])
+    ('{"answer": "no", "confidence": -1}', "confidence outside 0-100"),
+    ('{"answer": "yes", "confidence": ' + "9" * 400 + "}", "confidence not a number"),   # overflows a float
+    ('{"answer": "yes", "confidence": 1e400}', "confidence not a number")])
 def test_malformed_reply_is_unscored_never_half(text, reason):
     s = vg.score_response({"text": text, "finish_reason": "STOP"})
     assert s["p_incorrect"] is None and s["p_correct"] is None and s["unscored_reason"] == reason
@@ -225,11 +228,14 @@ def test_refuses_a_git_checkout_for_outputs_and_ledger(tmp_path):
     root, _ = _data_root(tmp_path)
     inside = os.path.join(vg.REPO_DIR, "scores-should-not-exist")
     stub = _Stub()
-    with pytest.raises(SystemExit, match="--out-dir"):
-        vg.main(_args(root, tmp_path, **{"out-dir": inside}), post=stub)
-    with pytest.raises(SystemExit, match="--usage-log"):
-        vg.main(_args(root, tmp_path, **{"usage-log": os.path.join(inside, "usage.jsonl")}), post=stub)
-    assert not os.path.exists(inside) and not stub.requests
+    try:
+        with pytest.raises(SystemExit, match="--out-dir"):
+            vg.main(_args(root, tmp_path, **{"out-dir": inside}), post=stub)
+        with pytest.raises(SystemExit, match="--usage-log"):
+            vg.main(_args(root, tmp_path, **{"usage-log": os.path.join(inside, "usage.jsonl")}), post=stub)
+        assert not os.path.exists(inside) and not stub.requests
+    finally:   # a regressed guard must not leave the directory behind and fail every later run
+        shutil.rmtree(inside, ignore_errors=True)
     vg.main(_args(root, tmp_path, **{"usage-log": "none", "limit": 2}), post=stub)
     assert stub.requests and not (tmp_path / "usage.jsonl").exists()
 
@@ -494,3 +500,46 @@ def test_a_cities_list_matching_no_crop_exits_before_anything_is_written(tmp_pat
     vg.main(_args(root, tmp_path, limit=2, **{"cities-file": some}), post=stub)
     out = capsys.readouterr().out
     assert "2 of 3 ids in --cities-file match no held-out crop" in out and "pub-x" not in out
+
+
+# ---- argument validation, resume and city derivation (#105 review nits) -------------------------------------------
+
+@pytest.mark.parametrize("kw,why", [({"fewshot": -2}, "--fewshot"), ({"fewshot": 3}, "--fewshot"),
+                                    ({"label-types": "CurbRamp, Obstacle"}, "--label-types"),
+                                    ({"label-types": "CurbRamp,CurbRamp"}, "--label-types"),
+                                    ({"label-types": "Curbramp"}, "--label-types"),
+                                    ({"concurrency": 0}, "--concurrency"), ({"retries": -1}, "--retries")])
+def test_bad_arguments_fail_before_anything_is_sent_or_written(tmp_path, kw, why):
+    root, _ = _data_root(tmp_path)
+    stub = _Stub()
+    with pytest.raises(SystemExit, match=why):
+        vg.main(_args(root, tmp_path, **kw), post=stub)
+    assert not stub.requests and not (tmp_path / "scores").exists() and not (tmp_path / "usage.jsonl").exists()
+
+
+def test_resume_refuses_rows_outside_the_listed_deployments(tmp_path):
+    """A CSV holding rows of a deployment no longer on the list (its meta deleted, so the binding cannot catch it)
+    is refused before any request, by count."""
+    root, _ = _data_root(tmp_path)
+    stub = _Stub()
+    both = tmp_path / "both.txt"
+    both.write_text(f"{LISTED}\n{UNLISTED}\n")
+    vg.main(_args(root, tmp_path, limit=4, **{"label-types": "CurbRamp", "cities-file": both}), post=stub)
+    leg = tmp_path / "scores" / "gemini-3.8-flash"
+    (leg / "CurbRamp.meta.json").unlink()
+    n = len(stub.requests)
+    with pytest.raises(SystemExit, match="rows are not held-out crops") as e:
+        vg.main(_args(root, tmp_path, limit=8, **{"label-types": "CurbRamp"}), post=stub)
+    assert len(stub.requests) == n and UNLISTED not in str(e.value)
+
+
+def test_city_is_derived_from_label_uid_when_split_has_no_city_column(tmp_path):
+    root, _ = _data_root(tmp_path)
+    for t in ("CurbRamp", "Obstacle"):
+        p = root / t / "split.csv"
+        pd.read_csv(p).drop(columns="city").to_csv(p, index=False)
+    stub = _Stub()
+    vg.main(_args(root, tmp_path, **{"label-types": "CurbRamp"}), post=stub)
+    cr = pd.read_csv(tmp_path / "scores" / "gemini-3.8-flash" / "CurbRamp.csv")
+    assert len(cr) == 24 and cr.label_uid.str.startswith(LISTED + ":").all()
+    assert not any(UNLISTED in json.dumps(r) for r in stub.requests)

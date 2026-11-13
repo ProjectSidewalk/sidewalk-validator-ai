@@ -156,7 +156,13 @@ def parse_elicited(text):
     if not isinstance(a, str) or a.strip().lower() not in ("yes", "no"):
         raise ValueError("answer not yes/no")
     c = d.get("confidence")
-    if isinstance(c, bool) or not isinstance(c, (int, float)) or not math.isfinite(c):
+    if isinstance(c, bool) or not isinstance(c, (int, float)):
+        raise ValueError("confidence not a number")
+    try:
+        finite = math.isfinite(c)   # an integer of hundreds of digits overflows a float
+    except OverflowError:
+        finite = False
+    if not finite:
         raise ValueError("confidence not a number")
     if not 0 <= c <= 100:
         raise ValueError("confidence outside 0-100")
@@ -581,6 +587,16 @@ def check_leg(leg_dir, leg_bind):
         _note_skipped(meta_path, skipped)
 
 
+def check_rows_listed(path, held, cities):
+    """Refuse a score CSV holding rows that are not held-out crops of the listed deployments (a list shrunk after
+    rows were written, with the meta that would have caught it deleted). Gives a count only, no ids."""
+    done = vv.done_uids(path)
+    extra = done - set(held.label_uid[held.city.isin(cities)])
+    if extra:
+        raise SystemExit(f"{path}: {len(extra)} of its {len(done)} rows are not held-out crops of the deployments "
+                         f"in --cities-file; use another --out-dir or --name")
+
+
 def append_rows(path, rows):
     """Append rows in ``SCORE_COLUMNS`` order, writing the header only for a new (or empty) file."""
     new_file = not os.path.exists(path) or os.path.getsize(path) == 0
@@ -617,7 +633,25 @@ def _rewrite(args):
     return lambda paths: rewrite_prefix(list(paths), args.crop_root_from, args.crop_root_to)
 
 
+def validate_args(args):
+    """Exit on arguments that would otherwise fail late, after requests were sent or files written."""
+    if args.fewshot < 0 or args.fewshot % 2:
+        raise SystemExit("--fewshot must be 0 or a positive even number (half per class)")
+    for flag, v, low in (("--concurrency", args.concurrency, 1), ("--retries", args.retries, 0),
+                         ("--chunk", args.chunk, 0), ("--limit", args.limit, 0)):
+        if v < low:
+            raise SystemExit(f"{flag} must be at least {low}")
+    types = args.label_types.split(",")
+    bad = [t for t in types if t not in vb.LABEL_TYPES]
+    if bad or len(set(types)) != len(types):
+        raise SystemExit(f"--label-types: comma-separated, no spaces or repeats, from {','.join(vb.LABEL_TYPES)} "
+                         f"(got {args.label_types!r})")
+    if bool(args.crop_root_from) != bool(args.crop_root_to):
+        raise SystemExit("--crop-root-from and --crop-root-to go together")
+
+
 def run_score(args, post=None):
+    validate_args(args)
     for what, p in (("--out-dir", args.out_dir), ("--usage-log", None if args.usage_log == "none" else args.usage_log)):
         if p is not None and inside_git_checkout(p):
             raise SystemExit(f"refusing {what} inside a git checkout (per-crop data and costs stay outside): {p}")
@@ -627,10 +661,6 @@ def run_score(args, post=None):
         # Open the ledger before anything is sent, so a bad path fails now and not after a type's requests are billed
         os.makedirs(os.path.dirname(os.path.abspath(args.usage_log)), exist_ok=True)
         open(args.usage_log, "a", encoding="utf-8").close()
-    if bool(args.crop_root_from) != bool(args.crop_root_to):
-        raise SystemExit("--crop-root-from and --crop-root-to go together")
-    if args.fewshot % 2:
-        raise SystemExit("--fewshot must be even (half per class)")
     cities, digest = load_cities_file(args.cities_file)
     types = args.label_types.split(",")
     held_by_type = {t: with_city(vv.load_heldout(args.data_root, t)) for t in types}
@@ -640,6 +670,12 @@ def run_score(args, post=None):
     os.makedirs(leg_dir, exist_ok=True)
     leg_bind = leg_binding(args, digest)
     check_leg(leg_dir, leg_bind)
+    unchecked_by_type = {}
+    for t in types:      # every type's files are checked before the first request of any type
+        path = os.path.join(leg_dir, f"{t}.csv")
+        unchecked_by_type[t] = check_owned(path, path.replace(".csv", ".meta.json"),
+                                           type_binding(leg_bind, t, args.variant))
+        check_rows_listed(path, held_by_type[t], cities)
     rewrite = _rewrite(args)
     scorer = None
     for t in types:
@@ -650,7 +686,7 @@ def run_score(args, post=None):
         path = os.path.join(leg_dir, f"{t}.csv")
         meta_path = path.replace(".csv", ".meta.json")
         binding = type_binding(leg_bind, t, args.variant)
-        unchecked = check_owned(path, meta_path, binding)
+        unchecked = unchecked_by_type[t]
         done = vv.done_uids(path)
         todo = df[~df.label_uid.isin(done)]
         print(f"{leg} {t}: {len(todo)} to score, {len(df) - len(todo)} done ({len(listed)} of {len(held)} held-out "
