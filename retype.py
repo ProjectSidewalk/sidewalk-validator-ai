@@ -1036,7 +1036,9 @@ def _public(spec):
 def cmd_crops(args):
     """Crops for the type-edit labels, cut as data_generation.py cuts a training crop: the per-provider pose from
     ``crop_pose.pose_for_row`` (``--tilt-beta`` for GSV), the click latitude offset, depth-sized, WebP. Resumable on
-    ``<out>/manifest.csv``; ``crop_path`` there is absolute.
+    ``<out>/manifest.csv``; ``crop_path`` there is absolute. A Panoramax label that data_generation.py skips (a pose
+    with both angles non-zero past ``crop_pose.MAX_POSE_TILT_DEG``, a pitch-only click past a pole; ``crop_pose.skip_status``) is skipped here
+    too, with the same status and before its panorama is read.
 
     Mapillary: ``mapillary_rotations`` is None (no Graph API lookup, unlike ``data_generation.py
     --mapillary-token-env``), so a Mapillary label whose DB pose is empty gets the rig-frame fallback here and its
@@ -1078,16 +1080,19 @@ def cmd_crops(args):
                    "pose_source": pose.pose_source, "tilt_beta": "" if pose.beta is None else pose.beta,
                    "click_lat_offset_deg": pose.click_lat_offset_deg or 0.0, "crop_path": crop_path, "status": ""}
             try:
-                if last[0] != (row["city"], row["pano_id"]):
+                y_norm = crop_pose.rig_y_norm(float(row["pano_y"]) / float(row["pano_height"]), pose)
+                skip = crop_pose.skip_status(pose, y_norm)  # #72; decided before the read, as data_generation.py
+                if skip is None and last[0] != (row["city"], row["pano_id"]):
                     read, info = dg.read_store_panorama(args.pano_store, row["city"], row["pano_id"])
                     last = ((row["city"], row["pano_id"]), read, info)
                 pano_bgr, info = last[1], last[2]
-                rec["pano_path"] = info.get("pano_path") or ""
-                if isinstance(pano_bgr, str):
+                if skip is None:  # a skipped label read no panorama (last may be another label's)
+                    rec["pano_path"] = info.get("pano_path") or ""
+                if skip is not None:
+                    rec["status"] = skip
+                elif isinstance(pano_bgr, str):
                     rec["status"] = pano_bgr
                 else:
-                    y_norm = (float(row["pano_y"]) / float(row["pano_height"])
-                              + (pose.click_lat_offset_deg or 0.0) / 180.0)
                     crop, cinfo = dg.create_perspective_crop(
                         depth_model, np.ascontiguousarray(pano_bgr[..., ::-1]),
                         float(row["pano_x"]) / float(row["pano_width"]), y_norm,

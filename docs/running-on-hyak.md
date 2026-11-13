@@ -105,7 +105,10 @@ at most one kept label in and one out.
 **Stopping rather than shrinking.** A run stops after 50 panoramas in a row missing or unusable (usually a wrong
 `PANO_STORE` or city directory names that are not the city_ids), after 50 consecutive per-label errors, or at the
 end if more than 20% of attempted labels ended `no_pano`/`bad_pano` (`--max-missing-frac`). A panorama not in the
-store is `no_pano`; a file that cannot be decoded, or is not 2:1, is `bad_pano`, never a stretched crop.
+store is `no_pano`; a file that cannot be decoded, or is not 2:1, is `bad_pano`, never a stretched crop. A Panoramax
+label whose pose has both angles non-zero and is past 45° of tilt is `panoramax_over_tilt`, and a pitch-only Panoramax click past a pole is
+`panoramax_pitch_offset_past_pole`; both are skips, decided before the panorama is read, and count toward none of
+these three stops.
 
 **The split.** The job then runs `split_data.py`, which writes `<label_type>/split.csv` (the `ok` manifest rows
 plus `hard`, joined by `label_uid` from `--hard-examples`, and `split` ∈ `train`/`val`/`test`/`test_heldout`),
@@ -248,5 +251,18 @@ Three things the first run (2026-11-05) needed that the launcher does not do for
   `HF_HUB_DISABLE_XET=1 HF_HOME=/gscratch/makelab/$USER/hf_cache python -c "from huggingface_hub import snapshot_download as s; s('facebook/dinov2-large')"`.
 - **An `sbatch` that fails with a socket timeout may still have submitted the job.** Check `squeue -u $USER` before
   resubmitting; the first attempt queued a duplicate chain that had to be cancelled and its outputs wiped.
+
+**Step (b), the masked expert round** (`analysis/nosidewalk_round.py`). On klone it needs a gate run that kept its
+checkpoints, the phase-1 panoramas staged, and one crop-and-score job:
+
+```bash
+KEEP_BEST=1 DATA=... GATE=$DATA/gate2 RUNS=/gscratch/scrubbed/$USER/nosidewalk-runs/gate2 ./nosidewalk_gate_submit.sh
+RUN=/gscratch/scrubbed/$USER/nosidewalk-2026-11/round-b        # holds labels.csv and stage_files.txt from `pool`
+RUN=$RUN DEST=/gscratch/scrubbed/$USER/pano-stage/NoSidewalk sbatch --export=ALL analysis/ai_labels_stage.slurm
+RUN=$RUN RUNS=/gscratch/scrubbed/$USER/nosidewalk-runs/gate2 STORE=/gscratch/scrubbed/$USER/pano-stage/NoSidewalk \
+    sbatch --export=ALL --dependency=afterok:<stage and fold job ids> nosidewalk_round.slurm
+```
+
+Copy `manifest.csv`, `crops_run.json` and `predictions_fold<k>.csv` back for `nosidewalk_round.py build`.
 
 Design, bar and results: [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md).

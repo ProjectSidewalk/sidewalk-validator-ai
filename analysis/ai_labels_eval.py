@@ -478,7 +478,16 @@ def cmd_crops(args):
         pd.DataFrame(columns=MANIFEST_COLUMNS).to_csv(manifest_path, index=False)
     todo = labels[~labels.label_uid.isin(done)].sort_values(["city", "pano_id"], kind="mergesort")
     device = dg.resolve_device(args.allow_cpu)
-    depth_model = dg.load_depth_model("vitb", device)
+    fixed = args.fixed_crop_half_px
+    if fixed is not None and not 0 < fixed <= dg.MAX_FIXED_CROP_HALF_PX:
+        sys.exit(f"--fixed-crop-half-px must be 1 to {dg.MAX_FIXED_CROP_HALF_PX}, got {fixed}")
+    crops_run_path = os.path.join(args.out, "crops_run.json")
+    if done and os.path.exists(crops_run_path):
+        with open(crops_run_path) as f:
+            before = json.load(f).get("fixed_crop_half_px")
+        if before != fixed:
+            sys.exit(f"{args.out} holds crops cut with --fixed-crop-half-px {before}; this run asks for {fixed}")
+    depth_model = None if fixed is not None else dg.load_depth_model("vitb", device)  # fixed size: no depth
     last = (None, None, None)
     # a stage that stopped early must not become a run of no_pano rows: stop after MAX_CONSECUTIVE_MISSING_PANOS
     # panoramas in a row with a status in MISSING_STATUSES, ignoring panoramas known to be missing before this run
@@ -512,7 +521,7 @@ def cmd_crops(args):
                         depth_model, pano_rgb, float(row.pano_x) / float(row.pano_width),
                         float(row.pano_y) / float(row.pano_height),
                         camera_pitch=_num_or_none(row.camera_pitch), camera_roll=_num_or_none(row.camera_roll),
-                        apply_tilt=human_gsv, beta=args.tilt_beta, device=device)
+                        apply_tilt=human_gsv, beta=args.tilt_beta, device=device, fixed_crop_half_px=fixed)
                     dg.save_webp(crop, os.path.join(args.out, crop_path))
                     rec.update(cinfo)
                     rec["status"] = "ok"
@@ -537,11 +546,12 @@ def cmd_crops(args):
                       f"~{el / i * (len(todo) - i) / 60:.0f} min left", flush=True)
     run = {"labels": args.labels, "labels_sha256": sha256_file(args.labels), "pano_store": os.path.abspath(args.pano_store),
            "pano_store_marker": open(os.path.join(args.pano_store, dg.PANO_STORE_MARKER)).readline().strip(),
-           "tilt_beta": args.tilt_beta, "depth_encoder": "vitb", "renderer": "torch" if device else "numpy",
+           "tilt_beta": args.tilt_beta, "depth_encoder": None if fixed is not None else "vitb",
+           "fixed_crop_half_px": fixed, "renderer": "torch" if device else "numpy",
            "package_source": dg.package_source(), "status_counts_this_run": dict(status_counts),
            "status_counts": pd.read_csv(manifest_path, dtype=str, keep_default_na=False).status.value_counts().to_dict(),
            "finished": datetime.now(timezone.utc).isoformat(timespec="seconds")}
-    with open(os.path.join(args.out, "crops_run.json"), "w") as f:
+    with open(crops_run_path, "w") as f:
         json.dump(run, f, indent=2)
     print(json.dumps(run, indent=2))
 
@@ -1019,6 +1029,10 @@ def build_parser():
     c.add_argument("--limit", type=int, default=None)
     c.add_argument("--tilt-beta", type=float, default=dg.DEFAULT_TILT_BETA)
     c.add_argument("--allow-cpu", action="store_true")
+    c.add_argument("--fixed-crop-half-px", type=int, default=None,
+                   help="every crop gets this half-width in view pixels and no depth is inferred, as "
+                        "data_generation.py --fixed-crop-half-px (1024 = the whole view, the NoSidewalk crop; "
+                        "analysis/nosidewalk_round.py). Default: sized by depth")
     c.set_defaults(func=cmd_crops)
     sc = sub.add_parser("score", help="predictions.csv from the manifest's ok crops with one checkpoint (GPU)")
     sc.add_argument("--manifest", required=True)

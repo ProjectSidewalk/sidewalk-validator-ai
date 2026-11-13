@@ -12,6 +12,15 @@ permissions:
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both pinned exactly, so a new pandas release cannot turn an unrelated PR red.
+        # 2.3.1 is environment.yml's pin (what the klone env runs); 3.1.1 is the pandas 3 line, where a
+        # missing string is NaN in a `str` column rather than None in an object one.
+        # Raise the 3.x pin by hand; keep the 2.x one equal to environment.yml.
+        pandas: ["2.3.1", "3.1.1"]
+    name: pytest (pandas ${{ matrix.pandas }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,7 +28,7 @@ jobs:
           python-version: "3.12"
       # Only what the CPU tests import; torch/transformers are imported lazily by the GPU code paths.
       - run: >-
-          pip install "numpy>=1.24" "pandas>=2.0" "scikit-learn>=1.3" "matplotlib>=3.7" "pytest>=7"
+          pip install "numpy>=1.24" "pandas==${{ matrix.pandas }}" "scikit-learn>=1.3" "matplotlib>=3.7" "pytest>=7"
           pillow opencv-python-headless requests
           "sidewalk-panorama-tools @ git+https://github.com/ProjectSidewalk/sidewalk-panorama-tools@v1.0.0"
       - run: pytest -q

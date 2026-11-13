@@ -9,8 +9,10 @@ Signal (also in #42) is counted here and follows later with the label-level rule
 **Pilot in short:** the whole-view crop beats the depth-sized crop on test in all three seeds (AUC 0.916 vs 0.878,
 within-city 0.931 vs 0.905, so both clear the 0.85 bar), and both fall to about 0.78 within-city on the held-out
 cities. The gate half of the serving bar cannot be judged at this scale: no Agree verdict reaches 0.92 in any run,
-because the calibration fit has only about 70 Agree labels. The whole-view crop is the NoSidewalk crop from here on;
-nothing is served yet. [Results](#results).
+because the calibration fit has only about 70 Agree labels. The 5-fold out-of-fold run of 2026-11-11 is the bar's
+own test: within-city AUC 0.924, and 240 labels clear the gate at a prior-weighted precision of 0.979 (Wilson 95 %
+lower bound 0.966), so the bar is met on that basis; unweighted the bound is 0.890, and the held-out cities stay
+under it. The whole-view crop is the NoSidewalk crop from here on; nothing is served yet. [Results](#results).
 
 ## The census (public rawLabels, 2026-11-05)
 
@@ -220,7 +222,9 @@ so no single difference is significant; the consistent sign on test is the evide
   is structural, not a property of the model. Calibration fits isotonic curves on the 111 validation labels (65 to 73
   of them Agree verdicts), and `calibration/_isotonic_map.py` serves any isotonic block with fewer than
   `THIN_BLOCK_N` = 300 labels at its 90 % Wilson lower bound rather than its mean. No Agree block can reach 300 labels
-  (the top block holds 7 to 48), so even a block whose labels are all correct is served below 0.92: the highest served Agree value per run
+  (the top block holds 7 to 48), and a block whose labels are all correct clears 0.92 only from about 32 labels
+  (the guard's 90 % bound, 1 / (1 + z² / n); a block at 0.98 needs about 56, at 0.97 about 80), so at this size every
+  Agree block is served below 0.92: the highest served Agree value per run
   is depth 0.882 / 0.899 / 0.889 and whole 0.868 / 0.917 / 0.896 (seeds 42 / 43 / 44). `calibration_report.json`
   records this as `uncapped_reaches_gate.correct = false` in every run.
 
@@ -277,6 +281,320 @@ The largest arm difference anywhere is on held-out labels tagged "street has no 
 average over seeds, 36 labels, 13 incorrect): the tag that asserts the absence along the whole stretch is the one
 the wider view helps most. It is a small slice; read it as consistent with the crop recommendation, not as proof.
 
+### The 5-fold out-of-fold gate (step (a), run 2026-11-11)
+
+The bar's own test. `analysis/nosidewalk_gate.py` pools the whole-view crops of train, val and test (758 rows in
+450 face groups: 440 faces, plus the 12 face-less labels in 10 panorama groups) into five face-grouped folds;
+fold k's model trains on three folds, selects its checkpoint on one and scores the fifth, so every pooled row is
+scored once by a model that never saw its face. The map that serves a fold is fitted on the other four folds'
+out-of-fold predictions (leave-one-fold-out calibration under the face-size prior, Disagree held back, thin-block
+guard on), so each row's served accuracy is out of sample for the model and for the map. The gate precision is read
+**reweighted to the deployment prior**, the basis the map is fitted under and the one `calibration_report.json`
+reports, with its Wilson 95 % lower bound taken on the raw passing count and mapped through the two-class weight
+ratio (the weights are fixed by the class, so the weighted precision is a monotone function of the raw one and the
+bound keeps its coverage; an effective-sample-size bound would be far too conservative here, since the weight is
+set by the outcome); the pooled rows' own 58:42 mix gives an unweighted
+precision that is reported beside it and is not the bar's number. The count of >= 100 passing labels is the raw
+count. Job files `nosidewalk_gate.slurm` / `nosidewalk_gate_submit.sh`; the two held-out cities are scored by every
+fold model under a map fitted on all pooled rows.
+
+What this estimates, and what it does not: the map serving fold k is fitted on four *other* fold models'
+predictions, so the number is for the recipe "a model of this kind plus a pooled out-of-fold map", not for one
+deployed model with its own map; a final model trained on every row is sharper than the 60 % fold models; the pooled
+AUC mixes five score scales; folds are grouped by face, so a panorama carrying two faces can straddle folds (21
+panoramas, 48 rows; the pilot split allows the same); and the mean-of-models row is descriptive only.
+
+<!-- gate-results:start -->
+Pooled out-of-fold rows: 758 (319 incorrect) in 450 face groups, 5 folds; the map serving each fold is fitted on the other folds' out-of-fold predictions under the face-size prior (P(correct) = 0.831), Disagree held back, thin-block guard on. Precision is reported both reweighted to that prior (the basis the map is fitted under, comparable with `calibration_report.json`) and unweighted on the pooled rows' own class mix.
+
+| rows | AUC [95 % CI, face resampling] | within-city AUC (cities) | Agree gate n (coverage) | precision, prior-weighted (Wilson 95 % lower) | precision, unweighted (Wilson 95 % lower) |
+|---|---|---|---|---|---|
+| pooled | 0.928 [0.894, 0.956] | 0.924 (7) | 240 (0.317) | 0.979 (0.966) | 0.929 (0.890) |
+
+**Bar:** within-city AUC >= 0.85 is met; the Agree gate's prior-weighted Wilson 95 % lower bound >= 0.92 on >= 100 passing labels is met (240 labels pass of 447 Agree verdicts; weighted lower bound 0.966, unweighted 0.890). **PASSES.**
+
+Per fold (each fold's map fitted on the other folds):
+
+| fold | rows | Agree gate n (coverage) | precision, prior-weighted (Wilson 95 % lower) | precision, unweighted (Wilson 95 % lower) |
+|---|---|---|---|---|
+| 0 | 156 | 78 (0.500) | 0.966 (0.935) | 0.885 (0.795) |
+| 1 | 152 | 2 (0.013) | 1.000 (0.656) | 1.000 (0.342) |
+| 2 | 151 | 55 (0.364) | 0.978 (0.944) | 0.927 (0.827) |
+| 3 | 149 | 50 (0.336) | 0.982 (0.948) | 0.940 (0.838) |
+| 4 | 150 | 55 (0.367) | 0.995 (0.970) | 0.982 (0.904) |
+
+Per city (>= 10 pooled rows):
+
+| city | rows | Agree gate n (coverage) | precision, prior-weighted (Wilson 95 % lower) | precision, unweighted (Wilson 95 % lower) |
+|---|---|---|---|---|
+| seattle-wa | 406 | 91 (0.224) | 0.978 (0.960) | 0.868 (0.784) |
+| oradell-nj | 92 | 57 (0.620) | 0.963 (0.820) | 0.982 (0.907) |
+| cdmx | 45 | 11 (0.244) | 1.000 (0.721) | 1.000 (0.741) |
+| amsterdam | 41 | 0 | n/a | n/a |
+| newberg-or | 38 | 25 (0.658) | n/a (one class) | 1.000 (0.867) |
+| walla-walla-wa | 38 | 17 (0.447) | 1.000 (0.830) | 1.000 (0.816) |
+| columbus-oh | 18 | 3 (0.167) | 1.000 (0.596) | 1.000 (0.438) |
+| houston-tx | 11 | 1 (0.091) | 0.000 (0.000) | 0.000 (0.000) |
+| paterson-nj | 10 | 3 (0.300) | 0.936 (0.658) | 0.667 (0.208) |
+
+Held-out cities (`test_heldout`), each fold model under a map fitted on all 758 pooled rows; the mean-of-models row is descriptive only (averaged probabilities are not what the map was fitted on):
+
+| model | rows (incorrect) | AUC | within-city AUC | Agree gate n (coverage) | precision, prior-weighted (Wilson 95 % lower) | precision, unweighted (Wilson 95 % lower) |
+|---|---|---|---|---|---|---|
+| fold 0 | 127 (80) | 0.814 | 0.802 | 34 (0.268) | 0.964 (0.926) | 0.765 (0.600) |
+| fold 1 | 127 (80) | 0.770 | 0.768 | 6 (0.047) | 0.977 (0.866) | 0.833 (0.436) |
+| fold 2 | 127 (80) | 0.791 | 0.768 | 24 (0.189) | 0.969 (0.925) | 0.792 (0.595) |
+| fold 3 | 127 (80) | 0.819 | 0.805 | 22 (0.173) | 0.966 (0.916) | 0.773 (0.566) |
+| fold 4 | 127 (80) | 0.782 | 0.749 | 28 (0.220) | 0.962 (0.916) | 0.750 (0.566) |
+| mean of 5 models | 127 (80) | 0.810 | 0.795 | 8 (0.063) | 0.983 (0.904) | 0.875 (0.529) |
+<!-- gate-results:end -->
+
+**Reading.** On the pooled out-of-fold rows the bar is met on the prior-weighted basis: within-city AUC 0.924 over
+seven cities, and 240 of the 447 Agree verdicts (31.7 % of all rows) clear 0.92 at a weighted precision of 0.979 with
+a Wilson 95 % lower bound of 0.966. Four things qualify that:
+
+- **The verdict depends on the basis.** Unweighted, on the pooled rows' own 58:42 mix, the same 240 labels are 0.929
+  precise with a lower bound of 0.890, under the gate. The weighted number is the one the map is fitted for and the
+  one `calibration_report.json` reports for the five shipped types, and it inherits the face-size prior's caveats
+  (one Seattle inventory measurement, per face, applied per label; [decisions.md](decisions.md)). Which basis the
+  bar means is a decision for the issue, not for this page; both numbers are reported above.
+- **Fold 1 is an outlier.** Its model (best checkpoint at step 105, val macro-F1 0.862) passes only 2 of its 152
+  rows through the gate; the other four folds pass 50–78 each at weighted precision 0.966–0.995. A pooled coverage
+  of 31.7 % therefore understates what four of five models do (33–50 %) and the gate precision is driven by those
+  four. Seed variation of this size was already visible in the pilot's three seeds.
+- **Seattle and Oradell carry the gate.** Of the 240 passing labels, 91 are Seattle's (weighted precision 0.978,
+  lower bound 0.960) and 57 Oradell's (0.963, 0.820); no other city has more than 25, and Amsterdam's 41 rows pass
+  none. Seattle is the only city whose own lower bound clears 0.92, and no city reaches the 100-label count, so the
+  bar is met only in aggregate.
+- **The held-out cities do not clear it.** Each fold model reaches within-city AUC 0.75–0.81 on Chicago and Tucson
+  (the pilot's 0.79), and its Agree verdicts at the gate are 0.96–0.98 precise weighted on 6–34 labels (lower
+  bounds 0.87–0.93, far short of the 100-label count), 0.75–0.83 unweighted. The class mix there is 37 % correct, so the weighting matters
+  even more; and these are the sharper-than-fold-model caveats in reverse: a model that has never seen a city is
+  not what the pooled estimate describes. Step (b), more negatives outside Seattle, is still the lever for this.
+
+**Decision (2026-11-11, [#42](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/42)).** The bar is
+read on the **prior-weighted** basis, the one the maps are fitted under; the unweighted number stays in every report
+as the pessimistic view. On that basis the pooled gate passes. Serving still waits: step (b) below comes first, because
+the pass is an aggregate one and the held-out cities do not clear it.
+
+What the pooled number is: the map serving fold k was fitted on four *other* fold models' out-of-fold predictions,
+so this is the precision of the recipe (a whole-view NoSidewalk model of this size plus a pooled out-of-fold map),
+not of one deployed model with its own map. A deployed model would be trained on all 758 rows (sharper than the
+fold models' 450) with a map fitted on the pooled out-of-fold predictions, which is the configuration step (c)
+would ship; its gate precision is expected at or above this estimate on the training cities and is unmeasured on
+new ones.
+
+### The masked expert round outside Seattle (step (b), design fixed 2026-11-11)
+
+Step (a) scored labels that already had a settled verdict, and most of its evidence is Seattle's. Step (b) samples
+the **deployment population** of four other cities instead: every human-placed NoSidewalk label with a block face,
+whatever its votes. One expert rates 250 of them in production Gallery with the votes masked
+(`analysis/nosidewalk_round.py`, design `analysis/gt_rounds/nosidewalk_b.json`; the Gallery lists, the vote pull and
+the pins are `analysis/gt_rounds.py`'s). Within a city the rated pass-stratum labels are a random sample of the
+labels the gate would pass, so that city's Agree precision is read directly on its natural class mix, with a plain
+Wilson bound and no prior. Across cities the rated set follows the design's quotas, not the population (see "What is
+read" below). The round also measures the share of correct labels that the face-size prior assumes (0.831).
+
+**Two phases, so the model chooses what is rated without biasing the estimate.**
+
+1. *Eligible labels* (rawLabels pull of 2026-11-11): NoSidewalk, human-placed, with a block face and a usable pano
+   point, author not excluded (Gallery hides those), never placed or voted on by the rater, and on no face or
+   panorama among the 758 rows the fold models trained on. Labels with crowd votes stay in. Chicago and Tucson were
+   never trained on; Oradell and CDMX were.
+
+   | city | NoSidewalk labels | no face | placed by the rater | voted on by the rater | trained face or panorama | eligible | phase 1 |
+   |---|---|---|---|---|---|---|---|
+   | chicago-il | 14,741 | 416 | 195 | 59 | 0 | 14,071 | 400 |
+   | tucson-az | 1,215 | 11 | 335 | 9 | 0 | 860 | 300 |
+   | oradell-nj | 5,679 | 188 | 2,063 | 1,145 | 852 | 1,431 | 250 |
+   | cdmx | 5,744 | 827 | 0 | 5 | 336 | 4,576 | 250 |
+
+   No label was AI-placed, had an unusable pano point or had an excluded author. In Oradell and Tucson the rater
+   placed a large share of the labels (36 % and 28 %), so the eligible population there is the *other* labelers'
+   labels; the round says nothing about the rater's own.
+2. *Phase 1*: a seeded simple random sample of each city's eligible labels (the counts above, 1,200 in all) is
+   cropped whole-view and scored by each of the five fold models of a second gate run (below), served through the
+   map fitted on all 758 of that run's out-of-fold predictions, as the held-out table above is.
+3. *Strata*: **pass** when at least 3 of the 5 models give Agree at served accuracy >= 0.92; **agree-below** when
+   not, with a median `p_correct` >= 0.5; **model-incorrect** otherwise.
+4. *Phase 2*, the 250 rated items: Chicago 80, Tucson 60, Oradell 55, CDMX 55, each split 60 / 20 / 20 over the
+   strata (150 / 50 / 50 in all), at most one label per face, in a seeded shuffled order. A short cell is topped up
+   from the same stratum of another city. Each item carries its inclusion weight (eligible / scored in its city,
+   times scored / picked in its cell), so every estimate can be reweighted to the population.
+
+**The rating rule.** Agree: no sidewalk on the labeled side of the street at that spot. Disagree: a sidewalk is
+there, or the label marks something else. Unsure: only when the imagery cannot show it. Gallery's vote counts,
+comments and AI icons are hidden by the masking CSS; the rater cannot tell an item's stratum.
+
+**What is read, fixed before any rating.**
+
+- **The bar:** in the pass stratum as sampled, correct / decided with a Wilson 95 % lower bound >= 0.92 on >= 100
+  decided labels. Unsure votes leave the denominator and are counted; the same rate with every Unsure counted as
+  incorrect is printed beside it as a sensitivity check. With 150 items the bound clears 0.92 from 145
+  correct (0.967) up, so a true precision near 0.96 would be a coin flip; that is the price of 250 ratings.
+- **What that rate is.** It is the precision under the design's city mix, which spreads the pass items almost
+  evenly (Chicago 35 %, Tucson 21 %, Oradell 22 %, CDMX 22 % of them), where the four cities' pass population is
+  about 75 % Chicago, 3 % Tucson, 14 % Oradell and 8 % CDMX. The bar therefore asks that the gate hold across
+  cities, not that it hold in a Chicago-dominated average. The population-weighted rate is reported beside it with
+  a bootstrap interval; its effective sample size is about 88, under the bar's 100, so it is not the bar. Where the
+  two differ, the per-city rows say why.
+- Beside those: per city, and per fold model on its own gate verdicts (weighted precision, coverage, AUC,
+  within-city AUC).
+- The population share of correct labels against the prior's 0.831 (this population leaves out the rater's own
+  labels and trained faces, which the prior does not); severity and tag slices with training counts; the crowd
+  majority against the expert.
+- At the vote pull, the timestamp of each vote is checked against the pool pull of 2026-11-11: a vote on a key label
+  cast before the lists existed would not be a masked rating.
+
+The same ratings can later score the final all-rows model of step (c) by reweighting.
+
+**The second gate run (`gate2`).** Step (a) deleted its fold checkpoints, so the five fold models were retrained on
+the same fold files with the same seed (`KEEP_BEST=1 ./nosidewalk_gate_submit.sh`, which keeps each fold's best
+checkpoint). Retrained weights are not bit-identical, so the run has its own out-of-fold predictions, map and
+report; it is also a replication of step (a).
+
+It agrees with step (a) and is a little stronger (run 2026-11-11, jobs 43156012–43156017, one A40 or L40 per
+fold, 11–15 minutes each):
+
+| run | pooled AUC [95 % CI] | within-city AUC | Agree gate n (coverage) | precision, prior-weighted (lower) | precision, unweighted (lower) |
+|---|---|---|---|---|---|
+| step (a) | 0.928 [0.894, 0.956] | 0.924 | 240 (0.317) | 0.979 (0.966) | 0.929 (0.890) |
+| `gate2` | 0.936 [0.907, 0.961] | 0.939 | 265 (0.350) | 0.985 (0.974) | 0.947 (0.913) |
+
+Fold 1 is again the weakest model (31 passing rows of 152; 2 in step (a)); the others pass 53–71. On the 127
+held-out rows the five models reach within-city AUC 0.78–0.82 and pass 18–45 labels at a weighted precision of
+0.94–0.97 (lower bounds 0.89–0.93), the same picture as step (a). Best checkpoints: fold 0 step 150, 1 step 75,
+2 step 270, 3 step 120, 4 step 165.
+
+**Phase 1 as scored** (2026-11-11, jobs 43156311 staging, 43156312 crops and scores, 32 minutes): 1,197 of the
+1,200 labels (3 panoramas are missing from the store). Labels per stratum, and the items picked for rating:
+
+| city | scored | pass | agree-below | model-incorrect | rated: pass / agree-below / model-incorrect |
+|---|---|---|---|---|---|
+| chicago-il | 400 | 179 (45 %) | 166 | 55 | 53 / 16 / 21 |
+| tucson-az | 299 | 88 (29 %) | 155 | 56 | 31 / 12 / 12 |
+| oradell-nj | 249 | 204 (82 %) | 36 | 9 | 33 / 11 / 6 |
+| cdmx | 249 | 38 (15 %) | 175 | 36 | 33 / 11 / 11 |
+
+Two cells fell short under the one-label-per-face rule and were topped up from Chicago: Tucson's pass cell (31 of
+36; its 88 passing labels sit on few faces) and Oradell's model-incorrect cell (6 of 11). The rated set is 250
+items on 250 faces, 150 / 50 / 50 over the strata; each city's weights sum to its eligible count. A face is used
+once, in the stratum of its first-ranked label, so the cell weights (scored / picked) are approximate where
+faces repeat, which is mainly Tucson.
+
+**Pins** (per-label files stay outside the repo, under `~/Data/sidewalk-validator-ai-nosidewalk-2026-11/`):
+`round-b/pool/pool.json` `f973f826fa20fb61d2bc339153596d4070a11049ccd023df3ac4ca7e6fa78807` (it pins the rawLabels
+pulls, the excluded-author pull, the pilot split and the seed's hash), `pool/labels.csv`
+`e41ea4501ded5bbc3fc06ffaf20d857c6b88a9ffd3413836bcd4f0a7fa95ac2f`, `scored/manifest.csv`
+`88430ecb40691b6833f6b4768625800b2491b6891ec2faace583f18539c7f2d1`, `gate2/report/gate.json`
+`cbb7ea06aacc6a3ed68fb7611123186c4ab16103320581ee56b001aee840077f`, the key
+`d2d30d05912e1a12cd75f56822a32413cb250dd048a5c17ff5bc13ae949172a8`, the Gallery lists
+`0fd1e0554e262760e200d64bbb7e5ddba5f24556b97281338afa6d0f6f3d7c6f`; the key's `manifest.json` pins the ten
+prediction files. `gate2` folds: `folds.csv` sha256 unchanged from step (a) (`895d00b4…`). Code: branch
+`nosidewalk-round-b` at 7649325 for the fold models, crops and scores. Job logs in `klone-logs/round-b/`.
+
+**Results.**
+
+<!-- round-b-results:start -->
+250 items, 248 rated (13 Unsure, 2 unanswered). Precision cells are correct / decided = rate (Wilson 95 % lower bound); Unsure votes are outside the denominator.
+
+**Bar:** in the pass stratum, 142 / 144 = 0.986 (0.951); a lower bound >= 0.92 on >= 100 decided labels is met. **PASSES.** Reweighted to the cities' population: 0.998 (Wilson 95 % lower bound 0.953 at the weights' effective sample size of 84; no bootstrap interval is given, because resampling cannot vary a cell with no misses). With every Unsure in the pass stratum counted as incorrect: 142 / 149 = 0.953 (0.906).
+
+Share of correct NoSidewalk labels in these cities' eligible population: 0.878 [0.819, 0.932] (the deployment prior assumes 0.831 over every label with a face; this population leaves out the rater's own labels and trained faces. The interval resamples within (city, stratum) cells with the weights fixed, so it is too narrow where a cell has no misses, and Unsure and unanswered items drop out with their weight).
+
+| stratum | items | Unsure | correct / decided (Wilson 95 % lower) |
+|---|---|---|---|
+| pass | 150 | 5 | 142 / 144 = 0.986 (0.951) |
+| agree_below | 50 | 2 | 42 / 48 = 0.875 (0.753) |
+| model_incorrect | 50 | 6 | 20 / 43 = 0.465 (0.325) |
+
+| city | decided (incorrect) | pass stratum (Wilson 95 % lower) | population share correct |
+|---|---|---|---|
+| chicago-il | 84 (8) | 51 / 51 = 1.000 (0.930) | 0.925 |
+| tucson-az | 54 (12) | 29 / 31 = 0.935 (0.793) | 0.788 |
+| oradell-nj | 49 (2) | 33 / 33 = 1.000 (0.896) | 0.981 |
+| cdmx | 48 (9) | 29 / 29 = 1.000 (0.883) | 0.713 |
+
+Per fold model, on its own gate verdicts (weights are the items' inverse inclusion probabilities):
+
+| model | gate passes, rated items unweighted (Wilson 95 % lower) | precision, weighted | coverage, weighted | AUC, weighted | within-city AUC, weighted (cities) |
+|---|---|---|---|---|---|
+| fold 0 | 115 / 117 = 0.983 (0.940) | 0.997 | 0.318 | 0.883 | 0.926 (4) |
+| fold 1 | 83 / 84 = 0.988 (0.936) | 0.998 | 0.264 | 0.910 | 0.943 (4) |
+| fold 2 | 155 / 158 = 0.981 (0.946) | 0.975 | 0.622 | 0.871 | 0.941 (4) |
+| fold 3 | 121 / 121 = 1.000 (0.969) | 1.000 | 0.372 | 0.923 | 0.942 (4) |
+| fold 4 | 153 / 157 = 0.975 (0.936) | 0.963 | 0.536 | 0.819 | 0.753 (4) |
+
+| severity | decided | pass stratum (Wilson 95 % lower) | population share correct | training rows |
+|---|---|---|---|---|
+| (none) | 235 | 142 / 144 = 0.986 (0.951) | 0.878 | 758 |
+
+| tag | decided | pass stratum (Wilson 95 % lower) | population share correct | training rows |
+|---|---|---|---|---|
+| (none) | 48 | 23 / 23 = 1.000 (0.857) | 0.892 | 325 |
+| ends abruptly | 22 | 4 / 5 = 0.800 (0.376) | 0.812 | 47 |
+| gravel/dirt road | 20 | 14 / 15 = 0.933 (0.702) | 0.857 | 38 |
+| shared pedestrian/car space | 20 | 5 / 6 = 0.833 (0.436) | 0.328 | 40 |
+| street has a sidewalk | 29 | 14 / 14 = 1.000 (0.785) | 0.849 | 93 |
+| street has no sidewalks | 127 | 95 / 95 = 1.000 (0.961) | 0.949 | 278 |
+
+Slice population shares rest on few items with unequal weights and carry no interval; read them as direction only.
+
+Crowd majority (human votes at the pool pull) against the expert, decided items:
+
+| crowd | expert correct | expert incorrect |
+|---|---|---|
+| correct | 34 | 2 |
+| incorrect | 2 | 12 |
+| none or tie | 168 | 17 |
+<!-- round-b-results:end -->
+
+**Reading (rated 2026-11-12 and 2026-11-13).** The bar is met: of the 144 decided labels the gate would pass, the
+expert called 142 correct (0.986, Wilson 95 % lower bound 0.951), against a bar of 0.92 on at least 100. Both
+misses are in Tucson (29 of 31), one tagged "ends abruptly" and "gravel/dirt road", one "shared pedestrian/car
+space"; Chicago (51 of 51), Oradell (33 of 33) and CDMX (29 of 29) have none. Chicago and Tucson were never
+trained on. The bar is met pooled over the four cities, not in each: Chicago alone clears 0.92 (lower bound
+0.930), Oradell and CDMX are too small to clear it alone, and Tucson, with both misses (29 / 31 = 0.935, lower
+bound 0.793), gives no evidence that the gate holds there. What qualifies the result:
+
+- **Unsure votes.** Five pass-stratum labels were rated Unsure (three in CDMX, two in Chicago). The bar leaves
+  them out, as fixed in advance. Counting all five as incorrect gives 142 / 149 = 0.953 with a lower bound of
+  0.906, under 0.92. The verdict survives up to three of the five being wrong (lower bound 0.923 at three,
+  0.914 at four). Unsure is rarer in the pass stratum (5 of 150) than among the labels the model calls incorrect
+  (6 of 50).
+- **The population-weighted rate is 0.998, with a lower bound of 0.953** (Wilson at the weights' effective
+  sample size of about 84). It is not the bar; it is high because Chicago holds three quarters of the passing
+  population and has no misses.
+- **Two labels could not be rated.** Gallery reported two CDMX labels as unavailable (one pass, one
+  model-incorrect), so 248 of 250 have a vote. They are outside every denominator.
+- **This is a 3-of-5 vote of the fold models, not the model that would ship.** Per model, the gate passes 84 to
+  158 of the rated items at 0.975 to 1.000 unweighted; fold 4 is the weakest ranker (weighted within-city AUC
+  0.753 against 0.926 to 0.943 for the others; low in three of the four cities and driven by a few heavily
+  weighted below-gate items) and has the lowest weighted precision on its own passes (0.963; 0.975 unweighted).
+  No AUC here carries an interval.
+- **The order of the strata is as designed.** Agree below the gate is 42 / 48 = 0.875 and the labels the model
+  calls incorrect are 20 / 43 = 0.465, so the model's Disagree is right about half the time here. Disagree stays
+  held back.
+- **The prior.** The share of correct labels in these four cities' eligible population is 0.878 [0.819, 0.932],
+  against the 0.831 the deployment prior assumes; the interval contains it, though it is a different population
+  from the prior's (the rater's own labels and trained faces are left out) and the interval is too narrow.
+  Unsure and unanswered items drop out with their weight; spreading that weight over the decided items of the
+  same cell gives 0.869. It differs by city: Oradell 0.981, Chicago 0.925, Tucson 0.788, CDMX 0.713. CDMX drew
+  the highest Unsure share (5 of 53 answered; Chicago 6 of 90), and the rater remarked that it was far harder to
+  judge than the other three.
+- **Tags.** The tag table's population shares are unstable: "shared pedestrian/car space" (0.328) rests on 20
+  decided items with an effective sample size of about 6.
+- **One rater.** There is no second expert and no measure of rater agreement in this round. Every vote was cast
+  after the label pull of 2026-11-11, so no earlier vote of the rater's is counted: a read-only query of
+  `label_validation.end_timestamp` for the rater's votes on the key's labels, run on 2026-11-13 before the
+  Oradell top-up, found 243 votes on 243 labels, the earliest at 2026-11-12 05:06 PST and none before the pull.
+  The five votes added afterwards did not exist at that query, so they too are later than the pull. The query is not part of the repo's code.
+
+Pins: `votes_jon.csv` `09a2624f93ff5ca203dfd8f0a4038129252d12334d863046986931e99ce957c9` (pulled 2026-11-13, 248
+of 250 voted; beside the key, outside the repo), the aggregates
+[`nosidewalk-2026-11/round_b.json`](nosidewalk-2026-11/round_b.json). Regenerate with `analysis/nosidewalk_round.py
+report` on the pinned key, sheet and `scores.csv`.
+
 ### Cost and jobs
 
 klone, `gpu-l40s` (one L40S) for data and training, `ckpt-all` CPU for staging and the report. Staging 829
@@ -288,20 +606,36 @@ training 25 epochs on 537 crops took 380–398 s per run (`train_runtime`). Job 
 attempt (42917537 and its siblings) failed because compute nodes cannot reach Hugging Face's Xet server; the job
 file now sets `HF_HOME` and `HF_HUB_OFFLINE=1` ([`running-on-hyak.md`](running-on-hyak.md#nosidewalk-pilot)).
 
+Gate run (2026-11-11): `ckpt-all`, one A40 per fold (nodes g3054, g3064, g3072, g3074), 25 epochs on about 450 rows
+in 617–637 s of `train_runtime` per fold, 13 minutes wall-clock per job including scoring; the five fold jobs ran in
+parallel (43134271–43134275) and the CPU report job (43134276, n3266) took 52 s. Fold checkpoints were deleted after
+scoring (3.8 MB left per fold: `training_run.json`, `run_key.json`, `trainer_state.best.json`, the split and prior).
+Free partition, no preemption.
+
 ### Recommendation and next steps
 
 **The whole-view crop (`--fixed-crop-half-px 1024`) is the NoSidewalk crop from here on.** It answers #42's crop
 question: better on test in every seed, no worse on the held-out cities on average, and best on the tag that marks an
-absence along the whole street. **NoSidewalk is not served**: the test half of the bar passes, the gate half is
-untested.
+absence along the whole street. **NoSidewalk is not served yet**: the test half of the bar passes, and the gate half
+passes on the prior-weighted basis in the 5-fold run of 2026-11-11 (weighted lower bound 0.966 on 240 labels) but not
+unweighted (0.890) and not on the held-out cities; see "The 5-fold out-of-fold gate" above. The masked expert round of step (b)
+meets its bar pooled over four cities outside Seattle (0.986, lower bound 0.951, on 144 labels; only Chicago
+clears it alone).
 
-- (a) **5-fold out-of-fold training over all 885 crops** (whole view), calibrating on the pooled out-of-fold
-   predictions, so the Agree gate is fitted on about 500 Agree verdicts instead of about 70 and the bar's Wilson
-   lower bound on ≥ 100 labels can be computed. Five training runs of this size are well under an hour of L40S time.
-- (b) **More negatives:** a masked expert round on NoSidewalk faces outside Seattle (300–500 faces, run like
-   [#78](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/78)), so test is not one city and the
-   held-out drop can be measured on more than Chicago.
-- (c) **Cross-repository work** (sidewalk-ai-api, SidewalkWebpage; listed above) only after (a) clears the bar.
+- (a) **5-fold out-of-fold training over the 758 pooled train / val / test crops** (whole view; the 127 held-out
+   rows stay held out), calibrating on the pooled out-of-fold predictions, so each fold's Agree map is fitted on
+   350–365 Agree verdicts instead of about 70 and the bar's Wilson lower bound on ≥ 100 labels can be computed.
+   Five training runs of this size are well under an hour of GPU time. **Done 2026-11-11**: see "The 5-fold
+   out-of-fold gate" above. The basis is decided: prior-weighted (2026-11-11).
+- (b) **A masked expert round outside Seattle**, before any serving work (decided 2026-11-11): one rater, 250
+   labels chosen score-first from four cities' deployment population, so the gate is read where step (a) could
+   not reach. Design and results in "The masked expert round outside Seattle" above. **Done 2026-11-13: the bar
+   is met pooled over the four cities** (142 / 144 = 0.986, lower bound 0.951; only Chicago clears it alone), with the caveats in that section's reading; whether that
+   unlocks step (c) is the maintainer's decision.
+- (c) **Cross-repository work** (sidewalk-ai-api, SidewalkWebpage; listed above) after step (b), if its bar is
+   met; a final model on all 758 rows with a map fitted on
+   the pooled out-of-fold predictions is the configuration to ship, gated per deployment as
+   [#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52) asks.
 
 ## Provenance
 
@@ -325,6 +659,34 @@ Pilot run (phase B, 2026-11-05):
 - `pilot.json` sha256 `a340ef99fe01e778ab73eb39798fff36b9cd9ee7750bb0e2e8fee9208f4e1704`; regenerated on a laptop from
   the run's predictions with `python analysis/nosidewalk_pilot.py --data <copy> --out-json ... --out-md ... --doc
   docs/nosidewalk-2026-11.md`, byte-identical to klone's report job (42919052).
+- Job ids: see "Cost and jobs" above.
+
+Gate run (step (a), 2026-11-11):
+
+- Inputs: the pilot's whole-arm `split.csv` (sha256 `94d6ead5d0d0f979aee8e334376a139f16e969af44046124e317b857e00f58e8`,
+  as above) and `whole/deployment_priors.json` (the face-size prior, P(correct) = 0.8306); no new crops or pulls.
+- Code: branch `nosidewalk-gate`, training and scoring at 0a58709 (the five fold jobs), the report at 246d622 (the
+  clone was pulled between the two; `fine_tune_classifier.py`, `evaluate.py` and `nosidewalk_gate.py predict` did not
+  change between them). `fine_tune_classifier.py` seed 42, 25 epochs, `--num-workers 7`, checkpoint by val macro-F1;
+  the fold models' `training_run.json` files predate the provenance fields of
+  [#94](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/94).
+- Folds: `analysis/nosidewalk_gate.py folds --folds 5 --seed 42`; `folds.csv` sha256
+  `895d00b4f5fb5567cf5b2b0253db5dba986ac42085c4827fe6123e3101df25ac` (758 rows, 450 face groups; per fold 149–156
+  test rows, 149–156 val, 450–459 train; `test_heldout` 127 in every fold file). Best checkpoints (val macro-F1):
+  fold 0 step 360 (0.891), 1 step 105 (0.862), 2 step 345 (0.890), 3 step 135 (0.959), 4 step 195 (0.856).
+- Predictions (`fold<k>/predictions.csv`, sha256): fold 0 `1170b8f2e572cbe8da2b822a9e4756dd5b3f726f0c9b0a986b95d9c152a1e234`,
+  1 `4a18a0d774441330d1f01d166a46bf2b0c9a01b41d3193485a05e5cda36fd7b4`, 2 `dd424332c2f2b61162dfcfb8ff9a28fb3809a4b9fcca59958d6408d2b4e150db`,
+  3 `3c8bc0cfa63b0b7537380896812f7f946b0bfab354df5defec64f65cc3d25876`, 4 `c1527363c6de7357d82b0b0a789b8237802475ce139317896a45cb775ff9b1de`.
+- Report: klone's report job ran at 246d622, whose weighted Wilson bound used an effective-sample-size (Kish)
+  correction (`gate.md` sha256 `f1cc33846011bb77d76671580a34f86694ee276b959636597df7661f4fb638c6`, kept as `gate.local.md` in the results copy; pooled weighted
+  lower bound 0.951); review round 2 replaced that bound with the exact one (the raw Wilson bound mapped through the
+  two-class weight ratio; the commit that adds this paragraph), and the report was regenerated on a laptop from the
+  copied predictions and split files (`--n-boot 1000 --seed 0`, the defaults): every number other than the weighted
+  lower bounds is identical to klone's, and the results block above is spliced from that run (`gate.json` sha256
+  `8800e364d3ea916093d3a2310173e8aa6865666c7078b90f537c26c352e097a0`, `gate.md`
+  `ece584d2d610f893e59035fd471ddd95d66c841906301da011640093d5d16b08`).
+- Per-label files stay outside the repo: `~/Data/sidewalk-validator-ai-nosidewalk-2026-11/gate/` (fold split files,
+  predictions, report) and `klone-logs/gate/` (the six job logs).
 - Job ids: see "Cost and jobs" above.
 
 Census (phase A):

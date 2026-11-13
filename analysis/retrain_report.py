@@ -322,6 +322,16 @@ def parse_prior(spec):
     return out
 
 
+def map_prior_rule(report):
+    """The vote rule a map's ``calibration_report.json`` was fitted under: its ``prior_rule`` (reports since issue
+    #56), else ``margin`` (every earlier report was fitted to a margin-rule prior).
+
+    >>> map_prior_rule({"prior_rule": "majority2"}), map_prior_rule({})
+    ('majority2', 'margin')
+    """
+    return report.get("prior_rule") or "margin"
+
+
 def load_map(run_dir, label_type, variant=""):
     d = os.path.join(run_dir, label_type, "calibration", variant)
     fn = [x for x in os.listdir(d) if x.endswith(".json") and "report" not in x and "provenance" not in x]
@@ -341,18 +351,32 @@ def clears_at(class_map, gate=im.GATE):
 
 
 def correct_weight(split_all, prior_entry):
-    """``1 / keep rate`` of the correct class: the prior's correct count over the selected human margin-rule correct
-    count (see the module docstring). Incorrect rows keep weight 1.
+    """``1 / keep rate`` of the correct class: the prior's MARGIN-rule correct count over the selected human
+    margin-rule correct count (see the module docstring). Incorrect rows keep weight 1.
+
+    The keep rate divides margin-rule selections by margin-rule counts, so it reads ``rules["margin"]`` when the entry
+    records it (files written since issue #56, whose top level is another rule by default) and the top level of an
+    older entry, which is the margin rule.
 
     >>> sp = pd.DataFrame({"label_class": ["correct"] * 3 + ["incorrect"] * 2, "author": ["human"] * 5,
     ...                    "class_source": ["margin", "margin", "expert", "margin", "margin"]})
     >>> correct_weight(sp, {"correct": 10, "incorrect": 2})
     5.0
+    >>> correct_weight(sp, {"correct": 99, "incorrect": 9, "rule": "majority2",
+    ...                     "rules": {"margin": {"correct": 10, "incorrect": 2}}})
+    5.0
     """
     hm = split_all[(split_all.author == "human") & (split_all.class_source == "margin")]
     n_sel = int((hm.label_class == "correct").sum())
     assert n_sel > 0, "no selected human margin-rule correct labels"
-    return float(prior_entry["correct"]) / n_sel
+    rules = prior_entry.get("rules") or {}
+    if "margin" in rules:
+        margin_correct = rules["margin"]["correct"]
+    elif prior_entry.get("rule", "margin") == "margin":
+        margin_correct = prior_entry["correct"]
+    else:
+        raise ValueError(f"prior entry is under rule {prior_entry.get('rule')!r} and records no margin counts")
+    return float(margin_correct) / n_sel
 
 
 def own_weights(true, k_correct):
@@ -642,7 +666,9 @@ def main():
     slice_list, vs_prod_list = [], []
     for t in TYPES:
         df, split_all = preds[t], splits[t]
-        pi, entry = cal.load_prior(priors_path, t)
+        amap, rep = load_map(args.run_dir, t)
+        # Reweight to the prior the served map was fitted under, not whatever rule the priors file has on top.
+        pi, entry = cal.load_prior(priors_path, t, map_prior_rule(rep))
         k_correct = correct_weight(split_all, entry)
         headline += headline_rows(df, t, args)
         per_city += per_city_rows(df, t, public, names, args)
@@ -650,7 +676,6 @@ def main():
         a, b = metrics_rows(args.run_dir, t, df, args)
         rp += a
         hard += b
-        amap, _ = load_map(args.run_dir, t)
         calib.append(calibration_rows(args.run_dir, t, df, k_correct))
         gate += gate_rows(df, k_correct, amap, pi, "file", t, public, names, args.min_city_n)
         sat.append(saturation_row(df, t, amap))
