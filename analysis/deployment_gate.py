@@ -1716,8 +1716,9 @@ def cmd_doc(args, fetch=None):
         return 0
     with open(args.doc) as f:
         text = f.read()
+    new = splice(text, render_blocks(args.public_out))   # render fully before opening the doc for writing
     with open(args.doc, "w") as f:
-        f.write(splice(text, render_blocks(args.public_out)))
+        f.write(new)
     print(f"wrote the generated blocks of {args.doc}")
     return 0
 
