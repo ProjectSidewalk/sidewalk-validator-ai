@@ -595,6 +595,63 @@ of 250 voted; beside the key, outside the repo), the aggregates
 [`nosidewalk-2026-11/round_b.json`](nosidewalk-2026-11/round_b.json). Regenerate with `analysis/nosidewalk_round.py
 report` on the pinned key, sheet and `scores.csv`.
 
+### The other labels on the rated faces (2026-11-13, for issue #102)
+
+NoSidewalk labels come in runs: one labeler walks a stretch and drops a label every panorama or so
+([#102](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/102)). The round rated one label per face
+and scored a random 1,200, so most labels beside a rated one had no score. `nosidewalk_round.py neighbours` lists
+every NoSidewalk label on the 250 rated faces, and the five gate2 fold models scored the ones phase 1 had not.
+
+**What was scored.** The rated faces carry 2,638 NoSidewalk labels (Chicago 896, Oradell 817, Tucson 653, CDMX
+272). 457 already had phase-1 scores; the other 2,181, on 1,598 panoramas, were cropped (whole view) and scored;
+3 had no panorama in the store, so 2,635 of 2,638 are scored. None was AI-placed or without a usable pano point.
+The pool's other eligibility rules are **flags** here, not exclusions, because these labels are scored and not
+rated: 480 of the new labels were placed by the rater (Tucson 182, Oradell 298), 112 carry a vote of the rater's,
+26 sit on a panorama the fold models trained on (no face is a trained face) and 9 are held-out rows of the pilot
+split. A labeler's run on a face is `(face_id, labeler_idx)`; the files hold no `user_id`. There are 493 such runs,
+and 1,533 of the 2,638 labels come from the labeler of the face's rated label.
+
+**The map is the round's map.** Before scoring, `neighbour-scores` checks that the gate run is the one the key was
+built with (the five out-of-fold prediction files against the key manifest) and that the refitted map reproduces
+every pinned served accuracy, pass and stratum of the round (1,197 labels by 5 models). Both held.
+
+**Aggregates** ([`nosidewalk-2026-11/neighbours.md`](nosidewalk-2026-11/neighbours.md), `neighbours.json`): 1,559
+of the 2,635 scored labels pass the gate under the round's rule (at least 3 of 5 models), 59.2 %. A few long faces
+hold much of the data (the ten largest hold 646 labels), so the mean of the per-face shares, 52.7 %, is the fairer
+figure. By tag the pass share runs from 67 % (`street has no sidewalks`) to 26 % (`ends abruptly`) and 31 %
+(`shared pedestrian/car space`); NoSidewalk labels carry no severity. On the 222 faces with at least two scored
+labels the model's verdict is pass for every label on 38, for none on 38 and **mixed on 146**: the per-label
+verdict often changes along one face.
+
+**What this does and does not answer.** That last number is about the model's verdict only. Whether the labels of
+a run are right or wrong together (#102, item 1) needs several *rated* labels per face, and the round has one; it
+is not answered here. The scores are the input for pooling the image score over a run or a face (#102, item 2) and
+for the neighbour features of item 3. Labels on other faces within a distance along the street are not scored.
+
+**Kept off scrubbed storage.** A retrained fold model is not the same model (above: fold 1 passed 31 rows in one
+run and 2 in the other), so the step (b) ratings are evidence about the exact gate2 weights. Those and the crops
+now sit on durable storage, `/gscratch/makelab/$USER/nosidewalk-2026-11-keep/` on klone: `fold<k>/` with
+`model.safetensors` (each checked against the `model_sha256` of its prediction file's provenance), config,
+preprocessor, split and training record; `pilot_whole.tar` (the pilot's whole-view run directory, 885 crops, which
+every fold `split.csv` points at); `round_b_crops.tar` (1,197) and `neighbour_crops.tar` (2,178). The three tars
+are also under `keep/` in the local data directory. With the weights and crops kept, nothing about this round
+depends on scrubbed storage any more.
+
+**Pins** (per-label files outside the repo, under `round-b/neighbours/` of the data directory): `neighbours.json`
+`491eef573c5ed01368bab82a9a64ebcf87975d47298ac584557583e1f5a2bcf9` (it pins the rawLabels pulls, the key, the
+phase-1 scores, `faces.csv` and `labels.csv`), `labels.csv`
+`44c097b8ba254263de8493fbdc12d0212fc8e99548ab5c343caf812a00f25cd9`, `scored/manifest.csv`
+`cbf8d7a2921dabd5533ab528144d1c18d0b869267a2a6696e790571f5ecd4102`, `face_scores.csv`
+`6da73f9e4e3c93de1102e8657b18e1e457c15b3d14c6ebf8de4b796775c54bd3`; `neighbours.json` in this repository pins the
+five prediction files. Kept archives: `pilot_whole.tar`
+`344788f6213c56a36aeee1482d61b4c33b0958545a2ed8fdb38e53683e712f91`, `round_b_crops.tar`
+`964333705291a7f1e318c05903ed9dacea1c4723f10e2498ba63f293b92fcd93`, `neighbour_crops.tar`
+`e64bda5aec092ccd73863693b20502565758be84696d67209bf25a50ab0fd895`; the fold weights' sha256s are in the keep
+directory's `SHA256SUMS` and in each `predictions_fold<k>_provenance.json`. Crops and scores were made on klone
+with the code that scored the round (branch `nosidewalk-round-b` at 7649325); jobs 43217966 (copy), 43218083
+(staging, 4 min) and 43218084 (crops and five scores, 49 min on one GPU, `ckpt-all`). Logs in
+`klone-logs/round-b-neighbours/`.
+
 ### Cost and jobs
 
 klone, `gpu-l40s` (one L40S) for data and training, `ckpt-all` CPU for staging and the report. Staging 829
