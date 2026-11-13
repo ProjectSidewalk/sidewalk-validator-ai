@@ -1728,7 +1728,8 @@ def build_parser():
                         "filesystems); never moved")
     p.add_argument("--calibration-map", help="calibrated map JSON (default <out>/<type>/calibration/<type>.json)")
     p.add_argument("--dataset-license", help="Hub license id for the dataset card (or dataset_license in "
-                                             "card_overrides.json; default: a TODO, issue #2)")
+                                             "card_overrides.json; default: none, and the card has no license "
+                                             "line)")
     p.add_argument("--audit", action="store_true", help="report on the live repos (public API, no token)")
     p.add_argument("--push", action="store_true", help="stage, then upload (dry run unless --yes)")
     p.add_argument("--push-staged", action="store_true",

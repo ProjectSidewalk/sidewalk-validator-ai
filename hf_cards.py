@@ -704,8 +704,8 @@ def dataset_card(ctx, license_id=None):
             output, including ``content_hash``), ``prior`` (this label type's ``deployment_priors.json`` entry or
             None), ``generation_run`` (dict), ``code_commit`` and ``overrides`` (see ``OVERRIDE_KEYS``).
         license_id: Hub license identifier for the dataset (``--dataset-license``, or ``dataset_license`` in the
-            overrides). None writes a ``TODO:`` (the dataset license has not been decided; issue #2) and leaves
-            ``license`` out of the metadata rather than guessing.
+            overrides). None leaves ``license`` out of the metadata and the license line out of the card: nothing
+            is guessed, and no ``TODO:`` is written, so an unset license does not block a push.
 
     Raises:
         ValueError: if ``generation_run`` records ``fixed_crop_half_px`` (see :func:`require_depth_sized`).
@@ -723,11 +723,8 @@ def dataset_card(ctx, license_id=None):
     split_dirs = {"train": "train", "val": "validation", "test": "test", "test_heldout": "test_heldout"}
 
     meta = {}
-    comments = []
     if license_id:
         meta["license"] = license_id
-    else:
-        comments.append(f"{TODO} dataset license (issue #2); pass --dataset-license once decided")
     meta.update({"task_categories": ["image-classification"], "size_categories": [size_category(ds["n"])],
                  "pretty_name": f"Project Sidewalk {t} label validation crops",
                  "tags": ["project-sidewalk", "accessibility", "sidewalks", "street-view", "crowdsourcing",
@@ -754,7 +751,7 @@ def dataset_card(ctx, license_id=None):
     heldout = ds.get("heldout_cities") or []
     selection = gen.get("selection_sha256")
 
-    parts = [yaml_front_matter(meta, comments), f"# {name}\n",
+    parts = [yaml_front_matter(meta), f"# {name}\n",
              f"Street-level image crops of crowdsourced [Project Sidewalk](https://projectsidewalk.org) **{t}** "
              f"labels, each marked **correct** or **incorrect** by the crowd's validation votes. It is the training "
              f"and evaluation data of [`{ctx['model_repo']}`](https://huggingface.co/{ctx['model_repo']}), built by "
@@ -765,7 +762,7 @@ def dataset_card(ctx, license_id=None):
              f"- **Panoramas:** {fmt(ds.get('n_panoramas'))}.\n"
              f"- **Content hash:** `{ds['content_hash']}` (sha256 of `SHA256SUMS`, which lists the sha256 of every "
              "crop by path; recompute it to check an upload).\n"
-             f"- **License:** {license_id or TODO + ' to be decided (issue #2)'}.\n",
+             + (f"- **License:** {license_id}.\n" if license_id else ""),
              "## How labels become correct or incorrect\n",
              "Every label of this type and its validations are pulled from each deployment's public "
              "`/v3/api/rawLabels` export. Only **human** votes are counted: each vote carries a `validator_type`, and "

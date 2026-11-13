@@ -415,8 +415,7 @@ def test_dataset_card_has_the_real_numbers(staged):
     assert "2016–2023" in card                                  # capture years from image_capture_date
     assert "oradell" in card and "test_heldout" in card
     assert 'size_categories:\n  - "n<1K"' in card
-    assert "TODO: dataset license" in card                     # not guessed
-    assert "license:" not in card.split("---")[1].replace("# TODO: dataset license", "")
+    assert "licens" not in card.lower()                        # none passed: no metadata, no line, no TODO
     assert "900" in card and "100" in card                      # deployment prior counts
     assert "disagree − agree > 1" in card and "agree − disagree > 2" in card
 
