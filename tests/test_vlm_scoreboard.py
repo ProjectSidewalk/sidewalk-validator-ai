@@ -3,6 +3,7 @@ import doctest
 import json
 import os
 import shutil
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -767,3 +768,31 @@ def test_bold_in_the_other_tables_and_the_rule(board):
     assert sb._with_rule([["", "a"], ["", "b"]], [True, False], 2)[1][1].startswith("*partial")
     assert [r[1] for r in sb._with_rule([["", "a"], ["", "b"], ["", "c"]], [True, False, False], 2)].count(
         "*partial coverage, not ranked against the rows above*") == 1
+
+
+def _write_leg(leg_dir, reasons, p):
+    leg_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"label_uid": [f"pub-a:{i}" for i in range(len(p))], "variant": "definition", "p_incorrect": p,
+                  "unscored_reason": reasons}).to_csv(leg_dir / "Obstacle.csv", index=False)
+
+
+def test_load_leg_reads_an_all_empty_unscored_reason_without_a_pandas4_warning(tmp_path):
+    """The normal case: every reply scored, so unscored_reason reads back as an all-NaN float64 column. Filling it
+    with "" warns on pandas 3 (and will raise); the load must stay silent and keep every row (#105 review)."""
+    _write_leg(tmp_path / "leg", ["", "", ""], [0.1, 0.5, 0.9])
+    assert pd.read_csv(tmp_path / "leg" / "Obstacle.csv").unscored_reason.dtype == "float64"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        d, unscored = sb.load_leg(str(tmp_path / "leg"))
+    assert len(d) == 3 and unscored == {}
+
+
+def test_load_leg_treats_a_blank_reason_as_scored_and_refuses_a_silent_nan(tmp_path):
+    """A whitespace-only reason is no reason (the row is scored); a NaN p_incorrect with no reason is a broken file
+    and raises naming it, instead of a NaN reaching the AUC."""
+    _write_leg(tmp_path / "ok", ["  ", "not JSON", ""], [0.2, None, 0.7])
+    d, unscored = sb.load_leg(str(tmp_path / "ok"))
+    assert sorted(d.label_uid) == ["pub-a:0", "pub-a:2"] and unscored == {"self-reported:Obstacle": 1}
+    _write_leg(tmp_path / "bad", ["", "", ""], [0.2, None, 0.7])
+    with pytest.raises(ValueError, match=r"bad/Obstacle\.csv: 1 rows with no p_incorrect"):
+        sb.load_leg(str(tmp_path / "bad"))

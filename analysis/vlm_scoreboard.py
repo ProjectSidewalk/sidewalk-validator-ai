@@ -187,7 +187,7 @@ def load_leg(leg_dir):
     variant only); ``unscored`` is ``{Type: n}`` for rows dropped because the vLLM client found neither answer in the
     top 20 (``answer_floor == "both"``, scored 0.5 as a placeholder; the column is absent for other backends), and
     ``{SELF_KEY: n}`` for rows of a self-reported leg (``vlm_gemini.py``) with a non-empty ``unscored_reason`` (no
-    score at all). Exact duplicate rows (a resumed run that re-wrote a chunk) are dropped; conflicting duplicates
+    score at all). Any other row without a ``p_incorrect`` raises, naming the file. Exact duplicate rows (a resumed run that re-wrote a chunk) are dropped; conflicting duplicates
     raise. ``(None, {})`` when the leg has no CSV."""
     frames, unscored = [], {}
     for t in LABEL_TYPES:
@@ -202,10 +202,14 @@ def load_leg(leg_dir):
                     unscored[t] = int(both.sum())
                     d = d[~both]
             if "unscored_reason" in d:
-                bad = d.unscored_reason.fillna("").astype(str).ne("")
+                # an all-empty column reads back as float64; cast before filling (pandas 3 refuses "" in float64)
+                bad = d.unscored_reason.astype("string").fillna("").str.strip().ne("")
                 if bad.any():
                     unscored[SELF_KEY.format(t=t)] = int(bad.sum())
                     d = d[~bad]
+            if d.p_incorrect.isna().any():
+                raise ValueError(f"{p}: {int(d.p_incorrect.isna().sum())} rows with no p_incorrect and no "
+                                 f"unscored_reason")
             frames.append(d[["label_uid", "p_incorrect"]])
     if not frames:
         return None, {}

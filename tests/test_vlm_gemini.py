@@ -4,6 +4,7 @@ import doctest
 import json
 import os
 import sys
+import warnings
 from types import SimpleNamespace
 
 import numpy as np
@@ -411,3 +412,17 @@ def test_a_meta_from_before_the_new_binding_keys_still_resumes(tmp_path, capsys)
     _legacy_meta(leg / "Obstacle.meta.json")
     with pytest.raises(SystemExit, match="thinking_level"):
         vg.main(_args(root, tmp_path, **{**args, "thinking-level": "high"}), post=stub)
+
+
+def test_summarize_scores_reads_all_empty_text_columns_without_a_pandas4_warning(tmp_path):
+    """Every reply scored: unscored_reason (and here finish_reason, answer) read back as all-NaN float64 columns,
+    which ``fillna("")`` warns about on pandas 3 (#105 review)."""
+    path = str(tmp_path / "CurbRamp.csv")
+    rows = [{**{c: None for c in vg.SCORE_COLUMNS}, "label_uid": f"pub-a:{i}", "p_incorrect": 0.3, "confidence": 70,
+             "unscored_reason": "", "finish_reason": "", "answer": ""} for i in range(3)]
+    vg.append_rows(path, rows)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        s = vg.summarize_scores(path)
+    assert (s["n_rows"], s["n_scored"], s["n_unscored"]) == (3, 3, 0) and s["unscored_reasons"] == {}
+    assert s["finish_reasons"] == {"": 3} and s["answers"] == {"": 3}

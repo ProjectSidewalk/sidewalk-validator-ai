@@ -555,14 +555,15 @@ def append_rows(path, rows):
 def summarize_scores(path):
     """Aggregates of one score CSV for the meta file (no ``label_uid``)."""
     df = pd.read_csv(path, keep_default_na=False, na_values=[""])
-    reasons = df.unscored_reason.fillna("")
+    # An all-empty text column reads back as float64; cast before filling (pandas 3 refuses "" in float64).
+    text = {c: df[c].astype("string").fillna("") for c in ("unscored_reason", "finish_reason", "answer")}
+    reasons = text["unscored_reason"].str.strip()
     conf = pd.to_numeric(df.confidence, errors="coerce").dropna()
     lat = pd.to_numeric(df.latency_s, errors="coerce").dropna()
     return {"n_rows": int(len(df)), "n_scored": int((reasons == "").sum()), "n_unscored": int((reasons != "").sum()),
             "unscored_reasons": {str(k): int(v) for k, v in reasons[reasons != ""].value_counts().items()},
-            "finish_reasons": {str(k): int(v)
-                               for k, v in df.finish_reason.fillna("").astype(str).value_counts().items()},
-            "answers": {str(k): int(v) for k, v in df.answer.fillna("").astype(str).value_counts().items()},
+            "finish_reasons": {str(k): int(v) for k, v in text["finish_reason"].value_counts().items()},
+            "answers": {str(k): int(v) for k, v in text["answer"].value_counts().items()},
             "confidence_top_values": {str(int(k)) if float(k).is_integer() else str(k): int(v)
                                       for k, v in conf.value_counts().head(8).items()},
             "s_per_crop": float(lat.median()) if len(lat) else None}
