@@ -1,0 +1,14 @@
+{
+ "git_commit": "64c7f7e0cba8e326f873fc68395e06deaee49cca",
+ "git_dirty": false,
+ "inputs": {
+  "clipping.csv": "dc1dd988e084f363a6fa75e9ac366b6811ea6c7bc2f6c0546735f32c1e05ccc8",
+  "trig.json": "5b504aef5deea58f758d81ac8ed72174985d6926ecb2793e3f26f1e7c19f13d7",
+  "trig_tables.json": "701e74286f6ca464d9973dade3b5cd1a8f58787b5a87622c755a0ef595d56336"
+ },
+ "outputs": {
+  "tables.md": "e55027f274d7d095444ccd2c6cae65e2ff4c24e1cc9d18eae18a91a4f8e8b003",
+  "trig_hist.png": "656c6056e1e29cf08c8087174d1e1d20b9bc3c4a3ef8260e1739f65e828c33a3"
+ },
+ "stage": "report"
+}

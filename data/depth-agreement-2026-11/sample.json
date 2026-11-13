@@ -1,0 +1,58 @@
+{
+ "counts": {
+  "Crosswalk": {
+   "candidates": 600,
+   "cities": 33,
+   "set_a": 200
+  },
+  "CurbRamp": {
+   "candidates": 600,
+   "cities": 39,
+   "set_a": 200
+  },
+  "NoCurbRamp": {
+   "candidates": 600,
+   "cities": 36,
+   "set_a": 200
+  },
+  "Obstacle": {
+   "candidates": 600,
+   "cities": 36,
+   "set_a": 200
+  },
+  "SurfaceProblem": {
+   "candidates": 600,
+   "cities": 39,
+   "set_a": 200
+  }
+ },
+ "date": "2026-11-12",
+ "git_commit": "b2756eb05c331f9d5ddf7ec8b1bece80381901fd",
+ "git_dirty": false,
+ "inputs": {
+  "Crosswalk/split.csv": "91001f64b778ec3d59b381d50911c6bd8ea35449052574d97eb4c9380d37f00f",
+  "CurbRamp/split.csv": "f2ec89f8032c9b6b7c1533bea7ac82d82b7c139847b14286dd53d932a2195610",
+  "NoCurbRamp/split.csv": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+  "Obstacle/split.csv": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+  "SurfaceProblem/split.csv": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+  "rawlabels/*.csv": "42c0dcfab78943d3e329b21c3d86322a0894469d4fd11eb5ea2f576d5dd6999a"
+ },
+ "n_per_type": 200,
+ "outputs": {
+  "sample.csv (local only)": "b87374268a0005ae4c13739065e192c32327353f6bcd8bbdde796f8f9d47fdf4",
+  "sample_public.csv": "efd5a3e9fd6c9da8e966836b57b58c54b94a476ac99bf1392a941ff1c0b249dc",
+  "stage_files.txt": "9e689aaff2130d60b7beb31f8626b03ff58a1add9a4f32375247c2dacdc7d61c"
+ },
+ "oversample": 3,
+ "panoramas": 2929,
+ "public_listing": {
+  "fetched_on": "2026-11-12",
+  "from": "cities_json",
+  "n_public": 46,
+  "sha256": "91dae5cf726719e8c9f079428cb3a580993e03de1e377dd2c68cb3af4e6b1b51"
+ },
+ "rank": "int(sha256('depth-agreement:<seed>:<label_uid>')[:12], 16) / 16**12",
+ "seed": 20261112,
+ "stage": "sample",
+ "stage_files": 2929
+}
