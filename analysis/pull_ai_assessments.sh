@@ -9,31 +9,43 @@
 # Columns after expert2 (added for issue #52, analysis/deployment_gate.py; readers that select columns by name are
 # unaffected):
 #   validator_revision       the model's hub commit (SidewalkWebpage evolution 420); empty before API 1.0.2, and
-#                            empty in a schema that predates the evolution. The deployment gate keys its era on it.
+#                            empty in a schema that predates the evolution. The deployment gate keys its era on it
+#                            and treats an empty revision as unknown (excluded), never as the previous era.
 #   validator_training_date  the model's training date as the API reported it.
 #   api_version              the sidewalk-ai-api release that scored the label.
-#   ai_vote_cast             t when this assessment cast a vote (its label_validation_id is set), f when it was
-#                            scored without a vote (shadow mode). Shadow and vote evidence are never pooled.
+#   ai_vote_cast             t when the assessment's label_validation_id is set, i.e. AI validation was ON for the
+#                            deployment (vote mode), f when it was scored without a vote (shadow mode). In vote mode
+#                            the website casts a vote for every assessment: the verdict at or above the deployment's
+#                            ai-validation-min-accuracy, an Unsure below it. So t on a gated row means the verdict
+#                            counted; t on an ungated row means an Unsure was cast. Evolution 355 nulled the link of
+#                            AI votes it voided (the off-target-marker repair), so those vote-mode rows read f.
+#                            Shadow and vote evidence are never pooled.
 #   h_agree_excl, h_dis_excl the human Agree / Disagree votes (already in h_agree / h_dis) cast by validators whose
 #                            user_stat.excluded is true, for the excluded-validator sensitivity.
 #   vote_type_join           t when the human counts are restricted to votes on the label's CURRENT type
 #                            (label_validation.label_type, evolution 395), f in a schema without that column.
 #                            Before this change the counts included votes cast on a label's earlier type.
+# A schema whose column check or query fails is skipped with a message on stderr, and the script exits 1 at the end,
+# so a partial pull is never mistaken for a complete one.
 set -u
 export PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=600000'
 P="${PSQL:-psql -X -q -d sidewalk_prod -p 5434 -At}"
 AI='51b0b927-3c8a-45b2-93de-bd878d1e5cf4'   # the SidewalkAI validator account
 E1="${EXPERT1_ID:-none}"; E2="${EXPERT2_ID:-none}"
 echo "schema,label_id,label_type,deleted,severity,ai_result,ai_accuracy,ai_confidence,ai_date,model_id,h_agree,h_dis,h_unsure,expert1,expert2,validator_revision,validator_training_date,api_version,ai_vote_cast,h_agree_excl,h_dis_excl,vote_type_join"
-has_col() {  # schema table column -> t/f
+has_col() {  # schema table column -> t/f; anything else (a failed query) is an error
   $P -c "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='$1' AND table_name='$2' AND column_name='$3')"
 }
+FAILED=0
 for S in $($P -c "SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'sidewalk_%' AND schema_name NOT IN ('sidewalk_login') AND schema_name NOT LIKE '%backup%' ORDER BY 1"); do
   has=$($P -c "SELECT to_regclass('$S.label_ai_assessment') IS NOT NULL")
-  [ "$has" = "t" ] || { echo "$S: no label_ai_assessment" >&2; continue; }
-  REV="NULL::text"; [ "$(has_col "$S" label_ai_assessment validator_revision)" = "t" ] && REV="validator_revision"
+  [ "$has" = "f" ] && { echo "$S: no label_ai_assessment" >&2; continue; }
+  [ "$has" = "t" ] || { echo "$S: table check failed, schema skipped" >&2; FAILED=1; continue; }
+  HR=$(has_col "$S" label_ai_assessment validator_revision); HT=$(has_col "$S" label_validation label_type)
+  case "$HR$HT" in tt|tf|ft|ff) ;; *) echo "$S: column check failed, schema skipped" >&2; FAILED=1; continue;; esac
+  REV="NULL::text"; [ "$HR" = "t" ] && REV="validator_revision"
   TYPEJOIN=""; TJ="f"
-  [ "$(has_col "$S" label_validation label_type)" = "t" ] && { TYPEJOIN="AND v.label_type = l.label_type"; TJ="t"; }
+  [ "$HT" = "t" ] && { TYPEJOIN="AND v.label_type = l.label_type"; TJ="t"; }
   $P -c "COPY (
     WITH a AS (
       SELECT DISTINCT ON (label_id) label_id,
@@ -53,5 +65,6 @@ for S in $($P -c "SELECT schema_name FROM information_schema.schemata WHERE sche
     FROM a JOIN $S.label l ON l.label_id=a.label_id
     LEFT JOIN $S.label_validation v ON v.label_id=l.label_id AND v.user_id <> '$AI' $TYPEJOIN
     LEFT JOIN $S.user_stat us ON us.user_id = v.user_id
-    GROUP BY 1,2,3,4,5,6,7,8,9,10,16,17,18,19) TO STDOUT WITH CSV" || echo "$S: query failed" >&2
+    GROUP BY 1,2,3,4,5,6,7,8,9,10,16,17,18,19) TO STDOUT WITH CSV" || { echo "$S: query failed" >&2; FAILED=1; }
 done
+[ "$FAILED" = 0 ] || { echo "one or more schemas failed: this pull is INCOMPLETE" >&2; exit 1; }

@@ -82,6 +82,35 @@ def test_checkpoint_evaluates_first_rows_only():
     assert g.checkpoints(r, 3300) == [50, 100, 200, 400, 800, 1600, 3200]
     with pytest.raises(ValueError):
         g.Rule(schedule=(100, 50))
+    with pytest.raises(ValueError, match="below min_n"):
+        g.Rule(min_n=60)                      # the first checkpoint (50) could never be judged
+
+
+def test_pass_lost_at_a_later_checkpoint_is_reported_both_ways():
+    """Passes at 50, not at 100: the status is re-judged at the current checkpoint, the first pass is kept beside it."""
+    r = g.Rule()
+    o = [1.0] * 50 + [1.0] * 42 + [0.0] * 8
+    s = g.status_from_outcomes(o, r)
+    assert (s["checkpoint"], s["status"], s["first_pass_checkpoint"]) == (100, "undecided", 50)
+    assert g.replay_stratum(o, r)["graduated_at"] == 50                 # the replay uses the sticky rule
+    df = frame(rows("sidewalk_alpha", "CurbRamp", "Agree", 92, 92), rows("sidewalk_alpha", "CurbRamp", "Agree", 8, 0, start=93))
+    d, _ = loaded(df)
+    rec = g.compute_strata(d, g.Rule(), "x")[0][("sidewalk_alpha", "CurbRamp", "Agree", "unrecorded")]
+    assert (rec["status"], rec["first_pass_checkpoint"]) == ("undecided", 50)
+    public, private, _ = _report(df)
+    assert public["deployments"]["alpha-wa"]["CurbRamp"]["Agree"]["unrecorded"]["first_pass_checkpoint"] == 50
+    assert private["strata"][0]["first_pass_checkpoint"] == 50
+    assert g.status_from_outcomes([1.0] * 40, r)["first_pass_checkpoint"] is None
+
+
+def test_precision_all_and_its_interval_beside_the_checkpoint():
+    s = g.status_from_outcomes([1.0] * 100 + [0.0] * 37, g.Rule())
+    assert s["precision"] == 1.0 and s["precision_all"] == pytest.approx(100 / 137)
+    assert (s["ci_all_lo"], s["ci_all_hi"]) == pytest.approx(g.wilson(100, 137))
+    df = frame(rows("sidewalk_alpha", "CurbRamp", "Agree", 100, 100), rows("sidewalk_alpha", "CurbRamp", "Agree", 37, 0, start=101))
+    public, _, _ = _report(df)
+    table = g.render_public_table(public)
+    assert "0.730 [" in table and "1.000 [" in table
 
 
 def test_more_needed_derived_from_rule():
@@ -163,8 +192,34 @@ def test_era_by_revision_when_present():
     df["validator_revision"] = ["old", "old", "new", "new"]
     df.loc[0, "validator_revision"] = None
     d, c = g.load_pull(df)
-    assert c["era_key"] == "validator_revision" and c["current_revisions"] == {"sidewalk-validator-ai-curbramp": "new"}
-    assert d.set_index("label_id")["era"].to_dict() == {1: "previous", 2: "previous", 3: "current", 4: "current"}
+    assert c["era_key"].startswith("validator_revision") and c["current_revisions"] == {"sidewalk-validator-ai-curbramp": "new"}
+    # an empty revision is never read as the previous era: it is excluded as unknown, and counted
+    assert d.set_index("label_id")["era"].to_dict() == {1: "unknown", 2: "previous", 3: "current", 4: "current"}
+    assert c["unknown_revision_rows"] == 1
+    strata, prev = g.compute_strata(g.add_outcomes(d), g.Rule(), "x")
+    assert strata[("sidewalk_alpha", "CurbRamp", "Agree", "unrecorded")]["n_assessed"] == 2
+    assert prev[("sidewalk_alpha", "CurbRamp", "Agree", "unrecorded")]["n_assessed"] == 1
+
+
+def test_empty_revision_previous_only_before_the_given_day():
+    df = frame(rows("sidewalk_alpha", "CurbRamp", "Agree", 1, 1, date="2026-08-01"),
+               rows("sidewalk_alpha", "CurbRamp", "Agree", 1, 1, date="2026-11-04", start=2),
+               rows("sidewalk_alpha", "CurbRamp", "Agree", 1, 1, date="2026-11-05", start=3))
+    df["validator_revision"] = [None, "", "new"]
+    d, c = g.load_pull(df, unrevisioned_before="2026-09-01")
+    # before the day: previous; on or after it, an empty revision is still unknown (a schema missing the column)
+    assert d.set_index("label_id")["era"].to_dict() == {1: "previous", 2: "unknown", 3: "current"}
+    assert c["unknown_revision_rows"] == 1
+
+
+def test_before_flag_moves_the_end_of_the_previous_era():
+    df = frame(rows("sidewalk_alpha", "CurbRamp", "Agree", 1, 1, date="2026-10-15"),
+               rows("sidewalk_alpha", "CurbRamp", "Agree", 1, 1, date="2026-10-25", start=2),
+               rows("sidewalk_alpha", "CurbRamp", "Agree", 1, 1, date="2026-11-02", start=3))
+    d, _ = g.load_pull(df, since="2026-11-01", before="2026-10-20")
+    assert d.set_index("label_id")["era"].to_dict() == {1: "previous", 2: "changeover", 3: "current"}
+    with pytest.raises(ValueError, match="previous era"):
+        g.load_pull(df, since="2026-10-01", before="2026-10-20")
 
 
 def test_shadow_and_vote_regimes_are_never_pooled():
@@ -176,6 +231,36 @@ def test_shadow_and_vote_regimes_are_never_pooled():
     assert strata[("sidewalk_alpha", "CurbRamp", "Agree", "shadow")]["status"] == "fail"
 
 
+def test_status_follows_assessment_date_not_label_id():
+    """Within a schema the order is (ai_date, label_id): ten wrong rows with the LOWEST label_ids but the latest
+    date fall outside the first 50, so the stratum passes; a sort on label_id alone would put them first."""
+    df = frame(rows("sidewalk_alpha", "CurbRamp", "Agree", 50, 50, date="2026-11-01", start=11),
+               rows("sidewalk_alpha", "CurbRamp", "Agree", 10, 0, date="2026-11-02", start=1))
+    d, _ = loaded(df.sample(frac=1, random_state=1))
+    rec = g.compute_strata(d, g.Rule(), "x")[0][("sidewalk_alpha", "CurbRamp", "Agree", "unrecorded")]
+    assert (rec["checkpoint"], rec["k_checkpoint"], rec["status"]) == (50, 50.0, "pass")
+    by_id = g.status_from_outcomes(d.sort_values("label_id")["out_majority2"].to_numpy(), g.Rule())
+    assert by_id["status"] != "pass"
+    prev = df.assign(ai_date=df["ai_date"].str.replace("2026-11", "2026-09"))
+    bt, _ = g.backtest(loaded(prev.sample(frac=1, random_state=2))[0], LISTING, g.Rule())
+    assert bt["public_deployments"]["alpha-wa"]["CurbRamp"]["Agree"]["unrecorded"]["graduated_at"] == 50
+
+
+def test_sensitivity_statuses_and_their_count():
+    df = frame(rows("sidewalk_alpha", "CurbRamp", "Agree", 60, 60, votes=(1, 0)),                  # one vote each
+               rows("sidewalk_alpha", "Crosswalk", "Agree", 10, 10, votes=(1, 1), start=100),      # ties first
+               rows("sidewalk_alpha", "Crosswalk", "Agree", 50, 50, votes=(2, 0), start=200))
+    public, _, _ = _report(df)
+    cr = public["deployments"]["alpha-wa"]["CurbRamp"]["Agree"]["unrecorded"]
+    cw = public["deployments"]["alpha-wa"]["Crosswalk"]["Agree"]["unrecorded"]
+    assert (cr["status"], cr["sensitivity"]["any_vote"]["status"], cr["sensitivity"]["tie_half"]["status"]) == \
+        ("insufficient", "pass", "insufficient")
+    assert (cw["status"], cw["sensitivity"]["tie_half"]["status"], cw["sensitivity"]["any_vote"]["status"]) == \
+        ("pass", "undecided", "pass")
+    assert cw["sensitivity"]["tie_half"]["n"] == 60
+    assert public["summary"]["status_differs_under"] == {"tie_half": 1, "any_vote": 1}
+
+
 def test_no_gated_and_type_policies():
     df = frame(rows("sidewalk_alpha", "CurbRamp", "Disagree", 30, 30, acc=0.9199),
                rows("sidewalk_alpha", "NoSidewalk", "Disagree", 5, 5, start=100),
@@ -183,6 +268,8 @@ def test_no_gated_and_type_policies():
     d, _ = loaded(df)
     strata, _ = g.compute_strata(d, g.Rule(), "x")
     assert strata[("sidewalk_alpha", "CurbRamp", "Disagree", "unrecorded")]["status"] == "no_gated"
+    # no number of decided rows helps while nothing reaches the gate
+    assert strata[("sidewalk_alpha", "CurbRamp", "Disagree", "unrecorded")]["more_needed_if_perfect"] is None
     assert strata[("sidewalk_alpha", "NoSidewalk", "Disagree", "unrecorded")]["status"] == "never_votes"
     assert strata[("sidewalk_alpha", "Other", "Agree", "unrecorded")]["status"] == "not_served"
     tb = g.types_block(d["label_type"].unique())
@@ -217,19 +304,105 @@ def test_private_unlisted_and_ambiguous_never_named():
     assert set(public["deployments"]) == {"alpha-wa"}
     terms = g.private_terms(LISTING, df["schema"].unique())
     assert g.find_private_terms(text, terms) == []
-    assert public["private"]["n_deployments_current_era"] == 3      # three private schemas: shown as a count
-    assert public["private"]["cells"]["CurbRamp"]["Agree"] == {"n_deployments": 3, "strata_by_status": {"pass": 3},
-                                                               "n_decided": 180}
+    assert public["private"] == {"note": g.PRIVATE_NOTE}             # no count, no cell, whatever the private strata
+    assert private["private_cells"]["CurbRamp"]["Agree"] == {"n_deployments": 3, "strata_by_status": {"pass": 3},
+                                                             "n_decided": 180}
+    assert public["summary"]["strata"] == 1 and private["summary_all"]["strata"] == 4
     assert {r["schema"] for r in private["strata"]} == {"sidewalk_alpha", "sidewalk_hidden", "sidewalk_unlisted",
                                                         "sidewalk_springfield"}
     assert len(strata) == 4
 
 
-def test_private_cells_suppressed_under_three():
-    df = frame(rows("sidewalk_alpha", "CurbRamp", "Agree", 60, 60), rows("sidewalk_hidden", "CurbRamp", "Agree", 60, 60))
-    public, _, _ = _report(df)
-    assert public["private"]["n_deployments_current_era"] == "fewer than 3"
-    assert public["private"]["cells"]["CurbRamp"]["Agree"]["n_decided"] == "suppressed"
+def test_private_block_key_set_is_fixed():
+    """The public ``private`` block (and the ``types`` block) do not depend on which types or how many non-public
+    deployments were assessed."""
+    base = rows("sidewalk_alpha", "CurbRamp", "Agree", 60, 60)
+    variants = [frame(base),
+                frame(base, rows("sidewalk_hidden", "CurbRamp", "Agree", 60, 60, start=1000)),
+                frame(base, rows("sidewalk_hidden", "Obstacle", "Disagree", 5, 5, start=1000),
+                      rows("sidewalk_unlisted", "Signal", "Agree", 70, 10, start=2000),
+                      rows("sidewalk_springfield", "NoCurbRamp", "Agree", 80, 80, start=3000))]
+    reps = [_report(df)[0] for df in variants]
+    assert all(r["private"] == {"note": g.PRIVATE_NOTE} for r in reps)
+    assert all(r["types"] == reps[0]["types"] for r in reps)
+    assert "Signal" not in reps[2]["types"]
+
+
+def _sumdep(rep_, field, verdict=None):
+    return sum(r[field] for by_t in rep_["deployments"].values() for v, by_v in
+               ((v, by_v) for by_v_all in by_t.values() for v, by_v in by_v_all.items())
+               if verdict in (None, v) for r in by_v.values())
+
+
+def test_public_pooled_figures_are_sums_of_the_public_strata():
+    """Subtraction leaves nothing: every pooled public figure equals the sum of the listed public strata."""
+    df = frame(rows("sidewalk_alpha", "CurbRamp", "Agree", 120, 118), rows("sidewalk_beta", "CurbRamp", "Agree", 30, 30, start=500),
+               rows("sidewalk_alpha", "Obstacle", "Disagree", 20, 20, acc=0.5, start=900),
+               rows("sidewalk_hidden", "CurbRamp", "Agree", 80, 40, start=1000),
+               rows("sidewalk_hidden", "Obstacle", "Agree", 60, 60, start=2000))
+    public, private, _ = _report(df)
+    s = public["summary"]
+    listed = [r for by_t in public["deployments"].values() for by_v in by_t.values() for by_r in by_v.values()
+              for r in by_r.values()]
+    assert s["strata"] == len(listed) == sum(n for by_v in s["by_status"].values() for c in by_v.values()
+                                             for n in c.values())
+    assert s["acceptance"]["CurbRamp"]["decided"] == 150 and s["acceptance"]["Obstacle"]["decided"] == 0
+    assert s["largest_deployment_share_of_decided_gated"]["n_deployments_with_decided"] == 2
+    assert s["largest_deployment_share_of_decided_gated"]["share"] == pytest.approx(120 / 150)
+    assert private["summary_all"]["acceptance"]["CurbRamp"]["decided"] == 230
+
+
+def _run_public(tmp_path, df, name):
+    """Run gate, backtest and slices on ``df`` and return the public files' text with the pull's sha256 masked."""
+    import hashlib
+    work = tmp_path / name
+    work.mkdir()
+    p = work / "pull.csv"
+    df.to_csv(p, index=False)
+    cache = work / "raw"
+    cache.mkdir()
+    pd.DataFrame({"label_id": range(1, 400), "tags": ['["narrow"]'] * 399}).to_csv(cache / "alpha-wa.csv", index=False)
+    key = work / "key.csv"
+    pd.DataFrame({"label_uid": ["alpha-wa:3", "sidewalk_hidden:1003", "sidewalk_gone:1"]}).to_csv(key, index=False)
+    out = work / "public"
+    common = ["--assessments", str(p), "--public-out", str(out), "--exclude-items", str(key)]
+    assert g.main(["gate"] + common, fetch=fetch_ok) == 0
+    assert g.main(["backtest"] + common, fetch=fetch_ok) == 0
+    assert g.main(["slices"] + common + ["--rawlabels-cache", str(cache)], fetch=fetch_ok) == 0
+    sha = hashlib.sha256(p.read_bytes()).hexdigest()
+    texts = {}
+    for f in sorted(os.listdir(out)):
+        t = (out / f).read_text().replace(sha, "SHA").replace(sha[:16], "SHA")
+        texts[f] = t
+    return texts
+
+
+def test_no_public_output_changes_when_the_private_strata_change(tmp_path):
+    """The strongest form of the subtraction property: change, add or remove every non-public stratum (current and
+    previous era, other types and verdicts, drops, exclusions, a schema whose only rows are excluded) and every
+    public file stays byte-identical."""
+    public_rows = [rows("sidewalk_alpha", "CurbRamp", "Agree", 120, 118),
+                   rows("sidewalk_alpha", "CurbRamp", "Agree", 150, 140, date="2026-09-01", start=200),
+                   rows("sidewalk_alpha", "Obstacle", "Disagree", 20, 20, acc=0.5, start=400),
+                   rows("sidewalk_beta", "Crosswalk", "Agree", 30, 30, start=1)]
+    variants = {
+        "none": frame(*public_rows),
+        "one": frame(*public_rows, rows("sidewalk_hidden", "CurbRamp", "Agree", 80, 40, start=1000)),
+        "many": frame(*public_rows,
+                      rows("sidewalk_hidden", "CurbRamp", "Agree", 60, 60, start=1000),
+                      rows("sidewalk_hidden", "Obstacle", "Agree", 70, 69, start=2000),
+                      rows("sidewalk_hidden", "CurbRamp", "Agree", 200, 150, date="2026-09-01", start=3000),
+                      rows("sidewalk_hidden", "NoCurbRamp", "Disagree", 30, 30, acc=0.95, start=4000),
+                      rows("sidewalk_unlisted", "Signal", "Agree", 70, 10, start=1),
+                      rows("sidewalk_unlisted", "SurfaceProblem", "Agree", 5, 5, date="2026-10-27", start=500),
+                      rows("sidewalk_springfield", "Crosswalk", "Agree", 90, 90, date="2025-01-01", start=1),
+                      rows("sidewalk_gone", "CurbRamp", "Agree", 1, 1, start=1))}
+    variants["many"].loc[variants["many"]["schema"] == "sidewalk_unlisted", "deleted"] = "t"
+    texts = {k: _run_public(tmp_path, df, k) for k, df in variants.items()}
+    assert set(texts["none"]) == {"deployment_status.json", "backtest.json", "slices.json", "provenance.json"}
+    for k in ("one", "many"):
+        for f, t in texts["none"].items():
+            assert texts[k][f] == t, f"{f} changed when the private strata changed ({k})"
 
 
 def test_public_report_has_no_mode_and_validates():
@@ -319,11 +492,13 @@ def test_gate_cli_end_to_end_and_acceptance(tmp_path):
             "--exclude-items", str(key)]
     assert g.main(args + ["--expect", "60,5,0,0,0"], fetch=fetch_ok) == 0
     rep = json.loads((out / "deployment_status.json").read_text())
-    assert rep["summary"]["acceptance_check"]["ok"]
-    assert rep["exclusions"]["rows_removed"] == 2                        # API-form and schema-form keys both map
+    assert rep["summary"]["acceptance_check"] == {"ok": True, "against": g.ACCEPTANCE_SOURCE}   # no counts
+    assert rep["exclusions"]["rows_removed_public"] == 2                 # API-form and schema-form keys both map
     assert rep["deployments"]["alpha-wa"]["Crosswalk"]["Agree"]["unrecorded"]["n"] == 58
     assert "hidden" not in (out / "deployment_status.json").read_text()
     assert (priv / "deployment_status_all.csv").exists()
+    allrep = json.loads((priv / "deployment_status_all.json").read_text())
+    assert allrep["acceptance_check"]["got"]["CurbRamp"] == 5         # the private-inclusive counts stay private
     prov = json.loads((out / "provenance.json").read_text())
     assert str(tmp_path) not in json.dumps(prov)                         # basenames only
     assert g.main(args + ["--expect", "61,5,0,0,0"], fetch=fetch_ok) == 1
@@ -349,12 +524,26 @@ def test_backtest_order_is_deterministic_and_counts_add_up():
                rows("sidewalk_hidden", "CurbRamp", "Agree", 70, 60, date="2026-09-01"))
     d, _ = loaded(df.sample(frac=1, random_state=0))
     pub, priv = g.backtest(d, LISTING, g.Rule())
-    p = pub["pooled"]["CurbRamp"]["Agree"]
+    p = pub["pooled"]["unrecorded"]["CurbRamp"]["Agree"]
     total = p["withheld_in_graduated"]["n"] + p["kept"]["n"] + p["never_graduated"]["n"] + p["strata_under_min_n"]["n"]
-    assert total == 190
+    assert total == p["all"]["n"] == 120                                 # public deployments only
+    pa = priv["pooled_all"]["unrecorded"]["CurbRamp"]["Agree"]
+    assert pa["all"]["n"] == 190                                         # every deployment, private file only
     d2, _ = loaded(df)
     assert g.backtest(d2, LISTING, g.Rule())[0] == pub
-    assert "hidden" not in json.dumps(pub)
+    assert "hidden" not in json.dumps(pub) and pub["private"] == {"note": g.PRIVATE_NOTE}
+
+
+def test_backtest_never_pools_vote_and_shadow():
+    df = frame(rows("sidewalk_alpha", "CurbRamp", "Agree", 60, 60, date="2026-09-01"),
+               rows("sidewalk_alpha", "CurbRamp", "Agree", 60, 0, date="2026-09-01", start=61))
+    df["ai_vote_cast"] = ["t"] * 60 + ["f"] * 60
+    pub, _ = g.backtest(loaded(df)[0], LISTING, g.Rule())
+    assert set(pub["pooled"]) == {"vote", "shadow"}
+    assert pub["pooled"]["vote"]["CurbRamp"]["Agree"]["graduated"] == 1
+    assert pub["pooled"]["shadow"]["CurbRamp"]["Agree"]["graduated"] == 0
+    dep = pub["public_deployments"]["alpha-wa"]["CurbRamp"]["Agree"]
+    assert dep["vote"]["n"] == dep["shadow"]["n"] == 60
 
 
 def test_power_bounds():
@@ -388,6 +577,27 @@ def test_join_tags_one_to_one_and_coverage(tmp_path):
         g.join_tags(d, str(tmp_path), g.listing_cities(LISTING))
 
 
+def test_privacy_terms_come_from_the_unfiltered_pull(tmp_path):
+    """A private schema whose only rows are excluded (or dropped) is still a term every public file is checked for."""
+    df = frame(rows("sidewalk_alpha", "CurbRamp", "Agree", 3, 3), rows("sidewalk_secretplace", "CurbRamp", "Agree", 1, 1))
+    df.loc[3, "deleted"] = "t"
+    p = tmp_path / "pull.csv"
+    df.to_csv(p, index=False)
+    args = g.build_parser().parse_args(["gate", "--assessments", str(p), "--public-out", str(tmp_path / "o")])
+    d, *_rest = g._prepare(args, fetch_ok)
+    terms = _rest[2]
+    assert "sidewalk_secretplace" not in set(d["schema"]) and "secretplace" in terms
+
+
+def test_slices_pool_public_deployments_only():
+    df = frame(rows("sidewalk_alpha", "CurbRamp", "Agree", 40, 40), rows("sidewalk_hidden", "CurbRamp", "Agree", 40, 0, start=100))
+    d, _ = loaded(df)
+    pub = g.slices_report(d, LISTING, g.Rule())
+    allr = g.slices_report(d, LISTING, g.Rule(), public_only=False)
+    n = lambda s: sum(r["n"] for r in s["types"]["CurbRamp"]["severity"]["current"])
+    assert (n(pub), n(allr)) == (40, 80)
+
+
 def test_schema_city_map_one_to_one():
     with pytest.raises(ValueError):
         g.schema_city_map(["sidewalk_alpha", "sidewalk_alpha_wa"], {"alpha-wa": "public"})
@@ -403,6 +613,5 @@ def test_committed_doc_matches_json_and_report_validates():
     with open(os.path.join(OUT, "deployment_status.json")) as f:
         rep = json.load(f)
     g.validate_report(rep)
-    assert rep["summary"]["acceptance_check"]["ok"]
-    assert rep["summary"]["acceptance_check"]["got"] == {"Crosswalk": 885, "CurbRamp": 834, "NoCurbRamp": 129,
-                                                         "Obstacle": 199, "SurfaceProblem": 226}
+    assert rep["summary"]["acceptance_check"] == {"ok": True, "against": g.ACCEPTANCE_SOURCE}
+    assert rep["private"] == {"note": g.PRIVATE_NOTE}

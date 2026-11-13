@@ -161,6 +161,9 @@ class Rule:
         s = tuple(int(x) for x in self.schedule)
         if not s or list(s) != sorted(set(s)) or s[0] < 1:
             raise ValueError(f"schedule must be strictly ascending positive counts, got {self.schedule}")
+        if s[0] < self.min_n:
+            raise ValueError(f"the first checkpoint ({s[0]}) is below min_n ({self.min_n}): a look there could never "
+                             "be judged")
         if self.reference not in REFERENCES:
             raise ValueError(f"reference must be one of {REFERENCES}")
         object.__setattr__(self, "schedule", s)
@@ -220,16 +223,35 @@ def more_needed_if_perfect(outcomes, rule):
     return None
 
 
+def first_pass_checkpoint(outcomes, rule):
+    """The first checkpoint at which the decided ``outcomes`` (in order) pass, or ``None``. This is the look a sticky
+    rule (a pass is kept for good) would act on; :func:`ever_pass` gives its false-pass rate.
+
+    >>> first_pass_checkpoint([1.0] * 50 + [1.0] * 42 + [0.0] * 8, Rule())   # passes at 50, not at 100
+    50
+    """
+    o = np.asarray(outcomes, dtype=float)
+    for c in checkpoints(rule, len(o)):
+        if c >= rule.min_n and classify(float(o[:c].sum()), c, rule) == "pass":
+            return c
+    return None
+
+
 def status_from_outcomes(outcomes, rule):
     """Status of one stratum from its decided outcomes in assessment order (1 right, 0 wrong, 0.5 a tie under
-    ``tie_half``): ``{"n", "k", "checkpoint", "k_checkpoint", "precision", "ci_lo", "ci_hi", "status"}``, where the
-    interval and the status are those of the first ``checkpoint`` rows and ``k`` / ``precision_all`` cover all rows."""
+    ``tie_half``): ``{"n", "k", "precision_all", "ci_all_lo", "ci_all_hi", "checkpoint", "k_checkpoint", "precision",
+    "ci_lo", "ci_hi", "status", "first_pass_checkpoint"}``. ``status`` and its interval are those of the first
+    ``checkpoint`` rows (the largest checkpoint, re-judged at every run); ``first_pass_checkpoint`` is the first
+    checkpoint that passed, which a sticky rule would keep even when ``status`` is no longer ``pass``; ``k``,
+    ``precision_all`` and its interval cover all decided rows."""
     o = np.asarray(outcomes, dtype=float)
     n = len(o)
     c = checkpoint_of(n, rule) if n >= rule.min_n else None
-    rec = {"n": int(n), "k": float(o.sum()) if n else 0.0, "precision_all": float(o.mean()) if n else None,
-           "checkpoint": c, "k_checkpoint": None, "precision": None, "ci_lo": None, "ci_hi": None,
-           "status": "insufficient"}
+    k = float(o.sum()) if n else 0.0
+    lo_all, hi_all = wilson(k, n, rule.z) if n else (None, None)
+    rec = {"n": int(n), "k": k, "precision_all": float(o.mean()) if n else None, "ci_all_lo": lo_all,
+           "ci_all_hi": hi_all, "checkpoint": c, "k_checkpoint": None, "precision": None, "ci_lo": None,
+           "ci_hi": None, "status": "insufficient", "first_pass_checkpoint": first_pass_checkpoint(o, rule)}
     if c is not None:
         kc = float(o[:c].sum())
         lo, hi = wilson(kc, c, rule.z)
@@ -251,22 +273,26 @@ def _truthy(s):
     return s.astype(str).str.lower().isin(["t", "true", "1"])
 
 
-def load_pull(path_or_frame, since=SINCE, before=BEFORE):
+def read_pull(path):
+    """The raw pull CSV, every column a string where it matters (no filtering)."""
+    return pd.read_csv(path, dtype={"schema": str, "label_type": str, "model_id": str, "ai_result": str,
+                                    "deleted": str, "validator_revision": str, "ai_vote_cast": str},
+                       low_memory=False)
+
+
+def load_pull(path_or_frame, since=SINCE, before=BEFORE, unrevisioned_before=None):
     """The pull (``analysis/pull_ai_assessments.sh``) as one row per AI-assessed label, with ``label_uid``
-    (``schema:label_id``, asserted unique), ``era`` (``current`` / ``previous`` / ``changeover``), ``model_revision``
-    and ``regime``. Dropped, with counts: backup schemas (``_bak_``), the internal ``sidewalk_validation`` schema,
+    (``schema:label_id``, asserted unique), ``era`` (``current`` / ``previous`` / ``changeover`` by date; ``current``
+    / ``previous`` / ``unknown`` by revision, see :func:`assign_era`), ``model_revision`` and ``regime``. Dropped, with counts: backup schemas (``_bak_``), the internal ``sidewalk_validation`` schema,
     deleted labels, and rows whose ``model_id`` is not ``sidewalk-validator-ai-<label type>`` (a label retyped after
     its assessment). Returns ``(df, counts)``.
 
     ``label_id`` is per schema, so ``(schema, label_id)`` is the key; the same ``label_id`` in two schemas is two
     labels.
     """
-    if isinstance(path_or_frame, pd.DataFrame):
-        d = path_or_frame.copy()
-    else:
-        d = pd.read_csv(path_or_frame, dtype={"schema": str, "label_type": str, "model_id": str, "ai_result": str,
-                                              "deleted": str, "validator_revision": str, "ai_vote_cast": str},
-                        low_memory=False)
+    if before > since:
+        raise ValueError(f"the previous era must end ({before}) on or before the current one starts ({since})")
+    d = path_or_frame.copy() if isinstance(path_or_frame, pd.DataFrame) else read_pull(path_or_frame)
     counts = {"rows": int(len(d))}
     bak = d["schema"].str.contains("_bak_", regex=False)
     internal = d["schema"].isin(EXCLUDED_SCHEMAS)
@@ -286,7 +312,12 @@ def load_pull(path_or_frame, since=SINCE, before=BEFORE):
         d[c] = pd.to_numeric(d[c], errors="coerce").fillna(0).astype(int)
     d["ai_accuracy"] = pd.to_numeric(d["ai_accuracy"], errors="coerce")
     d["ai_date"] = pd.to_datetime(d["ai_date"]).dt.strftime("%Y-%m-%d")
-    assign_era(d, since, before, counts)
+    assign_era(d, since, before, counts, unrevisioned_before)
+    # Regime = whether AI validation was ON for the label's deployment when it was assessed. ``ai_vote_cast`` is
+    # ``label_validation_id IS NOT NULL``: in vote mode the website casts a vote for EVERY assessment, the verdict when
+    # the served accuracy reaches the gate and an Unsure below it, so for a gated row ``vote`` also means the verdict
+    # was counted, and for an ungated row it means an Unsure was cast. Known limit: SidewalkWebpage evolution 355
+    # nulled the link of AI votes it voided (the off-target-marker repair), so those vote-mode rows read ``shadow``.
     if "ai_vote_cast" in d.columns and d["ai_vote_cast"].notna().any():
         d["regime"] = np.where(_truthy(d["ai_vote_cast"]), "vote", "shadow")
         counts["regime_source"] = "ai_vote_cast"
@@ -300,20 +331,33 @@ def load_pull(path_or_frame, since=SINCE, before=BEFORE):
     return d.reset_index(drop=True), counts
 
 
-def assign_era(d, since=SINCE, before=BEFORE, counts=None):
+def assign_era(d, since=SINCE, before=BEFORE, counts=None, unrevisioned_before=None):
     """Set ``era`` and ``model_revision`` in place. With a populated ``validator_revision`` column, each model's
-    current revision is the one of its newest assessment and the era follows the revision; otherwise the date split.
+    current revision is the one of its newest assessment and the era follows the revision: ``current`` for that
+    revision, ``previous`` for any other recorded revision, and ``unknown`` for an EMPTY revision, which is excluded
+    from both eras and counted (``unknown_revision_rows``). An empty revision is never read as the previous era: it is
+    what an assessment before API 1.0.2 looks like, but also what a schema whose column is missing looks like, and the
+    two cannot be told apart from the row. ``unrevisioned_before`` (a date) is the explicit exception: empty-revision
+    rows assessed before it are ``previous`` (pass the date revisions began to be recorded). Without the column, the
+    date split.
     """
     counts = {} if counts is None else counts
     if "validator_revision" in d.columns and d["validator_revision"].notna().any():
-        rev = d["validator_revision"].astype("string")
-        dated = d.assign(_rev=rev).dropna(subset=["_rev"]).sort_values(["ai_date", "label_id"])
+        rev = d["validator_revision"].astype("string").str.strip()
+        rev = rev.mask(rev == "")
+        has = rev.notna().to_numpy(dtype=bool)
+        dated = d.assign(_rev=rev).dropna(subset=["_rev"]).sort_values(["ai_date", "label_id"], kind="mergesort")
         current = dated.groupby("model_id")["_rev"].last().to_dict()
-        is_cur = rev.notna() & (rev == d["model_id"].map(current))
-        d["era"] = np.where(is_cur.fillna(False).to_numpy(dtype=bool), "current", "previous")
-        d["model_revision"] = rev.fillna("unrecorded (before API 1.0.2)").astype(str)
-        counts["era_key"] = "validator_revision"
+        is_cur = (rev == d["model_id"].map(current)).fillna(False).to_numpy(dtype=bool) & has
+        era = np.where(is_cur, "current", np.where(has, "previous", "unknown"))
+        if unrevisioned_before:
+            era = np.where(~has & (d["ai_date"].to_numpy() < unrevisioned_before), "previous", era)
+        d["era"] = era
+        d["model_revision"] = rev.fillna("unrecorded").astype(str)
+        counts["era_key"] = "validator_revision" + (f"; empty revision before {unrevisioned_before} = previous"
+                                                    if unrevisioned_before else "; empty revision = unknown (excluded)")
         counts["current_revisions"] = {str(k): str(v) for k, v in sorted(current.items())}
+        counts["unknown_revision_rows"] = int((era == "unknown").sum())
     else:
         d["era"] = np.where(d["ai_date"] >= since, "current", np.where(d["ai_date"] < before, "previous", "changeover"))
         d["model_revision"] = np.where(d["era"] == "current", f"unrecorded; current era by date (ai_date >= {since})",
@@ -354,11 +398,12 @@ def label_class(d, reference):
     return dg.prior_class(a, x, "majority2")
 
 
-def item_exclusions(paths, d, cities):
+def item_exclusions(paths, d, cities, pub=None):
     """``label_uid`` (schema form) of every item in the masked re-label round keys at ``paths``. A key has ``schema``
     and ``label_id`` columns, or a ``label_uid`` in either the schema form (``sidewalk_x:12``) or the API form
     (``city_id:12``), which is mapped to its schema through the listing (:func:`schema_city_map`). Returns
-    ``(set, per_file_counts)``; the counts are of rows and of matched pull rows, no ids."""
+    ``(set, per_file_counts)``; the counts are of rows and of matched pull rows (all, and in the ``pub`` schemas), no
+    ids."""
     to_schema = {cid: s for s, cid in schema_city_map(d["schema"].unique(), cities).items() if cid}
     uids, per_file = set(), []
     for p in paths or []:
@@ -370,8 +415,10 @@ def item_exclusions(paths, d, cities):
             sch = parts[0].where(parts[0].str.startswith("sidewalk_"), parts[0].map(to_schema))
             u = (sch + ":" + parts[1]).dropna()
         u = set(u)
+        hit = d["label_uid"].isin(u)
         per_file.append({"file": _short_path(p), "sha256": pr.sha256_of(p), "items": len(u),
-                         "in_pull": int(d["label_uid"].isin(u).sum())})
+                         "in_pull": int(hit.sum()),
+                         "in_pull_public": int((hit & d["schema"].isin(pub or {})).sum())})
         uids |= u
     return uids, per_file
 
@@ -526,7 +573,9 @@ def stratum_record(g, rule, evidence_ref, base, label_type, verdict):
         rec["status"] = "not_served"
     elif len(gated) == 0:
         rec["status"] = "no_gated"
-    rec["more_needed_if_perfect"] = (None if rec["status"] in ("never_votes", "not_served")
+    # None where no number of decided rows can help: the verdict never votes, the type is not served, or no
+    # assessment reaches the gate (no_gated).
+    rec["more_needed_if_perfect"] = (None if rec["status"] in ("never_votes", "not_served", "no_gated")
                                      else more_needed_if_perfect(dec[f"out_{ref}"].to_numpy(), rule))
     rec["sensitivity"] = {}
     for other in REFERENCES + ("majority2_no_excluded",):
@@ -596,32 +645,28 @@ def acceptance_counts(d, rule):
     return out
 
 
-def _suppress(m):
-    """``m`` when at least ``MIN_PRIVATE_DEPLOYMENTS``, else the words that replace it in public output."""
-    return int(m) if m >= MIN_PRIVATE_DEPLOYMENTS else f"fewer than {MIN_PRIVATE_DEPLOYMENTS}"
+PRIVATE_NOTE = ("Non-public deployments are left out of every figure in this file, pooled figures included. Their "
+                "strata, and every figure that includes them, are only in the private file kept outside the "
+                "repository.")
 
 
-def private_block(strata_priv, eras_key="status"):
-    """Pooled counts for private strata, per type x verdict: the number of contributing deployments, strata by status
-    and the decided rows, each cell suppressed (``"fewer than 3"``) unless at least ``MIN_PRIVATE_DEPLOYMENTS``
-    distinct private deployments contribute to it."""
+def public_private_block():
+    """The public report's ``private`` block. Its keys and text are FIXED: nothing in it depends on which non-public
+    deployments exist, which types they were assessed on, or how they fared."""
+    return {"note": PRIVATE_NOTE}
+
+
+def private_cells(strata_priv):
+    """Pooled counts for the non-public strata per type x verdict (PRIVATE file only): contributing deployments,
+    strata by status and decided rows."""
     cells = {}
     for (schema, t, v, regime), rec in strata_priv.items():
         c = cells.setdefault(t, {}).setdefault(v, {"schemas": set(), "by_status": {}, "n": 0})
         c["schemas"].add(schema)
-        c["by_status"][rec[eras_key]] = c["by_status"].get(rec[eras_key], 0) + 1
+        c["by_status"][rec["status"]] = c["by_status"].get(rec["status"], 0) + 1
         c["n"] += rec["n"]
-    out = {}
-    for t, by_v in sorted(cells.items()):
-        for v, c in sorted(by_v.items()):
-            m = len(c["schemas"])
-            if m >= MIN_PRIVATE_DEPLOYMENTS:
-                out.setdefault(t, {})[v] = {"n_deployments": m, "strata_by_status": dict(sorted(c["by_status"].items())),
-                                            "n_decided": c["n"]}
-            else:
-                out.setdefault(t, {})[v] = {"n_deployments": f"fewer than {MIN_PRIVATE_DEPLOYMENTS}",
-                                            "strata_by_status": "suppressed", "n_decided": "suppressed"}
-    return out
+    return {t: {v: {"n_deployments": len(c["schemas"]), "strata_by_status": dict(sorted(c["by_status"].items())),
+                    "n_decided": c["n"]} for v, c in sorted(by_v.items())} for t, by_v in sorted(cells.items())}
 
 
 def status_summary(strata):
@@ -633,18 +678,10 @@ def status_summary(strata):
     return {t: {v: dict(sorted(c.items())) for v, c in sorted(bv.items())} for t, bv in sorted(out.items())}
 
 
-def build_report(d, counts, listing, rule, evidence_ref, pull_meta, exclusions_meta):
-    """``(public_report, private_report)`` for the current era. The public one has no ``mode`` anywhere."""
-    cities = listing_cities(listing)
-    pub = public_schemas(d["schema"].unique(), cities)
-    strata, _ = compute_strata(d, rule, evidence_ref)
-    deployments, priv = {}, {}
-    for key, rec in strata.items():
-        schema, t, v, regime = key
-        if schema in pub:
-            deployments.setdefault(pub[schema], {}).setdefault(t, {}).setdefault(v, {})[regime] = rec
-        else:
-            priv[key] = rec
+def pooled_summary(d, strata, rule, names):
+    """``summary`` over ``strata`` and the rows of ``d`` (both already restricted to the deployments to pool):
+    strata by status, status changes under each sensitivity reference, the largest one-deployment share of the
+    decided gated rows (named by ``names`` when listed there) and the acceptance counts."""
     sens = {}
     for rec in strata.values():
         for other, srec in rec["sensitivity"].items():
@@ -655,8 +692,29 @@ def build_report(d, counts, listing, rule, evidence_ref, pull_meta, exclusions_m
     if len(cur_dec):
         share = cur_dec["schema"].value_counts(normalize=True)
         top = share.index[0]
-        largest = {"share": float(share.iloc[0]), "deployment": pub.get(top, "a private deployment"),
+        largest = {"share": float(share.iloc[0]), "deployment": names.get(top, top),
                    "n_deployments_with_decided": int(cur_dec["schema"].nunique())}
+    return {"strata": len(strata), "by_status": status_summary(strata), "status_differs_under": sens,
+            "largest_deployment_share_of_decided_gated": largest, "acceptance": acceptance_counts(d, rule)}
+
+
+def build_report(d, counts, listing, rule, evidence_ref, pull_meta, exclusions_meta):
+    """``(public_report, private_report, strata)`` for the current era. The public report has no ``mode`` anywhere,
+    and every figure in it, pooled ones included, is computed over PUBLIC deployments only, so no public number minus
+    the listed public strata leaves anything about a non-public deployment. Pooled figures that include non-public
+    deployments go to the private report (``summary_all``, ``private_cells``)."""
+    cities = listing_cities(listing)
+    pub = public_schemas(d["schema"].unique(), cities)
+    strata, _ = compute_strata(d, rule, evidence_ref)
+    deployments, priv, pub_strata = {}, {}, {}
+    for key, rec in strata.items():
+        schema, t, v, regime = key
+        if schema in pub:
+            deployments.setdefault(pub[schema], {}).setdefault(t, {}).setdefault(v, {})[regime] = rec
+            pub_strata[key] = rec
+        else:
+            priv[key] = rec
+    d_pub = d[d["schema"].isin(pub)]
     common = {
         "schema_version": SCHEMA_VERSION,
         "generated": datetime.date.today().isoformat(),
@@ -666,20 +724,20 @@ def build_report(d, counts, listing, rule, evidence_ref, pull_meta, exclusions_m
                  "decided": {"majority2": ">= 2 human Agree/Disagree votes, strict majority, ties out",
                              "tie_half": ">= 2 votes, a tie counts half right",
                              "any_vote": ">= 1 human Agree/Disagree vote, strict majority"}[rule.reference],
+                 "status_at": "the largest checkpoint not above n, re-judged at every run; first_pass_checkpoint "
+                              "is the first checkpoint that passed (what a sticky rule would keep)",
                  "era_key": counts["era_key"], "regime_source": counts["regime_source"]},
-        "types": types_block(d["label_type"].unique()),
     }
     public = {
         "kind": "deployment_status_report",
-        "note": ("A status report: per deployment, type, verdict and evidence regime, how the AI's gated assessments "
-                 "fared against the human reference in the current model era. It carries no serving decision."),
+        "note": ("A status report: per public deployment, type, verdict and evidence regime, how the AI's gated "
+                 "assessments fared against the human reference in the current model era. It carries no serving "
+                 "decision. Every figure, pooled ones included, covers public deployments only."),
         **common,
+        "types": types_block(d_pub["label_type"].unique()),
         "deployments": {c: deployments[c] for c in sorted(deployments)},
-        "private": {"n_deployments_current_era": _suppress(len({k[0] for k in priv})),
-                    "cells": private_block(priv)},
-        "summary": {"strata": len(strata), "by_status": status_summary(strata),
-                    "status_differs_under": sens, "largest_deployment_share_of_decided_gated": largest,
-                    "acceptance": acceptance_counts(d, rule)},
+        "private": public_private_block(),
+        "summary": pooled_summary(d_pub, pub_strata, rule, pub),
     }
     rows = []
     decisions = {p: {} for p in POLICIES}
@@ -687,8 +745,9 @@ def build_report(d, counts, listing, rule, evidence_ref, pull_meta, exclusions_m
         schema, t, v, regime = key
         row = {"schema": schema, "city_id": schema_city_map([schema], cities)[schema], "public": schema in pub,
                "label_type": t, "verdict": v, "regime": regime,
-               **{k: rec[k] for k in ("status", "n_assessed", "n_gated", "n", "k", "checkpoint", "precision", "ci_lo",
-                                      "ci_hi", "more_needed_if_perfect", "base_rate", "lift", "existing",
+               **{k: rec[k] for k in ("status", "first_pass_checkpoint", "n_assessed", "n_gated", "n", "k",
+                                      "checkpoint", "precision", "ci_lo", "ci_hi", "precision_all", "ci_all_lo",
+                                      "ci_all_hi", "more_needed_if_perfect", "base_rate", "lift", "existing",
                                       "model_revision")},
                **{f"status_{o}": s["status"] for o, s in rec["sensitivity"].items()},
                "previous_status": (rec["previous_era"] or {}).get("status")}
@@ -696,12 +755,14 @@ def build_report(d, counts, listing, rule, evidence_ref, pull_meta, exclusions_m
             row[f"mode_{p}"] = recommended_mode(rec, t, v, p)
             decisions[p].setdefault(schema, {}).setdefault(t, {})[v] = row[f"mode_{p}"]
         rows.append(row)
-    private = {"kind": "deployment_status_private", **common,
+    private = {"kind": "deployment_status_private", **common, "types": types_block(d["label_type"].unique()),
                "note": ("PRIVATE: every deployment by schema. The modes are what each policy WOULD give, for "
                         "comparison only; a person applies any change to the website's city-params. Absent "
                         "deployment or type = no evidence; an unserved type is off, not shadow."),
-               "policies": {"strict": "vote only on pass",
+               "policies": {"strict": "vote only on pass (status re-judged at the largest checkpoint)",
                             "grandfather": "existing deployments keep voting unless fail; new ones as strict"},
+               "summary_all": pooled_summary(d, strata, rule, pub),
+               "private_cells": private_cells(priv),
                "decisions": decisions, "strata": rows}
     return public, private, strata
 
@@ -726,7 +787,8 @@ def expert_round_stratum(k, n, rule, evidence_ref, model_revision, label_type, v
         status = "never_votes"
     return {"evidence": "masked_expert_round", "evidence_ref": evidence_ref, "basis": basis, "reference": "expert",
             "min_n": m, "model_revision": model_revision, "n_assessed": None, "n_gated": None, "n": n, "k": k,
-            "precision_all": (k / n) if n else None, "checkpoint": None, "k_checkpoint": None,
+            "precision_all": (k / n) if n else None, "ci_all_lo": lo if n else None, "ci_all_hi": hi if n else None,
+            "first_pass_checkpoint": None, "checkpoint": None, "k_checkpoint": None,
             "precision": (k / n) if n else None, "ci_lo": lo if n else None, "ci_hi": hi if n else None,
             "status": status, "more_needed_if_perfect": None, "sensitivity": {}, "base_rate": None, "base_n": 0,
             "lift": None, "previous_era": None, "existing": None}
@@ -780,15 +842,12 @@ def validate_report(report, gate=None):
 
 def replay_stratum(outcomes, rule):
     """Sequential replay of one stratum's decided outcomes (in assessment order) at the rule's checkpoints:
-    ``{"n", "graduated_at" (checkpoint or None), "final_status", "withheld": (k, n), "kept": (k, n)}``. Withheld =
-    rows up to and including the graduation checkpoint (all rows if it never graduates); kept = the rest."""
+    ``{"n", "graduated_at" (checkpoint or None), "final_status", "withheld": (k, n), "kept": (k, n)}``. A stratum
+    graduates at its first ``pass`` and stays graduated (the sticky rule). Withheld = rows up to and including the
+    graduation checkpoint (all rows if it never graduates); kept = the rest."""
     o = np.asarray(outcomes, dtype=float)
     n = len(o)
-    grad = None
-    for c in checkpoints(rule, n):
-        if c >= rule.min_n and classify(float(o[:c].sum()), c, rule) == "pass":
-            grad = c
-            break
+    grad = first_pass_checkpoint(o, rule)
     cut = n if grad is None else grad
     return {"n": n, "graduated_at": grad, "final_status": status_from_outcomes(o, rule)["status"],
             "withheld": (float(o[:cut].sum()), int(cut)), "kept": (float(o[cut:].sum()), int(n - cut))}
@@ -800,80 +859,88 @@ def _prec(k, n, z):
             "ci_hi": hi if n else None}
 
 
+def _pool_replays(replays, rule):
+    """Pool ``[(label_type, verdict, regime, replay, total_k)]`` into ``{regime: {type: {verdict: cell}}}``."""
+    pooled = {}
+    for t, v, regime, r, k_all in replays:
+        p = pooled.setdefault(regime, {}).setdefault(t, {}).setdefault(v, {
+            "strata": 0, "strata_ge_min_n": 0, "graduated": 0, "grad_n": [], "final": {}, "withheld": [0.0, 0],
+            "kept": [0.0, 0], "never": [0.0, 0], "small": [0.0, 0], "total": [0.0, 0]})
+        p["strata"] += 1
+        p["total"][0] += k_all
+        p["total"][1] += r["n"]
+        if r["n"] < rule.min_n:
+            p["small"][0] += r["withheld"][0]
+            p["small"][1] += r["n"]
+            continue
+        p["strata_ge_min_n"] += 1
+        p["final"][r["final_status"]] = p["final"].get(r["final_status"], 0) + 1
+        slot = "never"
+        if r["graduated_at"]:
+            p["graduated"] += 1
+            p["grad_n"].append(r["graduated_at"])
+            p["kept"][0] += r["kept"][0]
+            p["kept"][1] += r["kept"][1]
+            slot = "withheld"
+        p[slot][0] += r["withheld"][0]
+        p[slot][1] += r["withheld"][1]
+    out = {}
+    for regime, by_t in sorted(pooled.items()):
+        for t, by_v in sorted(by_t.items()):
+            for v, p in sorted(by_v.items()):
+                gn = sorted(p["grad_n"])
+                out.setdefault(regime, {}).setdefault(t, {})[v] = {
+                    "strata": p["strata"], "strata_ge_min_n": p["strata_ge_min_n"], "graduated": p["graduated"],
+                    "graduation_n": {"median": float(np.median(gn)) if gn else None, "min": gn[0] if gn else None,
+                                     "max": gn[-1] if gn else None,
+                                     "counts": {str(c): gn.count(c) for c in sorted(set(gn))}},
+                    "final_status": dict(sorted(p["final"].items())),
+                    "withheld_in_graduated": _prec(*p["withheld"], rule.z), "kept": _prec(*p["kept"], rule.z),
+                    "never_graduated": _prec(*p["never"], rule.z), "strata_under_min_n": _prec(*p["small"], rule.z),
+                    "all": _prec(*p["total"], rule.z)}
+    return out
+
+
 def backtest(d, listing, rule):
-    """Replay the rule on the previous era (served types, Agree and Disagree). Returns ``(public, private)``."""
+    """Replay the rule on the previous era (served types, Agree and Disagree), one stratum per deployment, type,
+    verdict and evidence REGIME, so vote-mode and shadow-mode evidence are never pooled. Returns
+    ``(public, private)``: the public part pools and lists PUBLIC deployments only; the private part has every
+    stratum by schema and the pooled cells over all deployments."""
     cities = listing_cities(listing)
     pub = public_schemas(d["schema"].unique(), cities)
     e = d[(d["era"] == "previous") & d["ai_result"].isin(VERDICTS) & d["label_type"].isin(SERVED_TYPES)
           & (d["ai_accuracy"] >= rule.gate)]
     ref = f"out_{rule.reference}"
     e = e[e[ref].notna()].sort_values(["schema", "ai_date", "label_id"], kind="mergesort")
-    pooled, per_dep, private_rows = {}, {}, []
-    for (schema, t, v), g in e.groupby(["schema", "label_type", "ai_result"], sort=True):
+    per_dep, private_rows, replays_pub, replays_all = {}, [], [], []
+    for (schema, t, v, regime), g in e.groupby(["schema", "label_type", "ai_result", "regime"], sort=True):
         r = replay_stratum(g[ref].to_numpy(), rule)
-        p = pooled.setdefault(t, {}).setdefault(v, {"strata": 0, "strata_ge_min_n": 0, "graduated": 0, "grad_n": [],
-                                                   "final": {}, "withheld": [0.0, 0], "kept": [0.0, 0],
-                                                   "never": [0.0, 0], "small": [0.0, 0], "total": [0.0, 0]})
-        p["strata"] += 1
-        p["total"][0] += float(g[ref].sum())
-        p["total"][1] += len(g)
-        if r["n"] < rule.min_n:
-            p["small"][0] += r["withheld"][0]
-            p["small"][1] += r["n"]
-        else:
-            p["strata_ge_min_n"] += 1
-            p["final"][r["final_status"]] = p["final"].get(r["final_status"], 0) + 1
-            if r["graduated_at"]:
-                p["graduated"] += 1
-                p["grad_n"].append(r["graduated_at"])
-                p["withheld"][0] += r["withheld"][0]
-                p["withheld"][1] += r["withheld"][1]
-                p["kept"][0] += r["kept"][0]
-                p["kept"][1] += r["kept"][1]
-            else:
-                p["never"][0] += r["withheld"][0]
-                p["never"][1] += r["withheld"][1]
-        row = {"label_type": t, "verdict": v, "n": r["n"], "graduated_at": r["graduated_at"],
+        item = (t, v, regime, r, float(g[ref].sum()))
+        replays_all.append(item)
+        row = {"label_type": t, "verdict": v, "regime": regime, "n": r["n"], "graduated_at": r["graduated_at"],
                "final_status": r["final_status"], "kept": _prec(*r["kept"], rule.z)}
         if schema in pub:
-            per_dep.setdefault(pub[schema], {}).setdefault(t, {})[v] = row
+            replays_pub.append(item)
+            per_dep.setdefault(pub[schema], {}).setdefault(t, {}).setdefault(v, {})[regime] = row
         private_rows.append({"schema": schema, **row})
-    out = {}
-    for t, by_v in sorted(pooled.items()):
-        for v, p in sorted(by_v.items()):
-            gn = sorted(p["grad_n"])
-            out.setdefault(t, {})[v] = {
-                "strata": p["strata"], "strata_ge_min_n": p["strata_ge_min_n"], "graduated": p["graduated"],
-                "graduation_n": {"median": float(np.median(gn)) if gn else None, "min": gn[0] if gn else None,
-                                 "max": gn[-1] if gn else None,
-                                 "counts": {str(c): gn.count(c) for c in sorted(set(gn))}},
-                "final_status": dict(sorted(p["final"].items())),
-                "withheld_in_graduated": _prec(*p["withheld"], rule.z), "kept": _prec(*p["kept"], rule.z),
-                "never_graduated": _prec(*p["never"], rule.z), "strata_under_min_n": _prec(*p["small"], rule.z),
-                "all": _prec(*p["total"], rule.z)}
-    priv_pub = {}
-    priv = [r for r in private_rows if r["schema"] not in pub]
-    for t in SERVED_TYPES:
-        for v in VERDICTS:
-            rs = [r for r in priv if r["label_type"] == t and r["verdict"] == v and r["n"] >= rule.min_n]
-            m = len({r["schema"] for r in rs})
-            if not rs:
-                continue
-            priv_pub.setdefault(t, {})[v] = (
-                {"n_deployments": m, "graduated": sum(1 for r in rs if r["graduated_at"])}
-                if m >= MIN_PRIVATE_DEPLOYMENTS else {"n_deployments": f"fewer than {MIN_PRIVATE_DEPLOYMENTS}"})
-    public = {"kind": "backtest", "label": "vote-mode evidence, votes as of the end of the pull; count-based replay",
-              "rule": {**asdict(rule), "schedule": list(rule.schedule)}, "pooled": out,
-              "public_deployments": {c: per_dep[c] for c in sorted(per_dep)}, "private": priv_pub,
+    public = {"kind": "backtest",
+              "label": "previous era, votes as of the end of the pull, public deployments only; count-based replay",
+              "rule": {**asdict(rule), "schedule": list(rule.schedule)},
+              "pooled": _pool_replays(replays_pub, rule),
+              "public_deployments": {c: per_dep[c] for c in sorted(per_dep)},
+              "private": public_private_block(),
               "limits": [
                   "Whether a row is decided, and its majority, uses votes as of the pull's end: an early checkpoint "
                   "here sees votes that did not exist yet. Contested labels are decided later, so this understates "
                   "early false graduation.",
-                  "Every previous-era vote was collected in vote mode; this says nothing about how evidence accrues in "
-                  "shadow mode.",
+                  "Strata are split by evidence regime (vote / shadow / unrecorded) and never pooled across it. The "
+                  "2026-11-11 pull has no ai_vote_cast column, so every row is unrecorded; its previous era was "
+                  "collected in vote mode, so this says nothing about how evidence accrues in shadow mode.",
+                  "A stratum graduates at its first pass and stays graduated (the sticky rule).",
                   "No dates and no waiting times: the pull has no vote timestamps.",
                   "The previous era mixes model revisions (releases before API 1.0.2 loaded the hub's main branch)."]}
-    return public, {"kind": "backtest_private", "strata": private_rows}
+    return public, {"kind": "backtest_private", "pooled_all": _pool_replays(replays_all, rule),
+                    "strata": private_rows}
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -954,7 +1021,21 @@ def power_tables(rule, up_to=2000, ps=(0.88, 0.90, 0.92, 0.94, 0.95, 0.96, 0.97,
     scheds = look_schedules(rule, up_to)
     ever = {name: {str(p): ever_pass(p, looks, rule) for p in ps if p <= 0.96} for name, looks in scheds.items()}
     max_single = max(single_look_pass(rule.gate, n, rule) for n in range(rule.min_n, up_to + 1))
+    longer = {str(u): ever_pass(rule.gate, checkpoints(rule, u), rule) for u in (6400, 25600) if u > up_to}
     return {"kind": "power", "rule": {**asdict(rule), "schedule": list(rule.schedule)}, "up_to": up_to,
+            "notes": [
+                "ever_pass is the chance of passing at ANY look, i.e. of a sticky rule (a pass is kept). A rule that "
+                "re-judges each stratum at its current checkpoint can lose a pass later; ever_pass bounds how often "
+                "it passes at some point, not how often it is passing at the end.",
+                "The rates assume NESTED looks: the rows judged at one checkpoint are the first rows of those judged "
+                "at the next. Real re-runs are not nested. The rule takes the first C decided rows ordered by "
+                "(ai_date, label_id) within a deployment, which is deterministic for one pull, but a label assessed "
+                "early and decided late (contested labels get extra votes) enters that prefix in a later pull and "
+                "pushes another row out. Over real re-runs the false-pass rate is therefore at least the stated "
+                "rate, not exactly it: each figure here is a lower bound.",
+                f"ever_pass is by n = {up_to:,}; the checkpoints keep doubling past it and the rate keeps growing "
+                "(ever_pass_checkpoints_at_gate_longer)."],
+            "ever_pass_checkpoints_at_gate_longer": longer,
             "errors_allowed": allowed, "single_look_pass": single, "max_single_look_pass_at_gate": max_single,
             "ever_pass": ever, "schedules": {k: (v if len(v) < 20 else f"{v[0]}, {v[1]}, ... {v[-1]}")
                                              for k, v in scheds.items()},
@@ -1025,15 +1106,24 @@ def confirmed_slices(g, by, ref, min_n=sl.MIN_N, train=None):
     return sl._order(out, by).to_dict("records")
 
 
-def slices_report(d, listing, rule, cache_dir=None, train_root=None):
+def slices_report(d, listing, rule, cache_dir=None, train_root=None, public_only=True):
+    """Type x severity and type x tag tables of the gated Agree rows, current era against the previous one, and the
+    severity mix inside each public pass or undecided stratum. With ``public_only`` (the public file) every table
+    pools PUBLIC deployments only; ``public_only=False`` pools every deployment, for the private file."""
     cities = listing_cities(listing)
     ref = f"out_{rule.reference}"
+    pub = public_schemas(d["schema"].unique(), cities)
+    if public_only:
+        d = d[d["schema"].isin(pub)]
     cov = None
     if cache_dir:
         d, cov = join_tags(d, cache_dir, cities)
+        if public_only:
+            cov = {k: cov[k] for k in ("public_rows", "exported")}
     g = d[(d["ai_result"] == "Agree") & (d["ai_accuracy"] >= rule.gate) & d["label_type"].isin(SERVED_TYPES)]
     g = g[g[ref].notna()]
-    out = {"kind": "slices", "reference": rule.reference, "min_n": sl.MIN_N, "tag_coverage": cov, "types": {},
+    out = {"kind": "slices", "reference": rule.reference, "min_n": sl.MIN_N,
+           "deployments": "public only" if public_only else "all (PRIVATE)", "tag_coverage": cov, "types": {},
            "train_sha256": {}, "within_strata": {}}
     for t in SERVED_TYPES:
         train = None
@@ -1049,15 +1139,15 @@ def slices_report(d, listing, rule, cache_dir=None, train_root=None):
             out["types"][t][by] = {era: confirmed_slices(g[(g.label_type == t) & (g.era == era)], by, ref,
                                                          train=train)
                                    for era in ("current", "previous")}
-    pub = public_schemas(d["schema"].unique(), cities)
     cur = g[g["era"] == "current"]
-    for (schema, t), s in cur.groupby(["schema", "label_type"]):
+    for (schema, t, regime), s in cur.groupby(["schema", "label_type", "regime"]):
         if schema not in pub:
             continue
-        st = status_from_outcomes(s.sort_values(["ai_date", "label_id"])[ref].to_numpy(), rule)["status"]
+        st = status_from_outcomes(s.sort_values(["ai_date", "label_id"], kind="mergesort")[ref].to_numpy(),
+                                  rule)["status"]
         if st in ("pass", "undecided"):
-            out["within_strata"].setdefault(pub[schema], {})[t] = {"status": st,
-                                                                    "severity": confirmed_slices(s, "severity", ref)}
+            out["within_strata"].setdefault(pub[schema], {}).setdefault(t, {})[regime] = {
+                "status": st, "severity": confirmed_slices(s, "severity", ref)}
     return out
 
 
@@ -1089,6 +1179,12 @@ def _load(out_dir, name):
         return json.load(f)
 
 
+def _ci_all(r):
+    if r.get("precision_all") is None or r.get("ci_all_lo") is None:
+        return ""
+    return f"{r['precision_all']:.3f} [{r['ci_all_lo']:.3f}, {r['ci_all_hi']:.3f}]"
+
+
 def render_headline(rep):
     if rep is None:
         return "_Not yet run._"
@@ -1101,27 +1197,32 @@ def render_headline(rep):
     big = s.get("largest_deployment_share_of_decided_gated") or {}
     acc = s["acceptance"]
     chk = s.get("acceptance_check")
-    lines = [f"- Pull `{rep['pull']['file']}` (sha256 `{rep['pull']['sha256'][:16]}`), AI dates "
-             f"{rep['pull']['ai_date_min']} .. {rep['pull']['ai_date_max']}; era key: {rep['rule']['era_key']}.",
-             f"- Current-era strata (deployment x type x verdict): {s['strata']}; by status: "
+    p = rep["pull"]
+    lines = [f"- Pull `{p['file']}` (sha256 `{p['sha256'][:16]}`), AI dates of the public deployments' rows "
+             f"{p['ai_date_min']} .. {p['ai_date_max']}; era key: {rep['rule']['era_key']}.",
+             "- Every figure below and in the generated files covers **public deployments only**, pooled figures "
+             "included; non-public deployments are left out (their figures are only in the private file).",
+             f"- Current-era strata (public deployment x type x verdict x regime): {s['strata']}; by status: "
              + ", ".join(f"{k} {v}" for k, v in sorted(tot.items(), key=lambda kv: STATUSES.index(kv[0]))) + ".",
-             f"- {100 * big.get('share', 0):.1f}% of the current era's decided gated rows come from one deployment "
-             f"({big.get('deployment')}); {big.get('n_deployments_with_decided', 0)} deployments have any.",
-             "- Pooled current-era decided gated Agree (majority2) after the re-label exclusions, share confirmed in "
-             "brackets: " + ", ".join(f"{t} {a['decided']:,} ({_f(a['share_confirmed'])})" for t, a in acc.items())
-             + "."]
+             f"- {100 * big.get('share', 0):.1f}% of the public deployments' current-era decided gated rows come from "
+             f"one deployment ({big.get('deployment')}); {big.get('n_deployments_with_decided', 0)} public "
+             "deployments have any.",
+             "- Pooled current-era decided gated Agree (majority2) of the public deployments after the re-label "
+             "exclusions, share confirmed in brackets: "
+             + ", ".join(f"{t} {a['decided']:,} ({_f(a['share_confirmed'])})" for t, a in acc.items()) + "."]
+    if p.get("unknown_revision_rows"):
+        lines.append(f"- Rows with an empty model revision, excluded from both eras: {p['unknown_revision_rows']:,}.")
     if chk:
-        lines.append("- Acceptance check (the same counts before exclusions, against "
-                     "`docs/deployment-prior-2026-11/observed.md`): "
-                     + ", ".join(f"{t} {n:,}" for t, n in chk["got"].items())
-                     + (" -- matches." if chk["ok"] else " -- MISMATCH."))
+        lines.append("- Acceptance check (every deployment's counts before the exclusions, computed privately, "
+                     f"against `{chk['against']}`): " + ("passes." if chk["ok"] else "FAILS."))
     return "\n".join(lines)
 
 
 def render_status_counts(rep):
     if rep is None:
         return "_Not yet run._"
-    lines = ["| Type | Verdict | " + " | ".join(STATUSES[:5]) + " |", "|---|---|" + "---:|" * 5]
+    lines = ["Public deployments only.", "",
+             "| Type | Verdict | " + " | ".join(STATUSES[:5]) + " |", "|---|---|" + "---:|" * 5]
     for t, by_v in rep["summary"]["by_status"].items():
         for v, c in by_v.items():
             lines.append(f"| {t} | {v} | " + " | ".join(str(c.get(k, 0)) for k in STATUSES[:5]) + " |")
@@ -1135,6 +1236,10 @@ def _agree_rows(rep):
                 yield city, t, regime, r
 
 
+def _type_name(t, regime):
+    return t if regime == "unrecorded" else f"{t} ({regime})"
+
+
 def render_public_table(rep):
     if rep is None:
         return "_Not yet run._"
@@ -1144,18 +1249,28 @@ def render_public_table(rep):
     zero_by = {}
     for _, _, _, r in zero:
         zero_by[r["status"]] = zero_by.get(r["status"], 0) + 1
-    lines = ["Public deployments' Agree strata with at least one decided row. Disagree is `no_gated` everywhere (the "
-             "round-3 Disagree maps are capped below 0.92), so it is not shown. n = decided rows (checkpoint the status "
-             "is evaluated at); precision [Wilson 95%] at the checkpoint; base rate = share of the deployment's decided "
-             "AI-assessed labels of the type that humans call correct; more needed = further decided rows, all right, "
-             "that would pass.", "",
-             "| Deployment | Type | Status | n (checkpoint) | precision [95%] | base rate | more needed | previous era |",
-             "|---|---|---|---:|---:|---:|---:|---|"]
+    dis = [r for by_t in rep["deployments"].values() for by_v in by_t.values()
+           for r in (by_v.get("Disagree") or {}).values()]
+    dis_txt = ("Disagree is `no_gated` in every public deployment (the round-3 Disagree maps are capped below 0.92), "
+               "so it is not shown." if dis and all(r["status"] == "no_gated" for r in dis)
+               else "Disagree strata are in `deployment_status.json`.")
+    lines = ["Public deployments' Agree strata with at least one decided row. " + dis_txt + " n = decided rows "
+             "(checkpoint the status is evaluated at); at checkpoint = precision [Wilson 95%] of the first "
+             "`checkpoint` decided rows, which sets the status; all decided = precision [Wilson 95%] of every decided "
+             "row, including those past the checkpoint; first pass = the first checkpoint that passed (a sticky rule "
+             "would keep it; the status is re-judged at the current checkpoint); base rate = share of the "
+             "deployment's decided AI-assessed labels of the type that humans call correct; more needed = further "
+             "decided rows, all right, that would pass.", "",
+             "| Deployment | Type | Status | first pass | n (checkpoint) | at checkpoint [95%] | all decided [95%] | "
+             "base rate | more needed | previous era |",
+             "|---|---|---|---:|---:|---:|---:|---:|---:|---|"]
     for city, t, regime, r in shown:
         prev = (r.get("previous_era") or {}).get("status", "")
         more = "" if r.get("more_needed_if_perfect") is None else r["more_needed_if_perfect"]
-        lines.append(f"| {city} | {t} | {r['status']} | {r['n']:,} ({r['checkpoint'] or '-'}) | {_ci(r)} | "
-                     f"{_f(r.get('base_rate'))} | {more} | {prev} |")
+        fp = r.get("first_pass_checkpoint") or ""
+        lines.append(f"| {city} | {_type_name(t, regime)} | {r['status']} | {fp} | {r['n']:,} "
+                     f"({r['checkpoint'] or '-'}) | {_ci(r)} | {_ci_all(r)} | {_f(r.get('base_rate'))} | {more} | "
+                     f"{prev} |")
     deps = len({c for c, _, _, _ in zero})
     lines += ["", f"Another {len(zero)} public Agree strata in {deps} deployments have current-era assessments but no "
               "decided row (" + ", ".join(f"{k} {v}" for k, v in sorted(zero_by.items())) + "); each needs at least "
@@ -1166,16 +1281,7 @@ def render_public_table(rep):
 def render_private(rep):
     if rep is None:
         return "_Not yet run._"
-    p = rep["private"]
-    lines = [f"Private deployments with a current-era assessment: {p['n_deployments_current_era']}. Per type and "
-             f"verdict, a cell is shown only when at least {MIN_PRIVATE_DEPLOYMENTS} private deployments contribute.",
-             "", "| Type | Verdict | deployments | strata by status | decided n |", "|---|---|---|---|---:|"]
-    for t, by_v in p["cells"].items():
-        for v, c in by_v.items():
-            sb = c["strata_by_status"]
-            sb = sb if isinstance(sb, str) else ", ".join(f"{k} {n}" for k, n in sb.items())
-            lines.append(f"| {t} | {v} | {c['n_deployments']} | {sb} | {c['n_decided']} |")
-    return "\n".join(lines)
+    return rep["private"]["note"]
 
 
 def render_sensitivity(rep):
@@ -1191,7 +1297,8 @@ def render_sensitivity(rep):
         if max(r["n"], th.get("n", 0), av.get("n", 0)) == 0:
             continue
         p = _f(av.get("precision"))
-        lines.append(f"| {city} | {t} | {r['status']} ({r['n']:,}) | {th.get('status')} ({th.get('n', 0):,}) | "
+        lines.append(f"| {city} | {_type_name(t, regime)} | {r['status']} ({r['n']:,}) | {th.get('status')} "
+                     f"({th.get('n', 0):,}) | "
                      f"{av.get('status')} ({av.get('n', 0):,}{', ' + p if p else ''}) |")
     return "\n".join(lines)
 
@@ -1199,23 +1306,26 @@ def render_sensitivity(rep):
 def render_backtest(bt):
     if bt is None:
         return "_Not yet run._"
-    lines = [f"Previous era, {bt['label']}. Checkpoints {', '.join(map(str, bt['rule']['schedule']))} then doubling. "
-             "Cells: decided rows, precision [Wilson 95%].", "",
-             "| Type | Verdict | strata (n >= min) | final pass / undecided / fail | graduated | n at graduation "
-             "(median, range) | withheld in graduated | kept after graduation | never graduated | strata under min |",
-             "|---|---|---:|---|---:|---|---|---|---|---|"]
-    for t, by_v in bt["pooled"].items():
-        for v, p in by_v.items():
-            fs = p["final_status"]
-            gn = p["graduation_n"]
-            gtxt = "" if gn["median"] is None else f"{gn['median']:.0f} ({gn['min']}-{gn['max']})"
+    lines = [f"Previous era, {bt['label']}. Checkpoints {', '.join(map(str, bt['rule']['schedule']))} then doubling; "
+             "a stratum graduates at its first pass and stays graduated. Strata are split by evidence regime and never "
+             "pooled across it. Cells: decided rows, precision [Wilson 95%].", "",
+             "| Type | Verdict | Regime | strata (n >= min) | final pass / undecided / fail | graduated | n at "
+             "graduation (median, range) | withheld in graduated | kept after graduation | never graduated | strata "
+             "under min | all decided |",
+             "|---|---|---|---:|---|---:|---|---|---|---|---|---|"]
 
-            def cell(x):
-                return f"{x['n']:,}" + (f", {_ci(x)}" if x["n"] else "")
-            lines.append(f"| {t} | {v} | {p['strata']} ({p['strata_ge_min_n']}) | {fs.get('pass', 0)} / "
-                         f"{fs.get('undecided', 0)} / {fs.get('fail', 0)} | {p['graduated']} | {gtxt} | "
-                         f"{cell(p['withheld_in_graduated'])} | {cell(p['kept'])} | {cell(p['never_graduated'])} | "
-                         f"{cell(p['strata_under_min_n'])} |")
+    def cell(x):
+        return f"{x['n']:,}" + (f", {_ci(x)}" if x["n"] else "")
+    for regime, by_t in bt["pooled"].items():
+        for t, by_v in by_t.items():
+            for v, p in by_v.items():
+                fs = p["final_status"]
+                gn = p["graduation_n"]
+                gtxt = "" if gn["median"] is None else f"{gn['median']:.0f} ({gn['min']}-{gn['max']})"
+                lines.append(f"| {t} | {v} | {regime} | {p['strata']} ({p['strata_ge_min_n']}) | {fs.get('pass', 0)} "
+                             f"/ {fs.get('undecided', 0)} / {fs.get('fail', 0)} | {p['graduated']} | {gtxt} | "
+                             f"{cell(p['withheld_in_graduated'])} | {cell(p['kept'])} | {cell(p['never_graduated'])} | "
+                             f"{cell(p['strata_under_min_n'])} | {cell(p['all'])} |")
     return "\n".join(lines)
 
 
@@ -1238,13 +1348,21 @@ def render_power(pw):
     for name, by_p in pw["ever_pass"].items():
         z = pw["z_for_5pct"].get(name)
         lines.append(f"| {name} | " + " | ".join(f"{v:.3f}" for v in by_p.values()) + f" | {_f(z, '{:.2f}')} |")
+    longer = pw.get("ever_pass_checkpoints_at_gate_longer") or {}
+    if longer:
+        lines += ["", "Past n = {:,} the checkpoints keep doubling and the rate keeps growing: at true precision = "
+                  "gate, P(ever pass) under the checkpoints is ".format(pw["up_to"])
+                  + ", ".join(f"{v:.3f} by n = {int(u):,}" for u, v in longer.items()) + "."]
+    if pw.get("notes"):
+        lines += [""] + [f"- {n}" for n in pw["notes"]]
     return "\n".join(lines)
 
 
 def render_slices(s):
     if s is None:
         return "_Not yet run._"
-    lines = [f"Gated Agree rows decided under `{s['reference']}`, pooled over deployments; confirmed share blank under "
+    lines = [f"Gated Agree rows decided under `{s['reference']}`, pooled over public deployments only (non-public "
+             "deployments are left out of every table); confirmed share blank under "
              f"{s['min_n']} decided; train = round-3 `split.csv` training rows (correct / incorrect); largest = the "
              "largest one-deployment share of the slice."]
     if s.get("tag_coverage"):
@@ -1276,9 +1394,11 @@ def render_slices(s):
         lines += ["", "**Severity within each current-era pass or undecided stratum** (public deployments)", "",
                   "| Deployment | Type | status | severity: n (confirmed) |", "|---|---|---|---|"]
         for city, by_t in s["within_strata"].items():
-            for t, r in by_t.items():
-                cells = "; ".join(f"{x['slice']}: {x['n']} ({_f(x['confirmed'])})" for x in r["severity"])
-                lines.append(f"| {city} | {t} | {r['status']} | {cells} |")
+            for t, by_r in by_t.items():
+                for regime, r in by_r.items():
+                    cells = "; ".join(f"{x['slice']}: {x['n']} ({_f(x['confirmed'])})" for x in r["severity"])
+                    name = t if regime == "unrecorded" else f"{t} ({regime})"
+                    lines.append(f"| {city} | {name} | {r['status']} | {cells} |")
     return "\n".join(lines)
 
 
@@ -1289,14 +1409,17 @@ def render_provenance(pv):
     first = next((pv[k] for k in ("gate", "backtest", "slices") if k in pv), None)
     if first:
         p, li = first["pull"], first["listing"]
-        lines += [f"Pull `{p['file']}`, sha256 `{p['sha256']}`, {p['rows']:,} rows, {p['rows_kept']:,} kept "
-                  f"({', '.join(f'{k} {v:,}' for k, v in p['dropped'].items())}); eras "
-                  f"{', '.join(f'{k} {v:,}' for k, v in p['eras'].items())}.",
+        lines += [f"Pull `{p['file']}`, sha256 `{p['sha256']}`. Public deployments only ({p['n_public_deployments']} "
+                  f"in the pull): {p['rows_public']:,} rows, {p['rows_kept_public']:,} kept after the drops and the "
+                  f"exclusions ({', '.join(f'{k} {v:,}' for k, v in p['dropped_public'].items())}); eras "
+                  f"{', '.join(f'{k} {v:,}' for k, v in p['eras_public'].items())}.",
                   f"Listing: live `{li['source']}`, sha256 `{li['sha256'][:16]}`, {li['n']} deployments, "
-                  f"{li['n_public']} public; {li['n_non_public_terms']} non-public terms checked.",
-                  "Excluded re-label keys (rows in the pull): " + "; ".join(
-                      f"`{e['file']}` sha256 `{e['sha256'][:16]}` ({e['items']} items, {e['in_pull']} in the pull)"
-                      for e in first["exclusions"]["files"]) + f"; {first['exclusions']['rows_removed']} rows removed."]
+                  f"{li['n_public']} public. Every public file is checked against the non-public terms before it is "
+                  "written.",
+                  "Excluded re-label keys (rows of public deployments in the pull): " + "; ".join(
+                      f"`{e['file']}` sha256 `{e['sha256'][:16]}` ({e['in_pull_public']})"
+                      for e in first["exclusions"]["files"])
+                  + f"; {first['exclusions']['rows_removed_public']} rows removed."]
     if "slices" in pv:
         sv = pv["slices"]
         lines.append(f"rawLabels cache: {sv.get('rawlabels_n_files')} files, sha256 of the sorted file hashes "
@@ -1387,35 +1510,84 @@ def update_provenance(out_dir, section, payload, terms):
     write_public_json(dict(sorted(pv.items())), path, terms)
 
 
+def _public_pull_counts(raw, d, pub, revision_mode=False):
+    """The pull's counts over the PUBLIC deployments' schemas only (``raw`` = the CSV as read, ``d`` = loaded and
+    after the exclusions)."""
+    rp = raw[raw["schema"].isin(pub)]
+    deleted = _truthy(rp["deleted"])
+    nd = rp[~deleted]
+    mismatch = nd["model_id"].astype(str).str.lower() != (MODEL_PREFIX + nd["label_type"].astype(str).str.lower())
+    dp = d[d["schema"].isin(pub)]
+    out = {"rows_public": int(len(rp)), "rows_kept_public": int(len(dp)),
+           "n_public_deployments": int(len(set(dp["schema"]))),
+           "ai_date_min": str(dp["ai_date"].min()) if len(dp) else None,
+           "ai_date_max": str(dp["ai_date"].max()) if len(dp) else None,
+           "dropped_public": {"deleted_rows": int(deleted.sum()), "model_type_mismatch": int(mismatch.sum())},
+           "eras_public": {k: int(v) for k, v in dp["era"].value_counts().sort_index().items()}}
+    if revision_mode:
+        out["unknown_revision_rows"] = int((dp["era"] == "unknown").sum())
+    return out
+
+
 def _prepare(args, fetch=None):
-    """Fetch the listing (live), load the pull, apply exclusions; ``(d, counts, listing, terms, meta)``."""
+    """Fetch the listing (live), load the pull, apply exclusions. Returns ``(d, counts, listing, terms, meta,
+    meta_all, raw)``: ``meta`` is the PUBLIC metadata (counts over public deployments only), ``meta_all`` the private
+    one (every deployment), ``raw`` the pull as read (for the acceptance check)."""
     listing = fetch_listing(fetch)
-    d, counts = load_pull(args.assessments, args.since)
+    raw = read_pull(args.assessments)
+    d, counts = load_pull(raw, args.since, args.before, args.unrevisioned_before)
     d = add_outcomes(d)
     cities = listing_cities(listing)
-    excl, per_file = item_exclusions(getattr(args, "exclude_items", None), d, cities)
-    n0 = len(d)
+    # The term list comes from the UNFILTERED pull, so a private schema whose rows are all dropped or excluded is
+    # still checked for.
+    terms = private_terms(listing, raw["schema"].dropna().unique(), _read_terms(getattr(args, "extra_terms", None)))
+    pub = public_schemas(d["schema"].unique(), cities)
+    excl, per_file = item_exclusions(getattr(args, "exclude_items", None), d, cities, pub)
+    n0, n0_pub = len(d), int(d["schema"].isin(pub).sum())
     if excl:
         d = d[~d["label_uid"].isin(excl)].reset_index(drop=True)
-    terms = private_terms(listing, d["schema"].unique(), _read_terms(getattr(args, "extra_terms", None)))
+    n_pub = int(d["schema"].isin(pub).sum())
     entries = regions._entries(listing)
     listing_text = json.dumps(listing, sort_keys=True)
-    meta = {"pull": {"file": os.path.basename(args.assessments), "sha256": pr.sha256_of(args.assessments),
-                     "rows": counts["rows"], "rows_kept": counts["rows_kept"], "n_schemas": counts["n_schemas"],
-                     "ai_date_min": counts["ai_date_min"], "ai_date_max": counts["ai_date_max"],
-                     "dropped": {k: counts[k] for k in ("backup_schema_rows", "internal_schema_rows", "deleted_rows",
-                                                        "model_type_mismatch")},
-                     "eras": counts["eras"]},
-            "exclusions": {"files": per_file, "rows_removed": int(n0 - len(d))},
-            "listing": {"source": dg.CITIES_API,
-                        "sha256": pr.sha256_of_text(listing_text), "n": len(entries),
-                        "n_public": sum(1 for c in entries if c.get("visibility") == "public"),
-                        "n_non_public_terms": len(terms)}}
+    sha = pr.sha256_of(args.assessments)
+    listing_meta = {"source": dg.CITIES_API, "sha256": pr.sha256_of_text(listing_text), "n": len(entries),
+                    "n_public": sum(1 for c in entries if c.get("visibility") == "public")}
+    pull_pub = {"file": os.path.basename(args.assessments), "sha256": sha,
+                **_public_pull_counts(raw, d, pub, "unknown_revision_rows" in counts)}
+    meta = {"pull": pull_pub,
+            "exclusions": {"files": [{k: e[k] for k in ("file", "sha256", "in_pull_public")} for e in per_file],
+                           "rows_removed_public": int(n0_pub - n_pub)},
+            "listing": listing_meta}
+    meta_all = {"pull": {"file": pull_pub["file"], "sha256": sha, "rows": counts["rows"],
+                         "rows_kept": counts["rows_kept"], "n_schemas": counts["n_schemas"],
+                         "ai_date_min": counts["ai_date_min"], "ai_date_max": counts["ai_date_max"],
+                         "dropped": {k: counts[k] for k in ("backup_schema_rows", "internal_schema_rows",
+                                                            "deleted_rows", "model_type_mismatch")},
+                         "eras": counts["eras"], "unknown_revision_rows": counts.get("unknown_revision_rows")},
+                "exclusions": {"files": per_file, "rows_removed": int(n0 - len(d))},
+                "listing": {**listing_meta, "n_non_public_terms": len(terms)}}
     if getattr(args, "private_out", None):
         os.makedirs(args.private_out, exist_ok=True)
         with open(os.path.join(args.private_out, "cities_listing.json"), "w") as f:
             f.write(listing_text)
-    return d, counts, listing, terms, meta
+    if counts.get("unknown_revision_rows"):
+        print(f"WARNING: {counts['unknown_revision_rows']} rows have an empty model revision and are excluded from "
+              "both eras (see --unrevisioned-before)", file=sys.stderr)
+    return d, counts, listing, terms, meta, meta_all, raw
+
+
+def _write_private_provenance(args, section, payload):
+    """The private twin of ``provenance.json`` (every deployment's counts), under ``--private-out``."""
+    if not getattr(args, "private_out", None):
+        return
+    path = os.path.join(args.private_out, "provenance_private.json")
+    pv = {}
+    if os.path.exists(path):
+        with open(path) as f:
+            pv = json.load(f)
+    pv[section] = {**payload, "git_commit": _git_commit(), "git_dirty": _git_dirty(),
+                   "run_on": datetime.date.today().isoformat()}
+    pr.write_json(dict(sorted(pv.items())), path)
 
 
 def _flags(args):
@@ -1432,25 +1604,32 @@ def _flags(args):
     return out
 
 
+ACCEPTANCE_SOURCE = "docs/deployment-prior-2026-11/observed.md"
+
+
 def cmd_gate(args, fetch=None):
     rule = rule_from_args(args)
     try:
-        d, counts, listing, terms, meta = _prepare(args, fetch)
+        d, counts, listing, terms, meta, meta_all, raw = _prepare(args, fetch)
     except dg.ListingError as e:
         print(f"listing fetch failed, nothing written: {e}", file=sys.stderr)
         return 2
     ref = f"{meta['pull']['file']}@{meta['pull']['sha256'][:16]}"
     public, private, strata = build_report(d, counts, listing, rule, ref, meta["pull"], meta["exclusions"])
+    private["pull"], private["exclusions"] = meta_all["pull"], meta_all["exclusions"]
     validate_report(public)
-    # Acceptance check on the frame before exclusions would differ; re-run on the unexcluded pull when asked.
+    # The acceptance check compares EVERY deployment's counts before the exclusions (a private-inclusive total) with
+    # the ones observed.md states for the same pull. Only its outcome goes into the public file; the counts go to the
+    # private one.
     acc = None
     if args.expect:
-        d0, _ = load_pull(args.assessments, args.since)
-        acc = acceptance_counts(add_outcomes(d0), rule)
+        d0, _ = load_pull(raw, args.since, args.before, args.unrevisioned_before)
+        a0 = acceptance_counts(add_outcomes(d0), rule)
         want = [int(x) for x in args.expect.split(",")]
-        got = [acc[t]["decided"] for t in SERVED_TYPES]
+        got = [a0[t]["decided"] for t in SERVED_TYPES]
         acc = {"expected": dict(zip(SERVED_TYPES, want)), "got": dict(zip(SERVED_TYPES, got)), "ok": got == want}
-        public["summary"]["acceptance_check"] = acc
+        public["summary"]["acceptance_check"] = {"ok": acc["ok"], "against": ACCEPTANCE_SOURCE}
+        private["acceptance_check"] = {**acc, "against": ACCEPTANCE_SOURCE}
     os.makedirs(args.public_out, exist_ok=True)
     write_public_json(public, os.path.join(args.public_out, "deployment_status.json"), terms)
     update_provenance(args.public_out, "gate", {"flags": _flags(args), **meta}, terms)
@@ -1458,11 +1637,13 @@ def cmd_gate(args, fetch=None):
         os.makedirs(args.private_out, exist_ok=True)
         pr.write_json(private, os.path.join(args.private_out, "deployment_status_all.json"))
         pd.DataFrame(private["strata"]).to_csv(os.path.join(args.private_out, "deployment_status_all.csv"), index=False)
+        _write_private_provenance(args, "gate", {"flags": _flags(args), **meta_all})
     text = render_headline(public) + "\n\n" + render_status_counts(public)
     assert_public(text, terms, "stdout")
     print(text)
     if acc is not None and not acc["ok"]:
-        print(f"ACCEPTANCE CHECK FAILED: expected {acc['expected']}, got {acc['got']}", file=sys.stderr)
+        print("ACCEPTANCE CHECK FAILED: the counts differ from " + ACCEPTANCE_SOURCE
+              + (f" (see {args.private_out}/deployment_status_all.json)" if args.private_out else ""), file=sys.stderr)
         return 1
     return 0
 
@@ -1470,7 +1651,7 @@ def cmd_gate(args, fetch=None):
 def cmd_backtest(args, fetch=None):
     rule = rule_from_args(args)
     try:
-        d, counts, listing, terms, meta = _prepare(args, fetch)
+        d, counts, listing, terms, meta, meta_all, _ = _prepare(args, fetch)
     except dg.ListingError as e:
         print(f"listing fetch failed, nothing written: {e}", file=sys.stderr)
         return 2
@@ -1479,7 +1660,9 @@ def cmd_backtest(args, fetch=None):
     write_public_json(public, os.path.join(args.public_out, "backtest.json"), terms)
     update_provenance(args.public_out, "backtest", {"flags": _flags(args), **meta}, terms)
     if args.private_out:
+        private["exclusions"] = meta_all["exclusions"]
         pr.write_json(private, os.path.join(args.private_out, "backtest_all.json"))
+        _write_private_provenance(args, "backtest", {"flags": _flags(args), **meta_all})
     text = render_backtest(public)
     assert_public(text, terms, "stdout")
     print(text)
@@ -1498,11 +1681,16 @@ def cmd_power(args, fetch=None):
 def cmd_slices(args, fetch=None):
     rule = rule_from_args(args)
     try:
-        d, counts, listing, terms, meta = _prepare(args, fetch)
+        d, counts, listing, terms, meta, meta_all, _ = _prepare(args, fetch)
     except dg.ListingError as e:
         print(f"listing fetch failed, nothing written: {e}", file=sys.stderr)
         return 2
-    s = slices_report(d, listing, rule, args.rawlabels_cache, args.train_root)
+    s = slices_report(d, listing, rule, args.rawlabels_cache, args.train_root, public_only=True)
+    if args.private_out:
+        os.makedirs(args.private_out, exist_ok=True)
+        pr.write_json(slices_report(d, listing, rule, args.rawlabels_cache, args.train_root, public_only=False),
+                      os.path.join(args.private_out, "slices_all.json"))
+        _write_private_provenance(args, "slices", {"flags": _flags(args), **meta_all})
     extra = {}
     if args.rawlabels_cache:
         files = sorted(n for n in os.listdir(args.rawlabels_cache) if n.endswith(".csv"))
@@ -1554,6 +1742,13 @@ def cmd_privacy_check(args, fetch=None):
 
 def _rule_flags(p):
     p.add_argument("--since", default=SINCE, help="first day of the current era when the pull has no revision column")
+    p.add_argument("--before", default=BEFORE,
+                   help="the previous era is assessments BEFORE this day when the pull has no revision column; days "
+                        "from --before up to --since are the changeover, in neither era")
+    p.add_argument("--unrevisioned-before", default=None,
+                   help="with a revision column: rows with an EMPTY revision assessed before this day are the "
+                        "previous era (pass the day revisions began to be recorded); every other empty-revision row "
+                        "is excluded as unknown")
     p.add_argument("--min-n", type=int, default=50)
     p.add_argument("--gate", type=float, default=im.GATE)
     p.add_argument("--z", type=float, default=pc.Z95, help="Wilson z (1.96 = 95%%)")
