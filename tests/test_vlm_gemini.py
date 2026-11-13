@@ -452,3 +452,45 @@ def test_usage_ledger_line_is_written_when_the_run_is_interrupted(tmp_path):
     (u,) = [json.loads(x) for x in open(tmp_path / "usage.jsonl")]
     assert u["label_type"] == "CurbRamp" and u["n_calls"] == len(stub.requests) - 1 >= 9
     assert u["input_tokens"] == 300 * u["n_calls"]
+
+
+# ---- the cities file (#105 review) --------------------------------------------------------------------------------
+
+def test_cities_file_bom_and_trailing_comments_are_read(tmp_path):
+    want = vg.load_cities_file(_write(tmp_path / "plain.txt", "a-city\nb-city\n"))
+    assert want[0] == ["a-city", "b-city"]
+    assert vg.load_cities_file(_write(tmp_path / "bom.txt", "a-city\r\nb-city\r\n", "utf-8-sig")) == want
+    assert vg.load_cities_file(_write(tmp_path / "bom.json", json.dumps(["b-city", "a-city"]), "utf-8-sig")) == want
+    assert vg.load_cities_file(_write(tmp_path / "notes.txt", "# public\nb-city  # a note\na-city\t# x\n")) == want
+
+
+@pytest.mark.parametrize("text,why", [
+    (json.dumps([{"city_id": "a-city"}]), "strings only"),
+    (json.dumps({"deployments": ["a-city"]}), "cities"),
+    (json.dumps({"cities": ["a-city"]}), "cities"),
+    ("42", "JSON must be"),
+    ("Seattle\n", "not deployment ids"),
+    ("a-city b-city\n", "not deployment ids"),
+    (json.dumps(["a_city"]), "not deployment ids"),
+    ("# only a comment\n", "no city ids")])
+def test_malformed_cities_file_exits(tmp_path, text, why):
+    with pytest.raises(SystemExit, match=why):
+        vg.load_cities_file(_write(tmp_path / "c.txt", text))
+
+
+def _write(path, text, encoding="utf-8"):
+    path.write_text(text, encoding=encoding)
+    return str(path)
+
+
+def test_a_cities_list_matching_no_crop_exits_before_anything_is_written(tmp_path, capsys):
+    root, _ = _data_root(tmp_path)
+    stub = _Stub()
+    none = _write(tmp_path / "none.txt", "pub-x\npub-y\n")
+    with pytest.raises(SystemExit, match="none of the 2 ids"):
+        vg.main(_args(root, tmp_path, **{"cities-file": none}), post=stub)
+    assert not stub.requests and not (tmp_path / "scores").exists()
+    some = _write(tmp_path / "some.txt", f"{LISTED}\npub-x\npub-y\n")
+    vg.main(_args(root, tmp_path, limit=2, **{"cities-file": some}), post=stub)
+    out = capsys.readouterr().out
+    assert "2 of 3 ids in --cities-file match no held-out crop" in out and "pub-x" not in out

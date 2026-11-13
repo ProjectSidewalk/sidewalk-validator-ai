@@ -75,6 +75,7 @@ import math
 import os
 import platform
 import random
+import re
 import sys
 import time
 import pandas as pd
@@ -238,22 +239,39 @@ def backoff_s(attempt, base=2.0, cap=60.0, rng=random):
     return min(cap, base * 2 ** attempt) * (0.5 + 0.5 * rng.random())
 
 
+CITY_ID = re.compile(r"[a-z0-9][a-z0-9-]*")
+"""A Project Sidewalk deployment id as the API spells it (``seattle-wa``); anything else in a cities file is a typo."""
+
+
 def load_cities_file(path):
-    """``(sorted city ids, sha256)`` from a JSON list, a saved ``/v3/api/cities`` response (public ones), or one id
-    per line (``#`` comments allowed). The sha256 is over the sorted ids joined by newlines, so it does not depend
-    on the file's format."""
-    with open(path, encoding="utf-8") as f:
+    """``(sorted city ids, sha256)`` from a JSON list of ids, a saved ``/v3/api/cities`` response (its public ones),
+    or one id per line (``#`` starts a comment, whole-line or trailing). A UTF-8 byte-order mark is ignored (Windows
+    PowerShell 5.1 writes one). Anything else exits: JSON of another shape, or an id not matching ``CITY_ID``. The
+    sha256 is over the sorted ids joined by newlines, so it does not depend on the file's format."""
+    with open(path, encoding="utf-8-sig") as f:
         text = f.read()
     try:
         d = json.loads(text)
     except json.JSONDecodeError:
-        d = None
+        d = text
     if isinstance(d, list):
-        ids = {str(x).strip() for x in d if str(x).strip()}
-    elif isinstance(d, dict) and "cities" in d:
-        ids = {c["city_id"] for c in d["cities"] if c.get("visibility") == "public"}
+        if not all(isinstance(x, str) for x in d):
+            raise SystemExit(f"{path}: a JSON cities list must hold strings only")
+        ids = {x.strip() for x in d if x.strip()}
+    elif isinstance(d, dict):
+        cities = d.get("cities")
+        if not isinstance(cities, list) or not all(isinstance(c, dict) and "city_id" in c for c in cities):
+            raise SystemExit(f"{path}: JSON must be a list of ids or a /v3/api/cities response "
+                             f"({{\"cities\": [{{\"city_id\": ..., \"visibility\": ...}}, ...]}})")
+        ids = {str(c["city_id"]).strip() for c in cities if c.get("visibility") == "public"}
+    elif isinstance(d, str):
+        ids = {ln.split("#", 1)[0].strip() for ln in text.splitlines()} - {""}
     else:
-        ids = {ln.strip() for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("#")}
+        raise SystemExit(f"{path}: JSON must be a list of ids or a /v3/api/cities response")
+    bad = sorted(x for x in ids if not CITY_ID.fullmatch(x))
+    if bad:
+        raise SystemExit(f"{path}: {len(bad)} entries are not deployment ids (lower-case letters, digits, hyphens), "
+                         f"e.g. {bad[0]!r}")
     if not ids:
         raise SystemExit(f"{path}: no city ids")
     ids = sorted(ids)
@@ -289,6 +307,21 @@ def listed_pools(train, cities):
     deployments not in ``cities`` dropped in place, so the examples are the open-weight arm's whenever those are all
     listed, and otherwise the next listed ones in the same order."""
     return {c: p[p.city.isin(cities)].reset_index(drop=True) for c, p in vb.fewshot_pools(train).items()}
+
+
+def check_cities_match(cities, held_by_type):
+    """Exit when no listed id matches a held-out crop (a typo'd or mis-cased list would otherwise score nothing and
+    still write metas); print how many listed ids match none (a count only: no deployment is named)."""
+    seen = set()
+    for h in held_by_type.values():
+        seen |= set(h.city.dropna().astype(str))
+    n_unmatched = sum(c not in seen for c in cities)
+    if n_unmatched == len(cities):
+        raise SystemExit(f"none of the {len(cities)} ids in --cities-file matches a held-out crop of "
+                         f"{', '.join(held_by_type)}; check the file")
+    if n_unmatched:
+        print(f"note: {n_unmatched} of {len(cities)} ids in --cities-file match no held-out crop of these types",
+              flush=True)
 
 
 def estimate_cost_usd(model, input_tokens, output_tokens, thinking_tokens, prices=PRICES_USD_PER_MTOK):
@@ -597,6 +630,9 @@ def run_score(args, post=None):
     if args.fewshot % 2:
         raise SystemExit("--fewshot must be even (half per class)")
     cities, digest = load_cities_file(args.cities_file)
+    types = args.label_types.split(",")
+    held_by_type = {t: with_city(vv.load_heldout(args.data_root, t)) for t in types}
+    check_cities_match(cities, held_by_type)
     leg = vb.leg_name(args.name or args.model, args.variant, args.fewshot)
     leg_dir = os.path.join(args.out_dir, leg)
     os.makedirs(leg_dir, exist_ok=True)
@@ -604,8 +640,8 @@ def run_score(args, post=None):
     check_leg(leg_dir, leg_bind)
     rewrite = _rewrite(args)
     scorer = None
-    for t in args.label_types.split(","):
-        held = with_city(vv.load_heldout(args.data_root, t))
+    for t in types:
+        held = held_by_type[t]
         listed = held[held.city.isin(cities)]
         df = vv.limit_rows(listed, args.limit).copy()
         df["image"] = rewrite(df.image)
