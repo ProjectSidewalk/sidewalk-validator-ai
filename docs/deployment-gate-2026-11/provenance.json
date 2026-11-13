@@ -1,0 +1,275 @@
+{
+  "backtest": {
+    "flags": {
+      "assessments": "ai_assessments_2026-11-11.csv",
+      "command": "backtest",
+      "exclude_items": [
+        "sidewalk-validator-ai-relabel-2026-10/private-key-do-not-share/key.csv",
+        "sidewalk-validator-ai-relabel-2026-10/round2/private-key-do-not-share/key.csv",
+        "sidewalk-validator-ai-ai-labels-2026-10/relabel/private-key-do-not-share/key.csv",
+        "sidewalk-validator-ai-nosidewalk-2026-11/round-b/private-key-do-not-share/key.csv"
+      ],
+      "extra_terms": "extra_private_terms.txt",
+      "gate": 0.92,
+      "min_n": 50,
+      "private_out": "run-2026-11-13",
+      "public_out": "deployment-gate-2026-11",
+      "reference": "majority2",
+      "schedule": "50,100,200,400,800,1600",
+      "since": "2026-10-28",
+      "z": 1.96
+    },
+    "pull": {
+      "file": "ai_assessments_2026-11-11.csv",
+      "sha256": "6891a1c150685975ca4b45136e2eaefd9c3401d20923ce6f6eb7dd53ae71db64",
+      "rows": 1045714,
+      "rows_kept": 1007374,
+      "n_schemas": 52,
+      "ai_date_min": "2025-08-13",
+      "ai_date_max": "2026-11-11",
+      "dropped": {
+        "backup_schema_rows": 0,
+        "internal_schema_rows": 9002,
+        "deleted_rows": 29337,
+        "model_type_mismatch": 1
+      },
+      "eras": {
+        "previous": 981513,
+        "current": 23932,
+        "changeover": 1929
+      }
+    },
+    "exclusions": {
+      "files": [
+        {
+          "file": "sidewalk-validator-ai-relabel-2026-10/private-key-do-not-share/key.csv",
+          "sha256": "ae3468a6409150c61e45ef358d44b579dd21cae6d01e15db720a3f447aabb860",
+          "items": 300,
+          "in_pull": 296
+        },
+        {
+          "file": "sidewalk-validator-ai-relabel-2026-10/round2/private-key-do-not-share/key.csv",
+          "sha256": "57116bdfa129b66f6944e5520be772e314a046cec9189f22fdee56659e790aed",
+          "items": 500,
+          "in_pull": 500
+        },
+        {
+          "file": "sidewalk-validator-ai-ai-labels-2026-10/relabel/private-key-do-not-share/key.csv",
+          "sha256": "54fa16fc1dd5a35c2b23af72cf42533406070d9fea06b4dd0bef337331f0fc9a",
+          "items": 133,
+          "in_pull": 0
+        },
+        {
+          "file": "sidewalk-validator-ai-nosidewalk-2026-11/round-b/private-key-do-not-share/key.csv",
+          "sha256": "d2d30d05912e1a12cd75f56822a32413cb250dd048a5c17ff5bc13ae949172a8",
+          "items": 250,
+          "in_pull": 0
+        }
+      ],
+      "rows_removed": 796
+    },
+    "listing": {
+      "source": "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities",
+      "sha256": "4932727583564bf949a1ece8022f246a5b5cdca54b0561ca2715818ddb49ccad",
+      "n": 60,
+      "n_public": 46,
+      "n_non_public_terms": 73
+    },
+    "git_commit": "0dec41fcd99e5f0d4152369139cd1bb5f98211c8",
+    "git_dirty": false,
+    "run_on": "2026-11-13"
+  },
+  "gate": {
+    "flags": {
+      "assessments": "ai_assessments_2026-11-11.csv",
+      "command": "gate",
+      "exclude_items": [
+        "sidewalk-validator-ai-relabel-2026-10/private-key-do-not-share/key.csv",
+        "sidewalk-validator-ai-relabel-2026-10/round2/private-key-do-not-share/key.csv",
+        "sidewalk-validator-ai-ai-labels-2026-10/relabel/private-key-do-not-share/key.csv",
+        "sidewalk-validator-ai-nosidewalk-2026-11/round-b/private-key-do-not-share/key.csv"
+      ],
+      "expect": "885,834,129,199,226",
+      "extra_terms": "extra_private_terms.txt",
+      "gate": 0.92,
+      "min_n": 50,
+      "private_out": "run-2026-11-13",
+      "public_out": "deployment-gate-2026-11",
+      "reference": "majority2",
+      "schedule": "50,100,200,400,800,1600",
+      "since": "2026-10-28",
+      "z": 1.96
+    },
+    "pull": {
+      "file": "ai_assessments_2026-11-11.csv",
+      "sha256": "6891a1c150685975ca4b45136e2eaefd9c3401d20923ce6f6eb7dd53ae71db64",
+      "rows": 1045714,
+      "rows_kept": 1007374,
+      "n_schemas": 52,
+      "ai_date_min": "2025-08-13",
+      "ai_date_max": "2026-11-11",
+      "dropped": {
+        "backup_schema_rows": 0,
+        "internal_schema_rows": 9002,
+        "deleted_rows": 29337,
+        "model_type_mismatch": 1
+      },
+      "eras": {
+        "previous": 981513,
+        "current": 23932,
+        "changeover": 1929
+      }
+    },
+    "exclusions": {
+      "files": [
+        {
+          "file": "sidewalk-validator-ai-relabel-2026-10/private-key-do-not-share/key.csv",
+          "sha256": "ae3468a6409150c61e45ef358d44b579dd21cae6d01e15db720a3f447aabb860",
+          "items": 300,
+          "in_pull": 296
+        },
+        {
+          "file": "sidewalk-validator-ai-relabel-2026-10/round2/private-key-do-not-share/key.csv",
+          "sha256": "57116bdfa129b66f6944e5520be772e314a046cec9189f22fdee56659e790aed",
+          "items": 500,
+          "in_pull": 500
+        },
+        {
+          "file": "sidewalk-validator-ai-ai-labels-2026-10/relabel/private-key-do-not-share/key.csv",
+          "sha256": "54fa16fc1dd5a35c2b23af72cf42533406070d9fea06b4dd0bef337331f0fc9a",
+          "items": 133,
+          "in_pull": 0
+        },
+        {
+          "file": "sidewalk-validator-ai-nosidewalk-2026-11/round-b/private-key-do-not-share/key.csv",
+          "sha256": "d2d30d05912e1a12cd75f56822a32413cb250dd048a5c17ff5bc13ae949172a8",
+          "items": 250,
+          "in_pull": 0
+        }
+      ],
+      "rows_removed": 796
+    },
+    "listing": {
+      "source": "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities",
+      "sha256": "4932727583564bf949a1ece8022f246a5b5cdca54b0561ca2715818ddb49ccad",
+      "n": 60,
+      "n_public": 46,
+      "n_non_public_terms": 73
+    },
+    "git_commit": "0dec41fcd99e5f0d4152369139cd1bb5f98211c8",
+    "git_dirty": false,
+    "run_on": "2026-11-13"
+  },
+  "power": {
+    "flags": {
+      "command": "power",
+      "gate": 0.92,
+      "min_n": 50,
+      "public_out": "deployment-gate-2026-11",
+      "reference": "majority2",
+      "schedule": "50,100,200,400,800,1600",
+      "since": "2026-10-28",
+      "up_to": 2000,
+      "z": 1.96
+    },
+    "git_commit": "0dec41fcd99e5f0d4152369139cd1bb5f98211c8",
+    "git_dirty": false,
+    "run_on": "2026-11-13"
+  },
+  "slices": {
+    "flags": {
+      "assessments": "ai_assessments_2026-11-11.csv",
+      "command": "slices",
+      "exclude_items": [
+        "sidewalk-validator-ai-relabel-2026-10/private-key-do-not-share/key.csv",
+        "sidewalk-validator-ai-relabel-2026-10/round2/private-key-do-not-share/key.csv",
+        "sidewalk-validator-ai-ai-labels-2026-10/relabel/private-key-do-not-share/key.csv",
+        "sidewalk-validator-ai-nosidewalk-2026-11/round-b/private-key-do-not-share/key.csv"
+      ],
+      "extra_terms": "extra_private_terms.txt",
+      "gate": 0.92,
+      "min_n": 50,
+      "private_out": null,
+      "public_out": "deployment-gate-2026-11",
+      "rawlabels_cache": "rawlabels",
+      "reference": "majority2",
+      "schedule": "50,100,200,400,800,1600",
+      "since": "2026-10-28",
+      "train_root": "round3",
+      "z": 1.96
+    },
+    "pull": {
+      "file": "ai_assessments_2026-11-11.csv",
+      "sha256": "6891a1c150685975ca4b45136e2eaefd9c3401d20923ce6f6eb7dd53ae71db64",
+      "rows": 1045714,
+      "rows_kept": 1007374,
+      "n_schemas": 52,
+      "ai_date_min": "2025-08-13",
+      "ai_date_max": "2026-11-11",
+      "dropped": {
+        "backup_schema_rows": 0,
+        "internal_schema_rows": 9002,
+        "deleted_rows": 29337,
+        "model_type_mismatch": 1
+      },
+      "eras": {
+        "previous": 981513,
+        "current": 23932,
+        "changeover": 1929
+      }
+    },
+    "exclusions": {
+      "files": [
+        {
+          "file": "sidewalk-validator-ai-relabel-2026-10/private-key-do-not-share/key.csv",
+          "sha256": "ae3468a6409150c61e45ef358d44b579dd21cae6d01e15db720a3f447aabb860",
+          "items": 300,
+          "in_pull": 296
+        },
+        {
+          "file": "sidewalk-validator-ai-relabel-2026-10/round2/private-key-do-not-share/key.csv",
+          "sha256": "57116bdfa129b66f6944e5520be772e314a046cec9189f22fdee56659e790aed",
+          "items": 500,
+          "in_pull": 500
+        },
+        {
+          "file": "sidewalk-validator-ai-ai-labels-2026-10/relabel/private-key-do-not-share/key.csv",
+          "sha256": "54fa16fc1dd5a35c2b23af72cf42533406070d9fea06b4dd0bef337331f0fc9a",
+          "items": 133,
+          "in_pull": 0
+        },
+        {
+          "file": "sidewalk-validator-ai-nosidewalk-2026-11/round-b/private-key-do-not-share/key.csv",
+          "sha256": "d2d30d05912e1a12cd75f56822a32413cb250dd048a5c17ff5bc13ae949172a8",
+          "items": 250,
+          "in_pull": 0
+        }
+      ],
+      "rows_removed": 796
+    },
+    "listing": {
+      "source": "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities",
+      "sha256": "4932727583564bf949a1ece8022f246a5b5cdca54b0561ca2715818ddb49ccad",
+      "n": 60,
+      "n_public": 46,
+      "n_non_public_terms": 73
+    },
+    "rawlabels_files_sha256": "99e286e784c01f5a940716d8ee0e4aef91c0b057989bcedc280e19e298525e7b",
+    "rawlabels_n_files": 54,
+    "train_split_sha256": {
+      "Crosswalk": "91001f64b778ec3d59b381d50911c6bd8ea35449052574d97eb4c9380d37f00f",
+      "CurbRamp": "f2ec89f8032c9b6b7c1533bea7ac82d82b7c139847b14286dd53d932a2195610",
+      "NoCurbRamp": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "Obstacle": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "SurfaceProblem": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd"
+    },
+    "git_commit": "0dec41fcd99e5f0d4152369139cd1bb5f98211c8",
+    "git_dirty": false,
+    "run_on": "2026-11-13"
+  },
+  "versions": {
+    "python": "3.12.14",
+    "pandas": "2.3.3",
+    "numpy": "2.5.4"
+  }
+}
