@@ -810,7 +810,9 @@ def residual_frame(cands, res):
     m["range_bin"] = [_bin_label(v, RANGE_BINS) for v in m["r_a"]]
     ya, yb = m["capture_month"].astype(float) // 12, m["capture_month_b"].astype(float) // 12
     m["era_pair"] = [f"{era(a)} -> {era(b)}" for a, b in zip(ya, yb)]
-    m["width_pair"] = [f"{int(a)} -> {int(b)}" for a, b in zip(m["pano_width"], m["pano_width_b"])]
+    # pano_data.width can be blank in a database pull; a blank width must not stop the gate run at its last step.
+    w = lambda v: str(int(v)) if pd.notna(v) else "unknown"  # noqa: E731
+    m["width_pair"] = [f"{w(a)} -> {w(b)}" for a, b in zip(m["pano_width"], m["pano_width_b"])]
     # Was each camera position checked? A database position is; an inverted one only when its panorama holds two or
     # more labels that agree (one label: a depth-era position would invert to the wrong place unnoticed).
     checked = lambda src, n: (src == "db") | (n >= 2)  # noqa: E731

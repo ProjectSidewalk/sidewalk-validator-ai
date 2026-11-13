@@ -659,6 +659,18 @@ def test_residual_tables_count_anchors_and_bound_the_share_by_the_unmatched():
     assert t["by_arm_baseline"]["n"].sum() == 4          # the baseline table is the one that goes past the cap
 
 
+
+def test_residual_frame_tolerates_a_blank_pano_width():
+    # A database pull can carry a blank pano_data.width; the width table must label it, not crash the gate run.
+    base = {"qc": "ok", "baseline_m": 2.0, "r_a": 8.0, "capture_month": 2015 * 12, "capture_month_b": 2019 * 12,
+            "position_source": "db", "position_source_b": "db", "n_labels": 1, "n_labels_b": 1}
+    cands = pd.DataFrame([{**base, "cand_uid": "c:1|B", "pano_width": 16384.0, "pano_width_b": np.nan},
+                          {**base, "cand_uid": "c:2|B", "pano_width": 13312.0, "pano_width_b": 16384.0}])
+    res = pd.DataFrame({"cand_uid": ["c:1|B", "c:2|B"], "res_px": [10.0, 20.0]})
+    rf = tp.residual_frame(cands, res)
+    assert rf["width_pair"].tolist() == ["16384 -> unknown", "13312 -> 16384"]
+    assert rf["positions_checked"].tolist() == ["both", "both"]
+
 def test_gate0_refuses_unconfirmed_thresholds_and_named_blockers():
     tables, census = _gate_inputs()
     unconfirmed = {**tp.load_gates(), "confirmed_on": None}
