@@ -1,0 +1,13 @@
+{
+  "_comment": "Issue #42 step (b): masked expert round on NoSidewalk labels outside Seattle (analysis/nosidewalk_round.py). phase1 = seeded random sample of each city's eligible labels to crop and score; phase2 = items the rater rates, split over the strata by shares. A label is in the pass stratum when at least pass_models of the five fold models give Agree at served accuracy >= gate. The rater's user_id is passed in the environment, never stored here.",
+  "rater": "jon",
+  "cities": {
+    "chicago-il": {"phase1": 400, "phase2": 80},
+    "tucson-az": {"phase1": 300, "phase2": 60},
+    "oradell-nj": {"phase1": 250, "phase2": 55},
+    "cdmx": {"phase1": 250, "phase2": 55}
+  },
+  "shares": {"pass": 0.6, "agree_below": 0.2, "model_incorrect": 0.2},
+  "pass_models": 3,
+  "gate": 0.92
+}
