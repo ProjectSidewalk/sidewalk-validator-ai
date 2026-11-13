@@ -871,3 +871,43 @@ def test_crops_stage_with_a_stubbed_store_and_depth_model(tmp_path, monkeypatch)
     rt.main(argv)  # resume: only the two failed labels are tried again
     assert reads == ["gone", "pb"]
     assert len(pd.read_csv(out / "manifest.csv")) == 4
+
+
+def test_crops_stage_skips_what_data_generation_skips(tmp_path, monkeypatch, capsys):
+    """cmd_crops applies data_generation.py's Panoramax skips (#72, PR #96 review): a pose past the tilt cap and a
+    pitch-only click past a pole get the same statuses, are never rendered or read, and print no traceback; a GSV label
+    on the same panorama is still cut."""
+    import crop_pose
+    labels = pd.DataFrame([
+        {**raw_label(1, "NoCurbRamp", pano="pa"), "label_uid": f"{CITY}:1"},
+        {**raw_label(2, "Obstacle", pano="pmx", pano_source="panoramax", camera_pitch=50.0, camera_roll=3.0),
+         "label_uid": f"{CITY}:2"},
+        {**raw_label(3, "CurbRamp", pano="pmx", pano_source="panoramax", pano_y=4090, camera_pitch=5.0,
+                     camera_roll=""), "label_uid": f"{CITY}:3"}])
+    labels_csv = tmp_path / "type_edits.csv"
+    labels.to_csv(labels_csv, index=False)
+    reads, renders = [], []
+
+    def read_store_panorama(store, city, pano_id):
+        reads.append(pano_id)
+        return np.zeros((16, 32, 3), np.uint8), {"pano_path": f"{city}/{pano_id}.jpg"}
+
+    def create_perspective_crop(depth_model, pano_rgb, x, y, **kw):
+        renders.append(y)
+        return np.zeros((8, 8, 3), np.uint8), {"depth_m": 5.0, "crop_half_px": 100, "clipped": 0}
+    monkeypatch.setattr(dg, "check_pano_store_marker", lambda store: "test")
+    monkeypatch.setattr(dg, "resolve_device", lambda allow_cpu: None)
+    monkeypatch.setattr(dg, "load_depth_model", lambda encoder, device: object())
+    monkeypatch.setattr(dg, "read_store_panorama", read_store_panorama)
+    monkeypatch.setattr(dg, "create_perspective_crop", create_perspective_crop)
+    out = tmp_path / "edit_crops"
+    run = rt.main(["crops", "--labels", str(labels_csv), "--pano-store", str(tmp_path), "--out", str(out),
+                   "--allow-cpu", "--tilt-beta", "0.95"])
+    m = pd.read_csv(out / "manifest.csv", dtype=str, keep_default_na=False).set_index("label_uid")
+    assert m.loc[f"{CITY}:1", "status"] == "ok"
+    assert m.loc[f"{CITY}:2", "status"] == crop_pose.OVER_TILT_STATUS
+    assert m.loc[f"{CITY}:3", "status"] == crop_pose.PAST_POLE_STATUS
+    assert m.loc[f"{CITY}:2", "pano_path"] == "" and not os.path.exists(m.loc[f"{CITY}:2", "crop_path"])
+    assert reads == ["pa"] and renders == [2000 / 4096]
+    assert run["status_counts_this_run"] == {"ok": 1, crop_pose.OVER_TILT_STATUS: 1, crop_pose.PAST_POLE_STATUS: 1}
+    assert "Traceback" not in capsys.readouterr().err

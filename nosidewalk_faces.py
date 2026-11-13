@@ -272,10 +272,10 @@ def apply_verdict_unit(all_labels, eligible, label_type, experts, unit, max_labe
     """``data_generation.main``'s one hook: ``eligible`` unchanged for ``unit == "label"``; for ``"face"``,
     :func:`add_face_verdicts` then :func:`cap_labels_per_face`, with a printed summary.
 
-    ``data_generation.main`` calls it right after ``deployment_prior_entry``, so the margin prior never sees face rows
-    or the cap. Under ``face`` that entry is a placeholder in any case: NoSidewalk's prior is written over it by
-    ``calibration/nosidewalk_prior.py`` (the pilot runs it after ``data_generation.py``), because the margin-rule
-    count is a queue-biased sample (``docs/nosidewalk-2026-11.md``).
+    ``data_generation.main`` calls it right after ``deployment_prior_entry``, so the vote-rule prior never sees face
+    rows or the cap. Under ``face`` that entry is a placeholder in any case: NoSidewalk's prior is written over it by
+    ``calibration/nosidewalk_prior.py`` (the pilot runs it after ``data_generation.py``), because a vote-rule count
+    is a queue-biased sample (``docs/nosidewalk-2026-11.md``).
     """
     if unit == "label":
         return eligible

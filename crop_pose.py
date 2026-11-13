@@ -17,6 +17,9 @@ mapillary      ``mapillary_api``   Graph API computed_rotation, as above    0   
 panoramax      ``panoramax_db``    DB (-camera_pitch, +camera_roll)         1.0   both angles non-zero: viewer levels
 panoramax      ``panoramax_db``    DB pitch only: (-camera_pitch, None)     0     viewer does not level; the click is
                                                                                   rig-frame + pers:pitch (offset below)
+panoramax      ``none``            both non-zero, past                      --    the viewer levelled by a pose that is
+                                   :data:`MAX_POSE_TILT_DEG`                      not a rig's: the label is SKIPPED
+                                                                                  (status :data:`OVER_TILT_STATUS`)
 (any)          ``image_estimate``  RESERVED: RampNet PR 273's estimator     --    not implemented
 (any)          ``none``            no usable pose                           --
 (AI label)     ``rig_frame``       placed on the rig image                  --
@@ -56,6 +59,16 @@ the sphere ONLY when both angles are non-zero (it mirrors Panoramax's own viewer
 * roll only: not levelled, nothing added: the click is rig-frame; no correction.
 * 0/0 or absent (the viewer stores an absent pose as pitch 0, roll NULL): no measurement, no correction (Bayonne:
   absent 42%, 0/0 21% of panoramas, panorama-tools ``reports/2026-10-06-non-gsv-levelling.md``).
+* both non-zero and past :data:`MAX_POSE_TILT_DEG` of combined tilt: reason ``panoramax_db_over_tilt``, and
+  ``data_generation.py`` skips the label with status :data:`OVER_TILT_STATUS`. The cap covers only the case the
+  viewer levels: there, levelling by an implausible pose would put the crop "into the sky", and an uncorrected crop
+  would sit off the feature too (unlike an over-tilt Mapillary pose, whose click is rig-frame). A roll-only pose is
+  neither levelled nor offset, so its click is rig-frame whatever the angle; a pitch-only pose is an exact latitude
+  shift at any size, with the pole guard below as its backstop. Bayonne tops out at |pitch| 20.2 and |roll| 8.5
+  degrees (about 21.9 combined), so the cap skips nothing today.
+* a pitch-only click within ``pers:pitch`` of a pole: the offset latitude leaves the panorama (:func:`rig_y_norm` is
+  None) and ``data_generation.py`` skips the label with status :data:`PAST_POLE_STATUS` instead of clipping it. No
+  pitch-only label exists today.
 
 Angles are wrapped to [-180, 180).
 """
@@ -122,7 +135,9 @@ def pose_tilt_deg(pitch, roll):
 # :func:`pose_for_row` converts both the DB and the API value in one place.
 
 #: A pose past this tilt (camera-up vs world-up) is a failed reconstruction, not a rig (30 of 191,286 panoramas in
-#: the auto-labeler's five Mapillary runs, up to 170 degrees); it is treated as no pose.
+#: the auto-labeler's five Mapillary runs, up to 170 degrees). Mapillary treats it as no pose (its click is rig-frame,
+#: so the crop is still right); a Panoramax pose with both angles non-zero (the case its viewer levels by) past it
+#: skips the label (:data:`OVER_TILT_STATUS`).
 MAX_POSE_TILT_DEG = 45.0
 
 
@@ -214,6 +229,66 @@ def website_to_package(pitch, roll):
     return (None if pitch is None else -pitch + 0.0), (None if roll is None else roll + 0.0)
 
 
+# --- Panoramax skips: manifest statuses for labels whose crop cannot be placed ----------------------------------------
+# Neither is ``ok`` (a resume retries them, and skips them again), ``error:*`` (no traceback, and they do not count
+# toward MAX_CONSECUTIVE_ERRORS) or a missing-pano status (``--max-missing-frac`` ignores them).
+
+#: Manifest status of a Panoramax label whose stored pose has both angles non-zero and is past
+#: :data:`MAX_POSE_TILT_DEG` (pose reason ``panoramax_db_over_tilt``).
+OVER_TILT_STATUS = "panoramax_over_tilt"
+
+#: Manifest status of a pitch-only Panoramax label whose rig latitude (the stored one less ``pers:pitch``) is past a
+#: pole, so the crop has no centre in the panorama (:func:`rig_y_norm` is None).
+PAST_POLE_STATUS = "panoramax_pitch_offset_past_pole"
+
+#: The pose reason that leads to :data:`OVER_TILT_STATUS`.
+PANORAMAX_OVER_TILT_REASON = "panoramax_db_over_tilt"
+
+#: The pose reason of a Panoramax pitch-only pose, the only one with a click latitude offset (so the only one whose
+#: :func:`rig_y_norm` can leave [0, 1] and lead to :data:`PAST_POLE_STATUS`).
+PANORAMAX_PITCH_ONLY_REASON = "panoramax_pitch_only_click_offset"
+
+
+def rig_y_norm(y_norm, pose):
+    """The crop centre's normalised row in the rig panorama: ``y_norm`` plus ``pose.click_lat_offset_deg / 180``
+    (non-zero only for a Panoramax pitch-only pose), or None when that leaves [0, 1] (the click is past a pole once the
+    offset is taken out; such a label is skipped, :data:`PAST_POLE_STATUS`, not clipped).
+
+    >>> P = Pose(-5.0, None, "panoramax_db", 0.0, "panoramax_pitch_only_click_offset", 5.0)
+    >>> round(rig_y_norm(0.5, P), 6), rig_y_norm(0.99, P)
+    (0.527778, None)
+    >>> rig_y_norm(1.0, Pose(1.5, None, "gsv_db", 0.95, "db"))   # no offset: unchanged, even on the edge
+    1.0
+    """
+    y = y_norm + (pose.click_lat_offset_deg or 0.0) / 180.0
+    return y if 0.0 <= y <= 1.0 else None
+
+
+def skip_status(pose, y_norm):
+    """The manifest status a label is skipped with instead of rendered, or None to render it:
+    :data:`OVER_TILT_STATUS` for an over-tilt Panoramax pose, :data:`PAST_POLE_STATUS` for a Panoramax pitch-only
+    pose whose ``y_norm`` (from :func:`rig_y_norm`) is None. A None ``y_norm`` on any other pose is not a skip: it
+    cannot come from a valid row, so rendering it fails loudly as an ``error:``. ``data_generation.py`` and
+    ``retype.py crops`` decide this before reading the panorama, so a skip costs no decode and wins over a missing
+    panorama; ``data_generation.py`` does not call it for ``--job-window-crops``, which uses neither the pose nor
+    ``y_norm``.
+
+    >>> skip_status(Pose(None, None, "none", None, "panoramax_db_over_tilt"), 0.5)
+    'panoramax_over_tilt'
+    >>> skip_status(Pose(-5.0, None, "panoramax_db", 0.0, "panoramax_pitch_only_click_offset", 5.0), None)
+    'panoramax_pitch_offset_past_pole'
+    >>> skip_status(Pose(1.5, None, "gsv_db", 0.95, "db"), 0.5) is None
+    True
+    >>> skip_status(Pose(1.5, None, "gsv_db", 0.95, "db"), None) is None   # not a Panoramax pitch-only pose
+    True
+    """
+    if pose.reason == PANORAMAX_OVER_TILT_REASON:
+        return OVER_TILT_STATUS
+    if y_norm is None and pose.reason == PANORAMAX_PITCH_ONLY_REASON:
+        return PAST_POLE_STATUS
+    return None
+
+
 # --- the per-row pose -----------------------------------------------------------------------------------------------
 
 def pose_for_row(row, gsv_beta, mapillary_rotations=None):
@@ -245,7 +320,9 @@ def pose_for_row(row, gsv_beta, mapillary_rotations=None):
         beta = SOURCE_BETA["mapillary"]
         reason = "mapillary_click_rig_frame" if beta == 0 else "level_frame_click"
         if pitch is not None and roll is not None:
-            if pose_tilt_deg(pitch, roll) > MAX_POSE_TILT_DEG:
+            # Wrapped for the check only, as Panoramax's are, so 315 and -45 get the same answer; the recorded pose
+            # stays as stored (the website's values are already in range).
+            if pose_tilt_deg(wrap180(pitch), wrap180(roll)) > MAX_POSE_TILT_DEG:
                 return Pose(None, None, "none", None, "mapillary_db_over_tilt")
             return Pose(*website_to_package(pitch, roll), "mapillary_db", beta, reason)
         if mapillary_rotations is None:
@@ -264,11 +341,12 @@ def pose_for_row(row, gsv_beta, mapillary_rotations=None):
         if not pitch and not roll:  # 0/0, or absent (stored as pitch 0, roll NULL)
             return Pose(None, None, "none", None, "panoramax_zero_or_absent_pose")
         if pitch and roll:  # the only case the viewer levels
+            if pose_tilt_deg(pitch, roll) > MAX_POSE_TILT_DEG:  # levelled by a pose no rig has; the label is skipped
+                return Pose(None, None, "none", None, PANORAMAX_OVER_TILT_REASON)
             return Pose(*website_to_package(pitch, roll), "panoramax_db", SOURCE_BETA["panoramax"],
                         "level_frame_click")
         if pitch:  # not levelled, but getPov adds pers:pitch to the click's latitude
-            return Pose(*website_to_package(pitch, None), "panoramax_db", 0.0, "panoramax_pitch_only_click_offset",
-                        pitch)
+            return Pose(*website_to_package(pitch, None), "panoramax_db", 0.0, PANORAMAX_PITCH_ONLY_REASON, pitch)
         return Pose(*website_to_package(None, roll), "panoramax_db", 0.0, "panoramax_roll_only_click_rig_frame")
     return Pose(None, None, "none", None, f"unsupported_source:{src or 'blank'}")
 

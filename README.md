@@ -66,8 +66,8 @@ against 0.97, and are near chance on Obstacle, 0.51–0.61 against 0.87.
 
 Round 3 is ahead of every VLM in every scoreable severity slice. The VLMs lose ground as severity rises on
 CurbRamp (the 8-shot Gemma leg falls from 0.87 at severity 1 to 0.76 at severity 3, where round 3 stays above
-0.91) and are near chance on Obstacle at every severity (0.50–0.70). Crosswalk severity 3 and Crosswalk with no
-severity are too thin to score.
+0.91) and are near chance on Obstacle at every severity (0.50–0.70). Crosswalk severity 3 is too thin to score
+(five correct crops of 96).
 
 ![Heatmap: AUC by model, label type and severity](docs/vlm-scoreboard/by_severity.png)
 
@@ -213,9 +213,11 @@ training and serving share one geometry package and depth checkpoint
 the deployment prior ([#4](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/4), open until the
 prior itself is settled). What is still open:
 
-- **The deployment prior** the maps are reweighted to comes from an asymmetric training rule and is 15–17 points off
-  the production estimate for three types; the Disagree hold-back stays until it is settled
-  ([#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56)).
+- **The deployment prior** the served maps are reweighted to comes from the asymmetric training rule and puts the
+  incorrect share 10–15 points too high for three types. `data_generation.py` now records the prior under four vote
+  rules and defaults to the ≥ 2-vote human majority; the maps are not refitted yet, and the Disagree hold-back stays
+  ([#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56),
+  [`docs/deployment-prior-2026-11.md`](docs/deployment-prior-2026-11.md)).
 - **Transfer to unseen deployments** is not reliable (SurfaceProblem 0.71 AUC, the non-US deployment weakest), so
   AI votes in a new deployment need a per-deployment check that SidewalkWebpage does not have yet
   ([#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52),

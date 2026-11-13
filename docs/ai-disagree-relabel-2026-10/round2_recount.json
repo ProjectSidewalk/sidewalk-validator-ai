@@ -1,0 +1,187 @@
+{
+ "after": {
+  "eligible_disagrees": {
+   "sidewalk_chicago": 10751,
+   "sidewalk_seattle": 16840
+  },
+  "population": {
+   "jon": {
+    "light_voted": {
+     "Crosswalk": 15,
+     "CurbRamp": 669,
+     "NoCurbRamp": 557,
+     "Obstacle": 160,
+     "SurfaceProblem": 565
+    },
+    "lone": {
+     "Crosswalk": 288,
+     "CurbRamp": 2737,
+     "NoCurbRamp": 396,
+     "Obstacle": 63,
+     "SurfaceProblem": 445
+    },
+    "margin_correct": {
+     "Crosswalk": 9,
+     "CurbRamp": 66,
+     "NoCurbRamp": 65,
+     "Obstacle": 21,
+     "SurfaceProblem": 53
+    },
+    "margin_incorrect": {
+     "Crosswalk": 48,
+     "CurbRamp": 627,
+     "NoCurbRamp": 580,
+     "Obstacle": 261,
+     "SurfaceProblem": 607
+    }
+   },
+   "mikey": {
+    "light_voted": {
+     "Crosswalk": 201,
+     "CurbRamp": 405,
+     "NoCurbRamp": 360,
+     "Obstacle": 84,
+     "SurfaceProblem": 246
+    },
+    "lone": {
+     "Crosswalk": 1131,
+     "CurbRamp": 1142,
+     "NoCurbRamp": 527,
+     "Obstacle": 34,
+     "SurfaceProblem": 474
+    },
+    "margin_correct": {
+     "Crosswalk": 33,
+     "CurbRamp": 61,
+     "NoCurbRamp": 103,
+     "Obstacle": 18,
+     "SurfaceProblem": 27
+    },
+    "margin_incorrect": {
+     "Crosswalk": 57,
+     "CurbRamp": 267,
+     "NoCurbRamp": 1242,
+     "Obstacle": 276,
+     "SurfaceProblem": 216
+    }
+   }
+  },
+  "unsampled": {
+   "sidewalk_chicago": {
+    "one_decisive": 2996,
+    "tie": 706,
+    "unsure_only": 145
+   },
+   "sidewalk_seattle": {
+    "one_decisive": 6698,
+    "tie": 1539,
+    "unsure_only": 371
+   }
+  }
+ },
+ "author_excluded_sha256": "767c3d5b0fca35b57deb09e28995549bd382c383fd4f1634b55e14e6c469bfd7",
+ "before": {
+  "eligible_disagrees": {
+   "sidewalk_chicago": 10769,
+   "sidewalk_seattle": 17284
+  },
+  "population": {
+   "jon": {
+    "light_voted": {
+     "Crosswalk": 15,
+     "CurbRamp": 669,
+     "NoCurbRamp": 557,
+     "Obstacle": 160,
+     "SurfaceProblem": 565
+    },
+    "lone": {
+     "Crosswalk": 289,
+     "CurbRamp": 2753,
+     "NoCurbRamp": 404,
+     "Obstacle": 417,
+     "SurfaceProblem": 507
+    },
+    "margin_correct": {
+     "Crosswalk": 9,
+     "CurbRamp": 66,
+     "NoCurbRamp": 65,
+     "Obstacle": 21,
+     "SurfaceProblem": 53
+    },
+    "margin_incorrect": {
+     "Crosswalk": 48,
+     "CurbRamp": 627,
+     "NoCurbRamp": 580,
+     "Obstacle": 261,
+     "SurfaceProblem": 607
+    }
+   },
+   "mikey": {
+    "light_voted": {
+     "Crosswalk": 201,
+     "CurbRamp": 405,
+     "NoCurbRamp": 361,
+     "Obstacle": 84,
+     "SurfaceProblem": 246
+    },
+    "lone": {
+     "Crosswalk": 1131,
+     "CurbRamp": 1143,
+     "NoCurbRamp": 530,
+     "Obstacle": 34,
+     "SurfaceProblem": 474
+    },
+    "margin_correct": {
+     "Crosswalk": 33,
+     "CurbRamp": 61,
+     "NoCurbRamp": 103,
+     "Obstacle": 18,
+     "SurfaceProblem": 27
+    },
+    "margin_incorrect": {
+     "Crosswalk": 57,
+     "CurbRamp": 267,
+     "NoCurbRamp": 1247,
+     "Obstacle": 278,
+     "SurfaceProblem": 216
+    }
+   }
+  },
+  "unsampled": {
+   "sidewalk_chicago": {
+    "one_decisive": 3002,
+    "tie": 706,
+    "unsure_only": 145
+   },
+   "sidewalk_seattle": {
+    "one_decisive": 6701,
+    "tie": 1539,
+    "unsure_only": 371
+   }
+  }
+ },
+ "design": "round2.json",
+ "design_sha256": "499fb9dfe5d976651f08d932d9a0c47477386e119080ae2107c91fc5c7404e57",
+ "excluded_eligible_disagrees": {
+  "sidewalk_chicago": 18,
+  "sidewalk_seattle": 444
+ },
+ "excluded_labels": {
+  "sidewalk_chicago": 70,
+  "sidewalk_seattle": 3042
+ },
+ "pool_labels_missing_from_flags": 0,
+ "pool_sha256": "8dd0c178ba88e2000886a42aaf1157f12ec4e48e3995f57d3a6753dec7f74959",
+ "proxy_absent_from_export": {
+  "sidewalk_chicago": {
+   "ai_disagrees_absent": 78,
+   "flagged_excluded_present_in_export": 13,
+   "of_which_flagged_excluded": 9
+  },
+  "sidewalk_seattle": {
+   "ai_disagrees_absent": 476,
+   "flagged_excluded_present_in_export": 0,
+   "of_which_flagged_excluded": 444
+  }
+ }
+}
