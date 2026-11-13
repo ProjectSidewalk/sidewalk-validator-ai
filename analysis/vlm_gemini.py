@@ -35,7 +35,9 @@ Subcommand ``score`` writes ``<out-dir>/<leg>/<Type>.csv`` (columns ``SCORE_COLU
 ``<leg>`` is ``vlm_baseline.leg_name(--name or --model, --variant, --fewshot)``; point ``--out-dir`` at
 ``<scores-dir>/scores`` and the scoreboard picks the leg up. Resumable: rows already in the CSV (scored or unscored)
 are skipped; a request that still fails after ``--retries`` (429, 5xx, timeouts) writes nothing, so the next run
-retries it. A run refuses to append to a leg whose meta was written under different settings (``binding``).
+retries it. A run refuses to append to a leg whose metas were written under different settings (``binding``): the
+leg-wide settings (``LEG_BINDING_KEYS``: model, thinking level, cities list, ...) are checked against every scored
+type of the leg, and each type's exact query text (``query_text_sha256``) against that type's meta.
 No ``timing.csv`` is written: API latency is not a GPU cost and would be misread by the scoreboard's GPU-hour columns.
 
 The client is the ``google-genai`` SDK on Vertex AI with Application Default Credentials (``gcloud auth
@@ -447,8 +449,55 @@ class Scorer:
 # Files
 # --------------------------------------------------------------------------------------------------------------------
 
+LEG_BINDING_KEYS = ("backend", "model", "variant", "fewshot", "fewshot_seed", "json_sentence", "response_schema",
+                    "temperature", "thinking_level", "cities_sha256")
+"""The settings every label type of one leg must share; a type's binding adds ``query_text_sha256``."""
+LEGACY_UNBOUND_KEYS = ("fewshot_seed", "query_text_sha256")
+"""Binding keys added after the first legs were scored: a meta written before them lacks them, and a resume skips
+the comparison of those keys (with a printed note) instead of refusing a leg it cannot check."""
+
+
+def leg_binding(args, cities_sha256):
+    """The leg-wide part of the binding (``LEG_BINDING_KEYS``) for this run's arguments."""
+    return {"backend": BACKEND, "model": args.model, "variant": args.variant, "fewshot": args.fewshot,
+            "fewshot_seed": vb.FEWSHOT_SEED, "json_sentence": JSON_SENTENCE, "response_schema": RESPONSE_SCHEMA,
+            "temperature": TEMPERATURE, "thinking_level": args.thinking_level, "cities_sha256": cities_sha256}
+
+
+def type_binding(leg_bind, label_type, variant):
+    """One type's binding: the leg-wide one plus the sha256 of the exact query text sent for that type.
+
+    >>> b = type_binding({"model": "m"}, "CurbRamp", "definition")
+    >>> sorted(b), len(b["query_text_sha256"])
+    (['model', 'query_text_sha256'], 64)
+    """
+    return {**leg_bind, "query_text_sha256": hashlib.sha256(query_text(label_type, variant).encode()).hexdigest()}
+
+
+def binding_diff(old, new, keys=None):
+    """``(differing keys, keys skipped)`` between a meta's binding and this run's, over ``keys`` (default: all).
+    A ``LEGACY_UNBOUND_KEYS`` key absent from ``old`` is skipped (a meta written before that key was bound).
+
+    >>> binding_diff({"model": "a"}, {"model": "a", "fewshot_seed": 1})
+    ([], ['fewshot_seed'])
+    >>> binding_diff({"model": "a", "fewshot_seed": 1}, {"model": "b", "fewshot_seed": 2})
+    (['fewshot_seed', 'model'], [])
+    """
+    keys = sorted(set(old) | set(new)) if keys is None else sorted(keys)
+    skipped = [k for k in keys if k in LEGACY_UNBOUND_KEYS and k not in old]
+    diff = [k for k in keys if k not in skipped and old.get(k) != new.get(k)]
+    return diff, skipped
+
+
+def _note_skipped(meta_path, skipped):
+    if skipped:
+        print(f"note: {meta_path} predates the binding of {', '.join(skipped)}; those settings are not checked "
+              f"for its rows", flush=True)
+
+
 def check_owned(path, meta_path, binding):
-    """Refuse a score CSV or meta another backend wrote, or a leg whose meta was written under other settings."""
+    """Refuse a score CSV or meta another backend wrote, or a type whose meta was written under other settings.
+    Returns the binding keys that could not be checked (absent from an old meta)."""
     if os.path.exists(path) and os.path.getsize(path) > 0:
         header = list(pd.read_csv(path, nrows=0).columns)
         if header != SCORE_COLUMNS:
@@ -461,10 +510,35 @@ def check_owned(path, meta_path, binding):
         old = meta.get("binding")
         # A meta with no scored row beside it binds nothing: a run that failed on its first request (a setting the
         # API refused, say) must not block the retry with corrected settings.
-        if old is not None and old != binding and vv.done_uids(path):
-            diff = sorted(k for k in set(old) | set(binding) if old.get(k) != binding.get(k))
+        if old is not None and vv.done_uids(path):
+            diff, skipped = binding_diff(old, binding)
+            if diff:
+                raise SystemExit(f"{meta_path}: this leg was scored with other settings ({', '.join(diff)}); "
+                                 f"use another --out-dir or --name")
+            _note_skipped(meta_path, skipped)
+            return skipped
+    return []
+
+
+def check_leg(leg_dir, leg_bind):
+    """Refuse a run whose leg-wide settings differ from those of ANY label type already scored in ``leg_dir`` (not
+    only the types this run scores), so one leg never mixes models, thinking levels or cities lists across types.
+    A meta with no scored row beside it binds nothing (as in ``check_owned``)."""
+    for name in sorted(os.listdir(leg_dir)) if os.path.isdir(leg_dir) else []:
+        if not name.endswith(".meta.json"):
+            continue
+        meta_path = os.path.join(leg_dir, name)
+        csv_path = meta_path[:-len(".meta.json")] + ".csv"
+        if not vv.done_uids(csv_path):
+            continue
+        meta = vb._read_meta(meta_path)
+        if meta.get("backend") != BACKEND:
+            raise SystemExit(f"{meta_path} was not written by vlm_gemini; use another --out-dir or --name")
+        diff, skipped = binding_diff(meta.get("binding") or {}, leg_bind, LEG_BINDING_KEYS)
+        if diff:
             raise SystemExit(f"{meta_path}: this leg was scored with other settings ({', '.join(diff)}); "
                              f"use another --out-dir or --name")
+        _note_skipped(meta_path, skipped)
 
 
 def append_rows(path, rows):
@@ -516,9 +590,8 @@ def run_score(args, post=None):
     leg = vb.leg_name(args.name or args.model, args.variant, args.fewshot)
     leg_dir = os.path.join(args.out_dir, leg)
     os.makedirs(leg_dir, exist_ok=True)
-    binding = {"backend": BACKEND, "model": args.model, "variant": args.variant, "fewshot": args.fewshot,
-               "json_sentence": JSON_SENTENCE, "response_schema": RESPONSE_SCHEMA, "temperature": TEMPERATURE,
-               "thinking_level": args.thinking_level, "cities_sha256": digest}
+    leg_bind = leg_binding(args, digest)
+    check_leg(leg_dir, leg_bind)
     rewrite = _rewrite(args)
     scorer = None
     for t in args.label_types.split(","):
@@ -528,7 +601,8 @@ def run_score(args, post=None):
         df["image"] = rewrite(df.image)
         path = os.path.join(leg_dir, f"{t}.csv")
         meta_path = path.replace(".csv", ".meta.json")
-        check_owned(path, meta_path, binding)
+        binding = type_binding(leg_bind, t, args.variant)
+        unchecked = check_owned(path, meta_path, binding)
         done = vv.done_uids(path)
         todo = df[~df.label_uid.isin(done)]
         print(f"{leg} {t}: {len(todo)} to score, {len(df) - len(todo)} done ({len(listed)} of {len(held)} held-out "
@@ -571,6 +645,8 @@ def run_score(args, post=None):
         run = {"start": datetime.datetime.now().isoformat(timespec="seconds"), "n_todo": int(len(todo)),
                "python": platform.python_version(), "host": platform.node(),
                "git_commit": vb._git(REPO_DIR, "rev-parse", "HEAD")}
+        if unchecked:
+            run["binding_unchecked"] = unchecked   # keys an older meta lacked: not compared for its earlier rows
         meta.setdefault("runs", []).append(run)
         vb._write_meta(meta_path, meta)
         results, t0 = [], time.perf_counter()

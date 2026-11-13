@@ -336,3 +336,77 @@ def test_a_meta_with_no_scored_rows_does_not_bind_the_leg(tmp_path):
     vg.append_rows(path, [row])
     with pytest.raises(SystemExit, match="other settings"):
         vg.check_owned(path, meta_path, {"thinking_level": "low"})
+
+
+# ---- the binding (#105 review) ------------------------------------------------------------------------------------
+
+def _legacy_meta(meta_path):
+    """Strip the binding keys a meta written before they were bound lacks (the first real leg's metas)."""
+    meta = json.load(open(meta_path))
+    for k in vg.LEGACY_UNBOUND_KEYS:
+        meta["binding"].pop(k, None)
+    vg.vb._write_meta(str(meta_path), meta)
+
+
+def test_leg_settings_bind_across_label_types(tmp_path):
+    """Type A scored under one setting, type B under another, into the same leg: refused, whichever setting differs
+    (a check against type B's own meta alone would accept it, since B has none yet)."""
+    root, _ = _data_root(tmp_path)
+    stub = _Stub()
+    vg.main(_args(root, tmp_path, name="g", limit=2, **{"label-types": "CurbRamp", "thinking-level": "low"}),
+            post=stub)
+    other = tmp_path / "other-cities.txt"
+    other.write_text(f"{LISTED}\npub-b\n")
+    n = len(stub.requests)
+    for kw, key in (({"thinking-level": "high"}, "thinking_level"), ({"model": "gemini-4-argon"}, "model"),
+                    ({"cities-file": other}, "cities_sha256")):
+        a = {"label-types": "Obstacle", "thinking-level": "low", **kw}
+        with pytest.raises(SystemExit, match=key):
+            vg.main(_args(root, tmp_path, name="g", limit=2, **a), post=stub)
+    assert len(stub.requests) == n
+    assert not (tmp_path / "scores" / "g" / "Obstacle.csv").exists()
+    vg.main(_args(root, tmp_path, name="g", limit=2, **{"label-types": "Obstacle", "thinking-level": "low"}),
+            post=stub)                                   # the same settings go through
+    assert (tmp_path / "scores" / "g" / "Obstacle.csv").exists()
+
+
+def test_query_text_and_fewshot_seed_are_bound(tmp_path, monkeypatch):
+    root, _ = _data_root(tmp_path)
+    stub = _Stub()
+    vg.main(_args(root, tmp_path, limit=4, **{"label-types": "CurbRamp"}), post=stub)
+    meta_path = tmp_path / "scores" / "gemini-3.8-flash" / "CurbRamp.meta.json"
+    b = json.load(open(meta_path))["binding"]
+    assert b["fewshot_seed"] == vb.FEWSHOT_SEED and len(b["query_text_sha256"]) == 64
+    n = len(stub.requests)
+    with monkeypatch.context() as m:
+        m.setitem(vb.DEFINITIONS, "CurbRamp", vb.DEFINITIONS["CurbRamp"] + " Edited.")
+        with pytest.raises(SystemExit, match="query_text_sha256"):
+            vg.main(_args(root, tmp_path, limit=8, **{"label-types": "CurbRamp"}), post=stub)
+    with monkeypatch.context() as m:
+        m.setattr(vb, "FEWSHOT_SEED", vb.FEWSHOT_SEED + 1)
+        with pytest.raises(SystemExit, match="fewshot_seed"):
+            vg.main(_args(root, tmp_path, limit=8, **{"label-types": "CurbRamp"}), post=stub)
+    assert len(stub.requests) == n
+    assert json.load(open(meta_path))["prompt"] == vb.build_prompt("CurbRamp")       # not overwritten
+
+
+def test_a_meta_from_before_the_new_binding_keys_still_resumes(tmp_path, capsys):
+    """The first real leg's metas carry no ``query_text_sha256`` / ``fewshot_seed``: same arguments resume, with a
+    printed note and the unchecked keys recorded in the run; other settings are still refused."""
+    root, _ = _data_root(tmp_path)
+    stub = _Stub()
+    args = dict(limit=4, **{"label-types": "CurbRamp,Obstacle", "thinking-level": "low"})
+    vg.main(_args(root, tmp_path, **args), post=stub)
+    leg = tmp_path / "scores" / "gemini-3.8-flash"
+    for t in ("CurbRamp", "Obstacle"):
+        _legacy_meta(leg / f"{t}.meta.json")
+    capsys.readouterr()
+    vg.main(_args(root, tmp_path, **{**args, "limit": 8}), post=stub)
+    out = capsys.readouterr().out
+    assert "predates the binding of fewshot_seed, query_text_sha256" in out
+    meta = json.load(open(leg / "CurbRamp.meta.json"))
+    assert meta["runs"][-1]["binding_unchecked"] == ["fewshot_seed", "query_text_sha256"]
+    assert len(pd.read_csv(leg / "CurbRamp.csv")) == 8
+    _legacy_meta(leg / "Obstacle.meta.json")
+    with pytest.raises(SystemExit, match="thinking_level"):
+        vg.main(_args(root, tmp_path, **{**args, "thinking-level": "high"}), post=stub)
