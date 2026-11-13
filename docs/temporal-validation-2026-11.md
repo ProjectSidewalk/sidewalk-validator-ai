@@ -120,7 +120,7 @@ inversion stays exact and no city-wide cosine can scale a baseline (a test check
    camera_heading_B)`, and **`lat_B = -blend_depression(d_B)`**, the depression at which the same estimator gives
    `d_B`. (The plan wrote `-atan(h / d_B)`; that breaks the identity below 11.25 degrees, where the fitted tail is not
    the cotangent. With the inverse of the same estimator, a partner at A's own position returns A's click exactly. In
-   the preview the change moves no median by more than 3 px; section 6.3.)
+   the preview the change moves no median by more than 3 px; section 6.2, step 2.)
 5. (Stage 2) The B crop is `data_generation.create_perspective_crop` at that level-frame point with B's
    `camera_pitch`, `camera_roll=None` when blank (as the A crop does), `apply_tilt=True`, beta 0.95, and
    `fixed_crop_half_px = round(crop_half_px_A * r_A / d_B)` (the same physical extent). Beta 0.95 was measured on human
@@ -169,7 +169,8 @@ that failed are published as the result.
 blocker is written into `gate0.json` (`refused`) and the first line of every table. The blockers: a camera position
 that is not from the database (the preview); `confirmed_on` still null in `gates.json`; a thresholds file other than
 the committed one; the exploratory `--anchor-pool all`; positions marked `db` with no database pull on record, or a
-`panos.csv` that is not the file `positions` wrote. The anchor pool of the gate is the margin rule; whether the
+`panos.csv` that is not the file `positions` wrote; a database pull that lacks a deployment with labels (left out
+of `SCHEMAS`, or its query failed), whose anchors would otherwise drop out of the yield unseen. The anchor pool of the gate is the margin rule; whether the
 expert rule (`EXPERTS`) is also on is recorded in `gate0.json` and is a choice to fix before the gate run (the
 preview ran without it).
 
@@ -486,8 +487,9 @@ python analysis/temporal_pairs.py census --rawlabels $C --listing $L --panos $R/
 python analysis/temporal_pairs.py residual --run $R --listing $L --out docs/temporal-validation-2026-11/preview
 ```
 
-`residual` refuses a listing more than a day old, so a later rerun needs a fresh one (`curl -s
-https://sidewalk-teaneck.cs.washington.edu/v3/api/cities > $L`); the numbers depend on it only through the list of
+`residual` refuses a listing more than a day old, so a later rerun of `residual` needs a fresh one, saved beside
+`$L` rather than over it (`$L` is the pinned file: `curl -s https://sidewalk-teaneck.cs.washington.edu/v3/api/cities >
+${L%/*}/cities-$(date +%F).json`, then pass that file); the numbers depend on it only through the list of
 public deployments. No sampling in Stage 0 (the seed, 20261112, is recorded for the later stages). The per-label run
 files (`$R`) hold label ids and stay outside the repo; they tell users apart by a key salted afresh in every run, so
 it cannot be traced back to a user id. Only aggregates are committed. Every input's sha256, the settings and the git
