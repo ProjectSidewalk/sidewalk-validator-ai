@@ -1,0 +1,5 @@
+# PREVIEW (not the gate): camera positions inverted from public rawLabels, not read from the database; no gate verdict is given on these numbers.
+arm,n,n_anchors,median_px,p75_px,p90_px,within_100,within_240,within_240_lo,within_240_hi,abs_az_median_px,abs_el_median_px,el_median_px
+same_month,306,303,74.5,154.6,260.0,0.647,0.873,0.831,0.905,59.1,26.9,1.1
+control,104,103,88.6,160.8,345.6,0.558,0.837,0.754,0.895,76.4,20.2,-1.9
+long_newer,463,448,76.5,146.3,322.1,0.607,0.86,0.825,0.888,57.9,26.9,4.4

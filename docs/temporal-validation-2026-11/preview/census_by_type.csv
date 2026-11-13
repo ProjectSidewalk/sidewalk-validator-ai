@@ -1,0 +1,8 @@
+# PREVIEW (not the gate): camera positions inverted from public rawLabels, not read from the database; no gate verdict is given on these numbers.
+label_type,decided_anchors,vote_correct_anchors,long_newer_le3m,long_newer_le5m,long_newer_le3m_clean,clean_share,negative_control_pool,contradicting_on_b,control_le3m,control_le5m,unchecked_inversion_share
+CurbRamp,16489,14361,527,916,392,0.744,209,5,114,236,0.237
+NoCurbRamp,11998,6644,229,362,82,0.358,30,50,71,114,0.288
+Obstacle,9230,5893,68,130,26,0.382,3,0,22,39,0.441
+SurfaceProblem,11457,8195,110,189,59,0.536,20,0,27,42,0.536
+Crosswalk,6580,5499,213,312,185,0.869,66,0,84,133,0.221
+all,55754,40592,1147,1909,744,0.649,328,55,318,564,0.285
