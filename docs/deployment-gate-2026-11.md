@@ -103,13 +103,13 @@ A **stratum** is one deployment x label type x verdict (Agree, Disagree) x evide
   `--current-revision MODEL=REVISION`; no tie is broken on `label_id`, which is numbered per deployment. The
   provenance records each model's current revision and whether it came from the public rows or the flag. Whether the
   revision and vote-cast columns are used at all is also decided on the public rows: a column that is present but
-  empty on every public row is treated as absent, and the output says "present but empty". An EMPTY revision is never read as the previous era: it is also what
-  a schema missing the column looks like, so such rows go to an `unknown` era, excluded from both and counted (and
-  the tool warns). `--unrevisioned-before DAY` is the explicit exception: empty-revision rows assessed before that day
-  (when revisions began to be recorded) are previous; the stderr warning counts the public deployments' rows only. Days
-  are given as YYYY-MM-DD and refused otherwise. The pull script now exits 1 when any schema's table or column
-  check or query fails, so a partial pull is not mistaken for a complete one. Status uses the current era only; the
-  previous era's status is reported as context.
+  empty on every public row is treated as absent, and the output says "present but empty". An EMPTY revision is
+  never read as the previous era: it is also what a schema missing the column looks like, so such rows go to an
+  `unknown` era, excluded from both and counted (and the tool warns, counting the public deployments' rows only).
+  `--unrevisioned-before DAY` is the explicit exception: empty-revision rows assessed before that day (when revisions
+  began to be recorded) are previous. Days are given as YYYY-MM-DD and refused otherwise. The pull script now exits 1
+  when any schema's table or column check or query fails, so a partial pull is not mistaken for a complete one.
+  Status uses the current era only; the previous era's status is reported as context.
 - **Regime**: `vote` when the assessment is linked to a vote (`ai_vote_cast`), `shadow` when it was scored without
   one. The link means AI validation was ON for the deployment: in vote mode the website casts a vote for every
   assessment, the verdict at or above the gate and an **Unsure** below it. So on a gated row (the only rows a status
@@ -393,10 +393,10 @@ Past n = 2,000 the checkpoints keep doubling and the rate keeps growing: at true
 ## Severity and tag slices
 
 The standing rule (every performance study reports type x severity and type x tag against a baseline, with training
-counts). Pooled over public deployments, so in the current era these are in effect one deployment's numbers (the `largest`
-column). The baseline is the previous era. The slice that bears on the status is the last table: the severity mix
-inside each stratum that passes or is undecided, so a stratum that passes overall but is weak at high severity is
-visible.
+counts). Pooled over public deployments, so in the current era these are in effect one deployment's numbers (the
+`largest` column). The baseline is the previous era. The slice that bears on the status is the last table: the
+severity mix inside each stratum that passes or is undecided, so a stratum that passes overall but is weak at high
+severity is visible.
 
 <!-- BEGIN GENERATED: slices (analysis/deployment_gate.py) -->
 
