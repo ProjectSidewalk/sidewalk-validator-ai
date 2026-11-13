@@ -350,7 +350,9 @@ The flagged rows are wrong 4 times in 13 against 19 in 118 for the rest: +14.7 p
 0.242, which cannot tell whether the flags are enriched for wrong targets. Flipping the flags unread pays off only
 if more than half the flagged targets are wrong: the point estimate is well under half (4 of 13, 30.8%), but its
 Wilson interval [12.7, 57.6] does not exclude a majority, so these rows neither license nor rule out acting on the
-flags unread. About 30 rated flagged rows would settle it if the share stays near 31%. The rules touch rows whose
+flags unread. If the true share is near 31%, about 50 new flagged rows, rated in a round that states this test
+beforehand, give about an 80% chance of settling it (Wilson's upper bound under 50%; 30 give about even odds), which
+is about 500 rated train rows at this flag rate. The rules touch rows whose
 target is wrong about twice as often as the rows they leave alone: `symmetric` 14/61 (23.0%) against 9/70 (12.9%),
 +10.1 points [-3.3, +23.0]; `unanimous3` 19/90 against 4/41, +11.4 points [-1.9, +23.3]. Neither interval excludes
 0, and neither excludes a difference of about 23 points. Split by target class in the scoreboard doc.

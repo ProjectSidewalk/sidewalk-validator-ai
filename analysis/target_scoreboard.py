@@ -876,6 +876,9 @@ def render_primary(j):
     p = j["primary"]
     roles = p["roles"]
     f1, f2 = p["P2"]["1"]["a"]["n"], p["P2"]["2"]["a"]["n"]
+    thin = [f"{f} flagged round-{r} row{'s' if f != 1 else ''}" for r, f in (("1", f1), ("2", f2)) if f < MIN_CELL]
+    origin = (f"Of the pooled P2's {f1 + f2} flagged rows, {f1} are from round 1 and {f2} from round 2"
+              + (f"; with {' and '.join(thin)} the rounds cannot be compared." if thin else "."))
     return "\n".join([
         "**P1. `symmetric` kept against dropped** (decided AI Disagrees whose margin target is `incorrect`; outcome: "
         f"the expert says incorrect; pooled row: {roles['P1']}):", "",
@@ -883,8 +886,7 @@ def render_primary(j):
         "**P2. Confident-learning flag** (decided round-3 train rows, both target classes; outcome: the target "
         f"differs from the expert; pooled row: {roles['P2']}):", "",
         contrast_table(p["P2"], "flagged", "unflagged", extra=True, role=roles["P2"]), "",
-        f"The pooled P2 is mostly round 2: {f2} of its {f1 + f2} flagged rows are from round 2, and with {f1} flagged "
-        "round-1 rows the rounds cannot be compared.", "",
+        origin, "",
         f"Descriptive twin of P1, `unanimous3` (same rows; pooled row: {roles['P1_unanimous3']}):", "",
         contrast_table(p["P1_unanimous3"], "kept: unanimous", "dropped", role=roles["P1_unanimous3"])])
 
