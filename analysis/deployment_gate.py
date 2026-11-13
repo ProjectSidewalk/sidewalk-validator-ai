@@ -56,13 +56,15 @@ module computes production evidence only.
 
 Subcommands
 -----------
-``gate``      the status report: public ``deployment_status.json`` (public deployments by ``city_id``; private ones
-              only as pooled counts, cells with fewer than 3 private deployments suppressed) and, under
-              ``--private-out``, ``deployment_status_all.json`` / ``.csv`` with every deployment and the mode each
-              stratum would get under each policy. Also the acceptance check (pooled current-era decided gated Agree
-              counts against ``--expect``).
-``backtest``  count-based sequential replay of the rule on the previous era (vote-mode evidence, votes as of the
-              pull's end; no dates, no waiting times), with the items of masked re-label rounds excluded.
+``gate``      the status report: public ``deployment_status.json`` (public deployments by ``city_id``; every figure,
+              pooled ones included, over PUBLIC deployments only, so nothing about a non-public deployment can be
+              recovered by subtraction) and, under ``--private-out``, ``deployment_status_all.json`` / ``.csv`` with
+              every deployment, the pooled figures that include non-public ones, and the mode each stratum would get
+              under each policy. Also the acceptance check (every deployment's current-era decided gated Agree counts
+              against ``--expect``; only its outcome is public).
+``backtest``  count-based sequential replay of the rule on the previous era, split by evidence regime (votes as of the
+              pull's end; no dates, no waiting times), with the items of masked re-label rounds excluded; public
+              deployments only in the public file.
 ``power``     exact (no simulation, no seed): errors allowed per n, single-look pass probability, and the chance of
               EVER passing under a look schedule at a given true precision; the z that holds it to 5%.
 ``slices``    type x severity and type x tag (tags joined from cached public rawLabels), gated Agree, current era
@@ -136,7 +138,6 @@ MODES = ("off", "shadow", "vote")  # SidewalkWebpage#5832's vocabulary; private 
 POLICIES = ("strict", "grandfather")
 EXCLUDED_SCHEMAS = pc.EXCLUDED_SCHEMAS  # the internal test deployment
 SINCE, BEFORE = pr.ROUND3_FROM, pr.OLDER_BEFORE
-MIN_PRIVATE_DEPLOYMENTS = 3  # a pooled private cell is shown only when at least this many deployments contribute
 CAP_MORE_NEEDED = 25_600
 MODEL_PREFIX = "sidewalk-validator-ai-"
 PUBLIC_FILES = ("deployment_status.json", "backtest.json", "power.json", "slices.json", "provenance.json")
@@ -924,7 +925,7 @@ def backtest(d, listing, rule):
             per_dep.setdefault(pub[schema], {}).setdefault(t, {}).setdefault(v, {})[regime] = row
         private_rows.append({"schema": schema, **row})
     public = {"kind": "backtest",
-              "label": "previous era, votes as of the end of the pull, public deployments only; count-based replay",
+              "label": "votes as of the end of the pull, public deployments only; count-based replay",
               "rule": {**asdict(rule), "schedule": list(rule.schedule)},
               "pooled": _pool_replays(replays_pub, rule),
               "public_deployments": {c: per_dep[c] for c in sorted(per_dep)},
@@ -1409,8 +1410,7 @@ def render_provenance(pv):
     first = next((pv[k] for k in ("gate", "backtest", "slices") if k in pv), None)
     if first:
         p, li = first["pull"], first["listing"]
-        lines += [f"Pull `{p['file']}`, sha256 `{p['sha256']}`. Public deployments only ({p['n_public_deployments']} "
-                  f"in the pull): {p['rows_public']:,} rows, {p['rows_kept_public']:,} kept after the drops and the "
+        lines += [f"Pull `{p['file']}`, sha256 `{p['sha256']}`. Public deployments only: {p['rows_public']:,} rows, {p['rows_kept_public']:,} kept after the drops and the "
                   f"exclusions ({', '.join(f'{k} {v:,}' for k, v in p['dropped_public'].items())}); eras "
                   f"{', '.join(f'{k} {v:,}' for k, v in p['eras_public'].items())}.",
                   f"Listing: live `{li['source']}`, sha256 `{li['sha256'][:16]}`, {li['n']} deployments, "
@@ -1519,7 +1519,6 @@ def _public_pull_counts(raw, d, pub, revision_mode=False):
     mismatch = nd["model_id"].astype(str).str.lower() != (MODEL_PREFIX + nd["label_type"].astype(str).str.lower())
     dp = d[d["schema"].isin(pub)]
     out = {"rows_public": int(len(rp)), "rows_kept_public": int(len(dp)),
-           "n_public_deployments": int(len(set(dp["schema"]))),
            "ai_date_min": str(dp["ai_date"].min()) if len(dp) else None,
            "ai_date_max": str(dp["ai_date"].max()) if len(dp) else None,
            "dropped_public": {"deleted_rows": int(deleted.sum()), "model_type_mismatch": int(mismatch.sum())},
