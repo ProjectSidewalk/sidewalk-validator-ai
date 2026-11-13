@@ -249,6 +249,164 @@ def test_poststratified_excludes_small_cells():
     assert r["excluded"] == ["B(n=4)"] and r["rate"] == pytest.approx(1.0)
 
 
+def test_poststratified_weights_by_population_times_domain_share():
+    # cell A: 10 items, 6 in the domain, 3/6 succeed; cell B: 10 items, 5 in the domain, 5/5 succeed. Both cells have
+    # population 100, so the domain weights are 100 * 6/10 = 60 and 100 * 5/10 = 50: (60 * 0.5 + 50 * 1) / 110.
+    x = pd.DataFrame({"t": ["A"] * 10 + ["B"] * 10,
+                      "dom": [True] * 6 + [False] * 4 + [True] * 5 + [False] * 5,
+                      "ok": [True] * 3 + [False] * 7 + [True] * 5 + [False] * 5})
+    r = ts.poststratified(x, ["t"], {("A",): 100, ("B",): 100}, x.dom, x.ok)
+    assert r["rate"] == pytest.approx(80 / 110)
+    assert r["rate"] != pytest.approx(0.75)  # what equal cell weights (ignoring the domain share) would give
+    assert r["n"] == 11 and r["excluded"] == []
+
+
+def _ac(k, n):
+    p = (k + 2) / (n + 4)
+    return p * (1 - p) / n
+
+
+def _p1_frame():
+    """Round 1: kept rows fill only CurbRamp and dropped rows only Obstacle (no shared cell). Round 2: one type in
+    two cities, both groups >= 5 in each (two shared cells); city-a's kept cell is 5/5 (a rate at 100%)."""
+    rows = []
+
+    def add(rnd, city, t, kept, ok, n):
+        for i in range(n):
+            rows.append({"round": rnd, "ai_vote": "Disagree", "city_id": city, "label_type": t,
+                         "group_r1": "voted_disagree" if rnd == "1" else "", "stratum": "margin_incorrect",
+                         "rule_margin": "incorrect", "rule_symmetric3": "incorrect" if kept else "",
+                         "expert": "incorrect" if i < ok else "correct"})
+    add("1", "city-a", "CurbRamp", True, 4, 5)
+    add("1", "city-a", "CurbRamp", False, 1, 1)
+    add("1", "city-a", "Obstacle", True, 1, 1)
+    add("1", "city-a", "Obstacle", False, 3, 5)
+    add("2", "city-a", "NoCurbRamp", True, 5, 5)
+    add("2", "city-a", "NoCurbRamp", False, 3, 5)
+    add("2", "city-b", "NoCurbRamp", True, 3, 6)
+    add("2", "city-b", "NoCurbRamp", False, 3, 6)
+    return pd.DataFrame(rows)
+
+
+def test_weighted_p1_uses_shared_cells_and_an_unclipped_interval():
+    w = {"1": {("voted_disagree", t): 100 for t in ts.LABEL_TYPES},
+         "2": {(c, "margin_incorrect", "NoCurbRamp"): 100 for c in ("city-a", "city-b")}}
+    out = ts.weighted_p1(_p1_frame(), w)
+    s1 = out["1"]["shared"]
+    assert (s1["cells"], s1["cells_a"], s1["cells_b"], s1["cells_shared"]) == (2, 1, 1, 0)
+    assert s1["estimable"] is False and s1["diff"] is None and s1["lo"] is None
+    s2 = out["2"]["shared"]
+    assert s2["estimable"] is True and s2["cells_shared"] == 2 and (s2["n_a"], s2["n_b"]) == (11, 11)
+    # equal weights: kept (1.0 + 0.5) / 2 = 0.75, dropped (0.6 + 0.5) / 2 = 0.55, kept minus dropped +0.2
+    assert (s2["rate_a"], s2["rate_b"]) == (pytest.approx(0.75), pytest.approx(0.55))
+    assert s2["diff"] == pytest.approx(0.2)
+    se = 0.5 * np.sqrt(_ac(5, 5) + _ac(3, 5) + _ac(3, 6) + _ac(3, 6))
+    assert s2["se"] == pytest.approx(se)
+    assert (s2["lo"], s2["hi"]) == (pytest.approx(0.2 - 1.96 * se), pytest.approx(0.2 + 1.96 * se))
+    assert s2["weight_share"] == pytest.approx(1.0)
+    assert out["2"]["all"]["rate"] == pytest.approx(0.65)
+
+
+def test_shared_cell_diff_one_shared_cell_is_not_estimable():
+    f = _p1_frame()
+    f = f[f["round"] == "2"]
+    f = f[~((f.city_id == "city-b") & (f.rule_symmetric3 == ""))].iloc[:-1]  # city-b keeps 5 kept rows, no dropped
+    r = ts.shared_cell_diff(f, ["city_id"], {("city-a",): 100, ("city-b",): 100}, pd.Series(True, index=f.index),
+                            f.rule_symmetric3 == "incorrect", f.expert == "incorrect")
+    assert (r["cells"], r["cells_a"], r["cells_b"], r["cells_shared"]) == (2, 2, 1, 1)
+    assert r["estimable"] is False and r["diff"] is None
+    assert 0 < r["weight_share"] < 1
+    text = ts.render_weighted({"weighted": {k: {"all": {"rate": None, "excluded": []}, "shared": r}
+                                            for k in ("1", "2")}})
+    assert "not estimable: 1 shared cell (needs 2)" in text
+
+
+def test_gain_boot_is_kept_minus_all():
+    ok = [1, 1, 1, 0, 1, 0, 0, 0]
+    a = [True] * 4 + [False] * 4
+    g, lo, hi = ts.gain_boot(ok, a, 500, 1)
+    assert g == pytest.approx(0.75 - 0.5)
+    d = ts.diff_boot(ok, a, 0)[0]
+    assert g == pytest.approx(d * 4 / 8)  # the A-minus-B difference times B's share
+    assert lo <= g <= hi and ts.gain_boot(ok, a, 500, 1) == (g, lo, hi)
+
+
+def test_did_boot_numeric_path():
+    # round 1: A 5/6 vs B 1/6 (+4/6); round 2: A 3/6 vs B 3/6 (0)
+    ok = [1, 1, 1, 1, 1, 0] + [1, 0, 0, 0, 0, 0] + [1, 1, 1, 0, 0, 0] * 2
+    a = ([True] * 6 + [False] * 6) * 2
+    grp = ["1"] * 12 + ["2"] * 12
+    d, lo, hi = ts.did_boot(ok, a, grp, 1000, 5)
+    assert d == pytest.approx(4 / 6)
+    assert lo < d < hi and lo > -1 and hi < 2
+    assert ts.did_boot(ok, a, grp, 1000, 5) == (d, lo, hi)
+    assert ts.did_boot(ok, [not x for x in a], grp, 1000, 5)[0] == pytest.approx(-4 / 6)
+    assert ts.did_boot(ok, a, ["2"] * 12 + ["1"] * 12, 1000, 5)[0] == pytest.approx(-4 / 6)  # level order matters
+
+
+def test_slice_rows_blanks_thin_cells():
+    g = pd.DataFrame({"label_uid": [f"city-a:{i}" for i in range(7)], "ai_vote": "Disagree",
+                      "label_type": "CurbRamp", "severity": ["1"] * 4 + ["2"] * 2 + ["3"],
+                      "tags": ["narrow"] * 4 + [""] * 3, "expert": ["incorrect"] * 3 + ["correct"] * 4,
+                      "rule_margin": "incorrect", "rule_symmetric3": ["incorrect"] * 3 + [""] * 4})
+    train = pd.DataFrame({"label_type": ["CurbRamp"] * 3, "severity": ["1", "1", "2"], "tags": ["[]"] * 3})
+    s = ts.slice_rows(g, train, min_n=3)
+    sev = {r["slice"]: r for r in s["ai_precision_severity"]}
+    assert sev["1"]["rate"] == pytest.approx(0.75) and sev["1"]["train"] == 2
+    assert sev["2"]["rate"] is None and (sev["2"]["k"], sev["2"]["n"]) == (0, 2) and sev["2"]["lo"] is None
+    tag = {r["slice"]: r for r in s["ai_precision_tag"]}
+    assert tag["narrow"]["rate"] == pytest.approx(0.75) and tag["(none)"]["rate"] == pytest.approx(0.0)
+    p1 = {r["slice"]: r for r in s["p1_severity"]}
+    assert p1["1"]["kept"]["rate"] == pytest.approx(1.0) and p1["1"]["dropped"]["rate"] is None
+    assert p1["1"]["diff"] is None and p1["1"]["fisher_p"] is None
+    text = ts.render_slices({"slices": s})
+    assert "| 1 | 3/3 (100.0%" in text and "n 1 |" in text  # a thin group shows its size, not k/n
+
+
+def test_ranking_rows_direction():
+    # train rows: wrong `incorrect` targets have a low p_incorrect, wrong `correct` targets a high one;
+    # AI Disagrees: wrong margin targets have the smaller lead. Every score separates perfectly, so AUC is 1.
+    inc_p = [0.1, 0.2, 0.3] + [0.6, 0.7, 0.8, 0.9]
+    cor_p = [0.9, 0.8] + [0.1, 0.2]
+    tr = pd.DataFrame({"train_row": True, "ai_vote": "Agree", "rule_margin": "",
+                       "target": ["incorrect"] * 7 + ["correct"] * 4, "oof_p_incorrect": inc_p + cor_p,
+                       "wrong": [True] * 3 + [False] * 4 + [True] * 2 + [False] * 2, "h_agree": 0, "h_dis": 0,
+                       "expert": "", "pano_id": [f"T{i}" for i in range(11)]})
+    dis = pd.DataFrame({"train_row": False, "ai_vote": "Disagree", "target": "", "oof_p_incorrect": np.nan,
+                        "wrong": False,
+                        "rule_margin": ["incorrect"] * 5 + ["correct"] * 4,
+                        "h_agree": [0, 0, 0, 0, 0] + [3, 3, 6, 6], "h_dis": [2, 2, 5, 5, 5] + [0, 0, 0, 0],
+                        "expert": ["correct"] * 2 + ["incorrect"] * 3 + ["incorrect"] * 2 + ["correct"] * 2,
+                        "pano_id": [f"D{i}" for i in range(9)]})
+    rows = ts.ranking_rows(pd.concat([tr, dis], ignore_index=True), n_boot=0)
+    got = {(r["score"].split()[0], r["target_class"]): r for r in rows}
+    for key, n, nw in ((("oof", "incorrect"), 7, 3), (("oof", "correct"), 4, 2), (("vote", "incorrect"), 5, 2),
+                       (("vote", "correct"), 4, 2)):
+        assert (got[key]["n"], got[key]["n_wrong"]) == (n, nw), key
+        assert got[key]["auc"] == pytest.approx(1.0), key
+        assert got[key]["lo"] is None
+
+
+def test_build_frame_refuses_a_wrong_split_root_and_no_flags(tmp_path):
+    g = _gold()
+    with pytest.raises(FileNotFoundError, match="--split-root"):
+        ts.build_frame(g, _pool(g), str(tmp_path / "nowhere"))
+    root = _split_root(tmp_path, g)
+    with pytest.raises(FileNotFoundError, match="--split-root"):
+        ts.check_b(ts.build_frame(g, _pool(g), root), str(tmp_path / "nowhere"))
+    g2 = g.assign(cl_flagged=False)
+    with pytest.raises(ValueError, match="flagged"):
+        ts.build_frame(g2, _pool(g2), root)
+
+
+def test_score_cli_names_a_missing_input(tmp_path, monkeypatch):
+    monkeypatch.setattr(ts, "city_lists", lambda: LISTS)
+    args = _cli_inputs(tmp_path, _gold())
+    args[args.index("--gold") + 1] = str(tmp_path / "no-gold.csv")
+    with pytest.raises(SystemExit, match="input not found: --gold"):
+        ts.main(args + ["--out-dir", str(tmp_path / "p"), "--out", str(tmp_path / "pub")])
+
+
 def _weights():
     return {"1": {("voted_disagree", t): 100 for t in ts.LABEL_TYPES},
             "2": {(c, s, t): 50 for c in ("city-a", "city-b") for s in ("margin_incorrect",) for t in ts.LABEL_TYPES}}

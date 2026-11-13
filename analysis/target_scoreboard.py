@@ -21,9 +21,9 @@ Two contrasts were fixed in ``docs/target-scoreboard-2026-11.md`` before any num
 * **P2** confident-learning flagged against unflagged, on the decided round-3 train rows: the share of wrong
   targets among flagged rows minus among unflagged rows.
 
-Both are reported per round before the pooled row, with Wilson intervals per group, a label-level bootstrap
-interval for the difference (``N_BOOT`` resamples) and a two-sided Fisher exact p. Every other table is
-descriptive.
+The pooled row of each is the pre-stated estimate (``ROLES``); it is printed after the per-round rows and a
+heterogeneity check, which are its check. Each has Wilson intervals per group, a label-level bootstrap interval for
+the difference (``N_BOOT`` resamples) and a two-sided Fisher exact p. Every other table is descriptive.
 
 Stages (subcommands)
 --------------------
@@ -157,6 +157,31 @@ def diff_boot(ok, in_a, n_boot=N_BOOT, seed=0):
     keep = (na > 0) & (nb > 0)
     vals = (o * ga).sum(1)[keep] / na[keep] - (o * ~ga).sum(1)[keep] / nb[keep]
     return d, float(np.percentile(vals, 2.5)), float(np.percentile(vals, 97.5))
+
+
+def gain_boot(ok, in_a, n_boot=N_BOOT, seed=0):
+    """``(gain, lo, hi)``: mean of ``ok`` in group A minus in all items (A and B together), with a 95% percentile
+    interval from resampling items with replacement. This is what keeping only A changes against keeping everything;
+    it equals the A-minus-B difference times B's share of the items, so it is the same comparison on another scale.
+    None as in :func:`diff_boot`.
+
+    >>> g, lo, hi = gain_boot([1, 1, 0, 0, 0, 1], [True, True, True, False, False, False], n_boot=0)
+    >>> round(g, 3), lo, hi
+    (0.167, None, None)
+    """
+    ok, a = np.asarray(ok, float), np.asarray(in_a, bool)
+    if not a.any() or a.all():
+        return None, None, None
+    g = float(ok[a].mean() - ok.mean())
+    if not n_boot:
+        return g, None, None
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, len(ok), size=(n_boot, len(ok)))
+    ga, o = a[idx], ok[idx]
+    na = ga.sum(1)
+    keep = (na > 0) & (na < len(ok))
+    vals = (o * ga).sum(1)[keep] / na[keep] - o.mean(1)[keep]
+    return g, float(np.percentile(vals, 2.5)), float(np.percentile(vals, 97.5))
 
 
 def did_boot(ok, in_a, group, n_boot=N_BOOT, seed=0):
@@ -313,6 +338,23 @@ def oof_scores(split_root, label_type):
                          "nt_flagged": n.flagged.isin(["1", "True", "true"])})
 
 
+def split_files_needed(split_root, label_type):
+    """The round-3 files one type needs: its split, its out-of-fold scores and every variant's split."""
+    return [os.path.join(split_root, label_type, rel)
+            for rel in ["split.csv", "cl/noisy_targets.csv"] + [f"cl/{v}/split.csv" for v in VARIANTS]]
+
+
+def check_split_root(g, split_root, types=LABEL_TYPES):
+    """Raise ``FileNotFoundError`` naming the missing files when a type that has gold train rows lacks any of
+    :func:`split_files_needed` (a wrong ``--split-root`` would otherwise skip every type and surface later as a
+    misleading disagreement between the flags and the cl-drop split, or pass on a gold set with no flagged row)."""
+    missing = [p for t in types if ((g.label_type == t) & g.train_row.astype(bool)).any()
+               for p in split_files_needed(split_root, t) if not os.path.exists(p)]
+    if missing:
+        raise FileNotFoundError(f"--split-root {split_root}: {len(missing)} round-3 file(s) missing for types with "
+                                f"gold train rows, e.g. {missing[:3]}")
+
+
 def build_frame(gold, pool, split_root, expert_votes="remove", types=LABEL_TYPES):
     """The decided gold items, one row each, with the rule verdicts from their tallies, the round-3 train target,
     the out-of-fold score and what each split variant did to the row. ``expert_votes`` is ``remove`` (the
@@ -322,6 +364,11 @@ def build_frame(gold, pool, split_root, expert_votes="remove", types=LABEL_TYPES
     if expert_votes not in ("remove", "keep"):
         raise ValueError(f"expert_votes must be remove or keep, not {expert_votes!r}")
     raw = gold[gold.decided]
+    check_split_root(raw, split_root, types)
+    tr = raw.train_row.astype(bool)
+    if tr.any() and not raw.cl_flagged[tr].astype(bool).any():
+        raise ValueError(f"none of the {int(tr.sum())} decided gold train rows is flagged by confident learning, so "
+                         "P2 has no flagged group; check the gold table's cl_flagged and --split-root")
     g = remove_expert_votes(raw, pool)
     if expert_votes == "keep":  # the tallies as pulled; n_expert_votes still counts the votes inside them
         for c in ("h_agree", "h_dis", "h_unsure"):
@@ -337,7 +384,7 @@ def build_frame(gold, pool, split_root, expert_votes="remove", types=LABEL_TYPES
         g[f"touch_{c}"] = False
     for t in types:
         idx = g.index[(g.label_type == t) & g.train_row]
-        if not len(idx) or not os.path.exists(os.path.join(split_root, t, "split.csv")):
+        if not len(idx):  # check_split_root has made sure every type with train rows has its files
             continue
         o = oof_scores(split_root, t)
         m = g.loc[idx, ["label_uid"]].merge(o, on="label_uid", how="left", validate="one_to_one")
@@ -360,9 +407,10 @@ def check_b(g, split_root, types=LABEL_TYPES):
     """Check B: the detector counts on the train rows equal ``confident_learning.expert_agreement`` summed over
     types, for every variant. Raises on a difference; returns the summed records."""
     gold_cl = g[["label_uid", "expert"]].rename(columns={"expert": "verdict"})
+    check_split_root(g, split_root, types)
     tot = {}
     for t in types:
-        if not os.path.exists(os.path.join(split_root, t, "split.csv")):
+        if not ((g.label_type == t) & g.train_row).any():
             continue
         for r in cl.expert_agreement(split_root, t, VARIANTS, gold_cl):
             s = tot.setdefault(r["variant"], {k: 0 for k in r if k != "variant"})
@@ -413,12 +461,21 @@ def by_round(df, fn, seed_name, seed=0):
 def p1_rows(g, rule="symmetric3", n_boot=N_BOOT, seed=0):
     """P1 (``rule="symmetric3"``) and its descriptive twin (``unanimous3``): on decided AI Disagrees whose margin
     target is ``incorrect``, the expert-incorrect share among the rows ``rule`` keeps (A) against the rows it drops
-    (B), per round and pooled, plus the heterogeneity check (round 1's difference minus round 2's)."""
+    (B), per round and pooled, plus the heterogeneity check (round 1's difference minus round 2's). Each row also
+    carries ``gain``: kept minus all of the margin rule's rows (:func:`gain_boot`), what applying ``rule`` changes."""
     x = g[(g.ai_vote == "Disagree") & (g.rule_margin == "incorrect")]
     ok = (x.expert == "incorrect").to_numpy()
     kept = (x[f"rule_{rule}"] == "incorrect").to_numpy()
     out = by_round(x.assign(_ok=ok, _kept=kept),
                    lambda f, s: contrast(f._ok.to_numpy(), f._kept.to_numpy(), n_boot, s), f"P1/{rule}", seed)
+
+    def gain(f, s):
+        k, lo, hi = gain_boot(f._ok.to_numpy(), f._kept.to_numpy(), n_boot, s)
+        if min(int(f._kept.sum()), int((~f._kept).sum())) < MIN_CELL:
+            lo = hi = None
+        return {"gain": k, "lo": lo, "hi": hi}
+    for k, v in by_round(x.assign(_ok=ok, _kept=kept), gain, f"P1/{rule}/gain", seed).items():
+        out[k]["gain"] = v
     out["heterogeneity"] = dict(zip(("did", "lo", "hi"), did_boot(ok, kept, x["round"].to_numpy(), n_boot,
                                                                    sl.slice_seed(seed, f"P1/{rule}/did"))))
     return out
@@ -540,11 +597,81 @@ def round_weights(r1_manifest, r2_recount, r2_design, schema_city):
     return {"1": w1, "2": w2}
 
 
+MIN_SHARED_CELLS = 2
+"""A population-weighted kept-minus-dropped difference needs at least this many cells in which both groups reach
+``MIN_CELL``; with one shared cell the "weighted" difference is that one cell's raw difference."""
+
+
+def _ac_var(k, n):
+    """Variance of a cell rate with the Agresti-Coull adjustment used by ``ai_disagree_relabel.weighted_rate``."""
+    p = (k + 2) / (n + 4)
+    return p * (1 - p) / n
+
+
+def shared_cell_diff(x, cell_cols, weights, domain, in_a, success, min_cell=MIN_CELL,
+                     min_shared=MIN_SHARED_CELLS):
+    """Population-weighted A-minus-B difference of ``success`` inside ``domain``, over the cells where both A and B
+    hold at least ``min_cell`` items, so both groups are averaged over the same cells. Each shared cell is weighted
+    by its population times the domain's share of its decided items (as :func:`poststratified`), renormalised over
+    the shared cells. The interval is ``diff +/- 1.96 se`` with ``se`` from the stratified variance of both groups
+    (Agresti-Coull cell rates, as ``weighted_rate``), never clipped, so a cell at 0% or 100% does not shrink it.
+
+    Returns counts always: ``cells`` (cells with weight and any domain item), ``cells_a`` / ``cells_b`` (cells where
+    that group reaches ``min_cell``), ``cells_shared`` and ``weight_share`` (the shared cells' share of the domain's
+    population weight). The rates and the difference are None, and ``estimable`` False, when fewer than
+    ``min_shared`` cells are shared.
+
+    >>> x = pd.DataFrame({"t": ["A"] * 10 + ["B"] * 10, "a": ([True] * 5 + [False] * 5) * 2,
+    ...                   "ok": [True] * 5 + [True, True, False, False, False] + [True] * 4 + [False] + [False] * 5})
+    >>> r = shared_cell_diff(x, ["t"], {("A",): 100, ("B",): 300}, pd.Series(True, index=x.index), x.a, x.ok,
+    ...                      min_shared=2)
+    >>> r["estimable"], round(r["diff"], 3), r["cells_shared"]
+    (True, 0.75, 2)
+    """
+    per, w = {}, {}
+    out = {"cells": 0, "cells_a": 0, "cells_b": 0, "cells_shared": 0}
+    tot_w = 0.0
+    for key, c in x.groupby(cell_cols, sort=True):
+        key = key if isinstance(key, tuple) else (key,)
+        dom = domain.loc[c.index]
+        n_dom = int(dom.sum())
+        N = weights.get(key, 0)
+        if not N or not n_dom:
+            continue
+        out["cells"] += 1
+        wk = N * n_dom / len(c)
+        tot_w += wk
+        a = dom & in_a.loc[c.index]
+        b = dom & ~in_a.loc[c.index]
+        s = success.loc[c.index]
+        na, nb = int(a.sum()), int(b.sum())
+        out["cells_a"] += na >= min_cell
+        out["cells_b"] += nb >= min_cell
+        if na >= min_cell and nb >= min_cell:
+            per[key] = (int((s & a).sum()), na, int((s & b).sum()), nb)
+            w[key] = wk
+    out["cells_shared"] = len(per)
+    out["weight_share"] = (sum(w.values()) / tot_w) if tot_w else None
+    out["n_a"] = int(sum(v[1] for v in per.values()))
+    out["n_b"] = int(sum(v[3] for v in per.values()))
+    out["estimable"] = len(per) >= min_shared
+    if not out["estimable"]:
+        return {**out, "rate_a": None, "rate_b": None, "diff": None, "se": None, "lo": None, "hi": None}
+    tw = sum(w.values())
+    wn = {k: v / tw for k, v in w.items()}
+    ra = sum(wn[k] * per[k][0] / per[k][1] for k in per)
+    rb = sum(wn[k] * per[k][2] / per[k][3] for k in per)
+    se = math.sqrt(sum(wn[k] ** 2 * (_ac_var(per[k][0], per[k][1]) + _ac_var(per[k][2], per[k][3])) for k in per))
+    d = ra - rb
+    return {**out, "rate_a": ra, "rate_b": rb, "diff": d, "se": se, "lo": d - 1.96 * se, "hi": d + 1.96 * se}
+
+
 def weighted_p1(g, weights, rule="symmetric3"):
-    """Population-weighted P1 shares per round: the expert-incorrect share of the margin-``incorrect`` AI Disagrees
-    (all, kept by ``rule``, dropped), and kept minus dropped with a normal-approximation interval from the two
-    weighted intervals (disjoint items, so the variances add). Round 1 is weighted within its ``voted_disagree``
-    group per type, round 2 within its ``margin_incorrect`` stratum per city and type."""
+    """Population-weighted P1 per round. ``all``: the expert-incorrect share of the margin-``incorrect`` AI
+    Disagrees (:func:`poststratified`). ``shared``: kept by ``rule`` minus dropped, over only the cells where both
+    groups reach ``MIN_CELL`` (:func:`shared_cell_diff`); not estimable when fewer than ``MIN_SHARED_CELLS`` cells
+    are shared. Round 1 is weighted within its ``voted_disagree`` group per type, round 2 within its
+    ``margin_incorrect`` stratum per city and type."""
     out = {}
     for r in ("1", "2"):
         x = g[(g["round"] == r) & (g.ai_vote == "Disagree")]
@@ -557,16 +684,7 @@ def weighted_p1(g, weights, rule="symmetric3"):
         mi = x.rule_margin == "incorrect"
         ok = x.expert == "incorrect"
         kept = x[f"rule_{rule}"] == "incorrect"
-        res = {"all": poststratified(x, cells, w, mi, ok), "kept": poststratified(x, cells, w, mi & kept, ok),
-               "dropped": poststratified(x, cells, w, mi & ~kept, ok)}
-        k, d = res["kept"], res["dropped"]
-        if k["rate"] is not None and d["rate"] is not None:
-            se = math.hypot((k["hi"] - k["lo"]) / 3.92, (d["hi"] - d["lo"]) / 3.92)
-            diff = k["rate"] - d["rate"]
-            res["diff"] = {"diff": diff, "lo": diff - 1.96 * se, "hi": diff + 1.96 * se}
-        else:
-            res["diff"] = {"diff": None, "lo": None, "hi": None}
-        out[r] = res
+        out[r] = {"all": poststratified(x, cells, w, mi, ok), "shared": shared_cell_diff(x, cells, w, mi, kept, ok)}
     return out
 
 
@@ -596,6 +714,10 @@ def slice_rows(g, train, min_n=SLICE_MIN_N):
         for name, m in (("kept", f.kept), ("dropped", ~f.kept)):
             k, n = int((f.expert[m] == "incorrect").sum()), int(m.sum())
             row[name] = rate(k, n) if n >= min_n else {"n": n, "k": k, "rate": None, "lo": None, "hi": None}
+        kp, dr = row["kept"], row["dropped"]
+        both = kp["rate"] is not None and dr["rate"] is not None
+        row["diff"] = (kp["rate"] - dr["rate"]) if both else None
+        row["fisher_p"] = (fisher_exact(kp["k"], kp["n"] - kp["k"], dr["k"], dr["n"] - dr["k"]) if both else None)
         rows.append(row)
     out["p1_severity"] = sorted(rows, key=lambda d: _slice_key("severity", d))
     return out
@@ -660,6 +782,11 @@ def _p(r):
     return f"{r['k']}/{r['n']} ({100 * r['rate']:.1f}% [{100 * r['lo']:.1f}, {100 * r['hi']:.1f}])"
 
 
+def _pn(r):
+    """:func:`_p`, or ``n <size>`` alone when the rate is blank (a thin cell's k/n invites reading a rate)."""
+    return f"n {r['n']}" if r["rate"] is None else _p(r)
+
+
 def _pp(d, lo, hi):
     if d is None:
         return "n/a"
@@ -671,22 +798,36 @@ def _ps(x):
 
 
 ROUND_NAMES = {"1": "round 1", "2": "round 2", "pooled": "pooled (sample rate; descriptive)"}
+POOLED_NAMES = {"primary": "**pooled (primary estimate)**", "descriptive": ROUND_NAMES["pooled"]}
+ROLES = {"P1": "primary", "P2": "primary", "P1_unanimous3": "descriptive"}
+"""Which pooled row is the pre-stated estimate. The primaries' pooled rows are the contrasts the plan review fixed
+(and computed by hand); the per-round rows above them are its check, beside the heterogeneity check."""
 
 
-def contrast_table(rows, a_name, b_name, extra=False):
+def contrast_table(rows, a_name, b_name, extra=False, role="descriptive"):
     head = f"| Rows | {a_name} | {b_name} | {a_name.split(':')[0]} minus {b_name.split(':')[0]} [95%] | Fisher p |"
     lines = [head + (" Recall | False alarms |" if extra else ""),
              "|---|---|---|---|---:|" + ("---|---|" if extra else "")]
     for k in ("1", "2", "pooled"):
         r = rows[k]
-        line = f"| {ROUND_NAMES[k]} | {_p(r['a'])} | {_p(r['b'])} | {_pp(r['diff'], r['lo'], r['hi'])} | " \
+        name = POOLED_NAMES[role] if k == "pooled" else ROUND_NAMES[k]
+        line = f"| {name} | {_p(r['a'])} | {_p(r['b'])} | {_pp(r['diff'], r['lo'], r['hi'])} | " \
                f"{_ps(r['fisher_p'])} |"
         if extra:
             line += f" {_p(r['recall'])} | {_p(r['false_alarm'])} |"
         lines.append(line)
     h = rows["heterogeneity"]
-    lines += ["", f"Heterogeneity check (round 1's difference minus round 2's, resampled within round): "
-                  f"{_pp(h['did'], h['lo'], h['hi'])}."]
+    het = _pp(h["did"], h["lo"], h["hi"])
+    if h["did"] is None:
+        small = min(min(rows[k]["a"]["n"], rows[k]["b"]["n"]) for k in ("1", "2"))
+        het = f"not computable (a group in one round has {small} rows; it needs {MIN_CELL})"
+    lines += ["", f"Heterogeneity check (round 1's difference minus round 2's, resampled within round): {het}."]
+    if all("gain" in rows[k] for k in ("1", "2", "pooled")):
+        lines += ["", "Kept minus all rows of the margin rule (what applying the stricter rule changes in the share "
+                      "of `incorrect` targets the expert confirms; P1 rescaled by the dropped share): " +
+                  "; ".join(f"{ROUND_NAMES[k] if k != 'pooled' else 'pooled'} "
+                            f"{_pp(rows[k]['gain']['gain'], rows[k]['gain']['lo'], rows[k]['gain']['hi'])}"
+                            for k in ("1", "2", "pooled")) + "."]
     return "\n".join(lines)
 
 
@@ -733,27 +874,44 @@ def render_pool(j):
 
 def render_primary(j):
     p = j["primary"]
+    roles = p["roles"]
+    f1, f2 = p["P2"]["1"]["a"]["n"], p["P2"]["2"]["a"]["n"]
     return "\n".join([
         "**P1. `symmetric` kept against dropped** (decided AI Disagrees whose margin target is `incorrect`; outcome: "
-        "the expert says incorrect):", "",
-        contrast_table(p["P1"], "kept: net Disagree >= 3", "dropped: net Disagree = 2"), "",
+        f"the expert says incorrect; pooled row: {roles['P1']}):", "",
+        contrast_table(p["P1"], "kept: net Disagree >= 3", "dropped: net Disagree = 2", role=roles["P1"]), "",
         "**P2. Confident-learning flag** (decided round-3 train rows, both target classes; outcome: the target "
-        "differs from the expert):", "",
-        contrast_table(p["P2"], "flagged", "unflagged", extra=True), "",
-        "Descriptive twin of P1, `unanimous3` (same rows):", "",
-        contrast_table(p["P1_unanimous3"], "kept: unanimous", "dropped")])
+        f"differs from the expert; pooled row: {roles['P2']}):", "",
+        contrast_table(p["P2"], "flagged", "unflagged", extra=True, role=roles["P2"]), "",
+        f"The pooled P2 is mostly round 2: {f2} of its {f1 + f2} flagged rows are from round 2, and with {f1} flagged "
+        "round-1 rows the rounds cannot be compared.", "",
+        f"Descriptive twin of P1, `unanimous3` (same rows; pooled row: {roles['P1_unanimous3']}):", "",
+        contrast_table(p["P1_unanimous3"], "kept: unanimous", "dropped", role=roles["P1_unanimous3"])])
 
 
 def render_weighted(j):
-    lines = ["| Round | margin-`incorrect` AI Disagrees | kept by `symmetric` | dropped | kept minus dropped "
-             "[95%, normal approx.] | cells left without weight (n < " + str(MIN_CELL) + ") |", "|---|---|---|---|---|---|"]
+    lines = ["| Round | margin-`incorrect` AI Disagrees, expert says incorrect (cells without weight) | cells with "
+             f">= {MIN_CELL} kept / >= {MIN_CELL} dropped / both, of all | kept minus dropped over the shared cells "
+             "[95%, unclipped normal approx.] |", "|---|---|---|---|"]
     for r in ("1", "2"):
         w = j["weighted"][r]
-        f = (lambda x: "unestimable" if x["rate"] is None else
-             f"{100 * x['rate']:.1f}% [{100 * x['lo']:.1f}, {100 * x['hi']:.1f}] (n {x['n']})")
-        exc = "; ".join(f"{k}: {len(w[k]['excluded'])}" for k in ("all", "kept", "dropped"))
-        lines.append(f"| {r} | {f(w['all'])} | {f(w['kept'])} | {f(w['dropped'])} | "
-                     f"{_pp(w['diff']['diff'], w['diff']['lo'], w['diff']['hi'])} | {exc} |")
+        a, s = w["all"], w["shared"]
+        all_ = ("not estimable" if a["rate"] is None else
+                f"{100 * a['rate']:.1f}% [{100 * a['lo']:.1f}, {100 * a['hi']:.1f}] (n {a['n']}; "
+                f"{len(a['excluded'])} without weight)")
+        cells = f"{s['cells_a']} / {s['cells_b']} / {s['cells_shared']}, of {s['cells']}"
+        if s["estimable"]:
+            diff = (f"kept {100 * s['rate_a']:.1f}% (n {s['n_a']}), dropped {100 * s['rate_b']:.1f}% (n {s['n_b']}): "
+                    f"{_pp(s['diff'], s['lo'], s['hi'])}; shared cells hold {100 * s['weight_share']:.0f}% of the "
+                    "population weight")
+        else:
+            diff = (f"not estimable: {s['cells_shared']} shared cell{'s' if s['cells_shared'] != 1 else ''} "
+                    f"(needs {MIN_SHARED_CELLS})")
+        lines.append(f"| {r} | {all_} | {cells} | {diff} |")
+    lines += ["", f"A kept-minus-dropped difference is computed only over cells where both groups hold at least "
+                  f"{MIN_CELL} rows, so the two shares average the same cells; with fewer than {MIN_SHARED_CELLS} "
+                  "such cells it is not estimable. Its interval uses the stratified variance of both groups, not "
+                  "clipped at 0 or 100%."]
     return "\n".join(lines)
 
 
@@ -820,12 +978,14 @@ def render_slices(j):
         out += ["| Type | Slice | Expert says incorrect | Train rows |", "|---|---|---|---:|"]
         out += [f"| {r['label_type']} | {r['slice']} | {_p(r)} | {r['train']:,} |" for r in shown]
         small = [r for r in rows if r["n"] < mn]
-        out += ["", f"Below {mn} items ({len(small)} cells, counts only): " +
-                "; ".join(f"{r['label_type']} {r['slice']} {r['k']}/{r['n']}" for r in small) + ".", ""]
+        out += ["", f"Below {mn} items: {len(small)} cells holding {sum(r['n'] for r in small)} items, not shown "
+                    "(no rate is read from them; their counts are in `scoreboard.json`).", ""]
     rows = s["p1_severity"]
-    out += [f"**P1 by severity** (types pooled; rates blank under {mn} items in a group)", "",
-            "| Severity | kept by `symmetric` | dropped |", "|---|---|---|"]
-    out += [f"| {r['slice']} | {_p(r['kept'])} | {_p(r['dropped'])} |" for r in rows]
+    out += [f"**P1 by severity** (types pooled; a group under {mn} items shows its size only)", "",
+            "| Severity | kept by `symmetric` | dropped | kept minus dropped (Fisher p) |", "|---|---|---|---|"]
+    out += [f"| {r['slice']} | {_pn(r['kept'])} | {_pn(r['dropped'])} | " +
+            ("" if r["diff"] is None else f"{_pp(r['diff'], None, None)} ({_ps(r['fisher_p'])})") + " |"
+            for r in rows]
     if not any(r["kept"]["n"] >= mn and r["dropped"]["n"] >= mn for r in rows):
         out += ["", f"_No severity reaches {mn} items in both groups._"]
     return "\n".join(out).rstrip()
@@ -983,7 +1143,7 @@ def score(gold, pool, split_root, weights, n_boot=N_BOOT, seed=0):
     j = {"gold_counts": gold_counts(gold, g_adj, g, g_keep),
          "pool": pr,
          "primary": {"P1": p1_rows(g, "symmetric3", n_boot, seed), "P2": p2_rows(g, "cl-drop", None, n_boot, seed),
-                     "P1_unanimous3": p1_rows(g, "unanimous3", n_boot, seed)},
+                     "P1_unanimous3": p1_rows(g, "unanimous3", n_boot, seed), "roles": dict(ROLES)},
          "weighted": weighted_p1(g, weights),
          "rules": {"ai_disagree": rule_rows(g, "ai_disagree"), "decoys": rule_rows(g, "decoys")},
          "detector": det,
@@ -1021,6 +1181,13 @@ def dumps(j):
 
 def cmd_score(args):
     adj.refuse_in_checkout(args.out_dir, "the per-label verdicts")
+    missing = [f"--{k.replace('_', '-')} {p}" for k, p in (("gold", args.gold), ("pool", args.pool),
+                                                         ("r1_manifest", args.r1_manifest),
+                                                         ("r2_recount", args.r2_recount),
+                                                         ("r2_design", args.r2_design), ("cityparams", args.cityparams))
+               if not os.path.isfile(p)] + ([] if os.path.isdir(args.split_root) else [f"--split-root {args.split_root}"])
+    if missing:
+        sys.exit("input not found: " + "; ".join(missing))
     gold = adj.load_gold(args.gold)
     pool = load_pool(args.pool)
     schema_city = adj.schema_city_map(open(args.cityparams).read())
