@@ -496,11 +496,11 @@ prediction files. `gate2` folds: `folds.csv` sha256 unchanged from step (a) (`89
 **Results.**
 
 <!-- round-b-results:start -->
-250 items rated (13 Unsure, 2 unanswered). Precision cells are correct / decided = rate (Wilson 95 % lower bound); Unsure votes are outside the denominator.
+250 items, 248 rated (13 Unsure, 2 unanswered). Precision cells are correct / decided = rate (Wilson 95 % lower bound); Unsure votes are outside the denominator.
 
-**Bar:** in the pass stratum, 142 / 144 = 0.986 (0.951); a lower bound >= 0.92 on >= 100 decided labels is met. **PASSES.** Reweighted to the cities' population: 0.998 [0.995, 1.000] (the interval holds the weights fixed, so it is somewhat narrow). With every Unsure in the pass stratum counted as incorrect: 142 / 149 = 0.953 (0.906).
+**Bar:** in the pass stratum, 142 / 144 = 0.986 (0.951); a lower bound >= 0.92 on >= 100 decided labels is met. **PASSES.** Reweighted to the cities' population: 0.998 (Wilson 95 % lower bound 0.953 at the weights' effective sample size of 84; no bootstrap interval is given, because resampling cannot vary a cell with no misses). With every Unsure in the pass stratum counted as incorrect: 142 / 149 = 0.953 (0.906).
 
-Share of correct NoSidewalk labels in these cities' eligible population: 0.878 [0.819, 0.932] (the deployment prior assumes 0.831 over every label with a face; this population leaves out the rater's own labels and trained faces).
+Share of correct NoSidewalk labels in these cities' eligible population: 0.878 [0.819, 0.932] (the deployment prior assumes 0.831 over every label with a face; this population leaves out the rater's own labels and trained faces. The interval resamples within (city, stratum) cells with the weights fixed, so it is too narrow where a cell has no misses, and Unsure and unanswered items drop out with their weight).
 
 | stratum | items | Unsure | correct / decided (Wilson 95 % lower) |
 |---|---|---|---|
@@ -538,6 +538,8 @@ Per fold model, on its own gate verdicts (weights are the items' inverse inclusi
 | street has a sidewalk | 29 | 14 / 14 = 1.000 (0.785) | 0.849 | 93 |
 | street has no sidewalks | 127 | 95 / 95 = 1.000 (0.961) | 0.949 | 278 |
 
+Slice population shares rest on few items with unequal weights and carry no interval; read them as direction only.
+
 Crowd majority (human votes at the pool pull) against the expert, decided items:
 
 | crowd | expert correct | expert incorrect |
@@ -551,26 +553,42 @@ Crowd majority (human votes at the pool pull) against the expert, decided items:
 expert called 142 correct (0.986, Wilson 95 % lower bound 0.951), against a bar of 0.92 on at least 100. Both
 misses are in Tucson (29 of 31), one tagged "ends abruptly" and "gravel/dirt road", one "shared pedestrian/car
 space"; Chicago (51 of 51), Oradell (33 of 33) and CDMX (29 of 29) have none. Chicago and Tucson were never
-trained on, and Chicago alone clears 0.92 (lower bound 0.930); the other three cities are too small to clear it
-alone. What qualifies the result:
+trained on. The bar is met pooled over the four cities, not in each: Chicago alone clears 0.92 (lower bound
+0.930), Oradell and CDMX are too small to clear it alone, and Tucson, with both misses (29 / 31 = 0.935, lower
+bound 0.793), gives no evidence that the gate holds there. What qualifies the result:
 
 - **Unsure votes.** Five pass-stratum labels were rated Unsure (three in CDMX, two in Chicago). The bar leaves
   them out, as fixed in advance. Counting all five as incorrect gives 142 / 149 = 0.953 with a lower bound of
-  0.906, under 0.92. The verdict therefore depends on Unsure not meaning wrong.
+  0.906, under 0.92. The verdict survives up to three of the five being wrong (lower bound 0.923 at three,
+  0.914 at four). Unsure is rarer in the pass stratum (5 of 150) than among the labels the model calls incorrect
+  (6 of 50).
+- **The population-weighted rate is 0.998, with a lower bound of 0.953** (Wilson at the weights' effective
+  sample size of about 84). It is not the bar; it is high because Chicago holds three quarters of the passing
+  population and has no misses.
 - **Two labels could not be rated.** Gallery reported two CDMX labels as unavailable (one pass, one
   model-incorrect), so 248 of 250 have a vote. They are outside every denominator.
 - **This is a 3-of-5 vote of the fold models, not the model that would ship.** Per model, the gate passes 84 to
-  158 of the rated items at 0.975 to 1.000 unweighted; fold 4 is the weakest ranker (within-city AUC 0.753
-  against 0.926 to 0.943 for the others) and still holds 0.975 on its own passes.
+  158 of the rated items at 0.975 to 1.000 unweighted; fold 4 is the weakest ranker (weighted within-city AUC
+  0.753 against 0.926 to 0.943 for the others; low in three of the four cities and driven by a few heavily
+  weighted below-gate items) and has the lowest weighted precision on its own passes (0.963; 0.975 unweighted).
+  No AUC here carries an interval.
 - **The order of the strata is as designed.** Agree below the gate is 42 / 48 = 0.875 and the labels the model
   calls incorrect are 20 / 43 = 0.465, so the model's Disagree is right about half the time here. Disagree stays
   held back.
 - **The prior.** The share of correct labels in these four cities' eligible population is 0.878 [0.819, 0.932],
-  against the 0.831 the deployment prior assumes; the interval contains it. It differs by city: Oradell 0.981,
-  Chicago 0.925, Tucson 0.788, CDMX 0.713. The rater found CDMX far harder to judge than the other three.
+  against the 0.831 the deployment prior assumes; the interval contains it, though it is a different population
+  from the prior's (the rater's own labels and trained faces are left out) and the interval is too narrow.
+  Unsure and unanswered items drop out with their weight; spreading that weight over the decided items of the
+  same cell gives 0.869. It differs by city: Oradell 0.981, Chicago 0.925, Tucson 0.788, CDMX 0.713. CDMX drew
+  the highest Unsure share (5 of 53 answered; Chicago 6 of 90), and the rater remarked that it was far harder to
+  judge than the other three.
+- **Tags.** The tag table's population shares are unstable: "shared pedestrian/car space" (0.328) rests on 20
+  decided items with an effective sample size of about 6.
 - **One rater.** There is no second expert and no measure of rater agreement in this round. Every vote was cast
-  after the label pull of 2026-11-11 (checked against `label_validation.end_timestamp`), so no earlier vote of
-  the rater's is counted.
+  after the label pull of 2026-11-11, so no earlier vote of the rater's is counted: a read-only query of
+  `label_validation.end_timestamp` for the rater's votes on the key's labels, run on 2026-11-13 before the
+  Oradell top-up, found 243 votes on 243 labels, the earliest at 2026-11-12 05:06 PST and none before the pull.
+  The five votes added afterwards did not exist at that query, so they too are later than the pull. The query is not part of the repo's code.
 
 Pins: `votes_jon.csv` `09a2624f93ff5ca203dfd8f0a4038129252d12334d863046986931e99ce957c9` (pulled 2026-11-13, 248
 of 250 voted; beside the key, outside the repo), the aggregates
@@ -601,7 +619,8 @@ question: better on test in every seed, no worse on the held-out cities on avera
 absence along the whole street. **NoSidewalk is not served yet**: the test half of the bar passes, and the gate half
 passes on the prior-weighted basis in the 5-fold run of 2026-11-11 (weighted lower bound 0.966 on 240 labels) but not
 unweighted (0.890) and not on the held-out cities; see "The 5-fold out-of-fold gate" above. The masked expert round of step (b)
-meets its bar in four cities outside Seattle (0.986, lower bound 0.951, on 144 labels).
+meets its bar pooled over four cities outside Seattle (0.986, lower bound 0.951, on 144 labels; only Chicago
+clears it alone).
 
 - (a) **5-fold out-of-fold training over the 758 pooled train / val / test crops** (whole view; the 127 held-out
    rows stay held out), calibrating on the pooled out-of-fold predictions, so each fold's Agree map is fitted on
@@ -611,7 +630,7 @@ meets its bar in four cities outside Seattle (0.986, lower bound 0.951, on 144 l
 - (b) **A masked expert round outside Seattle**, before any serving work (decided 2026-11-11): one rater, 250
    labels chosen score-first from four cities' deployment population, so the gate is read where step (a) could
    not reach. Design and results in "The masked expert round outside Seattle" above. **Done 2026-11-13: the bar
-   is met** (142 / 144 = 0.986, lower bound 0.951), with the caveats in that section's reading; whether that
+   is met pooled over the four cities** (142 / 144 = 0.986, lower bound 0.951; only Chicago clears it alone), with the caveats in that section's reading; whether that
    unlocks step (c) is the maintainer's decision.
 - (c) **Cross-repository work** (sidewalk-ai-api, SidewalkWebpage; listed above) after step (b), if its bar is
    met; a final model on all 758 rows with a map fitted on

@@ -491,6 +491,13 @@ def build_report(m, design, prior_correct, n_boot=1000, seed=0, train=None):
     primary["unsure_as_incorrect"] = rate(primary["k"], primary["n"] + n_unsure)  # sensitivity, not the bar
     primary["weighted"] = weighted_share(passed)
     primary["weighted_ci95"] = boot_ci(passed, weighted_share, n_boot, seed) if len(passed) else [None, None]
+    # The bootstrap cannot vary a cell with no misses, so the bound printed beside the weighted rate is Wilson's at
+    # the Kish effective sample size of the weights.
+    w = passed["weight"].astype(float)
+    n_eff = float(w.sum() ** 2 / (w ** 2).sum()) if len(passed) else 0.0
+    primary["weighted_n_eff"] = n_eff
+    primary["weighted_wilson95_lower_n_eff"] = (ale.wilson(primary["weighted"] * n_eff, n_eff)[0] if n_eff
+                                                else float("nan"))
     rep = {"items": int(len(m)), "unanswered": int((m["verdict"] == "").sum()),
            "cant_tell": int((m["verdict"] == "cant_tell").sum()), "gate": gate, "primary": primary,
            "prior_correct": prior_correct,
@@ -543,16 +550,21 @@ def _rate_cell(r):
 def markdown(rep):
     p, pc = rep["primary"], rep["population_correct"]
     lines = [
-        f"{rep['items']} items rated ({rep['cant_tell']} Unsure, {rep['unanswered']} unanswered). Precision cells are "
+        f"{rep['items']} items, {rep['items'] - rep['unanswered']} rated ({rep['cant_tell']} Unsure, "
+        f"{rep['unanswered']} unanswered). Precision cells are "
         f"correct / decided = rate (Wilson 95 % lower bound); Unsure votes are outside the denominator.", "",
         f"**Bar:** in the pass stratum, {_rate_cell(p)}; a lower bound >= {rep['gate']} on >= {MIN_DECIDED} decided "
         f"labels is {'met' if p['bar_met'] else 'not met'}. **{'PASSES' if p['bar_met'] else 'DOES NOT PASS'}.** "
-        f"Reweighted to the cities' population: {_f(p['weighted'])} [{_f(p['weighted_ci95'][0])}, "
-        f"{_f(p['weighted_ci95'][1])}] (the interval holds the weights fixed, so it is somewhat narrow). With every "
-        f"Unsure in the pass stratum counted as incorrect: {_rate_cell(p['unsure_as_incorrect'])}.", "",
+        f"Reweighted to the cities' population: {_f(p['weighted'])} (Wilson 95 % lower bound "
+        f"{_f(p['weighted_wilson95_lower_n_eff'])} at the weights' effective sample size of "
+        f"{p['weighted_n_eff']:.0f}; no bootstrap interval is given, because resampling cannot vary a cell with no "
+        f"misses). With every Unsure in the pass stratum counted as incorrect: "
+        f"{_rate_cell(p['unsure_as_incorrect'])}.", "",
         f"Share of correct NoSidewalk labels in these cities' eligible population: {_f(pc['share'])} "
         f"[{_f(pc['ci95'][0])}, {_f(pc['ci95'][1])}] (the deployment prior assumes {_f(rep['prior_correct'])} over "
-        f"every label with a face; this population leaves out the rater's own labels and trained faces).", "",
+        f"every label with a face; this population leaves out the rater's own labels and trained faces. The interval "
+        f"resamples within (city, stratum) cells with the weights fixed, so it is too narrow where a cell has no "
+        f"misses, and Unsure and unanswered items drop out with their weight).", "",
         "| stratum | items | Unsure | correct / decided (Wilson 95 % lower) |", "|---|---|---|---|"]
     lines += [f"| {s} | {r['items']} | {r['cant_tell']} | {_rate_cell(r)} |" for s, r in rep["strata"].items()]
     lines += ["", "| city | decided (incorrect) | pass stratum (Wilson 95 % lower) | population share correct |",
@@ -570,7 +582,9 @@ def markdown(rep):
                   "training rows |", "|---|---|---|---|---|"]
         lines += [f"| {name} | {r['decided']} | {_rate_cell(r)} | {_f(r['population_correct'])} | {r['train_rows']} |"
                   for name, r in rep["slices"][by].items()]
-    lines += ["", "Crowd majority (human votes at the pool pull) against the expert, decided items:", "",
+    lines += ["", "Slice population shares rest on few items with unequal weights and carry no interval; read them as "
+              "direction only.",
+              "", "Crowd majority (human votes at the pool pull) against the expert, decided items:", "",
               "| crowd | expert correct | expert incorrect |", "|---|---|---|"]
     lines += [f"| {r} | {v.get('correct', 0)} | {v.get('incorrect', 0)} |" for r, v in rep["crowd_vs_expert"].items()]
     return "\n".join(lines) + "\n"

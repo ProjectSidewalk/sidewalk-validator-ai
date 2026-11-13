@@ -19,7 +19,9 @@
   "weighted_ci95": [
    0.9949589430239616,
    1.0
-  ]
+  ],
+  "weighted_n_eff": 84.45194180686501,
+  "weighted_wilson95_lower_n_eff": 0.9527154580245503
  },
  "prior_correct": 0.8305856976206722,
  "population_correct": {

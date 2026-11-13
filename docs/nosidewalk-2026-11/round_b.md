@@ -1,8 +1,8 @@
-250 items rated (13 Unsure, 2 unanswered). Precision cells are correct / decided = rate (Wilson 95 % lower bound); Unsure votes are outside the denominator.
+250 items, 248 rated (13 Unsure, 2 unanswered). Precision cells are correct / decided = rate (Wilson 95 % lower bound); Unsure votes are outside the denominator.
 
-**Bar:** in the pass stratum, 142 / 144 = 0.986 (0.951); a lower bound >= 0.92 on >= 100 decided labels is met. **PASSES.** Reweighted to the cities' population: 0.998 [0.995, 1.000] (the interval holds the weights fixed, so it is somewhat narrow). With every Unsure in the pass stratum counted as incorrect: 142 / 149 = 0.953 (0.906).
+**Bar:** in the pass stratum, 142 / 144 = 0.986 (0.951); a lower bound >= 0.92 on >= 100 decided labels is met. **PASSES.** Reweighted to the cities' population: 0.998 (Wilson 95 % lower bound 0.953 at the weights' effective sample size of 84; no bootstrap interval is given, because resampling cannot vary a cell with no misses). With every Unsure in the pass stratum counted as incorrect: 142 / 149 = 0.953 (0.906).
 
-Share of correct NoSidewalk labels in these cities' eligible population: 0.878 [0.819, 0.932] (the deployment prior assumes 0.831 over every label with a face; this population leaves out the rater's own labels and trained faces).
+Share of correct NoSidewalk labels in these cities' eligible population: 0.878 [0.819, 0.932] (the deployment prior assumes 0.831 over every label with a face; this population leaves out the rater's own labels and trained faces. The interval resamples within (city, stratum) cells with the weights fixed, so it is too narrow where a cell has no misses, and Unsure and unanswered items drop out with their weight).
 
 | stratum | items | Unsure | correct / decided (Wilson 95 % lower) |
 |---|---|---|---|
@@ -39,6 +39,8 @@ Per fold model, on its own gate verdicts (weights are the items' inverse inclusi
 | shared pedestrian/car space | 20 | 5 / 6 = 0.833 (0.436) | 0.328 | 40 |
 | street has a sidewalk | 29 | 14 / 14 = 1.000 (0.785) | 0.849 | 93 |
 | street has no sidewalks | 127 | 95 / 95 = 1.000 (0.961) | 0.949 | 278 |
+
+Slice population shares rest on few items with unequal weights and carry no interval; read them as direction only.
 
 Crowd majority (human votes at the pool pull) against the expert, decided items:
 
