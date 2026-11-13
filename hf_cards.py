@@ -248,6 +248,40 @@ def training_provenance(run):
     return text[:1].upper() + text[1:] + ". "
 
 
+PRIOR_RULE_TEXT = {  # data_generation.PRIOR_RULES, as the dataset card words them (issue #56)
+    "margin": "the training margin rule (correct at net human Agree > 2, incorrect at net human Disagree > 1)",
+    "symmetric3": "a symmetric rule (net human votes beyond 2 either way)",
+    "symmetric2": "a symmetric rule (net human votes of at least 2 either way)",
+    "majority2": "the human majority among labels with at least two Agree/Disagree votes (ties left out)",
+    "face_size": "the face-size method (NoSidewalk precision by labels on the block face; issue #42)",
+}
+
+
+def prior_sentence(prior, n_experts=0):
+    """The dataset card's deployment-prior sentence, naming the vote rule the counts were taken under: the entry's
+    ``rule`` (files since issue #56), else its ``method`` (NoSidewalk's ``face_size``), else the margin rule (older
+    files). The expert rule never enters the prior; an expert's vote counts there as one human vote like any other.
+
+    >>> prior_sentence({"correct": 9, "incorrect": 1, "rule": "majority2", "source": "s", "measured_on": "d"})[:83]
+    'Before downsampling, 9 labels were correct and 1 incorrect under the human majority'
+    >>> "at least two" in prior_sentence({"correct": 9, "incorrect": 1, "rule": "majority2"})
+    True
+    """
+    rule = prior.get("rule") or prior.get("method") or "margin"
+    how = PRIOR_RULE_TEXT.get(rule, f"the `{rule}` rule")
+    extra = " (labels decided only by the expert rule are not counted)" if n_experts else ""
+    text = (f"Before downsampling, {fmt(prior.get('correct'))} labels were correct and {fmt(prior.get('incorrect'))} "
+            f"incorrect under {how}{extra} "
+            f"({fmt(prior['correct'] / (prior['correct'] + prior['incorrect']))} correct; "
+            f"{prior.get('source', '')}, measured {prior.get('measured_on', 'n/a')}). That is the deployment "
+            f"prior the served calibration map is reweighted to.")
+    if rule != "margin" and "margin" in (prior.get("rules") or {}):
+        m = prior["rules"]["margin"]
+        text += (f" The training classes use the margin rule, under which {fmt(m['correct'])} labels were correct "
+                 f"and {fmt(m['incorrect'])} incorrect.")
+    return text
+
+
 def size_category(n):
     """The Hub's ``size_categories`` bucket for ``n`` examples (``"1K<n<10K"`` etc.)."""
     for limit, name in ((1_000, "n<1K"), (10_000, "1K<n<10K"), (100_000, "10K<n<100K"),
@@ -352,7 +386,9 @@ def _calibration_section(ctx):
         return "\n".join(lines) + "\n"
     prior = rep.get("prior_deploy") or {}
     src = rep.get("prior_source") or {}
+    prior_rule = rep.get("prior_rule") or src.get("prior_rule") or src.get("rule") or "margin"
     lines.append(f"Deployment prior: correct {fmt(prior.get('correct'))}, incorrect {fmt(prior.get('incorrect'))} "
+                 f"under {PRIOR_RULE_TEXT.get(prior_rule, f'the `{prior_rule}` rule')} "
                  f"(from {src.get('source', 'deployment_priors.json')}, measured {src.get('measured_on', 'n/a')}). "
                  f"Fitted on {fmt(rep.get('n_fit'))} `{rep.get('fit_split')}` rows; evaluated on "
                  f"{fmt(rep.get('n_eval'))} `{rep.get('eval_split')}` rows, reweighted to the same prior.")
@@ -713,13 +749,8 @@ def dataset_card(ctx, license_id=None):
                    "manifest's `class_source` column says which rule decided each label (`margin` or `expert`)"
                    + (f": {fmt(source_counts.get('margin', 0))} margin and {fmt(source_counts.get('expert', 0))} "
                       "expert in the selection." if source_counts else ".") + "\n")
-    rule = " margin" if n_experts else ""  # the prior counts margin-rule labels only
-    prior_text = (f"Before downsampling, {fmt(prior.get('correct'))} labels met the `correct`{rule} rule and "
-                  f"{fmt(prior.get('incorrect'))} the `incorrect`{rule} rule "
-                  f"({fmt(prior['correct'] / (prior['correct'] + prior['incorrect']))} correct; "
-                  f"{prior.get('source', '')}, measured {prior.get('measured_on', 'n/a')}). That is the deployment "
-                  f"prior the served calibration map is reweighted to."
-                  if prior else f"{TODO} deployment_priors.json has no entry for {t}.")
+    prior_text = (prior_sentence(prior, n_experts) if prior
+                  else f"{TODO} deployment_priors.json has no entry for {t}.")
     heldout = ds.get("heldout_cities") or []
     selection = gen.get("selection_sha256")
 

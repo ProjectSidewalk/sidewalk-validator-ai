@@ -1,0 +1,2851 @@
+{
+  "types": {
+    "Crosswalk": {
+      "margin": {
+        "test": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 234,
+              "coverage": 0.9907423372743949,
+              "precision": 0.996717414584198,
+              "gate_n": 231,
+              "train_correct": 1073,
+              "train_incorrect": 321
+            },
+            {
+              "slice": "2",
+              "n": 13,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 44,
+              "train_incorrect": 143
+            },
+            {
+              "slice": "3",
+              "n": 3,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 12,
+              "train_incorrect": 357
+            },
+            {
+              "slice": "(none)",
+              "n": 8,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 27,
+              "train_incorrect": 112
+            }
+          ],
+          "tag": [
+            {
+              "slice": "(none)",
+              "n": 202,
+              "coverage": 0.9995846108057205,
+              "precision": 0.9975066291149992,
+              "gate_n": 201,
+              "train_correct": 922,
+              "train_incorrect": 635
+            },
+            {
+              "slice": "paint fading",
+              "n": 38,
+              "coverage": 0.9417333429076645,
+              "precision": 0.9899474415962932,
+              "gate_n": 36,
+              "train_correct": 158,
+              "train_incorrect": 181
+            },
+            {
+              "slice": "broken surface",
+              "n": 10,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 32,
+              "train_incorrect": 26
+            },
+            {
+              "slice": "very long crossing",
+              "n": 8,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 36,
+              "train_incorrect": 32
+            },
+            {
+              "slice": "bumpy",
+              "n": 7,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 21,
+              "train_incorrect": 37
+            },
+            {
+              "slice": "too close to traffic",
+              "n": 4,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 17,
+              "train_incorrect": 3
+            },
+            {
+              "slice": "uneven surface",
+              "n": 4,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 15,
+              "train_incorrect": 49
+            },
+            {
+              "slice": "no pedestrian priority",
+              "n": 3,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 11,
+              "train_incorrect": 22
+            },
+            {
+              "slice": "brick/cobblestone",
+              "n": 1,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 5,
+              "train_incorrect": 43
+            },
+            {
+              "slice": "rail/tram track",
+              "n": 1,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 4,
+              "train_incorrect": 6
+            }
+          ]
+        },
+        "test_heldout": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 59,
+              "coverage": 0.8666120265294328,
+              "precision": 0.9949831504893077,
+              "gate_n": 50,
+              "train_correct": 1073,
+              "train_incorrect": 321
+            },
+            {
+              "slice": "2",
+              "n": 6,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 44,
+              "train_incorrect": 143
+            },
+            {
+              "slice": "3",
+              "n": 2,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 12,
+              "train_incorrect": 357
+            },
+            {
+              "slice": "(none)",
+              "n": 1,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 27,
+              "train_incorrect": 112
+            }
+          ],
+          "tag": [
+            {
+              "slice": "(none)",
+              "n": 45,
+              "coverage": 0.8913199585517436,
+              "precision": 0.9932244947878898,
+              "gate_n": 38,
+              "train_correct": 922,
+              "train_incorrect": 635
+            },
+            {
+              "slice": "paint fading",
+              "n": 14,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 158,
+              "train_incorrect": 181
+            },
+            {
+              "slice": "broken surface",
+              "n": 6,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 32,
+              "train_incorrect": 26
+            },
+            {
+              "slice": "rail/tram track",
+              "n": 5,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 4,
+              "train_incorrect": 6
+            },
+            {
+              "slice": "brick/cobblestone",
+              "n": 3,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 5,
+              "train_incorrect": 43
+            },
+            {
+              "slice": "uneven surface",
+              "n": 2,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 15,
+              "train_incorrect": 49
+            },
+            {
+              "slice": "very long crossing",
+              "n": 1,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 36,
+              "train_incorrect": 32
+            }
+          ]
+        }
+      },
+      "majority2": {
+        "test": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 234,
+              "coverage": 0.9908387588756632,
+              "precision": 0.9976794165229478,
+              "gate_n": 231,
+              "train_correct": 1073,
+              "train_incorrect": 321
+            },
+            {
+              "slice": "2",
+              "n": 13,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 44,
+              "train_incorrect": 143
+            },
+            {
+              "slice": "3",
+              "n": 3,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 12,
+              "train_incorrect": 357
+            },
+            {
+              "slice": "(none)",
+              "n": 8,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 27,
+              "train_incorrect": 112
+            }
+          ],
+          "tag": [
+            {
+              "slice": "(none)",
+              "n": 202,
+              "coverage": 0.9997063780694473,
+              "precision": 0.9982377509817253,
+              "gate_n": 201,
+              "train_correct": 922,
+              "train_incorrect": 635
+            },
+            {
+              "slice": "paint fading",
+              "n": 38,
+              "coverage": 0.9415708617769963,
+              "precision": 0.9928792930186017,
+              "gate_n": 36,
+              "train_correct": 158,
+              "train_incorrect": 181
+            },
+            {
+              "slice": "broken surface",
+              "n": 10,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 32,
+              "train_incorrect": 26
+            },
+            {
+              "slice": "very long crossing",
+              "n": 8,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 36,
+              "train_incorrect": 32
+            },
+            {
+              "slice": "bumpy",
+              "n": 7,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 21,
+              "train_incorrect": 37
+            },
+            {
+              "slice": "too close to traffic",
+              "n": 4,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 17,
+              "train_incorrect": 3
+            },
+            {
+              "slice": "uneven surface",
+              "n": 4,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 15,
+              "train_incorrect": 49
+            },
+            {
+              "slice": "no pedestrian priority",
+              "n": 3,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 11,
+              "train_incorrect": 22
+            },
+            {
+              "slice": "brick/cobblestone",
+              "n": 1,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 5,
+              "train_incorrect": 43
+            },
+            {
+              "slice": "rail/tram track",
+              "n": 1,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 4,
+              "train_incorrect": 6
+            }
+          ]
+        },
+        "test_heldout": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 59,
+              "coverage": 0.8669957868140716,
+              "precision": 0.99645159039389,
+              "gate_n": 50,
+              "train_correct": 1073,
+              "train_incorrect": 321
+            },
+            {
+              "slice": "2",
+              "n": 6,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 44,
+              "train_incorrect": 143
+            },
+            {
+              "slice": "3",
+              "n": 2,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 12,
+              "train_incorrect": 357
+            },
+            {
+              "slice": "(none)",
+              "n": 1,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 27,
+              "train_incorrect": 112
+            }
+          ],
+          "tag": [
+            {
+              "slice": "(none)",
+              "n": 45,
+              "coverage": 0.8923161324209112,
+              "precision": 0.99520521542455,
+              "gate_n": 38,
+              "train_correct": 922,
+              "train_incorrect": 635
+            },
+            {
+              "slice": "paint fading",
+              "n": 14,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 158,
+              "train_incorrect": 181
+            },
+            {
+              "slice": "broken surface",
+              "n": 6,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 32,
+              "train_incorrect": 26
+            },
+            {
+              "slice": "rail/tram track",
+              "n": 5,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 4,
+              "train_incorrect": 6
+            },
+            {
+              "slice": "brick/cobblestone",
+              "n": 3,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 5,
+              "train_incorrect": 43
+            },
+            {
+              "slice": "uneven surface",
+              "n": 2,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 15,
+              "train_incorrect": 49
+            },
+            {
+              "slice": "very long crossing",
+              "n": 1,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 36,
+              "train_incorrect": 32
+            }
+          ]
+        }
+      }
+    },
+    "CurbRamp": {
+      "margin": {
+        "test": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 658,
+              "coverage": 0.892851218794485,
+              "precision": 0.9944525186989983,
+              "gate_n": 572,
+              "train_correct": 3062,
+              "train_incorrect": 2021
+            },
+            {
+              "slice": "2",
+              "n": 75,
+              "coverage": 0.8331837573167279,
+              "precision": 0.985189176658869,
+              "gate_n": 59,
+              "train_correct": 377,
+              "train_incorrect": 460
+            },
+            {
+              "slice": "3",
+              "n": 28,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 144,
+              "train_incorrect": 407
+            },
+            {
+              "slice": "(none)",
+              "n": 53,
+              "coverage": 0.9096246760399586,
+              "precision": 0.9964049355410314,
+              "gate_n": 46,
+              "train_correct": 212,
+              "train_incorrect": 242
+            }
+          ],
+          "tag": [
+            {
+              "slice": "(none)",
+              "n": 533,
+              "coverage": 0.9209086224319467,
+              "precision": 0.994009579094588,
+              "gate_n": 475,
+              "train_correct": 2381,
+              "train_incorrect": 1552
+            },
+            {
+              "slice": "missing tactile warning",
+              "n": 149,
+              "coverage": 0.782730563957391,
+              "precision": 0.9892917999618471,
+              "gate_n": 112,
+              "train_correct": 770,
+              "train_incorrect": 712
+            },
+            {
+              "slice": "points into traffic",
+              "n": 93,
+              "coverage": 0.8620014687136841,
+              "precision": 1.0,
+              "gate_n": 78,
+              "train_correct": 382,
+              "train_incorrect": 388
+            },
+            {
+              "slice": "surface problem",
+              "n": 33,
+              "coverage": 0.7866832616060961,
+              "precision": 0.9860781540970096,
+              "gate_n": 25,
+              "train_correct": 176,
+              "train_incorrect": 175
+            },
+            {
+              "slice": "narrow",
+              "n": 32,
+              "coverage": 0.8084750146375704,
+              "precision": 0.9929902829481952,
+              "gate_n": 24,
+              "train_correct": 234,
+              "train_incorrect": 217
+            },
+            {
+              "slice": "not enough landing space",
+              "n": 32,
+              "coverage": 0.834339846666274,
+              "precision": 1.0,
+              "gate_n": 26,
+              "train_correct": 164,
+              "train_incorrect": 184
+            },
+            {
+              "slice": "not level with street",
+              "n": 28,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 108,
+              "train_incorrect": 405
+            },
+            {
+              "slice": "steep",
+              "n": 11,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 49,
+              "train_incorrect": 177
+            },
+            {
+              "slice": "debris / pooled water",
+              "n": 9,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 56,
+              "train_incorrect": 18
+            },
+            {
+              "slice": "parallel lines",
+              "n": 7,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 12,
+              "train_incorrect": 2
+            },
+            {
+              "slice": "not aligned with crosswalk",
+              "n": 2,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 31,
+              "train_incorrect": 4
+            }
+          ]
+        },
+        "test_heldout": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 230,
+              "coverage": 0.7538642794671739,
+              "precision": 0.9930727995103481,
+              "gate_n": 166,
+              "train_correct": 3062,
+              "train_incorrect": 2021
+            },
+            {
+              "slice": "2",
+              "n": 29,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 377,
+              "train_incorrect": 460
+            },
+            {
+              "slice": "3",
+              "n": 13,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 144,
+              "train_incorrect": 407
+            },
+            {
+              "slice": "(none)",
+              "n": 3,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 212,
+              "train_incorrect": 242
+            }
+          ],
+          "tag": [
+            {
+              "slice": "(none)",
+              "n": 148,
+              "coverage": 0.7519664478940293,
+              "precision": 0.9946628523560125,
+              "gate_n": 107,
+              "train_correct": 2381,
+              "train_incorrect": 1552
+            },
+            {
+              "slice": "missing tactile warning",
+              "n": 86,
+              "coverage": 0.6763292171022468,
+              "precision": 0.9891764371282074,
+              "gate_n": 54,
+              "train_correct": 770,
+              "train_incorrect": 712
+            },
+            {
+              "slice": "points into traffic",
+              "n": 53,
+              "coverage": 0.877645302443439,
+              "precision": 0.9916157132684843,
+              "gate_n": 46,
+              "train_correct": 382,
+              "train_incorrect": 388
+            },
+            {
+              "slice": "not enough landing space",
+              "n": 21,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 164,
+              "train_incorrect": 184
+            },
+            {
+              "slice": "narrow",
+              "n": 14,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 234,
+              "train_incorrect": 217
+            },
+            {
+              "slice": "not level with street",
+              "n": 11,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 108,
+              "train_incorrect": 405
+            },
+            {
+              "slice": "surface problem",
+              "n": 8,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 176,
+              "train_incorrect": 175
+            },
+            {
+              "slice": "debris / pooled water",
+              "n": 7,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 56,
+              "train_incorrect": 18
+            },
+            {
+              "slice": "steep",
+              "n": 2,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 49,
+              "train_incorrect": 177
+            }
+          ]
+        }
+      },
+      "majority2": {
+        "test": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 658,
+              "coverage": 0.8950357618891047,
+              "precision": 0.9969453448604133,
+              "gate_n": 572,
+              "train_correct": 3062,
+              "train_incorrect": 2021
+            },
+            {
+              "slice": "2",
+              "n": 75,
+              "coverage": 0.8378744736739425,
+              "precision": 0.991810314347099,
+              "gate_n": 59,
+              "train_correct": 377,
+              "train_incorrect": 460
+            },
+            {
+              "slice": "3",
+              "n": 28,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 144,
+              "train_incorrect": 407
+            },
+            {
+              "slice": "(none)",
+              "n": 53,
+              "coverage": 0.9135368553633026,
+              "precision": 0.9980221650801405,
+              "gate_n": 46,
+              "train_correct": 212,
+              "train_incorrect": 242
+            }
+          ],
+          "tag": [
+            {
+              "slice": "(none)",
+              "n": 533,
+              "coverage": 0.9236912214230619,
+              "precision": 0.9967007850528049,
+              "gate_n": 475,
+              "train_correct": 2381,
+              "train_incorrect": 1552
+            },
+            {
+              "slice": "missing tactile warning",
+              "n": 149,
+              "coverage": 0.7857376875494089,
+              "precision": 0.9940898737485843,
+              "gate_n": 112,
+              "train_correct": 770,
+              "train_incorrect": 712
+            },
+            {
+              "slice": "points into traffic",
+              "n": 93,
+              "coverage": 0.8640980214489539,
+              "precision": 1.0,
+              "gate_n": 78,
+              "train_correct": 382,
+              "train_incorrect": 388
+            },
+            {
+              "slice": "surface problem",
+              "n": 33,
+              "coverage": 0.7895419247456174,
+              "precision": 0.9923049809650241,
+              "gate_n": 25,
+              "train_correct": 176,
+              "train_incorrect": 175
+            },
+            {
+              "slice": "narrow",
+              "n": 32,
+              "coverage": 0.8142402352546383,
+              "precision": 0.9961376299770889,
+              "gate_n": 24,
+              "train_correct": 234,
+              "train_incorrect": 217
+            },
+            {
+              "slice": "not enough landing space",
+              "n": 32,
+              "coverage": 0.8363038483456602,
+              "precision": 1.0,
+              "gate_n": 26,
+              "train_correct": 164,
+              "train_incorrect": 184
+            },
+            {
+              "slice": "not level with street",
+              "n": 28,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 108,
+              "train_incorrect": 405
+            },
+            {
+              "slice": "steep",
+              "n": 11,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 49,
+              "train_incorrect": 177
+            },
+            {
+              "slice": "debris / pooled water",
+              "n": 9,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 56,
+              "train_incorrect": 18
+            },
+            {
+              "slice": "parallel lines",
+              "n": 7,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 12,
+              "train_incorrect": 2
+            },
+            {
+              "slice": "not aligned with crosswalk",
+              "n": 2,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 31,
+              "train_incorrect": 4
+            }
+          ]
+        },
+        "test_heldout": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 230,
+              "coverage": 0.7574535106314065,
+              "precision": 0.9961832391985987,
+              "gate_n": 166,
+              "train_correct": 3062,
+              "train_incorrect": 2021
+            },
+            {
+              "slice": "2",
+              "n": 29,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 377,
+              "train_incorrect": 460
+            },
+            {
+              "slice": "3",
+              "n": 13,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 144,
+              "train_incorrect": 407
+            },
+            {
+              "slice": "(none)",
+              "n": 3,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 212,
+              "train_incorrect": 242
+            }
+          ],
+          "tag": [
+            {
+              "slice": "(none)",
+              "n": 148,
+              "coverage": 0.7551664219002538,
+              "precision": 0.9970614418973732,
+              "gate_n": 107,
+              "train_correct": 2381,
+              "train_incorrect": 1552
+            },
+            {
+              "slice": "missing tactile warning",
+              "n": 86,
+              "coverage": 0.6820312317013556,
+              "precision": 0.994025889933579,
+              "gate_n": 54,
+              "train_correct": 770,
+              "train_incorrect": 712
+            },
+            {
+              "slice": "points into traffic",
+              "n": 53,
+              "coverage": 0.8787001889538318,
+              "precision": 0.9953773658292808,
+              "gate_n": 46,
+              "train_correct": 382,
+              "train_incorrect": 388
+            },
+            {
+              "slice": "not enough landing space",
+              "n": 21,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 164,
+              "train_incorrect": 184
+            },
+            {
+              "slice": "narrow",
+              "n": 14,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 234,
+              "train_incorrect": 217
+            },
+            {
+              "slice": "not level with street",
+              "n": 11,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 108,
+              "train_incorrect": 405
+            },
+            {
+              "slice": "surface problem",
+              "n": 8,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 176,
+              "train_incorrect": 175
+            },
+            {
+              "slice": "debris / pooled water",
+              "n": 7,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 56,
+              "train_incorrect": 18
+            },
+            {
+              "slice": "steep",
+              "n": 2,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 49,
+              "train_incorrect": 177
+            }
+          ]
+        }
+      }
+    },
+    "NoCurbRamp": {
+      "margin": {
+        "test": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 115,
+              "coverage": 0.3408186783945511,
+              "precision": 0.9203282397415387,
+              "gate_n": 38,
+              "train_correct": 614,
+              "train_incorrect": 1225
+            },
+            {
+              "slice": "2",
+              "n": 445,
+              "coverage": 0.41494266127338053,
+              "precision": 0.9751147804558826,
+              "gate_n": 179,
+              "train_correct": 2044,
+              "train_incorrect": 1551
+            },
+            {
+              "slice": "3",
+              "n": 845,
+              "coverage": 0.4694182445699353,
+              "precision": 0.9791973562541221,
+              "gate_n": 392,
+              "train_correct": 3863,
+              "train_incorrect": 2211
+            },
+            {
+              "slice": "(none)",
+              "n": 49,
+              "coverage": 0.38122761786297427,
+              "precision": 0.9157681857821659,
+              "gate_n": 18,
+              "train_correct": 217,
+              "train_incorrect": 474
+            }
+          ],
+          "tag": [
+            {
+              "slice": "no alternate route",
+              "n": 707,
+              "coverage": 0.46632855329379913,
+              "precision": 0.9841097229413369,
+              "gate_n": 326,
+              "train_correct": 3339,
+              "train_incorrect": 1331
+            },
+            {
+              "slice": "(none)",
+              "n": 446,
+              "coverage": 0.43391260394097914,
+              "precision": 0.9803964598884546,
+              "gate_n": 189,
+              "train_correct": 2117,
+              "train_incorrect": 2514
+            },
+            {
+              "slice": "alternate route present",
+              "n": 257,
+              "coverage": 0.39826946056967943,
+              "precision": 0.9236355507602515,
+              "gate_n": 99,
+              "train_correct": 1129,
+              "train_incorrect": 1171
+            },
+            {
+              "slice": "unclear if needed",
+              "n": 60,
+              "coverage": 0.3195116391669745,
+              "precision": 0.9585113843510498,
+              "gate_n": 18,
+              "train_correct": 246,
+              "train_incorrect": 614
+            }
+          ]
+        },
+        "test_heldout": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 53,
+              "coverage": 0.16913969215380745,
+              "precision": 0.7050518556627162,
+              "gate_n": 7,
+              "train_correct": 614,
+              "train_incorrect": 1225
+            },
+            {
+              "slice": "2",
+              "n": 82,
+              "coverage": 0.3492741059115463,
+              "precision": 0.8013446855835088,
+              "gate_n": 26,
+              "train_correct": 2044,
+              "train_incorrect": 1551
+            },
+            {
+              "slice": "3",
+              "n": 324,
+              "coverage": 0.40108059196897516,
+              "precision": 0.9677062075338845,
+              "gate_n": 124,
+              "train_correct": 3863,
+              "train_incorrect": 2211
+            },
+            {
+              "slice": "(none)",
+              "n": 4,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 217,
+              "train_incorrect": 474
+            }
+          ],
+          "tag": [
+            {
+              "slice": "no alternate route",
+              "n": 283,
+              "coverage": 0.4253435875585289,
+              "precision": 0.9754905570883595,
+              "gate_n": 116,
+              "train_correct": 3339,
+              "train_incorrect": 1331
+            },
+            {
+              "slice": "alternate route present",
+              "n": 80,
+              "coverage": 0.2359640106913465,
+              "precision": 0.7492498247539593,
+              "gate_n": 16,
+              "train_correct": 1129,
+              "train_incorrect": 1171
+            },
+            {
+              "slice": "(none)",
+              "n": 73,
+              "coverage": 0.30943351309430883,
+              "precision": 0.8175864754171757,
+              "gate_n": 21,
+              "train_correct": 2117,
+              "train_incorrect": 2514
+            },
+            {
+              "slice": "unclear if needed",
+              "n": 33,
+              "coverage": 0.3128788874154126,
+              "precision": 0.9261978406424074,
+              "gate_n": 8,
+              "train_correct": 246,
+              "train_incorrect": 614
+            }
+          ]
+        }
+      },
+      "majority2": {
+        "test": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 115,
+              "coverage": 0.5811798994752101,
+              "precision": 0.9564490143007064,
+              "gate_n": 62,
+              "train_correct": 614,
+              "train_incorrect": 1225
+            },
+            {
+              "slice": "2",
+              "n": 445,
+              "coverage": 0.6915823762009342,
+              "precision": 0.9768717919848969,
+              "gate_n": 290,
+              "train_correct": 2044,
+              "train_incorrect": 1551
+            },
+            {
+              "slice": "3",
+              "n": 845,
+              "coverage": 0.7343097446996564,
+              "precision": 0.9903261041380107,
+              "gate_n": 602,
+              "train_correct": 3863,
+              "train_incorrect": 2211
+            },
+            {
+              "slice": "(none)",
+              "n": 49,
+              "coverage": 0.6642997779701687,
+              "precision": 0.9478303334147483,
+              "gate_n": 30,
+              "train_correct": 217,
+              "train_incorrect": 474
+            }
+          ],
+          "tag": [
+            {
+              "slice": "no alternate route",
+              "n": 707,
+              "coverage": 0.7363125671631638,
+              "precision": 0.9914014266345913,
+              "gate_n": 507,
+              "train_correct": 3339,
+              "train_incorrect": 1331
+            },
+            {
+              "slice": "(none)",
+              "n": 446,
+              "coverage": 0.7159465298210379,
+              "precision": 0.9903261041380107,
+              "gate_n": 301,
+              "train_correct": 2117,
+              "train_incorrect": 2514
+            },
+            {
+              "slice": "alternate route present",
+              "n": 257,
+              "coverage": 0.6408044497889922,
+              "precision": 0.9417352564476998,
+              "gate_n": 156,
+              "train_correct": 1129,
+              "train_incorrect": 1171
+            },
+            {
+              "slice": "unclear if needed",
+              "n": 60,
+              "coverage": 0.5181338509587147,
+              "precision": 0.9437275043108129,
+              "gate_n": 28,
+              "train_correct": 246,
+              "train_incorrect": 614
+            }
+          ]
+        },
+        "test_heldout": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 53,
+              "coverage": 0.34655719284186043,
+              "precision": 0.5513929849081491,
+              "gate_n": 16,
+              "train_correct": 614,
+              "train_incorrect": 1225
+            },
+            {
+              "slice": "2",
+              "n": 82,
+              "coverage": 0.5397674994040716,
+              "precision": 0.8764072801910803,
+              "gate_n": 38,
+              "train_correct": 2044,
+              "train_incorrect": 1551
+            },
+            {
+              "slice": "3",
+              "n": 324,
+              "coverage": 0.6670796929474617,
+              "precision": 0.9773222618231592,
+              "gate_n": 203,
+              "train_correct": 3863,
+              "train_incorrect": 2211
+            },
+            {
+              "slice": "(none)",
+              "n": 4,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 217,
+              "train_incorrect": 474
+            }
+          ],
+          "tag": [
+            {
+              "slice": "no alternate route",
+              "n": 283,
+              "coverage": 0.6658104120733317,
+              "precision": 0.985763213204272,
+              "gate_n": 178,
+              "train_correct": 3339,
+              "train_incorrect": 1331
+            },
+            {
+              "slice": "alternate route present",
+              "n": 80,
+              "coverage": 0.4125342299271469,
+              "precision": 0.7616618017708612,
+              "gate_n": 28,
+              "train_correct": 1129,
+              "train_incorrect": 1171
+            },
+            {
+              "slice": "(none)",
+              "n": 73,
+              "coverage": 0.6650960397246355,
+              "precision": 0.8948398962870213,
+              "gate_n": 43,
+              "train_correct": 2117,
+              "train_incorrect": 2514
+            },
+            {
+              "slice": "unclear if needed",
+              "n": 33,
+              "coverage": 0.5620942161424773,
+              "precision": 0.8690630161330142,
+              "gate_n": 14,
+              "train_correct": 246,
+              "train_incorrect": 614
+            }
+          ]
+        }
+      }
+    },
+    "Obstacle": {
+      "margin": {
+        "test": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 310,
+              "coverage": 0.41899385859883,
+              "precision": 0.9559830919870935,
+              "gate_n": 122,
+              "train_correct": 1382,
+              "train_incorrect": 1760
+            },
+            {
+              "slice": "2",
+              "n": 418,
+              "coverage": 0.5109102591469089,
+              "precision": 0.9407020132545412,
+              "gate_n": 208,
+              "train_correct": 1818,
+              "train_incorrect": 1026
+            },
+            {
+              "slice": "3",
+              "n": 579,
+              "coverage": 0.4960473896036722,
+              "precision": 0.9757561076885776,
+              "gate_n": 283,
+              "train_correct": 2627,
+              "train_incorrect": 1272
+            },
+            {
+              "slice": "(none)",
+              "n": 63,
+              "coverage": 0.3012778109125489,
+              "precision": 0.9136142698233181,
+              "gate_n": 18,
+              "train_correct": 270,
+              "train_incorrect": 399
+            }
+          ],
+          "tag": [
+            {
+              "slice": "pole",
+              "n": 275,
+              "coverage": 0.44413614108086436,
+              "precision": 0.9607180235282966,
+              "gate_n": 117,
+              "train_correct": 1160,
+              "train_incorrect": 927
+            },
+            {
+              "slice": "(none)",
+              "n": 199,
+              "coverage": 0.4482838371821498,
+              "precision": 0.9371847241815935,
+              "gate_n": 86,
+              "train_correct": 782,
+              "train_incorrect": 1151
+            },
+            {
+              "slice": "trash/recycling can",
+              "n": 172,
+              "coverage": 0.7088963795237835,
+              "precision": 0.9873414350948875,
+              "gate_n": 120,
+              "train_correct": 759,
+              "train_incorrect": 287
+            },
+            {
+              "slice": "parked car",
+              "n": 162,
+              "coverage": 0.3347349652693991,
+              "precision": 0.9418417953422248,
+              "gate_n": 53,
+              "train_correct": 775,
+              "train_incorrect": 518
+            },
+            {
+              "slice": "vegetation",
+              "n": 153,
+              "coverage": 0.5397495128191232,
+              "precision": 0.9332238650946852,
+              "gate_n": 81,
+              "train_correct": 743,
+              "train_incorrect": 393
+            },
+            {
+              "slice": "narrow",
+              "n": 146,
+              "coverage": 0.55668177607835,
+              "precision": 0.9809733760431801,
+              "gate_n": 80,
+              "train_correct": 669,
+              "train_incorrect": 239
+            },
+            {
+              "slice": "tree",
+              "n": 90,
+              "coverage": 0.395939006700756,
+              "precision": 0.9548572920159829,
+              "gate_n": 34,
+              "train_correct": 421,
+              "train_incorrect": 433
+            },
+            {
+              "slice": "construction",
+              "n": 87,
+              "coverage": 0.5100739898714234,
+              "precision": 0.9644140322427883,
+              "gate_n": 43,
+              "train_correct": 342,
+              "train_incorrect": 74
+            },
+            {
+              "slice": "parked scooter/motorcycle",
+              "n": 83,
+              "coverage": 0.49198707689558235,
+              "precision": 0.9809733760431801,
+              "gate_n": 40,
+              "train_correct": 411,
+              "train_incorrect": 116
+            },
+            {
+              "slice": "sign",
+              "n": 61,
+              "coverage": 0.5039393966339646,
+              "precision": 0.9487389143355656,
+              "gate_n": 30,
+              "train_correct": 277,
+              "train_incorrect": 209
+            },
+            {
+              "slice": "utility cabinet",
+              "n": 41,
+              "coverage": 0.635759356952227,
+              "precision": 0.9706313865434093,
+              "gate_n": 26,
+              "train_correct": 206,
+              "train_incorrect": 17
+            },
+            {
+              "slice": "fire hydrant",
+              "n": 34,
+              "coverage": 0.45350561920886395,
+              "precision": 0.9487389143355653,
+              "gate_n": 15,
+              "train_correct": 190,
+              "train_incorrect": 164
+            },
+            {
+              "slice": "parked bike",
+              "n": 27,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 112,
+              "train_incorrect": 79
+            },
+            {
+              "slice": "litter/garbage",
+              "n": 24,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 153,
+              "train_incorrect": 82
+            },
+            {
+              "slice": "street vendor",
+              "n": 24,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 97,
+              "train_incorrect": 17
+            },
+            {
+              "slice": "garage entrance",
+              "n": 12,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 31,
+              "train_incorrect": 64
+            },
+            {
+              "slice": "mailbox",
+              "n": 7,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 17,
+              "train_incorrect": 19
+            },
+            {
+              "slice": "height difference",
+              "n": 5,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 36,
+              "train_incorrect": 38
+            },
+            {
+              "slice": "stairs",
+              "n": 4,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 16,
+              "train_incorrect": 19
+            }
+          ]
+        },
+        "test_heldout": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 377,
+              "coverage": 0.3820081748100313,
+              "precision": 0.9145594571287546,
+              "gate_n": 81,
+              "train_correct": 1382,
+              "train_incorrect": 1760
+            },
+            {
+              "slice": "2",
+              "n": 220,
+              "coverage": 0.529822408421827,
+              "precision": 0.979880654843232,
+              "gate_n": 98,
+              "train_correct": 1818,
+              "train_incorrect": 1026
+            },
+            {
+              "slice": "3",
+              "n": 304,
+              "coverage": 0.5337197544794791,
+              "precision": 0.9883610984357255,
+              "gate_n": 142,
+              "train_correct": 2627,
+              "train_incorrect": 1272
+            },
+            {
+              "slice": "(none)",
+              "n": 18,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 270,
+              "train_incorrect": 399
+            }
+          ],
+          "tag": [
+            {
+              "slice": "trash/recycling can",
+              "n": 220,
+              "coverage": 0.7743872840051517,
+              "precision": 0.9912961013708328,
+              "gate_n": 157,
+              "train_correct": 759,
+              "train_incorrect": 287
+            },
+            {
+              "slice": "pole",
+              "n": 160,
+              "coverage": 0.47688943205342726,
+              "precision": 0.937443948521041,
+              "gate_n": 55,
+              "train_correct": 1160,
+              "train_incorrect": 927
+            },
+            {
+              "slice": "parked car",
+              "n": 110,
+              "coverage": 0.25019750375838024,
+              "precision": 0.9550151175973958,
+              "gate_n": 20,
+              "train_correct": 775,
+              "train_incorrect": 518
+            },
+            {
+              "slice": "vegetation",
+              "n": 86,
+              "coverage": 0.40933566289780166,
+              "precision": 0.970121549692095,
+              "gate_n": 29,
+              "train_correct": 743,
+              "train_incorrect": 393
+            },
+            {
+              "slice": "(none)",
+              "n": 63,
+              "coverage": 0.34266693789574476,
+              "precision": 0.9419767443449814,
+              "gate_n": 16,
+              "train_correct": 782,
+              "train_incorrect": 1151
+            },
+            {
+              "slice": "sign",
+              "n": 54,
+              "coverage": 0.34704562220590396,
+              "precision": 0.8973478497472395,
+              "gate_n": 10,
+              "train_correct": 277,
+              "train_incorrect": 209
+            },
+            {
+              "slice": "outdoor dining area",
+              "n": 49,
+              "coverage": 0.062455188288181876,
+              "precision": 1.0,
+              "gate_n": 1,
+              "train_correct": 0,
+              "train_incorrect": 1
+            },
+            {
+              "slice": "construction",
+              "n": 46,
+              "coverage": 0.47130109525337427,
+              "precision": 0.9695535348467661,
+              "gate_n": 19,
+              "train_correct": 342,
+              "train_incorrect": 74
+            },
+            {
+              "slice": "narrow",
+              "n": 43,
+              "coverage": 0.46635202154875166,
+              "precision": 0.9825163328729964,
+              "gate_n": 16,
+              "train_correct": 669,
+              "train_incorrect": 239
+            },
+            {
+              "slice": "litter/garbage",
+              "n": 31,
+              "coverage": 0.25608561028333526,
+              "precision": 1.0,
+              "gate_n": 7,
+              "train_correct": 153,
+              "train_incorrect": 82
+            },
+            {
+              "slice": "parked bike",
+              "n": 31,
+              "coverage": 0.11101670555346033,
+              "precision": 1.0,
+              "gate_n": 1,
+              "train_correct": 112,
+              "train_incorrect": 79
+            },
+            {
+              "slice": "parked scooter/motorcycle",
+              "n": 23,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 411,
+              "train_incorrect": 116
+            },
+            {
+              "slice": "tree",
+              "n": 19,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 421,
+              "train_incorrect": 433
+            },
+            {
+              "slice": "mailbox",
+              "n": 18,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 17,
+              "train_incorrect": 19
+            },
+            {
+              "slice": "stairs",
+              "n": 16,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 16,
+              "train_incorrect": 19
+            },
+            {
+              "slice": "fire hydrant",
+              "n": 9,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 190,
+              "train_incorrect": 164
+            },
+            {
+              "slice": "height difference",
+              "n": 5,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 36,
+              "train_incorrect": 38
+            }
+          ]
+        }
+      },
+      "majority2": {
+        "test": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 310,
+              "coverage": 0.45574632107446283,
+              "precision": 0.9726464280217947,
+              "gate_n": 122,
+              "train_correct": 1382,
+              "train_incorrect": 1760
+            },
+            {
+              "slice": "2",
+              "n": 418,
+              "coverage": 0.5287330178957617,
+              "precision": 0.9629259118265139,
+              "gate_n": 208,
+              "train_correct": 1818,
+              "train_incorrect": 1026
+            },
+            {
+              "slice": "3",
+              "n": 579,
+              "coverage": 0.5052947410023463,
+              "precision": 0.9850510891070564,
+              "gate_n": 283,
+              "train_correct": 2627,
+              "train_incorrect": 1272
+            },
+            {
+              "slice": "(none)",
+              "n": 63,
+              "coverage": 0.3239647700221756,
+              "precision": 0.9454009723229143,
+              "gate_n": 18,
+              "train_correct": 270,
+              "train_incorrect": 399
+            }
+          ],
+          "tag": [
+            {
+              "slice": "pole",
+              "n": 275,
+              "coverage": 0.4697772471254568,
+              "precision": 0.975634557801471,
+              "gate_n": 117,
+              "train_correct": 1160,
+              "train_incorrect": 927
+            },
+            {
+              "slice": "(none)",
+              "n": 199,
+              "coverage": 0.47047168369288955,
+              "precision": 0.9606717328057661,
+              "gate_n": 86,
+              "train_correct": 782,
+              "train_incorrect": 1151
+            },
+            {
+              "slice": "trash/recycling can",
+              "n": 172,
+              "coverage": 0.7230820230689438,
+              "precision": 0.9922300324089858,
+              "gate_n": 120,
+              "train_correct": 759,
+              "train_incorrect": 287
+            },
+            {
+              "slice": "parked car",
+              "n": 162,
+              "coverage": 0.3447923341316114,
+              "precision": 0.9636550267536708,
+              "gate_n": 53,
+              "train_correct": 775,
+              "train_incorrect": 518
+            },
+            {
+              "slice": "vegetation",
+              "n": 153,
+              "coverage": 0.5534494967626282,
+              "precision": 0.9581256906997188,
+              "gate_n": 81,
+              "train_correct": 743,
+              "train_incorrect": 393
+            },
+            {
+              "slice": "narrow",
+              "n": 146,
+              "coverage": 0.5677733579647346,
+              "precision": 0.9882920849880562,
+              "gate_n": 80,
+              "train_correct": 669,
+              "train_incorrect": 239
+            },
+            {
+              "slice": "tree",
+              "n": 90,
+              "coverage": 0.42121525951529004,
+              "precision": 0.9719343063698115,
+              "gate_n": 34,
+              "train_correct": 421,
+              "train_incorrect": 433
+            },
+            {
+              "slice": "construction",
+              "n": 87,
+              "coverage": 0.5311528300121695,
+              "precision": 0.9779592807602886,
+              "gate_n": 43,
+              "train_correct": 342,
+              "train_incorrect": 74
+            },
+            {
+              "slice": "parked scooter/motorcycle",
+              "n": 83,
+              "coverage": 0.5048995160447526,
+              "precision": 0.9882920849880562,
+              "gate_n": 40,
+              "train_correct": 411,
+              "train_incorrect": 116
+            },
+            {
+              "slice": "sign",
+              "n": 61,
+              "coverage": 0.5200277336818563,
+              "precision": 0.9680530093443772,
+              "gate_n": 30,
+              "train_correct": 277,
+              "train_incorrect": 209
+            },
+            {
+              "slice": "utility cabinet",
+              "n": 41,
+              "coverage": 0.637761623427017,
+              "precision": 0.9818546215288079,
+              "gate_n": 26,
+              "train_correct": 206,
+              "train_incorrect": 17
+            },
+            {
+              "slice": "fire hydrant",
+              "n": 34,
+              "coverage": 0.4699716407679568,
+              "precision": 0.9680530093443769,
+              "gate_n": 15,
+              "train_correct": 190,
+              "train_incorrect": 164
+            },
+            {
+              "slice": "parked bike",
+              "n": 27,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 112,
+              "train_incorrect": 79
+            },
+            {
+              "slice": "litter/garbage",
+              "n": 24,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 153,
+              "train_incorrect": 82
+            },
+            {
+              "slice": "street vendor",
+              "n": 24,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 97,
+              "train_incorrect": 17
+            },
+            {
+              "slice": "garage entrance",
+              "n": 12,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 31,
+              "train_incorrect": 64
+            },
+            {
+              "slice": "mailbox",
+              "n": 7,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 17,
+              "train_incorrect": 19
+            },
+            {
+              "slice": "height difference",
+              "n": 5,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 36,
+              "train_incorrect": 38
+            },
+            {
+              "slice": "stairs",
+              "n": 4,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 16,
+              "train_incorrect": 19
+            }
+          ]
+        },
+        "test_heldout": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 377,
+              "coverage": 0.444613389992801,
+              "precision": 0.9460189156623664,
+              "gate_n": 81,
+              "train_correct": 1382,
+              "train_incorrect": 1760
+            },
+            {
+              "slice": "2",
+              "n": 220,
+              "coverage": 0.5453919409787519,
+              "precision": 0.9876143788551212,
+              "gate_n": 98,
+              "train_correct": 1818,
+              "train_incorrect": 1026
+            },
+            {
+              "slice": "3",
+              "n": 304,
+              "coverage": 0.5451411976693116,
+              "precision": 0.9928587612307439,
+              "gate_n": 142,
+              "train_correct": 2627,
+              "train_incorrect": 1272
+            },
+            {
+              "slice": "(none)",
+              "n": 18,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 270,
+              "train_incorrect": 399
+            }
+          ],
+          "tag": [
+            {
+              "slice": "trash/recycling can",
+              "n": 220,
+              "coverage": 0.7841059116243566,
+              "precision": 0.9946657016945186,
+              "gate_n": 157,
+              "train_correct": 759,
+              "train_incorrect": 287
+            },
+            {
+              "slice": "pole",
+              "n": 160,
+              "coverage": 0.51054686122958,
+              "precision": 0.9608380818135634,
+              "gate_n": 55,
+              "train_correct": 1160,
+              "train_incorrect": 927
+            },
+            {
+              "slice": "parked car",
+              "n": 110,
+              "coverage": 0.26643672870998986,
+              "precision": 0.97203417678583,
+              "gate_n": 20,
+              "train_correct": 775,
+              "train_incorrect": 518
+            },
+            {
+              "slice": "vegetation",
+              "n": 86,
+              "coverage": 0.4233858722302229,
+              "precision": 0.98153591287663,
+              "gate_n": 29,
+              "train_correct": 743,
+              "train_incorrect": 393
+            },
+            {
+              "slice": "(none)",
+              "n": 63,
+              "coverage": 0.36403886665758256,
+              "precision": 0.9637413093759223,
+              "gate_n": 16,
+              "train_correct": 782,
+              "train_incorrect": 1151
+            },
+            {
+              "slice": "sign",
+              "n": 54,
+              "coverage": 0.41582091712240987,
+              "precision": 0.9346921270916558,
+              "gate_n": 10,
+              "train_correct": 277,
+              "train_incorrect": 209
+            },
+            {
+              "slice": "outdoor dining area",
+              "n": 49,
+              "coverage": 0.08821099779189817,
+              "precision": 1.0,
+              "gate_n": 1,
+              "train_correct": 0,
+              "train_incorrect": 1
+            },
+            {
+              "slice": "construction",
+              "n": 46,
+              "coverage": 0.48186332490657574,
+              "precision": 0.98118068531472,
+              "gate_n": 19,
+              "train_correct": 342,
+              "train_incorrect": 74
+            },
+            {
+              "slice": "narrow",
+              "n": 43,
+              "coverage": 0.4847136669579088,
+              "precision": 0.9892480390457795,
+              "gate_n": 16,
+              "train_correct": 669,
+              "train_incorrect": 239
+            },
+            {
+              "slice": "litter/garbage",
+              "n": 31,
+              "coverage": 0.261046347186277,
+              "precision": 1.0,
+              "gate_n": 7,
+              "train_correct": 153,
+              "train_incorrect": 82
+            },
+            {
+              "slice": "parked bike",
+              "n": 31,
+              "coverage": 0.16975133279336563,
+              "precision": 1.0,
+              "gate_n": 1,
+              "train_correct": 112,
+              "train_incorrect": 79
+            },
+            {
+              "slice": "parked scooter/motorcycle",
+              "n": 23,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 411,
+              "train_incorrect": 116
+            },
+            {
+              "slice": "tree",
+              "n": 19,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 421,
+              "train_incorrect": 433
+            },
+            {
+              "slice": "mailbox",
+              "n": 18,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 17,
+              "train_incorrect": 19
+            },
+            {
+              "slice": "stairs",
+              "n": 16,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 16,
+              "train_incorrect": 19
+            },
+            {
+              "slice": "fire hydrant",
+              "n": 9,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 190,
+              "train_incorrect": 164
+            },
+            {
+              "slice": "height difference",
+              "n": 5,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 36,
+              "train_incorrect": 38
+            }
+          ]
+        }
+      }
+    },
+    "SurfaceProblem": {
+      "margin": {
+        "test": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 587,
+              "coverage": 0.6471116266200345,
+              "precision": 0.9584603647254389,
+              "gate_n": 366,
+              "train_correct": 2641,
+              "train_incorrect": 2409
+            },
+            {
+              "slice": "2",
+              "n": 377,
+              "coverage": 0.7126880429114368,
+              "precision": 0.9534197653578813,
+              "gate_n": 262,
+              "train_correct": 1768,
+              "train_incorrect": 1191
+            },
+            {
+              "slice": "3",
+              "n": 241,
+              "coverage": 0.7002843205457304,
+              "precision": 0.9666055745958327,
+              "gate_n": 163,
+              "train_correct": 1191,
+              "train_incorrect": 642
+            },
+            {
+              "slice": "(none)",
+              "n": 49,
+              "coverage": 0.6035161490144156,
+              "precision": 0.9103105770758623,
+              "gate_n": 28,
+              "train_correct": 239,
+              "train_incorrect": 419
+            }
+          ],
+          "tag": [
+            {
+              "slice": "cracks",
+              "n": 495,
+              "coverage": 0.7653584589889977,
+              "precision": 0.9740477644281308,
+              "gate_n": 371,
+              "train_correct": 2245,
+              "train_incorrect": 786
+            },
+            {
+              "slice": "grass",
+              "n": 373,
+              "coverage": 0.7569913238809934,
+              "precision": 0.9626475280382091,
+              "gate_n": 276,
+              "train_correct": 1898,
+              "train_incorrect": 738
+            },
+            {
+              "slice": "bumpy",
+              "n": 261,
+              "coverage": 0.6803062236408925,
+              "precision": 0.9788301571210779,
+              "gate_n": 170,
+              "train_correct": 1178,
+              "train_incorrect": 804
+            },
+            {
+              "slice": "uneven/slanted",
+              "n": 237,
+              "coverage": 0.6976579576053081,
+              "precision": 0.9584497477513189,
+              "gate_n": 161,
+              "train_correct": 1148,
+              "train_incorrect": 426
+            },
+            {
+              "slice": "height difference",
+              "n": 129,
+              "coverage": 0.7553810090264956,
+              "precision": 0.9938157765582264,
+              "gate_n": 96,
+              "train_correct": 643,
+              "train_incorrect": 127
+            },
+            {
+              "slice": "(none)",
+              "n": 122,
+              "coverage": 0.6058389571651672,
+              "precision": 0.929127689464124,
+              "gate_n": 70,
+              "train_correct": 419,
+              "train_incorrect": 1071
+            },
+            {
+              "slice": "narrow sidewalk",
+              "n": 110,
+              "coverage": 0.5499400215182714,
+              "precision": 0.936145136163791,
+              "gate_n": 58,
+              "train_correct": 605,
+              "train_incorrect": 555
+            },
+            {
+              "slice": "very broken",
+              "n": 86,
+              "coverage": 0.7979901704224714,
+              "precision": 0.9638240381807663,
+              "gate_n": 67,
+              "train_correct": 503,
+              "train_incorrect": 122
+            },
+            {
+              "slice": "utility panel",
+              "n": 62,
+              "coverage": 0.551819030830333,
+              "precision": 0.963261990938732,
+              "gate_n": 33,
+              "train_correct": 346,
+              "train_incorrect": 558
+            },
+            {
+              "slice": "sand/gravel",
+              "n": 35,
+              "coverage": 0.7429980308783358,
+              "precision": 0.951108312399882,
+              "gate_n": 25,
+              "train_correct": 169,
+              "train_incorrect": 115
+            },
+            {
+              "slice": "brick/cobblestone",
+              "n": 17,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 95,
+              "train_incorrect": 242
+            },
+            {
+              "slice": "construction",
+              "n": 12,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 24,
+              "train_incorrect": 20
+            },
+            {
+              "slice": "debris",
+              "n": 9,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 45,
+              "train_incorrect": 21
+            },
+            {
+              "slice": "rail/tram track",
+              "n": 4,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 21,
+              "train_incorrect": 4
+            }
+          ]
+        },
+        "test_heldout": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 225,
+              "coverage": 0.4718418028136967,
+              "precision": 0.8705379847215745,
+              "gate_n": 97,
+              "train_correct": 2641,
+              "train_incorrect": 2409
+            },
+            {
+              "slice": "2",
+              "n": 105,
+              "coverage": 0.6121613625446934,
+              "precision": 0.9023014683003683,
+              "gate_n": 57,
+              "train_correct": 1768,
+              "train_incorrect": 1191
+            },
+            {
+              "slice": "3",
+              "n": 38,
+              "coverage": 0.6556468185714607,
+              "precision": 0.9424365809420883,
+              "gate_n": 21,
+              "train_correct": 1191,
+              "train_incorrect": 642
+            },
+            {
+              "slice": "(none)",
+              "n": 9,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 239,
+              "train_incorrect": 419
+            }
+          ],
+          "tag": [
+            {
+              "slice": "cracks",
+              "n": 88,
+              "coverage": 0.7015085688020337,
+              "precision": 0.9873044381342388,
+              "gate_n": 59,
+              "train_correct": 2245,
+              "train_incorrect": 786
+            },
+            {
+              "slice": "brick/cobblestone",
+              "n": 60,
+              "coverage": 0.12707568633867294,
+              "precision": 0.4380841503535152,
+              "gate_n": 9,
+              "train_correct": 95,
+              "train_incorrect": 242
+            },
+            {
+              "slice": "narrow sidewalk",
+              "n": 59,
+              "coverage": 0.4331698723250038,
+              "precision": 0.712695513967379,
+              "gate_n": 21,
+              "train_correct": 605,
+              "train_incorrect": 555
+            },
+            {
+              "slice": "sand/gravel",
+              "n": 51,
+              "coverage": 0.4869552249768796,
+              "precision": 0.8036534585129287,
+              "gate_n": 25,
+              "train_correct": 169,
+              "train_incorrect": 115
+            },
+            {
+              "slice": "uneven/slanted",
+              "n": 48,
+              "coverage": 0.5553943891263022,
+              "precision": 0.9662746110979388,
+              "gate_n": 23,
+              "train_correct": 1148,
+              "train_incorrect": 426
+            },
+            {
+              "slice": "utility panel",
+              "n": 45,
+              "coverage": 0.560087811330331,
+              "precision": 0.7472246236771635,
+              "gate_n": 25,
+              "train_correct": 346,
+              "train_incorrect": 558
+            },
+            {
+              "slice": "grass",
+              "n": 42,
+              "coverage": 0.7587972724701282,
+              "precision": 0.950250821837453,
+              "gate_n": 32,
+              "train_correct": 1898,
+              "train_incorrect": 738
+            },
+            {
+              "slice": "bumpy",
+              "n": 36,
+              "coverage": 0.3286927442433872,
+              "precision": 1.0,
+              "gate_n": 11,
+              "train_correct": 1178,
+              "train_incorrect": 804
+            },
+            {
+              "slice": "debris",
+              "n": 22,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 45,
+              "train_incorrect": 21
+            },
+            {
+              "slice": "height difference",
+              "n": 16,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 643,
+              "train_incorrect": 127
+            },
+            {
+              "slice": "very broken",
+              "n": 15,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 503,
+              "train_incorrect": 122
+            },
+            {
+              "slice": "rail/tram track",
+              "n": 11,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 21,
+              "train_incorrect": 4
+            },
+            {
+              "slice": "(none)",
+              "n": 3,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 419,
+              "train_incorrect": 1071
+            },
+            {
+              "slice": "construction",
+              "n": 1,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 24,
+              "train_incorrect": 20
+            }
+          ]
+        }
+      },
+      "majority2": {
+        "test": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 587,
+              "coverage": 0.6681836984704005,
+              "precision": 0.9807596211391404,
+              "gate_n": 366,
+              "train_correct": 2641,
+              "train_incorrect": 2409
+            },
+            {
+              "slice": "2",
+              "n": 377,
+              "coverage": 0.7282613467358724,
+              "precision": 0.9783638277760277,
+              "gate_n": 262,
+              "train_correct": 1768,
+              "train_incorrect": 1191
+            },
+            {
+              "slice": "3",
+              "n": 241,
+              "coverage": 0.7213393521021473,
+              "precision": 0.9846025725194497,
+              "gate_n": 163,
+              "train_correct": 1191,
+              "train_incorrect": 642
+            },
+            {
+              "slice": "(none)",
+              "n": 49,
+              "coverage": 0.6350358741158182,
+              "precision": 0.9573061790588184,
+              "gate_n": 28,
+              "train_correct": 239,
+              "train_incorrect": 419
+            }
+          ],
+          "tag": [
+            {
+              "slice": "cracks",
+              "n": 495,
+              "coverage": 0.7788302104048938,
+              "precision": 0.9880834465377769,
+              "gate_n": 371,
+              "train_correct": 2245,
+              "train_incorrect": 786
+            },
+            {
+              "slice": "grass",
+              "n": 373,
+              "coverage": 0.7717252083583598,
+              "precision": 0.9827395152307427,
+              "gate_n": 276,
+              "train_correct": 1898,
+              "train_incorrect": 738
+            },
+            {
+              "slice": "bumpy",
+              "n": 261,
+              "coverage": 0.7058061910568451,
+              "precision": 0.990305133232768,
+              "gate_n": 170,
+              "train_correct": 1178,
+              "train_incorrect": 804
+            },
+            {
+              "slice": "uneven/slanted",
+              "n": 237,
+              "coverage": 0.7137045364788713,
+              "precision": 0.9807545891151768,
+              "gate_n": 161,
+              "train_correct": 1148,
+              "train_incorrect": 426
+            },
+            {
+              "slice": "height difference",
+              "n": 129,
+              "coverage": 0.7645534851294237,
+              "precision": 0.9971912036882992,
+              "gate_n": 96,
+              "train_correct": 643,
+              "train_incorrect": 127
+            },
+            {
+              "slice": "(none)",
+              "n": 122,
+              "coverage": 0.6365688643112161,
+              "precision": 0.9666249659131346,
+              "gate_n": 70,
+              "train_correct": 419,
+              "train_incorrect": 1071
+            },
+            {
+              "slice": "narrow sidewalk",
+              "n": 110,
+              "coverage": 0.5709583805780611,
+              "precision": 0.9700492900413247,
+              "gate_n": 58,
+              "train_correct": 605,
+              "train_incorrect": 555
+            },
+            {
+              "slice": "very broken",
+              "n": 86,
+              "coverage": 0.8143582902062957,
+              "precision": 0.9832941601286053,
+              "gate_n": 67,
+              "train_correct": 503,
+              "train_incorrect": 122
+            },
+            {
+              "slice": "utility panel",
+              "n": 62,
+              "coverage": 0.5691418596504059,
+              "precision": 0.983029283841432,
+              "gate_n": 33,
+              "train_correct": 346,
+              "train_incorrect": 558
+            },
+            {
+              "slice": "sand/gravel",
+              "n": 35,
+              "coverage": 0.7689845431347955,
+              "precision": 0.9772606531777739,
+              "gate_n": 25,
+              "train_correct": 169,
+              "train_incorrect": 115
+            },
+            {
+              "slice": "brick/cobblestone",
+              "n": 17,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 95,
+              "train_incorrect": 242
+            },
+            {
+              "slice": "construction",
+              "n": 12,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 24,
+              "train_incorrect": 20
+            },
+            {
+              "slice": "debris",
+              "n": 9,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 45,
+              "train_incorrect": 21
+            },
+            {
+              "slice": "rail/tram track",
+              "n": 4,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 21,
+              "train_incorrect": 4
+            }
+          ]
+        },
+        "test_heldout": {
+          "severity": [
+            {
+              "slice": "1",
+              "n": 225,
+              "coverage": 0.4911955252544541,
+              "precision": 0.9369297995835408,
+              "gate_n": 97,
+              "train_correct": 2641,
+              "train_incorrect": 2409
+            },
+            {
+              "slice": "2",
+              "n": 105,
+              "coverage": 0.6443252864865455,
+              "precision": 0.9532783036231746,
+              "gate_n": 57,
+              "train_correct": 1768,
+              "train_incorrect": 1191
+            },
+            {
+              "slice": "3",
+              "n": 38,
+              "coverage": 0.7027345208306773,
+              "precision": 0.9730962531264572,
+              "gate_n": 21,
+              "train_correct": 1191,
+              "train_incorrect": 642
+            },
+            {
+              "slice": "(none)",
+              "n": 9,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 239,
+              "train_incorrect": 419
+            }
+          ],
+          "tag": [
+            {
+              "slice": "cracks",
+              "n": 88,
+              "coverage": 0.7122581227438444,
+              "precision": 0.9942131415732222,
+              "gate_n": 59,
+              "train_correct": 2245,
+              "train_incorrect": 786
+            },
+            {
+              "slice": "brick/cobblestone",
+              "n": 60,
+              "coverage": 0.11168871834183944,
+              "precision": 0.6326715489731415,
+              "gate_n": 9,
+              "train_correct": 95,
+              "train_incorrect": 242
+            },
+            {
+              "slice": "narrow sidewalk",
+              "n": 59,
+              "coverage": 0.4933720130918197,
+              "precision": 0.8456845829769473,
+              "gate_n": 21,
+              "train_correct": 605,
+              "train_incorrect": 555
+            },
+            {
+              "slice": "sand/gravel",
+              "n": 51,
+              "coverage": 0.4854302625922703,
+              "precision": 0.9004220707167152,
+              "gate_n": 25,
+              "train_correct": 169,
+              "train_incorrect": 115
+            },
+            {
+              "slice": "uneven/slanted",
+              "n": 48,
+              "coverage": 0.5872897511137807,
+              "precision": 0.9844471026955921,
+              "gate_n": 23,
+              "train_correct": 1148,
+              "train_incorrect": 426
+            },
+            {
+              "slice": "utility panel",
+              "n": 45,
+              "coverage": 0.5625109933582373,
+              "precision": 0.8672086693511386,
+              "gate_n": 25,
+              "train_correct": 346,
+              "train_incorrect": 558
+            },
+            {
+              "slice": "grass",
+              "n": 42,
+              "coverage": 0.7577048841992224,
+              "precision": 0.9768506735915365,
+              "gate_n": 32,
+              "train_correct": 1898,
+              "train_incorrect": 738
+            },
+            {
+              "slice": "bumpy",
+              "n": 36,
+              "coverage": 0.33676690993730435,
+              "precision": 1.0,
+              "gate_n": 11,
+              "train_correct": 1178,
+              "train_incorrect": 804
+            },
+            {
+              "slice": "debris",
+              "n": 22,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 45,
+              "train_incorrect": 21
+            },
+            {
+              "slice": "height difference",
+              "n": 16,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 643,
+              "train_incorrect": 127
+            },
+            {
+              "slice": "very broken",
+              "n": 15,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 503,
+              "train_incorrect": 122
+            },
+            {
+              "slice": "rail/tram track",
+              "n": 11,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 21,
+              "train_incorrect": 4
+            },
+            {
+              "slice": "(none)",
+              "n": 3,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 419,
+              "train_incorrect": 1071
+            },
+            {
+              "slice": "construction",
+              "n": 1,
+              "coverage": null,
+              "precision": null,
+              "gate_n": 0,
+              "train_correct": 24,
+              "train_incorrect": 20
+            }
+          ]
+        }
+      }
+    }
+  },
+  "split_sha256": {
+    "Crosswalk": "91001f64b778ec3d59b381d50911c6bd8ea35449052574d97eb4c9380d37f00f",
+    "CurbRamp": "f2ec89f8032c9b6b7c1533bea7ac82d82b7c139847b14286dd53d932a2195610",
+    "NoCurbRamp": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+    "Obstacle": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+    "SurfaceProblem": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd"
+  },
+  "_source": {
+    "shares": "shares.json",
+    "min_n": 30,
+    "rules": [
+      "margin",
+      "majority2"
+    ]
+  }
+}

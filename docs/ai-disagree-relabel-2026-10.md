@@ -350,16 +350,20 @@ with the design file [`analysis/gt_rounds/round2.json`](../analysis/gt_rounds/ro
   `light_voted` (at least two decisive human votes with a majority, short of the margin rule), half of them margin
   rows. `margin_correct` is capped at 40% of the margin cell and topped up with `margin_incorrect`.
 - **Not sampled.** AI Disagrees outside the four strata are never drawn: one decisive human vote, only Unsure
-  votes, or a tie. That is 8,611 of Seattle's 17,284 eligible AI Disagrees (6,701 with one decisive vote, 371 with
-  only Unsure votes, 1,539 ties) and 3,853 of Chicago's 10,769 (3,002 / 145 / 706). The ties are the labels where
+  votes, or a tie. That is 8,608 of Seattle's 16,840 eligible AI Disagrees (6,698 with one decisive vote, 371 with
+  only Unsure votes, 1,539 ties) and 3,847 of Chicago's 10,751 (2,996 / 145 / 706). The ties are the labels where
   the AI's Disagree breaks the tie in prod. No rate from this round, the population-weighted ones in `score`
-  included, covers them; a later round needs a stratum for them. `build` prints these counts. The eligible counts
-  still include excluded authors' labels (the pool predates the `author_excluded` column). The recount without them
+  included, covers them; a later round needs a stratum for them. These counts leave out labels whose authors are
+  excluded in `user_stat` as read on 2026-11-12 (Gallery and Validate hide them): the recount
   ([#85](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/85)) joins `user_stat.excluded` onto this
-  same pinned pool, so eligibility stays as of the round; it goes in
-  [`ai-disagree-relabel-2026-10/round2_recount.md`](ai-disagree-relabel-2026-10/round2_recount.md), pending the
-  `pull_author_excluded.sh` pull. A design can now sample these Disagrees as a `thin_voted` stratum (name it in
-  `shares`); round 2's design does not.
+  same pinned pool, so eligibility otherwise stays as of the round. The exclusion log shows no toggle in either city
+  between 2026-10-18 and the end of rating (2026-11-02); two Chicago authors, with 31 labels in the whole schema, were
+  excluded on 2026-11-03, after rating. 12 of the 18 Chicago AI Disagrees the recount removes are theirs and were
+  visible during the round; none of them is a rated item. Details in
+  [`ai-disagree-relabel-2026-10/round2_recount.md`](ai-disagree-relabel-2026-10/round2_recount.md). The counts `build`
+  printed, before the exclusion, were 8,611 of 17,284 (6,701 / 371 / 1,539) and 3,853 of 10,769 (3,002 / 145 /
+  706); the recount removes 444 Seattle and 18 Chicago AI Disagrees, 441 of the Seattle ones from `lone`. A design
+  can now sample these Disagrees as a `thin_voted` stratum (name it in `shares`); round 2's design does not.
 - **Quotas per type** (AI Disagrees per city): CurbRamp 42, Crosswalk 36, NoCurbRamp 34, Obstacle 30,
   SurfaceProblem 28, each filled over severity buckets (1–2 / 3–5 / none) in proportion to the eligible pool.
 - **Exclusions.** Labels either rater voted on or placed are out of every list, both cities.
@@ -395,7 +399,8 @@ share page (`/label/<id>`), which shows the existing AI vote, so these 11 are no
 AI's Disagree on all of them. Two of the 11 are shared items, and the other rater also rated them unmasked (they
 were not in Gallery for either rater). They are listed in `unmasked.csv` (checked against `user_stat.excluded` on
 prod, 2026-11-02; pinned as `unmasked`), and `score`, `agreement` and `adjudicate-report` leave them out of every
-table and count them apart. The pool query now carries
+table and count them apart. The flags pulled for the recount on 2026-11-12 still mark exactly these 11 key items as
+excluded-author labels, and no other key item. The pool query now carries
 `author_excluded` and `eligible()` drops those rows, so later rounds cannot draw them; this round's key was built
 before that and is unchanged.
 
@@ -410,6 +415,7 @@ before that and is unchanged.
 | `votes_jon.csv` (pinned 2026-10-30, 300 of 300 voted) | `6767596259746e8333b7fcfeec6ca4950c0ef25d7a33f7b3bf0d4e9d90f346eb` |
 | `votes_mikey.csv` (pinned 2026-11-02, 300 of 300 voted) | `c159ce6cadc89bb76c6adfe0dbaa3e89255ef87b1b9f251f2fdffd435cafcc86` |
 | `unmasked.csv` (11 items, 2 shared; pinned 2026-11-02) | `de3e5fd60329e962fd99e700b2d049e3ca74c3bc0432b8861d6801d40aac7f95` |
+| `author_excluded.csv` (pulled 2026-11-12 for the recount, #85; not committed: label ids) | `767c3d5b0fca35b57deb09e28995549bd382c383fd4f1634b55e14e6c469bfd7` |
 
 **Everything above is committed** under [`data/relabel-2026-10/round2/`](../data/relabel-2026-10/round2/), once
 rating and adjudication were over (the key carries the AI's and the crowd's votes, so it stayed private until then):
@@ -540,8 +546,12 @@ cell with fewer than 5 decided items carries no weight and is named beside the r
 no cell left is reported as unestimable. With the 11 unmasked items left out, Seattle's lone Obstacle cell has 1
 decided item, so it gets no weight; so do three other Seattle cells (light_voted Obstacle 4 and SurfaceProblem 3,
 margin_correct SurfaceProblem 4). In Chicago, three cells get no weight, none of them lone
-(light_voted Obstacle 4 and SurfaceProblem 4, margin_correct SurfaceProblem 4). `score --pool --author-excluded`
-weights by the recount above.
+(light_voted Obstacle 4 and SurfaceProblem 4, margin_correct SurfaceProblem 4). These are the same cells after the
+recount. `score --pool --author-excluded` weights by the recount; its effect on the weighted rows is in
+[`round2_recount.md`](ai-disagree-relabel-2026-10/round2_recount.md#effect-of-the-recount-on-scores-weighted-rows)
+(Seattle lone 57.2% -> 57.8%; the lower bound of Chicago light_voted 20.1 -> 20.0; no other printed value
+moves). A weighted rate covers only the cells that carry weight: Seattle's lone rate covers 3,866 of the stratum's
+3,929 labels after the recount, and says nothing about lone Obstacle (population 63).
 
 | File (in `data/relabel-2026-10/round2/`) | sha256 |
 |---|---|
