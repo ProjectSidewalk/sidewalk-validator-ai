@@ -1,0 +1,583 @@
+{
+ "banner": "PREVIEW (not the gate): camera positions inverted from public rawLabels, not read from the database; no gate verdict is given on these numbers.",
+ "made_on": "2026-11-12",
+ "git_head": "241d19e684cdc6af86ef89200180dd4952ea1f24",
+ "run_selection": {
+  "made_on": "2026-11-12",
+  "git_head": "241d19e684cdc6af86ef89200180dd4952ea1f24",
+  "cities": [
+   "amsterdam",
+   "bayonne-fr",
+   "blackhawk-hills-il",
+   "burnaby",
+   "cdmx",
+   "chandigarh-india",
+   "chicago-il",
+   "cliffside-park-nj",
+   "clifton-nj",
+   "columbus-oh",
+   "danville-il",
+   "detroit-mi",
+   "fort-wayne-in",
+   "gainesville-fl",
+   "hackensack-nj",
+   "houston-tx",
+   "knox-oh",
+   "la-piedad",
+   "laurens-ia",
+   "madison-wi",
+   "maywood-nj",
+   "mendota-il",
+   "newberg-or",
+   "newport-ky",
+   "niagara-falls-ny",
+   "oradell-nj",
+   "paterson-nj",
+   "pittsburgh-pa",
+   "rancagua-chile",
+   "richmond-va",
+   "santiago-chile",
+   "sao-paulo-brazil",
+   "seattle-wa",
+   "spgg",
+   "st-louis-mo",
+   "teaneck-nj",
+   "tucson-az",
+   "vancouver-wa",
+   "virden-il",
+   "walla-walla-wa",
+   "waltham-ma"
+  ],
+  "listing": {
+   "path": "cities-2026-11-12.json",
+   "sha256": "a4a2fab7379cada5d583f1bffa329a5b1f065741af3f51123b0a15403ceb5aca",
+   "fetched_on": null
+  },
+  "rawlabels_sha256": {
+   "amsterdam.csv": "b5266d4c420127c9e8a5ed1ee7c1a58c25460957071fd18258b92110742d839c",
+   "bayonne-fr.csv": "b8493b16c7b1248fab3fca92a98edc419ca2d7c2ab4b877fb7078abd8e4ed467",
+   "blackhawk-hills-il.csv": "f6f7d897dbe4e2d5c751cfb3255f24ad363d34b3a62863d55e5c12346510a722",
+   "burnaby.csv": "a5acd94b37b7e102b263caadebca9ce91d6b49d1e95d0a6c5267fbbf3872a798",
+   "cdmx.csv": "2b169ac851451cc5b2219747d2c6f5f6621421eb54ceb036e2e8a6d037642625",
+   "chandigarh-india.csv": "f0ff5276bcafb56c355f46e096f1e6e0940ce483e14a5ffb04d84eac802d830e",
+   "chicago-il.csv": "caa48b08e5130c425a351c2900c9a711be677ad24605c82c0cf6ddd0151b4314",
+   "cliffside-park-nj.csv": "4640c1865aa51dd74954d37c12726f4256135c4bd4ced1163648ecf343d826c6",
+   "clifton-nj.csv": "f3e9fa6b47fe15f2b7d24eea0b3fdebe3c2fe02d4deb2f8e1099d5e7598ef2aa",
+   "columbus-oh.csv": "ea1e142d7ea04d249276df75bfd0f97aa3b69ceb252045159153640102a93362",
+   "danville-il.csv": "133124dae27c8e268de439c5dd50e75397687dc9c367876e6fb4c6d32939cb94",
+   "detroit-mi.csv": "0b3f3efca48df7d273cd8f5c9e6dbe0a08a96960c25061a92b5673a8b2227f09",
+   "fort-wayne-in.csv": "9e7312f10782bb4a0ddbae5902909637ca929668bf1d92927b7bedf980032dac",
+   "gainesville-fl.csv": "31e65df04430c7e809529bd05ff7c2ead2ff11c5682a7bb337662c7298e1e0bb",
+   "hackensack-nj.csv": "1c373cd9fbf21d8cb9f9f211e9f9604c3234e085fff438a935bc9e3e842a4cbe",
+   "houston-tx.csv": "a61882ec84bcee5682a0908a0d9c6a2b924675e214e7dc59a3c21abe33067941",
+   "knox-oh.csv": "e9a01b92880f60545266ea5cef3cfaba81022342892e4bcf03724578b880eb46",
+   "la-piedad.csv": "0871e4c17c9412f72222d2488afe305e66e99d98e0e5709c14e2ea1e5c294021",
+   "laurens-ia.csv": "e03d503b3266c8963379ad10bd7e660a9b5a8f836506316e1879279c191f368e",
+   "madison-wi.csv": "3bd217c225bcc4d0a16280ab676d77fb1532743ac7d40446c6f77cb5f48bb92a",
+   "maywood-nj.csv": "05b2c42099761c02c2a1cd9273b290c93c2acd299413ef00a888b2b29d709a89",
+   "mendota-il.csv": "8e8e5292172b91c18e1cc540472b83ad9ac8d5a61a2841e012dc33ec40ee538e",
+   "newberg-or.csv": "7558fe41c6b626e067751418fc65e5ce09d03ddf96b6aa5ce5a3f3774b47cf9d",
+   "newport-ky.csv": "1f0f22482a1d5b8951d6735526e3f8a6bb0bcd2274c11e4abc75433f9b04f35a",
+   "niagara-falls-ny.csv": "f6b1ee2aa2c8b520db3e69664d4b9db19701d64c020d2eb96e9f0fc982835360",
+   "oradell-nj.csv": "454b8c4be7867fe5c82fd45fa84e2b4970e59f711db91b33ab23d3f509bfc8a3",
+   "paterson-nj.csv": "1199d43483471eb8f8f0faeab7a9671acd61f0d0ac8752a3985dcc136d2ec039",
+   "pittsburgh-pa.csv": "050ed80b9102b72985a124e16b897dadbdfab6318d1e262018676c986b4e1f45",
+   "rancagua-chile.csv": "bdd13d567d546f8693e08f973e235ff1122137d11fffb13b25a96e64688f2e74",
+   "richmond-va.csv": "72334f9dfc59b9d14ff7b3e7ff23cc9913be3af205ec952625b203b08773c9e6",
+   "santiago-chile.csv": "7ea42dd2679c67dccb67a9c0f86badac453a8e2e95890c1a37ef1abb9fc9b8f6",
+   "sao-paulo-brazil.csv": "b3a1d779e2a98cf584955a830d0a78ccbd131c2bf4d1c9ad85801b5b798d5db2",
+   "seattle-wa.csv": "5da1572c4a36cf88b78fdeba558f2642f8a840c33070901f828487539f0a5329",
+   "spgg.csv": "7a60920e9afdc099968ff413a858d5a83dec655b21728d0d861bb8f1055c907e",
+   "st-louis-mo.csv": "7f2c4acd9b26de1faee01a05f119c82cbf9b2303c11afc62a7be6ec412daef17",
+   "teaneck-nj.csv": "6777f39515e58858ba5edb3f24c28d529cbb61fd4b9b296897dd9e74ee8efe50",
+   "tucson-az.csv": "53a3895d0775db324266f38982846df75a0ff7ebd5a01cf57e017a9aad92d283",
+   "vancouver-wa.csv": "276c988d1ab7190b29796b2c53e88a91691e021815d0b9caa8377e98d236b8e2",
+   "virden-il.csv": "9bd30efe6e10eddeffd3665502c5b399f2ee817afa91cb398d26ffde7405ba02",
+   "walla-walla-wa.csv": "04d6ff31a37917add9b54ddf66775a741e7d58fb1556ed63d0662f47fc9fc919",
+   "waltham-ma.csv": "e5456dccf310d564fc8f991494912039c7f7d5d4b515017bce45e6b52af5032f"
+  },
+  "panos_sha256": "9a4a2e24f3f45e2fff7f178656b748f063fd029e0a539095f197e4c25d48a34b",
+  "positions_info": {
+   "made_on": "2026-11-12",
+   "git_head": "241d19e684cdc6af86ef89200180dd4952ea1f24",
+   "cities": [
+    "amsterdam",
+    "bayonne-fr",
+    "blackhawk-hills-il",
+    "burnaby",
+    "cdmx",
+    "chandigarh-india",
+    "chicago-il",
+    "cliffside-park-nj",
+    "clifton-nj",
+    "columbus-oh",
+    "danville-il",
+    "detroit-mi",
+    "fort-wayne-in",
+    "gainesville-fl",
+    "hackensack-nj",
+    "houston-tx",
+    "knox-oh",
+    "la-piedad",
+    "laurens-ia",
+    "madison-wi",
+    "maywood-nj",
+    "mendota-il",
+    "newberg-or",
+    "newport-ky",
+    "niagara-falls-ny",
+    "oradell-nj",
+    "paterson-nj",
+    "pittsburgh-pa",
+    "rancagua-chile",
+    "richmond-va",
+    "santiago-chile",
+    "sao-paulo-brazil",
+    "seattle-wa",
+    "spgg",
+    "st-louis-mo",
+    "teaneck-nj",
+    "tucson-az",
+    "vancouver-wa",
+    "virden-il",
+    "walla-walla-wa",
+    "waltham-ma"
+   ],
+   "listing": {
+    "path": "cities-2026-11-12.json",
+    "sha256": "a4a2fab7379cada5d583f1bffa329a5b1f065741af3f51123b0a15403ceb5aca",
+    "fetched_on": null
+   },
+   "rawlabels_sha256": {
+    "amsterdam.csv": "b5266d4c420127c9e8a5ed1ee7c1a58c25460957071fd18258b92110742d839c",
+    "bayonne-fr.csv": "b8493b16c7b1248fab3fca92a98edc419ca2d7c2ab4b877fb7078abd8e4ed467",
+    "blackhawk-hills-il.csv": "f6f7d897dbe4e2d5c751cfb3255f24ad363d34b3a62863d55e5c12346510a722",
+    "burnaby.csv": "a5acd94b37b7e102b263caadebca9ce91d6b49d1e95d0a6c5267fbbf3872a798",
+    "cdmx.csv": "2b169ac851451cc5b2219747d2c6f5f6621421eb54ceb036e2e8a6d037642625",
+    "chandigarh-india.csv": "f0ff5276bcafb56c355f46e096f1e6e0940ce483e14a5ffb04d84eac802d830e",
+    "chicago-il.csv": "caa48b08e5130c425a351c2900c9a711be677ad24605c82c0cf6ddd0151b4314",
+    "cliffside-park-nj.csv": "4640c1865aa51dd74954d37c12726f4256135c4bd4ced1163648ecf343d826c6",
+    "clifton-nj.csv": "f3e9fa6b47fe15f2b7d24eea0b3fdebe3c2fe02d4deb2f8e1099d5e7598ef2aa",
+    "columbus-oh.csv": "ea1e142d7ea04d249276df75bfd0f97aa3b69ceb252045159153640102a93362",
+    "danville-il.csv": "133124dae27c8e268de439c5dd50e75397687dc9c367876e6fb4c6d32939cb94",
+    "detroit-mi.csv": "0b3f3efca48df7d273cd8f5c9e6dbe0a08a96960c25061a92b5673a8b2227f09",
+    "fort-wayne-in.csv": "9e7312f10782bb4a0ddbae5902909637ca929668bf1d92927b7bedf980032dac",
+    "gainesville-fl.csv": "31e65df04430c7e809529bd05ff7c2ead2ff11c5682a7bb337662c7298e1e0bb",
+    "hackensack-nj.csv": "1c373cd9fbf21d8cb9f9f211e9f9604c3234e085fff438a935bc9e3e842a4cbe",
+    "houston-tx.csv": "a61882ec84bcee5682a0908a0d9c6a2b924675e214e7dc59a3c21abe33067941",
+    "knox-oh.csv": "e9a01b92880f60545266ea5cef3cfaba81022342892e4bcf03724578b880eb46",
+    "la-piedad.csv": "0871e4c17c9412f72222d2488afe305e66e99d98e0e5709c14e2ea1e5c294021",
+    "laurens-ia.csv": "e03d503b3266c8963379ad10bd7e660a9b5a8f836506316e1879279c191f368e",
+    "madison-wi.csv": "3bd217c225bcc4d0a16280ab676d77fb1532743ac7d40446c6f77cb5f48bb92a",
+    "maywood-nj.csv": "05b2c42099761c02c2a1cd9273b290c93c2acd299413ef00a888b2b29d709a89",
+    "mendota-il.csv": "8e8e5292172b91c18e1cc540472b83ad9ac8d5a61a2841e012dc33ec40ee538e",
+    "newberg-or.csv": "7558fe41c6b626e067751418fc65e5ce09d03ddf96b6aa5ce5a3f3774b47cf9d",
+    "newport-ky.csv": "1f0f22482a1d5b8951d6735526e3f8a6bb0bcd2274c11e4abc75433f9b04f35a",
+    "niagara-falls-ny.csv": "f6b1ee2aa2c8b520db3e69664d4b9db19701d64c020d2eb96e9f0fc982835360",
+    "oradell-nj.csv": "454b8c4be7867fe5c82fd45fa84e2b4970e59f711db91b33ab23d3f509bfc8a3",
+    "paterson-nj.csv": "1199d43483471eb8f8f0faeab7a9671acd61f0d0ac8752a3985dcc136d2ec039",
+    "pittsburgh-pa.csv": "050ed80b9102b72985a124e16b897dadbdfab6318d1e262018676c986b4e1f45",
+    "rancagua-chile.csv": "bdd13d567d546f8693e08f973e235ff1122137d11fffb13b25a96e64688f2e74",
+    "richmond-va.csv": "72334f9dfc59b9d14ff7b3e7ff23cc9913be3af205ec952625b203b08773c9e6",
+    "santiago-chile.csv": "7ea42dd2679c67dccb67a9c0f86badac453a8e2e95890c1a37ef1abb9fc9b8f6",
+    "sao-paulo-brazil.csv": "b3a1d779e2a98cf584955a830d0a78ccbd131c2bf4d1c9ad85801b5b798d5db2",
+    "seattle-wa.csv": "5da1572c4a36cf88b78fdeba558f2642f8a840c33070901f828487539f0a5329",
+    "spgg.csv": "7a60920e9afdc099968ff413a858d5a83dec655b21728d0d861bb8f1055c907e",
+    "st-louis-mo.csv": "7f2c4acd9b26de1faee01a05f119c82cbf9b2303c11afc62a7be6ec412daef17",
+    "teaneck-nj.csv": "6777f39515e58858ba5edb3f24c28d529cbb61fd4b9b296897dd9e74ee8efe50",
+    "tucson-az.csv": "53a3895d0775db324266f38982846df75a0ff7ebd5a01cf57e017a9aad92d283",
+    "vancouver-wa.csv": "276c988d1ab7190b29796b2c53e88a91691e021815d0b9caa8377e98d236b8e2",
+    "virden-il.csv": "9bd30efe6e10eddeffd3665502c5b399f2ee817afa91cb398d26ffde7405ba02",
+    "walla-walla-wa.csv": "04d6ff31a37917add9b54ddf66775a741e7d58fb1556ed63d0662f47fc9fc919",
+    "waltham-ma.csv": "e5456dccf310d564fc8f991494912039c7f7d5d4b515017bce45e6b52af5032f"
+   },
+   "label_drops": {
+    "non_gsv": 16881,
+    "bad_pano_size": 218
+   },
+   "inversion": {
+    "amsterdam": {
+     "panos": 11339,
+     "multi_label_panos": 5800,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0,
+     "dropped_inversion_disagrees": 1,
+     "share_multi_label_dropped": 0.0002
+    },
+    "blackhawk-hills-il": {
+     "panos": 95,
+     "multi_label_panos": 43,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0129,
+     "share_multi_label_dropped": 0.0
+    },
+    "burnaby": {
+     "panos": 8012,
+     "multi_label_panos": 4403,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0,
+     "share_multi_label_dropped": 0.0
+    },
+    "cdmx": {
+     "panos": 30506,
+     "multi_label_panos": 17115,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 4.8672,
+     "dropped_inversion_disagrees": 1518,
+     "share_multi_label_dropped": 0.0887
+    },
+    "chandigarh-india": {
+     "panos": 1780,
+     "multi_label_panos": 790,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0099,
+     "share_multi_label_dropped": 0.0
+    },
+    "chicago-il": {
+     "panos": 61818,
+     "multi_label_panos": 35818,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0083,
+     "dropped_inversion_disagrees": 9,
+     "share_multi_label_dropped": 0.0003
+    },
+    "cliffside-park-nj": {
+     "panos": 389,
+     "multi_label_panos": 205,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0,
+     "share_multi_label_dropped": 0.0
+    },
+    "clifton-nj": {
+     "panos": 167,
+     "multi_label_panos": 48,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.3003,
+     "dropped_inversion_disagrees": 3,
+     "share_multi_label_dropped": 0.0625
+    },
+    "columbus-oh": {
+     "panos": 14849,
+     "multi_label_panos": 9234,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 14.1173,
+     "dropped_inversion_disagrees": 4203,
+     "share_multi_label_dropped": 0.4552
+    },
+    "danville-il": {
+     "panos": 7198,
+     "multi_label_panos": 4466,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0,
+     "dropped_inversion_disagrees": 2,
+     "share_multi_label_dropped": 0.0004
+    },
+    "detroit-mi": {
+     "panos": 554,
+     "multi_label_panos": 325,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0078,
+     "dropped_inversion_disagrees": 1,
+     "share_multi_label_dropped": 0.0031
+    },
+    "fort-wayne-in": {
+     "panos": 393,
+     "multi_label_panos": 245,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0,
+     "share_multi_label_dropped": 0.0
+    },
+    "gainesville-fl": {
+     "panos": 7392,
+     "multi_label_panos": 5088,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0038,
+     "share_multi_label_dropped": 0.0
+    },
+    "hackensack-nj": {
+     "panos": 157,
+     "multi_label_panos": 84,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.2651,
+     "dropped_inversion_disagrees": 6,
+     "share_multi_label_dropped": 0.0714
+    },
+    "houston-tx": {
+     "panos": 293,
+     "multi_label_panos": 138,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0127,
+     "share_multi_label_dropped": 0.0
+    },
+    "knox-oh": {
+     "panos": 8003,
+     "multi_label_panos": 6170,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0,
+     "share_multi_label_dropped": 0.0
+    },
+    "la-piedad": {
+     "panos": 258,
+     "multi_label_panos": 133,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0027,
+     "dropped_inversion_disagrees": 1,
+     "share_multi_label_dropped": 0.0075
+    },
+    "madison-wi": {
+     "panos": 439,
+     "multi_label_panos": 206,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0106,
+     "dropped_inversion_disagrees": 1,
+     "share_multi_label_dropped": 0.0049
+    },
+    "maywood-nj": {
+     "panos": 1642,
+     "multi_label_panos": 1040,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0026,
+     "dropped_inversion_disagrees": 6,
+     "share_multi_label_dropped": 0.0058
+    },
+    "mendota-il": {
+     "panos": 5671,
+     "multi_label_panos": 4314,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0,
+     "share_multi_label_dropped": 0.0
+    },
+    "newberg-or": {
+     "panos": 6880,
+     "multi_label_panos": 4406,
+     "agreement_m_p50": 1.7018,
+     "agreement_m_p99": 20.9402,
+     "dropped_inversion_disagrees": 4183,
+     "share_multi_label_dropped": 0.9494
+    },
+    "newport-ky": {
+     "panos": 126,
+     "multi_label_panos": 106,
+     "agreement_m_p50": 0.0041,
+     "agreement_m_p99": 0.0196,
+     "share_multi_label_dropped": 0.0
+    },
+    "niagara-falls-ny": {
+     "panos": 643,
+     "multi_label_panos": 307,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0071,
+     "share_multi_label_dropped": 0.0
+    },
+    "oradell-nj": {
+     "panos": 4122,
+     "multi_label_panos": 2946,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0,
+     "share_multi_label_dropped": 0.0
+    },
+    "paterson-nj": {
+     "panos": 6915,
+     "multi_label_panos": 3622,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0168,
+     "dropped_inversion_disagrees": 17,
+     "share_multi_label_dropped": 0.0047
+    },
+    "pittsburgh-pa": {
+     "panos": 11857,
+     "multi_label_panos": 6230,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 1.1431,
+     "dropped_inversion_disagrees": 192,
+     "share_multi_label_dropped": 0.0308
+    },
+    "rancagua-chile": {
+     "panos": 784,
+     "multi_label_panos": 450,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0004,
+     "share_multi_label_dropped": 0.0
+    },
+    "santiago-chile": {
+     "panos": 381,
+     "multi_label_panos": 225,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0087,
+     "share_multi_label_dropped": 0.0
+    },
+    "sao-paulo-brazil": {
+     "panos": 218,
+     "multi_label_panos": 117,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0099,
+     "share_multi_label_dropped": 0.0
+    },
+    "seattle-wa": {
+     "panos": 106117,
+     "multi_label_panos": 61737,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 12.3339,
+     "dropped_inversion_disagrees": 26178,
+     "share_multi_label_dropped": 0.424
+    },
+    "spgg": {
+     "panos": 33880,
+     "multi_label_panos": 22108,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 14.3888,
+     "dropped_inversion_disagrees": 7027,
+     "share_multi_label_dropped": 0.3178
+    },
+    "st-louis-mo": {
+     "panos": 43531,
+     "multi_label_panos": 17916,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0076,
+     "dropped_inversion_disagrees": 15,
+     "share_multi_label_dropped": 0.0008
+    },
+    "teaneck-nj": {
+     "panos": 8414,
+     "multi_label_panos": 5412,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0,
+     "dropped_inversion_disagrees": 12,
+     "share_multi_label_dropped": 0.0022
+    },
+    "tucson-az": {
+     "panos": 2170,
+     "multi_label_panos": 1308,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0019,
+     "share_multi_label_dropped": 0.0
+    },
+    "vancouver-wa": {
+     "panos": 28987,
+     "multi_label_panos": 17955,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0,
+     "dropped_inversion_disagrees": 1,
+     "share_multi_label_dropped": 0.0001
+    },
+    "virden-il": {
+     "panos": 396,
+     "multi_label_panos": 142,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0,
+     "share_multi_label_dropped": 0.0
+    },
+    "walla-walla-wa": {
+     "panos": 4471,
+     "multi_label_panos": 2667,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0455,
+     "dropped_inversion_disagrees": 27,
+     "share_multi_label_dropped": 0.0101
+    },
+    "waltham-ma": {
+     "panos": 2049,
+     "multi_label_panos": 897,
+     "agreement_m_p50": 0.0,
+     "agreement_m_p99": 0.0056,
+     "dropped_inversion_disagrees": 1,
+     "share_multi_label_dropped": 0.0011
+    }
+   },
+   "agree_tol_m": 0.05,
+   "panos_sha256": "9a4a2e24f3f45e2fff7f178656b748f063fd029e0a539095f197e4c25d48a34b"
+  },
+  "round3_split_sha256": {
+   "CurbRamp": "f2ec89f8032c9b6b7c1533bea7ac82d82b7c139847b14286dd53d932a2195610",
+   "NoCurbRamp": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+   "Obstacle": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+   "SurfaceProblem": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+   "Crosswalk": "91001f64b778ec3d59b381d50911c6bd8ea35449052574d97eb4c9380d37f00f"
+  },
+  "anchor_pool": "decided",
+  "experts_set": false,
+  "label_drops": {
+   "non_gsv": 16881,
+   "bad_pano_size": 218
+  },
+  "anchor_drops": {
+   "not_vote_decided": 778435,
+   "ai_authored": 1,
+   "no_capture_month": 0,
+   "photosphere": 19,
+   "no_camera_position": 11056
+  },
+  "position_sources": [
+   "inverted"
+  ],
+  "settings": {
+   "TYPES": [
+    "CurbRamp",
+    "NoCurbRamp",
+    "Obstacle",
+    "SurfaceProblem",
+    "Crosswalk"
+   ],
+   "PRESENCE_TYPES": [
+    "CurbRamp",
+    "NoCurbRamp",
+    "Crosswalk"
+   ],
+   "CAMERA_HEIGHT_M": 2.341219672825709,
+   "BLEND_DEG": 11.25,
+   "DIST_CAP_M": 50.0,
+   "EARTH_R_M": 6371000.0,
+   "M_PER_DEG": 111194.92664455873,
+   "FOCAL_PX": 1024.0000000000002,
+   "B_SEARCH_M": 5.0,
+   "LONG_MONTHS": 24,
+   "CONTROL_MONTHS": [
+    1,
+    3
+   ],
+   "AGREE_TOL_M": 0.05,
+   "MIN_DEPRESSION_DEG": 5.0,
+   "B_RANGE_M": [
+    3.0,
+    25.0
+   ],
+   "RANGE_RATIO": [
+    0.6,
+    1.6
+   ],
+   "MAX_PARALLAX_DEG": 25.0,
+   "QC_ORDER": [
+    "no_camera_position",
+    "photosphere",
+    "near_horizon",
+    "baseline",
+    "b_range",
+    "range_ratio",
+    "b_near_horizon",
+    "parallax"
+   ],
+   "RESIDUAL_WINDOW_DEG": 30.0,
+   "FLOOR_WINDOW_DEG": 15.0,
+   "CONTRA_WINDOW_DEG": 15.0,
+   "WITHIN_PX": [
+    100,
+    240
+   ],
+   "SEED": 20261112,
+   "LISTING_MAX_AGE_DAYS": 1,
+   "ARMS": [
+    "same_month",
+    "control",
+    "long_newer"
+   ]
+  }
+ },
+ "public_check": {
+  "listing": "cities-2026-11-12.json",
+  "sha256": "a4a2fab7379cada5d583f1bffa329a5b1f065741af3f51123b0a15403ceb5aca",
+  "fetched_on": null,
+  "listing_age_days": 0,
+  "all_named_deployments_public": true
+ },
+ "gates_sha256": "4ff94f3374b1db94c19bcf1e9bf77a69c3880f30ba44caa2e76d691d51003077"
+}

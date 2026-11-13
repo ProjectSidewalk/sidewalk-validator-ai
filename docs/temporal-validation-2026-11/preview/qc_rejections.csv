@@ -1,0 +1,5 @@
+# PREVIEW (not the gate): camera positions inverted from public rawLabels, not read from the database; no gate verdict is given on these numbers.
+arm,b_near_horizon,b_range,near_horizon,ok,parallax,photosphere,range_ratio
+control,26,16,8,729,136,0,88
+long_newer,39,85,57,2665,461,3,285
+same_month,95,110,59,2794,891,0,544
