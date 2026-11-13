@@ -103,6 +103,29 @@ def test_t2_ratio_scales_with_height_and_slopes_do_not(r3):
         assert sa[k] == pytest.approx(sb[k], abs=1e-12)
 
 
+def test_t3_near_horizon_edge_and_missing_pixel_are_excluded():
+    """Exactly 2 degrees below the horizon is excluded ("within 2 degrees or above"), as is a row with no pixel."""
+    tf = da.trig_frame(pd.DataFrame({"depth_m": [20.0] * 4, "pano_height": [8192] * 4,
+                                     "pano_y": [y_for_depression(2.0), y_for_depression(2.01), np.nan,
+                                                y_for_depression(30.0)]}))
+    assert tf.why_excluded.tolist() == ["near_horizon", "", "near_horizon", ""]
+    assert tf.usable.tolist() == [False, True, False, True]
+
+
+def test_committed_public_sample_has_only_public_columns_and_city_scoped_uids():
+    """data/depth-agreement-2026-11/sample_public.csv: the public columns only (no paths, depths or user ids), and
+    every label_uid is <city>:<label_id> of its own row (a label_id alone is per-city, not a key)."""
+    path = os.path.join(os.path.dirname(__file__), "..", "data", "depth-agreement-2026-11", "sample_public.csv")
+    pub = pd.read_csv(path, dtype={"label_uid": str, "city": str})
+    assert list(pub.columns) == da.PUBLIC_SAMPLE_COLUMNS
+    assert pub.label_uid.is_unique
+    assert (pub.label_uid == pub.city + ":" + pub.label_uid.str.split(":").str[1]).all()
+    assert pub.label_uid.str.fullmatch(r"[a-z0-9-]+:[0-9]+").all()
+    rec = json.load(open(os.path.join(os.path.dirname(path), "sample.json")))
+    assert rec["outputs"]["sample_public.csv"] == da.sha256_file(path)
+    assert pub.city.nunique() <= rec["public_listing"]["n_public"]
+
+
 def test_t3_ai_and_near_horizon_excluded_and_counted(tmp_path):
     def extra(t, df):
         if t == "CurbRamp":
@@ -534,6 +557,7 @@ def test_17_sample_outputs_and_store_root(tmp_path):
     public = pd.read_csv(public_out / "sample_public.csv")
     assert len(full) == len(public) == 5 * 8
     assert not any(c in public for c in ("pano_path", "depth_m", "crop_half_px", "store_root"))
+    assert list(public.columns) == ["label_uid", "city", "label_type", "label_class", "rank", "order", "set_a"]
     assert not public.city.eq("secret-town").any()
     lines = (out / "stage_files.txt").read_text().split()
     assert all(re.fullmatch(r"pub-[abc]/[A-Za-z0-9]{2}/[A-Za-z0-9]+\.depth\.npz", ln) for ln in lines)
@@ -1113,6 +1137,8 @@ def test_r_a_pool_of_one_or_two_private_deployments_shows_counts_only(tmp_path):
     assert not one["pub-a"]["small"] and one["pub-a"]["ratio_med"] is not None
     md = da.table_markdown(_t(out, "city"))
     assert re.search(r"\| non-public deployments \(1\) \| 150 \| 80 \| n too small \|", md)
+    _, two = city_table(("pub-a", "pub-b", "s1", "s2"))
+    assert two["non-public deployments (2)"]["small"] and two["non-public deployments (2)"]["ratio_med"] is None
     _, three = city_table(("pub-a", "pub-b", "s1", "s2", "s3"))
     assert not three["non-public deployments (3)"]["small"] and three["non-public deployments (3)"]["ratio_med"]
 
