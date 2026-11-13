@@ -463,6 +463,11 @@ own hash.
 | `$D/stage_files.txt` | `9e689aaff2130d60b7beb31f8626b03ff58a1add9a4f32375247c2dacdc7d61c` |
 | `data/depth-agreement-2026-11/sample_public.csv` | `efd5a3e9fd6c9da8e966836b57b58c54b94a476ac99bf1392a941ff1c0b249dc` |
 
+The `sample.csv` hash holds under pandas 2.x (2.3.1 checked). Under pandas 3.1.1 that file differs in the last
+digit of five `camera_pitch` values, which pandas 3 parses and writes back differently. The sample it describes is
+the same, and every other output above (`sample_public.csv` included), `tables.md` and the figure are
+byte-identical under pandas 3.1.1 (checked 2026-11-13).
+
 `trig_tables.json` reproduces byte for byte: three runs of the code at `64c7f7e` gave the same hash, and `trig.csv`
 is unchanged from the first run at `b2756eb`. `docs/depth-ablation-2026-11/provenance.json` records the hashes of
 `tables.md` and the figure. Regenerated on 2026-11-12 in the review of PR #104: `trig_tables.json` and `tables.md`
