@@ -321,6 +321,54 @@ def test_shared_cell_diff_one_shared_cell_is_not_estimable():
     assert "not estimable: 1 shared cell (needs 2)" in text
 
 
+def test_shared_cell_diff_renormalises_over_shared_cells_and_weights_by_domain_share():
+    # cell A: 20 items, 10 in the domain (5 kept 5/5 incorrect, 5 dropped 2/5); cell B: 10 items, all in the domain
+    # (5 kept 3/5, 5 dropped 3/5); cell C: kept only, so not shared but it carries weight. Population 100 each, so the
+    # domain weights are A 100 * 10/20 = 50, B 100 * 10/10 = 100, renormalised over A and B: 1/3 and 2/3.
+    a_kept = [True] * 5 + [False] * 5 + [False] * 10
+    a_dom = [True] * 10 + [False] * 10
+    a_ok = [True] * 5 + [True, True, False, False, False] + [False] * 10
+    b_kept = [True] * 5 + [False] * 5
+    b_ok = [True, True, True, False, False] * 2
+    x = pd.DataFrame({"t": ["A"] * 20 + ["B"] * 10 + ["C"] * 6,
+                      "kept": a_kept + b_kept + [True] * 6,
+                      "dom": a_dom + [True] * 10 + [True] * 6,
+                      "ok": a_ok + b_ok + [True] * 6})
+    r = ts.shared_cell_diff(x, ["t"], {("A",): 100, ("B",): 100, ("C",): 100}, x.dom, x.kept, x.ok)
+    assert (r["cells"], r["cells_a"], r["cells_b"], r["cells_shared"]) == (3, 3, 2, 2)
+    assert r["estimable"] is True and (r["n_a"], r["n_b"]) == (10, 10)
+    assert r["rate_a"] == pytest.approx(1 / 3 * 1.0 + 2 / 3 * 0.6)
+    assert r["rate_b"] == pytest.approx(1 / 3 * 0.4 + 2 / 3 * 0.6)
+    assert r["diff"] == pytest.approx(0.2)
+    assert r["diff"] != pytest.approx(0.3)  # what equal cell weights (no domain share) would give
+    assert r["weight_share"] == pytest.approx(150 / 250)
+    se = np.sqrt((1 / 3) ** 2 * (_ac(5, 5) + _ac(2, 5)) + (2 / 3) ** 2 * (_ac(3, 5) + _ac(3, 5)))
+    assert r["se"] == pytest.approx(se)
+
+
+def test_weighted_p1_shared_diff_reads_only_margin_incorrect_rows():
+    w = {"1": {("voted_disagree", t): 100 for t in ts.LABEL_TYPES},
+         "2": {(c, "margin_incorrect", "NoCurbRamp"): 100 for c in ("city-a", "city-b")}}
+    f = _p1_frame()
+    extra = pd.DataFrame([{"round": "2", "ai_vote": "Disagree", "city_id": c, "label_type": "NoCurbRamp",
+                           "group_r1": "", "stratum": "margin_incorrect", "rule_margin": "correct",
+                           "rule_symmetric3": "", "expert": "correct"}
+                          for c, n in (("city-a", 5), ("city-b", 6)) for _ in range(n)])
+    s2 = ts.weighted_p1(pd.concat([f, extra], ignore_index=True), w)["2"]["shared"]
+    # the margin-correct rows cut each cell's domain share to 2/3 (10 of 15, 12 of 18), so the cells keep equal
+    # weights and the result equals the fixture's own
+    assert (s2["n_a"], s2["n_b"]) == (11, 11)
+    assert s2["diff"] == pytest.approx(0.2)
+
+
+def test_render_weighted_labels_kept_and_dropped():
+    s = ts.weighted_p1(_p1_frame(), {"1": {("voted_disagree", t): 100 for t in ts.LABEL_TYPES},
+                                     "2": {(c, "margin_incorrect", "NoCurbRamp"): 100
+                                           for c in ("city-a", "city-b")}})
+    text = ts.render_weighted({"weighted": s})
+    assert "kept 75.0% (n 11), dropped 55.0% (n 11)" in text
+
+
 def test_gain_boot_is_kept_minus_all():
     ok = [1, 1, 1, 0, 1, 0, 0, 0]
     a = [True] * 4 + [False] * 4
@@ -329,6 +377,53 @@ def test_gain_boot_is_kept_minus_all():
     d = ts.diff_boot(ok, a, 0)[0]
     assert g == pytest.approx(d * 4 / 8)  # the A-minus-B difference times B's share
     assert lo <= g <= hi and ts.gain_boot(ok, a, 500, 1) == (g, lo, hi)
+
+
+def _p1_rows_frame():
+    """Round 1: kept 6 (5 incorrect) against dropped 6 (2 incorrect), both groups at MIN_CELL or more. Round 2: kept
+    2 (2 incorrect) against dropped 8 (3 incorrect), kept under MIN_CELL. Plus rows p1_rows must ignore: an AI Agree
+    and a margin-``correct`` AI Disagree."""
+    rows = []
+
+    def add(rnd, kept, ok, n, ai="Disagree", margin="incorrect"):
+        for i in range(n):
+            rows.append({"round": rnd, "ai_vote": ai, "rule_margin": margin,
+                         "rule_symmetric3": "incorrect" if kept else "", "rule_unanimous3": "",
+                         "expert": "incorrect" if i < ok else "correct"})
+    add("1", True, 5, 6)
+    add("1", False, 2, 6)
+    add("2", True, 2, 2)
+    add("2", False, 3, 8)
+    add("2", False, 0, 3, ai="Agree")
+    add("2", False, 0, 3, margin="correct")
+    return pd.DataFrame(rows)
+
+
+def test_p1_rows_gain_is_kept_minus_all_with_its_own_interval():
+    p1 = ts.p1_rows(_p1_rows_frame(), n_boot=2000, seed=3)
+    r1, r2, pooled = p1["1"], p1["2"], p1["pooled"]
+    # round 1: kept 5/6, all 7/12; round 2: kept 2/2, all 5/10; pooled: kept 7/8, all 12/22
+    assert r1["gain"]["gain"] == pytest.approx(5 / 6 - 7 / 12)
+    assert r2["gain"]["gain"] == pytest.approx(1.0 - 0.5)
+    assert pooled["gain"]["gain"] == pytest.approx(7 / 8 - 12 / 22)
+    assert pooled["gain"]["gain"] == pytest.approx(pooled["diff"] * 14 / 22)  # kept minus dropped times B's share
+    # the gain's interval is its own bootstrap, about B's share of the kept-minus-dropped interval, not that interval
+    for r in (r1, pooled):
+        g = r["gain"]
+        assert g["lo"] <= g["gain"] <= g["hi"]
+        assert (g["hi"] - g["lo"]) < 0.85 * (r["hi"] - r["lo"])  # about 0.5 (round 1) and 0.7 (pooled) here
+    # a round with a group under MIN_CELL has a point but no interval, like its kept-minus-dropped row
+    assert r2["gain"]["gain"] is not None and r2["gain"]["lo"] is None and r2["gain"]["hi"] is None
+    assert r2["lo"] is None
+
+
+def test_contrast_blanks_the_interval_under_min_cell():
+    ok = [1, 1, 0] + [1, 0, 0, 0, 0, 1, 0, 0, 0, 0]
+    thin = ts.contrast(ok, [True] * 3 + [False] * 10, n_boot=500, seed=1)
+    assert thin["diff"] == pytest.approx(2 / 3 - 0.2) and thin["lo"] is None and thin["hi"] is None
+    ok5 = [1, 1, 0, 1, 1] + [1, 0, 0, 0, 0, 1, 0, 0, 0, 0]
+    full = ts.contrast(ok5, [True] * 5 + [False] * 10, n_boot=500, seed=1)
+    assert full["lo"] is not None and full["lo"] <= full["diff"] <= full["hi"]
 
 
 def test_did_boot_numeric_path():
@@ -397,6 +492,25 @@ def test_build_frame_refuses_a_wrong_split_root_and_no_flags(tmp_path):
     g2 = g.assign(cl_flagged=False)
     with pytest.raises(ValueError, match="flagged"):
         ts.build_frame(g2, _pool(g2), root)
+
+
+def test_split_files_needed_and_a_missing_noisy_targets_file(tmp_path):
+    need = ts.split_files_needed("R", "CurbRamp")
+    assert need == [os.path.join("R", "CurbRamp", rel) for rel in
+                    ["split.csv", "cl/noisy_targets.csv"] + [f"cl/{v}/split.csv" for v in ts.VARIANTS]]
+    g = _gold()
+    root = _split_root(tmp_path, g)
+    os.remove(os.path.join(root, "Obstacle", "cl", "noisy_targets.csv"))
+    with pytest.raises(FileNotFoundError, match="noisy_targets"):
+        ts.build_frame(g, _pool(g), root)
+
+
+def test_score_cli_names_a_missing_split_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(ts, "city_lists", lambda: LISTS)
+    args = _cli_inputs(tmp_path, _gold())
+    args[args.index("--split-root") + 1] = str(tmp_path / "no-splits")
+    with pytest.raises(SystemExit, match="input not found: --split-root"):
+        ts.main(args + ["--out-dir", str(tmp_path / "p"), "--out", str(tmp_path / "pub")])
 
 
 def test_score_cli_names_a_missing_input(tmp_path, monkeypatch):
@@ -531,6 +645,23 @@ def test_committed_json_reproduces_the_hand_numbers():
     assert {k: round(100 * v, 1) for k, v in c["pool_cover_share"].items() if k != "symmetric2"} == {
         "majority": 59.5, "majority2": 31.5, "margin": 19.8, "symmetric3": 11.7, "unanimous3": 6.4}
     assert j["check_b"]["cl-drop"]["touched_overturned"] == 4
+
+
+def test_both_primaries_are_pooled_primary_estimates():
+    assert ts.ROLES == {"P1": "primary", "P2": "primary", "P1_unanimous3": "descriptive"}
+
+
+def test_render_primary_says_where_the_flagged_rows_come_from():
+    j, _ = _committed()
+    text = ts.render_primary(j)
+    assert ("Of the pooled P2's 13 flagged rows, 2 are from round 1 and 11 from round 2; with 2 flagged round-1 rows "
+            "the rounds cannot be compared.") in text
+    for n1, n2, tail in ((1, 1, "with 1 flagged round-1 row and 1 flagged round-2 row the rounds cannot be compared."),
+                         (6, 7, "6 are from round 1 and 7 from round 2.")):
+        k = json.loads(json.dumps(j))
+        k["primary"]["P2"]["1"]["a"]["n"], k["primary"]["P2"]["2"]["a"]["n"] = n1, n2
+        assert tail in ts.render_primary(k)
+        assert "mostly" not in ts.render_primary(k)
 
 
 def test_doc_prose_quotes_the_json():
