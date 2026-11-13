@@ -29,7 +29,9 @@ are on the list; the meta file records whether they did (``fewshot_matches_open_
 **Public deployments only.** ``--cities-file`` (required; a JSON list, a saved ``/v3/api/cities`` response, or one
 city id per line) limits both the scored crops and the few-shot examples to those deployments; nothing else is sent.
 The meta file records the list's sha256 (over the sorted ids, one per line) and its size, never the names of the
-deployments left out. The leg is then "partial" on the scoreboard; a ``notes.json`` entry can say why.
+deployments left out. The leg is then "partial" on the scoreboard (``vlm_scoreboard.API_LEGS`` gives it a default
+coverage note; a ``notes.json`` entry overrides it). The scoreboard's ``build`` does not restrict the other legs to
+this leg's crops: its AUCs sit beside theirs on different crops, and a same-crop comparison is not produced.
 
 **Cost.** After each label type one JSON line goes to ``--usage-log`` (outside any git checkout, or ``none``): model,
 leg, type, calls, input / output / thinking / cached tokens from the SDK's usage metadata, wall time, and an estimate

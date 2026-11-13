@@ -796,3 +796,20 @@ def test_load_leg_treats_a_blank_reason_as_scored_and_refuses_a_silent_nan(tmp_p
     _write_leg(tmp_path / "bad", ["", "", ""], [0.2, None, 0.7])
     with pytest.raises(ValueError, match=r"bad/Obstacle\.csv: 1 rows with no p_incorrect"):
         sb.load_leg(str(tmp_path / "bad"))
+
+
+def test_the_gemini_leg_is_named_self_reported_and_noted_as_public_only():
+    """#105 review, finding 9: the API leg shows as self-reported (not the raw id as a plain chat VLM), is absent from
+    the coverage table until staged (no "not run yet" rows, so a build without it is unchanged), and once staged
+    its missing cells say "public deployments only" rather than "partial: run incomplete"."""
+    assert sb.leg_info("gemini-3.8-flash") == ("Gemini 3.8 Flash (API, self-reported score)", sb.CHAT)
+    assert sb.leg_info("gemini-3.8-flash-fewshot8")[0] == "Gemini 3.8 Flash (API, self-reported score), 8-shot"
+    splits = pd.DataFrame({"label_type": ["Obstacle"] * 4, "label_uid": [f"pub-a:{i}" for i in range(4)]})
+    rows = sb.coverage_rows({"round3": splits}, splits, {})
+    assert not any(r["leg"] in sb.API_LEGS for r in rows)
+    for leg in ("gemini-3.8-flash", "gemini-3.8-flash-fewshot8"):
+        rows = sb.coverage_rows({"round3": splits, leg: splits.head(2)}, splits, {})
+        (r,) = [r for r in rows if r["leg"] == leg and r["label_type"] == "Obstacle"]
+        assert r["why"].startswith("public deployments only") and not r["complete"]
+    rows = sb.coverage_rows({"gemini-3.8-flash": splits.head(2)}, splits, {"gemini-3.8-flash": {"*": "a note"}})
+    assert [r["why"] for r in rows if r["label_type"] == "Obstacle"][0] == "a note"
