@@ -252,4 +252,28 @@ Three things the first run (2026-11-05) needed that the launcher does not do for
 - **An `sbatch` that fails with a socket timeout may still have submitted the job.** Check `squeue -u $USER` before
   resubmitting; the first attempt queued a duplicate chain that had to be cancelled and its outputs wiped.
 
+**Step (b), the masked expert round** (`analysis/nosidewalk_round.py`). On klone it needs a gate run that kept its
+checkpoints, the phase-1 panoramas staged, and one crop-and-score job:
+
+```bash
+KEEP_BEST=1 DATA=... GATE=$DATA/gate2 RUNS=/gscratch/scrubbed/$USER/nosidewalk-runs/gate2 ./nosidewalk_gate_submit.sh
+RUN=/gscratch/scrubbed/$USER/nosidewalk-2026-11/round-b        # holds labels.csv and stage_files.txt from `pool`
+RUN=$RUN DEST=/gscratch/scrubbed/$USER/pano-stage/NoSidewalk sbatch --export=ALL analysis/ai_labels_stage.slurm
+RUN=$RUN RUNS=/gscratch/scrubbed/$USER/nosidewalk-runs/gate2 STORE=/gscratch/scrubbed/$USER/pano-stage/NoSidewalk \
+    sbatch --export=ALL --dependency=afterok:<stage and fold job ids> nosidewalk_round.slurm
+```
+
+Copy `manifest.csv`, `crops_run.json` and `predictions_fold<k>.csv` back for `nosidewalk_round.py build`.
+
 Design, bar and results: [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md).
+
+## Depth agreement (issue #21)
+
+Two jobs, run from `/gscratch/scrubbed/$USER/depth-ablation-2026-11` (both refuse any other directory):
+`analysis/depth_agreement_stage.slurm` (one rsync connection for the sample's `.depth.npz` artifacts, no requeue),
+then `analysis/depth_agreement.slurm` (ViT-B and ViT-L depth on round 3's render plus Google's depth, one GPU,
+about 1 GPU-h). The ViT-L checkpoint is `depth_anything_v2_metric_vkitti_vitl.pth` from
+`depth-anything/Depth-Anything-V2-Metric-VKITTI-Large`. **Its revision is not pinned yet** (TODO(#21)), and the GPU
+job refuses to start until `VITL_REV` (a 40-hex commit) and `VITL_SHA256` (verified against the file) are set: read
+the commit on a login node and pin both here and in the job file. Recipe and expected outputs:
+[`depth-ablation-2026-11.md`](depth-ablation-2026-11.md), "Reproduce".

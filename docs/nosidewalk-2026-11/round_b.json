@@ -1,0 +1,253 @@
+{
+ "items": 250,
+ "unanswered": 2,
+ "cant_tell": 13,
+ "gate": 0.92,
+ "primary": {
+  "k": 142,
+  "n": 144,
+  "rate": 0.9861111111111112,
+  "wilson95_lower": 0.9507765031823722,
+  "bar_met": true,
+  "unsure_as_incorrect": {
+   "k": 142,
+   "n": 149,
+   "rate": 0.9530201342281879,
+   "wilson95_lower": 0.9062078139650711
+  },
+  "weighted": 0.9979835772095846,
+  "weighted_ci95": [
+   0.9949589430239616,
+   1.0
+  ],
+  "weighted_n_eff": 84.45194180686501,
+  "weighted_wilson95_lower_n_eff": 0.9527154580245503
+ },
+ "prior_correct": 0.8305856976206722,
+ "population_correct": {
+  "share": 0.8775874089612801,
+  "ci95": [
+   0.8186308180011023,
+   0.9317999891354424
+  ]
+ },
+ "strata": {
+  "pass": {
+   "k": 142,
+   "n": 144,
+   "rate": 0.9861111111111112,
+   "wilson95_lower": 0.9507765031823722,
+   "items": 150,
+   "cant_tell": 5
+  },
+  "agree_below": {
+   "k": 42,
+   "n": 48,
+   "rate": 0.875,
+   "wilson95_lower": 0.7529927291394518,
+   "items": 50,
+   "cant_tell": 2
+  },
+  "model_incorrect": {
+   "k": 20,
+   "n": 43,
+   "rate": 0.46511627906976744,
+   "wilson95_lower": 0.3251082626391856,
+   "items": 50,
+   "cant_tell": 6
+  }
+ },
+ "cities": {
+  "chicago-il": {
+   "pass": {
+    "k": 51,
+    "n": 51,
+    "rate": 1.0,
+    "wilson95_lower": 0.9299509861127317
+   },
+   "population_correct": 0.9249982982099516,
+   "decided": 84,
+   "incorrect": 8
+  },
+  "tucson-az": {
+   "pass": {
+    "k": 29,
+    "n": 31,
+    "rate": 0.9354838709677419,
+    "wilson95_lower": 0.7928101168125355
+   },
+   "population_correct": 0.7881942813113705,
+   "decided": 54,
+   "incorrect": 12
+  },
+  "oradell-nj": {
+   "pass": {
+    "k": 33,
+    "n": 33,
+    "rate": 1.0,
+    "wilson95_lower": 0.8957265699643882
+   },
+   "population_correct": 0.9805771365149832,
+   "decided": 49,
+   "incorrect": 2
+  },
+  "cdmx": {
+   "pass": {
+    "k": 29,
+    "n": 29,
+    "rate": 1.0,
+    "wilson95_lower": 0.8830264055344442
+   },
+   "population_correct": 0.7128278000258365,
+   "decided": 48,
+   "incorrect": 9
+  }
+ },
+ "models": {
+  "0": {
+   "k": 115,
+   "n": 117,
+   "rate": 0.9829059829059829,
+   "wilson95_lower": 0.9398087235860804,
+   "precision_weighted": 0.9974353720826084,
+   "coverage_weighted": 0.3181918312443852,
+   "auc_weighted": 0.8832910426561951,
+   "within_city_auc_weighted": 0.926322548514726,
+   "auc_cities": 4
+  },
+  "1": {
+   "k": 83,
+   "n": 84,
+   "rate": 0.9880952380952381,
+   "wilson95_lower": 0.9356030079821146,
+   "precision_weighted": 0.9984557942558534,
+   "coverage_weighted": 0.2642276317739719,
+   "auc_weighted": 0.909703153337015,
+   "within_city_auc_weighted": 0.9431109005552825,
+   "auc_cities": 4
+  },
+  "2": {
+   "k": 155,
+   "n": 158,
+   "rate": 0.9810126582278481,
+   "wilson95_lower": 0.9456678903718178,
+   "precision_weighted": 0.9751836332766204,
+   "coverage_weighted": 0.6216306662454849,
+   "auc_weighted": 0.8706516832706124,
+   "within_city_auc_weighted": 0.9407563058350558,
+   "auc_cities": 4
+  },
+  "3": {
+   "k": 121,
+   "n": 121,
+   "rate": 1.0,
+   "wilson95_lower": 0.9692282059826209,
+   "precision_weighted": 1.0,
+   "coverage_weighted": 0.3715391893754735,
+   "auc_weighted": 0.9233243018154942,
+   "within_city_auc_weighted": 0.94232757235106,
+   "auc_cities": 4
+  },
+  "4": {
+   "k": 153,
+   "n": 157,
+   "rate": 0.9745222929936306,
+   "wilson95_lower": 0.9363284856960792,
+   "precision_weighted": 0.9626817266983849,
+   "coverage_weighted": 0.5357807983381813,
+   "auc_weighted": 0.8189696053708969,
+   "within_city_auc_weighted": 0.7530576372170589,
+   "auc_cities": 4
+  }
+ },
+ "slices": {
+  "severity": {
+   "(none)": {
+    "k": 142,
+    "n": 144,
+    "rate": 0.9861111111111112,
+    "wilson95_lower": 0.9507765031823722,
+    "decided": 235,
+    "population_correct": 0.8775874089612801,
+    "train_rows": 758
+   }
+  },
+  "tag": {
+   "(none)": {
+    "k": 23,
+    "n": 23,
+    "rate": 1.0,
+    "wilson95_lower": 0.8568788745827373,
+    "decided": 48,
+    "population_correct": 0.8917488266510667,
+    "train_rows": 325
+   },
+   "ends abruptly": {
+    "k": 4,
+    "n": 5,
+    "rate": 0.8,
+    "wilson95_lower": 0.37552826411853885,
+    "decided": 22,
+    "population_correct": 0.8120479860362066,
+    "train_rows": 47
+   },
+   "gravel/dirt road": {
+    "k": 14,
+    "n": 15,
+    "rate": 0.9333333333333333,
+    "wilson95_lower": 0.70182922447576,
+    "decided": 20,
+    "population_correct": 0.8567159022093869,
+    "train_rows": 38
+   },
+   "shared pedestrian/car space": {
+    "k": 5,
+    "n": 6,
+    "rate": 0.8333333333333334,
+    "wilson95_lower": 0.4364905634363539,
+    "decided": 20,
+    "population_correct": 0.3283094797818577,
+    "train_rows": 40
+   },
+   "street has a sidewalk": {
+    "k": 14,
+    "n": 14,
+    "rate": 1.0,
+    "wilson95_lower": 0.7846829880728186,
+    "decided": 29,
+    "population_correct": 0.8486766229847282,
+    "train_rows": 93
+   },
+   "street has no sidewalks": {
+    "k": 95,
+    "n": 95,
+    "rate": 1.0,
+    "wilson95_lower": 0.9611337736337737,
+    "decided": 127,
+    "population_correct": 0.9493209088987062,
+    "train_rows": 278
+   }
+  }
+ },
+ "crowd_vs_expert": {
+  "correct": {
+   "correct": 34,
+   "incorrect": 2
+  },
+  "incorrect": {
+   "correct": 2,
+   "incorrect": 12
+  },
+  "none or tie": {
+   "correct": 168,
+   "incorrect": 17
+  }
+ },
+ "provenance": {
+  "key_sha256": "d2d30d05912e1a12cd75f56822a32413cb250dd048a5c17ff5bc13ae949172a8",
+  "sheet_sha256": "09a2624f93ff5ca203dfd8f0a4038129252d12334d863046986931e99ce957c9",
+  "scores_sha256": "66ffe36eed0ce7c9677075eea223333305f9a205056b89221907d4893eae9704",
+  "n_boot": 1000,
+  "seed": 0
+ }
+}
