@@ -136,6 +136,8 @@
   "mixed_expected_if_independent": 192.44955014460027,
   "mixed_minority_at_most_20pct": 42,
   "median_labels_mixed": 9.0,
+  "median_labels_not_mixed": 5.0,
+  "labels_at_2_or_3_models": 640,
   "two_label_faces": 27,
   "two_label_faces_mixed": 11
  },
@@ -346,5 +348,6 @@
   }
  },
  "gate": 0.92,
- "pass_models": 3
+ "pass_models": 3,
+ "n_models": 5
 }

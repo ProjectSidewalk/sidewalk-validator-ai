@@ -26,7 +26,7 @@ Labels beside the rated one, by the stratum of the face's rated label (the faces
 | agree below | 482 | 44 | 196 | 0.407 | 0.357 |
 | model incorrect | 324 | 39 | 62 | 0.191 | 0.170 |
 
-Faces with at least two scored labels: 222. The model's gate verdict is pass for every label on 38, for none on 38, and mixed on 146; independent verdicts at each city's pass share would leave about 192 mixed, so the verdict clusters by face. Mixed faces are the long ones (median 9 labels); on 42 of them at most a fifth of the labels differ from the rest. Of the 27 two-label faces, 11 are mixed.
+Faces with at least two scored labels: 222. The model's gate verdict is pass for every label on 38, for none on 38, and mixed on 146; verdicts drawn independently at each city's pass share (over the scored labels of these faces, rated ones included) would leave about 192 mixed, so the verdict clusters by face. Mixed faces are longer (median 9 labels against 5 on the others); on 42 of them at most a fifth of the labels differ from the rest. Of the 27 two-label faces, 11 are mixed. 640 of the 2635 scored labels sit at 2 or 3 of the 5 models, one model away from the other verdict.
 
 42 of the 250 rated faces carry a label the rater placed or voted on. Correct / decided = rate (Wilson 95 % lower bound) on the rated labels:
 

@@ -629,20 +629,25 @@ abruptly`) and 31 % (`shared pedestrian/car space`). NoSidewalk labels carry no 
 
 **The model's verdict clusters by face.** On the 222 faces with at least two scored labels the verdict is pass
 for every label on 38, for none on 38 and mixed on 146. Verdicts drawn independently at each city's pass share
-would leave about 192 faces mixed, so labels on one face tend to get the same verdict, but most faces with
-several labels still hold some disagreement. Mixed faces are the long ones (median 9 labels, up to 135); on 42 of
-them at most a fifth of the labels differ from the rest, and a verdict of "3 of 5 models" flips on small score
-changes. Of the 27 two-label faces, 11 are mixed.
+(taken over the scored labels of these faces, rated ones included) would leave about 192 faces mixed, so labels on
+one face tend to get the same verdict, but most faces with several labels still hold some disagreement. Mixed
+faces are longer (median 9 labels against 5 on the others, up to 135), and on 42 of them at most a fifth of the
+labels differ from the rest. The verdict is a threshold, "at least 3 of 5 models", and 640 of the 2,635 scored
+labels sit at 2 or 3 models, one model away from the other verdict. Of the 27 two-label faces, 11 are mixed.
 
 **Faces the rater already knew.** The pool kept the rater's own labels and votes out of the round, but not the
-faces they sit on: 42 of the 250 rated faces carry another label the rater had placed (26 faces) or voted on (22).
-On those faces the rater judged all 42 rated labels correct, 11 of them outside the pass stratum, where the other
-faces have 51 correct of 80. That is unlikely to be chance (about 0.007 at that rate), so either those faces
-really are without sidewalks more often (the rater placed NoSidewalk labels there) or knowing the street helped
-the label; the round cannot tell which. It does not change the bar: without the 42 faces the pass stratum is
-**111 / 113 = 0.982, Wilson lower bound 0.938**, on more than 100 decided labels, so the bar is still met
-(`neighbour-scores --sheet`; table in `neighbours.md`). A later round should exclude a face the rater has
-touched, not only the labels.
+faces they sit on: 42 of the 250 rated faces carry another NoSidewalk label the rater had placed (26 faces) or
+voted Agree on (22; 6 faces both). Only NoSidewalk labels are in the pull, so faces the rater knew through other
+label types are not counted, and 42 is a lower bound. On those faces the rater judged all 42 rated labels correct,
+11 of them outside the pass stratum, where the other faces have 51 correct of 80. Taking the other faces' rates
+within the same stratum and city, 11 of 11 has a chance of about 0.01 to 0.015; the cells behind that are small.
+Three readings fit and the round cannot tell them apart: those faces lack sidewalks more often; the rating
+repeats the rater's earlier judgment of the same street; or it is the city, since 32 of the 42 faces are in
+Oradell, where the rater placed most of these labels. It does not change the bar: without the 42 faces the pass
+stratum is **111 / 113 = 0.982, Wilson lower bound 0.938**, on more than 100 decided labels, so the bar is still
+met (`neighbour-scores --sheet`; table in `neighbours.md`). That is a check made after the fact, and it leaves
+Oradell with 8 pass-stratum ratings. A later round should exclude a face the rater has touched, not only the
+labels.
 
 **What this does and does not answer.** The clustering above is about the model's verdict only. Whether the
 labels of a run are right or wrong together (#102, item 1) needs several *rated* labels per face, and the round
@@ -665,7 +670,8 @@ phase-1 scores, `faces.csv` and `labels.csv`), `labels.csv`
 `44c097b8ba254263de8493fbdc12d0212fc8e99548ab5c343caf812a00f25cd9`, `scored/manifest.csv`
 `cbf8d7a2921dabd5533ab528144d1c18d0b869267a2a6696e790571f5ecd4102`, `face_scores.csv`
 `6da73f9e4e3c93de1102e8657b18e1e457c15b3d14c6ebf8de4b796775c54bd3`; `neighbours.json` in this repository pins the
-five prediction files. Kept archives: `pilot_whole.tar`
+five prediction files. `faces.csv` and `labels.csv` reproduce to these sha256s on pandas 2.x (2.3.1 was used);
+pandas 3 writes the last digit of some coordinates differently, with the same rows and the same aggregates. Kept archives: `pilot_whole.tar`
 `344788f6213c56a36aeee1482d61b4c33b0958545a2ed8fdb38e53683e712f91`, `round_b_crops.tar`
 `964333705291a7f1e318c05903ed9dacea1c4723f10e2498ba63f293b92fcd93`, `neighbour_crops.tar`
 `e64bda5aec092ccd73863693b20502565758be84696d67209bf25a50ab0fd895`; the fold weights' sha256s are in the keep

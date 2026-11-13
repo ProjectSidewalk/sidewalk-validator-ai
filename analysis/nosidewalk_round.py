@@ -45,6 +45,19 @@ Usage (``D`` outside the repo; the full run order is in ``docs/nosidewalk-2026-1
     python analysis/nosidewalk_round.py report --key ... --sheet $D/votes_jon.csv --scores .../scores.csv \\
         --out-json docs/nosidewalk-2026-11/round_b.json --out-md docs/nosidewalk-2026-11/round_b.md \\
         --doc docs/nosidewalk-2026-11.md
+
+After the round, for issue #102: every other NoSidewalk label on the rated faces, scored by the same fold models
+(its own run directory on klone; ``docs/running-on-hyak.md``)::
+
+    K=$D/private-key-do-not-share
+    RATER_ID=<uuid> python analysis/nosidewalk_round.py neighbours --design analysis/gt_rounds/nosidewalk_b.json \\
+        --rawlabels $D/rawlabels --key-dir $K --pool $D/pool --author-excluded $D/author_excluded.csv \\
+        --pilot-split <whole split.csv> --cityparams $D/gallery_jon/cityparams_snapshot.conf --out $D/neighbours
+    # klone: stage, crops, score into $D/neighbours/scored (manifest.csv, predictions_fold<k>.csv + provenance)
+    python analysis/nosidewalk_round.py neighbour-scores --design analysis/gt_rounds/nosidewalk_b.json --key-dir $K \\
+        --gate <gate2 dir> --priors <deployment_priors.json> --pinned-predictions $D/scored --neighbours $D/neighbours \\
+        --manifest $D/neighbours/scored/manifest.csv --predictions $D/neighbours/scored --sheet $K/votes_jon.csv \\
+        --out-json docs/nosidewalk-2026-11/neighbours.json --out-md docs/nosidewalk-2026-11/neighbours.md
 """
 import argparse
 import hashlib
@@ -488,6 +501,8 @@ def face_neighbours(raw, rated_uids, scored_uids, excluded, trained_panos, heldo
     df["same_labeler"] = (df["user_id"].astype(str) == df["face_id"].map(rated_user)).astype(int)
     # Parsed, not as text: the export writes 0 to 3 fractional digits, and "Z" sorts after a digit.
     df["_t"] = pd.to_datetime(df["time_created"], utc=True, format="ISO8601")
+    if df["_t"].isna().any():
+        raise ValueError("a label on a rated face has no time_created: its labeler cannot be ordered")
     df["_id"] = pd.to_numeric(df["label_id"])
     df = df.sort_values(["face_id", "_t", "_id"], kind="mergesort").drop(columns=["_t", "_id"]).reset_index(drop=True)
     first = df.drop_duplicates(["face_id", "user_id"])
@@ -625,6 +640,9 @@ def neighbour_report(face_scores, min_n=slices.MIN_N):
         "mixed_expected_if_independent": float((1 - p_city ** multi["n"] - (1 - p_city) ** multi["n"]).sum()),
         "mixed_minority_at_most_20pct": int((minority <= 0.2).sum()),
         "median_labels_mixed": float(mixed["n"].median()) if len(mixed) else None,
+        "median_labels_not_mixed": (float(multi.loc[~multi.index.isin(mixed.index), "n"].median())
+                                    if len(mixed) < len(multi) else None),
+        "labels_at_2_or_3_models": int(s["n_pass_models"].isin([2, 3]).sum()),
         "two_label_faces": int((multi["n"] == 2).sum()), "two_label_faces_mixed": int((mixed["n"] == 2).sum())}
     rep["slices"] = {}
     for by in slices.BY:
@@ -661,6 +679,10 @@ def rater_touched_report(rated, face_scores, gate):
     return out
 
 
+def _n(x):
+    return "n/a" if x is None else f"{x:g}"
+
+
 def neighbour_markdown(rep):
     def row(name, v):
         share = "" if v["pass_share"] is None else f"{v['pass_share']:.3f}"
@@ -675,11 +697,14 @@ def neighbour_markdown(rep):
             *[row(k.replace("_", " "), v) for k, v in rep["not_rated_by_rated_stratum"].items()], ""]
     f = rep["faces_with_2plus_scored"]
     out += [f"Faces with at least two scored labels: {f['faces']}. The model's gate verdict is pass for every label on "
-            f"{f['all_pass']}, for none on {f['none_pass']}, and mixed on {f['mixed']}; independent verdicts at each "
-            f"city's pass share would leave about {f['mixed_expected_if_independent']:.0f} mixed, so the verdict "
-            f"clusters by face. Mixed faces are the long ones (median {f['median_labels_mixed']:.0f} labels); on "
-            f"{f['mixed_minority_at_most_20pct']} of them at most a fifth of the labels differ from the rest. Of the "
-            f"{f['two_label_faces']} two-label faces, {f['two_label_faces_mixed']} are mixed.", ""]
+            f"{f['all_pass']}, for none on {f['none_pass']}, and mixed on {f['mixed']}; verdicts drawn independently "
+            f"at each city's pass share (over the scored labels of these faces, rated ones included) would leave "
+            f"about {f['mixed_expected_if_independent']:.0f} mixed, so the verdict clusters by face. Mixed faces are "
+            f"longer (median {_n(f['median_labels_mixed'])} labels against {_n(f['median_labels_not_mixed'])} on the "
+            f"others); on {f['mixed_minority_at_most_20pct']} of them at most a fifth of the labels differ from the "
+            f"rest. Of the {f['two_label_faces']} two-label faces, {f['two_label_faces_mixed']} are mixed. "
+            f"{f['labels_at_2_or_3_models']} of the {rep['all']['labels']} scored labels sit at 2 or 3 of the "
+            f"{rep['n_models']} models, one model away from the other verdict.", ""]
     if "rater_touched_faces" in rep:
         t = rep["rater_touched_faces"]
         out += [f"{t['faces_touched']} of the {t['faces']} rated faces carry a label the rater placed or voted on. "
@@ -769,7 +794,7 @@ def cmd_neighbour_scores(args):
     rep["crops"] = {c: {s: int(n) for s, n in g["status"].value_counts().items()}
                     for c, g in manifest.groupby("city")}
     rep["selection"] = nman["cities"]
-    rep["gate"], rep["pass_models"] = gate, n_pass
+    rep["gate"], rep["pass_models"], rep["n_models"] = gate, n_pass, n_folds
     rep = without_nan(rep)
     if args.out_json:
         with open(args.out_json, "w") as f:

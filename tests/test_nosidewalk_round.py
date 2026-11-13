@@ -350,6 +350,9 @@ def test_neighbours_are_the_other_labels_on_the_rated_faces(run, monkeypatch):
     open(path, "a").write("\n")
     with pytest.raises(SystemExit, match="not the file the pool was drawn from"):
         make_neighbours(run, key_dir)
+    open(pool / "pool.json", "a").write("\n")                                    # nor is an edited pool.json the pool
+    with pytest.raises(SystemExit, match="not the pool the key was built from"):
+        make_neighbours(run, key_dir)
 
 
 def test_pool_crop_input_after_the_crop_labels_refactor(run, monkeypatch):
@@ -424,6 +427,12 @@ def test_neighbour_scores_reproduces_the_pinned_scores_first(run, monkeypatch, c
     with pytest.raises(SystemExit, match="does not reproduce the pinned scores"):
         nr.main(args)
     monkeypatch.setattr(nr.ng, "fit_map", fit)
+    nj = nb / "neighbours.json"                                                # a neighbours list from another key
+    good = nj.read_text()
+    nj.write_text(json.dumps(dict(json.loads(good), key_sha256="0" * 64)))
+    with pytest.raises(SystemExit, match="different key or scores"):
+        nr.main(args)
+    nj.write_text(good)
     short = pd.read_csv(d / "predictions_fold2.csv")
     short.iloc[1:].to_csv(d / "predictions_fold2.csv", index=False)
     with pytest.raises(SystemExit, match="does not cover exactly"):
