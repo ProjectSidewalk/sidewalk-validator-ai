@@ -496,8 +496,86 @@ prediction files. `gate2` folds: `folds.csv` sha256 unchanged from step (a) (`89
 **Results.**
 
 <!-- round-b-results:start -->
-Not rated yet.
+250 items rated (13 Unsure, 2 unanswered). Precision cells are correct / decided = rate (Wilson 95 % lower bound); Unsure votes are outside the denominator.
+
+**Bar:** in the pass stratum, 142 / 144 = 0.986 (0.951); a lower bound >= 0.92 on >= 100 decided labels is met. **PASSES.** Reweighted to the cities' population: 0.998 [0.995, 1.000] (the interval holds the weights fixed, so it is somewhat narrow). With every Unsure in the pass stratum counted as incorrect: 142 / 149 = 0.953 (0.906).
+
+Share of correct NoSidewalk labels in these cities' eligible population: 0.878 [0.819, 0.932] (the deployment prior assumes 0.831 over every label with a face; this population leaves out the rater's own labels and trained faces).
+
+| stratum | items | Unsure | correct / decided (Wilson 95 % lower) |
+|---|---|---|---|
+| pass | 150 | 5 | 142 / 144 = 0.986 (0.951) |
+| agree_below | 50 | 2 | 42 / 48 = 0.875 (0.753) |
+| model_incorrect | 50 | 6 | 20 / 43 = 0.465 (0.325) |
+
+| city | decided (incorrect) | pass stratum (Wilson 95 % lower) | population share correct |
+|---|---|---|---|
+| chicago-il | 84 (8) | 51 / 51 = 1.000 (0.930) | 0.925 |
+| tucson-az | 54 (12) | 29 / 31 = 0.935 (0.793) | 0.788 |
+| oradell-nj | 49 (2) | 33 / 33 = 1.000 (0.896) | 0.981 |
+| cdmx | 48 (9) | 29 / 29 = 1.000 (0.883) | 0.713 |
+
+Per fold model, on its own gate verdicts (weights are the items' inverse inclusion probabilities):
+
+| model | gate passes, rated items unweighted (Wilson 95 % lower) | precision, weighted | coverage, weighted | AUC, weighted | within-city AUC, weighted (cities) |
+|---|---|---|---|---|---|
+| fold 0 | 115 / 117 = 0.983 (0.940) | 0.997 | 0.318 | 0.883 | 0.926 (4) |
+| fold 1 | 83 / 84 = 0.988 (0.936) | 0.998 | 0.264 | 0.910 | 0.943 (4) |
+| fold 2 | 155 / 158 = 0.981 (0.946) | 0.975 | 0.622 | 0.871 | 0.941 (4) |
+| fold 3 | 121 / 121 = 1.000 (0.969) | 1.000 | 0.372 | 0.923 | 0.942 (4) |
+| fold 4 | 153 / 157 = 0.975 (0.936) | 0.963 | 0.536 | 0.819 | 0.753 (4) |
+
+| severity | decided | pass stratum (Wilson 95 % lower) | population share correct | training rows |
+|---|---|---|---|---|
+| (none) | 235 | 142 / 144 = 0.986 (0.951) | 0.878 | 758 |
+
+| tag | decided | pass stratum (Wilson 95 % lower) | population share correct | training rows |
+|---|---|---|---|---|
+| (none) | 48 | 23 / 23 = 1.000 (0.857) | 0.892 | 325 |
+| ends abruptly | 22 | 4 / 5 = 0.800 (0.376) | 0.812 | 47 |
+| gravel/dirt road | 20 | 14 / 15 = 0.933 (0.702) | 0.857 | 38 |
+| shared pedestrian/car space | 20 | 5 / 6 = 0.833 (0.436) | 0.328 | 40 |
+| street has a sidewalk | 29 | 14 / 14 = 1.000 (0.785) | 0.849 | 93 |
+| street has no sidewalks | 127 | 95 / 95 = 1.000 (0.961) | 0.949 | 278 |
+
+Crowd majority (human votes at the pool pull) against the expert, decided items:
+
+| crowd | expert correct | expert incorrect |
+|---|---|---|
+| correct | 34 | 2 |
+| incorrect | 2 | 12 |
+| none or tie | 168 | 17 |
 <!-- round-b-results:end -->
+
+**Reading (rated 2026-11-12 and 2026-11-13).** The bar is met: of the 144 decided labels the gate would pass, the
+expert called 142 correct (0.986, Wilson 95 % lower bound 0.951), against a bar of 0.92 on at least 100. Both
+misses are in Tucson (29 of 31), one tagged "ends abruptly" and "gravel/dirt road", one "shared pedestrian/car
+space"; Chicago (51 of 51), Oradell (33 of 33) and CDMX (29 of 29) have none. Chicago and Tucson were never
+trained on, and Chicago alone clears 0.92 (lower bound 0.930); the other three cities are too small to clear it
+alone. What qualifies the result:
+
+- **Unsure votes.** Five pass-stratum labels were rated Unsure (three in CDMX, two in Chicago). The bar leaves
+  them out, as fixed in advance. Counting all five as incorrect gives 142 / 149 = 0.953 with a lower bound of
+  0.906, under 0.92. The verdict therefore depends on Unsure not meaning wrong.
+- **Two labels could not be rated.** Gallery reported two CDMX labels as unavailable (one pass, one
+  model-incorrect), so 248 of 250 have a vote. They are outside every denominator.
+- **This is a 3-of-5 vote of the fold models, not the model that would ship.** Per model, the gate passes 84 to
+  158 of the rated items at 0.975 to 1.000 unweighted; fold 4 is the weakest ranker (within-city AUC 0.753
+  against 0.926 to 0.943 for the others) and still holds 0.975 on its own passes.
+- **The order of the strata is as designed.** Agree below the gate is 42 / 48 = 0.875 and the labels the model
+  calls incorrect are 20 / 43 = 0.465, so the model's Disagree is right about half the time here. Disagree stays
+  held back.
+- **The prior.** The share of correct labels in these four cities' eligible population is 0.878 [0.819, 0.932],
+  against the 0.831 the deployment prior assumes; the interval contains it. It differs by city: Oradell 0.981,
+  Chicago 0.925, Tucson 0.788, CDMX 0.713. The rater found CDMX far harder to judge than the other three.
+- **One rater.** There is no second expert and no measure of rater agreement in this round. Every vote was cast
+  after the label pull of 2026-11-11 (checked against `label_validation.end_timestamp`), so no earlier vote of
+  the rater's is counted.
+
+Pins: `votes_jon.csv` `09a2624f93ff5ca203dfd8f0a4038129252d12334d863046986931e99ce957c9` (pulled 2026-11-13, 248
+of 250 voted; beside the key, outside the repo), the aggregates
+[`nosidewalk-2026-11/round_b.json`](nosidewalk-2026-11/round_b.json). Regenerate with `analysis/nosidewalk_round.py
+report` on the pinned key, sheet and `scores.csv`.
 
 ### Cost and jobs
 
@@ -522,7 +600,8 @@ Free partition, no preemption.
 question: better on test in every seed, no worse on the held-out cities on average, and best on the tag that marks an
 absence along the whole street. **NoSidewalk is not served yet**: the test half of the bar passes, and the gate half
 passes on the prior-weighted basis in the 5-fold run of 2026-11-11 (weighted lower bound 0.966 on 240 labels) but not
-unweighted (0.890) and not on the held-out cities; see "The 5-fold out-of-fold gate" above.
+unweighted (0.890) and not on the held-out cities; see "The 5-fold out-of-fold gate" above. The masked expert round of step (b)
+meets its bar in four cities outside Seattle (0.986, lower bound 0.951, on 144 labels).
 
 - (a) **5-fold out-of-fold training over the 758 pooled train / val / test crops** (whole view; the 127 held-out
    rows stay held out), calibrating on the pooled out-of-fold predictions, so each fold's Agree map is fitted on
@@ -531,7 +610,9 @@ unweighted (0.890) and not on the held-out cities; see "The 5-fold out-of-fold g
    out-of-fold gate" above. The basis is decided: prior-weighted (2026-11-11).
 - (b) **A masked expert round outside Seattle**, before any serving work (decided 2026-11-11): one rater, 250
    labels chosen score-first from four cities' deployment population, so the gate is read where step (a) could
-   not reach. Design and results in "The masked expert round outside Seattle" above.
+   not reach. Design and results in "The masked expert round outside Seattle" above. **Done 2026-11-13: the bar
+   is met** (142 / 144 = 0.986, lower bound 0.951), with the caveats in that section's reading; whether that
+   unlocks step (c) is the maintainer's decision.
 - (c) **Cross-repository work** (sidewalk-ai-api, SidewalkWebpage; listed above) after step (b), if its bar is
    met; a final model on all 758 rows with a map fitted on
    the pooled out-of-fold predictions is the configuration to ship, gated per deployment as
