@@ -2032,3 +2032,14 @@ def test_the_manifest_is_checked_when_the_split_is_clean_and_the_refusal_names_t
     with pytest.raises(pub.PublishError) as e:
         pub.check_depth_rows(_rows([10.0], [610]).drop(columns="crop_half_px"), "x.csv")
     assert "reviewed change to this check" in str(e.value)
+
+
+def test_a_file_without_a_size_column_is_refused_even_with_no_rows():
+    # docs/publishing.md: "a file without either column is refused too", whatever its row count
+    with pytest.raises(pub.PublishError, match="empty.csv has no crop_half_px column"):
+        pub.check_depth_rows(pd.DataFrame({"depth_m": []}), "empty.csv")
+    with pytest.raises(pub.PublishError, match="empty.csv has no depth_m column"):
+        pub.check_depth_rows(pd.DataFrame({"crop_half_px": []}), "empty.csv")
+    manifest = pd.DataFrame({"status": ["no_pano"], "depth_m": [None]})   # no ok row, and no size column
+    with pytest.raises(pub.PublishError, match="manifest.csv has no crop_half_px column"):
+        pub.check_depth_rows(pub._ok_rows(manifest), "manifest.csv")

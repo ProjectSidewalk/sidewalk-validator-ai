@@ -757,7 +757,9 @@ def check_depth_rows(df, what):
         raise PublishError(f"{what} has no depth_m column, so nothing shows its crops were sized by depth; refusing "
                            f"to publish it. {NOT_SERVED}")
     n = len(df)
-    if n == 0:
+    if n == 0:                            # nothing to refuse, but a file without the size column is still refused
+        if "crop_half_px" not in df.columns:
+            _no_crop_half_px(what)
         return
     depth = pd.to_numeric(df["depth_m"], errors="coerce").astype(float)
     good = np.isfinite(depth) & (depth > 0)
@@ -769,8 +771,7 @@ def check_depth_rows(df, what):
         raise PublishError(f"{what}: {n_bad} of {n} rows have no depth_m (blank, non-numeric, non-finite or <= 0), so "
                            f"those crops were not sized by depth; refusing to publish them. {NOT_SERVED}")
     if "crop_half_px" not in df.columns:
-        raise PublishError(f"{what} has no crop_half_px column, so nothing shows its crops were cut at "
-                           f"int({CROP_DEPTH_CONSTANT} / depth_m); refusing to publish it. {NOT_SERVED}")
+        _no_crop_half_px(what)
     half = pd.to_numeric(df["crop_half_px"], errors="coerce").astype(float)
     expected = np.floor(CROP_DEPTH_CONSTANT / depth)
     # The sizes the unrounded depth could have given; a stored depth at or under the rounding step has no upper bound.
@@ -782,8 +783,14 @@ def check_depth_rows(df, what):
     n_off = int(off.sum())
     if n_off:
         raise PublishError(f"{what}: {n_off} of {n} rows were not cut at int({CROP_DEPTH_CONSTANT} / depth_m) (within "
-                           f"{DEPTH_HALF_TOLERANCE_PX} px, or the rounding of depth_m); the crops come from another constant or sizing rule, which "
-                           f"serving does not reproduce. {NOT_SERVED}")
+                           f"{DEPTH_HALF_TOLERANCE_PX} px, or the rounding of depth_m); the crops come from another "
+                           f"constant or sizing rule, which serving does not reproduce. {NOT_SERVED}")
+
+
+def _no_crop_half_px(what):
+    """Refuse ``what`` for lacking a ``crop_half_px`` column (:func:`check_depth_rows`), whatever its row count."""
+    raise PublishError(f"{what} has no crop_half_px column, so nothing shows its crops were cut at "
+                       f"int({CROP_DEPTH_CONSTANT} / depth_m); refusing to publish it. {NOT_SERVED}")
 
 
 def read_dataset_context(root, label_type):
