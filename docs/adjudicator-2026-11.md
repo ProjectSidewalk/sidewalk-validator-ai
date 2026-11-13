@@ -285,6 +285,13 @@ The crops dominate a pool run. `stage-list` prints the panorama count at 10 MB e
 Run `--rows train` first, since those crops exist. Run the pool only for types that clear the bar, and only after Jon
 approves the staging size. Each meta file's `s_per_crop` replaces these estimates once the jobs run.
 
+## In the target scoreboard
+
+[`target-scoreboard-2026-11.md`](target-scoreboard-2026-11.md) scores the vote rules and confident learning against
+the same gold table (pinned by the same sha256), with the reliability-weighted target left as a pointer to this doc.
+The model rows join it in the PR that brings the klone scores back: `agree` here stays the scoring of record and the
+bar.
+
 ## Provenance
 
 <!-- BEGIN GENERATED: provenance (analysis/adjudicator.py) -->

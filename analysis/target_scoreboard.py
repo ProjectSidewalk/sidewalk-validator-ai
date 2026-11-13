@@ -695,7 +695,7 @@ def render_gold_counts(j):
     return "\n".join([
         "| Count | Value |", "|---|---:|",
         f"| Gold items (rounds 1 + 2) | {c['n_items']} |",
-        f"| Decided (correct or incorrect, reached masked) | {c['n_decided']} |",
+        f"| Decided (a correct or incorrect verdict, as `adjudicator.py gold` defines it) | {c['n_decided']} |",
         f"| of which the round-2 meeting reached (`r2_consensus`) | {c['n_consensus_decided']} |",
         f"| Decided, masked-only gold (the headline) | {c['n_decided_masked']} |",
         f"| AI Disagrees, masked-only: round 1 / round 2 | {c['ai_disagree_masked_by_round']['1']} / "

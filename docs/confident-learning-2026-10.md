@@ -332,6 +332,25 @@ are stratified to add rated items that are also training rows (95 in the two rat
 the report reruns on the combined private file with `--gold` once they are rated; an item both raters saw
 counts only when they gave the same verdict (`adjudicate_gold`), otherwise it is unrated.
 
+### Rounds 1 + 2 together (2026-11-13)
+
+Round 2 is rated, and the gold set of rounds 1 + 2 has 131 decided items that are round-3 train rows (37 from
+round 1, 94 from round 2; masked-only gold, which here is the same as the adjudicated gold because none of the
+meeting verdicts is a train row). The counts below come from
+[`target-scoreboard-2026-11.md`](target-scoreboard-2026-11.md), which computes them from the same variant split
+files and asserts they equal `expert_agreement` summed over types:
+
+| variant | rated train rows touched | of which the expert overturns | rows left alone | of which the expert overturns |
+|---|---:|---:|---:|---:|
+| `symmetric` | 61 | 14 | 70 | 9 |
+| `unanimous3` | 90 | 19 | 41 | 4 |
+| `cl-drop` / `cl-flip` | 13 | 4 | 118 | 19 |
+
+The flagged rows are wrong 4 times in 13 against 19 in 118 for the rest: +14.7 points [-10.1, +43.2], Fisher p
+0.242. That rules out acting on the flags unread (9 of the 13 flagged targets are right) and cannot tell whether the
+flags are enriched for wrong targets. The rules drop wrong targets at roughly the rate of the ones they keep, as
+with 37 rows; split by target class and with intervals in the scoreboard doc.
+
 ## The deployment prior under each rule
 
 `deployment_priors.json`, which `calibration/calibrate.py` reweights the val split to before fitting the
@@ -381,8 +400,9 @@ retrain under either rule would write to the file.
    out-of-fold score, vote margin and target source) concentrate on the two-vote Disagrees but also mark 2–13%
    of the `correct` targets and half the hard slice; they are the right packet for the VLM adjudicator of
    [#77](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/77) and for a round-3 re-label, where a
-   rated flag becomes either a fixed target or a hard example to keep. The 37 rated train rows available today
-   cannot score them; the round-2 packets of #78 add 95 and the report reruns with `--gold` when they are in.
+   rated flag becomes either a fixed target or a hard example to keep. With 131 rated train rows (rounds 1 + 2,
+   "Rounds 1 + 2 together" above) 4 of 13 flagged targets are wrong against 19 of 118 unflagged: too few to say the
+   flags are enriched, enough to rule out flipping or dropping them unread.
 4. **A variant worth one more batch:** `cl-drop` that keeps the expert-sourced and hard-slice rows whatever
    the fold models say (the rules already spare expert-sourced rows), to find out whether the transfer gain
    comes from dropping crowd targets or from dropping hard crops.

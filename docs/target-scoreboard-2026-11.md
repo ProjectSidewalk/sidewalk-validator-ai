@@ -41,9 +41,24 @@ comparison and none had it ([`confident-learning-2026-10.md`](confident-learning
 
 `adjudicator.py gold` builds it (rounds 1 and 2 in one table keyed on `city_id:label_id`; definition and counts in
 [`adjudicator-2026-11.md`](adjudicator-2026-11.md#the-gold-set)). It was rebuilt for this run with that doc's
-Reproducing step 1 and its sha256 matches the pin there.
+Reproducing step 1 and its sha256 matches the pin there. With the meeting verdicts left out it has 488 decided AI
+Disagrees (184 from round 1, 304 from round 2) and 131 decided round-3 train rows.
 
 <!-- BEGIN GENERATED: gold_counts (analysis/target_scoreboard.py) -->
+
+| Count | Value |
+|---|---:|
+| Gold items (rounds 1 + 2) | 800 |
+| Decided (a correct or incorrect verdict, as `adjudicator.py gold` defines it) | 741 |
+| of which the round-2 meeting reached (`r2_consensus`) | 10 |
+| Decided, masked-only gold (the headline) | 731 |
+| AI Disagrees, masked-only: round 1 / round 2 | 184 / 304 (488) |
+| AI Disagrees, masked-only, per type | Crosswalk 110, CurbRamp 119, NoCurbRamp 101, Obstacle 79, SurfaceProblem 79 |
+| Round-3 train rows: round 1 / round 2 | 37 / 94 (131) |
+| of which flagged by confident learning / wrong target | 13 / 23 |
+| Items whose pool tallies hold a rater's earlier vote: round 1 / round 2 | 2 / 0 |
+| Train rows whose round-3 target differs from the margin target of the pool tallies | 5 |
+
 <!-- END GENERATED: gold_counts -->
 
 ## Method
@@ -115,6 +130,27 @@ printed when either group has fewer than 5 items.
 ### Coverage on the whole AI-Disagree pool
 
 <!-- BEGIN GENERATED: pool (analysis/target_scoreboard.py) -->
+
+| Type | AI Disagrees | no decisive vote | 1 vote | tie | light | margin incorrect | margin correct |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| all | 91,626 | 33.9% | 28.0% | 6.6% | 11.7% | 16.3% | 3.5% |
+| CurbRamp | 32,098 | 34.4% | 34.4% | 6.1% | 11.5% | 9.9% | 3.8% |
+| NoCurbRamp | 19,534 | 23.9% | 21.2% | 7.2% | 14.0% | 29.2% | 4.5% |
+| Obstacle | 14,150 | 46.5% | 24.9% | 5.2% | 7.9% | 13.3% | 2.1% |
+| SurfaceProblem | 15,070 | 24.0% | 27.4% | 10.5% | 15.1% | 20.2% | 2.9% |
+| Crosswalk | 10,773 | 47.6% | 26.4% | 3.5% | 8.5% | 10.0% | 4.0% |
+
+| Type | `majority` | `majority2` | `symmetric2` | `margin` | `symmetric3` | `unanimous3` |
+|---|---:|---:|---:|---:|---:|---:|
+| all | 59.5% (33.3%) | 31.5% (19.7%) | 25.7% (16.3%) | 19.8% (16.3%) | 11.7% (8.2%) | 6.4% (4.1%) |
+| CurbRamp | 59.5% (29.3%) | 25.2% (12.8%) | 20.1% (9.9%) | 13.7% (9.9%) | 7.2% (3.4%) | 5.4% (2.6%) |
+| NoCurbRamp | 68.9% (43.5%) | 47.7% (33.9%) | 39.7% (29.2%) | 33.7% (29.2%) | 24.5% (20.0%) | 8.8% (6.8%) |
+| Obstacle | 48.3% (30.2%) | 23.4% (16.0%) | 19.2% (13.3%) | 15.5% (13.3%) | 7.6% (5.5%) | 4.9% (3.5%) |
+| SurfaceProblem | 65.5% (39.3%) | 38.2% (25.1%) | 29.8% (20.2%) | 23.1% (20.2%) | 9.9% (7.0%) | 6.7% (5.0%) |
+| Crosswalk | 49.0% (22.7%) | 22.5% (11.4%) | 20.2% (10.0%) | 14.0% (10.0%) | 10.2% (6.2%) | 6.9% (3.5%) |
+
+Cells: share of the type's AI Disagrees the rule gives any target (in brackets: an `incorrect` target). The rest is dropped. Exact counts over the whole pool, so no interval.
+
 <!-- END GENERATED: pool -->
 
 A third of the pool has no decisive vote and is decided by no vote rule; the gold set's `lone` stratum scores the AI
@@ -126,6 +162,37 @@ all of the difference is two-vote Disagrees (16.3% of the pool get an `incorrect
 ### The primary contrasts
 
 <!-- BEGIN GENERATED: primary (analysis/target_scoreboard.py) -->
+
+**P1. `symmetric` kept against dropped** (decided AI Disagrees whose margin target is `incorrect`; outcome: the expert says incorrect):
+
+| Rows | kept: net Disagree >= 3 | dropped: net Disagree = 2 | kept minus dropped [95%] | Fisher p |
+|---|---|---|---|---:|
+| round 1 | 12/17 (70.6% [46.9, 86.7]) | 22/29 (75.9% [57.9, 87.8]) | -5.3 pts [-31.3, +21.1] | 0.737 |
+| round 2 | 42/48 (87.5% [75.3, 94.1]) | 46/56 (82.1% [70.2, 90.0]) | +5.4 pts [-8.4, +18.9] | 0.588 |
+| pooled (sample rate; descriptive) | 54/65 (83.1% [72.2, 90.3]) | 68/85 (80.0% [70.3, 87.1]) | +3.1 pts [-9.4, +15.9] | 0.677 |
+
+Heterogeneity check (round 1's difference minus round 2's, resampled within round): -10.6 pts [-40.7, +21.2].
+
+**P2. Confident-learning flag** (decided round-3 train rows, both target classes; outcome: the target differs from the expert):
+
+| Rows | flagged | unflagged | flagged minus unflagged [95%] | Fisher p | Recall | False alarms |
+|---|---|---|---|---:|---|---|
+| round 1 | 0/2 (0.0% [0.0, 65.8]) | 9/35 (25.7% [14.2, 42.1]) | -25.7 pts | 1 | 0/9 (0.0% [0.0, 29.9]) | 2/28 (7.1% [2.0, 22.6]) |
+| round 2 | 4/11 (36.4% [15.2, 64.6]) | 10/83 (12.0% [6.7, 20.8]) | +24.3 pts [-4.1, +56.4] | 0.0559 | 4/14 (28.6% [11.7, 54.6]) | 7/80 (8.8% [4.3, 17.0]) |
+| pooled (sample rate; descriptive) | 4/13 (30.8% [12.7, 57.6]) | 19/118 (16.1% [10.6, 23.8]) | +14.7 pts [-10.1, +43.2] | 0.242 | 4/23 (17.4% [7.0, 37.1]) | 9/108 (8.3% [4.4, 15.1]) |
+
+Heterogeneity check (round 1's difference minus round 2's, resampled within round): n/a.
+
+Descriptive twin of P1, `unanimous3` (same rows):
+
+| Rows | kept: unanimous | dropped | kept minus dropped [95%] | Fisher p |
+|---|---|---|---|---:|
+| round 1 | 10/13 (76.9% [49.7, 91.8]) | 24/33 (72.7% [55.8, 84.9]) | +4.2 pts [-26.3, +29.6] | 1 |
+| round 2 | 25/30 (83.3% [66.4, 92.7]) | 63/74 (85.1% [75.3, 91.5]) | -1.8 pts [-18.4, +13.3] | 0.773 |
+| pooled (sample rate; descriptive) | 35/43 (81.4% [67.4, 90.3]) | 87/107 (81.3% [72.9, 87.6]) | +0.1 pts [-14.5, +13.2] | 1 |
+
+Heterogeneity check (round 1's difference minus round 2's, resampled within round): +6.0 pts [-26.5, +35.9].
+
 <!-- END GENERATED: primary -->
 
 **P1.** Pooled, kept 54/65 against dropped 68/85, +3.1 pts [-9.4, +15.9]; neither round's interval excludes 0
@@ -144,6 +211,12 @@ are enriched for wrong targets, which the point estimate suggests and the interv
 ### Population-weighted P1, each round on its own
 
 <!-- BEGIN GENERATED: weighted (analysis/target_scoreboard.py) -->
+
+| Round | margin-`incorrect` AI Disagrees | kept by `symmetric` | dropped | kept minus dropped [95%, normal approx.] | cells left without weight (n < 5) |
+|---|---|---|---|---|---|
+| 1 | 73.1% [58.3, 87.9] (n 43) | 72.8% [42.3, 100.0] (n 12) | 70.3% [48.9, 91.6] (n 20) | +2.6 pts [-33.3, +38.5] | all: 1; kept: 3; dropped: 3 |
+| 2 | 82.0% [71.7, 92.4] (n 104) | 90.3% [71.9, 100.0] (n 34) | 84.4% [69.6, 99.3] (n 42) | +5.8 pts [-14.6, +26.3] | all: 0; kept: 5; dropped: 5 |
+
 <!-- END GENERATED: weighted -->
 
 Weighting does not change the reading: round 2 is +5.8 pts [-14.6, +26.3]. Round 1's estimate rests on few cells
@@ -153,6 +226,59 @@ informative.
 ### The vote rules on the gold set (descriptive)
 
 <!-- BEGIN GENERATED: rules (analysis/target_scoreboard.py) -->
+
+**Decided AI Disagrees**
+
+| Rule | Round | `incorrect` target: expert agrees | `correct` target: expert agrees |
+|---|---|---|---|
+| reference: expert says incorrect | round 1 | 106/184 (57.6% [50.4, 64.5]) | |
+| reference: expert says incorrect | round 2 | 182/304 (59.9% [54.3, 65.2]) | |
+| reference: expert says incorrect | pooled (sample rate; descriptive) | 288/488 (59.0% [54.6, 63.3]) | |
+| `majority` | round 1 | 41/55 (74.5% [61.7, 84.2]) | 29/39 (74.4% [58.9, 85.4]) |
+| `majority` | round 2 | 101/122 (82.8% [75.1, 88.5]) | 54/80 (67.5% [56.6, 76.8]) |
+| `majority` | pooled (sample rate; descriptive) | 142/177 (80.2% [73.7, 85.4]) | 83/119 (69.7% [61.0, 77.3]) |
+| `majority2` | round 1 | 40/54 (74.1% [61.1, 83.9]) | 28/38 (73.7% [58.0, 85.0]) |
+| `majority2` | round 2 | 101/122 (82.8% [75.1, 88.5]) | 54/80 (67.5% [56.6, 76.8]) |
+| `majority2` | pooled (sample rate; descriptive) | 141/176 (80.1% [73.6, 85.3]) | 82/118 (69.5% [60.7, 77.1]) |
+| `symmetric2` | round 1 | 34/46 (73.9% [59.7, 84.4]) | 26/34 (76.5% [60.0, 87.6]) |
+| `symmetric2` | round 2 | 88/104 (84.6% [76.5, 90.3]) | 53/73 (72.6% [61.4, 81.5]) |
+| `symmetric2` | pooled (sample rate; descriptive) | 122/150 (81.3% [74.3, 86.8]) | 79/107 (73.8% [64.8, 81.2]) |
+| `margin` | round 1 | 34/46 (73.9% [59.7, 84.4]) | 9/10 (90.0% [59.6, 98.2]) |
+| `margin` | round 2 | 88/104 (84.6% [76.5, 90.3]) | 43/55 (78.2% [65.6, 87.1]) |
+| `margin` | pooled (sample rate; descriptive) | 122/150 (81.3% [74.3, 86.8]) | 52/65 (80.0% [68.7, 87.9]) |
+| `symmetric3` | round 1 | 12/17 (70.6% [46.9, 86.7]) | 9/10 (90.0% [59.6, 98.2]) |
+| `symmetric3` | round 2 | 42/48 (87.5% [75.3, 94.1]) | 43/55 (78.2% [65.6, 87.1]) |
+| `symmetric3` | pooled (sample rate; descriptive) | 54/65 (83.1% [72.2, 90.3]) | 52/65 (80.0% [68.7, 87.9]) |
+| `unanimous3` | round 1 | 10/13 (76.9% [49.7, 91.8]) | 7/8 (87.5% [52.9, 97.8]) |
+| `unanimous3` | round 2 | 25/30 (83.3% [66.4, 92.7]) | 36/46 (78.3% [64.4, 87.7]) |
+| `unanimous3` | pooled (sample rate; descriptive) | 35/43 (81.4% [67.4, 90.3]) | 43/54 (79.6% [67.1, 88.2]) |
+
+**Decoys (AI Agree or Unsure)**
+
+| Rule | Round | `incorrect` target: expert agrees | `correct` target: expert agrees |
+|---|---|---|---|
+| reference: expert says incorrect | round 1 | 8/92 (8.7% [4.5, 16.2]) | |
+| reference: expert says incorrect | round 2 | 17/151 (11.3% [7.1, 17.3]) | |
+| reference: expert says incorrect | pooled (sample rate; descriptive) | 25/243 (10.3% [7.1, 14.7]) | |
+| `majority` | round 1 | 2/5 (40.0% [11.8, 76.9]) | 46/49 (93.9% [83.5, 97.9]) |
+| `majority` | round 2 | 5/7 (71.4% [35.9, 91.8]) | 83/88 (94.3% [87.4, 97.5]) |
+| `majority` | pooled (sample rate; descriptive) | 7/12 (58.3% [32.0, 80.7]) | 129/137 (94.2% [88.9, 97.0]) |
+| `majority2` | round 1 | 2/5 (40.0% [11.8, 76.9]) | 29/31 (93.5% [79.3, 98.2]) |
+| `majority2` | round 2 | 3/3 (100.0% [43.8, 100.0]) | 41/45 (91.1% [79.3, 96.5]) |
+| `majority2` | pooled (sample rate; descriptive) | 5/8 (62.5% [30.6, 86.3]) | 70/76 (92.1% [83.8, 96.3]) |
+| `symmetric2` | round 1 | 2/4 (50.0% [15.0, 85.0]) | 29/31 (93.5% [79.3, 98.2]) |
+| `symmetric2` | round 2 | 3/3 (100.0% [43.8, 100.0]) | 40/44 (90.9% [78.8, 96.4]) |
+| `symmetric2` | pooled (sample rate; descriptive) | 5/7 (71.4% [35.9, 91.8]) | 69/75 (92.0% [83.6, 96.3]) |
+| `margin` | round 1 | 2/4 (50.0% [15.0, 85.0]) | 16/18 (88.9% [67.2, 96.9]) |
+| `margin` | round 2 | 3/3 (100.0% [43.8, 100.0]) | 20/20 (100.0% [83.9, 100.0]) |
+| `margin` | pooled (sample rate; descriptive) | 5/7 (71.4% [35.9, 91.8]) | 36/38 (94.7% [82.7, 98.5]) |
+| `symmetric3` | round 1 | 1/2 (50.0% [9.5, 90.5]) | 16/18 (88.9% [67.2, 96.9]) |
+| `symmetric3` | round 2 | 2/2 (100.0% [34.2, 100.0]) | 20/20 (100.0% [83.9, 100.0]) |
+| `symmetric3` | pooled (sample rate; descriptive) | 3/4 (75.0% [30.1, 95.4]) | 36/38 (94.7% [82.7, 98.5]) |
+| `unanimous3` | round 1 | 1/1 (100.0% [20.7, 100.0]) | 10/11 (90.9% [62.3, 98.4]) |
+| `unanimous3` | round 2 | 0/0 | 14/14 (100.0% [78.5, 100.0]) |
+| `unanimous3` | pooled (sample rate; descriptive) | 1/1 (100.0% [20.7, 100.0]) | 24/25 (96.0% [80.5, 99.3]) |
+
 <!-- END GENERATED: rules -->
 
 Coverage is left out on purpose (see Choices). The margin rule's `incorrect` targets agree with the expert 73.9% of
@@ -164,18 +290,46 @@ target is right at least 88% of the time.
 ### Every split variant as a detector of wrong train targets (descriptive)
 
 <!-- BEGIN GENERATED: detector (analysis/target_scoreboard.py) -->
+
+| Variant | Target class | Rows | Touched: wrong target | Untouched: wrong target | touched minus untouched [95%] | Fisher p |
+|---|---|---|---|---|---|---:|
+| `symmetric` | incorrect | 105 | 14/61 (23.0% [14.2, 34.9]) | 6/44 (13.6% [6.4, 26.7]) | +9.3 pts [-5.6, +23.6] | 0.315 |
+| `symmetric` | correct | 26 | 0/0 | 3/26 (11.5% [4.0, 29.0]) | n/a | 1 |
+| `symmetric` | all (descriptive pool) | 131 | 14/61 (23.0% [14.2, 34.9]) | 9/70 (12.9% [6.9, 22.7]) | +10.1 pts [-3.3, +23.0] | 0.168 |
+| `unanimous3` | incorrect | 105 | 18/81 (22.2% [14.5, 32.4]) | 2/24 (8.3% [2.3, 25.8]) | +13.9 pts [-1.1, +26.8] | 0.152 |
+| `unanimous3` | correct | 26 | 1/9 (11.1% [2.0, 43.5]) | 2/17 (11.8% [3.3, 34.3]) | -0.7 pts [-23.5, +30.0] | 1 |
+| `unanimous3` | all (descriptive pool) | 131 | 19/90 (21.1% [14.0, 30.6]) | 4/41 (9.8% [3.9, 22.5]) | +11.4 pts [-1.9, +23.3] | 0.141 |
+| `cl-drop` | incorrect | 105 | 3/5 (60.0% [23.1, 88.2]) | 17/100 (17.0% [10.9, 25.5]) | +43.0 pts [-16.7, +86.3] | 0.0466 |
+| `cl-drop` | correct | 26 | 1/8 (12.5% [2.2, 47.1]) | 2/18 (11.1% [3.1, 32.8]) | +1.4 pts [-22.2, +33.3] | 1 |
+| `cl-drop` | all (descriptive pool) | 131 | 4/13 (30.8% [12.7, 57.6]) | 19/118 (16.1% [10.6, 23.8]) | +14.7 pts [-10.1, +43.2] | 0.242 |
+| `cl-flip` | incorrect | 105 | 3/5 (60.0% [23.1, 88.2]) | 17/100 (17.0% [10.9, 25.5]) | +43.0 pts [-14.6, +86.2] | 0.0466 |
+| `cl-flip` | correct | 26 | 1/8 (12.5% [2.2, 47.1]) | 2/18 (11.1% [3.1, 32.8]) | +1.4 pts [-23.5, +33.3] | 1 |
+| `cl-flip` | all (descriptive pool) | 131 | 4/13 (30.8% [12.7, 57.6]) | 19/118 (16.1% [10.6, 23.8]) | +14.7 pts [-10.8, +43.5] | 0.242 |
+
+Rounds pooled (round 1 has 37 train rows); per-round rows of every cell are in `scoreboard.json`. Touched = dropped (`symmetric`, `unanimous3`, `cl-drop`) or flipped (`cl-flip`).
+
 <!-- END GENERATED: detector -->
 
 Split by the target's class, because the strata oversample `incorrect` targets (round 2 capped `margin_correct`),
 so a pooled recall or false-alarm rate reflects the sample's mix. Inside `incorrect` targets, `cl-drop` touches 5
-rows and 3 are wrong (17/100 among the rest), the only cell whose Fisher p is under 0.05; it is a descriptive row
-of 5, one of 12, and not a finding. These are the counts the confident-learning report's `--gold` rerun promised
+rows and 3 are wrong (17/100 among the rest), Fisher p 0.047, the only Fisher p under 0.05 in the table (`cl-flip`
+touches the same rows); it is a descriptive cell of 5 rows among 12 rows of comparisons, not a finding. These are the counts the confident-learning report's `--gold` rerun promised
 (131 rated train rows instead of 37); they equal `confident_learning.expert_agreement` summed over types (check B,
 asserted in the code).
 
 ### Does a score rank wrong targets? (descriptive)
 
 <!-- BEGIN GENERATED: ranking (analysis/target_scoreboard.py) -->
+
+| Score | Target class | Items | Wrong targets | AUC [95%, panorama bootstrap] |
+|---|---|---:|---:|---|
+| oof (train rows) | correct | 26 | 3 | 0.630 |
+| oof (train rows) | incorrect | 105 | 20 | 0.769 [0.642, 0.890] |
+| vote margin (AI Disagrees) | correct | 65 | 13 | 0.477 [0.337, 0.607] |
+| vote margin (AI Disagrees) | incorrect | 150 | 28 | 0.543 [0.441, 0.640] |
+
+No interval when the smaller class has fewer than 8 items.
+
 <!-- END GENERATED: ranking -->
 
 Within `incorrect` targets the out-of-fold probability of the opposite class ranks the 20 wrong targets above the
@@ -187,6 +341,46 @@ pre-stated test on the next gold round, not a result here: this AUC was not a pr
 ### Slices (descriptive)
 
 <!-- BEGIN GENERATED: slices (analysis/target_scoreboard.py) -->
+
+**Decided AI Disagrees by type x severity: the expert says incorrect** (rounds pooled; rate blank under 20 items; train = round-3 train rows of the slice; 10 of 20 cells reach 20)
+
+| Type | Slice | Expert says incorrect | Train rows |
+|---|---|---|---:|
+| CurbRamp | 1 | 51/84 (60.7% [50.0, 70.5]) | 5,083 |
+| CurbRamp | 2 | 8/22 (36.4% [19.7, 57.0]) | 837 |
+| NoCurbRamp | 1 | 16/21 (76.2% [54.9, 89.4]) | 1,839 |
+| NoCurbRamp | 2 | 17/25 (68.0% [48.4, 82.8]) | 3,595 |
+| NoCurbRamp | 3 | 16/36 (44.4% [29.5, 60.4]) | 6,074 |
+| Obstacle | 1 | 32/38 (84.2% [69.6, 92.6]) | 3,142 |
+| SurfaceProblem | 1 | 20/45 (44.4% [30.9, 58.8]) | 5,050 |
+| Crosswalk | 1 | 17/51 (33.3% [22.0, 47.0]) | 1,394 |
+| Crosswalk | 2 | 10/22 (45.5% [26.9, 65.3]) | 187 |
+| Crosswalk | 3 | 15/24 (62.5% [42.7, 78.8]) | 369 |
+
+Below 20 items (10 cells, counts only): CurbRamp 3 3/8; CurbRamp (none) 4/5; NoCurbRamp (none) 17/19; Obstacle 2 13/17; Obstacle 3 15/18; Obstacle (none) 5/6; SurfaceProblem 2 13/18; SurfaceProblem 3 3/10; SurfaceProblem (none) 4/6; Crosswalk (none) 9/13.
+
+**Decided AI Disagrees by type x tag: the expert says incorrect** (rounds pooled; rate blank under 20 items; train = round-3 train rows of the slice; 6 of 48 cells reach 20)
+
+| Type | Slice | Expert says incorrect | Train rows |
+|---|---|---|---:|
+| CurbRamp | missing tactile warning | 10/32 (31.2% [18.0, 48.6]) | 1,482 |
+| CurbRamp | (none) | 45/66 (68.2% [56.2, 78.2]) | 3,933 |
+| NoCurbRamp | no alternate route | 14/27 (51.9% [34.0, 69.3]) | 4,670 |
+| NoCurbRamp | (none) | 34/47 (72.3% [58.2, 83.1]) | 4,631 |
+| Crosswalk | paint fading | 11/40 (27.5% [16.1, 42.8]) | 339 |
+| Crosswalk | (none) | 34/56 (60.7% [47.6, 72.4]) | 1,557 |
+
+Below 20 items (42 cells, counts only): CurbRamp not level with street 9/13; CurbRamp points into traffic 3/10; CurbRamp surface problem 2/10; CurbRamp narrow 1/5; CurbRamp not enough landing space 1/4; CurbRamp steep 1/3; NoCurbRamp alternate route present 10/18; NoCurbRamp unclear if needed 9/11; Obstacle pole 18/19; Obstacle tree 14/17; Obstacle vegetation 7/12; Obstacle narrow 8/9; Obstacle sign 6/7; Obstacle parked car 4/4; Obstacle construction 3/3; Obstacle parked scooter/motorcycle 1/3; Obstacle trash/recycling can 2/3; Obstacle garage entrance 2/2; Obstacle fire hydrant 1/1; Obstacle height difference 1/1; Obstacle litter/garbage 1/1; Obstacle stairs 0/1; Obstacle (none) 9/10; SurfaceProblem grass 6/19; SurfaceProblem cracks 7/17; SurfaceProblem narrow sidewalk 11/17; SurfaceProblem bumpy 4/9; SurfaceProblem uneven/slanted 2/8; SurfaceProblem brick/cobblestone 1/6; SurfaceProblem utility panel 4/6; SurfaceProblem debris 0/3; SurfaceProblem height difference 0/2; SurfaceProblem sand/gravel 0/2; SurfaceProblem very broken 1/2; SurfaceProblem construction 1/1; SurfaceProblem (none) 8/8; Crosswalk broken surface 4/10; Crosswalk brick/cobblestone 3/9; Crosswalk bumpy 4/9; Crosswalk uneven surface 2/6; Crosswalk very long crossing 1/4; Crosswalk rail/tram track 0/1.
+
+**P1 by severity** (types pooled; rates blank under 20 items in a group)
+
+| Severity | kept by `symmetric` | dropped |
+|---|---|---|
+| 1 | 27/29 (93.1% [78.0, 98.1]) | 30/41 (73.2% [58.1, 84.3]) |
+| 2 | 7/12 | 18/20 (90.0% [69.9, 97.2]) |
+| 3 | 14/17 | 13/16 |
+| (none) | 6/7 | 7/8 |
+
 <!-- END GENERATED: slices -->
 
 The AI's Disagrees are least often right where the feature is present but degraded: CurbRamp tagged `missing
@@ -198,6 +392,18 @@ dropped 30/41); the rows are descriptive and their intervals overlap.
 ### Sensitivity
 
 <!-- BEGIN GENERATED: sensitivity (analysis/target_scoreboard.py) -->
+
+| Contrast | Gold | Tallies | kept / flagged | dropped / unflagged | difference [95%] |
+|---|---|---|---|---|---|
+| P1 | masked-only | expert votes removed | 54/65 (83.1% [72.2, 90.3]) | 68/85 (80.0% [70.3, 87.1]) | +3.1 pts [-9.4, +15.9] |
+| P2 | masked-only | n/a (train targets) | 4/13 (30.8% [12.7, 57.6]) | 19/118 (16.1% [10.6, 23.8]) | +14.7 pts [-10.1, +43.2] |
+| P1 | masked-only | tallies as pulled | 54/65 (83.1% [72.2, 90.3]) | 69/86 (80.2% [70.6, 87.3]) | +2.8 pts [-9.9, +15.3] |
+| P1 | with meeting verdicts | expert votes removed | 55/66 (83.3% [72.6, 90.4]) | 68/85 (80.0% [70.3, 87.1]) | +3.3 pts [-9.5, +15.9] |
+| P2 | with meeting verdicts | n/a (train targets) | 4/13 (30.8% [12.7, 57.6]) | 19/118 (16.1% [10.6, 23.8]) | +14.7 pts [-10.1, +43.2] |
+| P1 | with meeting verdicts | tallies as pulled | 55/66 (83.3% [72.6, 90.4]) | 69/86 (80.2% [70.6, 87.3]) | +3.1 pts [-9.4, +15.9] |
+
+Pooled rows. Masked-only gold leaves out the decided items reached in the round-2 meeting; `expert votes removed` takes a rater's earlier production vote out of the pool tallies.
+
 <!-- END GENERATED: sensitivity -->
 
 Neither choice moves a primary: putting the 10 meeting verdicts back changes P1 by 0.2 points and P2 not at all,
@@ -207,6 +413,14 @@ that item has a single Disagree and no margin target).
 ### Cross-check against the numbers computed by hand
 
 <!-- BEGIN GENERATED: crosscheck (analysis/target_scoreboard.py) -->
+
+Adjudicated gold, tallies as pulled (the configuration the plan and its review used by hand):
+
+- decided 741, decided AI Disagrees 497, decided train rows 131, flagged 13;
+- `margin` covers 219, `incorrect` 152 at 81.6%; `symmetric3` covers 133, `incorrect` 66 at 83.3%; `unanimous3` covers 99, `incorrect` 44 at 81.8%; `majority` covers 303 at 75.2%, and `majority` gives the same verdict as `majority2` on every one of these items;
+- confident learning: 4 of 13 flagged rows have a wrong target, 19 of 118 unflagged;
+- pool (91,626 AI Disagrees) given any target: `majority` 59.5%, `majority2` 31.5%, `margin` 19.8%, `symmetric2` 25.7%, `symmetric3` 11.7%, `unanimous3` 6.4%.
+
 <!-- END GENERATED: crosscheck -->
 
 The plan and its review each computed these from the same gold table with throwaway code before this module
@@ -234,6 +448,19 @@ the same point with a different resampling stream.
 ## Provenance
 
 <!-- BEGIN GENERATED: provenance (analysis/target_scoreboard.py) -->
+
+| Item | Pin |
+|---|---|
+| gold.csv | `2b472651cb01011a8640b86eb4103e1794ab482186ba3a3471e7d019273edcae` (matches the pin in `docs/adjudicator-2026-11.md`: yes) |
+| relabel_pool.csv | `dd5a6d363ce7f6c05ac6faf250f2526090bd2199541e6164b76029cd35483d09` |
+| round-1 manifest (population) | `d5c2011386c253283e27fdbd77931a52f7f233cfd092b7343f9cbcb617bc055d` |
+| round-2 recount / design | `5e9a18e193b970ad79809b4ce034001a79009fc75a11454a964a846e74c9de47` / `499fb9dfe5d976651f08d932d9a0c47477386e119080ae2107c91fc5c7404e57` |
+| round-3 splits, noisy targets and variant splits (sha256 of the sorted per-file list) | `761fb89088deea286859cfbe7c600a92f2894ed4e5fb5bd2aebcd9cf66e1dcff` (30 files) |
+| verdicts.csv (private) | `e17a408a5db6c49dbe7e7ee2deef83c230a84068f383a32be033f5af6382e4f1` |
+| code | commit `9fa3b4b7203c47bd16de771ff231fd3f7c1820d1`; Python 3.10.19, pandas 2.3.3, numpy 2.2.6 |
+| intervals | 2000 label-level resamples (AUC: 1,000 panorama resamples), seed 0 |
+| public-deployment list | live `/v3/api/cities`, read 2026-11-13T14:43:48+00:00 (46 public) |
+
 <!-- END GENERATED: provenance -->
 
 The per-label verdicts (`verdicts.csv`), `run.json` (argv, every input path and sha256, the public-deployment list
