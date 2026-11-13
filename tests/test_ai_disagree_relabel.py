@@ -3,6 +3,8 @@
 import doctest
 import json
 import io
+import os
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -600,3 +602,19 @@ def test_score_checks_the_key_pin(tmp_path):
     rl.pin(str(man), "votes", str(sheet), 5)
     with pytest.raises(SystemExit, match="key"):
         rl.main(["score", "--key", str(key), "--sheet", str(sheet), "--manifest", str(man)])
+
+
+def test_inside_git_checkout_fails_closed(tmp_path, monkeypatch):
+    """#105 review: a dangling symlink whose target is in the checkout counts as inside, and a git failure other
+    than "not a git repository" (dubious ownership, say) counts as inside instead of letting the write through."""
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(rl.__file__)))
+    assert rl.inside_git_checkout(os.path.join(repo, "README.md"))
+    assert not rl.inside_git_checkout(str(tmp_path / "usage.jsonl"))
+    link = tmp_path / "usage.jsonl"
+    link.symlink_to(os.path.join(repo, "no-such-dir-from-tests", "usage.jsonl"))     # dangling
+    assert rl.inside_git_checkout(str(link))
+    for stderr, inside in (("fatal: detected dubious ownership in repository at '/x'\n", True),
+                           ("fatal: not a git repository (or any of the parent directories): .git\n", False)):
+        monkeypatch.setattr(rl.subprocess, "run",
+                            lambda *a, _e=stderr, **k: SimpleNamespace(returncode=128, stdout="", stderr=_e))
+        assert rl.inside_git_checkout(str(tmp_path / "other.jsonl")) is inside
