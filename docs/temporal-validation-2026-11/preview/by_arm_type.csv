@@ -1,0 +1,17 @@
+# PREVIEW (not the gate): camera positions inverted from public rawLabels, not read from the database; no gate verdict is given on these numbers.
+arm,label_type,n,n_anchors,median_px,p75_px,p90_px,within_100,within_240,within_240_lo,within_240_hi,abs_az_median_px,abs_el_median_px,el_median_px
+same_month,Crosswalk,63,63,80.2,176.1,317.3,0.635,0.825,0.714,0.9,67.6,23.4,-5.2
+same_month,CurbRamp,119,118,62.3,106.6,203.0,0.714,0.899,0.832,0.941,49.6,21.1,6.2
+same_month,NoCurbRamp,95,93,80.1,151.8,212.3,0.632,0.926,0.856,0.964,65.1,28.4,2.2
+same_month,Obstacle,9,9,84.4,257.9,319.4,0.556,0.556,0.267,0.811,69.5,49.4,1.4
+same_month,SurfaceProblem,20,20,142.2,228.0,253.1,0.4,0.75,0.531,0.888,102.3,50.4,-17.8
+control,Crosswalk,23,22,122.9,156.7,207.2,0.348,0.913,0.732,0.976,105.3,18.2,-10.7
+control,CurbRamp,40,40,57.0,139.8,350.1,0.7,0.825,0.68,0.913,40.7,23.2,2.9
+control,NoCurbRamp,29,29,90.6,146.7,309.6,0.586,0.828,0.655,0.924,84.1,11.0,-2.8
+control,Obstacle,4,4,52.9,91.1,97.7,0.75,1.0,0.51,1.0,44.0,27.9,-11.4
+control,SurfaceProblem,8,8,225.1,461.5,556.6,0.25,0.625,0.306,0.863,200.1,61.8,3.4
+long_newer,Crosswalk,97,92,79.9,147.5,342.3,0.598,0.835,0.749,0.896,68.2,26.6,2.3
+long_newer,CurbRamp,235,226,68.2,122.6,263.9,0.672,0.894,0.848,0.927,47.9,25.5,7.7
+long_newer,NoCurbRamp,77,76,91.1,147.7,240.6,0.532,0.896,0.808,0.946,63.8,28.3,3.4
+long_newer,Obstacle,17,17,106.9,263.7,346.5,0.471,0.706,0.469,0.867,87.5,41.5,10.7
+long_newer,SurfaceProblem,37,37,123.0,284.4,452.3,0.432,0.703,0.542,0.825,112.3,23.0,-2.6

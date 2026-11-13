@@ -1,0 +1,4 @@
+# PREVIEW (not the gate): camera positions inverted from public rawLabels, not read from the database; no gate verdict is given on these numbers.
+width_pair,n,n_anchors,median_px,p75_px,p90_px,within_100,within_240,within_240_lo,within_240_hi,abs_az_median_px,abs_el_median_px,el_median_px
+13312 -> 16384,125,123,98.4,159.5,236.5,0.512,0.904,0.84,0.944,66.4,43.6,42.1
+16384 -> 16384,332,319,67.5,138.0,344.0,0.639,0.84,0.797,0.876,55.1,20.5,-6.6
