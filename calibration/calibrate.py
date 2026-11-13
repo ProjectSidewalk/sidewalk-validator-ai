@@ -32,9 +32,20 @@ checkpoint, so the fit is mildly optimistic. With a ``test_heldout`` split avail
 
 ``deployment_priors.json``::
 
-    {"CurbRamp": {"correct": 3969, "incorrect": 417, "measured_on": "2026-10-17", "source": "..."}, ...}
+    {"CurbRamp": {"correct": 3969, "incorrect": 417, "rule": "majority2",
+                  "rules": {"margin": {"correct": ..., "incorrect": ...}, "symmetric3": {...}, ...},
+                  "measured_on": "2026-10-17", "source": "..."}, ...}
 
-i.e. pre-downsampling counts of labels meeting the training vote thresholds on human votes alone.
+i.e. pre-downsampling counts of human-authored labels on human votes alone, under every vote rule
+(``data_generation.PRIOR_RULES``). The top level is the rule ``data_generation.py --prior-rule`` chose (default
+``majority2``: at least two decisive human votes, majority, ties out; issue #56); ``--prior-rule`` here picks another
+recorded rule. Files written before #56 have no ``rule``/``rules`` and their top level is the asymmetric training
+margin rule (correct at net Agree > 2, incorrect at net Disagree > 1), which is what the October 2026 maps used.
+
+**Caveat on any vote-rule prior.** The reweighting moves the val classes as the TRAINING margin rule defines them;
+the labels the margin rule leaves out (thin margins, the hardest ones) are not in val at all, so the fitted precision
+is above what production sees whichever prior is chosen. ``calibrate_from_production.py`` on the revision's own
+production outcomes is the sound fit; ``docs/deployment-prior-2026-11.md`` measures the gap.
 
 Usage::
 
@@ -55,16 +66,40 @@ from calibration import _isotonic_map as im
 from calibration._plots import plot_reliability
 
 CLASSES = im.API_CLASSES
+# data_generation.PRIOR_RULES, repeated so this module does not import the generator (a test keeps them equal).
+PRIOR_RULES = ("margin", "symmetric3", "symmetric2", "majority2")
 
 
-def load_prior(priors_path, label_type):
-    """Return ``(pi, entry)``: the deployment class proportions and the raw JSON entry for ``label_type``."""
+def load_prior(priors_path, label_type, rule=None):
+    """Return ``(pi, entry)``: the deployment class proportions and the raw JSON entry for ``label_type``.
+
+    ``rule`` (one of ``data_generation.PRIOR_RULES``) reads that rule's counts from the entry's ``rules`` (issue #56);
+    ``None`` reads the top-level counts, which are the entry's own ``rule`` (``majority2`` since #56) or, in a file
+    written before #56 that has no ``rules``, the margin rule. A named rule falls back to the top level only when it
+    IS the top-level rule (or the file predates #56 and ``rule`` is ``margin``); otherwise ``KeyError``. The returned
+    entry carries ``prior_rule``, the rule its counts came from.
+
+    Example::
+
+        pi, entry = load_prior("deployment_priors.json", "CurbRamp", rule="margin")  # the pre-#56 prior
+    """
     with open(priors_path) as f:
         priors = json.load(f)
     if label_type not in priors:
         raise KeyError(f"{label_type} not in {priors_path} (has {sorted(priors)})")
-    entry = priors[label_type]
-    counts = np.array([float(entry[c]) for c in CLASSES])
+    entry = dict(priors[label_type])
+    # A pre-#56 entry has no "rule": its counts are the margin rule's, unless another method wrote it (NoSidewalk's
+    # face-size prior says "method": "face_size").
+    top_rule = entry.get("rule") or entry.get("method") or "margin"
+    if rule is None or rule == top_rule:
+        counts_from, used = entry, top_rule
+    elif rule in (entry.get("rules") or {}):
+        counts_from, used = entry["rules"][rule], rule
+    else:
+        raise KeyError(f"{label_type} in {priors_path} has no counts under prior rule {rule!r} "
+                       f"(top level: {top_rule!r}; recorded: {sorted(entry.get('rules') or {})})")
+    entry["prior_rule"] = used
+    counts = np.array([float(counts_from[c]) for c in CLASSES])
     if (counts < 0).any() or counts.sum() <= 0:
         raise ValueError(f"bad prior counts for {label_type}: {entry}")
     return dict(zip(CLASSES, counts / counts.sum())), entry
@@ -199,6 +234,10 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--predictions", required=True, help="<label_type>/predictions.csv from evaluate.py")
     p.add_argument("--priors", required=True, help="deployment_priors.json")
+    p.add_argument("--prior-rule", default=None, choices=PRIOR_RULES,
+                   help="vote rule whose counts to reweight to, from the entry's \"rules\" (margin, symmetric3, "
+                        "symmetric2, majority2; issue #56). Default: the entry's top level (majority2 in a file written "
+                        "since #56, margin in an older one). Recorded in calibration_report.json as prior_rule")
     p.add_argument("--label-type", required=True)
     p.add_argument("--out", required=True, help="path of the map JSON to write (drop-in for sidewalk-ai-api)")
     p.add_argument("--fit-split", default="val")
@@ -216,10 +255,10 @@ def main(argv=None):
     if args.hold_back_reason is not None and not args.hold_back:
         p.error("--hold-back-reason needs --hold-back (nothing is held back, so the reason would be dropped)")
 
-    pi_deploy, entry = load_prior(args.priors, args.label_type)
+    pi_deploy, entry = load_prior(args.priors, args.label_type, args.prior_rule)
     api_map, rep, tables = calibrate(pd.read_csv(args.predictions), pi_deploy, args.fit_split, args.eval_split,
                                      args.hold_back, args.hold_back_reason)
-    rep.update({"label_type": args.label_type, "prior_source": entry})
+    rep.update({"label_type": args.label_type, "prior_rule": entry["prior_rule"], "prior_source": entry})
 
     out_dir = os.path.dirname(os.path.abspath(args.out))
     os.makedirs(out_dir, exist_ok=True)
@@ -234,7 +273,8 @@ def main(argv=None):
                          xlabel=f"confidence, bin lower edge ({args.eval_split} split)",
                          observed_label="observed (reweighted)", new_label="map value")
 
-    print(f"{args.label_type}: deployment prior {pi_deploy} (from {entry.get('source', '?')}, "
+    print(f"{args.label_type}: deployment prior {pi_deploy} under rule {entry['prior_rule']} "
+          f"(from {entry.get('source', '?')}, "
           f"{entry.get('measured_on', '?')}); fit on {rep['n_fit']} {args.fit_split} rows")
     if rep["eval"] == "n/a":
         print(f"eval: n/a ({rep.get('eval_error', 'no eval rows')})")

@@ -7,7 +7,8 @@ script:
 2. keeps human-authored labels the crowd clearly endorsed (net >= 3 human agree votes) or clearly rejected
    (net >= 2 human disagree votes), or that an expert validator (env ``EXPERTS``) voted on with no other human voting
    the other way (:func:`expert_verdict`; a different ``EXPERTS`` is a selection change), downsampling the ``correct`` class to ``CORRECT_PROPORTION``, and records the
-   PRE-downsampling class counts in ``deployment_priors.json`` (the prior ``calibration/calibrate.py`` reweights to);
+   PRE-downsampling class counts in ``deployment_priors.json`` (the prior ``calibration/calibrate.py`` reweights to),
+   under every vote rule in ``PRIOR_RULES``, with ``--prior-rule`` (default ``majority2``) at the top level (issue #56);
 3. reads the panorama from the lab's pano store (``--pano-store``), renders a 2048x2048, 90-degree perspective view
    CENTRED on the label with rig-tilt correction (``sidewalk_panorama_tools.geometry``), estimates metric depth at
    the view centre with Depth Anything V2, and cuts a crop whose size scales with 1/depth so near and far features
@@ -42,7 +43,9 @@ already, so Mapillary crops are NOT corrected (beta 0); their pose is still read
 levels only when both stored angles are non-zero; those crops are corrected with beta 1.0 (unmeasured), a pitch-only
 pose shifts the click by ``pers:pitch`` instead, and the rest are rig-frame. Both website viewers store pitch positive
 nose UP, so their pitch is negated (measured on pixels: tests/test_pose_levelling.py). A label with no usable pose is
-rendered uncorrected and counted by reason. The manifest records ``pose_source``, the pose in the package's sign
+rendered uncorrected and counted by reason, except that a Panoramax label is skipped with its own status when its pose
+has both angles non-zero and is past ``crop_pose.MAX_POSE_TILT_DEG`` (``panoramax_over_tilt``) or its pitch-only click is past a pole
+(``panoramax_pitch_offset_past_pole``). The manifest records ``pose_source``, the pose in the package's sign
 (``pose_pitch``/``pose_roll``), the beta used (``tilt_beta``) and any ``click_lat_offset_deg``. Labels authored by the AI account (RampNet,
 Vancouver WA / Richmond VA / Laurens IA) were placed on the rig-frame image directly, so they are rendered without
 it. They are excluded from the training selection by default anyway: production never sends them to the validator
@@ -145,6 +148,17 @@ LISTING_RETRY_S = 10  # pause before the one retry of the listing fetch
 HOST_OVERRIDES = {}
 
 CORRECT_PROPORTION = 0.55
+
+# The vote rules the deployment prior is counted under (issue #56); every one is recorded in deployment_priors.json
+# and ``--prior-rule`` picks the one at the top level, which ``calibration/calibrate.py`` reads by default.
+#   margin      the TRAINING rule (asymmetric): correct at net human Agree > 2, incorrect at net Disagree > 1
+#   symmetric3  |net| > 2 both ways (analysis/confident_learning.py calls this rule "symmetric")
+#   symmetric2  |net| >= 2 both ways
+#   majority2   at least two decisive (Agree/Disagree) human votes, the majority wins, ties left out: the
+#               website's notion of a settled label, and the default prior since issue #56
+# The training set is always selected under ``margin``; only the prior changes with ``--prior-rule``.
+PRIOR_RULES = ("margin", "symmetric3", "symmetric2", "majority2")
+DEFAULT_PRIOR_RULE = "majority2"
 
 # Crop geometry. The view matches sidewalk-ai-api for an 8192-wide pano (width // 4).
 VIEW_FOV_DEG = 90.0
@@ -527,18 +541,41 @@ def valid_geometry(df):
     return keep, why
 
 
-def eligible_labels(all_labels, label_type, experts=frozenset()):
-    """Labels of one type with a usable pano point that meet the vote thresholds: ``(eligible_df, dropped)``.
+def prior_class(agree, disagree, rule):
+    """``"correct"``, ``"incorrect"`` or ``""`` (undecided) for human vote tallies under one of :data:`PRIOR_RULES`.
 
-    Adds ``human_agree``, ``human_disagree``, ``author`` (``human``/``ai``), ``label_class`` and ``class_source``;
-    no downsampling.
-    AI-authored labels are KEPT here (tagged ``author = ai``): the prior counts only human-authored ones, and the
-    selection drops AI ones unless asked. ``dropped`` counts rows removed by :func:`valid_geometry`.
+    Takes scalars (returns a str) or array-likes (returns a numpy array of str).
 
-    Rule: ``incorrect`` if net human disagree votes > 1, ``correct`` if net human agree votes > 2 (``class_source =
-    margin``, unchanged since the first models); otherwise the :func:`expert_verdict` of ``experts``, if any
-    (``class_source = expert``); everything else (unvalidated, unsure, contested) is left out. The two rules cannot
-    disagree: an expert verdict requires that no human voted the other way, so the opposite margin is impossible.
+    >>> [prior_class(a, d, "margin") for a, d in [(3, 0), (2, 0), (0, 2), (1, 3), (2, 1)]]
+    ['correct', '', 'incorrect', 'incorrect', '']
+    >>> [prior_class(a, d, "majority2") for a, d in [(3, 0), (2, 0), (0, 2), (2, 1), (1, 1), (1, 0)]]
+    ['correct', 'correct', 'incorrect', 'correct', '', '']
+    """
+    if rule not in PRIOR_RULES:
+        raise ValueError(f"unknown prior rule {rule!r}; choose from {PRIOR_RULES}")
+    scalar = np.ndim(agree) == 0 and np.ndim(disagree) == 0
+    a, d = np.asarray(agree, dtype=int), np.asarray(disagree, dtype=int)
+    net = a - d
+    if rule == "margin":
+        correct, incorrect = net > 2, -net > 1
+    elif rule == "symmetric3":
+        correct, incorrect = net > 2, -net > 2
+    elif rule == "symmetric2":
+        correct, incorrect = net >= 2, -net >= 2
+    else:  # majority2
+        decisive = (a + d) >= 2
+        correct, incorrect = decisive & (net > 0), decisive & (net < 0)
+    out = np.where(correct, 'correct', np.where(incorrect, 'incorrect', ''))
+    return str(out) if scalar else out
+
+
+def voted_labels(all_labels, label_type):
+    """Labels of one type with a usable pano point and their human vote tallies, before any vote rule:
+    ``(voted_df, dropped)``.
+
+    Adds ``author`` (``human``/``ai``), ``human_agree`` and ``human_disagree`` (:func:`human_vote_counts`).
+    ``dropped`` counts rows removed by :func:`valid_geometry`. :func:`eligible_labels` applies the training rule to
+    this frame, and :func:`deployment_prior_entry` counts it under every rule in :data:`PRIOR_RULES`.
     """
     df = all_labels[all_labels['label_type'] == label_type]
     keep, dropped = valid_geometry(df)
@@ -547,8 +584,28 @@ def eligible_labels(all_labels, label_type, experts=frozenset()):
     counts = df['validations'].apply(human_vote_counts)
     df['human_agree'] = [a for a, _ in counts]
     df['human_disagree'] = [d for _, d in counts]
-    net = df['human_agree'] - df['human_disagree']
-    df['label_class'] = np.where(net > 2, 'correct', np.where(-net > 1, 'incorrect', ''))
+    return df, dropped
+
+
+def eligible_labels(all_labels, label_type, experts=frozenset(), voted=None):
+    """Labels of one type with a usable pano point that meet the vote thresholds: ``(eligible_df, dropped)``.
+
+    Adds ``human_agree``, ``human_disagree``, ``author`` (``human``/``ai``), ``label_class`` and ``class_source``;
+    no downsampling.
+    AI-authored labels are KEPT here (tagged ``author = ai``): the prior counts only human-authored ones, and the
+    selection drops AI ones unless asked. ``dropped`` counts rows removed by :func:`valid_geometry`. ``voted``, when
+    given, is :func:`voted_labels`'s ``(voted_df, dropped)`` for the same rows, so the votes are not counted twice.
+
+    Rule: ``incorrect`` if net human disagree votes > 1, ``correct`` if net human agree votes > 2 (``class_source =
+    margin``, unchanged since the first models; :func:`prior_class` ``"margin"``); otherwise the
+    :func:`expert_verdict` of ``experts``, if any (``class_source = expert``); everything else (unvalidated, unsure,
+    contested) is left out. The two rules cannot disagree: an expert verdict requires that no human voted the other
+    way, so the opposite margin is impossible. The rule is asymmetric (issue #56): it still selects the training set,
+    but the deployment prior is counted under ``--prior-rule`` (default ``majority2``).
+    """
+    df, dropped = voted if voted is not None else voted_labels(all_labels, label_type)
+    df = df.copy()
+    df['label_class'] = prior_class(df['human_agree'], df['human_disagree'], 'margin')
     df['class_source'] = np.where(df['label_class'] != '', 'margin', '')
     if experts:
         verdict = df['validations'].apply(expert_verdict, experts=experts)
@@ -596,21 +653,57 @@ def label_rank(seed, label_uid):
     return hashlib.sha256(f"{seed}:{label_uid}".encode()).hexdigest()
 
 
-def deployment_prior_entry(eligible, cities, n_rows, measured_on=None, city_source=None):
-    """The pre-downsampling class counts of human-authored :func:`eligible_labels`: the class mix the validator meets
-    in production (which never sends it AI-authored labels), for ``calibration/calibrate.py``. ``n_rows`` is the
-    number of rawLabels rows of this label type the counts were drawn from; ``city_source``, when given, says where
-    the city list came from (the ``source`` of :func:`load_city_listing`, or ``{"from": "--cities"}``).
+def prior_rule_counts(voted):
+    """``{rule: {"correct": n, "incorrect": n}}`` over the human-authored rows of a :func:`voted_labels` frame, for
+    every rule in :data:`PRIOR_RULES` (one population, so the rules differ only in how they read the votes)."""
+    human = voted[voted['author'] == 'human']
+    out = {}
+    for rule in PRIOR_RULES:
+        cls = pd.Series(prior_class(human['human_agree'], human['human_disagree'], rule))
+        out[rule] = {"correct": int((cls == 'correct').sum()), "incorrect": int((cls == 'incorrect').sum())}
+    return out
 
-    Only ``class_source == "margin"`` labels count: the labels experts vote on are not a sample of production (they
-    check what looks wrong), so adding them would move the prior with who happened to validate, and an ``EXPERTS``
-    setting would change calibration as well as the training set."""
+
+def deployment_prior_entry(eligible, cities, n_rows, measured_on=None, city_source=None, voted=None, rule="margin"):
+    """The pre-downsampling class counts of human-authored labels: the class mix the validator meets in production
+    (which never sends it AI-authored labels), for ``calibration/calibrate.py``. ``n_rows`` is the number of rawLabels
+    rows of this label type the counts were drawn from; ``city_source``, when given, says where the city list came
+    from (the ``source`` of :func:`load_city_listing`, or ``{"from": "--cities"}``).
+
+    Without ``voted`` (the legacy shape), the counts are the human-authored :func:`eligible_labels` under the
+    training margin rule. Only ``class_source == "margin"`` labels count: the labels experts vote on are not a sample
+    of production (they check what looks wrong), so adding them would move the prior with who happened to validate,
+    and an ``EXPERTS`` setting would change calibration as well as the training set.
+
+    With ``voted`` (:func:`voted_labels` of the same rows; issue #56), the entry also records ``rule`` and ``rules``,
+    the counts under every rule in :data:`PRIOR_RULES`, and its top-level ``correct``/``incorrect`` are those of
+    ``rule``. ``rules["margin"]`` must equal the legacy counts from ``eligible`` (``ValueError`` otherwise: the two
+    frames are not the same rows). The expert rule never enters any rule's counts; an expert's vote is tallied as one
+    human vote like any other.
+
+    Example::
+
+        voted, dropped = voted_labels(all_labels, "CurbRamp")
+        eligible, _ = eligible_labels(all_labels, "CurbRamp", voted=(voted, dropped))
+        deployment_prior_entry(eligible, ["seattle-wa"], n_rows, voted=voted, rule="majority2")
+        # {"correct": ..., "incorrect": ..., "rule": "majority2", "rules": {"margin": {...}, ...}, ...}
+    """
+    if rule not in PRIOR_RULES:
+        raise ValueError(f"unknown prior rule {rule!r}; choose from {PRIOR_RULES}")
+    if voted is None and rule != "margin":
+        raise ValueError(f"prior rule {rule!r} needs the voted_labels frame (voted=); eligible holds margin labels only")
     human = eligible[(eligible['author'] == 'human') & (eligible.get('class_source', 'margin') == 'margin')]
     counts = human['label_class'].value_counts()
-    entry = {"correct": int(counts.get('correct', 0)), "incorrect": int(counts.get('incorrect', 0)),
-             "measured_on": measured_on or date.today().isoformat(),
-             "source": f"rawLabels of {', '.join(cities)}, human votes only",
-             "cities": list(cities), "n_rows": int(n_rows)}
+    legacy = {"correct": int(counts.get('correct', 0)), "incorrect": int(counts.get('incorrect', 0))}
+    entry = dict(legacy)
+    if voted is not None:
+        rules = prior_rule_counts(voted)
+        if rules["margin"] != legacy:
+            raise ValueError(f"voted and eligible are not the same rows: margin counts {rules['margin']} vs {legacy}")
+        entry = {**rules[rule], "rule": rule, "rules": rules}
+    entry.update({"measured_on": measured_on or date.today().isoformat(),
+                  "source": f"rawLabels of {', '.join(cities)}, human votes only",
+                  "cities": list(cities), "n_rows": int(n_rows)})
     if city_source is not None:
         entry["city_source"] = dict(city_source)
     return entry
@@ -1265,6 +1358,11 @@ def build_parser():
     p.add_argument('--priors', default=None,
                    help='shared deployment_priors.json; default <out>/deployment_priors.json. Partial runs (--cities '
                         'or --limit) write deployment_priors.partial.json beside it instead')
+    p.add_argument('--prior-rule', choices=PRIOR_RULES, default=DEFAULT_PRIOR_RULE,
+                   help='vote rule whose counts go at the top level of the deployment_priors.json entry, the prior '
+                        'calibration/calibrate.py reweights to (issue #56; default %(default)s: at least two decisive '
+                        'human votes, majority, ties out). Every rule is recorded under "rules" either way, and the '
+                        'training set is always selected under the margin rule, so this is not a resume setting')
     p.add_argument('--depth-encoder', choices=['vitb', 'vitl'], default='vitb', help='the API serves vitb')
     p.add_argument('--tilt-beta', type=float, default=DEFAULT_TILT_BETA,
                    help='beta for GSV labels (Mapillary and Panoramax use crop_pose.SOURCE_BETA)')
@@ -1375,7 +1473,8 @@ def main(argv=None):
     all_cities = pd.concat([load_city(c, s, args.rawlabels_cache) for c, s in cities.items()], ignore_index=True)
     n_rows = int((all_cities['label_type'] == label_type).sum())
 
-    eligible, dropped = eligible_labels(all_cities, label_type, experts)  # once, for both the prior and the selection
+    voted = voted_labels(all_cities, label_type)  # vote tallies once, for every prior rule and the selection
+    eligible, dropped = eligible_labels(all_cities, label_type, experts, voted=voted)
     print(f"{n_rows} {label_type} rows; dropped for unusable pano geometry: {dict(dropped) or 'none'}")
     if experts:
         by_expert = eligible.loc[eligible['class_source'] == 'expert']
@@ -1384,7 +1483,11 @@ def main(argv=None):
               if len(by_expert) else f"Expert rule ({len(experts)} accounts) added no labels")
     else:
         print(f"${EXPERTS_ENV} is not set: crowd margin rule only (no expert votes)")
-    entry = deployment_prior_entry(eligible, list(cities), n_rows, city_source=city_source)
+    entry = deployment_prior_entry(eligible, list(cities), n_rows, city_source=city_source, voted=voted[0],
+                                   rule=args.prior_rule)
+    print(f"Deployment prior under every rule (human-authored; --prior-rule {args.prior_rule} is the one calibration "
+          f"reads): " + ", ".join(f"{r} {c['correct']}/{c['incorrect']}" for r, c in entry['rules'].items()))
+    del voted
     eligible, ai_holdout = ai_label_holdout.apply(eligible, args)  # issue #79: AI-label holdout, before selection
     eligible = nosidewalk_faces.apply_verdict_unit(all_cities, eligible, label_type, experts, args.verdict_unit,
                                                    args.max_labels_per_face, args.seed)  # issue #42; after the prior
@@ -1392,7 +1495,7 @@ def main(argv=None):
     def write_priors():
         update_deployment_priors(priors_path, label_type, entry)
         print(f"Deployment prior ({priors_path}{', PARTIAL run' if partial else ''}): "
-              f"{entry['correct']} correct, {entry['incorrect']} incorrect")
+              f"{entry['correct']} correct, {entry['incorrect']} incorrect (rule {entry['rule']})")
 
     combined_filtered = select_training_labels(eligible, seed=args.seed, correct_proportion=args.correct_proportion,
                                                include_ai_labels=args.include_ai_labels)
@@ -1418,7 +1521,7 @@ def main(argv=None):
                   f"{priors_path}, not the real deployment_priors.json.")
         update_deployment_priors(priors_path, label_type, entry)
         print(f"Deployment prior ({priors_path}{', PARTIAL run' if partial else ''}): "
-              f"{entry['correct']} correct, {entry['incorrect']} incorrect")
+              f"{entry['correct']} correct, {entry['incorrect']} incorrect (rule {entry['rule']})")
         print(f"--select-only: {len(combined_filtered)} labels selected; stopping before rendering.")
         return
 
@@ -1535,9 +1638,15 @@ def main(argv=None):
                 status_counts['skipped (already ok)'] += 1
                 continue
             try:
+                y_norm = crop_pose.rig_y_norm(row['pano_y'] / row['pano_height'], pose)  # None: past a pole
+                # A Panoramax pose past the tilt cap, or a pitch-only click past a pole, is skipped with its own status
+                # (#72), decided before the panorama is read: a skip costs no decode, and wins over a missing
+                # panorama (so it never counts toward --max-missing-frac). The job-window crop uses neither the pose
+                # nor y_norm, so it is never skipped for them.
+                skip = None if args.job_window_crops else crop_pose.skip_status(pose, y_norm)
                 # Keyed on (city, pano_id): the store path includes the city, so the same pano_id in two cities is
                 # two reads (the sort is by pano_id, so they can be adjacent).
-                if last_pano[0] != (row['city'], row['pano_id']):
+                if skip is None and last_pano[0] != (row['city'], row['pano_id']):
                     if row['city'] in absent_cities:  # --allow-missing-cities; not a store failure
                         read, pano_info = "no_pano", {"pano_path": None}
                     else:
@@ -1557,9 +1666,11 @@ def main(argv=None):
                     else:
                         consecutive_missing = 0
                 pano_bgr = last_pano[1]
-                y_norm = row['pano_y'] / row['pano_height'] + (pose.click_lat_offset_deg or 0.0) / 180.0
-                rec.update(last_pano[2])
-                if isinstance(pano_bgr, str):
+                if skip is None:  # a skipped label read no panorama (last_pano may be another label's)
+                    rec.update(last_pano[2])
+                if skip is not None:
+                    rec['status'] = skip
+                elif isinstance(pano_bgr, str):
                     rec['status'] = pano_bgr
                 elif args.job_window_crops:  # issue #53: the backend's crop-job window from the native file
                     crop, info = job_crop.crop_for_row(rec['pano_path'], row, rec['label_uid'],
@@ -1627,7 +1738,8 @@ def main(argv=None):
                  f"above --max-missing-frac {args.max_missing_frac}: the dataset would shrink silently.")
     if n_ok == 0:
         # e.g. a store without these cities' panos: fail the SLURM job instead of an empty dataset with exit 0
-        sys.exit(f"No crops in {manifest_path}: every label failed (no_pano/bad_pano or error; check --pano-store "
+        sys.exit(f"No crops in {manifest_path}: every label failed or was skipped (no_pano/bad_pano, a panoramax_* "
+                 f"skip, or error; check --pano-store "
                  f"{args.pano_store}).")
 
 

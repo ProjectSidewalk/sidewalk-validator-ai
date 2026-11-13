@@ -289,3 +289,15 @@ def test_evaluate_slices_carry_city_share_pano_bootstrap_and_default_min_n(tmp_p
     assert rows["3"]["max_city_share"] == pytest.approx(20 / 30)
     assert seen and all(g <= set(p.pano_id) for g in seen)
     assert f"blank under {sl.MIN_N} " in (lt / "slices.md").read_text()
+
+
+def test_slice_names_tag_threshold_and_none_last():
+    """Moved from the scoreboard (#70): rows are chosen on counts only, every severity ascending, tags at or over
+    ``min_n`` most common first with ties by name, ``(none)`` last and only when some row has none."""
+    d = pd.DataFrame({"severity": [3, 1, 1, None, 10],
+                      "tags": ['["b","a"]', '["a"]', '["b"]', "[]", '["c"]']})
+    assert sl.slice_names(d, "severity") == ["1", "3", "10", "(none)"]          # numeric order, not string order
+    assert sl.slice_names(d, "tag", min_n=2) == ["a", "b", "(none)"]            # c has 1; a and b tie, by name
+    assert sl.slice_names(d, "tag", min_n=3) == ["(none)"]
+    assert sl.slice_names(d.iloc[:3], "tag", min_n=1) == ["a", "b"]             # no untagged row: no (none)
+    assert sl.slice_names(d.iloc[:3], "severity") == ["1", "3"]
