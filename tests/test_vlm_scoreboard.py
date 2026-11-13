@@ -3,6 +3,7 @@ import doctest
 import json
 import os
 import shutil
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -374,6 +375,23 @@ def test_unscored_vllm_rows_are_dropped_and_explained(board):
     assert bool(c.loc[("gemma4-31b", "Obstacle"), "complete"])
     legs, unscored = sb.load_scores(str(board["stage"]), sb.load_splits(str(board["stage"])))
     assert unscored == {"gemma4-31b": {"CurbRamp": 3}} and len(legs["round3"]) == int(r.n_total)
+
+
+def test_unscored_self_reported_rows_are_dropped_and_explained(board):
+    """A self-reported leg (vlm_gemini.py) writes an unusable reply as a row with no p_incorrect and an
+    unscored_reason; the leg drops it (never a 0.5), shows as partial, and the coverage table says so."""
+    d = board["stage"] / "scores" / "gemma4-31b"
+    df = pd.read_csv(d / "Obstacle.csv").assign(unscored_reason="")
+    df.loc[df.index[:2], ["unscored_reason", "p_incorrect"]] = ["not JSON", np.nan]
+    df.to_csv(d / "Obstacle.csv", index=False)
+    sb.main(board["base"] + ["--no-figures"])
+    a = sb.read_aggregates(str(board["out"]))
+    r = a["board"].set_index("leg").loc["gemma4-31b"]
+    assert not bool(r.full) and int(r.n) == int(r.n_total) - 2 and np.isfinite(r.macro_auc)
+    c = a["coverage"].set_index(["leg", "label_type"])
+    assert c.loc[("gemma4-31b", "Obstacle"), "why"] == "2 rows unscored: no valid yes/no answer with a confidence"
+    _, unscored = sb.load_scores(str(board["stage"]), sb.load_splits(str(board["stage"])))
+    assert unscored == {"gemma4-31b": {"self-reported:Obstacle": 2}}
 
 
 def test_run_speed_prefers_the_full_run_with_most_crops_on_a_tie():
@@ -750,3 +768,48 @@ def test_bold_in_the_other_tables_and_the_rule(board):
     assert sb._with_rule([["", "a"], ["", "b"]], [True, False], 2)[1][1].startswith("*partial")
     assert [r[1] for r in sb._with_rule([["", "a"], ["", "b"], ["", "c"]], [True, False, False], 2)].count(
         "*partial coverage, not ranked against the rows above*") == 1
+
+
+def _write_leg(leg_dir, reasons, p):
+    leg_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"label_uid": [f"pub-a:{i}" for i in range(len(p))], "variant": "definition", "p_incorrect": p,
+                  "unscored_reason": reasons}).to_csv(leg_dir / "Obstacle.csv", index=False)
+
+
+def test_load_leg_reads_an_all_empty_unscored_reason_without_a_pandas4_warning(tmp_path):
+    """The normal case: every reply scored, so unscored_reason reads back as an all-NaN float64 column. Filling it
+    with "" warns on pandas 3 (and will raise); the load must stay silent and keep every row (#105 review)."""
+    _write_leg(tmp_path / "leg", ["", "", ""], [0.1, 0.5, 0.9])
+    assert pd.read_csv(tmp_path / "leg" / "Obstacle.csv").unscored_reason.dtype == "float64"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        d, unscored = sb.load_leg(str(tmp_path / "leg"))
+    assert len(d) == 3 and unscored == {}
+
+
+def test_load_leg_treats_a_blank_reason_as_scored_and_refuses_a_silent_nan(tmp_path):
+    """A whitespace-only reason is no reason (the row is scored); a NaN p_incorrect with no reason is a broken file
+    and raises naming it, instead of a NaN reaching the AUC."""
+    _write_leg(tmp_path / "ok", ["  ", "not JSON", ""], [0.2, None, 0.7])
+    d, unscored = sb.load_leg(str(tmp_path / "ok"))
+    assert sorted(d.label_uid) == ["pub-a:0", "pub-a:2"] and unscored == {"self-reported:Obstacle": 1}
+    _write_leg(tmp_path / "bad", ["", "", ""], [0.2, None, 0.7])
+    with pytest.raises(ValueError, match=r"bad/Obstacle\.csv: 1 rows with no p_incorrect"):
+        sb.load_leg(str(tmp_path / "bad"))
+
+
+def test_the_gemini_leg_is_named_self_reported_and_noted_as_public_only():
+    """#105 review, finding 9: the API leg shows as self-reported (not the raw id as a plain chat VLM), is absent from
+    the coverage table until staged (no "not run yet" rows, so a build without it is unchanged), and once staged
+    its missing cells say "public deployments only" rather than "partial: run incomplete"."""
+    assert sb.leg_info("gemini-3.8-flash") == ("Gemini 3.8 Flash (API, self-reported score)", sb.CHAT)
+    assert sb.leg_info("gemini-3.8-flash-fewshot8")[0] == "Gemini 3.8 Flash (API, self-reported score), 8-shot"
+    splits = pd.DataFrame({"label_type": ["Obstacle"] * 4, "label_uid": [f"pub-a:{i}" for i in range(4)]})
+    rows = sb.coverage_rows({"round3": splits}, splits, {})
+    assert not any(r["leg"] in sb.API_LEGS for r in rows)
+    for leg in ("gemini-3.8-flash", "gemini-3.8-flash-fewshot8"):
+        rows = sb.coverage_rows({"round3": splits, leg: splits.head(2)}, splits, {})
+        (r,) = [r for r in rows if r["leg"] == leg and r["label_type"] == "Obstacle"]
+        assert r["why"].startswith("public deployments only") and not r["complete"]
+    rows = sb.coverage_rows({"gemini-3.8-flash": splits.head(2)}, splits, {"gemini-3.8-flash": {"*": "a note"}})
+    assert [r["why"] for r in rows if r["label_type"] == "Obstacle"][0] == "a note"
