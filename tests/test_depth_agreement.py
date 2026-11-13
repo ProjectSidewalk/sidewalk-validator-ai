@@ -3,6 +3,7 @@
 The geometry tests need ``sidewalk_panorama_tools`` (installed in CI at the pinned v1.0.0) and skip without it.
 """
 import doctest
+import hashlib
 import json
 import math
 import os
@@ -1233,6 +1234,53 @@ def test_r_gpu_job_refuses_to_run_until_vitl_is_pinned(env, passes):
     assert max(lines.index(g) for g in gate) < first_python            # the gate comes before any work
     assert any("sha256sum --check" in ln and "VITL_SHA256" in ln for ln in lines[:first_python])
     assert 'VITL_REV=${VITL_REV:-}' in text and "TRANSFORMERS_OFFLINE=1" in text
+
+
+def _gnu_sha256sum():
+    """klone's sha256sum is GNU coreutils (``--check --status``); macOS's BSD one has no ``--status``."""
+    try:
+        return "GNU" in subprocess.run(["sha256sum", "--version"], capture_output=True, text=True).stdout
+    except OSError:
+        return False
+
+
+#: Stand-in for GNU ``sha256sum --check --status`` where only a BSD one exists (macOS): reads ``<sha>  <file>`` lines
+#: from stdin and exits 1 when any file is missing or differs, as GNU does. CI (Ubuntu) uses the real one.
+_SHA256SUM_SHIM = """#!/usr/bin/env python3
+import hashlib, os, sys
+assert sys.argv[1:] == ["--check", "--status"], sys.argv
+bad = 0
+for line in sys.stdin.read().splitlines():
+    want, name = line.split("  ", 1)
+    bad |= not os.path.exists(name) or hashlib.sha256(open(name, "rb").read()).hexdigest() != want
+sys.exit(1 if bad else 0)
+"""
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+@pytest.mark.parametrize("case", ["match", "mismatch", "missing"])
+def test_r_gpu_job_stops_when_the_vitl_file_does_not_match_its_sha256(tmp_path, case):
+    """Run the job's own checkpoint check: a file whose sha256 is not VITL_SHA256 (or no file) stops the job."""
+    text = open(os.path.join(ANALYSIS, "depth_agreement.slurm")).read()
+    check = [ln for ln in text.splitlines() if "sha256sum --check" in ln]
+    assert len(check) == 1
+    path = os.environ["PATH"]
+    if not _gnu_sha256sum():
+        shim = tmp_path / "bin"
+        shim.mkdir()
+        (shim / "sha256sum").write_text(_SHA256SUM_SHIM)
+        (shim / "sha256sum").chmod(0o755)
+        path = f"{shim}{os.pathsep}{path}"
+    work = tmp_path / "clone"
+    work.mkdir()
+    if case != "missing":
+        (work / "depth_anything_v2_metric_vkitti_vitl.pth").write_bytes(b"weights")
+    sha = hashlib.sha256(b"weights" if case == "match" else b"other").hexdigest()
+    r = subprocess.run(["bash", "-c", "set -euo pipefail\n" + check[0] + "\necho checked"], capture_output=True,
+                       text=True, cwd=work, env={"PATH": path, "VITL_SHA256": sha})
+    assert ("checked" in r.stdout) == (case == "match"), (r.stdout, r.stderr)
+    if case != "match":
+        assert r.returncode == 2 and "refusing to run" in r.stdout
 
 
 @pytest.mark.parametrize("name", SLURM)
