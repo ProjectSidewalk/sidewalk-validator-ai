@@ -1,0 +1,353 @@
+{
+ "all": {
+  "labels": 2635,
+  "faces": 250,
+  "pass": 1559,
+  "pass_share": 0.5916508538899431,
+  "pass_share_per_face": 0.5265672006718947
+ },
+ "cities": {
+  "cdmx": {
+   "labels": 272,
+   "faces": 55,
+   "pass": 121,
+   "pass_share": 0.44485294117647056,
+   "pass_share_per_face": 0.4633426704014939
+  },
+  "chicago-il": {
+   "labels": 895,
+   "faces": 90,
+   "pass": 517,
+   "pass_share": 0.5776536312849162,
+   "pass_share_per_face": 0.5334140117899148
+  },
+  "oradell-nj": {
+   "labels": 817,
+   "faces": 50,
+   "pass": 665,
+   "pass_share": 0.813953488372093,
+   "pass_share_per_face": 0.7116604653048708
+  },
+  "tucson-az": {
+   "labels": 651,
+   "faces": 55,
+   "pass": 256,
+   "pass_share": 0.3932411674347158,
+   "pass_share_per_face": 0.4103212539919204
+  }
+ },
+ "by": {
+  "rated": {
+   "labels": 250,
+   "faces": 250,
+   "pass": 150,
+   "pass_share": 0.6,
+   "pass_share_per_face": 0.6
+  },
+  "not_rated": {
+   "labels": 2385,
+   "faces": 222,
+   "pass": 1409,
+   "pass_share": 0.5907756813417191,
+   "pass_share_per_face": 0.5217713444837465
+  },
+  "same_labeler": {
+   "labels": 1280,
+   "faces": 190,
+   "pass": 680,
+   "pass_share": 0.53125,
+   "pass_share_per_face": 0.5067927539860317
+  },
+  "other_labeler": {
+   "labels": 1105,
+   "faces": 124,
+   "pass": 729,
+   "pass_share": 0.6597285067873303,
+   "pass_share_per_face": 0.5362146672810973
+  },
+  "rater_placed": {
+   "labels": 480,
+   "faces": 26,
+   "pass": 310,
+   "pass_share": 0.6458333333333334,
+   "pass_share_per_face": 0.6758713359144058
+  },
+  "rater_voted": {
+   "labels": 112,
+   "faces": 22,
+   "pass": 109,
+   "pass_share": 0.9732142857142857,
+   "pass_share_per_face": 0.9366883116883117
+  },
+  "author_excluded": {
+   "labels": 0,
+   "faces": 0,
+   "pass": 0,
+   "pass_share": null,
+   "pass_share_per_face": null
+  },
+  "trained_pano": {
+   "labels": 26,
+   "faces": 12,
+   "pass": 22,
+   "pass_share": 0.8461538461538461,
+   "pass_share_per_face": 0.8541666666666666
+  },
+  "pilot_heldout": {
+   "labels": 16,
+   "faces": 7,
+   "pass": 3,
+   "pass_share": 0.1875,
+   "pass_share_per_face": 0.42857142857142855
+  }
+ },
+ "unscored": {
+  "chicago-il": 1,
+  "tucson-az": 2
+ },
+ "not_rated_by_rated_stratum": {
+  "pass": {
+   "labels": 1579,
+   "faces": 139,
+   "pass": 1151,
+   "pass_share": 0.7289423685877138,
+   "pass_share_per_face": 0.6726740466072508
+  },
+  "agree_below": {
+   "labels": 482,
+   "faces": 44,
+   "pass": 196,
+   "pass_share": 0.4066390041493776,
+   "pass_share_per_face": 0.3567625325023695
+  },
+  "model_incorrect": {
+   "labels": 324,
+   "faces": 39,
+   "pass": 62,
+   "pass_share": 0.19135802469135801,
+   "pass_share_per_face": 0.17010242479178536
+  }
+ },
+ "faces_with_2plus_scored": {
+  "faces": 222,
+  "all_pass": 38,
+  "none_pass": 38,
+  "mixed": 146,
+  "mixed_expected_if_independent": 192.44955014460027,
+  "mixed_minority_at_most_20pct": 42,
+  "median_labels_mixed": 9.0,
+  "median_labels_not_mixed": 5.0,
+  "labels_at_2_or_3_models": 640,
+  "two_label_faces": 27,
+  "two_label_faces_mixed": 11
+ },
+ "slices": {
+  "severity": {
+   "(none)": {
+    "labels": 2635,
+    "faces": 250,
+    "pass": 1559,
+    "pass_share": 0.5916508538899431,
+    "pass_share_per_face": 0.5265672006718947
+   }
+  },
+  "tag": {
+   "street has no sidewalks": {
+    "labels": 1220,
+    "faces": 166,
+    "pass": 815,
+    "pass_share": 0.6680327868852459,
+    "pass_share_per_face": 0.6411391169446905
+   },
+   "street has a sidewalk": {
+    "labels": 245,
+    "faces": 56,
+    "pass": 126,
+    "pass_share": 0.5142857142857142,
+    "pass_share_per_face": 0.44916576479076475
+   },
+   "gravel/dirt road": {
+    "labels": 209,
+    "faces": 50,
+    "pass": 107,
+    "pass_share": 0.5119617224880383,
+    "pass_share_per_face": 0.4942619047619047
+   },
+   "shared pedestrian/car space": {
+    "labels": 190,
+    "faces": 39,
+    "pass": 59,
+    "pass_share": 0.3105263157894737,
+    "pass_share_per_face": 0.23689088689088691
+   },
+   "ends abruptly": {
+    "labels": 146,
+    "faces": 72,
+    "pass": 38,
+    "pass_share": 0.2602739726027397,
+    "pass_share_per_face": 0.2685185185185185
+   },
+   "(none)": {
+    "labels": 907,
+    "faces": 117,
+    "pass": 530,
+    "pass_share": 0.5843439911797134,
+    "pass_share_per_face": 0.5692845463880659
+   }
+  }
+ },
+ "pins": {
+  "neighbours_json_sha256": "491eef573c5ed01368bab82a9a64ebcf87975d47298ac584557583e1f5a2bcf9",
+  "manifest_sha256": "cbf8d7a2921dabd5533ab528144d1c18d0b869267a2a6696e790571f5ecd4102",
+  "predictions_sha256": {
+   "0": "cb6112a579c9ba954ad13ab701edf8dfe77661f848a8c8a056a54716c897300f",
+   "1": "a32b0dabc766e86d32a74e3f75c4c55e9f1609d33df2683e3bc0b87751957e22",
+   "2": "e59fa52623902ea015f85f3fe2e199167997634f2bda44a15ffcf8d2d711b23f",
+   "3": "27dddcb6afd0f0fe2d80f9ba81a5f70babd9d029beab4af529585046770dc31e",
+   "4": "03426b4f356156b96ad8858aefd5f67187fdf318ff0a8355beb3b09591f31642"
+  },
+  "face_scores_sha256": "6da73f9e4e3c93de1102e8657b18e1e457c15b3d14c6ebf8de4b796775c54bd3",
+  "key_sha256": "d2d30d05912e1a12cd75f56822a32413cb250dd048a5c17ff5bc13ae949172a8",
+  "gate_predictions_sha256": {
+   "0": "b44a555fb2e063d330bd11cd54d2b15a49bafd20cf6a2802b972f793a2af8e1c",
+   "1": "ed0c74735a7347e84a352128a9d6b799631fadcadf01b1cd265168536e3127a4",
+   "2": "c6306f54914bca59daae87892665c630c8dcd64a46457ca49f9842219c7d4ede",
+   "3": "a2a9270f17b3ad26627794ee81e12cc111b84d15bf5e497bc454656cbc1a70e8",
+   "4": "f36ed206947435bfbcc4acdad8fd15675f2efdc35db4161436724bf13d217b4f"
+  },
+  "model_sha256": {
+   "0": "546403993c5e6a2d0ab6d8a2d36541bb1638b90e88cfa1c148210a359203f7f4",
+   "1": "e309789dca10e3afb0ae248360d5e0502c065e500e95bcca721adf2de5ef5174",
+   "2": "57607ba98ae7635abfcc7859e7a60a4526b4317653abfdd0f63db9b8fe24eddb",
+   "3": "36c870211075b650fddc19aab2bc5bc5af68b9e2f95135deee22c30fae226c53",
+   "4": "6db6671eb1ab016a05dd4485fb2200e4a1b6c1db81bd46bedb7d0f0304c15574"
+  },
+  "sheet_sha256": "09a2624f93ff5ca203dfd8f0a4038129252d12334d863046986931e99ce957c9"
+ },
+ "rater_touched_faces": {
+  "faces_touched": 42,
+  "faces": 250,
+  "touched": {
+   "pass": {
+    "k": 31,
+    "n": 31,
+    "rate": 1.0,
+    "wilson95_lower": 0.889740999265246
+   },
+   "agree_below": {
+    "k": 7,
+    "n": 7,
+    "rate": 1.0,
+    "wilson95_lower": 0.6456611570247934
+   },
+   "model_incorrect": {
+    "k": 4,
+    "n": 4,
+    "rate": 1.0,
+    "wilson95_lower": 0.5100999795960008
+   }
+  },
+  "untouched": {
+   "pass": {
+    "k": 111,
+    "n": 113,
+    "rate": 0.9823008849557522,
+    "wilson95_lower": 0.9377540468123469
+   },
+   "agree_below": {
+    "k": 35,
+    "n": 41,
+    "rate": 0.8536585365853658,
+    "wilson95_lower": 0.7155624473141075
+   },
+   "model_incorrect": {
+    "k": 16,
+    "n": 39,
+    "rate": 0.41025641025641024,
+    "wilson95_lower": 0.2707908943540048
+   }
+  },
+  "bar_met_without_touched": true
+ },
+ "crops": {
+  "cdmx": {
+   "ok": 213
+  },
+  "chicago-il": {
+   "ok": 779,
+   "no_pano": 1
+  },
+  "oradell-nj": {
+   "ok": 712
+  },
+  "tucson-az": {
+   "ok": 474,
+   "no_pano": 2
+  }
+ },
+ "selection": {
+  "chicago-il": {
+   "rated_faces": 90,
+   "face_labels": 896,
+   "scored": 116,
+   "ai_placed": 0,
+   "bad_geometry": 0,
+   "new": 780,
+   "same_labeler": 847,
+   "runs": 109,
+   "new_rater_placed": 0,
+   "new_rater_voted": 3,
+   "new_author_excluded": 0,
+   "new_trained_pano": 0,
+   "new_pilot_heldout": 1
+  },
+  "tucson-az": {
+   "rated_faces": 55,
+   "face_labels": 653,
+   "scored": 177,
+   "ai_placed": 0,
+   "bad_geometry": 0,
+   "new": 476,
+   "same_labeler": 312,
+   "runs": 117,
+   "new_rater_placed": 182,
+   "new_rater_voted": 8,
+   "new_author_excluded": 0,
+   "new_trained_pano": 0,
+   "new_pilot_heldout": 8
+  },
+  "oradell-nj": {
+   "rated_faces": 50,
+   "face_labels": 817,
+   "scored": 105,
+   "ai_placed": 0,
+   "bad_geometry": 0,
+   "new": 712,
+   "same_labeler": 220,
+   "runs": 151,
+   "new_rater_placed": 298,
+   "new_rater_voted": 101,
+   "new_author_excluded": 0,
+   "new_trained_pano": 23,
+   "new_pilot_heldout": 0
+  },
+  "cdmx": {
+   "rated_faces": 55,
+   "face_labels": 272,
+   "scored": 59,
+   "ai_placed": 0,
+   "bad_geometry": 0,
+   "new": 213,
+   "same_labeler": 154,
+   "runs": 116,
+   "new_rater_placed": 0,
+   "new_rater_voted": 0,
+   "new_author_excluded": 0,
+   "new_trained_pano": 3,
+   "new_pilot_heldout": 0
+  }
+ },
+ "gate": 0.92,
+ "pass_models": 3,
+ "n_models": 5
+}

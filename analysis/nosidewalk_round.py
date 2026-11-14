@@ -45,6 +45,19 @@ Usage (``D`` outside the repo; the full run order is in ``docs/nosidewalk-2026-1
     python analysis/nosidewalk_round.py report --key ... --sheet $D/votes_jon.csv --scores .../scores.csv \\
         --out-json docs/nosidewalk-2026-11/round_b.json --out-md docs/nosidewalk-2026-11/round_b.md \\
         --doc docs/nosidewalk-2026-11.md
+
+After the round, for issue #102: every other NoSidewalk label on the rated faces, scored by the same fold models
+(its own run directory on klone; ``docs/running-on-hyak.md``)::
+
+    K=$D/private-key-do-not-share
+    RATER_ID=<uuid> python analysis/nosidewalk_round.py neighbours --design analysis/gt_rounds/nosidewalk_b.json \\
+        --rawlabels $D/rawlabels --key-dir $K --pool $D/pool --author-excluded $D/author_excluded.csv \\
+        --pilot-split <whole split.csv> --cityparams $D/gallery_jon/cityparams_snapshot.conf --out $D/neighbours
+    # klone: stage, crops, score into $D/neighbours/scored (manifest.csv, predictions_fold<k>.csv + provenance)
+    python analysis/nosidewalk_round.py neighbour-scores --design analysis/gt_rounds/nosidewalk_b.json --key-dir $K \\
+        --gate <gate2 dir> --priors <deployment_priors.json> --pinned-predictions $D/scored --neighbours $D/neighbours \\
+        --manifest $D/neighbours/scored/manifest.csv --predictions $D/neighbours/scored --sheet $K/votes_jon.csv \\
+        --out-json docs/nosidewalk-2026-11/neighbours.json --out-md docs/nosidewalk-2026-11/neighbours.md
 """
 import argparse
 import hashlib
@@ -209,16 +222,48 @@ def ranked(df, seed):
     return df.assign(rank=rank).sort_values("rank", kind="mergesort").reset_index(drop=True)
 
 
+def crop_labels(rows):
+    """``rows`` (rawLabels rows with ``label_uid``, ``city`` and ``author``) with the columns ``ai_labels_eval.py
+    crops`` reads: the human vote counts, and every other ``ale.LABEL_COLUMNS`` column empty (the class is unknown).
+    Returns a new frame."""
+    rows = rows.copy()
+    votes = rows["validations"].map(dg.human_vote_counts)
+    rows["human_agree"], rows["human_disagree"] = [v[0] for v in votes], [v[1] for v in votes]
+    rows["n_votes"] = rows["human_agree"] + rows["human_disagree"]
+    for col in ale.LABEL_COLUMNS:
+        if col not in rows:
+            rows[col] = ""
+    return rows
+
+
+def write_stage_files(rows, path):
+    """The store-relative panorama paths of ``rows`` for ``ai_labels_stage.slurm``, sorted and unique."""
+    panos = sorted({f"{c}/{p[:2]}/{p}.jpg" for c, p in zip(rows["city"], rows["pano_id"])})
+    with open(path, "w") as f:
+        f.write("\n".join(panos) + "\n")
+    return panos
+
+
+def read_city_inputs(args, design):
+    """What ``pool`` and ``neighbours`` both read: ``(city -> schema, the schema:label_id set of labels whose author
+    is excluded)``. Stops when the author-excluded pull has no rows for a city of the design."""
+    schema_city, _ = rl.cityparams(open(args.cityparams).read())
+    city_schema = {c: s for s, c in schema_city.items()}
+    ex = pd.read_csv(args.author_excluded, dtype=str)
+    for city in design["cities"]:
+        if city_schema[city] not in set(ex["schema"]):
+            sys.exit(f"{args.author_excluded} has no rows for {city_schema[city]}")
+    excluded = set((ex["schema"] + ":" + ex["label_id"])[ex["author_excluded"] == "t"])
+    return city_schema, excluded
+
+
 def cmd_pool(args):
     if rl.inside_git_checkout(args.out):
         sys.exit(f"refusing to write the pool inside a git checkout: {args.out}")
     rater_id = os.environ.get("RATER_ID", "")
     rl._check_uuid(rater_id)
     design = load_design(args.design)
-    schema_city, _ = rl.cityparams(open(args.cityparams).read())
-    city_schema = {c: s for s, c in schema_city.items()}
-    ex = pd.read_csv(args.author_excluded, dtype=str)
-    excluded = set((ex["schema"] + ":" + ex["label_id"])[ex["author_excluded"] == "t"])
+    city_schema, excluded = read_city_inputs(args, design)
     split = pd.read_csv(args.pilot_split, dtype=str, usecols=["face_id", "pano_id", "split"])
     seen = split[split["split"].isin(POOLED)]
     trained = (set(seen["face_id"].dropna()) - {""}, set(seen["pano_id"]))
@@ -227,8 +272,6 @@ def cmd_pool(args):
         path = os.path.join(args.rawlabels, f"{city}.csv")
         inputs[city] = rl.sha256_file(path)
         raw = pd.read_csv(path, low_memory=False, dtype={"pano_id": str, "label_id": str})
-        if city_schema[city] not in set(ex["schema"]):
-            sys.exit(f"{args.author_excluded} has no rows for {city_schema[city]}")
         raw = raw.assign(city=city, schema=city_schema[city])
         elig, dropped = eligible_pool(raw, excluded, trained, rater_id)
         elig = ranked(elig, args.seed)
@@ -236,13 +279,7 @@ def cmd_pool(args):
         dropped["phase1"] = int(elig["phase1"].sum())
         counts[city] = dropped
         frames.append(elig)
-    pool = pd.concat(frames, ignore_index=True)
-    votes = pool["validations"].map(dg.human_vote_counts)
-    pool["human_agree"], pool["human_disagree"] = [v[0] for v in votes], [v[1] for v in votes]
-    pool["n_votes"] = pool["human_agree"] + pool["human_disagree"]
-    for col in ale.LABEL_COLUMNS:  # the columns ai_labels_eval.py crops reads; the unknown class stays empty
-        if col not in pool:
-            pool[col] = ""
+    pool = crop_labels(pd.concat(frames, ignore_index=True))
     os.makedirs(args.out, exist_ok=True)
     cols = ale.LABEL_COLUMNS + ["schema", "face_id", "rank"]
     pool[["label_uid", "city", "schema", "face_id", "rank", "phase1"]].to_csv(
@@ -250,9 +287,7 @@ def cmd_pool(args):
     labels_path = os.path.join(args.out, "labels.csv")
     p1 = pool[pool["phase1"] == 1]
     p1[cols].to_csv(labels_path, index=False)
-    panos = sorted({f"{c}/{p[:2]}/{p}.jpg" for c, p in zip(p1["city"], p1["pano_id"])})
-    with open(os.path.join(args.out, "stage_files.txt"), "w") as f:
-        f.write("\n".join(panos) + "\n")
+    panos = write_stage_files(p1, os.path.join(args.out, "stage_files.txt"))
     summary = {"design": design, "design_sha256": rl.sha256_file(args.design), "rawlabels_sha256": inputs,
                "author_excluded_sha256": rl.sha256_file(args.author_excluded),
                "pilot_split_sha256": rl.sha256_file(args.pilot_split),
@@ -405,6 +440,372 @@ def cmd_build(args):
     rl.write_manifest(os.path.join(args.key_dir, "manifest.json"), man)
     print(json.dumps({k: man[k] for k in ("items", "eligible", "scored", "cells", "shortfall")}, indent=1))
     print(f"key -> {kpath} (sha256 {man['key_sha256']})")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# neighbours: every other label on the rated labels' faces (issue #102)
+# ---------------------------------------------------------------------------------------------------------------------
+
+NEIGHBOUR_FLAGS = ("rater_placed", "rater_voted", "author_excluded", "trained_pano", "pilot_heldout")
+FACE_COLUMNS = ["label_uid", "city", "schema", "label_id", "face_id", "pano_id", "rated", "scored", "new", "ai_placed",
+                "bad_geometry", *NEIGHBOUR_FLAGS, "same_labeler", "labeler_idx", "time_created", "latitude",
+                "longitude", "severity", "tags"]
+
+
+def face_neighbours(raw, rated_uids, scored_uids, excluded, trained_panos, heldout_uids, rater_id):
+    """One city's NoSidewalk labels on the block faces of the rated labels, the rated labels included, one row each.
+
+    Nothing is dropped for the eligibility rules of ``pool``: these labels are scored, not rated, so each rule is a
+    flag column instead. ``new`` marks the labels to crop and score now (not scored in phase 1, human-placed, usable
+    pano point). ``same_labeler`` is 1 when the label's author placed the face's rated label; ``labeler_idx`` numbers
+    the face's labelers by their first label there, so a labeler's run on a face (issue #102) is
+    ``(face_id, labeler_idx)`` and no ``user_id`` has to be written.
+
+    >>> v = "[]"
+    >>> raw = pd.DataFrame({"label_id": ["1", "2", "3", "4", "5"], "user_id": ["u1", "u2", "u1", "u1", "u3"],
+    ...     "label_type": "NoSidewalk", "city": "a", "schema": "s", "street_edge_id": [7, 7, 7, 8, 7],
+    ...     "street_side": ["left", "left", "left", "left", "right"], "pano_id": list("pqrst"), "validations": v,
+    ...     "time_created": ["2026-01-03T00:00:00Z", "2026-01-01T00:00:00.5Z", "2026-01-01T00:00:00.12Z",
+    ...                      "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"], "pano_source": "gsv", "pano_x": 1.0, "pano_y": 1.0, "pano_width": 9.0,
+    ...     "pano_height": 9.0})
+    >>> f = face_neighbours(raw, {"a:1"}, {"a:1"}, set(), {"q"}, set(), "me").set_index("label_uid")
+    >>> f.index.tolist(), f["new"].tolist(), f["same_labeler"].tolist(), f["labeler_idx"].tolist()
+    (['a:3', 'a:2', 'a:1'], [1, 1, 0], [1, 0, 1], [0, 1, 0])
+    >>> f["trained_pano"].tolist()
+    [0, 1, 0]
+    """
+    df = raw[raw["label_type"] == LABEL_TYPE].copy()
+    df["label_uid"] = df["city"] + ":" + df["label_id"].astype(str)
+    if not df["label_uid"].is_unique:
+        raise ValueError("duplicate labels in the rawLabels export")
+    df["face_id"] = nosidewalk_faces.face_id(df)
+    df["rated"] = df["label_uid"].isin(rated_uids).astype(int)
+    rated = df.loc[df["rated"] == 1, ["face_id", "user_id"]]
+    if (rated["face_id"] == "").any() or rated["face_id"].duplicated().any():
+        raise ValueError("a rated label has no face, or two rated labels share one")
+    df = df[df["face_id"].isin(set(rated["face_id"]))].copy()
+    if df["user_id"].isna().any():
+        raise ValueError("a label on a rated face has no user_id: its labeler cannot be numbered")
+    df["author"] = df["user_id"].map(dg.label_author)
+    geometry_ok, _ = dg.valid_geometry(df)
+    placed, voted = rater_touched(df, rater_id)
+    df["scored"] = df["label_uid"].isin(scored_uids).astype(int)
+    df["ai_placed"] = (df["author"] != "human").astype(int)
+    df["bad_geometry"] = (~geometry_ok).astype(int)
+    df["rater_placed"], df["rater_voted"] = placed.astype(int), voted.astype(int)
+    df["author_excluded"] = (df["schema"] + ":" + df["label_id"].astype(str)).isin(excluded).astype(int)
+    df["trained_pano"] = df["pano_id"].astype(str).isin(trained_panos).astype(int)
+    df["pilot_heldout"] = df["label_uid"].isin(heldout_uids).astype(int)
+    df["new"] = ((df["scored"] == 0) & (df["ai_placed"] == 0) & (df["bad_geometry"] == 0)).astype(int)
+    rated_user = dict(zip(rated["face_id"], rated["user_id"].astype(str)))
+    df["same_labeler"] = (df["user_id"].astype(str) == df["face_id"].map(rated_user)).astype(int)
+    # Parsed, not as text: the export writes 0 to 3 fractional digits, and "Z" sorts after a digit.
+    df["_t"] = pd.to_datetime(df["time_created"], utc=True, format="ISO8601")
+    if df["_t"].isna().any():
+        raise ValueError("a label on a rated face has no time_created: its labeler cannot be ordered")
+    df["_id"] = pd.to_numeric(df["label_id"])
+    df = df.sort_values(["face_id", "_t", "_id"], kind="mergesort").drop(columns=["_t", "_id"]).reset_index(drop=True)
+    first = df.drop_duplicates(["face_id", "user_id"])
+    idx = first.assign(labeler_idx=first.groupby("face_id").cumcount())[["face_id", "user_id", "labeler_idx"]]
+    return df.merge(idx, on=["face_id", "user_id"], how="left", validate="many_to_one")
+
+
+def cmd_neighbours(args):
+    if rl.inside_git_checkout(args.out):
+        sys.exit(f"refusing to write label rows inside a git checkout: {args.out}")
+    rater_id = os.environ.get("RATER_ID", "")
+    rl._check_uuid(rater_id)
+    design = load_design(args.design)
+    city_schema, excluded = read_city_inputs(args, design)
+    kman = json.load(open(os.path.join(args.key_dir, "manifest.json")))
+    for name, want in (("key.csv", kman["key_sha256"]), ("scores.csv", kman["scores_sha256"])):
+        if rl.sha256_file(os.path.join(args.key_dir, name)) != want:
+            sys.exit(f"{name} is not the file the key's manifest pins")
+    ppath = os.path.join(args.pool, "pool.json")  # the same pulls the round was drawn from, or faces and votes drift
+    if rl.sha256_file(ppath) != kman["pool_json_sha256"]:
+        sys.exit(f"{ppath} is not the pool the key was built from")
+    pool_json = json.load(open(ppath))
+    for path, want in ((args.author_excluded, pool_json["author_excluded_sha256"]),
+                       (args.pilot_split, pool_json["pilot_split_sha256"]),
+                       *((os.path.join(args.rawlabels, f"{c}.csv"), pool_json["rawlabels_sha256"][c])
+                         for c in design["cities"])):
+        if rl.sha256_file(path) != want:
+            sys.exit(f"{path} is not the file the pool was drawn from")
+    key = pd.read_csv(os.path.join(args.key_dir, "key.csv"), dtype=str)
+    scores = pd.read_csv(os.path.join(args.key_dir, "scores.csv"), dtype=str, usecols=["label_uid"])
+    split = pd.read_csv(args.pilot_split, dtype=str, usecols=["label_uid", "pano_id", "split"])
+    trained_panos = set(split.loc[split["split"].isin(POOLED), "pano_id"])
+    heldout = set(split.loc[split["split"] == "test_heldout", "label_uid"])
+    frames, counts, inputs = [], {}, {}
+    for city in design["cities"]:
+        path = os.path.join(args.rawlabels, f"{city}.csv")
+        inputs[city] = rl.sha256_file(path)
+        raw = pd.read_csv(path, low_memory=False, dtype={"pano_id": str, "label_id": str})
+        raw = raw.assign(city=city, schema=city_schema[city])
+        rated = set(key.loc[key["city_id"] == city, "label_uid_city"])  # city:label_id; the key's label_uid is by schema
+        f = face_neighbours(raw, rated, set(scores["label_uid"]), excluded, trained_panos, heldout, rater_id)
+        if int(f["rated"].sum()) != len(rated):
+            sys.exit(f"{city}: {len(rated) - int(f['rated'].sum())} rated labels are not in {path}")
+        counts[city] = {"rated_faces": int(f["face_id"].nunique()), "face_labels": int(len(f)),
+                        "scored": int(f["scored"].sum()),
+                        "ai_placed": int(((f["scored"] == 0) & (f["ai_placed"] == 1)).sum()),
+                        "bad_geometry": int(((f["scored"] == 0) & (f["ai_placed"] == 0)
+                                             & (f["bad_geometry"] == 1)).sum()),
+                        "new": int(f["new"].sum()), "same_labeler": int(f["same_labeler"].sum()),
+                        "runs": int(len(f.drop_duplicates(["face_id", "labeler_idx"]))),
+                        **{f"new_{flag}": int(((f["new"] == 1) & (f[flag] == 1)).sum()) for flag in NEIGHBOUR_FLAGS}}
+        frames.append(f)
+    faces = pd.concat(frames, ignore_index=True)
+    os.makedirs(args.out, exist_ok=True)
+    fpath, lpath = os.path.join(args.out, "faces.csv"), os.path.join(args.out, "labels.csv")
+    faces[FACE_COLUMNS].to_csv(fpath, index=False)
+    new = crop_labels(faces[faces["new"] == 1].copy())
+    new[ale.LABEL_COLUMNS + ["schema", "face_id"]].to_csv(lpath, index=False)
+    panos = write_stage_files(new, os.path.join(args.out, "stage_files.txt"))
+    summary = {"design_sha256": rl.sha256_file(args.design), "rawlabels_sha256": inputs,
+               "author_excluded_sha256": rl.sha256_file(args.author_excluded),
+               "pilot_split_sha256": rl.sha256_file(args.pilot_split), "key_sha256": kman["key_sha256"],
+               "scores_sha256": kman["scores_sha256"], "cities": counts, "faces_sha256": rl.sha256_file(fpath),
+               "labels_sha256": rl.sha256_file(lpath), "labels": int(len(new)), "panos": len(panos)}
+    rl.write_manifest(os.path.join(args.out, "neighbours.json"), summary)
+    print(json.dumps({"cities": counts, "labels": int(len(new)), "panos": len(panos)}, indent=1))
+
+
+def read_fold_predictions(directory, n_folds, pins=None):
+    """``{k: frame}`` of ``predictions_fold<k>.csv`` under ``directory`` and their sha256s; with ``pins`` (fold ->
+    sha256, keys as strings) a file that is not the pinned one stops the run."""
+    preds, shas = {}, {}
+    for k in range(n_folds):
+        path = os.path.join(directory, f"predictions_fold{k}.csv")
+        preds[k], shas[str(k)] = pd.read_csv(path, dtype={"label_uid": str}), rl.sha256_file(path)
+        if pins is not None and shas[str(k)] != pins[str(k)]:
+            sys.exit(f"{path} is not the file the key's manifest pins")
+    return preds, shas
+
+
+def model_shas(directory, n_folds):
+    """``{fold: sha256 of the weights}`` from the ``predictions_fold<k>_provenance.json`` files ``ai_labels_eval.py
+    score`` writes beside each prediction file."""
+    out = {}
+    for k in range(n_folds):
+        path = os.path.join(directory, f"predictions_fold{k}_provenance.json")
+        if not os.path.exists(path):
+            sys.exit(f"{path} is missing: cannot tell which weights made predictions_fold{k}.csv")
+        out[str(k)] = json.load(open(path))["model_sha256"]
+    return out
+
+
+def pass_summary(df):
+    """Counts and gate-pass shares of scored labels: by label, and as the mean over faces of each face's share (a few
+    long faces hold a large part of the labels, so the two differ).
+
+    >>> pass_summary(pd.DataFrame({"face_id": list("aaab"), "stratum": ["pass", "pass", "pass", "agree_below"]}))
+    {'labels': 4, 'faces': 2, 'pass': 3, 'pass_share': 0.75, 'pass_share_per_face': 0.5}
+    """
+    if not len(df):
+        return {"labels": 0, "faces": 0, "pass": 0, "pass_share": None, "pass_share_per_face": None}
+    p = df["stratum"] == "pass"
+    return {"labels": int(len(df)), "faces": int(df["face_id"].nunique()), "pass": int(p.sum()),
+            "pass_share": float(p.mean()), "pass_share_per_face": float(p.groupby(df["face_id"]).mean().mean())}
+
+
+def neighbour_report(face_scores, min_n=slices.MIN_N):
+    """Aggregates of the scored labels on the rated faces (no label rows): per city, per flag, per severity and tag,
+    and how often the model's own gate verdict is the same for every scored label of a face. That last table is
+    about the **model's** verdict only; it says nothing on whether the labels of a face are right or wrong together
+    (issue #102 item 1), which needs several rated labels per face."""
+    s = face_scores[face_scores["stratum"].notna() & (face_scores["stratum"] != "")]
+    rep = {"all": pass_summary(s), "cities": {c: pass_summary(g) for c, g in s.groupby("city")},
+           "by": {"rated": pass_summary(s[s["rated"] == 1]), "not_rated": pass_summary(s[s["rated"] == 0]),
+                  "same_labeler": pass_summary(s[(s["rated"] == 0) & (s["same_labeler"] == 1)]),
+                  "other_labeler": pass_summary(s[(s["rated"] == 0) & (s["same_labeler"] == 0)]),
+                  **{flag: pass_summary(s[s[flag] == 1]) for flag in NEIGHBOUR_FLAGS}},
+           "unscored": {c: int(n) for c, n in face_scores[~face_scores.index.isin(s.index)].groupby("city").size().items()}}
+    # The faces were chosen through their rated label, 60 % of them from the pass stratum, so the shares above are
+    # of this sample and not of any population; the split by the rated label's stratum shows how far they follow it.
+    rated_stratum = s[s["rated"] == 1].set_index("face_id")["stratum"]
+    others = s[s["rated"] == 0]
+    rep["not_rated_by_rated_stratum"] = {
+        st: pass_summary(others[others["face_id"].map(rated_stratum) == st]) for st in STRATA}
+    is_pass = (s["stratum"] == "pass").astype(int)
+    multi = pd.DataFrame({"n": is_pass.groupby(s["face_id"]).size(), "passing": is_pass.groupby(s["face_id"]).sum(),
+                          "city": s.groupby("face_id")["city"].first()})
+    multi = multi[multi["n"] >= 2]
+    mixed = multi[(multi["passing"] > 0) & (multi["passing"] < multi["n"])]
+    minority = np.minimum(mixed["passing"], mixed["n"] - mixed["passing"]) / mixed["n"]
+    p_city = multi["city"].map(is_pass.groupby(s["city"]).mean())  # the benchmark: verdicts independent within a city
+    rep["faces_with_2plus_scored"] = {
+        "faces": int(len(multi)), "all_pass": int((multi["passing"] == multi["n"]).sum()),
+        "none_pass": int((multi["passing"] == 0).sum()), "mixed": int(len(mixed)),
+        "mixed_expected_if_independent": float((1 - p_city ** multi["n"] - (1 - p_city) ** multi["n"]).sum()),
+        "mixed_minority_at_most_20pct": int((minority <= 0.2).sum()),
+        "median_labels_mixed": float(mixed["n"].median()) if len(mixed) else None,
+        "median_labels_not_mixed": (float(multi.loc[~multi.index.isin(mixed.index), "n"].median())
+                                    if len(mixed) < len(multi) else None),
+        "labels_at_2_or_3_models": int(s["n_pass_models"].isin([2, 3]).sum()),
+        "two_label_faces": int((multi["n"] == 2).sum()), "two_label_faces_mixed": int((mixed["n"] == 2).sum())}
+    rep["slices"] = {}
+    for by in slices.BY:
+        d = slices.with_slice(s, by)
+        rep["slices"][by] = {name: pass_summary(d[d["slice"] == name]) for name in slices.slice_names(s, by, min_n)}
+    return rep
+
+
+def rater_touched_report(rated, face_scores, gate):
+    """The round's rates on rated labels whose face carries a label the rater placed or voted on, and on the rest.
+    The pool keeps the rater's own labels and votes out of the round, but not the faces they sit on, so the rater
+    may know such a face. ``rated`` is the unmasked key (``face_id``, ``stratum``, ``verdict``); Unsure votes leave
+    the denominator, as in the round's report.
+
+    >>> r = pd.DataFrame({"face_id": list("abcd"), "stratum": ["pass"] * 3 + ["agree_below"],
+    ...                   "verdict": ["correct", "incorrect", "correct", "cant_tell"]})
+    >>> f = pd.DataFrame({"face_id": list("aabcd"), "rater_placed": [0, 1, 0, 0, 0], "rater_voted": 0})
+    >>> t = rater_touched_report(r, f, 0.92)
+    >>> t["faces_touched"], t["touched"]["pass"]["n"], (t["untouched"]["pass"]["k"], t["untouched"]["pass"]["n"])
+    (1, 1, (1, 2))
+    """
+    touched_faces = set(face_scores.loc[(face_scores["rater_placed"] == 1) | (face_scores["rater_voted"] == 1),
+                                        "face_id"])
+    decided = rated[rated["verdict"].isin(["correct", "incorrect"])]
+    is_touched = decided["face_id"].isin(touched_faces)
+
+    def rates(d):
+        return {st: rate(int((d.loc[d["stratum"] == st, "verdict"] == "correct").sum()),
+                         int((d["stratum"] == st).sum())) for st in STRATA}
+    out = {"faces_touched": int(rated["face_id"].isin(touched_faces).sum()), "faces": int(len(rated)),
+           "touched": rates(decided[is_touched]), "untouched": rates(decided[~is_touched])}
+    bar = out["untouched"]["pass"]
+    out["bar_met_without_touched"] = bool(bar["n"] >= MIN_DECIDED and bar["wilson95_lower"] >= gate)
+    return out
+
+
+def _n(x):
+    return "n/a" if x is None else f"{x:g}"
+
+
+def neighbour_markdown(rep):
+    def row(name, v):
+        share = "" if v["pass_share"] is None else f"{v['pass_share']:.3f}"
+        face = "" if v["pass_share_per_face"] is None else f"{v['pass_share_per_face']:.3f}"
+        return f"| {name} | {v['labels']} | {v['faces']} | {v['pass']} | {share} | {face} |"
+    head = "| {} | Scored labels | Faces | Pass the gate | Share | Mean share per face |\n|---|---|---|---|---|---|"
+    out = [head.format("City"), *[row(c, v) for c, v in rep["cities"].items()], row("all", rep["all"]), "",
+           head.format("Group"), *[row(k.replace("_", " "), v) for k, v in rep["by"].items()], ""]
+    out += ["Labels beside the rated one, by the stratum of the face's rated label (the faces were chosen through that "
+            "label, 60 % of them from the pass stratum, so every share on this page describes this sample only):", "",
+            head.format("Rated label's stratum"),
+            *[row(k.replace("_", " "), v) for k, v in rep["not_rated_by_rated_stratum"].items()], ""]
+    f = rep["faces_with_2plus_scored"]
+    out += [f"Faces with at least two scored labels: {f['faces']}. The model's gate verdict is pass for every label on "
+            f"{f['all_pass']}, for none on {f['none_pass']}, and mixed on {f['mixed']}; verdicts drawn independently "
+            f"at each city's pass share (over the scored labels of these faces, rated ones included) would leave "
+            f"about {f['mixed_expected_if_independent']:.0f} mixed, so the verdict clusters by face. Mixed faces are "
+            f"longer (median {_n(f['median_labels_mixed'])} labels against {_n(f['median_labels_not_mixed'])} on the "
+            f"others); on {f['mixed_minority_at_most_20pct']} of them at most a fifth of the labels differ from the "
+            f"rest. Of the {f['two_label_faces']} two-label faces, {f['two_label_faces_mixed']} are mixed. "
+            f"{f['labels_at_2_or_3_models']} of the {rep['all']['labels']} scored labels sit at 2 or 3 of the "
+            f"{rep['n_models']} models, one model away from the other verdict.", ""]
+    if "rater_touched_faces" in rep:
+        t = rep["rater_touched_faces"]
+        out += [f"{t['faces_touched']} of the {t['faces']} rated faces carry a label the rater placed or voted on. "
+                "Correct / decided = rate (Wilson 95 % lower bound) on the rated labels:", "",
+                "| Stratum | Faces the rater had touched | Other faces |", "|---|---|---|",
+                *[f"| {st.replace('_', ' ')} | {_rate_cell(t['touched'][st])} | {_rate_cell(t['untouched'][st])} |"
+                  for st in STRATA], "",
+                "Without the touched faces the bar on the pass stratum is "
+                + ("still met." if t["bar_met_without_touched"] else "**not met**."), ""]
+    for by, table in rep["slices"].items():
+        out += [head.format(by.capitalize()), *[row(k, v) for k, v in table.items()], ""]
+    return "\n".join(out)
+
+
+def cmd_neighbour_scores(args):
+    if rl.inside_git_checkout(args.neighbours):
+        sys.exit(f"refusing to write label rows inside a git checkout: {args.neighbours}")
+    design = load_design(args.design)
+    gate, n_pass = float(design["gate"]), int(design["pass_models"])
+    kman = json.load(open(os.path.join(args.key_dir, "manifest.json")))
+    nman = json.load(open(os.path.join(args.neighbours, "neighbours.json")))
+    if (nman["key_sha256"], nman["scores_sha256"]) != (kman["key_sha256"], kman["scores_sha256"]):
+        sys.exit("neighbours.json was made from a different key or scores file")
+    pooled, _, n_folds, missing = ng.load_predictions(args.gate)
+    if missing:
+        sys.exit(f"the gate run is incomplete: {missing}")
+    for k in range(n_folds):  # the data directory can hold several gate runs; only the key's one fits its map
+        if rl.sha256_file(ng.predictions_path(args.gate, k)) != kman["gate_predictions_sha256"][str(k)]:
+            sys.exit(f"{args.gate} is not the gate run the key was built with (fold {k})")
+    pi, _ = cal.load_prior(args.priors, LABEL_TYPE)
+    if pi != kman["prior"]:
+        sys.exit("--priors is not the prior the key was built with")
+    api_map = ng.fit_map(pooled, pi)
+    spath = os.path.join(args.key_dir, "scores.csv")
+    if rl.sha256_file(spath) != kman["scores_sha256"]:
+        sys.exit(f"{spath} is not the file the key's manifest pins")
+    pinned = pd.read_csv(spath, dtype={"label_uid": str, "label_id": str}, low_memory=False)
+    old_preds, _ = read_fold_predictions(args.pinned_predictions, n_folds, kman["predictions_sha256"])
+    redo = score_table(pinned[["label_uid"]], old_preds, api_map, gate, n_pass)
+    both = pinned.merge(redo, on="label_uid", validate="one_to_one", suffixes=("", "_redo"))
+    same = len(both) == len(pinned) and (both["stratum"] == both["stratum_redo"]).all() and all(
+        np.allclose(both[f"served_{k}"], both[f"served_{k}_redo"], rtol=0, atol=1e-12)
+        and (both[f"pass_{k}"] == both[f"pass_{k}_redo"]).all() for k in range(n_folds))
+    if not same:
+        sys.exit("the refitted map does not reproduce the pinned scores.csv: not the map the round was rated under")
+    lpath = os.path.join(args.neighbours, "labels.csv")
+    if rl.sha256_file(lpath) != nman["labels_sha256"]:
+        sys.exit(f"{lpath} is not the file neighbours.json pins")
+    labels = pd.read_csv(lpath, dtype={"label_uid": str, "label_id": str, "pano_id": str, "tags": str},
+                         low_memory=False)
+    manifest = pd.read_csv(args.manifest, dtype=str, keep_default_na=False)
+    if set(manifest["label_uid"]) != set(labels["label_uid"]):
+        sys.exit(f"{args.manifest} does not cover exactly the labels of {lpath}")
+    ok = set(manifest.loc[manifest["status"] == "ok", "label_uid"])
+    preds, pred_shas = read_fold_predictions(args.predictions, n_folds)
+    weights = model_shas(args.pinned_predictions, n_folds)
+    if model_shas(args.predictions, n_folds) != weights:  # a retrained fold model is a different model
+        sys.exit("the neighbours were not scored with the weights that scored the round")
+    for k, pred in preds.items():
+        if set(pred["label_uid"]) != ok:
+            sys.exit(f"predictions_fold{k}.csv does not cover exactly the manifest's ok crops")
+    new = score_table(labels.loc[labels["label_uid"].isin(ok), ["label_uid"]], preds, api_map, gate, n_pass)
+    score_cols = [c for c in new.columns if c != "label_uid"]
+    scored = pd.concat([pinned[["label_uid", *score_cols]], new], ignore_index=True)
+    faces = pd.read_csv(os.path.join(args.neighbours, "faces.csv"), dtype={"label_uid": str, "label_id": str,
+                                                                          "pano_id": str, "tags": str})
+    if rl.sha256_file(os.path.join(args.neighbours, "faces.csv")) != nman["faces_sha256"]:
+        sys.exit("faces.csv is not the file neighbours.json pins")
+    out = faces.merge(scored, on="label_uid", how="left", validate="one_to_one")
+    status = dict(zip(manifest["label_uid"], manifest["status"]))
+    out["crop_status"] = [status.get(u, "phase1" if s == 1 else "not_cropped")
+                          for u, s in zip(out["label_uid"], out["scored"])]
+    opath = os.path.join(args.neighbours, "face_scores.csv")
+    out.to_csv(opath, index=False)
+    rep = neighbour_report(out)
+    rep["pins"] = {"neighbours_json_sha256": rl.sha256_file(os.path.join(args.neighbours, "neighbours.json")),
+                   "manifest_sha256": rl.sha256_file(args.manifest), "predictions_sha256": pred_shas,
+                   "face_scores_sha256": rl.sha256_file(opath), "key_sha256": kman["key_sha256"],
+                   "gate_predictions_sha256": kman["gate_predictions_sha256"], "model_sha256": weights}
+    if args.sheet:
+        rater = kman["design_json"]["rater"]
+        rl.check_pin(os.path.join(args.key_dir, "manifest.json"), f"votes_{rater}", args.sheet, False)
+        key = pd.read_csv(os.path.join(args.key_dir, "key.csv"), dtype={"tags": str, "label_id": str})
+        rated = rl.unmask(key, pd.read_csv(args.sheet, dtype=str, keep_default_na=False))
+        rep["rater_touched_faces"] = rater_touched_report(rated, out, gate)
+        rep["pins"]["sheet_sha256"] = rl.sha256_file(args.sheet)
+    rep["crops"] = {c: {s: int(n) for s, n in g["status"].value_counts().items()}
+                    for c, g in manifest.groupby("city")}
+    rep["selection"] = nman["cities"]
+    rep["gate"], rep["pass_models"], rep["n_models"] = gate, n_pass, n_folds
+    rep = without_nan(rep)
+    if args.out_json:
+        with open(args.out_json, "w") as f:
+            json.dump(rep, f, indent=1)
+            f.write("\n")
+    md = neighbour_markdown(rep)
+    if args.out_md:
+        with open(args.out_md, "w") as f:
+            f.write(md + "\n")
+    print(md)
+    print(f"face scores -> {opath} (sha256 {rep['pins']['face_scores_sha256']})")
 
 
 def cmd_gallery(args):
@@ -664,6 +1065,30 @@ def build_parser():
     b.add_argument("--seed", required=True)
     b.add_argument("--key-dir", required=True, help="private; outside any git checkout")
     b.set_defaults(func=cmd_build)
+    n = sub.add_parser("neighbours", help="every other label on the rated labels' faces, to crop and score (#102)")
+    n.add_argument("--design", required=True)
+    n.add_argument("--rawlabels", required=True, help="the directory the pool was drawn from")
+    n.add_argument("--key-dir", required=True, help="holds key.csv, scores.csv and manifest.json")
+    n.add_argument("--pool", required=True, help="the directory `pool` wrote; its pool.json pins the inputs")
+    n.add_argument("--author-excluded", required=True)
+    n.add_argument("--pilot-split", required=True)
+    n.add_argument("--cityparams", default=rl.DEFAULT_CITYPARAMS)
+    n.add_argument("--out", required=True, help="outside any git checkout")
+    n.set_defaults(func=cmd_neighbours)
+    ns = sub.add_parser("neighbour-scores", help="the fold models' gate verdicts on the neighbours, under the round's map")
+    ns.add_argument("--design", required=True)
+    ns.add_argument("--key-dir", required=True)
+    ns.add_argument("--gate", required=True, help="the gate run the key was built with")
+    ns.add_argument("--priors", required=True)
+    ns.add_argument("--pinned-predictions", required=True, help="the round's own predictions_fold<k>.csv directory")
+    ns.add_argument("--neighbours", required=True, help="the directory `neighbours` wrote; face_scores.csv goes here")
+    ns.add_argument("--manifest", required=True, help="manifest.csv of the neighbour crops")
+    ns.add_argument("--predictions", required=True, help="directory of the neighbours' predictions_fold<k>.csv")
+    ns.add_argument("--sheet", help="the rater's pinned votes: adds the round's rates with and without the faces "
+                                    "that carry a label the rater placed or voted on")
+    ns.add_argument("--out-json", help="aggregates only (safe for the repo)")
+    ns.add_argument("--out-md")
+    ns.set_defaults(func=cmd_neighbour_scores)
     g = sub.add_parser("gallery", help="the rater's Gallery lists (gt_rounds.py gallery) with this round's rating rule")
     g.add_argument("--key", required=True)
     g.add_argument("--out", required=True, help="outside any git checkout")

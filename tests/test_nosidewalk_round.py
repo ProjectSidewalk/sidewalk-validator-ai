@@ -46,7 +46,9 @@ def raw_city(n, start=1000):
                      "street_edge_id": i // 2, "street_side": "left", "validations": json.dumps(
                          [vote("v1", "Agree")] if i % 4 == 0 else []), "pano_x": 100, "pano_y": 50,
                      "pano_width": 1000, "pano_height": 500, "camera_pitch": 0.0, "camera_roll": 0.0,
-                     "time_created": "2026-01-01"})
+                     "time_created": f"2026-01-01T00:00:{i % 60:02d}Z", "latitude": 41.0 + i / 1e4, "longitude": -87.0})
+    for i in range(9, n, 10):
+        rows[i]["user_id"] = "u2"                                   # a second labeler on some faces
     rows[0]["user_id"] = ME                                         # rater placed
     rows[1]["validations"] = json.dumps([vote(ME, "Unsure")])       # rater voted (Unsure counts)
     rows[2]["street_side"] = ""                                     # no face
@@ -273,6 +275,174 @@ def test_bar_needs_the_count_and_the_bound():
     assert nr.build_report(m(150, 3), DESIGN, 0.83, n_boot=20)["primary"]["bar_met"]
     assert not nr.build_report(m(150, 8), DESIGN, 0.83, n_boot=20)["primary"]["bar_met"]   # bound under the gate
     assert not nr.build_report(m(90, 0), DESIGN, 0.83, n_boot=20)["primary"]["bar_met"]    # too few decided
+
+
+def make_neighbours(run, key_dir):
+    out = run["tmp"] / "neighbours"
+    assert nr.main(["neighbours", "--design", run["design"], "--rawlabels", run["raw"], "--key-dir", str(key_dir),
+                    "--pool", str(run["tmp"] / "pool"), "--author-excluded", run["ex"], "--pilot-split", run["split"], "--cityparams", run["conf"],
+                    "--out", str(out)]) == 0
+    return out
+
+
+def score_neighbours(run, nb):
+    """A manifest (first label without a panorama) and five prediction files for the neighbour labels."""
+    labels = pd.read_csv(nb / "labels.csv", dtype=str)
+    d = run["tmp"] / "nb_scored"
+    d.mkdir(exist_ok=True)
+    labels.assign(status=["no_pano" if i == 0 else "ok" for i in range(len(labels))])[
+        ["label_uid", "city", "status"]].to_csv(d / "manifest.csv", index=False)
+    ok = labels.iloc[1:]
+    p = np.where(ok["label_id"].astype(int) % 2 == 0, 0.97, 0.2)
+    for k in range(5):
+        pd.DataFrame({"label_uid": ok["label_uid"], "split": "test", "true": "", "p_correct": p,
+                      "p_incorrect": 1 - p}).to_csv(d / f"predictions_fold{k}.csv", index=False)
+    write_provenance(d)
+    return d
+
+
+def write_provenance(directory, weights="w"):
+    for k in range(5):
+        (directory / f"predictions_fold{k}_provenance.json").write_text(json.dumps({"model_sha256": f"{weights}{k}"}))
+
+
+def test_neighbours_are_the_other_labels_on_the_rated_faces(run, monkeypatch):
+    pool = make_pool(run, monkeypatch)
+    scored = score_pool(run, pool)
+    key_dir = build(run, pool, scored)
+    key = pd.read_csv(key_dir / "key.csv", dtype=str)
+    scores = pd.read_csv(key_dir / "scores.csv", dtype=str)
+    nb = make_neighbours(run, key_dir)
+    faces = pd.read_csv(nb / "faces.csv", dtype=str)
+    labels = pd.read_csv(nb / "labels.csv", dtype=str)
+    raw = pd.concat([pd.read_csv(os.path.join(run["raw"], f"{c}.csv"), dtype=str).assign(city=c)
+                     for c in DESIGN["cities"]])
+    raw = raw[raw["label_type"] == "NoSidewalk"]
+    raw_face = raw["city"] + ":" + raw["street_edge_id"] + ":" + raw["street_side"]
+    assert set(faces["face_id"]) == set(key["face_id"]) and faces["label_uid"].is_unique
+    assert len(faces) == int(raw_face.isin(set(key["face_id"])).sum())          # every label on a rated face
+    assert set(faces.loc[faces["rated"] == "1", "label_uid"]) == set(key["label_uid_city"])
+    new = faces[faces["new"] == "1"]
+    assert set(labels["label_uid"]) == set(new["label_uid"]) and len(new) > 0
+    assert not new["label_uid"].isin(scores["label_uid"]).any()                 # phase-1 labels are not scored again
+    assert (faces.loc[faces["scored"] == "1", "label_uid"].isin(scores["label_uid"])).all()
+    # a rule that keeps a label out of the pool is a flag here, except the two that make a crop impossible or moot
+    assert (new["ai_placed"] == "0").all() and (new["bad_geometry"] == "0").all()
+    assert set(nr.NEIGHBOUR_FLAGS) <= set(faces.columns) and "user_id" not in faces and "user_id" not in labels
+    # two labelers share some faces: a run is (face, labeler), numbered by each labeler's first label on the face
+    runs = faces.groupby("face_id")["labeler_idx"].nunique()
+    assert runs.max() == 2 and set(faces["labeler_idx"]) == {"0", "1"}
+    two = faces[faces["face_id"].isin(runs[runs == 2].index)]
+    assert (two.groupby("face_id")["same_labeler"].apply(lambda x: sorted(x)) .map(lambda x: x == ["0", "1"])).all()
+    first = two.sort_values("label_id").groupby("face_id").head(1)             # fixture time grows with label_id
+    assert (first["labeler_idx"] == "0").all()
+    man = json.loads((nb / "neighbours.json").read_text())
+    assert man["labels"] == len(labels) and man["labels_sha256"] == rl.sha256_file(str(nb / "labels.csv"))
+    assert sum(c["new"] for c in man["cities"].values()) == len(labels)
+    assert len((nb / "stage_files.txt").read_text().split()) == labels["pano_id"].nunique()
+    for name in os.listdir(nb):
+        assert ME not in (nb / name).read_text()
+    monkeypatch.setattr(rl, "inside_git_checkout", lambda p: True)
+    with pytest.raises(SystemExit, match="inside a git checkout"):
+        make_neighbours(run, key_dir)
+    monkeypatch.setattr(rl, "inside_git_checkout", lambda p: False)
+    path = os.path.join(run["raw"], "chicago-il.csv")                             # a fresh pull is not the pool's pull
+    open(path, "a").write("\n")
+    with pytest.raises(SystemExit, match="not the file the pool was drawn from"):
+        make_neighbours(run, key_dir)
+    open(pool / "pool.json", "a").write("\n")                                    # nor is an edited pool.json the pool
+    with pytest.raises(SystemExit, match="not the pool the key was built from"):
+        make_neighbours(run, key_dir)
+
+
+def test_pool_crop_input_after_the_crop_labels_refactor(run, monkeypatch):
+    """``crop_labels`` and ``write_stage_files`` were factored out of ``pool``. The real pinned pool was reproduced
+    byte for byte when that changed; this checks the content the crops stage depends on."""
+    pool = make_pool(run, monkeypatch)
+    labels = pd.read_csv(pool / "labels.csv", dtype=str, keep_default_na=False)
+    assert list(labels.columns) == nr.ale.LABEL_COLUMNS + ["schema", "face_id", "rank"]
+    i = labels["label_id"].astype(int) % 1000                         # the fixture gives one human Agree to every 4th
+    assert (labels["human_agree"].astype(int) == (i % 4 == 0).astype(int)).all()
+    assert (labels["human_disagree"] == "0").all() and (labels["author"] == "human").all()
+    for _, g in labels.groupby("city", sort=False):
+        assert g["rank"].map(int).is_monotonic_increasing
+    assert (labels["label_class"] == "").all() and (labels["n_votes"].astype(int)
+                                                    == labels["human_agree"].astype(int)
+                                                    + labels["human_disagree"].astype(int)).all()
+    stage = (pool / "stage_files.txt").read_text().split()
+    assert stage == sorted(set(stage)) and all(p.endswith(".jpg") for p in stage)
+
+
+def test_neighbour_scores_reproduces_the_pinned_scores_first(run, monkeypatch, capsys):
+    pool = make_pool(run, monkeypatch)
+    scored = score_pool(run, pool)
+    key_dir = build(run, pool, scored)
+    nb = make_neighbours(run, key_dir)
+    d = score_neighbours(run, nb)
+    write_provenance(scored)
+    key = pd.read_csv(key_dir / "key.csv", dtype=str)
+    sheet = run["tmp"] / "votes_jon.csv"
+    sheet_for(key).to_csv(sheet, index=False)
+    rl.pin(str(key_dir / "manifest.json"), "votes_jon", str(sheet), len(key))
+    out_json = run["tmp"] / "nb.json"
+    args = ["neighbour-scores", "--sheet", str(sheet), "--design", run["design"], "--key-dir", str(key_dir), "--gate", run["gate"],
+            "--priors", run["priors"], "--pinned-predictions", str(scored), "--neighbours", str(nb),
+            "--manifest", str(d / "manifest.csv"), "--predictions", str(d), "--out-json", str(out_json),
+            "--out-md", str(run["tmp"] / "nb.md")]
+    assert nr.main(args) == 0
+    fs = pd.read_csv(nb / "face_scores.csv", dtype=str, keep_default_na=False)
+    faces = pd.read_csv(nb / "faces.csv", dtype=str)
+    assert len(fs) == len(faces) and "user_id" not in fs
+    new = fs[fs["new"] == "1"]
+    assert (new["crop_status"] == "no_pano").sum() == 1 and (new.loc[new["crop_status"] == "no_pano", "stratum"] == "").all()
+    ok = new[new["crop_status"] == "ok"]
+    assert (ok["stratum"] == np.where(ok["label_id"].astype(int) % 2 == 0, "pass", "model_incorrect")).all()
+    pinned = pd.read_csv(key_dir / "scores.csv", dtype=str).set_index("label_uid")
+    old = fs[fs["crop_status"] == "phase1"].set_index("label_uid")
+    assert len(old) > 0 and (old["stratum"] == pinned.loc[old.index, "stratum"]).all()
+    rep = json.loads(out_json.read_text())
+    assert rep["all"]["labels"] == int((fs["stratum"] != "").sum()) and set(rep["slices"]) == {"severity", "tag"}
+    assert set(rep["cities"]) == set(DESIGN["cities"]) and "label_uid" not in out_json.read_text()
+    f = rep["faces_with_2plus_scored"]
+    assert f["faces"] == f["all_pass"] + f["none_pass"] + f["mixed"] and 0 <= f["mixed_expected_if_independent"] <= f["faces"]
+    assert set(rep["not_rated_by_rated_stratum"]) == set(nr.STRATA)
+    assert sum(v["labels"] for v in rep["not_rated_by_rated_stratum"].values()) == rep["by"]["not_rated"]["labels"]
+    t = rep["rater_touched_faces"]
+    assert t["faces"] == len(key) and 0 <= t["faces_touched"] <= t["faces"] and not t["bar_met_without_touched"]
+    decided = sum(t[side][st]["n"] for side in ("touched", "untouched") for st in nr.STRATA)
+    assert decided == len(key) - 2                                              # sheet_for leaves two Unsure
+    assert rep["pins"]["model_sha256"] == {str(k): f"w{k}" for k in range(5)}
+    assert "Mean share per face" in (run["tmp"] / "nb.md").read_text()
+    # other weights, a map that is not the round's, an incomplete prediction file and another gate run all stop it
+    write_provenance(d, weights="retrained")
+    with pytest.raises(SystemExit, match="not scored with the weights"):
+        nr.main(args)
+    write_provenance(d)
+    fit = nr.ng.fit_map
+
+    def other_map(pooled, pi):
+        m = fit(pooled, pi)
+        return {v: {t: min(1.0, a + 0.01) for t, a in m[v].items()} for v in m}
+    monkeypatch.setattr(nr.ng, "fit_map", other_map)
+    with pytest.raises(SystemExit, match="does not reproduce the pinned scores"):
+        nr.main(args)
+    monkeypatch.setattr(nr.ng, "fit_map", fit)
+    nj = nb / "neighbours.json"                                                # a neighbours list from another key
+    good = nj.read_text()
+    nj.write_text(json.dumps(dict(json.loads(good), key_sha256="0" * 64)))
+    with pytest.raises(SystemExit, match="different key or scores"):
+        nr.main(args)
+    nj.write_text(good)
+    short = pd.read_csv(d / "predictions_fold2.csv")
+    short.iloc[1:].to_csv(d / "predictions_fold2.csv", index=False)
+    with pytest.raises(SystemExit, match="does not cover exactly"):
+        nr.main(args)
+    short.to_csv(d / "predictions_fold2.csv", index=False)
+    gp = os.path.join(run["gate"], "fold0", "predictions.csv")
+    g = pd.read_csv(gp)
+    g.assign(p_correct=g["p_correct"] * 0.999).to_csv(gp, index=False)
+    with pytest.raises(SystemExit, match="not the gate run the key was built with"):
+        nr.main(args)
 
 
 def test_design_file_and_job_file():
