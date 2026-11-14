@@ -277,11 +277,11 @@ def test_bar_needs_the_count_and_the_bound():
     assert not nr.build_report(m(90, 0), DESIGN, 0.83, n_boot=20)["primary"]["bar_met"]    # too few decided
 
 
-def make_neighbours(run, key_dir):
-    out = run["tmp"] / "neighbours"
+def make_neighbours(run, key_dir, out="neighbours", extra=()):
+    out = run["tmp"] / out
     assert nr.main(["neighbours", "--design", run["design"], "--rawlabels", run["raw"], "--key-dir", str(key_dir),
                     "--pool", str(run["tmp"] / "pool"), "--author-excluded", run["ex"], "--pilot-split", run["split"], "--cityparams", run["conf"],
-                    "--out", str(out)]) == 0
+                    "--out", str(out), *extra]) == 0
     return out
 
 
@@ -301,9 +301,13 @@ def score_neighbours(run, nb):
     return d
 
 
-def write_provenance(directory, weights="w"):
+def write_provenance(directory, weights="w", manifest=None):
+    """As ``ai_labels_eval.py score`` writes it: the weights' sha256 and the crop manifest's (by default the
+    ``manifest.csv`` in ``directory``)."""
+    sha = manifest or rl.sha256_file(str(directory / "manifest.csv"))
     for k in range(5):
-        (directory / f"predictions_fold{k}_provenance.json").write_text(json.dumps({"model_sha256": f"{weights}{k}"}))
+        (directory / f"predictions_fold{k}_provenance.json").write_text(
+            json.dumps({"model_sha256": f"{weights}{k}", "manifest_sha256": sha}))
 
 
 def test_neighbours_are_the_other_labels_on_the_rated_faces(run, monkeypatch):
@@ -443,6 +447,188 @@ def test_neighbour_scores_reproduces_the_pinned_scores_first(run, monkeypatch, c
     g.assign(p_correct=g["p_correct"] * 0.999).to_csv(gp, index=False)
     with pytest.raises(SystemExit, match="not the gate run the key was built with"):
         nr.main(args)
+
+
+AI_ID = "51b0b927-3c8a-45b2-93de-bd878d1e5cf4"
+
+
+def touch_two_rated_faces(run, key):
+    """Add four labels to Chicago's rawLabels beside the first two pass-stratum rated labels: on face ``x`` one the
+    rater placed, one AI-placed and one with bad geometry; on face ``y`` one carrying only a vote of the rater's.
+    None of them is eligible for the pool, so the round itself must not change. Returns ``(x, y)``."""
+    pas = key[(key["city_id"] == "chicago-il") & (key["stratum"] == "pass")]
+    x, y = pas["face_id"].iloc[0], pas["face_id"].iloc[1]
+    path = os.path.join(run["raw"], "chicago-il.csv")
+    raw = pd.read_csv(path, dtype=str, keep_default_na=False)
+    rated = raw.set_index("label_id")
+    tx, ty = (rated.loc[key.loc[key["face_id"] == f, "label_id"].iloc[0]] for f in (x, y))
+    late = "2026-02-01T00:00:00Z"
+    new = [dict(tx, label_id="9001", user_id=ME, pano_id="pnew1", time_created=late),
+           dict(tx, label_id="9002", user_id=AI_ID, pano_id="pnew2", time_created=late),
+           dict(tx, label_id="9003", user_id="u3", pano_id="pnew3", pano_y="9999", time_created=late),
+           dict(ty, label_id="9004", user_id="u3", pano_id="pnew4", time_created=late,
+                validations=json.dumps([vote(ME, "Agree")]))]
+    pd.concat([raw, pd.DataFrame(new)], ignore_index=True).to_csv(path, index=False)
+    return x, y
+
+
+def test_touched_faces_flags_counts_and_the_bar_side(run, monkeypatch, capsys):
+    """Rated faces that carry a label the rater placed or voted on: each flag is set on exactly the right label,
+    the AI-placed and bad-geometry labels are listed but never cropped, and the round's rates split exactly."""
+    pool = make_pool(run, monkeypatch)
+    key_dir = build(run, pool, score_pool(run, pool))
+    before = json.loads((make_neighbours(run, key_dir) / "neighbours.json").read_text())["cities"]["chicago-il"]
+    key = pd.read_csv(key_dir / "key.csv", dtype=str)
+    x, y = touch_two_rated_faces(run, key)
+    pool = make_pool(run, monkeypatch)                                          # the pull changed, so pool again
+    scored = score_pool(run, pool)
+    key_dir = build(run, pool, scored, key_dir="key2")
+    assert (key_dir / "key.csv").read_bytes() == (run["tmp"] / "key" / "key.csv").read_bytes()   # same round
+    nb = make_neighbours(run, key_dir, out="neighbours2")
+    faces = pd.read_csv(nb / "faces.csv", dtype=str).set_index("label_uid")
+    cols = ["face_id", "rater_placed", "rater_voted", "ai_placed", "bad_geometry", "new"]
+    assert faces.loc[[f"chicago-il:900{i}" for i in range(1, 5)], cols].values.tolist() == [
+        [x, "1", "0", "0", "0", "1"], [x, "0", "0", "1", "0", "0"], [x, "0", "0", "0", "1", "0"],
+        [y, "0", "1", "0", "0", "1"]]
+    labels = pd.read_csv(nb / "labels.csv", dtype=str)
+    assert {"chicago-il:9001", "chicago-il:9004"} <= set(labels["label_uid"])
+    assert not {"chicago-il:9002", "chicago-il:9003"} & set(labels["label_uid"])
+    after = json.loads((nb / "neighbours.json").read_text())["cities"]["chicago-il"]
+    assert {k: after[k] - before[k] for k in after} == {
+        "rated_faces": 0, "face_labels": 4, "scored": 0, "ai_placed": 1, "bad_geometry": 1, "new": 2, "same_labeler": 0,
+        "runs": 4, "new_rater_placed": 1, "new_rater_voted": 1, "new_author_excluded": 0, "new_trained_pano": 0,
+        "new_pilot_heldout": 0}
+    d = score_neighbours(run, nb)
+    write_provenance(scored)
+    rated_x_y = key["face_id"].isin([x, y])
+    sheet = run["tmp"] / "votes_jon.csv"
+    pd.DataFrame({"packet_id": key["packet_id"], "label_type": "NoSidewalk", "notes": "",
+                  "verdict": np.where(rated_x_y, "incorrect", "correct")}).to_csv(sheet, index=False)
+    rl.pin(str(key_dir / "manifest.json"), "votes_jon", str(sheet), len(key))
+    out_json = run["tmp"] / "nb2.json"
+    assert nr.main(["neighbour-scores", "--sheet", str(sheet), "--design", run["design"], "--key-dir", str(key_dir),
+                    "--gate", run["gate"], "--priors", run["priors"], "--pinned-predictions", str(scored),
+                    "--neighbours", str(nb), "--manifest", str(d / "manifest.csv"), "--predictions", str(d),
+                    "--out-json", str(out_json)]) == 0
+    t = json.loads(out_json.read_text())["rater_touched_faces"]
+    n = key["stratum"].value_counts()
+    assert t["faces_touched"] == 2 and t["faces"] == len(key)
+    assert {st: (t["touched"][st]["k"], t["touched"][st]["n"]) for st in nr.STRATA} == {
+        "pass": (0, 2), "agree_below": (0, 0), "model_incorrect": (0, 0)}
+    assert {st: (t["untouched"][st]["k"], t["untouched"][st]["n"]) for st in nr.STRATA} == {
+        "pass": (n["pass"] - 2, n["pass"] - 2), "agree_below": (n["agree_below"], n["agree_below"]),
+        "model_incorrect": (n["model_incorrect"], n["model_incorrect"])}
+
+
+def test_the_bar_without_touched_faces_is_read_on_the_other_faces():
+    """Votes alone make a face touched, and the bar is read on the untouched side only: met when only the touched
+    side is weak, not met when only the touched side is strong."""
+    def frames(touched, untouched):
+        v = ["correct"] * untouched[0] + ["incorrect"] * (untouched[1] - untouched[0])
+        v += ["correct"] * touched[0] + ["incorrect"] * (touched[1] - touched[0])
+        faces = [f"u{i}" for i in range(untouched[1])] + [f"t{i}" for i in range(touched[1])]
+        rated = pd.DataFrame({"face_id": faces, "stratum": "pass", "verdict": v})
+        fs = pd.DataFrame({"face_id": faces, "rater_placed": 0,
+                           "rater_voted": [int(f.startswith("t")) for f in faces]})
+        return rated, fs
+    t = nr.rater_touched_report(*frames(touched=(0, 5), untouched=(100, 100)), 0.92)
+    assert t["faces_touched"] == 5 and t["bar_met_without_touched"]
+    assert (t["untouched"]["pass"]["k"], t["untouched"]["pass"]["n"]) == (100, 100)
+    t = nr.rater_touched_report(*frames(touched=(150, 150), untouched=(60, 60)), 0.92)
+    assert t["faces_touched"] == 150 and not t["bar_met_without_touched"]               # too few decided
+    t = nr.rater_touched_report(*frames(touched=(150, 150), untouched=(100, 120)), 0.92)
+    assert not t["bar_met_without_touched"]                                             # bound under the gate
+    rated, fs = frames(touched=(5, 5), untouched=(100, 100))
+    rated.loc[rated["face_id"] == "t0", "verdict"] = "cant_tell"                        # an Unsure on a touched face
+    t = nr.rater_touched_report(rated, fs, 0.92)
+    assert t["faces_touched"] == 5 and (t["touched"]["pass"]["k"], t["touched"]["pass"]["n"]) == (4, 4)
+
+
+def test_neighbour_report_by_hand():
+    """Face a: an agree_below label, then the rated pass label, on one panorama, and a pass label on another; face
+    b: rated pass + a pass label (same labeler) on its own panorama; face c: two model_incorrect labels, one
+    panorama; face d: the rated label alone; one unscored label on face a."""
+    flags = dict.fromkeys(nr.NEIGHBOUR_FLAGS, 0)
+    s = pd.DataFrame({"face_id": list("aaabbccda"), "city": list("xxxxxyyxx"), "rated": [0, 1, 0, 1, 0, 1, 0, 1, 0],
+                      "same_labeler": [0, 1, 1, 1, 1, 1, 0, 1, 0], "pano_id": list("ppqrsttuv"),
+                      "stratum": ["agree_below", "pass", "pass", "pass", "pass", "model_incorrect",
+                                  "model_incorrect", "pass", ""],
+                      "n_pass_models": [2, 5, 3, 4, 5, 0, 1, 5, 0], "severity": "", "tags": "[]", **flags})
+    s.loc[4, "rater_voted"] = 1
+    rep = nr.neighbour_report(s)
+    assert rep["all"] == {"labels": 8, "faces": 4, "pass": 5, "pass_share": 0.625,
+                          "pass_share_per_face": (2 / 3 + 1 + 0 + 1) / 4}
+    assert rep["unscored"] == {"x": 1} and rep["cities"]["y"]["pass"] == 0
+    assert rep["by"]["not_rated"] == {"labels": 4, "faces": 3, "pass": 2, "pass_share": 0.5,
+                                      "pass_share_per_face": (0.5 + 1 + 0) / 3}
+    assert (rep["by"]["same_labeler"]["labels"], rep["by"]["other_labeler"]["labels"]) == (2, 2)
+    assert rep["by"]["rater_voted"]["labels"] == 1 and rep["by"]["rater_placed"]["labels"] == 0
+    assert {k: v["labels"] for k, v in rep["not_rated_by_rated_stratum"].items()} == {
+        "pass": 3, "agree_below": 0, "model_incorrect": 1}
+    f = rep["faces_with_2plus_scored"]
+    # pass shares: city x 5/6, city y 0; given the rated stratum the same here (x is all pass-rated, y is not)
+    assert (f["faces"], f["all_pass"], f["none_pass"], f["mixed"]) == (3, 1, 1, 1)
+    assert f["mixed_expected_if_independent"] == pytest.approx((1 - (5 / 6) ** 3 - (1 / 6) ** 3)
+                                                               + (1 - (5 / 6) ** 2 - (1 / 6) ** 2))
+    assert f["mixed_expected_given_rated_stratum"] == pytest.approx(f["mixed_expected_if_independent"])
+    assert f["labels_at_2_or_3_models"] == 2 and f["labels_sharing_a_pano"] == 4
+    o = rep["one_label_per_pano"]           # a keeps the rated label of panorama p, not the agree_below before it
+    assert (o["labels"], o["faces"], o["mixed"], o["all_pass"]) == (6, 2, 0, 2)
+
+
+def test_neighbour_outputs_are_not_replaced_silently(run, monkeypatch):
+    """A rerun with the same inputs passes; a pinned output that would change stops the run unless --force; a
+    design, cityparams file or crop manifest other than the round's stops it too."""
+    pool = make_pool(run, monkeypatch)
+    scored = score_pool(run, pool)
+    key_dir = build(run, pool, scored)
+    nb = make_neighbours(run, key_dir)
+    make_neighbours(run, key_dir)                                                # byte-identical rerun
+    faces = (nb / "faces.csv").read_bytes()
+    (nb / "faces.csv").write_bytes(faces + b"\n")
+    with pytest.raises(SystemExit, match="refusing to replace faces.csv"):
+        make_neighbours(run, key_dir)
+    assert (nb / "faces.csv").read_bytes() == faces + b"\n" and not [p for p in os.listdir(nb) if ".new." in p]
+    make_neighbours(run, key_dir, extra=["--force"])
+    assert (nb / "faces.csv").read_bytes() == faces
+    d = score_neighbours(run, nb)
+    write_provenance(scored)
+    args = ["neighbour-scores", "--design", run["design"], "--key-dir", str(key_dir), "--gate", run["gate"],
+            "--priors", run["priors"], "--pinned-predictions", str(scored), "--neighbours", str(nb),
+            "--manifest", str(d / "manifest.csv"), "--predictions", str(d)]
+    assert nr.main(args) == 0 and nr.main(args) == 0
+    fs = nb / "face_scores.csv"
+    good = fs.read_bytes()
+    fs.write_bytes(good.replace(b"phase1", b"PHASE1"))
+    with pytest.raises(SystemExit, match="refusing to replace face_scores.csv"):
+        nr.main(args)
+    assert nr.main(args + ["--force"]) == 0 and fs.read_bytes() == good
+    write_provenance(d, manifest="0" * 64)                                       # predictions from other crops
+    with pytest.raises(SystemExit, match="names another crop manifest"):
+        nr.main(args)
+    write_provenance(d)
+    other = run["tmp"] / "design2.json"
+    other.write_text(json.dumps(dict(DESIGN, gate=0.9)))
+    with pytest.raises(SystemExit, match="not the design the key was built with"):
+        nr.main([a if a != run["design"] else str(other) for a in args])
+    nb_args = ["neighbours", "--design", run["design"], "--rawlabels", run["raw"], "--key-dir", str(key_dir),
+               "--pool", str(pool), "--author-excluded", run["ex"], "--pilot-split", run["split"],
+               "--cityparams", run["conf"], "--out", str(run["tmp"] / "nb3")]
+    with pytest.raises(SystemExit, match="not the design the key was built with"):
+        nr.main([a if a != run["design"] else str(other) for a in nb_args])
+    conf = run["tmp"] / "city2.conf"
+    conf.write_text(CONF.replace('chicago-il = "sidewalk_chicago"', 'chicago-il = "sidewalk_x"')   # swapped
+                   .replace('amsterdam = "sidewalk_amsterdam"', 'amsterdam = "sidewalk_chicago"')
+                   .replace('sidewalk_x', 'sidewalk_amsterdam'))
+    with pytest.raises(SystemExit, match="another schema than the key's"):
+        nr.main([a if a != run["conf"] else str(conf) for a in nb_args])
+    kpath, mpath = key_dir / "key.csv", key_dir / "manifest.json"             # a rated label missing from the pull
+    key = pd.read_csv(kpath, dtype=str, keep_default_na=False)
+    key.loc[0, "label_uid_city"] = key.loc[0, "city_id"] + ":999999"
+    key.to_csv(kpath, index=False)
+    mpath.write_text(json.dumps(dict(json.loads(mpath.read_text()), key_sha256=rl.sha256_file(str(kpath)))))
+    with pytest.raises(SystemExit, match="rated labels are not in"):
+        nr.main(nb_args)
 
 
 def test_design_file_and_job_file():
