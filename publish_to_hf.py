@@ -38,8 +38,9 @@ cross-check against ``trainer_state.json`` and out-of-order file times only warn
 
 **Card overrides.** Facts the pipeline does not record (per-type failure modes, the split seed, the dataset
 license, DOIs) go in ``<out>/<label_type>/card_overrides.json`` (keys in ``hf_cards.OVERRIDE_KEYS``); anything still
-unknown is a ``TODO:`` in the card. To hand-edit a card, stage, edit ``publish/*/README.md``, then ``--push-staged``,
-which uploads the staged folders without restaging after re-verifying them against ``publish/staging.json``.
+unknown is a ``TODO:`` in the card, except the dataset license, which is left out of the card when unset. To
+hand-edit a card, stage, edit ``publish/*/README.md``, then ``--push-staged``, which uploads the staged folders
+without restaging after re-verifying them against ``publish/staging.json``.
 
 **Model only** (``--what model``, at staging and at ``--push-staged``). Stages ``model/`` alone, for a machine that
 has the checkpoints, ``split.csv``, ``predictions.csv`` and the map but not the crops (the crops live where
@@ -1873,7 +1874,8 @@ def build_parser():
                         "filesystems); never moved")
     p.add_argument("--calibration-map", help="calibrated map JSON (default <out>/<type>/calibration/<type>.json)")
     p.add_argument("--dataset-license", help="Hub license id for the dataset card (or dataset_license in "
-                                             "card_overrides.json; default: a TODO, issue #2)")
+                                             "card_overrides.json; default: none, and the card has no license "
+                                             "line)")
     p.add_argument("--audit", action="store_true", help="report on the live repos (public API, no token)")
     p.add_argument("--push", action="store_true", help="stage, then upload (dry run unless --yes)")
     p.add_argument("--push-staged", action="store_true",
