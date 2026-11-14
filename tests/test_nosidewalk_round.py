@@ -3,6 +3,7 @@ import doctest
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 
 import numpy as np
@@ -227,13 +228,17 @@ def test_short_cell_is_topped_up_from_the_same_stratum():
     assert len(picked) == 50 and (picked["cell_picked"] <= picked["cell_scored"]).all()
 
 
-def topup(run, key_dir, raw_dir, out="topup", n=("pass=10", "agree_below=2", "model_incorrect=2"), seed="s3cret"):
+def topup(run, key_dir, raw_dir, out="topup", n=("pass=10", "agree_below=2", "model_incorrect=2"), seed="s3cret",
+          city="chicago-il", extra=()):
     ns = [a for x in n for a in ("--n", x)]
-    return nr.main(["topup", "--key-dir", str(key_dir), "--rawlabels", str(raw_dir), "--city", "chicago-il", *ns,
-                    "--seed", seed, "--cityparams", run["conf"], "--out-key-dir", str(run["tmp"] / out)])
+    return nr.main(["topup", "--key-dir", str(key_dir), "--rawlabels", str(raw_dir), "--city", city, *ns,
+                    "--seed", seed, "--cityparams", run["conf"], "--out-key-dir", str(run["tmp"] / out), *extra])
 
 
-def test_topup_continues_the_cell_and_leaves_out_rated_and_touched_faces(run, monkeypatch):
+def topup_inputs(run, monkeypatch):
+    """A built round, its Chicago candidates in face order (``fresh``), and a pull in which the rater has since voted
+    on a label of the first pass candidate's face (``victim``) and on one of the base key's labels (a Gallery rating,
+    which must not count)."""
     pool = make_pool(run, monkeypatch)
     key_dir = build(run, pool, score_pool(run, pool))
     base = pd.read_csv(key_dir / "key.csv", dtype=str)
@@ -248,35 +253,103 @@ def test_topup_continues_the_cell_and_leaves_out_rated_and_touched_faces(run, mo
     edge = int(victim.split(":")[1])
     mate = raw.index[(raw["street_edge_id"].astype(int) == edge) & (raw["label_type"] == "NoSidewalk")][-1]
     raw.loc[mate, "validations"] = json.dumps([vote(ME, "Agree")])
+    rated = base.loc[base["city_id"] == "chicago-il", "label_id"].iloc[0]
+    raw.loc[raw["label_id"] == rated, "validations"] = json.dumps([vote(ME, "Agree")])
     raw.to_csv(raw_dir / "chicago-il.csv", index=False)
-    assert topup(run, key_dir, raw_dir) == 0
+    return {"key_dir": key_dir, "base": base, "fresh": fresh, "victim": victim, "raw_dir": raw_dir, "raw": raw,
+            "mate": f"chicago-il:{raw.loc[mate, 'label_id']}"}
+
+
+def test_topup_continues_the_cell_and_leaves_out_rated_and_touched_faces(run, monkeypatch):
+    t = topup_inputs(run, monkeypatch)
+    key_dir, base, fresh, victim = t["key_dir"], t["base"], t["fresh"], t["victim"]
+    assert topup(run, key_dir, t["raw_dir"]) == 0
     out = run["tmp"] / "topup"
     key = pd.read_csv(out / "key.csv", dtype=str)
     man = json.loads((out / "manifest.json").read_text())
+    cells, faces = man["counts"]["cells"], man["counts"]["faces"]
     assert list(key.columns) == nr.KEY_COLUMNS and len(key) == man["items"]
-    assert key["stratum"].value_counts().to_dict() == {s: man["counts"][s]["picked"] for s in nr.STRATA}
-    assert man["counts"]["pass"]["picked"] == 10 and man["counts"]["agree_below"]["picked"] > 0
+    assert key["stratum"].value_counts().to_dict() == {s: cells[s]["picked"] for s in nr.STRATA}
+    assert cells["pass"]["picked"] == 10 and cells["agree_below"]["picked"] > 0
     assert set(key["city_id"]) == {"chicago-il"} and key["face_id"].is_unique
+    assert (key["schema"] == "sidewalk_chicago").all()
+    assert (key["label_uid"] == key["schema"] + ":" + key["label_id"]).all()
+    assert (key["label_uid_city"] == "chicago-il:" + key["label_id"]).all()
     assert not key["face_id"].isin(set(base["face_id"])).any() and victim not in set(key["face_id"])
     assert not key["packet_id"].isin(set(base["packet_id"])).any()
     rest = fresh[fresh["face_id"] != victim]
     want = rest[rest["stratum"] == "pass"]["label_uid"].head(10)
-    assert set(key.loc[key["stratum"] == "pass", "label_uid_city"]) == set(want)   # the next ranks, nothing skipped
+    assert set(key.loc[key["stratum"] == "pass", "label_uid_city"]) == set(want)   # the next ranks, the victim skipped
+    # the victim was skipped before the last pass pick, so that cell is no longer a prefix sample; the vote on the
+    # base key's label is a Gallery rating and touches nothing
+    assert faces["touched"] == 1 and faces["touched_in_base_key"] == 0 and man["touched_faces_in_city"] == 2
+    assert faces["touched"] == faces["touched_in_base_key"] + sum(c["touched_candidates"] for c in cells.values())
+    assert cells["pass"]["touched_before_last_pick"] == 1 and not cells["pass"]["prefix_sample"]
+    assert cells["model_incorrect"]["prefix_sample"]
     w = key.assign(weight=key["weight"].astype(float)).groupby("stratum")["weight"].first()
-    c = man["counts"]["pass"]
+    c = cells["pass"]
     assert w["pass"] == pytest.approx(man_base_ratio(key_dir) * c["cell_scored"] / (c["picked_base"] + c["picked"]))
-    assert man["counts"]["touched_faces"] == 1 and man["base_key_sha256"] == rl.sha256_file(str(key_dir / "key.csv"))
+    assert man["weights"] == pytest.approx(w.to_dict())
+    base_man = json.loads((key_dir / "manifest.json").read_text())
+    assert man["base_key_sha256"] == rl.sha256_file(str(key_dir / "key.csv"))
+    assert man["scores_sha256"] == base_man["scores_sha256"] and man["prior"] == base_man["prior"]
     for name in os.listdir(out):
         assert ME not in (out / name).read_text()
     g = run["tmp"] / "gallery_topup"
     assert nr.main(["gallery", "--key", str(out / "key.csv"), "--out", str(g), "--cityparams", run["conf"]]) == 0
     assert pd.read_csv(g / "gallery_urls.csv")["n"].sum() == len(key)
     with pytest.raises(SystemExit, match="exists"):
-        topup(run, key_dir, raw_dir)
+        topup(run, key_dir, t["raw_dir"])
     with pytest.raises(SystemExit, match="not the seed"):
-        topup(run, key_dir, raw_dir, out="topup2", seed="other")
+        topup(run, key_dir, t["raw_dir"], out="topup2", seed="other")
     with pytest.raises(SystemExit, match="once per stratum"):
-        topup(run, key_dir, raw_dir, out="topup3", n=("pass=3", "pass=4"))
+        topup(run, key_dir, t["raw_dir"], out="topup3", n=("pass=3", "pass=4"))
+    with pytest.raises(SystemExit, match="not a city of the round"):
+        topup(run, key_dir, t["raw_dir"], out="topup4", city="nowhere")
+    # a re-check after rating: votes on the top-up's own labels are ignored, so the victim's face is a candidate again
+    ign = run["tmp"] / "ignore.csv"
+    pd.DataFrame({"label_uid_city": [t["mate"]]}).to_csv(ign, index=False)
+    assert topup(run, key_dir, t["raw_dir"], out="topup5", extra=("--ignore-votes-on", str(ign))) == 0
+    again = pd.read_csv(run["tmp"] / "topup5" / "key.csv", dtype=str)
+    assert set(again.loc[again["stratum"] == "pass", "label_uid_city"]) == set(
+        fresh[fresh["stratum"] == "pass"]["label_uid"].head(10))
+    assert json.loads((run["tmp"] / "topup5" / "manifest.json").read_text())["counts"]["cells"]["pass"]["prefix_sample"]
+
+
+def test_topup_refuses_bad_inputs(run, monkeypatch):
+    t = topup_inputs(run, monkeypatch)
+    key_dir = t["key_dir"]
+    first = t["fresh"].loc[(t["fresh"]["stratum"] == "pass") & (t["fresh"]["face_id"] != t["victim"]), "label_uid"]
+    gone = run["tmp"] / "raw_gone"
+    gone.mkdir()
+    t["raw"][t["raw"]["label_id"] != first.iloc[0].split(":")[1]].to_csv(gone / "chicago-il.csv", index=False)
+    with pytest.raises(SystemExit, match="1 picked labels are not in"):
+        topup(run, key_dir, gone, out="t1")
+    for name in ("key.csv", "scores.csv"):
+        bad = run["tmp"] / f"bad_{name}"
+        shutil.copytree(key_dir, bad)
+        with open(bad / name, "a") as f:
+            f.write("\n")
+        with pytest.raises(SystemExit, match=f"{name} is not the file"):
+            topup(run, bad, t["raw_dir"], out=f"t_{name}")
+    make_key = rl.make_key
+
+    def colliding(picked, seed):
+        k = make_key(picked, seed)
+        return k.assign(packet_id=[t["base"]["packet_id"].iloc[0]] + k["packet_id"].tolist()[1:])
+    monkeypatch.setattr(rl, "make_key", colliding)
+    with pytest.raises(SystemExit, match="collides"):
+        topup(run, key_dir, t["raw_dir"], out="t2")
+    assert not (run["tmp"] / "t2").exists()
+    monkeypatch.setattr(rl, "make_key", make_key)
+    monkeypatch.setenv("RATER_ID", "not a uuid")
+    with pytest.raises(ValueError, match="UUID"):
+        topup(run, key_dir, t["raw_dir"], out="t3")
+    monkeypatch.setenv("RATER_ID", ME)
+    monkeypatch.setattr(rl, "inside_git_checkout", lambda p: True)
+    with pytest.raises(SystemExit, match="git checkout"):
+        topup(run, key_dir, t["raw_dir"], out="t4")
+    assert not (run["tmp"] / "t4").exists()
 
 
 def man_base_ratio(key_dir):
@@ -320,6 +393,42 @@ def test_report_end_to_end(run, monkeypatch, capsys):
     assert "DOES NOT PASS" in text and "STALE" not in text and text.startswith("x\n") and text.endswith("y\n")
     first = (run["tmp"] / "r.json").read_bytes()
     assert nr.main(args) == 0 and (run["tmp"] / "r.json").read_bytes() == first
+
+
+def test_report_reads_a_topup_beside_its_base_key(run, monkeypatch):
+    t = topup_inputs(run, monkeypatch)
+    key_dir, out = t["key_dir"], run["tmp"] / "topup"
+    assert topup(run, key_dir, t["raw_dir"]) == 0
+    sheets = {}
+    for d in (key_dir, out):
+        k = pd.read_csv(d / "key.csv", dtype=str)
+        sheets[d] = d / "votes_jon.csv"
+        sheet_for(k).to_csv(sheets[d], index=False)
+        rl.pin(str(d / "manifest.json"), "votes_jon", str(sheets[d]), len(k))
+    man, tman = (json.loads((d / "manifest.json").read_text()) for d in (key_dir, out))
+    base_m = rl.unmask(pd.read_csv(key_dir / "key.csv", dtype={"tags": str, "label_id": str}),
+                       pd.read_csv(sheets[key_dir], dtype=str, keep_default_na=False))
+    ams_before = base_m.loc[base_m["city_id"] == "amsterdam", "weight"].tolist()
+    m, prov = nr.with_topups(base_m, man, [(str(out / "key.csv"), str(sheets[out]))])
+    chi = m[m["city_id"] == "chicago-il"]
+    assert len(m) == 50 + tman["items"] and prov[0]["city"] == "chicago-il" and not prov[0]["prefix_sample"]["pass"]
+    assert chi.groupby("stratum")["weight"].nunique().eq(1).all()                 # base and top-up rows weighted alike
+    assert chi.groupby("stratum")["weight"].first().to_dict() == pytest.approx(tman["weights"])
+    assert chi["weight"].sum() == pytest.approx(man["eligible"]["chicago-il"])    # still sums to the population
+    assert m.loc[m["city_id"] == "amsterdam", "weight"].tolist() == ams_before
+    args = ["report", "--key", str(key_dir / "key.csv"), "--sheet", str(sheets[key_dir]), "--scores",
+            str(key_dir / "scores.csv"), "--n-boot", "20", "--out-json", str(run["tmp"] / "r.json")]
+    tops = ["--topup", str(out / "key.csv"), str(sheets[out])]
+    assert nr.main(args + tops) == 0
+    rep = json.loads((run["tmp"] / "r.json").read_text())
+    assert rep["items"] == 50 + tman["items"] and rep["provenance"]["topups"][0]["key_sha256"] == tman["key_sha256"]
+    with pytest.raises(SystemExit, match="two top-ups"):
+        nr.main(args + tops + tops)
+    with pytest.raises(SystemExit, match="is a top-up key"):
+        nr.main(["report", "--key", str(out / "key.csv"), "--sheet", str(sheets[out]), "--scores",
+                 str(key_dir / "scores.csv")])
+    with pytest.raises(SystemExit, match="not the pinned votes_jon"):
+        nr.main(args + ["--topup", str(out / "key.csv"), str(sheets[key_dir])])
 
 
 def test_bar_needs_the_count_and_the_bound():

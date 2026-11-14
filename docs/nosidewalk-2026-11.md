@@ -734,11 +734,30 @@ per-deployment count of step (c) (100 decided pass-stratum labels) on its own.
 
   **Chicago top-up (built 2026-11-14, `nosidewalk_round.py topup`)**: 91 more labels from round b's scored
   Chicago pool, continuing each cell's seeded rank order under the same one-label-per-face rule, leaving out every
-  face already in round b's key and every face carrying a NoSidewalk label the rater placed or voted on (75 such
-  faces in Chicago; 6 candidate faces dropped for it). 55 pass, 18 agree-below and 18 model-incorrect: the
-  decoys keep the list masked to the model's verdict, as round b's 60 / 20 / 20 shares did; 55 leaves room for
-  Unsure votes against the 50 the count needs. The touched-face check used round b's 2026-11-11 pull because
-  the API was unreachable on 2026-11-14; re-check against a fresh pull before reading the result. Key sha256
+  face already in round b's key and every face carrying a NoSidewalk label the rater placed or voted on. Chicago has
+  75 such faces; 6 are among its 357 scored faces, 2 of them already in round b's key, so 4 candidate faces were
+  left out (1 pass, 3 agree-below). None of the 4 ranked before its cell's last pick, so the top-up is exactly the
+  next ranks of each cell, and round b's items plus the top-up are a prefix of each cell's face order: the
+  equal-probability sample that the weights `N/n · M/(base + top-up)` assume. That holds only because no touched
+  face was skipped. Round b's items were drawn without the touched-face rule, so in a city where a touched face
+  ranks before a cell's last pick the combined weights are approximate; the manifest records
+  `touched_before_last_pick` and `prefix_sample` per cell. For the same reason a city's count toward the 100 mixes
+  two eligibility rules (round b's items may sit on touched faces, the top-up's may not) unless only untouched
+  faces are counted.
+
+  55 pass, 18 agree-below and 18 model-incorrect: the decoys keep the list masked to the model's verdict, as round
+  b's 60 / 20 / 20 shares did. 55 leaves room for Unsure votes: the count needs 50 decided of the 55 on untouched
+  faces (49 counting all faces). At round b's Chicago pass-stratum Unsure rate (2 / 53) the binomial chance of
+  falling short is about 2 % (0.5 % counting all faces); at CDMX's rate (3 / 33) it would be about 38 %. 51
+  untouched pass faces remain in the scored pool, but `topup` leaves out only round b's faces, so a second run
+  would draw these 91 again; a second top-up needs that exclusion added first.
+
+  Read it with `report --key <round b key> --sheet <round b votes> --topup <top-up key> <top-up votes>`: the
+  top-up's rows join round b's, and round b's Chicago rows take the combined weights (`report` refuses the top-up
+  key alone). The touched-face check used round b's 2026-11-11 pull because the API was unreachable on 2026-11-14.
+  Re-check against a fresh pull by rerunning `topup` into a scratch dir; the key's sha256 must not change. Votes on
+  round b's labels are ignored, since they are its Gallery ratings. A re-check after the top-up is rated also
+  needs `--ignore-votes-on <top-up key.csv>`, in case the pull shows those ratings as the rater's votes. Key sha256
   `c0f03f3225fb45f02e101f8e6f2bafde38e1fdcd2fc5f2c1285e24b27f5b0097` (91 items, packet ids distinct from round
   b's); key, manifest and Gallery list in `~/Data/sidewalk-validator-ai-nosidewalk-2026-11/round-c-chicago/`.
 

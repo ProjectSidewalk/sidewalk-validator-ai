@@ -812,62 +812,89 @@ def cmd_neighbour_scores(args):
 # topup (more ratings in one cell, step c)
 # ---------------------------------------------------------------------------------------------------------------------
 
-def touched_faces(raw, rater_id):
+def touched_faces(raw, rater_id, ignore=()):
     """The faces of ``raw`` (one city's rawLabels rows, ``city`` set) that carry a NoSidewalk label the rater placed
     or voted on. Step (b) left out the rater's labels but not their faces (42 of 250 rated faces were touched), so a
-    top-up leaves out the faces.
+    top-up leaves out the faces. Votes on the labels in ``ignore`` (``city:label_id``) do not count: those are the
+    round's own Gallery ratings, which a pull taken after rating shows as the rater's votes.
 
-    >>> d = pd.DataFrame({"label_type": "NoSidewalk", "city": "c", "street_edge_id": [1, 1, 2, 3],
-    ...     "street_side": "left", "user_id": ["me", "x", "x", "x"], "validations": ["[]", "[]", "[]",
-    ...     '[{"user_id":"me","validation":"Agree"}]']})
-    >>> sorted(touched_faces(d, "me"))
-    ['c:1:left', 'c:3:left']
+    >>> d = pd.DataFrame({"label_type": ["NoSidewalk"] * 5 + ["CurbRamp"], "city": "c",
+    ...     "street_edge_id": [1, 1, 2, 3, 4, 5], "label_id": range(6), "street_side": "left",
+    ...     "user_id": ["me", "x", "x", "x", "x", "me"], "validations": ["[]", "[]", "[]",
+    ...     '[{"user_id":"me","validation":"Agree"}]', '[{"user_id":"me","validation":"Agree"}]', "[]"]})
+    >>> sorted(touched_faces(d, "me")), sorted(touched_faces(d, "me", ignore={"c:4", "c:0"}))
+    (['c:1:left', 'c:3:left', 'c:4:left'], ['c:1:left', 'c:3:left'])
     """
     df = raw[raw["label_type"] == LABEL_TYPE].copy()
     df["face_id"] = nosidewalk_faces.face_id(df)
     placed, voted = rater_touched(df, rater_id)
+    voted &= ~(df["city"] + ":" + df["label_id"].astype(str)).isin(set(ignore))
     return set(df.loc[placed | voted, "face_id"]) - {""}
 
 
 def topup_sample(scores, base_key, touched, city, wants):
     """The next labels of one city's (city, stratum) cells of ``scores``, ``wants = {stratum: n}``, continuing the
     seeded rank order under ``sample_phase2``'s face rule (a face is used once, in the stratum of its first-ranked
-    label), and leaving out every face already in ``base_key`` and every face in ``touched``. The base draw is a
-    prefix of each cell, so each cell stays a simple random sample, now under the touched-face rule as well.
-    Asking for every stratum keeps the rater masked to the model's verdict, as in the base round.
-    Returns ``(picked, counts)``; ``counts[stratum]`` has ``cell_scored``, ``available`` and ``picked``.
+    label), and leaving out every face already in ``base_key`` and every face in ``touched``. Asking for every
+    stratum keeps the rater masked to the model's verdict, as in the base round.
 
-    >>> s = pd.DataFrame({"label_uid": [f"c:{i}" for i in range(7)], "city": "c",
-    ...     "stratum": ["pass"] * 6 + ["model_incorrect"], "rank": [5, 0, 1, 2, 3, 4, 6],
-    ...     "face_id": ["f9", "f0", "f1", "f1", "f2", "f3", "f4"]})
-    >>> p, c = topup_sample(s, pd.DataFrame({"face_id": ["f0"]}), {"f2"}, "c", {"pass": 5, "model_incorrect": 1})
-    >>> p["label_uid"].tolist(), c["pass"], c["model_incorrect"]["picked"], c["faces_in_base_key"], c["touched_faces"]
-    (['c:2', 'c:5', 'c:0', 'c:6'], {'cell_scored': 6, 'available': 3, 'picked': 3}, 1, 1, 1)
+    The base draw is a prefix of each cell's face order, taken without the touched-face rule. Base plus top-up is
+    therefore still a prefix of the cell, an equal-probability sample that ``N/n * M/m`` weights exactly, only when
+    no touched face lies before the cell's last pick; ``touched_before_last_pick`` counts those and ``prefix_sample``
+    says whether there were none. Returns ``(picked, counts)``: ``counts["faces"]`` tallies the city's scored faces
+    (``touched`` is ``touched_in_base_key`` plus the cells' ``touched_candidates``), ``counts["cells"][stratum]``
+    the cell.
+
+    >>> s = pd.DataFrame({"label_uid": [f"c:{i}" for i in range(8)], "city": "c",
+    ...     "stratum": ["pass"] * 6 + ["model_incorrect"] * 2, "rank": [5, 0, 1, 2, 3, 4, 6, 7],
+    ...     "face_id": ["f9", "f0", "f1", "f1", "f2", "f3", "f4", "f5"]})
+    >>> p, c = topup_sample(s, pd.DataFrame({"face_id": ["f0"]}), {"f0", "f2", "f5"}, "c",
+    ...                     {"pass": 5, "model_incorrect": 1})
+    >>> p["label_uid"].tolist(), c["faces"]
+    (['c:2', 'c:5', 'c:0', 'c:6'], {'scored': 7, 'in_base_key': 1, 'touched': 3, 'touched_in_base_key': 1})
+    >>> {k: c["cells"]["pass"][k] for k in ("available", "touched_candidates", "touched_before_last_pick", "picked")}
+    {'available': 3, 'touched_candidates': 1, 'touched_before_last_pick': 1, 'picked': 3}
+    >>> c["cells"]["pass"]["cell_scored"], c["cells"]["pass"]["prefix_sample"]
+    (6, False)
+    >>> c["cells"]["model_incorrect"]["touched_candidates"], c["cells"]["model_incorrect"]["prefix_sample"]
+    (1, True)
     """
     s = scores[scores["city"] == city].sort_values("rank", kind="mergesort")
-    counts = {"faces_in_base_key": int(s.loc[s["face_id"].isin(set(base_key["face_id"])), "face_id"].nunique()),
-              "touched_faces": int(s.loc[s["face_id"].isin(touched), "face_id"].nunique())}
+    in_base = s["face_id"].isin(set(base_key["face_id"]))
+    counts = {"faces": {"scored": int(s["face_id"].nunique()), "in_base_key": int(s.loc[in_base, "face_id"].nunique()),
+                        "touched": int(s.loc[s["face_id"].isin(touched), "face_id"].nunique()),
+                        "touched_in_base_key": int(s.loc[in_base & s["face_id"].isin(touched), "face_id"].nunique())},
+              "cells": {}}
     first = one_per_face(s)
-    first = first[~first["face_id"].isin(set(base_key["face_id"])) & ~first["face_id"].isin(touched)]
+    first = first[~first["face_id"].isin(set(base_key["face_id"]))]
     picked = []
     for stratum, n in wants.items():
-        cell = first[first["stratum"] == stratum]
-        picked.append(cell.head(n))
-        counts[stratum] = {"cell_scored": int((s["stratum"] == stratum).sum()), "available": int(len(cell)),
-                           "picked": int(min(n, len(cell)))}
+        cand = first[first["stratum"] == stratum]
+        hit = cand["face_id"].isin(touched)
+        cell = cand[~hit].head(n)
+        last = cell["rank"].max() if len(cell) else -np.inf
+        skipped = int((hit & (cand["rank"] < last)).sum())
+        picked.append(cell)
+        counts["cells"][stratum] = {"cell_scored": int((s["stratum"] == stratum).sum()), "available": int((~hit).sum()),
+                                    "touched_candidates": int(hit.sum()), "touched_before_last_pick": skipped,
+                                    "picked": int(len(cell)), "prefix_sample": skipped == 0}
     return pd.concat(picked, ignore_index=True), counts
 
 
 def cmd_topup(args):
     """A second key for the same round: more labels of one city's (city, stratum) cells (#42 step c: each deployment
     needs >= 100 decided pass-stratum labels; Chicago had 50 on untouched faces). Ask for every stratum in the round's
-    shares, so the list does not tell the rater the model's verdict.
+    shares, so the list does not tell the rater the model's verdict. ``report --topup`` reads it beside the base key.
+    One top-up per city: a second run draws the same labels again (it leaves out only the base key's faces).
 
     Example (Chicago, 2026-11-14)::
 
         RATER_ID=<uuid> python analysis/nosidewalk_round.py topup --key-dir $D/round-b/private-key-do-not-share \\
             --rawlabels $D/round-b/rawlabels --city chicago-il --n pass=55 --n agree_below=18 \\
             --n model_incorrect=18 --seed $SEED --out-key-dir $D/round-c-chicago/private-key-do-not-share
+
+    Re-check on a fresh pull: the same command into a scratch dir, with ``--ignore-votes-on`` the top-up's key.csv if
+    the top-up has been rated (votes on the base key's labels are always ignored); the key's sha256 must not change.
     """
     if rl.inside_git_checkout(args.out_key_dir):
         sys.exit(f"refusing to write the key inside a git checkout: {args.out_key_dir}")
@@ -898,7 +925,10 @@ def cmd_topup(args):
     schema = {c: s for s, c in schema_city.items()}[args.city]
     rpath = os.path.join(args.rawlabels, f"{args.city}.csv")
     raw = pd.read_csv(rpath, low_memory=False, dtype={"pano_id": str, "label_id": str}).assign(city=args.city)
-    touched = touched_faces(raw, rater_id)
+    ignore = set(base["label_uid_city"])
+    for path in args.ignore_votes_on or ():
+        ignore |= set(pd.read_csv(path, dtype=str)["label_uid_city"])
+    touched = touched_faces(raw, rater_id, ignore)
     picked, counts = topup_sample(scores, base, touched, args.city, wants)
     live = set(args.city + ":" + raw.loc[raw["label_type"] == LABEL_TYPE, "label_id"].astype(str))
     gone = ~picked["label_uid"].isin(live)  # deleted since the round's pull: Gallery could not show it
@@ -906,9 +936,12 @@ def cmd_topup(args):
         sys.exit(f"{int(gone.sum())} picked labels are not in {rpath}; pull again and rerun")
     weight = {}
     for stratum, n in wants.items():
-        c = counts[stratum]
+        c = counts["cells"][stratum]
         if c["picked"] < n:
             print(f"warning: only {c['picked']} of {n} labels available in {args.city}/{stratum}")
+        if not c["prefix_sample"]:
+            print(f"warning: {args.city}/{stratum} skipped {c['touched_before_last_pick']} touched faces before its "
+                  f"last pick, so base + top-up is not a prefix sample and its weights are approximate")
         c["picked_base"] = int(((base["city_id"] == args.city) & (base["stratum"] == stratum)).sum())
         c["picked_total"] = c["picked_base"] + c["picked"]
         weight[stratum] = (kman["eligible"][args.city] / kman["scored"][args.city] * c["cell_scored"]
@@ -919,15 +952,21 @@ def cmd_topup(args):
                            h_dis=picked["human_disagree"], weight=picked["stratum"].map(weight))
     key = rl.make_key(picked, f"{args.seed}:topup:{args.city}")  # a different seed: not the base key's packet ids
     if key["packet_id"].isin(set(base["packet_id"])).any():
+        # About 1 in 740 for 91 ids against 250 in 16^6, and fixed by the seed: if it ever fires, give make_key a
+        # suffixed seed string here (and record the suffix in the manifest) rather than editing the key by hand.
         sys.exit("a packet id collides with the base key's")
     os.makedirs(args.out_key_dir, exist_ok=True)
     key[KEY_COLUMNS].to_csv(kpath, index=False)
     man = {"design": kman["design"] + "_topup", "design_json": design, "base_key_sha256": kman["key_sha256"],
-           "base_scores_sha256": kman["scores_sha256"], "base_manifest_sha256": rl.sha256_file(
+           "scores_sha256": kman["scores_sha256"], "prior": kman["prior"], "base_manifest_sha256": rl.sha256_file(
                os.path.join(args.key_dir, "manifest.json")), "seed_sha256": kman["seed_sha256"],
            "rawlabels_sha256": {args.city: rl.sha256_file(rpath)}, "city": args.city, "requested": wants,
-           "counts": counts, "touched_faces_in_city": len(touched),
-           "weight_note": "a cell's weight covers its base and top-up items together: N/n * M/m, m = base + top-up",
+           "counts": counts, "touched_faces_in_city": len(touched), "ignored_vote_labels": len(ignore),
+           "weights": weight,
+           "weight_note": ("a cell's weight covers its base and top-up items together, N/n * M/m with m = base + "
+                           "top-up; report --topup gives the base rows of the cell this weight. Base items were drawn "
+                           "without the touched-face rule, so the weight is exact (base + top-up a prefix sample of "
+                           "the cell) only where counts.cells.<stratum>.prefix_sample is true"),
            "key_sha256": rl.sha256_file(kpath), "items": int(len(key))}
     rl.write_manifest(os.path.join(args.out_key_dir, "manifest.json"), man)
     print(json.dumps({k: man[k] for k in ("city", "requested", "counts", "touched_faces_in_city", "items")}, indent=1))
@@ -1129,16 +1168,46 @@ def splice(doc_text, block):
     return doc_text[:i + len(START)] + "\n" + block + doc_text[j:]
 
 
+def with_topups(m, man, topups, allow_unpinned=False):
+    """The base key's unmasked rows ``m`` (manifest ``man``) with each ``(key, sheet)`` top-up's unmasked rows added,
+    and the base rows of every topped-up (city, stratum) cell given the top-up's weight, ``N/n * M/(base + top-up)``,
+    so the cell's rows are weighted as one sample (see ``topup_sample`` for when that is exact). Returns ``(m,
+    provenance)``. One top-up per city: ``topup`` leaves out only the base key's faces, so a second would repeat it."""
+    parts, prov = [m], []
+    for tkey, tsheet in topups:
+        tpath = rl.default_manifest(tkey)
+        tman = json.load(open(tpath))
+        if tman.get("base_key_sha256") != man["key_sha256"] or tman.get("scores_sha256") != man["scores_sha256"]:
+            sys.exit(f"{tkey} is not a top-up of this key and scores file")
+        if tman["city"] in {p["city"] for p in prov}:
+            sys.exit(f"two top-ups of {tman['city']}")
+        rl.check_pin(tpath, "key", tkey, allow_unpinned)
+        rl.check_pin(tpath, f"votes_{man['design_json']['rater']}", tsheet, allow_unpinned)
+        tm = rl.unmask(pd.read_csv(tkey, dtype={"tags": str, "label_id": str}),
+                       pd.read_csv(tsheet, dtype=str, keep_default_na=False))
+        for stratum, w in tman["weights"].items():
+            m.loc[(m["city_id"] == tman["city"]) & (m["stratum"] == stratum), "weight"] = w
+        parts.append(tm)
+        prov.append({"city": tman["city"], "key_sha256": tman["key_sha256"], "sheet_sha256": rl.sha256_file(tsheet),
+                     "prefix_sample": {s: c["prefix_sample"] for s, c in tman["counts"]["cells"].items()}})
+    out = pd.concat(parts, ignore_index=True)
+    if not (out["label_uid"].is_unique and out["face_id"].is_unique):
+        sys.exit("a label or face is in more than one key")
+    return out, prov
+
+
 def cmd_report(args):
     mpath = args.manifest or rl.default_manifest(args.key)
     man = json.load(open(mpath))
+    if "base_key_sha256" in man:
+        sys.exit(f"{args.key} is a top-up key: pass its round's base key with --key and this one with --topup")
     rl.check_pin(mpath, "key", args.key, args.allow_unpinned)
     rl.check_pin(mpath, f"votes_{man['design_json']['rater']}", args.sheet, args.allow_unpinned)
     if rl.sha256_file(args.scores) != man["scores_sha256"] and not args.allow_unpinned:
         sys.exit(f"{args.scores} is not the scores file the manifest pins")
     key = pd.read_csv(args.key, dtype={"tags": str, "label_id": str})
     sheet = pd.read_csv(args.sheet, dtype=str, keep_default_na=False)
-    m = rl.unmask(key, sheet)
+    m, topups = with_topups(rl.unmask(key, sheet), man, args.topup or (), args.allow_unpinned)
     scores = pd.read_csv(args.scores, dtype={"label_uid": str}, low_memory=False)
     model_cols = [c for c in scores.columns if c.startswith(("pass_", "p_correct_", "served_"))]
     m = m.merge(scores[["label_uid"] + model_cols].rename(columns={"label_uid": "label_uid_city"}),
@@ -1149,7 +1218,8 @@ def cmd_report(args):
         train = sp[sp["split"].isin(POOLED)]
     rep = build_report(m, man["design_json"], float(man["prior"]["correct"]), args.n_boot, args.seed, train)
     rep["provenance"] = {"key_sha256": man["key_sha256"], "sheet_sha256": rl.sha256_file(args.sheet),
-                         "scores_sha256": man["scores_sha256"], "n_boot": args.n_boot, "seed": args.seed}
+                         "scores_sha256": man["scores_sha256"], "n_boot": args.n_boot, "seed": args.seed,
+                         **({"topups": topups} if topups else {})}
     md = markdown(rep)
     for path, text in ((args.out_json, json.dumps(without_nan(rep), indent=1) + "\n"), (args.out_md, md)):
         if path:
@@ -1224,6 +1294,9 @@ def build_parser():
                    help="repeat per stratum; ask for all three (as the round's shares) to keep the rater masked")
     t.add_argument("--seed", required=True, help="the round's seed")
     t.add_argument("--cityparams", default=rl.DEFAULT_CITYPARAMS)
+    t.add_argument("--ignore-votes-on", action="append", metavar="KEY_CSV",
+                   help="a rated key of this round (the top-up's own, on a re-check after rating): the rater's votes "
+                        "on its labels do not touch a face; the base key's are always ignored")
     t.add_argument("--out-key-dir", required=True, help="private; outside any git checkout")
     t.set_defaults(func=cmd_topup)
     g = sub.add_parser("gallery", help="the rater's Gallery lists (gt_rounds.py gallery) with this round's rating rule")
@@ -1239,6 +1312,8 @@ def build_parser():
     r.add_argument("--scores", required=True, help="scores.csv beside the key")
     r.add_argument("--pilot-split", help="the gate's split.csv, for training counts per severity and tag")
     r.add_argument("--manifest")
+    r.add_argument("--topup", nargs=2, action="append", metavar=("KEY", "SHEET"),
+                   help="a top-up key of this round (manifest beside it) and its pinned votes; repeat per city")
     r.add_argument("--allow-unpinned", action="store_true")
     r.add_argument("--out-json")
     r.add_argument("--out-md")
