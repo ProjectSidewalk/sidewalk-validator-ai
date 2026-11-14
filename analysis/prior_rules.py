@@ -86,10 +86,12 @@ def sha256_of_text(text):
 
 
 def write_json(obj, path):
+    """Write ``obj`` as indented JSON. The text is built before the file is opened, so a value that cannot be
+    serialised leaves an existing file untouched instead of truncated (some outputs are read back on the next run)."""
+    text = json.dumps(cal.without_nan(obj), indent=2, default=float) + "\n"
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w") as f:
-        json.dump(cal.without_nan(obj), f, indent=2, default=float)
-        f.write("\n")
+        f.write(text)
 
 
 def share(c, i):

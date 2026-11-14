@@ -1,0 +1,6433 @@
+{
+  "kind": "backtest",
+  "label": "votes as of the end of the pull, public deployments only; count-based replay",
+  "rule": {
+    "gate": 0.92,
+    "min_n": 50,
+    "z": 1.96,
+    "schedule": [
+      50,
+      100,
+      200,
+      400,
+      800,
+      1600
+    ],
+    "reference": "majority2"
+  },
+  "pooled": {
+    "unrecorded": {
+      "Crosswalk": {
+        "Agree": {
+          "strata": 37,
+          "strata_ge_min_n": 18,
+          "graduated": 17,
+          "graduation_n": {
+            "median": 50.0,
+            "min": 50,
+            "max": 100,
+            "counts": {
+              "50": 13,
+              "100": 4
+            }
+          },
+          "final_status": {
+            "pass": 17,
+            "undecided": 1
+          },
+          "withheld_in_graduated": {
+            "n": 1050,
+            "k": 1045.0,
+            "precision": 0.9952380952380953,
+            "ci_lo": 0.9889012130291069,
+            "ci_hi": 0.9979643652513481
+          },
+          "kept": {
+            "n": 5857,
+            "k": 5847.0,
+            "precision": 0.9982926412839338,
+            "ci_lo": 0.9968597313756006,
+            "ci_hi": 0.9990723204307477
+          },
+          "never_graduated": {
+            "n": 79,
+            "k": 77.0,
+            "precision": 0.9746835443037974,
+            "ci_lo": 0.9123124646752686,
+            "ci_hi": 0.9930297788352381
+          },
+          "strata_under_min_n": {
+            "n": 238,
+            "k": 236.0,
+            "precision": 0.9915966386554622,
+            "ci_lo": 0.9698829604625083,
+            "ci_hi": 0.9976925104242209
+          },
+          "all": {
+            "n": 7224,
+            "k": 7205.0,
+            "precision": 0.9973698781838317,
+            "ci_lo": 0.9958955193419584,
+            "ci_hi": 0.9983155325438494
+          }
+        },
+        "Disagree": {
+          "strata": 36,
+          "strata_ge_min_n": 9,
+          "graduated": 0,
+          "graduation_n": {
+            "median": null,
+            "min": null,
+            "max": null,
+            "counts": {}
+          },
+          "final_status": {
+            "fail": 6,
+            "undecided": 3
+          },
+          "withheld_in_graduated": {
+            "n": 0,
+            "k": 0.0,
+            "precision": null,
+            "ci_lo": null,
+            "ci_hi": null
+          },
+          "kept": {
+            "n": 0,
+            "k": 0.0,
+            "precision": null,
+            "ci_lo": null,
+            "ci_hi": null
+          },
+          "never_graduated": {
+            "n": 1568,
+            "k": 922.0,
+            "precision": 0.5880102040816326,
+            "ci_lo": 0.5634616211188592,
+            "ci_hi": 0.6121285910246544
+          },
+          "strata_under_min_n": {
+            "n": 355,
+            "k": 150.0,
+            "precision": 0.4225352112676056,
+            "ci_lo": 0.3722486105788246,
+            "ci_hi": 0.4744804197231247
+          },
+          "all": {
+            "n": 1923,
+            "k": 1072.0,
+            "precision": 0.5574622984919396,
+            "ci_lo": 0.5351697665061863,
+            "ci_hi": 0.5795257019744611
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "strata": 40,
+          "strata_ge_min_n": 25,
+          "graduated": 24,
+          "graduation_n": {
+            "median": 50.0,
+            "min": 50,
+            "max": 400,
+            "counts": {
+              "50": 17,
+              "100": 3,
+              "200": 2,
+              "400": 2
+            }
+          },
+          "final_status": {
+            "pass": 24,
+            "undecided": 1
+          },
+          "withheld_in_graduated": {
+            "n": 2350,
+            "k": 2302.0,
+            "precision": 0.9795744680851064,
+            "ci_lo": 0.9730239938796192,
+            "ci_hi": 0.9845595580467297
+          },
+          "kept": {
+            "n": 44030,
+            "k": 43737.0,
+            "precision": 0.9933454462866228,
+            "ci_lo": 0.9925417839652723,
+            "ci_hi": 0.9940630277302851
+          },
+          "never_graduated": {
+            "n": 52,
+            "k": 50.0,
+            "precision": 0.9615384615384616,
+            "ci_lo": 0.8701857125563403,
+            "ci_hi": 0.9893885116779224
+          },
+          "strata_under_min_n": {
+            "n": 303,
+            "k": 301.0,
+            "precision": 0.9933993399339934,
+            "ci_lo": 0.9762561145559292,
+            "ci_hi": 0.9981880286110991
+          },
+          "all": {
+            "n": 46735,
+            "k": 46390.0,
+            "precision": 0.9926179522841554,
+            "ci_lo": 0.9918003447756116,
+            "ci_hi": 0.9933545804162014
+          }
+        },
+        "Disagree": {
+          "strata": 35,
+          "strata_ge_min_n": 12,
+          "graduated": 0,
+          "graduation_n": {
+            "median": null,
+            "min": null,
+            "max": null,
+            "counts": {}
+          },
+          "final_status": {
+            "fail": 12
+          },
+          "withheld_in_graduated": {
+            "n": 0,
+            "k": 0.0,
+            "precision": null,
+            "ci_lo": null,
+            "ci_hi": null
+          },
+          "kept": {
+            "n": 0,
+            "k": 0.0,
+            "precision": null,
+            "ci_lo": null,
+            "ci_hi": null
+          },
+          "never_graduated": {
+            "n": 5328,
+            "k": 2881.0,
+            "precision": 0.5407282282282282,
+            "ci_lo": 0.52732237113379,
+            "ci_hi": 0.5540753958216273
+          },
+          "strata_under_min_n": {
+            "n": 240,
+            "k": 83.0,
+            "precision": 0.3458333333333333,
+            "ci_lo": 0.2885120128150054,
+            "ci_hi": 0.40801228820664137
+          },
+          "all": {
+            "n": 5568,
+            "k": 2964.0,
+            "precision": 0.5323275862068966,
+            "ci_lo": 0.5192038981397745,
+            "ci_hi": 0.5454066966768478
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "strata": 37,
+          "strata_ge_min_n": 16,
+          "graduated": 7,
+          "graduation_n": {
+            "median": 200.0,
+            "min": 100,
+            "max": 3200,
+            "counts": {
+              "100": 1,
+              "200": 5,
+              "3200": 1
+            }
+          },
+          "final_status": {
+            "fail": 2,
+            "pass": 6,
+            "undecided": 8
+          },
+          "withheld_in_graduated": {
+            "n": 4300,
+            "k": 4063.0,
+            "precision": 0.9448837209302325,
+            "ci_lo": 0.937657063189675,
+            "ci_hi": 0.9513161741153411
+          },
+          "kept": {
+            "n": 18186,
+            "k": 17677.0,
+            "precision": 0.972011437369405,
+            "ci_lo": 0.969512681429768,
+            "ci_hi": 0.974310820584675
+          },
+          "never_graduated": {
+            "n": 2676,
+            "k": 2369.0,
+            "precision": 0.8852765321375187,
+            "ci_lo": 0.8726454923775199,
+            "ci_hi": 0.8968029705465574
+          },
+          "strata_under_min_n": {
+            "n": 342,
+            "k": 292.0,
+            "precision": 0.8538011695906432,
+            "ci_lo": 0.8124279301632685,
+            "ci_hi": 0.887314379610917
+          },
+          "all": {
+            "n": 25504,
+            "k": 24401.0,
+            "precision": 0.9567518820577164,
+            "ci_lo": 0.9541858126888532,
+            "ci_hi": 0.9591803734960258
+          }
+        },
+        "Disagree": {
+          "strata": 38,
+          "strata_ge_min_n": 14,
+          "graduated": 0,
+          "graduation_n": {
+            "median": null,
+            "min": null,
+            "max": null,
+            "counts": {}
+          },
+          "final_status": {
+            "fail": 13,
+            "undecided": 1
+          },
+          "withheld_in_graduated": {
+            "n": 0,
+            "k": 0.0,
+            "precision": null,
+            "ci_lo": null,
+            "ci_hi": null
+          },
+          "kept": {
+            "n": 0,
+            "k": 0.0,
+            "precision": null,
+            "ci_lo": null,
+            "ci_hi": null
+          },
+          "never_graduated": {
+            "n": 7376,
+            "k": 5272.0,
+            "precision": 0.7147505422993492,
+            "ci_lo": 0.7043361309157585,
+            "ci_hi": 0.7249413755282821
+          },
+          "strata_under_min_n": {
+            "n": 260,
+            "k": 122.0,
+            "precision": 0.46923076923076923,
+            "ci_lo": 0.40945852552562484,
+            "ci_hi": 0.5298990284006704
+          },
+          "all": {
+            "n": 7636,
+            "k": 5394.0,
+            "precision": 0.7063907805133578,
+            "ci_lo": 0.6960742265660563,
+            "ci_hi": 0.716499772350361
+          }
+        }
+      },
+      "Obstacle": {
+        "Agree": {
+          "strata": 1,
+          "strata_ge_min_n": 0,
+          "graduated": 0,
+          "graduation_n": {
+            "median": null,
+            "min": null,
+            "max": null,
+            "counts": {}
+          },
+          "final_status": {},
+          "withheld_in_graduated": {
+            "n": 0,
+            "k": 0.0,
+            "precision": null,
+            "ci_lo": null,
+            "ci_hi": null
+          },
+          "kept": {
+            "n": 0,
+            "k": 0.0,
+            "precision": null,
+            "ci_lo": null,
+            "ci_hi": null
+          },
+          "never_graduated": {
+            "n": 0,
+            "k": 0.0,
+            "precision": null,
+            "ci_lo": null,
+            "ci_hi": null
+          },
+          "strata_under_min_n": {
+            "n": 2,
+            "k": 2.0,
+            "precision": 1.0,
+            "ci_lo": 0.3423719528896193,
+            "ci_hi": 1.0
+          },
+          "all": {
+            "n": 2,
+            "k": 2.0,
+            "precision": 1.0,
+            "ci_lo": 0.3423719528896193,
+            "ci_hi": 1.0
+          }
+        },
+        "Disagree": {
+          "strata": 28,
+          "strata_ge_min_n": 6,
+          "graduated": 0,
+          "graduation_n": {
+            "median": null,
+            "min": null,
+            "max": null,
+            "counts": {}
+          },
+          "final_status": {
+            "fail": 4,
+            "undecided": 2
+          },
+          "withheld_in_graduated": {
+            "n": 0,
+            "k": 0.0,
+            "precision": null,
+            "ci_lo": null,
+            "ci_hi": null
+          },
+          "kept": {
+            "n": 0,
+            "k": 0.0,
+            "precision": null,
+            "ci_lo": null,
+            "ci_hi": null
+          },
+          "never_graduated": {
+            "n": 1529,
+            "k": 1236.0,
+            "precision": 0.8083714846304775,
+            "ci_lo": 0.7878800121618487,
+            "ci_hi": 0.8273172789346352
+          },
+          "strata_under_min_n": {
+            "n": 281,
+            "k": 191.0,
+            "precision": 0.6797153024911032,
+            "ci_lo": 0.6230514759188818,
+            "ci_hi": 0.7315315625137068
+          },
+          "all": {
+            "n": 1810,
+            "k": 1427.0,
+            "precision": 0.7883977900552486,
+            "ci_lo": 0.768980032485705,
+            "ci_hi": 0.806593931635528
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "strata": 38,
+          "strata_ge_min_n": 25,
+          "graduated": 18,
+          "graduation_n": {
+            "median": 50.0,
+            "min": 50,
+            "max": 1600,
+            "counts": {
+              "50": 10,
+              "100": 5,
+              "200": 2,
+              "1600": 1
+            }
+          },
+          "final_status": {
+            "fail": 1,
+            "pass": 18,
+            "undecided": 6
+          },
+          "withheld_in_graduated": {
+            "n": 3000,
+            "k": 2881.0,
+            "precision": 0.9603333333333334,
+            "ci_lo": 0.9527400560849422,
+            "ci_hi": 0.9667491739729944
+          },
+          "kept": {
+            "n": 10645,
+            "k": 10445.0,
+            "precision": 0.9812118365429779,
+            "ci_lo": 0.9784535376184678,
+            "ci_hi": 0.9836229383805744
+          },
+          "never_graduated": {
+            "n": 6347,
+            "k": 5946.0,
+            "precision": 0.9368205451394359,
+            "ci_lo": 0.9305669651104707,
+            "ci_hi": 0.9425456629859377
+          },
+          "strata_under_min_n": {
+            "n": 177,
+            "k": 170.0,
+            "precision": 0.96045197740113,
+            "ci_lo": 0.9206279337431519,
+            "ci_hi": 0.9807133505631139
+          },
+          "all": {
+            "n": 20169,
+            "k": 19442.0,
+            "precision": 0.9639545837671675,
+            "ci_lo": 0.9612923890078433,
+            "ci_hi": 0.9664400728382856
+          }
+        },
+        "Disagree": {
+          "strata": 28,
+          "strata_ge_min_n": 4,
+          "graduated": 0,
+          "graduation_n": {
+            "median": null,
+            "min": null,
+            "max": null,
+            "counts": {}
+          },
+          "final_status": {
+            "fail": 4
+          },
+          "withheld_in_graduated": {
+            "n": 0,
+            "k": 0.0,
+            "precision": null,
+            "ci_lo": null,
+            "ci_hi": null
+          },
+          "kept": {
+            "n": 0,
+            "k": 0.0,
+            "precision": null,
+            "ci_lo": null,
+            "ci_hi": null
+          },
+          "never_graduated": {
+            "n": 2600,
+            "k": 1701.0,
+            "precision": 0.6542307692307693,
+            "ci_lo": 0.635733114856447,
+            "ci_hi": 0.6722733322331149
+          },
+          "strata_under_min_n": {
+            "n": 328,
+            "k": 178.0,
+            "precision": 0.5426829268292683,
+            "ci_lo": 0.4885855811384666,
+            "ci_hi": 0.5957920255268823
+          },
+          "all": {
+            "n": 2928,
+            "k": 1879.0,
+            "precision": 0.6417349726775956,
+            "ci_lo": 0.6241916143770042,
+            "ci_hi": 0.6589068995399823
+          }
+        }
+      }
+    }
+  },
+  "public_deployments": {
+    "amsterdam": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 572,
+            "graduated_at": 100,
+            "final_status": "pass",
+            "kept": {
+              "n": 472,
+              "k": 469.0,
+              "precision": 0.9936440677966102,
+              "ci_lo": 0.9814813446512747,
+              "ci_hi": 0.9978361425125211
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 154,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 940,
+            "graduated_at": 200,
+            "final_status": "pass",
+            "kept": {
+              "n": 740,
+              "k": 729.0,
+              "precision": 0.9851351351351352,
+              "ci_lo": 0.9735794115403353,
+              "ci_hi": 0.9916798587129014
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 347,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 175,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 507,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 168,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 60,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 403,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "auckland": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 79,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 27,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 138,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 88,
+              "k": 88.0,
+              "precision": 1.0,
+              "ci_lo": 0.9581714604275188,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 18,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 26,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 27,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 68,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 18,
+              "k": 18.0,
+              "precision": 1.0,
+              "ci_lo": 0.8241154494176252,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 11,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "blackhawk-hills-il": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 16,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 26,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 5,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 8,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 3,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 9,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "burnaby": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 184,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 134,
+              "k": 134.0,
+              "precision": 1.0,
+              "ci_lo": 0.9721303293055218,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 21,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 361,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 311,
+              "k": 310.0,
+              "precision": 0.9967845659163987,
+              "ci_lo": 0.9820137221768206,
+              "ci_hi": 0.9994321858607452
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 16,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 155,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 39,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 87,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 37,
+              "k": 36.0,
+              "precision": 0.972972972972973,
+              "ci_lo": 0.8617562156243666,
+              "ci_hi": 0.9952131489450923
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 11,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "cdmx": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 41,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 86,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 896,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 846,
+              "k": 841.0,
+              "precision": 0.9940898345153665,
+              "ci_lo": 0.9862397255837555,
+              "ci_hi": 0.9974730039413702
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 287,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1292,
+            "graduated_at": 200,
+            "final_status": "pass",
+            "kept": {
+              "n": 1092,
+              "k": 1050.0,
+              "precision": 0.9615384615384616,
+              "ci_lo": 0.9484199015753524,
+              "ci_hi": 0.9714210681414388
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 127,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 30,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 493,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 443,
+              "k": 442.0,
+              "precision": 0.9977426636568849,
+              "ci_lo": 0.9873254872500569,
+              "ci_hi": 0.9996014237627048
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 17,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "chandigarh-india": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 3,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 8,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 4,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 13,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 23,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 15,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 4,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "chicago-il": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 2714,
+            "graduated_at": 100,
+            "final_status": "pass",
+            "kept": {
+              "n": 2614,
+              "k": 2611.0,
+              "precision": 0.9988523335883703,
+              "ci_lo": 0.9966309451709765,
+              "ci_hi": 0.9996096218671514
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 423,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 17414,
+            "graduated_at": 200,
+            "final_status": "pass",
+            "kept": {
+              "n": 17214,
+              "k": 17101.0,
+              "precision": 0.9934355756942024,
+              "ci_lo": 0.9921142246553221,
+              "ci_hi": 0.9945367386105961
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 906,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 710,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2873,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 451,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 4200,
+            "graduated_at": 1600,
+            "final_status": "pass",
+            "kept": {
+              "n": 2600,
+              "k": 2516.0,
+              "precision": 0.9676923076923077,
+              "ci_lo": 0.9601757581510131,
+              "ci_hi": 0.9738288295320473
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 624,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "cliffside-park-nj": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 55,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 5,
+              "k": 5.0,
+              "precision": 1.0,
+              "ci_lo": 0.565508505247919,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 4,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 156,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 106,
+              "k": 103.0,
+              "precision": 0.9716981132075472,
+              "ci_lo": 0.9200729964539736,
+              "ci_hi": 0.9903288913553809
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 8,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 4,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 7,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 6,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 34,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 3,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "clifton-nj": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 52,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 3,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 44,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "columbus-oh": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 102,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 52,
+              "k": 52.0,
+              "precision": 1.0,
+              "ci_lo": 0.9312054095871177,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 43,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 2050,
+            "graduated_at": 100,
+            "final_status": "pass",
+            "kept": {
+              "n": 1950,
+              "k": 1935.0,
+              "precision": 0.9923076923076923,
+              "ci_lo": 0.9873466015010025,
+              "ci_hi": 0.995332854192847
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 97,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 553,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 336,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 73,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1025,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 975,
+              "k": 965.0,
+              "precision": 0.9897435897435898,
+              "ci_lo": 0.9812234776567701,
+              "ci_hi": 0.9944195681639225
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 25,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "cuenca": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 90,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 40,
+              "k": 40.0,
+              "precision": 1.0,
+              "ci_lo": 0.9123754607496077,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 99,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 39,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 17,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 98,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 9,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 51,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "danville-il": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 4,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 9,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 45,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 21,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 10,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 102,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 52,
+              "k": 52.0,
+              "precision": 1.0,
+              "ci_lo": 0.9312054095871177,
+              "ci_hi": 1.0
+            }
+          }
+        }
+      }
+    },
+    "detroit-mi": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 22,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 18,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 188,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 138,
+              "k": 137.0,
+              "precision": 0.9927536231884058,
+              "ci_lo": 0.9600963092363003,
+              "ci_hi": 0.9987197221677447
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 4,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 29,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 19,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 4,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 55,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "fort-wayne-in": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 10,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 7,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 4,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 8,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "gainesville-fl": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 12,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 19,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 34,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 7,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 6,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "hackensack-nj": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 23,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 25,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "houston-tx": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 3,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 11,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 5,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 4,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "knox-oh": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 53,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 3,
+              "k": 3.0,
+              "precision": 1.0,
+              "ci_lo": 0.4384939195509822,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 15,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 374,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 324,
+              "k": 323.0,
+              "precision": 0.9969135802469136,
+              "ci_lo": 0.9827266617129456,
+              "ci_hi": 0.9994549772248829
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 41,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 92,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 23,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 6,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 244,
+            "graduated_at": 200,
+            "final_status": "pass",
+            "kept": {
+              "n": 44,
+              "k": 43.0,
+              "precision": 0.9772727272727273,
+              "ci_lo": 0.8819202086846235,
+              "ci_hi": 0.995976851614363
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "la-ca": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 14,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 10,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 33,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 3,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "la-piedad": {
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 14,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 4,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 5,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "madison-wi": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 25,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 3,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 76,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 26,
+              "k": 26.0,
+              "precision": 1.0,
+              "ci_lo": 0.8712669561953783,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 7,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 61,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 11,
+              "k": 11.0,
+              "precision": 1.0,
+              "ci_lo": 0.7411599827511859,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 8,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "maywood-nj": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 91,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 41,
+              "k": 41.0,
+              "precision": 1.0,
+              "ci_lo": 0.9143295511310926,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 5,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 269,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 219,
+              "k": 219.0,
+              "precision": 1.0,
+              "ci_lo": 0.9827608489617736,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 6,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 13,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 13,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 165,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 115,
+              "k": 112.0,
+              "precision": 0.9739130434782609,
+              "ci_lo": 0.9260981308647812,
+              "ci_hi": 0.9910891166983617
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "mendota-il": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 329,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 279,
+              "k": 278.0,
+              "precision": 0.996415770609319,
+              "ci_lo": 0.9799797125550331,
+              "ci_hi": 0.9993670313468537
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 280,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1148,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 1098,
+              "k": 1086.0,
+              "precision": 0.9890710382513661,
+              "ci_lo": 0.9809944393193145,
+              "ci_hi": 0.9937373188571783
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 100,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 240,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 635,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 105,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 555,
+            "graduated_at": 100,
+            "final_status": "pass",
+            "kept": {
+              "n": 455,
+              "k": 450.0,
+              "precision": 0.989010989010989,
+              "ci_lo": 0.9745362587007292,
+              "ci_hi": 0.9952973396478076
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 21,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "newberg-or": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 4,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1212,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 1162,
+              "k": 1162.0,
+              "precision": 1.0,
+              "ci_lo": 0.9967048696838404,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 43,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1281,
+            "graduated_at": 200,
+            "final_status": "pass",
+            "kept": {
+              "n": 1081,
+              "k": 1060.0,
+              "precision": 0.9805735430157262,
+              "ci_lo": 0.9704841484541872,
+              "ci_hi": 0.9872593599068492
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 161,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 43,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 855,
+            "graduated_at": 100,
+            "final_status": "pass",
+            "kept": {
+              "n": 755,
+              "k": 739.0,
+              "precision": 0.9788079470198675,
+              "ci_lo": 0.9658537758988648,
+              "ci_hi": 0.9869142326025141
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 50,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "niagara-falls-ny": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 10,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 3,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 45,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 7,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 32,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 12,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 26,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "oradell-nj": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 364,
+            "graduated_at": 100,
+            "final_status": "pass",
+            "kept": {
+              "n": 264,
+              "k": 263.0,
+              "precision": 0.9962121212121212,
+              "ci_lo": 0.9788590440799143,
+              "ci_hi": 0.9993310503639657
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 43,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1237,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 1187,
+              "k": 1184.0,
+              "precision": 0.9974726200505476,
+              "ci_lo": 0.9925954785502764,
+              "ci_hi": 0.9991401141599547
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 57,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 267,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 146,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 29,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 2430,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 2380,
+              "k": 2358.0,
+              "precision": 0.9907563025210084,
+              "ci_lo": 0.9860431791058858,
+              "ci_hi": 0.993887702207705
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 12,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "paterson-nj": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 13,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 7,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 141,
+            "graduated_at": 100,
+            "final_status": "pass",
+            "kept": {
+              "n": 41,
+              "k": 41.0,
+              "precision": 1.0,
+              "ci_lo": 0.9143295511310926,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 39,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 54,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 7,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 82,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "pittsburgh-pa": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 154,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 104,
+              "k": 103.0,
+              "precision": 0.9903846153846154,
+              "ci_lo": 0.9475309933230526,
+              "ci_hi": 0.9983006708955792
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 49,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1126,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 1076,
+              "k": 1067.0,
+              "precision": 0.991635687732342,
+              "ci_lo": 0.9841799389241088,
+              "ci_hi": 0.9955933907938795
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 90,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 440,
+            "graduated_at": 200,
+            "final_status": "undecided",
+            "kept": {
+              "n": 240,
+              "k": 217.0,
+              "precision": 0.9041666666666667,
+              "ci_lo": 0.8603070960253913,
+              "ci_hi": 0.9352913580529939
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 287,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 39,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 880,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 830,
+              "k": 807.0,
+              "precision": 0.9722891566265061,
+              "ci_lo": 0.958761456502888,
+              "ci_hi": 0.9814650805276464
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 45,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "rancagua-chile": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 3,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 6,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 8,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "santiago-chile": {
+      "Crosswalk": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 5,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 4,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "sao-paulo-brazil": {
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 16,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 8,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 4,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 8,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "seattle-wa": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 621,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 571,
+              "k": 570.0,
+              "precision": 0.9982486865148862,
+              "ci_lo": 0.9901471050156003,
+              "ci_hi": 0.9996907911978955
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 152,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 11959,
+            "graduated_at": 400,
+            "final_status": "pass",
+            "kept": {
+              "n": 11559,
+              "k": 11495.0,
+              "precision": 0.9944631888571676,
+              "ci_lo": 0.9929364365352753,
+              "ci_hi": 0.9956613835715054
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1884,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 17606,
+            "graduated_at": 3200,
+            "final_status": "pass",
+            "kept": {
+              "n": 14406,
+              "k": 14025.0,
+              "precision": 0.9735526863806747,
+              "ci_lo": 0.9708034254072594,
+              "ci_hi": 0.9760494532531139
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1452,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 681,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 5883,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1523,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "spgg": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 11,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 56,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1119,
+            "graduated_at": 400,
+            "final_status": "pass",
+            "kept": {
+              "n": 719,
+              "k": 683.0,
+              "precision": 0.9499304589707928,
+              "ci_lo": 0.9314615504447104,
+              "ci_hi": 0.9636169840502606
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1319,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 724,
+            "graduated_at": 200,
+            "final_status": "pass",
+            "kept": {
+              "n": 524,
+              "k": 503.0,
+              "precision": 0.9599236641221374,
+              "ci_lo": 0.9395121231808298,
+              "ci_hi": 0.9736406105180677
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 131,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 5,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 574,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 524,
+              "k": 517.0,
+              "precision": 0.9866412213740458,
+              "ci_lo": 0.9726846028485753,
+              "ci_hi": 0.9935143477456938
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 28,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "st-louis-mo": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 115,
+            "graduated_at": 100,
+            "final_status": "pass",
+            "kept": {
+              "n": 15,
+              "k": 15.0,
+              "precision": 1.0,
+              "ci_lo": 0.7961107336956521,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 113,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 494,
+            "graduated_at": 100,
+            "final_status": "pass",
+            "kept": {
+              "n": 394,
+              "k": 394.0,
+              "precision": 1.0,
+              "ci_lo": 0.9903438956609867,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 110,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 386,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 332,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 51,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 469,
+            "graduated_at": 200,
+            "final_status": "pass",
+            "kept": {
+              "n": 269,
+              "k": 265.0,
+              "precision": 0.9851301115241635,
+              "ci_lo": 0.9623963045610563,
+              "ci_hi": 0.9942026891407838
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 25,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "teaneck-nj": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1119,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 1069,
+              "k": 1069.0,
+              "precision": 1.0,
+              "ci_lo": 0.9964192290828395,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 205,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 3687,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 3637,
+              "k": 3624.0,
+              "precision": 0.9964256255155348,
+              "ci_lo": 0.9938937548300949,
+              "ci_hi": 0.9979098984790741
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 69,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 782,
+            "graduated_at": 200,
+            "final_status": "pass",
+            "kept": {
+              "n": 582,
+              "k": 565.0,
+              "precision": 0.9707903780068728,
+              "ci_lo": 0.9537219753153676,
+              "ci_hi": 0.9816844553648709
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 231,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 15,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 1065,
+            "graduated_at": 100,
+            "final_status": "pass",
+            "kept": {
+              "n": 965,
+              "k": 946.0,
+              "precision": 0.9803108808290155,
+              "ci_lo": 0.9694531508177927,
+              "ci_hi": 0.9873596037129788
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 42,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "tucson-az": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 95,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 45,
+              "k": 45.0,
+              "precision": 1.0,
+              "ci_lo": 0.9213457380593593,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 45,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 353,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 303,
+              "k": 302.0,
+              "precision": 0.9966996699669967,
+              "ci_lo": 0.9815449762439091,
+              "ci_hi": 0.9994171879476476
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 62,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 38,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 26,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 13,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 142,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 14,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "virden-il": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 5,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 1,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 31,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 7,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 7,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 13,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 74,
+            "graduated_at": null,
+            "final_status": "undecided",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "walla-walla-wa": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 198,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 148,
+              "k": 148.0,
+              "precision": 1.0,
+              "ci_lo": 0.9746999504747053,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 29,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 917,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 867,
+              "k": 862.0,
+              "precision": 0.994232987312572,
+              "ci_lo": 0.9865712184081609,
+              "ci_hi": 0.9975342721885216
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 24,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 361,
+            "graduated_at": 100,
+            "final_status": "pass",
+            "kept": {
+              "n": 261,
+              "k": 257.0,
+              "precision": 0.9846743295019157,
+              "ci_lo": 0.9612634673065324,
+              "ci_hi": 0.9940245237039433
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 104,
+            "graduated_at": null,
+            "final_status": "fail",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 42,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 255,
+            "graduated_at": 100,
+            "final_status": "pass",
+            "kept": {
+              "n": 155,
+              "k": 151.0,
+              "precision": 0.9741935483870968,
+              "ci_lo": 0.9355304684162196,
+              "ci_hi": 0.9899197914653228
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 41,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "waltham-ma": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 51,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 1,
+              "k": 1.0,
+              "precision": 1.0,
+              "ci_lo": 0.20654329147389294,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 63,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 13,
+              "k": 13.0,
+              "precision": 1.0,
+              "ci_lo": 0.7718981569447084,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 5,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 33,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 18,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "Obstacle": {
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Obstacle",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 6,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 117,
+            "graduated_at": 100,
+            "final_status": "pass",
+            "kept": {
+              "n": 17,
+              "k": 17.0,
+              "precision": 1.0,
+              "ci_lo": 0.8156763396284354,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 5,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    },
+    "west-chester-pa": {
+      "Crosswalk": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 31,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "Crosswalk",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 6,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "CurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 62,
+            "graduated_at": 50,
+            "final_status": "pass",
+            "kept": {
+              "n": 12,
+              "k": 12.0,
+              "precision": 1.0,
+              "ci_lo": 0.7574992425007574,
+              "ci_hi": 1.0
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "CurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 3,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "NoCurbRamp": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 7,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "NoCurbRamp",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      },
+      "SurfaceProblem": {
+        "Agree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Agree",
+            "regime": "unrecorded",
+            "n": 14,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        },
+        "Disagree": {
+          "unrecorded": {
+            "label_type": "SurfaceProblem",
+            "verdict": "Disagree",
+            "regime": "unrecorded",
+            "n": 2,
+            "graduated_at": null,
+            "final_status": "insufficient",
+            "kept": {
+              "n": 0,
+              "k": 0.0,
+              "precision": null,
+              "ci_lo": null,
+              "ci_hi": null
+            }
+          }
+        }
+      }
+    }
+  },
+  "private": {
+    "note": "Non-public deployments are left out of every figure in this file, pooled figures included. Their strata, and every figure that includes them, are only in the private file kept outside the repository."
+  },
+  "limits": [
+    "Whether a row is decided, and its majority, uses votes as of the pull's end: an early checkpoint here sees votes that did not exist yet. Contested labels are decided later, so this understates early false graduation.",
+    "Strata are split by evidence regime (vote / shadow / unrecorded) and never pooled across it. The 2026-11-11 pull has no ai_vote_cast column, so every row is unrecorded; its previous era was collected in vote mode, so this says nothing about how evidence accrues in shadow mode.",
+    "A stratum graduates at its first pass and stays graduated (the sticky rule).",
+    "No dates and no waiting times: the pull has no vote timestamps.",
+    "The previous era mixes model revisions (releases before API 1.0.2 loaded the hub's main branch)."
+  ],
+  "exclusions": {
+    "files": [
+      {
+        "file": "sidewalk-validator-ai-relabel-2026-10/private-key-do-not-share/key.csv",
+        "sha256": "ae3468a6409150c61e45ef358d44b579dd21cae6d01e15db720a3f447aabb860",
+        "in_pull_public": 200
+      },
+      {
+        "file": "sidewalk-validator-ai-relabel-2026-10/round2/private-key-do-not-share/key.csv",
+        "sha256": "57116bdfa129b66f6944e5520be772e314a046cec9189f22fdee56659e790aed",
+        "in_pull_public": 500
+      },
+      {
+        "file": "sidewalk-validator-ai-ai-labels-2026-10/relabel/private-key-do-not-share/key.csv",
+        "sha256": "54fa16fc1dd5a35c2b23af72cf42533406070d9fea06b4dd0bef337331f0fc9a",
+        "in_pull_public": 0
+      },
+      {
+        "file": "sidewalk-validator-ai-nosidewalk-2026-11/round-b/private-key-do-not-share/key.csv",
+        "sha256": "d2d30d05912e1a12cd75f56822a32413cb250dd048a5c17ff5bc13ae949172a8",
+        "in_pull_public": 0
+      }
+    ],
+    "rows_removed_public": 700
+  }
+}
