@@ -22,9 +22,9 @@ check are in Results.
 
 - **`symmetric` against the training margin rule (P1).** On the AI Disagrees whose margin target is `incorrect`,
   the expert says incorrect on 54/65 rows `symmetric` keeps and 68/85 rows it drops: kept minus dropped
-  +3.1 pts [-9.4, +15.9], unresolved. The positive sign comes from the mix of label types, not from inside any
-  type: compared within type (a check, not pre-stated), kept minus dropped is -0.5 pts [-12.6, +11.8], and
-  -1.1 pts [-14.4, +11.5] within type x round. Each type trains its own model, so the pooled point estimate, and
+  +3.1 pts [-9.4, +15.9], unresolved. The positive sign comes from the mix of label types: compared within type
+  (a check, not pre-stated), kept minus dropped is -0.5 pts [-12.6, +11.8], and -1.1 pts [-14.4, +11.5] within
+  type x round. Each type trains its own model, so the pooled point estimate, and
   the change from applying the rule (122/150 to 54/65 confirmed, +1.7 pts [-5.2, +8.6], a gold-sample quantity),
   say nothing about a gain for any one model. Pooled over types, the dropped two-vote Disagrees are not mostly
   wrong: the expert confirms 68/85, 95% lower bound 70.3% (round 1 alone 22/29, lower bound 57.9%). That does not
@@ -73,7 +73,8 @@ Disagrees (184 from round 1, 304 from round 2) and 131 decided round-3 train row
 | AI Disagrees, masked-only, per type | Crosswalk 110, CurbRamp 119, NoCurbRamp 101, Obstacle 79, SurfaceProblem 79 |
 | Round-3 train rows: round 1 / round 2 | 37 / 94 (131) |
 | of which flagged by confident learning / wrong target | 13 / 23 |
-| Items whose pool tallies hold a rater's earlier vote: round 1 / round 2 | 2 / 0 |
+| Decided items whose pool tallies hold the other expert's production vote (removed): round 1 / round 2 | 2 / 0 |
+| Items not in the 2026-10-27 pool (tallies from round 2's own pull, which left out both experts' votes): round 1 / round 2 (of which decoys) | 0 / 21 (21) |
 | Train rows whose round-3 target differs from the margin target of the pool tallies | 5 |
 
 <!-- END GENERATED: gold_counts -->
@@ -201,7 +202,9 @@ primary; P1 by type is in Slices.
 | SurfaceProblem | 65.5% (39.3%) | 38.2% (25.1%) | 29.8% (20.2%) | 23.1% (20.2%) | 9.9% (7.0%) | 6.7% (5.0%) |
 | Crosswalk | 49.0% (22.7%) | 22.5% (11.4%) | 20.2% (10.0%) | 14.0% (10.0%) | 10.2% (6.2%) | 6.9% (3.5%) |
 
-Cells: share of the type's AI Disagrees the rule gives any target (in brackets: an `incorrect` target). The rest is dropped. Exact counts over the whole pool, so no interval.
+Cells: share of the type's AI Disagrees the rule gives any target (in brackets: an `incorrect` target). The rest is dropped. Exact counts over the whole pool, so no interval. Tallies as pulled, expert votes included.
+
+Labels an expert voted on, or round 1's rater placed: 9,409 of 91,626 AI Disagrees (10.3%) and 3,427 of the 14,892 with a margin-`incorrect` target (23.0%); a lower bound, as the pool records no placement by the other expert. With every expert vote taken out of the tallies: `margin` covers 18.2%, `symmetric3` 10.7%, one-vote labels are 28.2% of the pool and 48.9% of what `majority` decides, ties 6.4%.
 
 <!-- END GENERATED: pool -->
 
@@ -229,6 +232,10 @@ Heterogeneity check (round 1's difference minus round 2's, resampled within roun
 
 Kept minus all rows of the margin rule (what applying the stricter rule changes in the share of `incorrect` targets the expert confirms; P1 rescaled by the dropped share): round 1 -3.3 pts [-20.1, +14.1]; round 2 +2.9 pts [-4.5, +10.5]; pooled +1.7 pts [-5.2, +8.6].
 
+Check, not pre-stated: kept minus dropped within label type (Mantel-Haenszel risk difference, label-level bootstrap; 5 of 5 types hold both groups) -0.5 pts [-12.6, +11.8]; within type x round (10 of 10 cells) -1.1 pts [-14.4, +11.5]. Each type trains its own model, so the pooled row's mix of types never reaches one; P1 by type is under Slices.
+
+The gain is kept minus dropped times the dropped share, which is 56.7% (85 of 150) in the gold set against 49.6% of the pool's margin-`incorrect` AI Disagrees: the gain is a gold-sample quantity.
+
 **P2. Confident-learning flag** (decided round-3 train rows, both target classes; outcome: the target differs from the expert; pooled row: primary):
 
 | Rows | flagged | unflagged | flagged minus unflagged [95%] | Fisher p | Recall | False alarms |
@@ -240,6 +247,8 @@ Kept minus all rows of the margin rule (what applying the stricter rule changes 
 Heterogeneity check (round 1's difference minus round 2's, resampled within round): not computable (a group in one round has 2 rows; it needs 5).
 
 Of the pooled P2's 13 flagged rows, 2 are from round 1 and 11 from round 2; with 2 flagged round-1 rows the rounds cannot be compared.
+
+Resampled within round x stratum instead of label-level (the sampling design; 2 and 9 strata): P1 +3.1 pts [-9.2, +15.1], P2 +14.7 pts [-9.0, +41.5].
 
 Descriptive twin of P1, `unanimous3` (same rows; pooled row: descriptive):
 
@@ -350,20 +359,22 @@ clipped bounds; both are gone.
 | `majority` | round 2 | 5/7 (71.4% [35.9, 91.8]) | 83/88 (94.3% [87.4, 97.5]) |
 | `majority` | pooled (sample rate; descriptive) | 7/12 (58.3% [32.0, 80.7]) | 129/137 (94.2% [88.9, 97.0]) |
 | `majority2` | round 1 | 2/5 (40.0% [11.8, 76.9]) | 29/31 (93.5% [79.3, 98.2]) |
-| `majority2` | round 2 | 3/3 (100.0% [43.8, 100.0]) | 41/45 (91.1% [79.3, 96.5]) |
+| `majority2` | round 2 | n 3 | 41/45 (91.1% [79.3, 96.5]) |
 | `majority2` | pooled (sample rate; descriptive) | 5/8 (62.5% [30.6, 86.3]) | 70/76 (92.1% [83.8, 96.3]) |
-| `symmetric2` | round 1 | 2/4 (50.0% [15.0, 85.0]) | 29/31 (93.5% [79.3, 98.2]) |
-| `symmetric2` | round 2 | 3/3 (100.0% [43.8, 100.0]) | 40/44 (90.9% [78.8, 96.4]) |
+| `symmetric2` | round 1 | n 4 | 29/31 (93.5% [79.3, 98.2]) |
+| `symmetric2` | round 2 | n 3 | 40/44 (90.9% [78.8, 96.4]) |
 | `symmetric2` | pooled (sample rate; descriptive) | 5/7 (71.4% [35.9, 91.8]) | 69/75 (92.0% [83.6, 96.3]) |
-| `margin` | round 1 | 2/4 (50.0% [15.0, 85.0]) | 16/18 (88.9% [67.2, 96.9]) |
-| `margin` | round 2 | 3/3 (100.0% [43.8, 100.0]) | 20/20 (100.0% [83.9, 100.0]) |
+| `margin` | round 1 | n 4 | 16/18 (88.9% [67.2, 96.9]) |
+| `margin` | round 2 | n 3 | 20/20 (100.0% [83.9, 100.0]) |
 | `margin` | pooled (sample rate; descriptive) | 5/7 (71.4% [35.9, 91.8]) | 36/38 (94.7% [82.7, 98.5]) |
-| `symmetric3` | round 1 | 1/2 (50.0% [9.5, 90.5]) | 16/18 (88.9% [67.2, 96.9]) |
-| `symmetric3` | round 2 | 2/2 (100.0% [34.2, 100.0]) | 20/20 (100.0% [83.9, 100.0]) |
-| `symmetric3` | pooled (sample rate; descriptive) | 3/4 (75.0% [30.1, 95.4]) | 36/38 (94.7% [82.7, 98.5]) |
-| `unanimous3` | round 1 | 1/1 (100.0% [20.7, 100.0]) | 10/11 (90.9% [62.3, 98.4]) |
-| `unanimous3` | round 2 | 0/0 | 14/14 (100.0% [78.5, 100.0]) |
-| `unanimous3` | pooled (sample rate; descriptive) | 1/1 (100.0% [20.7, 100.0]) | 24/25 (96.0% [80.5, 99.3]) |
+| `symmetric3` | round 1 | n 2 | 16/18 (88.9% [67.2, 96.9]) |
+| `symmetric3` | round 2 | n 2 | 20/20 (100.0% [83.9, 100.0]) |
+| `symmetric3` | pooled (sample rate; descriptive) | n 4 | 36/38 (94.7% [82.7, 98.5]) |
+| `unanimous3` | round 1 | n 1 | 10/11 (90.9% [62.3, 98.4]) |
+| `unanimous3` | round 2 | n 0 | 14/14 (100.0% [78.5, 100.0]) |
+| `unanimous3` | pooled (sample rate; descriptive) | n 1 | 24/25 (96.0% [80.5, 99.3]) |
+
+A cell under 5 items shows its size only.
 
 <!-- END GENERATED: rules -->
 
@@ -472,6 +483,16 @@ Below 20 items: 42 cells holding 306 items, not shown (no rate is read from them
 | 3 | n 17 | n 16 |  |
 | (none) | n 7 | n 8 |  |
 
+**P1 by type** (rounds pooled; a group under 20 items shows its size only)
+
+| Type | kept by `symmetric` | dropped | kept minus dropped (Fisher p) |
+|---|---|---|---|
+| CurbRamp | n 5 | 20/24 (83.3% [64.1, 93.3]) |  |
+| NoCurbRamp | 17/21 (81.0% [60.0, 92.3]) | n 12 |  |
+| Obstacle | n 14 | n 13 |  |
+| SurfaceProblem | n 9 | 13/22 (59.1% [38.7, 76.7]) |  |
+| Crosswalk | n 16 | n 14 |  |
+
 <!-- END GENERATED: slices -->
 
 Among the 16 cells that reach 20, the AI's Disagrees are least often right where the feature is present but
@@ -497,7 +518,7 @@ result.
 | P2 | with meeting verdicts | n/a (train targets) | 4/13 (30.8% [12.7, 57.6]) | 19/118 (16.1% [10.6, 23.8]) | +14.7 pts [-10.1, +43.2] |
 | P1 | with meeting verdicts | tallies as pulled | 55/66 (83.3% [72.6, 90.4]) | 69/86 (80.2% [70.6, 87.3]) | +3.1 pts [-9.4, +15.9] |
 
-Pooled rows. Masked-only gold leaves out the decided items reached in the round-2 meeting; `expert votes removed` takes a rater's earlier production vote out of the pool tallies.
+Pooled rows. Masked-only gold leaves out the decided items reached in the round-2 meeting; `expert votes removed` takes the other expert's production vote (round 1's rater's were left out at the draw) out of the pool tallies.
 
 <!-- END GENERATED: sensitivity -->
 
@@ -563,9 +584,10 @@ the same point with a different resampling stream.
 | round-2 recount / design | `5e9a18e193b970ad79809b4ce034001a79009fc75a11454a964a846e74c9de47` / `499fb9dfe5d976651f08d932d9a0c47477386e119080ae2107c91fc5c7404e57` |
 | round-3 splits, noisy targets and variant splits (sha256 of the sorted per-file list) | `761fb89088deea286859cfbe7c600a92f2894ed4e5fb5bd2aebcd9cf66e1dcff` (30 files) |
 | verdicts.csv (private) | `e17a408a5db6c49dbe7e7ee2deef83c230a84068f383a32be033f5af6382e4f1` |
-| code | commit `0f1a324698473d632b1ce35e01e51f36d714f769`; Python 3.10.19, pandas 2.3.3, numpy 2.2.6 |
+| cityparams.conf (deployment ids and schemas for the privacy check) | `eed92cfd7658762f981c082f135fa1474041d688c7b3ef63f21278263026a899` |
+| code | commit `b2a22dedf17cb33eb96999a9f6f73815691b6f44`; Python 3.11.15, pandas 2.3.1, numpy 2.4.6 |
 | intervals | 2000 label-level resamples (AUC: 1,000 panorama resamples), seed 0 |
-| public-deployment list | live `/v3/api/cities`, read 2026-11-13T15:39:45+00:00 (46 public) |
+| public-deployment list | live `/v3/api/cities`, read 2026-11-13T15:46:33+00:00 (saved response; API down on 2026-11-14) (46 public) |
 
 <!-- END GENERATED: provenance -->
 

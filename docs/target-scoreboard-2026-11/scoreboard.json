@@ -1689,6 +1689,11 @@
   "n_items": 800,
   "n_train_rows": 131,
   "n_wrong_targets": 23,
+  "not_in_pool": {
+   "1": 0,
+   "2": 21
+  },
+  "not_in_pool_decoys": 21,
   "train_rows_by_round": {
    "1": 37,
    "2": 94
@@ -1926,6 +1931,30 @@
    }
   }
  ],
+ "pool_expert": {
+  "margin_incorrect": 14892,
+  "n": 91626,
+  "removed": {
+   "classes": {
+    "1 vote": 25804,
+    "light": 10300,
+    "margin_correct": 2951,
+    "margin_incorrect": 13759,
+    "no decisive vote": 32908,
+    "tie": 5904
+   },
+   "rules": {
+    "majority": 52814,
+    "majority2": 27010,
+    "margin": 16710,
+    "symmetric2": 21898,
+    "symmetric3": 9820,
+    "unanimous3": 5320
+   }
+  },
+  "touched": 9409,
+  "touched_margin_incorrect": 3427
+ },
  "primary": {
   "P1": {
    "1": {
@@ -2007,6 +2036,26 @@
     },
     "hi": 0.15909333721833718,
     "lo": -0.0937675536438096
+   }
+  },
+  "P1_stratified": {
+   "type": {
+    "diff": -0.0052256468634131505,
+    "hi": 0.11773661277391652,
+    "lo": -0.12644064253107073,
+    "n": 150,
+    "n_used": 150,
+    "strata": 5,
+    "strata_used": 5
+   },
+   "type_round": {
+    "diff": -0.011118249855664307,
+    "hi": 0.11471630765087962,
+    "lo": -0.14412825060393342,
+    "n": 150,
+    "n_used": 150,
+    "strata": 10,
+    "strata_used": 10
    }
   },
   "P1_unanimous3": {
@@ -2221,6 +2270,20 @@
     }
    }
   },
+  "design_boot": {
+   "P1": {
+    "diff": 0.03076923076923077,
+    "hi": 0.15105314268702963,
+    "lo": -0.09183952696826465,
+    "strata": 2
+   },
+   "P2": {
+    "diff": 0.14667535853976535,
+    "hi": 0.41532401422107273,
+    "lo": -0.09014118457300276,
+    "strata": 9
+   }
+  },
   "roles": {
    "P1": "primary",
    "P1_unanimous3": "descriptive",
@@ -2228,17 +2291,18 @@
   }
  },
  "provenance": {
-  "cities_read_at": "2026-11-13T15:39:45+00:00",
-  "git_commit": "0f1a324698473d632b1ce35e01e51f36d714f769",
+  "cities_read_at": "2026-11-13T15:46:33+00:00 (saved response; API down on 2026-11-14)",
+  "cityparams_sha256": "eed92cfd7658762f981c082f135fa1474041d688c7b3ef63f21278263026a899",
+  "git_commit": "b2a22dedf17cb33eb96999a9f6f73815691b6f44",
   "gold_matches_pin": true,
   "gold_sha256": "2b472651cb01011a8640b86eb4103e1794ab482186ba3a3471e7d019273edcae",
   "n_boot": 2000,
   "n_public": 46,
   "n_split_files": 30,
-  "numpy": "2.2.6",
-  "pandas": "2.3.3",
+  "numpy": "2.4.6",
+  "pandas": "2.3.1",
   "pool_sha256": "dd5a6d363ce7f6c05ac6faf250f2526090bd2199541e6164b76029cd35483d09",
-  "python": "3.10.19",
+  "python": "3.11.15",
   "r1_manifest_sha256": "d5c2011386c253283e27fdbd77931a52f7f233cfd092b7343f9cbcb617bc055d",
   "r2_design_sha256": "499fb9dfe5d976651f08d932d9a0c47477386e119080ae2107c91fc5c7404e57",
   "r2_recount_sha256": "5e9a18e193b970ad79809b4ce034001a79009fc75a11454a964a846e74c9de47",
@@ -2807,11 +2871,11 @@
        "rate": 0.8888888888888888
       },
       "incorrect": {
-       "hi": 0.8499642911798285,
-       "k": 2,
-       "lo": 0.15003570882017145,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 4,
-       "rate": 0.5
+       "rate": null
       }
      },
      "n": 92,
@@ -2831,11 +2895,11 @@
        "rate": 0.9354838709677419
       },
       "incorrect": {
-       "hi": 0.8499642911798285,
-       "k": 2,
-       "lo": 0.15003570882017145,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 4,
-       "rate": 0.5
+       "rate": null
       }
      },
      "symmetric3": {
@@ -2854,11 +2918,11 @@
        "rate": 0.8888888888888888
       },
       "incorrect": {
-       "hi": 0.9054713451991339,
-       "k": 1,
-       "lo": 0.09452865480086611,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 2,
-       "rate": 0.5
+       "rate": null
       }
      },
      "unanimous3": {
@@ -2877,11 +2941,11 @@
        "rate": 0.9090909090909091
       },
       "incorrect": {
-       "hi": 1.0,
-       "k": 1,
-       "lo": 0.20654329147389294,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 1,
-       "rate": 1.0
+       "rate": null
       }
      }
     },
@@ -2932,11 +2996,11 @@
        "rate": 0.9111111111111111
       },
       "incorrect": {
-       "hi": 1.0,
-       "k": 3,
-       "lo": 0.4384939195509822,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 3,
-       "rate": 1.0
+       "rate": null
       }
      },
      "margin": {
@@ -2955,11 +3019,11 @@
        "rate": 1.0
       },
       "incorrect": {
-       "hi": 1.0,
-       "k": 3,
-       "lo": 0.4384939195509822,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 3,
-       "rate": 1.0
+       "rate": null
       }
      },
      "n": 151,
@@ -2979,11 +3043,11 @@
        "rate": 0.9090909090909091
       },
       "incorrect": {
-       "hi": 1.0,
-       "k": 3,
-       "lo": 0.4384939195509822,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 3,
-       "rate": 1.0
+       "rate": null
       }
      },
      "symmetric3": {
@@ -3002,11 +3066,11 @@
        "rate": 1.0
       },
       "incorrect": {
-       "hi": 1.0,
-       "k": 2,
-       "lo": 0.3423719528896193,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 2,
-       "rate": 1.0
+       "rate": null
       }
      },
      "unanimous3": {
@@ -3026,7 +3090,7 @@
       },
       "incorrect": {
        "hi": null,
-       "k": 0,
+       "k": null,
        "lo": null,
        "n": 0,
        "rate": null
@@ -3150,11 +3214,11 @@
        "rate": 0.9473684210526315
       },
       "incorrect": {
-       "hi": 0.9544139373553637,
-       "k": 3,
-       "lo": 0.30063605244263664,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 4,
-       "rate": 0.75
+       "rate": null
       }
      },
      "unanimous3": {
@@ -3173,11 +3237,11 @@
        "rate": 0.96
       },
       "incorrect": {
-       "hi": 1.0,
-       "k": 1,
-       "lo": 0.20654329147389294,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 1,
-       "rate": 1.0
+       "rate": null
       }
      }
     }
@@ -3805,7 +3869,7 @@
    },
    {
     "hi": null,
-    "k": 3,
+    "k": null,
     "label_type": "CurbRamp",
     "lo": null,
     "n": 8,
@@ -3815,7 +3879,7 @@
    },
    {
     "hi": null,
-    "k": 4,
+    "k": null,
     "label_type": "CurbRamp",
     "lo": null,
     "n": 5,
@@ -3855,7 +3919,7 @@
    },
    {
     "hi": null,
-    "k": 17,
+    "k": null,
     "label_type": "NoCurbRamp",
     "lo": null,
     "n": 19,
@@ -3875,7 +3939,7 @@
    },
    {
     "hi": null,
-    "k": 13,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 17,
@@ -3885,7 +3949,7 @@
    },
    {
     "hi": null,
-    "k": 15,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 18,
@@ -3895,7 +3959,7 @@
    },
    {
     "hi": null,
-    "k": 5,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 6,
@@ -3915,7 +3979,7 @@
    },
    {
     "hi": null,
-    "k": 13,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 18,
@@ -3925,7 +3989,7 @@
    },
    {
     "hi": null,
-    "k": 3,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 10,
@@ -3935,7 +3999,7 @@
    },
    {
     "hi": null,
-    "k": 4,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 6,
@@ -3975,7 +4039,7 @@
    },
    {
     "hi": null,
-    "k": 9,
+    "k": null,
     "label_type": "Crosswalk",
     "lo": null,
     "n": 13,
@@ -3997,7 +4061,7 @@
    },
    {
     "hi": null,
-    "k": 9,
+    "k": null,
     "label_type": "CurbRamp",
     "lo": null,
     "n": 13,
@@ -4007,7 +4071,7 @@
    },
    {
     "hi": null,
-    "k": 3,
+    "k": null,
     "label_type": "CurbRamp",
     "lo": null,
     "n": 10,
@@ -4017,7 +4081,7 @@
    },
    {
     "hi": null,
-    "k": 2,
+    "k": null,
     "label_type": "CurbRamp",
     "lo": null,
     "n": 10,
@@ -4027,7 +4091,7 @@
    },
    {
     "hi": null,
-    "k": 1,
+    "k": null,
     "label_type": "CurbRamp",
     "lo": null,
     "n": 5,
@@ -4037,7 +4101,7 @@
    },
    {
     "hi": null,
-    "k": 1,
+    "k": null,
     "label_type": "CurbRamp",
     "lo": null,
     "n": 4,
@@ -4047,7 +4111,7 @@
    },
    {
     "hi": null,
-    "k": 1,
+    "k": null,
     "label_type": "CurbRamp",
     "lo": null,
     "n": 3,
@@ -4077,7 +4141,7 @@
    },
    {
     "hi": null,
-    "k": 10,
+    "k": null,
     "label_type": "NoCurbRamp",
     "lo": null,
     "n": 18,
@@ -4087,7 +4151,7 @@
    },
    {
     "hi": null,
-    "k": 9,
+    "k": null,
     "label_type": "NoCurbRamp",
     "lo": null,
     "n": 11,
@@ -4107,7 +4171,7 @@
    },
    {
     "hi": null,
-    "k": 18,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 19,
@@ -4117,7 +4181,7 @@
    },
    {
     "hi": null,
-    "k": 14,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 17,
@@ -4127,7 +4191,7 @@
    },
    {
     "hi": null,
-    "k": 7,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 12,
@@ -4137,7 +4201,7 @@
    },
    {
     "hi": null,
-    "k": 8,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 9,
@@ -4147,7 +4211,7 @@
    },
    {
     "hi": null,
-    "k": 6,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 7,
@@ -4157,7 +4221,7 @@
    },
    {
     "hi": null,
-    "k": 4,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 4,
@@ -4167,7 +4231,7 @@
    },
    {
     "hi": null,
-    "k": 3,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 3,
@@ -4177,7 +4241,7 @@
    },
    {
     "hi": null,
-    "k": 1,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 3,
@@ -4187,7 +4251,7 @@
    },
    {
     "hi": null,
-    "k": 2,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 3,
@@ -4197,7 +4261,7 @@
    },
    {
     "hi": null,
-    "k": 2,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 2,
@@ -4207,7 +4271,7 @@
    },
    {
     "hi": null,
-    "k": 1,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 1,
@@ -4217,7 +4281,7 @@
    },
    {
     "hi": null,
-    "k": 1,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 1,
@@ -4227,7 +4291,7 @@
    },
    {
     "hi": null,
-    "k": 1,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 1,
@@ -4237,7 +4301,7 @@
    },
    {
     "hi": null,
-    "k": 0,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 1,
@@ -4247,7 +4311,7 @@
    },
    {
     "hi": null,
-    "k": 9,
+    "k": null,
     "label_type": "Obstacle",
     "lo": null,
     "n": 10,
@@ -4257,7 +4321,7 @@
    },
    {
     "hi": null,
-    "k": 6,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 19,
@@ -4267,7 +4331,7 @@
    },
    {
     "hi": null,
-    "k": 7,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 17,
@@ -4277,7 +4341,7 @@
    },
    {
     "hi": null,
-    "k": 11,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 17,
@@ -4287,7 +4351,7 @@
    },
    {
     "hi": null,
-    "k": 4,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 9,
@@ -4297,7 +4361,7 @@
    },
    {
     "hi": null,
-    "k": 2,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 8,
@@ -4307,7 +4371,7 @@
    },
    {
     "hi": null,
-    "k": 1,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 6,
@@ -4317,7 +4381,7 @@
    },
    {
     "hi": null,
-    "k": 4,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 6,
@@ -4327,7 +4391,7 @@
    },
    {
     "hi": null,
-    "k": 0,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 3,
@@ -4337,7 +4401,7 @@
    },
    {
     "hi": null,
-    "k": 0,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 2,
@@ -4347,7 +4411,7 @@
    },
    {
     "hi": null,
-    "k": 0,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 2,
@@ -4357,7 +4421,7 @@
    },
    {
     "hi": null,
-    "k": 1,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 2,
@@ -4367,7 +4431,7 @@
    },
    {
     "hi": null,
-    "k": 1,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 1,
@@ -4377,7 +4441,7 @@
    },
    {
     "hi": null,
-    "k": 8,
+    "k": null,
     "label_type": "SurfaceProblem",
     "lo": null,
     "n": 8,
@@ -4397,7 +4461,7 @@
    },
    {
     "hi": null,
-    "k": 4,
+    "k": null,
     "label_type": "Crosswalk",
     "lo": null,
     "n": 10,
@@ -4407,7 +4471,7 @@
    },
    {
     "hi": null,
-    "k": 3,
+    "k": null,
     "label_type": "Crosswalk",
     "lo": null,
     "n": 9,
@@ -4417,7 +4481,7 @@
    },
    {
     "hi": null,
-    "k": 4,
+    "k": null,
     "label_type": "Crosswalk",
     "lo": null,
     "n": 9,
@@ -4427,7 +4491,7 @@
    },
    {
     "hi": null,
-    "k": 2,
+    "k": null,
     "label_type": "Crosswalk",
     "lo": null,
     "n": 6,
@@ -4437,7 +4501,7 @@
    },
    {
     "hi": null,
-    "k": 1,
+    "k": null,
     "label_type": "Crosswalk",
     "lo": null,
     "n": 4,
@@ -4447,7 +4511,7 @@
    },
    {
     "hi": null,
-    "k": 0,
+    "k": null,
     "label_type": "Crosswalk",
     "lo": null,
     "n": 1,
@@ -4499,7 +4563,7 @@
     "fisher_p": null,
     "kept": {
      "hi": null,
-     "k": 7,
+     "k": null,
      "lo": null,
      "n": 12,
      "rate": null
@@ -4510,7 +4574,7 @@
     "diff": null,
     "dropped": {
      "hi": null,
-     "k": 13,
+     "k": null,
      "lo": null,
      "n": 16,
      "rate": null
@@ -4518,7 +4582,7 @@
     "fisher_p": null,
     "kept": {
      "hi": null,
-     "k": 14,
+     "k": null,
      "lo": null,
      "n": 17,
      "rate": null
@@ -4529,7 +4593,7 @@
     "diff": null,
     "dropped": {
      "hi": null,
-     "k": 7,
+     "k": null,
      "lo": null,
      "n": 8,
      "rate": null
@@ -4537,12 +4601,109 @@
     "fisher_p": null,
     "kept": {
      "hi": null,
-     "k": 6,
+     "k": null,
      "lo": null,
      "n": 7,
      "rate": null
     },
     "slice": "(none)"
+   }
+  ],
+  "p1_type": [
+   {
+    "diff": null,
+    "dropped": {
+     "hi": 0.9332143199927108,
+     "k": 20,
+     "lo": 0.6414652961213058,
+     "n": 24,
+     "rate": 0.8333333333333334
+    },
+    "fisher_p": null,
+    "kept": {
+     "hi": null,
+     "k": null,
+     "lo": null,
+     "n": 5,
+     "rate": null
+    },
+    "slice": "CurbRamp"
+   },
+   {
+    "diff": null,
+    "dropped": {
+     "hi": null,
+     "k": null,
+     "lo": null,
+     "n": 12,
+     "rate": null
+    },
+    "fisher_p": null,
+    "kept": {
+     "hi": 0.923325593848227,
+     "k": 17,
+     "lo": 0.599990134607267,
+     "n": 21,
+     "rate": 0.8095238095238095
+    },
+    "slice": "NoCurbRamp"
+   },
+   {
+    "diff": null,
+    "dropped": {
+     "hi": null,
+     "k": null,
+     "lo": null,
+     "n": 13,
+     "rate": null
+    },
+    "fisher_p": null,
+    "kept": {
+     "hi": null,
+     "k": null,
+     "lo": null,
+     "n": 14,
+     "rate": null
+    },
+    "slice": "Obstacle"
+   },
+   {
+    "diff": null,
+    "dropped": {
+     "hi": 0.7674444033117963,
+     "k": 13,
+     "lo": 0.3873447738289381,
+     "n": 22,
+     "rate": 0.5909090909090909
+    },
+    "fisher_p": null,
+    "kept": {
+     "hi": null,
+     "k": null,
+     "lo": null,
+     "n": 9,
+     "rate": null
+    },
+    "slice": "SurfaceProblem"
+   },
+   {
+    "diff": null,
+    "dropped": {
+     "hi": null,
+     "k": null,
+     "lo": null,
+     "n": 14,
+     "rate": null
+    },
+    "fisher_p": null,
+    "kept": {
+     "hi": null,
+     "k": null,
+     "lo": null,
+     "n": 16,
+     "rate": null
+    },
+    "slice": "Crosswalk"
    }
   ]
  },
