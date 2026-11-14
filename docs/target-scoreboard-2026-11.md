@@ -8,7 +8,9 @@ rounds 1 and 2 ([#66](https://github.com/ProjectSidewalk/sidewalk-validator-ai/p
 [#78](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/78)). Part of
 [#74](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/74).
 
-**Status:** run 2026-11-13 on the Mac from files on disk (`analysis/target_scoreboard.py`). The VLM adjudicator of
+**Status:** run 2026-11-13 on the Mac from files on disk (`analysis/target_scoreboard.py`), rerun 2026-11-14 for
+the third review round (the within-type P1 check and the expert-touched share added; no earlier number changed).
+The VLM adjudicator of
 [#77](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/77) is not in this scoreboard: it has not
 been scored yet (that needs klone), and `adjudicator.py agree` already scores it against the same gold set with a
 paired bar. Its rows join this scoreboard in the PR that brings its klone scores back.
@@ -20,11 +22,14 @@ check are in Results.
 
 - **`symmetric` against the training margin rule (P1).** On the AI Disagrees whose margin target is `incorrect`,
   the expert says incorrect on 54/65 rows `symmetric` keeps and 68/85 rows it drops: kept minus dropped
-  +3.1 pts [-9.4, +15.9]. Applying the rule (keeping the 65, dropping the 85) changes the share of `incorrect`
-  targets the expert confirms from 122/150 to 54/65: +1.7 pts [-5.2, +8.6]. The data are compatible with a gain of
-  up to about 9 points, with no change, and with a loss of about 5. The dropped two-vote Disagrees are not mostly
-  wrong: the expert confirms 68/85, 95% lower bound 70.3% (round 1 alone 22/29, lower bound 57.9%). This is not
-  evidence that stricter rules do not help; it is a difference this gold set is too small to resolve.
+  +3.1 pts [-9.4, +15.9], unresolved. The positive sign comes from the mix of label types, not from inside any
+  type: compared within type (a check, not pre-stated), kept minus dropped is -0.5 pts [-12.6, +11.8], and
+  -1.1 pts [-14.4, +11.5] within type x round. Each type trains its own model, so the pooled point estimate, and
+  the change from applying the rule (122/150 to 54/65 confirmed, +1.7 pts [-5.2, +8.6], a gold-sample quantity),
+  say nothing about a gain for any one model. Pooled over types, the dropped two-vote Disagrees are not mostly
+  wrong: the expert confirms 68/85, 95% lower bound 70.3% (round 1 alone 22/29, lower bound 57.9%). That does not
+  hold type by type: SurfaceProblem's dropped rows are confirmed 13/22, lower bound 38.7%. This is not evidence that
+  stricter rules do not help; it is a difference this gold set is too small to resolve.
 - **Confident learning (P2).** On the 131 decided round-3 train rows, 4/13 flagged rows have a wrong target against
   19/118 unflagged: +14.7 pts [-10.1, +43.2], Fisher p 0.242. The flags catch 4 of the 23 wrong targets. Flipping
   the flagged targets unread pays off only if more than half of them are wrong. The point estimate is well under
@@ -83,7 +88,7 @@ outcomes as below. The implementer's first run of the module came before this te
 rule is stated only in terms of the intervals, not of any threshold chosen after seeing them.
 
 - **P1. `symmetric` kept against dropped.** Rows: decided AI Disagrees whose margin target (from the 2026-10-27
-  pool tallies, a rater's earlier production vote removed) is `incorrect`. Groups: the rows `symmetric` keeps (net
+  pool tallies, the other expert's production vote removed) is `incorrect`. Groups: the rows `symmetric` keeps (net
   Disagree >= 3) and the rows it drops (net Disagree 2). Outcome: the expert says incorrect. Statistic: kept minus
   dropped, 95% percentile interval from 2,000 label-level resamples, and the two-sided Fisher exact p.
 - **P2. Confident-learning flag.** Rows: decided gold items that are round-3 train rows. Groups: flagged by
@@ -104,18 +109,29 @@ each end, never as "no effect". No correction for multiplicity: there are two pr
 labelled descriptive. A difference interval is not printed when either group has fewer than 5 items.
 
 **The bootstrap** resamples labels iid over the pooled set, ignoring round and stratum. That is slightly
-conservative here: a bootstrap stratified by round x stratum gives P1 about [-9.0, +15.4] and P2 about
-[-10.2, +41.4], against [-9.4, +15.9] and [-10.1, +43.2]. Panorama clustering does not matter: P1's 150 rows sit on
+conservative here: resampling within round x stratum (the line under the P2 table) gives P1 [-9.2, +15.1] and P2
+[-9.0, +41.5], against [-9.4, +15.9] and [-10.1, +43.2]. Panorama clustering does not matter: P1's 150 rows sit on
 149 panoramas and P2's 131 on 130.
+
+**A check added after the review: P1 within label type.** The pooled P1 compares rows of five label types whose
+confirmation rates and dropped shares differ, and each type trains its own model. Under the P1 table a
+Mantel-Haenszel risk difference (each type's kept-minus-dropped difference weighted by `n_kept * n_dropped / n`)
+compares kept with dropped only inside a type, and inside type x round, with a label-level bootstrap interval. It
+was added in the third review round, after the numbers were known, so it is a check on the primary, not a second
+primary; P1 by type is in Slices.
 
 ### Choices
 
 - **Masked-only gold leads.** The 10 decided round-2 verdicts reached in the meeting (unmasked to each other's
   votes, `expert_source == r2_consensus`) are left out of every headline; the sensitivity table puts them back.
   None of them is a train row, so P2 is the same either way.
-- **A rater's own earlier vote is not crowd evidence.** Round 1 excluded labels one rater had voted on; the pool
-  records the other rater's vote as a value with no id (`expert2`), and it is subtracted from the tallies of the
-  items that carry one. Round 2 excluded both raters' labels and votes.
+- **An expert's production vote is not crowd evidence.** Round 1 had one rater, and its draw left out the labels
+  that rater had voted on or placed. The pool still records the other expert's production vote as a value with no
+  id (`expert2`; that expert did not rate round 1), and it is subtracted from the tallies of the 2 round-1 items
+  that carry one. The rules are scored as crowd rules against an expert, and round 2's draw left out labels either
+  expert had voted on or placed, so the subtraction makes the two rounds' tallies alike. It moves one row of P1
+  (Sensitivity). The 21 round-2 decoys missing from the 2026-10-27 pool keep the tallies of round 2's own pull,
+  which, like every round-2 item, carries no expert vote.
 - **Coverage comes from the pool.** The strata were drawn on the same tallies the rules read, so the share of gold
   items a rule decides restates the sampling design. Coverage and drop shares are exact counts over every AI
   Disagree of `relabel_pool.csv`; the gold set is used only for how often a verdict is right.
@@ -143,13 +159,23 @@ conservative here: a bootstrap stratified by round x stratum gives P1 about [-9.
   `majority` and `majority2` differ; the ties (6.6%) are decided by neither. Issue
   [#106](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/106) proposes the stratum that would cover
   them.
+- Silent on labels an expert voted on or placed. Round 1's draw left out the labels its rater had voted on or
+  placed, and round 2's those of both experts, so the gold set holds none of them except 2 round-1 items with the
+  other expert's vote. They are 10.3% of the pool's AI Disagrees and 23.0% of those with a margin-`incorrect`
+  target (a lower bound; the line under the coverage table), so P1 is silent on about a fifth of its own
+  population. The coverage table counts the tallies as pulled, expert votes included; with those votes removed,
+  `margin` covers 18.2% of the pool rather than 19.8%, `symmetric3` 10.7% rather than 11.7%, and one-vote labels
+  are 48.9% of what `majority` decides rather than 47.0%.
 - Seattle and Chicago: every round-2 item is from one of them; round 1 spreads over 28 deployments. Per-deployment
   rows are not shown (private deployments are pooled everywhere).
 - A test of the target only. Whether a stricter rule makes a better *training set* (with the class rebalanced) is
   the question of [`confident-learning-2026-10.md`](confident-learning-2026-10.md), Recommendation 2.
 - Three tally sources: the 2026-10-27 pool (view of the rules), the 2026-10-19 manifests (round-3 targets), and
-  for 21 round-2 decoys missing from that pool, the round-2 key. 5 train rows have a round-3 target that differs
-  from the margin target of the pool tallies.
+  for 21 round-2 decoys missing from that pool, the round-2 key (round 2's own pull). 5 train rows have a round-3
+  target that differs from the margin target of the pool tallies.
+- A gold-sample mix. The strata oversample some types and vote patterns, so a pooled rate or difference carries
+  the sample's mix: P1's dropped share is 56.7% in the gold set against 49.6% of the pool's margin-`incorrect` AI
+  Disagrees (the line under the P1 table), and its types are not in the pool's proportions.
 
 ## Results
 
@@ -183,7 +209,9 @@ A third of the pool has no decisive vote and is decided by no vote rule; the gol
 on those. One-vote labels (28.0%) are what separates `majority` from `majority2`; ties (6.6%) are decided by
 neither. No gold round has sampled either. `symmetric` gives a target to 11.7% of the AI Disagrees against 19.8%
 for the margin rule; nearly all of the difference is two-vote Disagrees (16.3% of the pool get an `incorrect` margin
-target, 8.2% under `symmetric`).
+target, 8.2% under `symmetric`). These shares count the tallies as pulled, expert votes included; the line under the
+tables gives the share of labels an expert touched, which no gold round samples, and the shares with expert votes
+removed.
 
 ### The primary contrasts
 
@@ -229,15 +257,21 @@ Kept minus all rows of the margin rule (what applying the stricter rule changes 
 
 **P1.** Pooled (the primary estimate), kept 54/65 against dropped 68/85: kept minus dropped +3.1 pts
 [-9.4, +15.9]. Neither round's interval excludes 0 (round 1 -5.3, round 2 +5.4), and the heterogeneity check
-(-10.6 pts [-40.7, +21.2]) is too wide to say whether the rounds agree. Kept minus dropped is not the gain from the
-rule: applying `symmetric` keeps the 65 rows and drops the 85, which moves the expert-confirmed share of the
-margin rule's `incorrect` targets from 122/150 to 54/65, +1.7 pts [-5.2, +8.6] (kept minus all rows, the line under
-the table). What the data rule out: that the two-vote Disagrees `symmetric` drops are mostly wrong targets (the
-expert confirms 68/85, Wilson lower bound 70.3%; round 1 alone 57.9%), and a gain from applying the rule larger
-than about 9 points. What they cannot rule out: any gain from 0 to about 9 points, or a loss of up to about 5. At
-200 rows per group a 10-point kept-minus-dropped difference would be detected with about 80% power at 80% against
-90%, and about 70% at 75% against 85%; this set has 65 and 85. The `unanimous3` twin's interval also spans 0
-(+0.1 pts [-14.5, +13.2]).
+(-10.6 pts [-40.7, +21.2]) is too wide to say whether the rounds agree. The positive sign of the pooled point is a
+composition effect: SurfaceProblem, the type whose margin-`incorrect` rows the expert confirms least often, has 22
+of its 31 rows in the dropped group, so it pulls the dropped share down. Within type (the check under the table,
+not pre-stated), kept minus dropped is -0.5 pts [-12.6, +11.8], and -1.1 pts [-14.4, +11.5] within type x round.
+Kept minus dropped is not the gain from the rule: applying `symmetric` keeps the 65 rows and drops the 85, which
+moves the expert-confirmed share of the margin rule's `incorrect` targets from 122/150 to 54/65, +1.7 pts
+[-5.2, +8.6] (kept minus all rows, the line under the table). That gain is P1 times the dropped share, which is
+56.7% in the gold set against 49.6% in the pool, so it is a gold-sample quantity, and it carries the same mix of
+types. What the data rule out: that the two-vote Disagrees `symmetric` drops are mostly wrong targets, pooled over
+types (the expert confirms 68/85, Wilson lower bound 70.3%; round 1 alone 57.9%), but not for SurfaceProblem
+(13/22, lower bound 38.7%); and a pooled gain from applying the rule larger than about 9 points. What they cannot
+rule out: a pooled gain from 0 to about 9 points or a loss of up to about 5, and within type a difference from
+about -13 to +12 points. Neither the pooled point nor the gain should be quoted as a gain for a model without the
+within-type row. At 200 rows per group a 10-point kept-minus-dropped difference would be detected with about 80%
+power at 80% against 90%, and about 70% at 75% against 85%; this set has 65 and 85. The `unanimous3` twin's interval also spans 0 (+0.1 pts [-14.5, +13.2]).
 
 **P2.** Pooled (the primary estimate), flagged 4/13 against unflagged 19/118, +14.7 pts [-10.1, +43.2], Fisher p
 0.242. Round 1 has 2 flagged rows, so no round-1 interval and no heterogeneity check, and the pooled P2 is
@@ -250,7 +284,8 @@ at the flags is a judgement on the point estimate. If the true share is near 31%
 in a round that states this test beforehand (not added to these 13), give about an 80% chance of settling it
 (Wilson's upper bound under 50%); 30 give about even odds (55%), and the chance does not rise steadily with n
 because the bound moves in steps. At this gold set's flag rate (13 of 131) that is about 500 rated train rows, or
-fewer from a round that oversamples flags. What the data also cannot rule out: that
+fewer from a round that oversamples flags. The plan is sensitive to the true share: at 50 rows the chance of
+settling is about 0.97 if it is 25%, 0.62 if it is 35% and 0.34 if it is 40%. What the data also cannot rule out: that
 flagged rows are enriched for wrong targets, which the point estimate suggests and the interval does not settle.
 
 ### Population-weighted P1, each round on its own
@@ -467,8 +502,8 @@ Pooled rows. Masked-only gold leaves out the decided items reached in the round-
 <!-- END GENERATED: sensitivity -->
 
 Neither choice moves a primary: putting the 10 meeting verdicts back changes P1 by 0.2 points and P2 not at all,
-and leaving the rater's earlier vote in the tallies adds one row to P1's dropped group (with the vote taken out,
-that item has a single Disagree and no margin target).
+and leaving the other expert's production vote in the tallies adds one row to P1's dropped group (with the vote
+taken out, that item has a single Disagree and no margin target).
 
 ### Cross-check against the numbers computed by hand
 
@@ -491,8 +526,10 @@ the same point with a different resampling stream.
 ## What this means
 
 - **[#75](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/75), the stricter rules.** No
-  target-accuracy reason to adopt or reject them: P1 cannot separate them from the margin rule, and the gain from
-  applying `symmetric` is +1.7 pts [-5.2, +8.6]. The training-set result already argues against filtering with them
+  target-accuracy reason to adopt or reject them: P1 cannot separate them from the margin rule, pooled (+3.1 pts) or
+  within type (-0.5 pts), and the gain from applying `symmetric` on this gold sample's mix is +1.7 pts [-5.2, +8.6].
+  Pooled, the two-vote Disagrees it drops are mostly right; for SurfaceProblem that is not established (13/22).
+  The training-set result already argues against filtering with them
   without rebalancing ([`confident-learning-2026-10.md`](confident-learning-2026-10.md), Recommendation 2). Settling
   the target question needs about three times the margin-`incorrect` rows of rounds 1 + 2 (about 200 per group for
   70 to 80% power against a 10-point kept-minus-dropped difference).
@@ -534,7 +571,9 @@ the same point with a different resampling stream.
 
 The per-label verdicts (`verdicts.csv`), `run.json` (argv, every input path and sha256, the public-deployment list
 used) and a copy of `scoreboard.json` are in `~/Data/sidewalk-validator-ai-target-scoreboard-2026-11/`, outside the
-repo.
+repo. The 2026-11-14 rerun could not read the cities API (the servers were down); its privacy check used the
+`/v3/api/cities` response saved on 2026-11-13, the same 46 public deployments as the first run, and the
+provenance row gives that read time.
 
 ## Reproducing
 

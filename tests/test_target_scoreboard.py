@@ -448,7 +448,7 @@ def test_slice_rows_blanks_thin_cells():
     s = ts.slice_rows(g, train, min_n=3)
     sev = {r["slice"]: r for r in s["ai_precision_severity"]}
     assert sev["1"]["rate"] == pytest.approx(0.75) and sev["1"]["train"] == 2
-    assert sev["2"]["rate"] is None and (sev["2"]["k"], sev["2"]["n"]) == (0, 2) and sev["2"]["lo"] is None
+    assert sev["2"]["rate"] is None and (sev["2"]["k"], sev["2"]["n"]) == (None, 2) and sev["2"]["lo"] is None
     tag = {r["slice"]: r for r in s["ai_precision_tag"]}
     assert tag["narrow"]["rate"] == pytest.approx(0.75) and tag["(none)"]["rate"] == pytest.approx(0.0)
     p1 = {r["slice"]: r for r in s["p1_severity"]}
@@ -557,6 +557,194 @@ def test_round_weights_never_carry_rater_names():
     assert w == {"1": {("voted_disagree", "CurbRamp"): 7}, "2": {("city-b", "margin_incorrect", "CurbRamp"): 9}}
 
 
+def test_vote_class_boundaries():
+    a = [0, 0, 1, 2, 3, 1, 1, 0, 5]
+    d = [0, 1, 1, 0, 0, 2, 3, 2, 2]
+    assert ts.vote_class(a, d).tolist() == ["no decisive vote", "1 vote", "tie", "light", "margin_correct", "light",
+                                            "margin_incorrect", "margin_incorrect", "margin_correct"]
+
+
+def test_contrast_fisher_p_is_of_the_a_b_table():
+    # A: 3 of 5 succeed, B: 17 of 100 (SciPy 0.046573...); a mis-ordered table gives another p
+    ok = [1] * 3 + [0] * 2 + [1] * 17 + [0] * 83
+    c = ts.contrast(ok, [True] * 5 + [False] * 100, n_boot=0)
+    assert c["fisher_p"] == pytest.approx(0.046573103912332964, rel=1e-9)
+    assert (c["a"]["k"], c["a"]["n"], c["b"]["k"], c["b"]["n"]) == (3, 5, 17, 100)
+    c2 = ts.contrast([1] * 4 + [0] * 9 + [1] * 19 + [0] * 99, [True] * 13 + [False] * 118, n_boot=0)
+    assert c2["fisher_p"] == pytest.approx(0.2424698856612656, rel=1e-9)
+
+
+def test_p2_rows_denominators(tmp_path):
+    g = _gold()
+    f = ts.build_frame(g, _pool(g), _split_root(tmp_path, g))
+    r = ts.p2_rows(f, "cl-drop", n_boot=0)["pooled"]
+    # 8 train rows: flagged b1 (wrong) and b7 (right); unflagged 6, of which a5 is wrong
+    assert (r["a"]["k"], r["a"]["n"], r["b"]["k"], r["b"]["n"]) == (1, 2, 1, 6)
+    assert (r["recall"]["k"], r["recall"]["n"]) == (1, 2)
+    assert (r["false_alarm"]["k"], r["false_alarm"]["n"]) == (1, 6)
+    assert (r["kept_accuracy"]["k"], r["kept_accuracy"]["n"]) == (5, 6)
+    # symmetric touches a1, a5 (wrong) and b6: the touched and the right-target counts differ, so each denominator
+    # is pinned to its own group
+    sy = ts.p2_rows(f, "symmetric", n_boot=0)["pooled"]
+    assert (sy["a"]["k"], sy["a"]["n"], sy["b"]["k"], sy["b"]["n"]) == (1, 3, 1, 5)
+    assert (sy["recall"]["k"], sy["recall"]["n"]) == (1, 2)
+    assert (sy["false_alarm"]["k"], sy["false_alarm"]["n"]) == (2, 6)
+    assert (sy["kept_accuracy"]["k"], sy["kept_accuracy"]["n"]) == (4, 5)
+    inc = ts.p2_rows(f, "cl-drop", "incorrect", n_boot=0)["pooled"]
+    assert inc["a"]["n"] + inc["b"]["n"] == int((f.train_row & (f.target == "incorrect")).sum()) == 6
+
+
+def test_score_primaries_are_masked_only(tmp_path):
+    g = _gold()
+    j, frame = ts.score(g, _pool(g), _split_root(tmp_path, g), _weights(), n_boot=0, seed=0)
+    p1 = j["primary"]["P1"]["pooled"]
+    masked = ts.p1_rows(frame[frame.masked], n_boot=0)["pooled"]
+    assert (p1["a"]["n"], p1["b"]["n"]) == (masked["a"]["n"], masked["b"]["n"]) == (3, 3)  # city-a:5 left out
+    full = j["sensitivity"]["with meeting verdicts|expert votes removed"]["pooled"]
+    assert (full["a"]["n"], full["b"]["n"]) == (3, 4)
+    assert j["gold_counts"]["not_in_pool"] == {"1": 0, "2": 0}
+
+
+def test_build_frame_refuses_a_round_1_item_missing_from_the_pool(tmp_path):
+    g = _gold()
+    root = _split_root(tmp_path, g)
+    pool = _pool(g)
+    with pytest.raises(ValueError, match="round-1 gold items are not in the pool"):
+        ts.build_frame(g, pool[pool.label_uid_schema != "sidewalk_a:1"], root)
+    f = ts.build_frame(g, pool[pool.label_uid_schema != "sidewalk_b:8"], root)  # a round-2 decoy keeps its tallies
+    assert f.set_index("label_uid").loc["city-b:8", ["h_agree", "h_dis", "n_expert_votes"]].tolist() == [4, 0, 0]
+
+
+def _composition_frame():
+    """Type A: kept 18/20, dropped 9/10 (90% each); type B: kept 5/10, dropped 10/20 (50% each); type C: kept only.
+    Pooled, kept (28/35) beats dropped (19/30) only because A is mostly kept and B mostly dropped."""
+    rows = []
+
+    def add(t, rnd, kept, ok, n):
+        rows.extend({"label_type": t, "round": rnd, "ai_vote": "Disagree", "rule_margin": "incorrect",
+                     "rule_symmetric3": "incorrect" if kept else "", "expert": "incorrect" if i < ok else "correct"}
+                    for i in range(n))
+    add("CurbRamp", "1", True, 9, 10)
+    add("CurbRamp", "2", True, 9, 10)
+    add("CurbRamp", "2", False, 9, 10)
+    add("Obstacle", "1", True, 5, 10)
+    add("Obstacle", "1", False, 10, 20)
+    add("Crosswalk", "2", True, 5, 5)
+    return pd.DataFrame(rows)
+
+
+def test_mh_diff_removes_a_composition_effect():
+    f = _composition_frame()
+    ok, kept = (f.expert == "incorrect").to_numpy(), (f.rule_symmetric3 == "incorrect").to_numpy()
+    assert ok[kept].mean() - ok[~kept].mean() == pytest.approx(28 / 35 - 19 / 30)
+    d, used, n = ts.mh_diff(ok, kept, f.label_type)
+    assert d == pytest.approx(0.0) and used == 2 and n == 60  # Crosswalk has no dropped row and no weight
+    r = ts.mh_boot(ok, kept, f.label_type, 500, 2)
+    assert r["lo"] < 0 < r["hi"] and (r["strata"], r["strata_used"], r["n"], r["n_used"]) == (3, 2, 65, 60)
+    assert ts.mh_boot(ok, kept, f.label_type, 500, 2) == r
+    # unequal within-type differences: weights n_kept * n_dropped / n
+    ok2 = ok.copy()
+    ok2[(f.label_type == "Obstacle").to_numpy() & ~kept] = [True] * 5 + [False] * 15  # Obstacle dropped 5/20
+    d2, _, _ = ts.mh_diff(ok2, kept, f.label_type)
+    wa, wb = 20 * 10 / 30, 10 * 20 / 30
+    assert d2 == pytest.approx((wa * 0.0 + wb * (0.5 - 0.25)) / (wa + wb))
+
+
+def test_p1_stratified_reads_only_p1_rows():
+    f = _composition_frame()
+    st = ts.p1_stratified(f, n_boot=0)
+    assert st["type"]["diff"] == pytest.approx(0.0) and st["type"]["lo"] is None
+    # type x round: CurbRamp round 1 has no dropped row, so only CurbRamp/2 and Obstacle/1 carry weight
+    assert (st["type_round"]["strata"], st["type_round"]["strata_used"]) == (4, 2)
+    extra = pd.DataFrame([{"label_type": "CurbRamp", "round": "2", "ai_vote": ai, "rule_margin": m,
+                           "rule_symmetric3": "", "expert": "correct"}
+                          for ai, m in (("Agree", "incorrect"), ("Disagree", "correct"), ("Disagree", ""))
+                          for _ in range(5)])
+    assert ts.p1_stratified(pd.concat([f, extra], ignore_index=True), n_boot=0) == st
+
+
+def test_strat_diff_boot_keeps_the_point_and_is_seeded():
+    ok = [1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0]
+    a = [True, False] * 6
+    s = ["x"] * 6 + ["y"] * 6
+    d, lo, hi = ts.strat_diff_boot(ok, a, s, 500, 3)
+    assert d == pytest.approx(ts.diff_boot(ok, a, 0)[0]) and lo <= d <= hi
+    assert ts.strat_diff_boot(ok, a, s, 500, 3) == (d, lo, hi)
+    # one stratum all A, the other all B: every resample keeps both groups whole, so the interval is that of the
+    # two stratum means, never a skipped draw
+    d2, lo2, hi2 = ts.strat_diff_boot([1] * 6 + [0] * 6, [True] * 6 + [False] * 6, s, 200, 1)
+    assert (d2, lo2, hi2) == (1.0, 1.0, 1.0)
+
+
+def test_pool_expert_counts_votes_and_placements():
+    p = pd.DataFrame({"ai_vote": ["Disagree"] * 5 + ["Agree"], "h_agree": ["0", "0", "1", "0", "2", "0"],
+                      "h_dis": ["2", "3", "0", "1", "2", "5"], "expert1": ["", "", "", "", "", "Disagree"],
+                      "expert2": ["", "Disagree", "", "", "", ""], "expert1_labeled": ["f", "f", "t", "f", "f", "f"]})
+    e = ts.pool_expert(p)
+    assert (e["n"], e["touched"], e["margin_incorrect"], e["touched_margin_incorrect"]) == (5, 2, 2, 1)
+    # removing the Disagree of row 2 leaves (0, 2): still a margin target; row 1 keeps (0, 2)
+    assert e["removed"]["rules"]["margin"] == 2 and e["removed"]["rules"]["symmetric3"] == 0
+    assert e["removed"]["classes"]["1 vote"] == 2 and e["removed"]["classes"]["tie"] == 1
+
+
+def test_weighted_p1_ignores_rows_outside_its_strata():
+    w = {"1": {(grp, t): 100 for grp in ("voted_disagree", "lone_disagree") for t in ts.LABEL_TYPES},
+         "2": {(c, s, "NoCurbRamp"): 100 for c in ("city-a", "city-b") for s in ("margin_incorrect", "light_voted")}}
+    base = ts.weighted_p1(_p1_frame(), w)
+    rows = []
+    for rnd, grp, stratum, ai in (("1", "lone_disagree", "lone", "Disagree"), ("2", "", "light_voted", "Disagree"),
+                                  ("1", "voted_disagree", "", "Agree"), ("2", "", "margin_incorrect", "Agree")):
+        t = "CurbRamp" if rnd == "1" else "NoCurbRamp"
+        rows += [{"round": rnd, "ai_vote": ai, "city_id": "city-a", "label_type": t, "group_r1": grp,
+                  "stratum": stratum, "rule_margin": "incorrect", "rule_symmetric3": "", "expert": "correct"}] * 6
+    out = ts.weighted_p1(pd.concat([_p1_frame(), pd.DataFrame(rows)], ignore_index=True), w)
+    assert ts.dumps(out) == ts.dumps(base)
+
+
+def test_slice_rows_reads_only_ai_disagrees_and_p1_rows():
+    g = pd.DataFrame({"label_uid": [f"city-a:{i}" for i in range(7)], "ai_vote": "Disagree",
+                      "label_type": "CurbRamp", "severity": ["1"] * 4 + ["2"] * 2 + ["3"],
+                      "tags": ["narrow"] * 4 + [""] * 3, "expert": ["incorrect"] * 3 + ["correct"] * 4,
+                      "rule_margin": "incorrect", "rule_symmetric3": ["incorrect"] * 3 + [""] * 4})
+    train = pd.DataFrame({"label_type": ["CurbRamp"] * 3, "severity": ["1", "1", "2"], "tags": ["[]"] * 3})
+    base = ts.slice_rows(g, train, min_n=3)
+    extra = g.iloc[:4].assign(label_uid=[f"city-a:{50 + i}" for i in range(4)], expert="correct")
+    agree = extra.assign(ai_vote="Agree")
+    margin_correct = extra.assign(rule_margin="correct", label_uid=[f"city-a:{60 + i}" for i in range(4)])
+    out = ts.slice_rows(pd.concat([g, agree], ignore_index=True), train, min_n=3)
+    assert ts.dumps(out) == ts.dumps(base)
+    out2 = ts.slice_rows(pd.concat([g, margin_correct], ignore_index=True), train, min_n=3)
+    assert ts.dumps(out2["p1_severity"]) == ts.dumps(base["p1_severity"])
+    assert ts.dumps(out2["p1_type"]) == ts.dumps(base["p1_type"])
+    t = {r["slice"]: r for r in base["p1_type"]}["CurbRamp"]
+    assert (t["kept"]["k"], t["kept"]["n"], t["dropped"]["k"], t["dropped"]["n"]) == (3, 3, 0, 4)
+
+
+def test_git_commit_marks_a_dirty_tree_and_survives_no_git(monkeypatch):
+    class R:
+        def __init__(self, out, code=0):
+            self.stdout, self.returncode = out, code
+
+    monkeypatch.setattr(ts.subprocess, "run", lambda cmd, **k: R("abc\n") if "rev-parse" in cmd else R(" M x.py\n"))
+    assert ts._git_commit() == "abc-dirty"
+    monkeypatch.setattr(ts.subprocess, "run", lambda cmd, **k: R("abc\n") if "rev-parse" in cmd else R(""))
+    assert ts._git_commit() == "abc"
+
+    def no_git(cmd, **k):
+        raise FileNotFoundError("git")
+    monkeypatch.setattr(ts.subprocess, "run", no_git)
+    assert ts._git_commit() == "unknown"
+
+
+def test_refuse_private_out_holds_without_git(tmp_path, monkeypatch):
+    def no_git(path, what):
+        raise FileNotFoundError("git")
+    monkeypatch.setattr(ts.adj, "refuse_in_checkout", no_git)
+    with pytest.raises(SystemExit, match="inside the repository"):
+        ts.refuse_private_out(os.path.join(ROOT, "x"), "verdicts")
+    ts.refuse_private_out(str(tmp_path / "private"), "verdicts")  # outside the repo: allowed
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Privacy
 # ---------------------------------------------------------------------------------------------------------------------
@@ -593,8 +781,9 @@ def test_score_cli_writes_and_refuses(tmp_path, monkeypatch):
     monkeypatch.setattr(ts, "city_lists", lambda: LISTS)
     g = _gold()
     args = _cli_inputs(tmp_path, g)
-    with pytest.raises(SystemExit, match="inside a git checkout"):
+    with pytest.raises(SystemExit, match="refusing to write the per-label verdicts inside the repository"):
         ts.main(args + ["--out-dir", os.path.join(ROOT, "tmp-should-not-exist"), "--out", str(tmp_path / "pub")])
+    assert not os.path.exists(os.path.join(ROOT, "tmp-should-not-exist"))
     priv = tmp_path / "private"
     ts.main(args + ["--out-dir", str(priv), "--out", str(tmp_path / "pub")])
     assert (priv / "verdicts.csv").exists() and (priv / "run.json").exists()
@@ -691,3 +880,56 @@ def test_committed_json_is_counts_only():
         assert f'"{key}"' not in text
     assert not re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-", text)  # no user ids
     assert not re.search(r"\b[a-z-]+:\d+\b", text)  # no city:label_id
+
+
+def test_committed_json_thin_cells_carry_no_verdict_count():
+    j, _ = _committed()
+    s = j["slices"]
+    mn = s["min_n"]
+    for by in ("severity", "tag"):
+        for r in s[f"ai_precision_{by}"]:
+            assert (r["k"] is None) == (r["n"] < mn), r
+    for key in ("p1_severity", "p1_type"):
+        for r in s[key]:
+            for grp in ("kept", "dropped"):
+                assert (r[grp]["k"] is None) == (r[grp]["n"] < mn), r
+
+
+def test_doc_prose_quotes_the_type_stratified_p1():
+    j, doc = _committed()
+    prose = " ".join(re.sub(r"<!-- BEGIN GENERATED.*?<!-- END GENERATED: \w+ -->", "", doc, flags=re.S).split())
+    st = j["primary"]["P1_stratified"]
+    for k in ("type", "type_round"):
+        assert f"{100 * st[k]['diff']:+.1f}" in prose
+    sp = {r["slice"]: r for r in j["slices"]["p1_type"]}["SurfaceProblem"]["dropped"]
+    assert f"{sp['k']}/{sp['n']}" in prose and f"{100 * sp['lo']:.1f}" in prose
+
+
+VERDICTS = os.path.expanduser("~/Data/sidewalk-validator-ai-target-scoreboard-2026-11/verdicts.csv")
+
+
+@pytest.mark.skipif(not os.path.exists(VERDICTS), reason="private per-label verdicts not on this machine")
+def test_committed_json_recomputes_from_the_private_verdicts():
+    """On the machine that ran ``score``: recompute the primaries, the type-stratified P1 and P1 by type from the
+    private verdicts and compare with the committed JSON (the other committed-JSON tests only read it)."""
+    j, _ = _committed()
+    if ts.rl.sha256_file(VERDICTS) != j["provenance"]["verdicts_sha256"]:
+        pytest.skip("the private verdicts are not the ones the committed JSON was built from")
+    v = pd.read_csv(VERDICTS, dtype=str, keep_default_na=False)
+    for c in ("masked", "train_row", "wrong", "cl_flagged") + tuple(f"touch_{x}" for x in ts.VARIANTS):
+        v[c] = v[c] == "True"
+    for c in ("h_agree", "h_dis"):
+        v[c] = v[c].astype(int)
+    g = v[v.masked]
+    p1, p2 = ts.p1_rows(g, n_boot=0)["pooled"], ts.p2_rows(g, "cl-drop", n_boot=0)["pooled"]
+    for mine, theirs in ((p1, j["primary"]["P1"]["pooled"]), (p2, j["primary"]["P2"]["pooled"])):
+        for grp in ("a", "b"):
+            assert (mine[grp]["k"], mine[grp]["n"]) == (theirs[grp]["k"], theirs[grp]["n"])
+        assert mine["diff"] == pytest.approx(theirs["diff"])
+    st = ts.p1_stratified(g, n_boot=0)
+    for k in ("type", "type_round"):
+        assert st[k]["diff"] == pytest.approx(j["primary"]["P1_stratified"][k]["diff"])
+    mine = ts.slice_rows(g, pd.DataFrame(columns=["label_type", "severity", "tags"]))
+    for key in ("p1_type", "p1_severity"):
+        assert [(r["kept"]["n"], r["dropped"]["n"], r["kept"]["k"], r["dropped"]["k"]) for r in mine[key]] == \
+            [(r["kept"]["n"], r["dropped"]["n"], r["kept"]["k"], r["dropped"]["k"]) for r in j["slices"][key]]

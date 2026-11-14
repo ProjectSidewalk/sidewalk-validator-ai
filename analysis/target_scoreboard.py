@@ -22,8 +22,11 @@ Two contrasts were fixed in ``docs/target-scoreboard-2026-11.md`` before any num
   targets among flagged rows minus among unflagged rows.
 
 The pooled row of each is the pre-stated estimate (``ROLES``); it is printed after the per-round rows and a
-heterogeneity check, which are its check. Each has Wilson intervals per group, a label-level bootstrap interval for
-the difference (``N_BOOT`` resamples) and a two-sided Fisher exact p. Every other table is descriptive.
+heterogeneity check, which are its check. P1 also gets a check that was not pre-stated: kept minus dropped within
+label type (a Mantel-Haenszel risk difference, :func:`p1_stratified`), because the pooled row mixes types whose
+confirmation rates and dropped shares differ, and each type trains its own model. Each primary has Wilson intervals
+per group, a label-level bootstrap interval for the difference (``N_BOOT`` resamples) and a two-sided Fisher exact
+p. Every other table is descriptive.
 
 Stages (subcommands)
 --------------------
@@ -187,7 +190,7 @@ def gain_boot(ok, in_a, n_boot=N_BOOT, seed=0):
 def did_boot(ok, in_a, group, n_boot=N_BOOT, seed=0):
     """``(did, lo, hi)``: the A-minus-B difference in the first value of ``group`` minus that in the second, with a
     95% interval from resampling items within each group (the heterogeneity check printed beside a pooled row).
-    None when an A or a B group of either level has fewer than ``MIN_CELL`` items."""
+    None when an A or a B group of either level has fewer than ``MIN_CELL`` items; no interval when ``n_boot`` is 0."""
     ok, a, g = np.asarray(ok, float), np.asarray(in_a, bool), np.asarray(group)
     levels = sorted(set(g))
     if len(levels) != 2:
@@ -196,6 +199,8 @@ def did_boot(ok, in_a, group, n_boot=N_BOOT, seed=0):
     if any(min(x[1].sum(), (~x[1]).sum()) < MIN_CELL for x in parts):
         return None, None, None
     point = [o[m].mean() - o[~m].mean() for o, m in parts]
+    if not n_boot:
+        return float(point[0] - point[1]), None, None
     rng = np.random.default_rng(seed)
     sims = []
     for o, m in parts:
@@ -207,6 +212,84 @@ def did_boot(ok, in_a, group, n_boot=N_BOOT, seed=0):
     v = sims[0] - sims[1]
     v = v[np.isfinite(v)]
     return float(point[0] - point[1]), float(np.percentile(v, 2.5)), float(np.percentile(v, 97.5))
+
+
+def strat_diff_boot(ok, in_a, strata, n_boot=N_BOOT, seed=0):
+    """``(diff, lo, hi)`` as :func:`diff_boot`, but each resample draws items within each level of ``strata`` (so
+    every stratum keeps its size): the sensitivity of the label-level interval to the sampling design."""
+    ok, a, s = np.asarray(ok, float), np.asarray(in_a, bool), np.asarray(strata)
+    if not a.any() or a.all():
+        return None, None, None
+    d = float(ok[a].mean() - ok[~a].mean())
+    if not n_boot:
+        return d, None, None
+    rng = np.random.default_rng(seed)
+    idx = np.concatenate([rng.choice(np.flatnonzero(s == lv), size=(n_boot, int((s == lv).sum())))
+                          for lv in sorted(set(s))], axis=1)
+    ga, o = a[idx], ok[idx]
+    na, nb = ga.sum(1), (~ga).sum(1)
+    keep = (na > 0) & (nb > 0)
+    vals = (o * ga).sum(1)[keep] / na[keep] - (o * ~ga).sum(1)[keep] / nb[keep]
+    return d, float(np.percentile(vals, 2.5)), float(np.percentile(vals, 97.5))
+
+
+def mh_diff(ok, in_a, strata):
+    """Mantel-Haenszel risk difference of ``ok``, group A minus group B, within the levels of ``strata``: each
+    stratum's difference weighted by ``n_a * n_b / n``, so a stratum missing either group carries no weight. Returns
+    ``(diff, strata_used, n_used)``; diff is None when no stratum holds both groups.
+
+    A pooled difference mixes strata with different base rates in different proportions; this one compares A with B
+    only inside a stratum. Here: type 1 has A 1/2, B 1/2; type 2 has A 2/2, B 3/6 (weights 1 and 1.5).
+
+    >>> ok = [1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0]
+    >>> d, used, n = mh_diff(ok, [True, True, False, False] + [True] * 2 + [False] * 6, ["t1"] * 4 + ["t2"] * 8)
+    >>> round(d, 3), used, n
+    (0.3, 2, 12)
+    """
+    ok, a, s = np.asarray(ok, float), np.asarray(in_a, bool), np.asarray(strata)
+    num = den = 0.0
+    used = n_used = 0
+    for lv in sorted(set(s)):
+        m = s == lv
+        na, nb = int((a & m).sum()), int((~a & m).sum())
+        if not na or not nb:
+            continue
+        w = na * nb / (na + nb)
+        num += w * (ok[a & m].mean() - ok[~a & m].mean())
+        den += w
+        used += 1
+        n_used += na + nb
+    return (float(num / den) if den else None), used, n_used
+
+
+def mh_boot(ok, in_a, strata, n_boot=N_BOOT, seed=0):
+    """:func:`mh_diff` with a 95% percentile interval from resampling items with replacement (label-level, as
+    :func:`diff_boot`); ``{diff, lo, hi, strata, strata_used, n, n_used}``. The interval is None when ``n_boot`` is 0
+    or no stratum holds both groups."""
+    ok, a, s = np.asarray(ok, float), np.asarray(in_a, bool), np.asarray(strata)
+    levels = sorted(set(s))
+    d, used, n_used = mh_diff(ok, a, s)
+    out = {"diff": d, "lo": None, "hi": None, "strata": len(levels), "strata_used": used, "n": int(len(ok)),
+           "n_used": n_used}
+    if d is None or not n_boot:
+        return out
+    code = np.searchsorted(np.array(levels), s)
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, len(ok), size=(n_boot, len(ok)))
+    o, ga, gs = ok[idx], a[idx], code[idx]
+    num, den = np.zeros(n_boot), np.zeros(n_boot)
+    for c in range(len(levels)):
+        m = gs == c
+        ma, mb = ga & m, ~ga & m
+        na, nb = ma.sum(1), mb.sum(1)
+        both = (na > 0) & (nb > 0)
+        w = np.where(both, na * nb / np.maximum(na + nb, 1), 0.0)
+        diff = np.where(both, (o * ma).sum(1) / np.maximum(na, 1) - (o * mb).sum(1) / np.maximum(nb, 1), 0.0)
+        num += w * diff
+        den += w
+    vals = num[den > 0] / den[den > 0]
+    out.update(lo=float(np.percentile(vals, 2.5)), hi=float(np.percentile(vals, 97.5)))
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -274,6 +357,41 @@ def pool_shares(pool):
     return rows
 
 
+def pool_expert(pool):
+    """What the coverage table (:func:`pool_shares`, tallies as pulled) holds that the gold set does not draw on,
+    over every AI Disagree of the pool. ``touched``: labels with a vote by either expert (``expert1`` /
+    ``expert2``) or placed by round 1's rater (``expert1_labeled``; the pool records no placement by the other
+    expert, so this is a lower bound), overall and among the margin-``incorrect`` ones. ``removed``: the vote classes
+    and rule coverage with every expert vote taken out of the tallies. Counts only.
+
+    >>> p = pd.DataFrame({"ai_vote": "Disagree", "h_agree": ["0", "1", "0"], "h_dis": ["2", "0", "3"],
+    ...                   "expert1": ["", "Agree", ""], "expert2": ["Disagree", "", ""]})
+    >>> e = pool_expert(p)
+    >>> e["touched"], e["margin_incorrect"], e["touched_margin_incorrect"], e["removed"]["rules"]["margin"]
+    (2, 2, 1, 1)
+    """
+    p = pool[pool.ai_vote == "Disagree"]
+    a = pd.to_numeric(p.h_agree, errors="coerce").fillna(0).astype(int).to_numpy()
+    d = pd.to_numeric(p.h_dis, errors="coerce").fillna(0).astype(int).to_numpy()
+    touched = np.zeros(len(p), bool)
+    a2, d2 = a.copy(), d.copy()
+    for c in ("expert1", "expert2"):
+        if c in p:
+            v = p[c].fillna("").astype(str).to_numpy()
+            touched |= v != ""
+            a2 -= v == "Agree"
+            d2 -= v == "Disagree"
+    if "expert1_labeled" in p:
+        touched |= p.expert1_labeled.astype(str).str.strip().str.lower().isin(["t", "true", "1"]).to_numpy()
+    mi = tally_verdicts(a, d)["margin"].to_numpy() == "incorrect"
+    v2 = tally_verdicts(a2, d2)
+    vc2 = vote_class(a2, d2)
+    return {"n": int(len(p)), "touched": int(touched.sum()), "margin_incorrect": int(mi.sum()),
+            "touched_margin_incorrect": int((touched & mi).sum()),
+            "removed": {"classes": {c: int((vc2 == c).sum()) for c in VOTE_CLASSES},
+                        "rules": {r: int((v2[r] != "").sum()) for r in TALLY_RULES}}}
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # The per-label frame
 # ---------------------------------------------------------------------------------------------------------------------
@@ -289,8 +407,16 @@ def load_pool(path):
 
 def remove_expert_votes(gold, pool):
     """``gold`` with every vote of the pool's ``expert1`` / ``expert2`` columns (vote values only; no ids) taken
-    out of ``h_agree`` / ``h_dis`` / ``h_unsure``, and ``n_expert_votes``. A rater's own earlier production vote
-    must not count as crowd evidence against their verdict. Items not in the pool keep their tallies.
+    out of ``h_agree`` / ``h_dis`` / ``h_unsure``, and ``n_expert_votes``.
+
+    Why: the rules are scored as crowd rules against an expert, so the tallies should hold only non-expert votes.
+    Round 1's pool pull named its one rater ``expert1`` and the other expert ``expert2``, and its draw left out the
+    labels the rater had voted on or placed; the votes left to subtract are therefore the *other* expert's
+    production votes (that expert did not rate round 1). An expert's vote in the tally would credit a crowd rule with
+    an expert's judgement, and round 2's draw left out labels either expert had voted on or placed, so removing
+    them makes the two rounds' tallies alike. Items not in the pool (some round-2 decoys; :func:`build_frame` refuses
+    a missing round-1 item) keep the gold table's tallies, from round 2's own pull, which left out both experts'
+    votes.
 
     >>> g = pd.DataFrame({"label_uid": ["c:1", "c:2"], "label_uid_schema": ["s:1", "s:2"], "h_agree": ["1", "0"],
     ...                   "h_dis": ["2", "3"], "h_unsure": ["0", "0"]})
@@ -364,6 +490,9 @@ def build_frame(gold, pool, split_root, expert_votes="remove", types=LABEL_TYPES
     if expert_votes not in ("remove", "keep"):
         raise ValueError(f"expert_votes must be remove or keep, not {expert_votes!r}")
     raw = gold[gold.decided]
+    lost = ~raw.label_uid_schema.isin(pool.label_uid_schema) & (raw["round"].astype(str) == "1")
+    if lost.any():  # round 1 was drawn from this pool, so a missing round-1 item means the wrong pool
+        raise ValueError(f"{int(lost.sum())} round-1 gold items are not in the pool; is --pool round 1's pull?")
     check_split_root(raw, split_root, types)
     tr = raw.train_row.astype(bool)
     if tr.any() and not raw.cl_flagged[tr].astype(bool).any():
@@ -478,6 +607,39 @@ def p1_rows(g, rule="symmetric3", n_boot=N_BOOT, seed=0):
         out[k]["gain"] = v
     out["heterogeneity"] = dict(zip(("did", "lo", "hi"), did_boot(ok, kept, x["round"].to_numpy(), n_boot,
                                                                    sl.slice_seed(seed, f"P1/{rule}/did"))))
+    return out
+
+
+def _p1_population(g, rule="symmetric3"):
+    """P1's rows (decided AI Disagrees with a margin target of ``incorrect``), the outcome and the kept flag."""
+    x = g[(g.ai_vote == "Disagree") & (g.rule_margin == "incorrect")]
+    return x, (x.expert == "incorrect").to_numpy(), (x[f"rule_{rule}"] == "incorrect").to_numpy()
+
+
+def p1_stratified(g, rule="symmetric3", n_boot=N_BOOT, seed=0):
+    """A check on P1's pooled row, not pre-stated: kept minus dropped as a Mantel-Haenszel risk difference within
+    label type (``type``) and within type x round (``type_round``), with label-level bootstrap intervals
+    (:func:`mh_boot`). The pooled row mixes types whose confirmation rates and dropped shares differ, and each type
+    trains its own model; this compares kept with dropped only inside a type."""
+    x, ok, kept = _p1_population(g, rule)
+    t = x.label_type.astype(str).to_numpy()
+    return {"type": mh_boot(ok, kept, t, n_boot, sl.slice_seed(seed, f"P1/{rule}/mh/type")),
+            "type_round": mh_boot(ok, kept, np.char.add(np.char.add(t, "/"), x["round"].astype(str).to_numpy()),
+                                  n_boot, sl.slice_seed(seed, f"P1/{rule}/mh/type_round"))}
+
+
+def design_boot(g, n_boot=N_BOOT, seed=0):
+    """The pooled P1 and P2 differences with intervals from resampling within round x stratum
+    (:func:`strat_diff_boot`), beside the label-level intervals of the primary table: how much the iid bootstrap's
+    neglect of the sampling design matters."""
+    x, ok, kept = _p1_population(g)
+    tr = g[g.train_row]
+    out = {}
+    for name, f, o, a in (("P1", x, ok, kept),
+                          ("P2", tr, tr.wrong.to_numpy(bool), tr["touch_cl-drop"].to_numpy(bool))):
+        s = (f["round"].astype(str) + "/" + f.stratum.astype(str)).to_numpy()
+        d, lo, hi = strat_diff_boot(o, a, s, n_boot, sl.slice_seed(seed, f"{name}/design"))
+        out[name] = {"diff": d, "lo": lo, "hi": hi, "strata": int(len(set(s)))}
     return out
 
 
@@ -688,10 +850,17 @@ def weighted_p1(g, weights, rule="symmetric3"):
     return out
 
 
+def _thin_rate(k, n, min_n):
+    """:func:`rate`, or only the size when ``n`` is under ``min_n``: a thin cell publishes no count of verdicts (a
+    cell can consist only of items from non-public deployments)."""
+    return rate(k, n) if n >= min_n else {"n": int(n), "k": None, "rate": None, "lo": None, "hi": None}
+
+
 def slice_rows(g, train, min_n=SLICE_MIN_N):
     """Descriptive slices, pooled over rounds. ``ai_precision``: per type x severity and type x tag, the decided AI
-    Disagrees, the share the expert calls incorrect (blank under ``min_n``) and the round-3 train rows of the slice.
-    ``p1_severity``: P1's kept and dropped groups by severity, pooled over types, each blank under ``min_n``."""
+    Disagrees, the share the expert calls incorrect and the round-3 train rows of the slice. ``p1_severity`` /
+    ``p1_type``: P1's kept and dropped groups by severity (pooled over types) and by type. A cell under ``min_n``
+    keeps only its size (:func:`_thin_rate`)."""
     out = {"min_n": min_n}
     dis = g[g.ai_vote == "Disagree"]
     for by in sl.BY:
@@ -700,26 +869,26 @@ def slice_rows(g, train, min_n=SLICE_MIN_N):
         trc = (sl.with_slice(train, by).groupby(["label_type", "slice"]).size()
                if len(train) else pd.Series(dtype=int))
         for (t, s), f in x.groupby(["label_type", "slice"], sort=True):
-            k, n = int((f.expert == "incorrect").sum()), len(f)
-            r = rate(k, n) if n >= min_n else {"n": n, "k": k, "rate": None, "lo": None, "hi": None}
+            r = _thin_rate(int((f.expert == "incorrect").sum()), len(f), min_n)
             rows.append({"label_type": t, "slice": s, **r, "train": int(trc.get((t, s), 0))})
         out[f"ai_precision_{by}"] = sorted(rows, key=lambda d: (LABEL_TYPES.index(d["label_type"]),
                                                                _slice_key(by, d)))
     x = dis[dis.rule_margin == "incorrect"]
-    x = sl.with_slice(x.assign(kept=x.rule_symmetric3 == "incorrect")[["severity", "tags", "expert", "kept"]],
-                      "severity")
-    rows = []
-    for s, f in x.groupby("slice"):
-        row = {"slice": s}
-        for name, m in (("kept", f.kept), ("dropped", ~f.kept)):
-            k, n = int((f.expert[m] == "incorrect").sum()), int(m.sum())
-            row[name] = rate(k, n) if n >= min_n else {"n": n, "k": k, "rate": None, "lo": None, "hi": None}
-        kp, dr = row["kept"], row["dropped"]
-        both = kp["rate"] is not None and dr["rate"] is not None
-        row["diff"] = (kp["rate"] - dr["rate"]) if both else None
-        row["fisher_p"] = (fisher_exact(kp["k"], kp["n"] - kp["k"], dr["k"], dr["n"] - dr["k"]) if both else None)
-        rows.append(row)
-    out["p1_severity"] = sorted(rows, key=lambda d: _slice_key("severity", d))
+    x = x.assign(kept=x.rule_symmetric3 == "incorrect")[["label_type", "severity", "tags", "expert", "kept"]]
+    for key, f_all in (("p1_severity", sl.with_slice(x, "severity")), ("p1_type", x.assign(slice=x.label_type))):
+        rows = []
+        for s, f in f_all.groupby("slice"):
+            row = {"slice": s}
+            for name, m in (("kept", f.kept), ("dropped", ~f.kept)):
+                row[name] = _thin_rate(int((f.expert[m] == "incorrect").sum()), int(m.sum()), min_n)
+            kp, dr = row["kept"], row["dropped"]
+            both = kp["rate"] is not None and dr["rate"] is not None
+            row["diff"] = (kp["rate"] - dr["rate"]) if both else None
+            row["fisher_p"] = (fisher_exact(kp["k"], kp["n"] - kp["k"], dr["k"], dr["n"] - dr["k"]) if both
+                               else None)
+            rows.append(row)
+        out[key] = sorted(rows, key=(lambda d: _slice_key("severity", d)) if key == "p1_severity" else
+                          (lambda d: LABEL_TYPES.index(d["slice"]) if d["slice"] in LABEL_TYPES else len(LABEL_TYPES)))
     return out
 
 
@@ -729,10 +898,16 @@ def _slice_key(by, d):
     return (d["slice"] == sl.NONE, -d["n"], d["slice"])
 
 
-def gold_counts(gold, g_adj, g_masked, g_keep):
-    """Counts only: items, decided, the masked-only subset, AI Disagrees per round and type, train rows, flags."""
+def gold_counts(gold, g_adj, g_masked, g_keep, pool=None):
+    """Counts only: items, decided, the masked-only subset, AI Disagrees per round and type, train rows, flags, the
+    items whose pool tallies hold an expert vote, and the items missing from the pool (with ``pool``)."""
     dis = g_masked[g_masked.ai_vote == "Disagree"]
-    return {"n_items": int(len(gold)), "n_decided": int(len(g_adj)), "n_decided_masked": int(len(g_masked)),
+    extra = {}
+    if pool is not None:
+        miss = ~gold.label_uid_schema.isin(pool.label_uid_schema)
+        extra["not_in_pool"] = {r: int((miss & (gold["round"].astype(str) == r)).sum()) for r in ("1", "2")}
+        extra["not_in_pool_decoys"] = int((miss & (gold.ai_vote != "Disagree")).sum())
+    return {**extra, "n_items": int(len(gold)), "n_decided": int(len(g_adj)), "n_decided_masked": int(len(g_masked)),
             "n_consensus_decided": int((g_adj.expert_source == CONSENSUS).sum()),
             "n_ai_disagree_decided": int((g_adj.ai_vote == "Disagree").sum()),
             "n_ai_disagree_masked": int(len(dis)),
@@ -846,8 +1021,11 @@ def render_gold_counts(j):
         f"| Round-3 train rows: round 1 / round 2 | {c['train_rows_by_round']['1']} / {c['train_rows_by_round']['2']} "
         f"({c['n_train_rows']}) |",
         f"| of which flagged by confident learning / wrong target | {c['n_flagged']} / {c['n_wrong_targets']} |",
-        f"| Items whose pool tallies hold a rater's earlier vote: round 1 / round 2 | "
+        f"| Decided items whose pool tallies hold the other expert's production vote (removed): round 1 / round 2 | "
         f"{c['expert_vote_items']['1']} / {c['expert_vote_items']['2']} |",
+        *([f"| Items not in the 2026-10-27 pool (tallies from round 2's own pull, which left out both experts' "
+           f"votes): round 1 / round 2 (of which decoys) | {c['not_in_pool']['1']} / {c['not_in_pool']['2']} "
+           f"({c['not_in_pool_decoys']}) |"] if "not_in_pool" in c else []),
         f"| Train rows whose round-3 target differs from the margin target of the pool tallies | "
         f"{c['train_target_differs_from_pool_margin']} |"])
 
@@ -868,7 +1046,21 @@ def render_pool(j):
             f"{100 * r['rules'][x]['cover'] / n:.1f}% ({100 * r['rules'][x]['incorrect'] / n:.1f}%)"
             for x in TALLY_RULES) + " |")
     lines += ["", "Cells: share of the type's AI Disagrees the rule gives any target (in brackets: an `incorrect` "
-                  "target). The rest is dropped. Exact counts over the whole pool, so no interval."]
+                  "target). The rest is dropped. Exact counts over the whole pool, so no interval. Tallies as "
+                  "pulled, expert votes included."]
+    e = j.get("pool_expert")
+    if e:
+        n, rm = e["n"], e["removed"]
+        pct = (lambda k, d: f"{100 * k / d:.1f}%")
+        lines += ["", f"Labels an expert voted on, or round 1's rater placed: {e['touched']:,} of {n:,} AI Disagrees "
+                      f"({pct(e['touched'], n)}) and {e['touched_margin_incorrect']:,} of the "
+                      f"{e['margin_incorrect']:,} "
+                      f"with a margin-`incorrect` target ({pct(e['touched_margin_incorrect'], e['margin_incorrect'])})"
+                      "; a lower bound, as the pool records no placement by the other expert. With every expert vote "
+                      f"taken out of the tallies: `margin` covers {pct(rm['rules']['margin'], n)}, `symmetric3` "
+                      f"{pct(rm['rules']['symmetric3'], n)}, one-vote labels are {pct(rm['classes']['1 vote'], n)} of "
+                      f"the pool and {pct(rm['classes']['1 vote'], rm['rules']['majority'])} of what `majority` "
+                      f"decides, ties {pct(rm['classes']['tie'], n)}."]
     return "\n".join(lines)
 
 
@@ -883,12 +1075,44 @@ def render_primary(j):
         "**P1. `symmetric` kept against dropped** (decided AI Disagrees whose margin target is `incorrect`; outcome: "
         f"the expert says incorrect; pooled row: {roles['P1']}):", "",
         contrast_table(p["P1"], "kept: net Disagree >= 3", "dropped: net Disagree = 2", role=roles["P1"]), "",
+        *_p1_checks(j),
         "**P2. Confident-learning flag** (decided round-3 train rows, both target classes; outcome: the target "
         f"differs from the expert; pooled row: {roles['P2']}):", "",
         contrast_table(p["P2"], "flagged", "unflagged", extra=True, role=roles["P2"]), "",
         origin, "",
+        *([_design_line(p["design_boot"]), ""] if "design_boot" in p else []),
         f"Descriptive twin of P1, `unanimous3` (same rows; pooled row: {roles['P1_unanimous3']}):", "",
         contrast_table(p["P1_unanimous3"], "kept: unanimous", "dropped", role=roles["P1_unanimous3"])])
+
+
+def _p1_checks(j):
+    """Lines under the P1 table: the type-stratified check (not pre-stated) and the gold set's dropped share against
+    the pool's, which scales the gain."""
+    p = j["primary"]
+    out = []
+    st = p.get("P1_stratified")
+    if st:
+        t, tr = st["type"], st["type_round"]
+        out += ["Check, not pre-stated: kept minus dropped within label type (Mantel-Haenszel risk difference, "
+                f"label-level bootstrap; {t['strata_used']} of {t['strata']} types hold both groups) "
+                f"{_pp(t['diff'], t['lo'], t['hi'])}; within type x round ({tr['strata_used']} of {tr['strata']} "
+                f"cells) {_pp(tr['diff'], tr['lo'], tr['hi'])}. Each type trains its own model, so the pooled row's "
+                "mix of types never reaches one; P1 by type is under Slices.", ""]
+    pool = next((r for r in j.get("pool", []) if r["label_type"] == "all"), None)
+    pooled = p["P1"]["pooled"]
+    if pool:
+        mi, kept = pool["rules"]["margin"]["incorrect"], pool["rules"]["symmetric3"]["incorrect"]
+        nb, n = pooled["b"]["n"], pooled["a"]["n"] + pooled["b"]["n"]
+        out += [f"The gain is kept minus dropped times the dropped share, which is {100 * nb / n:.1f}% ({nb} of {n}) "
+                f"in the gold set against {100 * (mi - kept) / mi:.1f}% of the pool's margin-`incorrect` AI "
+                "Disagrees: the gain is a gold-sample quantity.", ""]
+    return out
+
+
+def _design_line(d):
+    return ("Resampled within round x stratum instead of label-level (the sampling design; "
+            f"{d['P1']['strata']} and {d['P2']['strata']} strata): "
+            f"P1 {_pp(d['P1']['diff'], d['P1']['lo'], d['P1']['hi'])}, P2 {_pp(d['P2']['diff'], d['P2']['lo'], d['P2']['hi'])}.")
 
 
 def render_weighted(j):
@@ -990,6 +1214,12 @@ def render_slices(j):
             for r in rows]
     if not any(r["kept"]["n"] >= mn and r["dropped"]["n"] >= mn for r in rows):
         out += ["", f"_No severity reaches {mn} items in both groups._"]
+    if "p1_type" in s:
+        out += ["", f"**P1 by type** (rounds pooled; a group under {mn} items shows its size only)", "",
+                "| Type | kept by `symmetric` | dropped | kept minus dropped (Fisher p) |", "|---|---|---|---|"]
+        out += [f"| {r['slice']} | {_pn(r['kept'])} | {_pn(r['dropped'])} | " +
+                ("" if r["diff"] is None else f"{_pp(r['diff'], None, None)} ({_ps(r['fisher_p'])})") + " |"
+                for r in s["p1_type"]]
     return "\n".join(out).rstrip()
 
 
@@ -1003,7 +1233,8 @@ def render_sensitivity(j):
         lines.append(f"| {r['label']} | {gold} | {tallies} | {_p(p['a'])} | {_p(p['b'])} | "
                      f"{_pp(p['diff'], p['lo'], p['hi'])} |")
     lines += ["", "Pooled rows. Masked-only gold leaves out the decided items reached in the round-2 meeting; "
-                  "`expert votes removed` takes a rater's earlier production vote out of the pool tallies."]
+                  "`expert votes removed` takes the other expert's production vote (round 1's rater's were left "
+                  "out at the draw) out of the pool tallies."]
     return "\n".join(lines)
 
 
@@ -1039,6 +1270,8 @@ def render_provenance(j):
              f"| round-3 splits, noisy targets and variant splits (sha256 of the sorted per-file list) | "
              f"`{p['splits_combined_sha256']}` ({p['n_split_files']} files) |",
              f"| verdicts.csv (private) | `{p['verdicts_sha256']}` |",
+             *([f"| cityparams.conf (deployment ids and schemas for the privacy check) | `{p['cityparams_sha256']}` |"]
+               if "cityparams_sha256" in p else []),
              f"| code | commit `{p['git_commit']}`; Python {p['python']}, pandas {p['pandas']}, numpy {p['numpy']} |",
              f"| intervals | {p['n_boot']} label-level resamples (AUC: 1,000 panorama resamples), seed {p['seed']} |",
              f"| public-deployment list | live `/v3/api/cities`, read {p['cities_read_at']} ({p['n_public']} public) |"]
@@ -1114,8 +1347,29 @@ def city_lists():
 # ---------------------------------------------------------------------------------------------------------------------
 
 def _git_commit():
-    r = subprocess.run(["git", "-C", REPO_DIR, "rev-parse", "HEAD"], capture_output=True, text=True)
-    return r.stdout.strip() if r.returncode == 0 else "unknown"
+    """``HEAD``'s sha, with ``-dirty`` when tracked files differ from it (the run's code is then not that commit);
+    ``unknown`` without git."""
+    try:
+        r = subprocess.run(["git", "-C", REPO_DIR, "rev-parse", "HEAD"], capture_output=True, text=True)
+        if r.returncode:
+            return "unknown"
+        d = subprocess.run(["git", "-C", REPO_DIR, "status", "--porcelain", "--untracked-files=no"],
+                           capture_output=True, text=True)
+    except OSError:
+        return "unknown"
+    return r.stdout.strip() + ("-dirty" if d.returncode or d.stdout.strip() else "")
+
+
+def refuse_private_out(path, what):
+    """Exit when ``path`` is inside this repository (checked without git, so a copy without ``.git`` is covered) or
+    inside any git checkout (``adjudicator.refuse_in_checkout``; skipped when git itself is missing)."""
+    p = os.path.abspath(path)
+    if p == REPO_DIR or p.startswith(REPO_DIR + os.sep):
+        sys.exit(f"refusing to write {what} inside the repository: {path}")
+    try:
+        adj.refuse_in_checkout(path, what)
+    except OSError:  # no git binary: the repository check above still holds
+        pass
 
 
 def _split_files(split_root):
@@ -1142,10 +1396,13 @@ def score(gold, pool, split_root, weights, n_boot=N_BOOT, seed=0):
     train = adj.train_rows_of(split_root)
     pr = pool_shares(pool)
     det = {v: {c or "all": p2_rows(g, v, c, n_boot, seed) for c in ("incorrect", "correct", None)} for v in VARIANTS}
-    j = {"gold_counts": gold_counts(gold, g_adj, g, g_keep),
+    j = {"gold_counts": gold_counts(gold, g_adj, g, g_keep, pool),
          "pool": pr,
+         "pool_expert": pool_expert(pool),
          "primary": {"P1": p1_rows(g, "symmetric3", n_boot, seed), "P2": p2_rows(g, "cl-drop", None, n_boot, seed),
-                     "P1_unanimous3": p1_rows(g, "unanimous3", n_boot, seed), "roles": dict(ROLES)},
+                     "P1_unanimous3": p1_rows(g, "unanimous3", n_boot, seed), "roles": dict(ROLES),
+                     "P1_stratified": p1_stratified(g, "symmetric3", n_boot, seed),
+                     "design_boot": design_boot(g, n_boot, seed)},
          "weighted": weighted_p1(g, weights),
          "rules": {"ai_disagree": rule_rows(g, "ai_disagree"), "decoys": rule_rows(g, "decoys")},
          "detector": det,
@@ -1182,7 +1439,7 @@ def dumps(j):
 
 
 def cmd_score(args):
-    adj.refuse_in_checkout(args.out_dir, "the per-label verdicts")
+    refuse_private_out(args.out_dir, "the per-label verdicts")
     missing = [f"--{k.replace('_', '-')} {p}" for k, p in (("gold", args.gold), ("pool", args.pool),
                                                          ("r1_manifest", args.r1_manifest),
                                                          ("r2_recount", args.r2_recount),
@@ -1211,6 +1468,7 @@ def cmd_score(args):
                        "r2_recount_sha256": rl.sha256_file(args.r2_recount),
                        "r2_design_sha256": rl.sha256_file(args.r2_design),
                        "splits_combined_sha256": combined, "n_split_files": len(files), "verdicts_sha256": vsha,
+                       "cityparams_sha256": rl.sha256_file(args.cityparams),
                        "git_commit": _git_commit(), "python": platform.python_version(), "pandas": pd.__version__,
                        "numpy": np.__version__, "n_boot": args.n_boot, "seed": args.seed,
                        "cities_read_at": lists["read_at"], "n_public": len(lists["public"])}
