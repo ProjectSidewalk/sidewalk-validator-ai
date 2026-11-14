@@ -883,6 +883,8 @@ def test_committed_json_is_counts_only():
 
 
 def test_committed_json_thin_cells_carry_no_verdict_count():
+    """A thin cell can consist only of items from non-public deployments (round 1's decoys hold a one-item rule
+    cell), so it publishes its size and no count of verdicts."""
     j, _ = _committed()
     s = j["slices"]
     mn = s["min_n"]
@@ -893,6 +895,11 @@ def test_committed_json_thin_cells_carry_no_verdict_count():
         for r in s[key]:
             for grp in ("kept", "dropped"):
                 assert (r[grp]["k"] is None) == (r[grp]["n"] < mn), r
+    for pop in ("ai_disagree", "decoys"):
+        for rows in j["rules"][pop]["rows"].values():
+            for rule in ts.TALLY_RULES:
+                for c in ("incorrect", "correct", "agree"):
+                    assert (rows[rule][c]["k"] is None) == (rows[rule][c]["n"] < ts.MIN_CELL), (pop, rule, c)
 
 
 def test_doc_prose_quotes_the_type_stratified_p1():
@@ -911,7 +918,8 @@ VERDICTS = os.path.expanduser("~/Data/sidewalk-validator-ai-target-scoreboard-20
 @pytest.mark.skipif(not os.path.exists(VERDICTS), reason="private per-label verdicts not on this machine")
 def test_committed_json_recomputes_from_the_private_verdicts():
     """On the machine that ran ``score``: recompute the primaries, the type-stratified P1 and P1 by type from the
-    private verdicts and compare with the committed JSON (the other committed-JSON tests only read it)."""
+    private verdicts and compare with the committed JSON (the other committed-JSON tests only read it). Skipped in CI,
+    which has no private data."""
     j, _ = _committed()
     if ts.rl.sha256_file(VERDICTS) != j["provenance"]["verdicts_sha256"]:
         pytest.skip("the private verdicts are not the ones the committed JSON was built from")
@@ -929,7 +937,8 @@ def test_committed_json_recomputes_from_the_private_verdicts():
     st = ts.p1_stratified(g, n_boot=0)
     for k in ("type", "type_round"):
         assert st[k]["diff"] == pytest.approx(j["primary"]["P1_stratified"][k]["diff"])
-    mine = ts.slice_rows(g, pd.DataFrame(columns=["label_type", "severity", "tags"]))
-    for key in ("p1_type", "p1_severity"):
+    # verdicts.csv carries no severity or tags, so only P1 by type is recomputed (blank columns stand in)
+    mine = ts.slice_rows(g.assign(severity="", tags=""), pd.DataFrame(columns=["label_type", "severity", "tags"]))
+    for key in ("p1_type",):
         assert [(r["kept"]["n"], r["dropped"]["n"], r["kept"]["k"], r["dropped"]["k"]) for r in mine[key]] == \
             [(r["kept"]["n"], r["dropped"]["n"], r["kept"]["k"], r["dropped"]["k"]) for r in j["slices"][key]]

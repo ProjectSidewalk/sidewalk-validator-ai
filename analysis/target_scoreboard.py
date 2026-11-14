@@ -668,8 +668,9 @@ def p2_rows(g, variant="cl-drop", target_class=None, n_boot=N_BOOT, seed=0):
 
 def rule_rows(g, population="ai_disagree"):
     """Descriptive: per round and pooled, per rule, how often the expert agrees with an ``incorrect`` target and
-    with a ``correct`` target the rule gives (Wilson), on the decided AI Disagrees or on the decoys. Coverage is
-    not reported here (the sampling design fixes it; see :func:`pool_shares`)."""
+    with a ``correct`` target the rule gives (Wilson), on the decided AI Disagrees or on the decoys. A cell under
+    ``MIN_CELL`` items keeps only its size (:func:`_thin_rate`; round 1's decoy cells can be a single item from a
+    non-public deployment). Coverage is not reported here (the sampling design fixes it; see :func:`pool_shares`)."""
     x = g[g.ai_vote == "Disagree"] if population == "ai_disagree" else g[g.ai_vote != "Disagree"]
     out = {}
     for r in ("1", "2", "pooled"):
@@ -677,8 +678,10 @@ def rule_rows(g, population="ai_disagree"):
         rows = {"n": int(len(f)), "expert_incorrect": rate(int((f.expert == "incorrect").sum()), len(f))}
         for rule in TALLY_RULES:
             v = f[f"rule_{rule}"]
-            rows[rule] = {c: rate(int(((v == c) & (f.expert == c)).sum()), int((v == c).sum())) for c in cl.CLASSES}
-            rows[rule]["agree"] = rate(int(((v != "") & (v == f.expert)).sum()), int((v != "").sum()))
+            rows[rule] = {c: _thin_rate(int(((v == c) & (f.expert == c)).sum()), int((v == c).sum()), MIN_CELL)
+                          for c in cl.CLASSES}
+            rows[rule]["agree"] = _thin_rate(int(((v != "") & (v == f.expert)).sum()), int((v != "").sum()),
+                                             MIN_CELL)
         out[r] = rows
     same = bool((x.rule_majority == x.rule_majority2).all())
     return {"rows": out, "majority_equals_majority2": same}
@@ -1158,8 +1161,9 @@ def render_rules(j):
             name = "`majority` = `majority2`" if (same and rule == "majority") else f"`{rule}`"
             for r in ("1", "2", "pooled"):
                 row = rr["rows"][r][rule]
-                out.append(f"| {name} | {ROUND_NAMES[r]} | {_p(row['incorrect'])} | {_p(row['correct'])} |")
+                out.append(f"| {name} | {ROUND_NAMES[r]} | {_pn(row['incorrect'])} | {_pn(row['correct'])} |")
         out.append("")
+    out.append(f"A cell under {MIN_CELL} items shows its size only.")
     return "\n".join(out).rstrip()
 
 
