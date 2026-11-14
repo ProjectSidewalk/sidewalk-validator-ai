@@ -227,6 +227,63 @@ def test_short_cell_is_topped_up_from_the_same_stratum():
     assert len(picked) == 50 and (picked["cell_picked"] <= picked["cell_scored"]).all()
 
 
+def topup(run, key_dir, raw_dir, out="topup", n=("pass=10", "agree_below=2", "model_incorrect=2"), seed="s3cret"):
+    ns = [a for x in n for a in ("--n", x)]
+    return nr.main(["topup", "--key-dir", str(key_dir), "--rawlabels", str(raw_dir), "--city", "chicago-il", *ns,
+                    "--seed", seed, "--cityparams", run["conf"], "--out-key-dir", str(run["tmp"] / out)])
+
+
+def test_topup_continues_the_cell_and_leaves_out_rated_and_touched_faces(run, monkeypatch):
+    pool = make_pool(run, monkeypatch)
+    key_dir = build(run, pool, score_pool(run, pool))
+    base = pd.read_csv(key_dir / "key.csv", dtype=str)
+    scores = pd.read_csv(key_dir / "scores.csv", dtype=str)
+    chi = scores[scores["city"] == "chicago-il"].copy()
+    chi = nr.one_per_face(chi.assign(rank=chi["rank"].astype(float)).sort_values("rank"))
+    fresh = chi[~chi["face_id"].isin(set(base["face_id"]))]
+    victim = fresh.loc[fresh["stratum"] == "pass", "face_id"].iloc[0]       # the first candidate face, voted on since
+    raw_dir = run["tmp"] / "raw_fresh"
+    raw_dir.mkdir()
+    raw = pd.read_csv(os.path.join(run["raw"], "chicago-il.csv"), dtype=str)
+    edge = int(victim.split(":")[1])
+    mate = raw.index[(raw["street_edge_id"].astype(int) == edge) & (raw["label_type"] == "NoSidewalk")][-1]
+    raw.loc[mate, "validations"] = json.dumps([vote(ME, "Agree")])
+    raw.to_csv(raw_dir / "chicago-il.csv", index=False)
+    assert topup(run, key_dir, raw_dir) == 0
+    out = run["tmp"] / "topup"
+    key = pd.read_csv(out / "key.csv", dtype=str)
+    man = json.loads((out / "manifest.json").read_text())
+    assert list(key.columns) == nr.KEY_COLUMNS and len(key) == man["items"]
+    assert key["stratum"].value_counts().to_dict() == {s: man["counts"][s]["picked"] for s in nr.STRATA}
+    assert man["counts"]["pass"]["picked"] == 10 and man["counts"]["agree_below"]["picked"] > 0
+    assert set(key["city_id"]) == {"chicago-il"} and key["face_id"].is_unique
+    assert not key["face_id"].isin(set(base["face_id"])).any() and victim not in set(key["face_id"])
+    assert not key["packet_id"].isin(set(base["packet_id"])).any()
+    rest = fresh[fresh["face_id"] != victim]
+    want = rest[rest["stratum"] == "pass"]["label_uid"].head(10)
+    assert set(key.loc[key["stratum"] == "pass", "label_uid_city"]) == set(want)   # the next ranks, nothing skipped
+    w = key.assign(weight=key["weight"].astype(float)).groupby("stratum")["weight"].first()
+    c = man["counts"]["pass"]
+    assert w["pass"] == pytest.approx(man_base_ratio(key_dir) * c["cell_scored"] / (c["picked_base"] + c["picked"]))
+    assert man["counts"]["touched_faces"] == 1 and man["base_key_sha256"] == rl.sha256_file(str(key_dir / "key.csv"))
+    for name in os.listdir(out):
+        assert ME not in (out / name).read_text()
+    g = run["tmp"] / "gallery_topup"
+    assert nr.main(["gallery", "--key", str(out / "key.csv"), "--out", str(g), "--cityparams", run["conf"]]) == 0
+    assert pd.read_csv(g / "gallery_urls.csv")["n"].sum() == len(key)
+    with pytest.raises(SystemExit, match="exists"):
+        topup(run, key_dir, raw_dir)
+    with pytest.raises(SystemExit, match="not the seed"):
+        topup(run, key_dir, raw_dir, out="topup2", seed="other")
+    with pytest.raises(SystemExit, match="once per stratum"):
+        topup(run, key_dir, raw_dir, out="topup3", n=("pass=3", "pass=4"))
+
+
+def man_base_ratio(key_dir):
+    m = json.loads((key_dir / "manifest.json").read_text())
+    return m["eligible"]["chicago-il"] / m["scored"]["chicago-il"]
+
+
 def sheet_for(key, wrong_pass=1, unsure=2):
     """Correct on pass and agree_below, incorrect on model_incorrect, with a few exceptions."""
     v = np.where(key["stratum"] == "model_incorrect", "incorrect", "correct").astype(object)
