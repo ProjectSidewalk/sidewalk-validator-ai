@@ -547,12 +547,23 @@ def marked_image(png, marker_x, marker_y, max_width=1000):
 # ---------------------------------------------------------------------------------------------------------------------
 
 def inside_git_checkout(path):
-    """True if ``path`` (or its nearest existing parent) is inside any git work tree."""
-    p = os.path.abspath(path)
+    """True if ``path`` (or its nearest existing parent) is inside any git work tree or git directory.
+
+    Fails closed: symlinks are resolved first (a dangling link into a checkout counts as inside), and any git
+    failure other than "not a git repository" (``dubious ownership``, git missing, ...) counts as inside, since the
+    callers use this to keep private data out of a repo."""
+    p = os.path.realpath(os.path.abspath(path))
     while not os.path.isdir(p):
         p = os.path.dirname(p)
-    r = subprocess.run(["git", "-C", p, "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True)
-    return r.returncode == 0 and r.stdout.strip() == "true"
+    try:
+        r = subprocess.run(["git", "-C", p, "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True,
+                           env={**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+                                "LC_ALL": "C", "LANGUAGE": ""})   # discovery from the path alone; English errors
+    except OSError:
+        return True
+    if r.returncode == 0:
+        return True          # "true" in a work tree; "false" inside a .git directory or a bare repo
+    return "not a git repository" not in r.stderr
 
 
 def sha256_file(path):

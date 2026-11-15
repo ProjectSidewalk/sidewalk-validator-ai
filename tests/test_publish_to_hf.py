@@ -415,8 +415,7 @@ def test_dataset_card_has_the_real_numbers(staged):
     assert "2016–2023" in card                                  # capture years from image_capture_date
     assert "oradell" in card and "test_heldout" in card
     assert 'size_categories:\n  - "n<1K"' in card
-    assert "TODO: dataset license" in card                     # not guessed
-    assert "license:" not in card.split("---")[1].replace("# TODO: dataset license", "")
+    assert not re.search(r"licen[sc]e", card, re.I)            # none passed: no metadata, no line, no TODO
     assert "900" in card and "100" in card                      # deployment prior counts
     assert "disagree − agree > 1" in card and "agree − disagree > 2" in card
 
@@ -494,7 +493,9 @@ def test_read_dataset_context_keeps_pano_id_a_string(tmp_path):
 def test_dataset_license_flag(tmp_path):
     root, *_ = make_root(tmp_path)
     _, d = pub.stage(root, T, dataset_license="cc-by-4.0")
-    assert "\nlicense: cc-by-4.0\n" in _read(os.path.join(d, "README.md"))
+    card = _read(os.path.join(d, "README.md"))
+    assert "\nlicense: cc-by-4.0\n" in card                    # front matter
+    assert "- **License:** cc-by-4.0.\n" in card               # body line
 
 
 def test_front_matter_is_valid_yaml(staged):

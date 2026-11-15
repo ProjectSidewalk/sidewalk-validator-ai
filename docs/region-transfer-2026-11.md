@@ -6,6 +6,9 @@ Experiment for [#33](https://github.com/ProjectSidewalk/sidewalk-validator-ai/is
 country it never saw? If not, what helps most: local fine-tuning, a model that is told the country, or
 per-country calibration of the global model?
 
+This page covers #52's option 3 only. Option 1 (shadow mode until a deployment is checked) is
+[`deployment-gate-2026-11.md`](deployment-gate-2026-11.md).
+
 <!-- BEGIN GENERATED: status (analysis/region_transfer.py) -->
 
 **Status: not yet run.** No GPU job has run; the report stage replaces this line.

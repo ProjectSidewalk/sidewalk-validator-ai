@@ -44,6 +44,8 @@ held-out deployments are lettered as in ``docs/retrain-2026-10.md``; every other
 
 **Ordering.** Legs that scored all held-out crops ("full") are ranked by macro-AUC. Partial legs sit below a rule,
 sorted by coverage then macro-AUC, and are never ranked against the full ones (their AUCs are on other crops).
+``build`` does not produce a same-crop comparison (every leg restricted to a partial leg's crops, such as an API
+leg's public deployments): a partial leg's AUCs are on its own crops only.
 
 **Drift check.** ``build --check`` has two modes. With the staging directory present it regenerates every aggregate
 CSV into a temporary directory and compares bytes with the committed ones, then checks the doc. Without it (CI) it
@@ -118,7 +120,12 @@ LEGS = {
     "qwen3vl-2b-mlx4": ("Qwen3-VL-2B (4-bit, Mac)", CHAT, ""),
     "qwen3vl-8b-mlx4": ("Qwen3-VL-8B (4-bit, Mac)", CHAT, ""),
     "gemma4-12b-mlx4": ("Gemma 4 12B (4-bit, Mac)", CHAT, ""),
+    "gemini-3.8-flash": ("Gemini 3.8 Flash (API, self-reported score)", CHAT,
+                         "an API leg (vlm_gemini.py): public deployments only, elicited confidence, not log-probs"),
 }
+API_LEGS = ("gemini-3.8-flash",)
+"""Legs scored through a paid API on the public deployments only (``vlm_gemini.py``). They are on the coverage table
+only once staged (no "not run yet" row), and are partial by design."""
 SHORT = {REFERENCE: "round 3", "production": "2025-08 models"}   # column headers of the wide slice tables
 MAC_LEGS = {"qwen3vl-2b": "qwen3vl-2b-mlx4", "qwen3vl-8b": "qwen3vl-8b-mlx4", "gemma4-12b": "gemma4-12b-mlx4"}
 DEFAULT_WHY = {
@@ -127,6 +134,9 @@ DEFAULT_WHY = {
 }
 for _leg in MAC_LEGS.values():
     DEFAULT_WHY[_leg] = "4-bit, Mac, sample (#16's 1,988-crop sample or its 500-crop subset)"
+for _leg in API_LEGS:
+    for _arm in (_leg, f"{_leg}-fewshot8"):
+        DEFAULT_WHY[_arm] = "public deployments only (an API leg); its meta files give the crops listed and scored"
 
 
 def leg_info(leg):
@@ -178,14 +188,17 @@ def load_splits(scores_dir):
 
 
 UNSCORED_WHY = "{n} rows unscored: neither yes nor no in the top-20 log-probs"
+UNSCORED_SELF_WHY = "{n} rows unscored: no valid yes/no answer with a confidence"
+SELF_KEY = "self-reported:{t}"   # key of a type's self-reported unscored count in a leg's ``unscored`` dict
 
 
 def load_leg(leg_dir):
     """All ``<Type>.csv`` of one leg as ``(frame, unscored)``: the frame is ``label_uid, p_incorrect`` (definition
     variant only); ``unscored`` is ``{Type: n}`` for rows dropped because the vLLM client found neither answer in the
-    top 20 (``answer_floor == "both"``, scored 0.5 as a placeholder; the column is absent for other backends). Exact
-    duplicate rows (a resumed run that re-wrote a chunk) are dropped; conflicting duplicates raise. ``(None, {})``
-    when the leg has no CSV."""
+    top 20 (``answer_floor == "both"``, scored 0.5 as a placeholder; the column is absent for other backends), and
+    ``{SELF_KEY: n}`` for rows of a self-reported leg (``vlm_gemini.py``) with a non-empty ``unscored_reason`` (no
+    score at all). Any other row without a ``p_incorrect`` raises, naming the file. Exact duplicate rows (a resumed
+    run that re-wrote a chunk) are dropped; conflicting duplicates raise. ``(None, {})`` when the leg has no CSV."""
     frames, unscored = [], {}
     for t in LABEL_TYPES:
         p = os.path.join(leg_dir, f"{t}.csv")
@@ -198,6 +211,15 @@ def load_leg(leg_dir):
                 if both.any():
                     unscored[t] = int(both.sum())
                     d = d[~both]
+            if "unscored_reason" in d:
+                # an all-empty column reads back as float64; cast before filling (pandas 3 refuses "" in float64)
+                bad = d.unscored_reason.astype("string").fillna("").str.strip().ne("")
+                if bad.any():
+                    unscored[SELF_KEY.format(t=t)] = int(bad.sum())
+                    d = d[~bad]
+            if d.p_incorrect.isna().any():
+                raise ValueError(f"{p}: {int(d.p_incorrect.isna().sum())} rows with no p_incorrect and no "
+                                 f"unscored_reason")
             frames.append(d[["label_uid", "p_incorrect"]])
     if not frames:
         return None, {}
@@ -448,7 +470,7 @@ def coverage_rows(legs, splits, notes, unscored=None):
     missing (rows the leg could not score, ``UNSCORED_WHY``, first; then ``notes.json``, then ``DEFAULT_WHY``)."""
     unscored = unscored or {}
     totals = splits.groupby("label_type").size()
-    names = list(legs) + [k for k in LEGS if k not in legs] + (["fewshot8"] if not any(
+    names = list(legs) + [k for k in LEGS if k not in legs and k not in API_LEGS] + (["fewshot8"] if not any(
         k.endswith("-fewshot8") for k in legs) else [])
     rows = []
     for leg in names:
@@ -459,10 +481,13 @@ def coverage_rows(legs, splits, notes, unscored=None):
             tot = int(totals.get(t, 0))
             why = note.get(t) or note.get("*") or ""
             nu = unscored.get(leg, {}).get(t, 0)
-            if n + nu < tot and not why:
-                why = DEFAULT_WHY.get(leg, "not run yet" if n == 0 else f"partial: run incomplete ({n + nu} of {tot})")
-            if nu:
-                why = "; ".join(w for w in (UNSCORED_WHY.format(n=nu), why) if w)
+            ns = unscored.get(leg, {}).get(SELF_KEY.format(t=t), 0)
+            if n + nu + ns < tot and not why:
+                why = DEFAULT_WHY.get(leg, "not run yet" if n == 0 else
+                                      f"partial: run incomplete ({n + nu + ns} of {tot})")
+            if nu or ns:
+                why = "; ".join(w for w in (UNSCORED_WHY.format(n=nu) if nu else "",
+                                            UNSCORED_SELF_WHY.format(n=ns) if ns else "", why) if w)
             rows.append({"leg": leg, "display": "8-shot arm" if leg == "fewshot8" else leg_info(leg)[0],
                          "label_type": t, "n": n, "total": tot, "complete": n == tot, "why": "" if n == tot else why})
     return rows

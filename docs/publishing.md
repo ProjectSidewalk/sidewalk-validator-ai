@@ -74,7 +74,9 @@ What the pipeline does not record goes in `<out>/<label_type>/card_overrides.jso
 {"failure_modes": ["..."], "split_seed": 42, "dataset_license": "<hub license id>", "doi": "...", "model_doi": "..."}
 ```
 
-Anything still unknown is written as `TODO:` (the DOI lines just say none has been minted yet).
+Anything still unknown is written as `TODO:` (the DOI lines just say none has been minted yet). The dataset
+license is the exception: with no `dataset_license` (or `--dataset-license`), the card has no license metadata and
+no license line.
 `croissant.json` is validated when `mlcroissant` is installed and written unvalidated otherwise.
 
 ## Pushing
