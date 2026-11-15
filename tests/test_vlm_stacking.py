@@ -49,7 +49,7 @@ def test_folds_never_split_a_city(monkeypatch):
         return real(xtr, ytr, xte, raw)
     monkeypatch.setattr(vs, "_fit_predict", spy)
     g = df[df.label_type == vs.LABEL_TYPES[0]]
-    x = np.column_stack([vs.logit(g.p_r3, 1e-6), vs.logit(g.p_vlm, 0.01)])
+    x = np.column_stack([vs.logit(g.p_r3, vs.CLIP["p_r3"]), vs.logit(g.p_vlm, vs.CLIP["p_vlm"])])
     scores, w = vs.oof_scores(x, g.y.to_numpy(), g.city.to_numpy())
     assert len(seen) == vs.N_FOLDS and all(a + b == len(g) and b % 40 == 0 for a, b in seen)   # whole cities
     assert w.shape == (vs.N_FOLDS, 1) and not np.isnan(scores).any()
@@ -64,7 +64,40 @@ def test_stack_gains_when_the_second_score_is_independent_and_holdout_flags_trai
     assert a["macro", "stack_type"] > a["macro", "round3"] > 0.5
     run = df[["label_uid", "city", "label_id", "label_type", "pano_id"]].assign(split="test")
     run.loc[0, "split"] = "train"                       # one crop trained on; its panorama mate is flagged too
+    other = df[df.label_type != df.label_type[0]].iloc[:1]   # a train row of another type on crop 0's panorama
+    run = pd.concat([run, other.assign(label_id=999999, label_uid=other.city + ":999999",
+                                       pano_id=df.pano_id[0], split="train")[run.columns]], ignore_index=True)
     rows, trained = vs.holdout_check(df, run)
-    assert trained.sum() == 2 and rows.set_index("check").n["round-3 split = train"] == 1
-    assert "Verdict: YES" in vs.render({"n_both": len(df), "n_vlm": len(df), "n_classifier": len(df),
+    n = rows.set_index("check").n
+    assert trained.sum() == 2 and n["round-3 split = train"] == 1
+    assert n[[c for c in n.index if "different label type" in c][0]] == 2   # crop 0 and its panorama mate
+    assert "pre-stated rule: YES" in vs.render({"n_both": len(df), "n_vlm": len(df), "n_classifier": len(df),
                                         "vlm_unscored": 0}, rows, res, None, 0)
+
+
+def test_round3_clip_keeps_its_tails_distinct():
+    """The primary clip must not tie round 3's stored scores (about 1e-11 to 1 - 1e-7, plus exact 1.0)."""
+    x = vs.logit(np.array([1.2e-11, 1e-9, 1e-7, 1 - 1e-7, 1.0]), vs.CLIP["p_r3"])
+    assert np.isfinite(x).all() and (np.diff(x) > 0).all()
+
+
+def test_error_rows_expectation_under_independence():
+    # one type; round 3 wrong on crops 0 and 2 (one of each class); Flash's accuracy is 1/2 on class 1, 1 on class 0
+    df = pd.DataFrame({"label_type": vs.LABEL_TYPES[0], "y": [1, 1, 0, 0],
+                       "p_r3": [0.1, 0.9, 0.9, 0.1], "p_vlm": [0.9, 0.1, 0.1, 0.1]})
+    r = vs.error_rows(df).iloc[0]
+    assert r.n_round3_wrong == 2 and r.flash_right_when_round3_wrong == 1.0
+    assert r.flash_right_if_independent == pytest.approx((0.5 + 1.0) / 2)
+    assert (r.flash_tpr, r.flash_tnr) == (0.5, 1.0)
+
+
+def test_sensitivity_is_reported_apart_from_the_primary():
+    df = frame()
+    res = vs.analyse(df, n_boot=50)
+    sens, seeds = vs.sensitivity(df, n_boot=50, fold_seeds=(0, 1), n_refit=5)
+    assert list(sens.variant) == ["clip_1e-6", "normal_rank", "loco", "refit_bootstrap"]
+    assert list(seeds.fold_seed) == [0, 1] and seeds["diff"].notna().all()
+    assert (sens.set_index("variant").x0_alone_diff[["normal_rank", "loco"]] == 0).all()   # same ranking as round 3
+    page = vs.render({"n_both": len(df), "n_vlm": len(df), "n_classifier": len(df), "vlm_unscored": 0},
+                     vs.holdout_check(df, df.assign(split="test"))[0], res, None, 0, sens, seeds)
+    assert "Verdict under the pre-stated rule" in page and "Sensitivity analyses (not the primary result)" in page
