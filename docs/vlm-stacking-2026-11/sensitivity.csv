@@ -1,0 +1,5 @@
+variant,label,diff,crop_lo,crop_hi,city_lo,city_hi,meets_rule,x0_alone_diff,diff_CurbRamp,diff_NoCurbRamp,diff_Obstacle,diff_SurfaceProblem,diff_Crosswalk,x0_alone_CurbRamp,x0_alone_NoCurbRamp,x0_alone_Obstacle,x0_alone_SurfaceProblem,x0_alone_Crosswalk,n_tied_CurbRamp,n_tied_NoCurbRamp,n_tied_Obstacle,n_tied_SurfaceProblem,n_tied_Crosswalk
+clip_1e-6,"round-3 logit clipped at 1e-06 (first version, superseded)",0.0022,-0.0003,0.0049,-0.0008,0.0047,False,-0.0035,0.0034,0.0006,-0.0070,0.0113,0.0026,-0.0048,-0.0000,-0.0092,-0.0036,0.0000,839.0000,118.0000,976.0000,978.0000,53.0000
+normal_rank,round 3 as normal scores of its rank within type,0.0037,0.0016,0.0060,0.0008,0.0064,False,0.0000,0.0043,0.0004,0.0024,0.0081,0.0033,0.0000,0.0000,0.0000,0.0000,0.0000,,,,,
+loco,leave one city out,0.0043,0.0023,0.0065,0.0016,0.0067,False,0.0000,0.0046,0.0007,0.0007,0.0135,0.0022,0.0000,0.0000,0.0000,0.0000,0.0000,,,,,
+refit_bootstrap,"primary stack, refitted inside each resample (300 crop and 300 city resamples usable of 300)",0.0041,0.0014,0.0064,-0.0023,0.0056,False,,,,,,,,,,,,,,,,
