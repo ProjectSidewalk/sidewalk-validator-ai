@@ -137,9 +137,29 @@
   "mixed_minority_at_most_20pct": 42,
   "median_labels_mixed": 9.0,
   "median_labels_not_mixed": 5.0,
-  "labels_at_2_or_3_models": 640,
   "two_label_faces": 27,
-  "two_label_faces_mixed": 11
+  "two_label_faces_mixed": 11,
+  "mixed_sd_if_independent": 4.227745814113178,
+  "mixed_expected_given_rated_stratum": 172.3045245056777,
+  "mixed_sd_given_rated_stratum": 4.954995714367159,
+  "labels_at_2_or_3_models": 640,
+  "labels_sharing_a_pano": 1003
+ },
+ "one_label_per_pano": {
+  "labels": 2036,
+  "faces": 221,
+  "all_pass": 41,
+  "none_pass": 38,
+  "mixed": 142,
+  "mixed_expected_if_independent": 186.50244406508486,
+  "mixed_minority_at_most_20pct": 41,
+  "median_labels_mixed": 8.0,
+  "median_labels_not_mixed": 5.0,
+  "two_label_faces": 31,
+  "two_label_faces_mixed": 15,
+  "mixed_sd_if_independent": 4.5886032929667975,
+  "mixed_expected_given_rated_stratum": 162.17039029645485,
+  "mixed_sd_given_rated_stratum": 5.2462732587768475
  },
  "slices": {
   "severity": {

@@ -611,11 +611,16 @@ rated: 480 of the new labels were placed by the rater (Tucson 182, Oradell 298),
 split. A labeler's run on a face is `(face_id, labeler_idx)`; the files hold no `user_id`. There are 493 such runs,
 and 1,283 of the 2,388 labels beside a rated one come from that rated label's labeler.
 
-**The map and the models are the round's.** `neighbours` refuses inputs other than the files `pool.json` pins.
-Before scoring, `neighbour-scores` checks that the gate run is the one the key was built with (the five
-out-of-fold prediction files against the key manifest), that the refitted map reproduces every pinned served
-accuracy, pass and stratum of the round (1,197 labels by 5 models), and that the neighbours' prediction files name
-the same five weight files (sha256) as the round's. All held.
+**The map and the models are the round's.** `neighbours` refuses inputs other than the files `pool.json` pins
+and a design other than the one the key manifest pins; the cityparams file is not pinned, so it is checked
+against the schema the key carries for each city. Before scoring, `neighbour-scores` checks the same design and
+that the gate run is the one the key was built with (the five out-of-fold prediction files against the key
+manifest), that the refitted map reproduces every pinned served accuracy, pass and stratum of the round (1,197
+labels by 5 models), that the neighbours' prediction files name the same five weight files (sha256) as the
+round's, and that each prediction file's provenance names the crop manifest it was scored from (the round's for
+the round's files, the neighbours' for the neighbours'). All held. Neither command replaces an existing output
+whose bytes would change (a pandas upgrade can do that) without `--force`, so a rerun cannot quietly break the
+pins below; a byte-identical rerun of both on 2026-11-14 passed.
 
 **Aggregates** ([`nosidewalk-2026-11/neighbours.md`](nosidewalk-2026-11/neighbours.md), `neighbours.json`). Every
 share here describes **this sample of faces, not a population**: the 250 faces were chosen through their rated
@@ -627,27 +632,41 @@ largest faces hold 646 labels), a figure that mostly reflects the 60 / 20 / 20 d
 city and tag rows; within the sample, the pass share runs from 67 % (`street has no sidewalks`) to 26 % (`ends
 abruptly`) and 31 % (`shared pedestrian/car space`). NoSidewalk labels carry no severity.
 
-**The model's verdict clusters by face.** On the 222 faces with at least two scored labels the verdict is pass
-for every label on 38, for none on 38 and mixed on 146. Verdicts drawn independently at each city's pass share
-(taken over the scored labels of these faces, rated ones included) would leave about 192 faces mixed, so labels on
-one face tend to get the same verdict, but most faces with several labels still hold some disagreement. Mixed
-faces are longer (median 9 labels against 5 on the others, up to 135), and on 42 of them at most a fifth of the
-labels differ from the rest. The verdict is a threshold, "at least 3 of 5 models", and 640 of the 2,635 scored
-labels sit at 2 or 3 models, one model away from the other verdict. Of the 27 two-label faces, 11 are mixed.
+**The model's verdict clusters by face, less than the plain benchmark says.** On the 222 faces with at least two
+scored labels the verdict is pass for every label on 38, for none on 38 and mixed on 146. Verdicts drawn
+independently at each city's pass share (taken over the scored labels of these faces, rated ones included) would
+leave about 192 faces mixed (sd 4.2), but that benchmark inflates the gap through two effects:
 
-**Faces the rater already knew.** The pool kept the rater's own labels and votes out of the round, but not the
-faces they sit on: 42 of the 250 rated faces carry another NoSidewalk label the rater had placed (26 faces) or
-voted Agree on (22; 6 faces both). Only NoSidewalk labels are in the pull, so faces the rater knew through other
-label types are not counted, and 42 is a lower bound. On those faces the rater judged all 42 rated labels correct,
-11 of them outside the pass stratum, where the other faces have 51 correct of 80. Taking the other faces' rates
-within the same stratum and city, 11 of 11 has a chance of about 0.01 to 0.015; the cells behind that are small.
-Three readings fit and the round cannot tell them apart: those faces lack sidewalks more often; the rating
-repeats the rater's earlier judgment of the same street; or it is the city, since 32 of the 42 faces are in
+- *Selection.* The faces were drawn through their rated label, 60 / 20 / 20 by stratum, and the labels beside it
+  follow it (the aggregates above). At the pass share of each city and rated-label stratum the benchmark is 172
+  (sd 5.0), not 192.
+- *Shared panoramas.* 1,003 of the 2,635 scored labels share a panorama with another label of their face, and the
+  crops are whole views, so those labels are scored on overlapping crops of one image. With one label per face
+  and panorama (the rated one where it is there, else the earliest; 2,036 labels), 142 of 221 faces are mixed,
+  against 162 (sd 5.2) at the city-and-stratum shares and 187 at the city shares.
+
+With both effects removed the gap is about 20 faces, about four standard deviations, rather than 46, so labels on
+one face do tend to get the same verdict, but most faces with several labels still hold some disagreement. Like
+every share in this section, these counts describe this sample of faces, not a population. Mixed faces are longer (median 9 labels against 5 on the others, up to 135), and on 42 of them at most a fifth of the labels differ
+from the rest. The verdict is a threshold, "at least 3 of 5 models", and 640 of the 2,635 scored labels sit at 2
+or 3 models, one model away from the other verdict. Of the 27 two-label faces, 11 are mixed.
+
+**Faces the rater already knew.** The pool kept the rater's own labels and votes out of the round, but not the faces
+they sit on: 42 of the 250 rated faces carry another NoSidewalk label the rater had placed (26 faces) or voted Agree
+on (22; 6 faces both). Only NoSidewalk labels are in the pull, so faces the rater knew through other label types are
+not counted, and 42 is a lower bound. On those faces the rater judged all 42 rated labels correct, 11 of them
+outside the pass stratum, where the other faces have 51 correct of 80. At the other faces' rate within the same
+stratum, 11 of 11 has a chance of about 0.009, and within the same stratum and city about 0.015; the cells behind
+that are small. Three readings fit and the round cannot tell them apart: those faces lack sidewalks more often; the
+rating repeats the rater's earlier judgment of the same street; or it is the city, since 32 of the 42 faces are in
 Oradell, where the rater placed most of these labels. It does not change the bar: without the 42 faces the pass
-stratum is **111 / 113 = 0.982, Wilson lower bound 0.938**, on more than 100 decided labels, so the bar is still
-met (`neighbour-scores --sheet`; table in `neighbours.md`). That is a check made after the fact, and it leaves
-Oradell with 8 pass-stratum ratings. A later round should exclude a face the rater has touched, not only the
-labels.
+stratum is **111 / 113 = 0.982, Wilson lower bound 0.938**, on more than 100 decided labels, so the bar is still met
+(`neighbour-scores --sheet`; table in `neighbours.md`). Wider definitions of "touched" keep it met, where a rated
+label also counts as touched when a NoSidewalk label the rater placed or voted on sits on the same street edge
+(either side): 110 / 112 (0.937); on the same panorama: 110 / 112 (0.937); within 100 m: 106 / 107 (0.949). Those
+three were counted in review from the pinned rawLabels pulls, not by `neighbour-scores`. That is a check made after
+the fact, and it leaves Oradell with 8 pass-stratum ratings. A later round should exclude a face the rater has
+touched, not only the labels.
 
 **What this does and does not answer.** The clustering above is about the model's verdict only. Whether the
 labels of a run are right or wrong together (#102, item 1) needs several *rated* labels per face, and the round
