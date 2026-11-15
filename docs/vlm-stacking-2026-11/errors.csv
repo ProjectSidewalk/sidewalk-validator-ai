@@ -1,0 +1,7 @@
+label_type,n,round3_accuracy,flash_accuracy,n_round3_wrong,flash_right_when_round3_wrong,n_flash_wrong,round3_right_when_flash_wrong,n_both_wrong,error_phi
+CurbRamp,1199,0.9216,0.8165,94,0.5106,220,0.7909,46,0.2305
+NoCurbRamp,2357,0.8791,0.7582,285,0.4105,570,0.7053,168,0.3011
+Obstacle,1826,0.7941,0.6709,376,0.4761,601,0.6722,197,0.2111
+SurfaceProblem,1900,0.7916,0.6842,396,0.5303,600,0.6900,186,0.1699
+Crosswalk,290,0.9552,0.9138,13,0.3846,25,0.6800,8,0.4084
+all,7572,0.8463,0.7338,1164,0.4802,2016,0.6999,605,0.2445
