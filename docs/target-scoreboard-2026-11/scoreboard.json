@@ -95,84 +95,84 @@
    "all": {
     "1": {
      "a": {
-      "hi": 0.6576280471103807,
-      "k": 0,
-      "lo": 0.0,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 2,
-      "rate": 0.0
+      "rate": null
      },
      "b": {
-      "hi": 0.4206962427064874,
-      "k": 9,
-      "lo": 0.14162868726550137,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 35,
-      "rate": 0.2571428571428571
+      "rate": null
      },
-     "diff": -0.2571428571428571,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.2264573842591785,
-      "k": 2,
-      "lo": 0.01981164744777079,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 28,
-      "rate": 0.07142857142857142
+      "rate": null
      },
-     "fisher_p": 1.0,
+     "fisher_p": null,
      "hi": null,
      "kept_accuracy": {
-      "hi": 0.8583713127344986,
-      "k": 26,
-      "lo": 0.5793037572935126,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 35,
-      "rate": 0.7428571428571429
+      "rate": null
      },
      "lo": null,
      "recall": {
-      "hi": 0.2991527535509594,
-      "k": 0,
-      "lo": 0.0,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 9,
-      "rate": 0.0
+      "rate": null
      }
     },
     "2": {
      "a": {
-      "hi": 0.6462032231083628,
-      "k": 4,
-      "lo": 0.15166223614131386,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 11,
-      "rate": 0.36363636363636365
+      "rate": null
      },
      "b": {
-      "hi": 0.2077650492890617,
-      "k": 10,
-      "lo": 0.0667761844053888,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 83,
-      "rate": 0.12048192771084337
+      "rate": null
      },
-     "diff": 0.24315443592552027,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.1697698277708346,
-      "k": 7,
-      "lo": 0.043031454647439876,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 80,
-      "rate": 0.0875
+      "rate": null
      },
-     "fisher_p": 0.055898578184839884,
-     "hi": 0.5640778809015968,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.9332238155946112,
-      "k": 73,
-      "lo": 0.7922349507109382,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 83,
-      "rate": 0.8795180722891566
+      "rate": null
      },
-     "lo": -0.041051416256157644,
+     "lo": null,
      "recall": {
-      "hi": 0.546495411724844,
-      "k": 4,
-      "lo": 0.11721187910109102,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 14,
-      "rate": 0.2857142857142857
+      "rate": null
      }
     },
     "heterogeneity": {
@@ -225,84 +225,84 @@
    "correct": {
     "1": {
      "a": {
-      "hi": 0.6576280471103807,
-      "k": 0,
-      "lo": 0.0,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 2,
-      "rate": 0.0
+      "rate": null
      },
      "b": {
-      "hi": 0.6993639475573634,
-      "k": 1,
-      "lo": 0.045586062644636216,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 4,
-      "rate": 0.25
+      "rate": null
      },
-     "diff": -0.25,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.769280067791163,
-      "k": 2,
-      "lo": 0.11761823115925325,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 5,
-      "rate": 0.4
+      "rate": null
      },
-     "fisher_p": 1.0,
+     "fisher_p": null,
      "hi": null,
      "kept_accuracy": {
-      "hi": 0.9544139373553637,
-      "k": 3,
-      "lo": 0.30063605244263664,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 4,
-      "rate": 0.75
+      "rate": null
      },
      "lo": null,
      "recall": {
-      "hi": 0.7934567085261071,
-      "k": 0,
-      "lo": 0.0,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 1,
-      "rate": 0.0
+      "rate": null
      }
     },
     "2": {
      "a": {
-      "hi": 0.5635094365636462,
-      "k": 1,
-      "lo": 0.030052585871730285,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 6,
-      "rate": 0.16666666666666666
+      "rate": null
      },
      "b": {
-      "hi": 0.3146926955395781,
-      "k": 1,
-      "lo": 0.012721886112291648,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 14,
-      "rate": 0.07142857142857142
+      "rate": null
      },
-     "diff": 0.09523809523809523,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.5087307754619452,
-      "k": 5,
-      "lo": 0.12499569146355476,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 18,
-      "rate": 0.2777777777777778
+      "rate": null
      },
-     "fisher_p": 0.5210526315789473,
-     "hi": 0.49051928463693184,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.9872781138877084,
-      "k": 13,
-      "lo": 0.6853073044604219,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 14,
-      "rate": 0.9285714285714286
+      "rate": null
      },
-     "lo": -0.1875,
+     "lo": null,
      "recall": {
-      "hi": 0.9054713451991339,
-      "k": 1,
-      "lo": 0.09452865480086611,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 2,
-      "rate": 0.5
+      "rate": null
      }
     },
     "heterogeneity": {
@@ -312,43 +312,43 @@
     },
     "pooled": {
      "a": {
-      "hi": 0.47089480576986154,
-      "k": 1,
-      "lo": 0.02241690886329618,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 8,
-      "rate": 0.125
+      "rate": null
      },
      "b": {
-      "hi": 0.3280024486660422,
-      "k": 2,
-      "lo": 0.031018868453582777,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 18,
-      "rate": 0.1111111111111111
+      "rate": null
      },
-     "diff": 0.013888888888888895,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.5086612906057262,
-      "k": 7,
-      "lo": 0.15603828020972457,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 23,
-      "rate": 0.30434782608695654
+      "rate": null
      },
-     "fisher_p": 1.0,
-     "hi": 0.3333333333333333,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.9689811315464172,
-      "k": 16,
-      "lo": 0.6719975513339578,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 18,
-      "rate": 0.8888888888888888
+      "rate": null
      },
-     "lo": -0.2222222222222222,
+     "lo": null,
      "recall": {
-      "hi": 0.7923450448735121,
-      "k": 1,
-      "lo": 0.061490315276160515,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 3,
-      "rate": 0.3333333333333333
+      "rate": null
      }
     }
    },
@@ -356,7 +356,7 @@
     "1": {
      "a": {
       "hi": null,
-      "k": 0,
+      "k": null,
       "lo": null,
       "n": 0,
       "rate": null
@@ -376,7 +376,7 @@
       "n": 23,
       "rate": 0.0
      },
-     "fisher_p": 1.0,
+     "fisher_p": null,
      "hi": null,
      "kept_accuracy": {
       "hi": 0.8629845626313024,
@@ -396,43 +396,43 @@
     },
     "2": {
      "a": {
-      "hi": 0.8823817688407467,
-      "k": 3,
-      "lo": 0.23071993220883702,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 5,
-      "rate": 0.6
+      "rate": null
      },
      "b": {
-      "hi": 0.2296851491140428,
-      "k": 9,
-      "lo": 0.07016548568804834,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 69,
-      "rate": 0.13043478260869565
+      "rate": null
      },
-     "diff": 0.4695652173913043,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.1102067713101822,
-      "k": 2,
-      "lo": 0.008891184997076395,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 62,
-      "rate": 0.03225806451612903
+      "rate": null
      },
-     "fisher_p": 0.027780033278779176,
-     "hi": 0.9027777777777778,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.9298345143119516,
-      "k": 60,
-      "lo": 0.7703148508859572,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 69,
-      "rate": 0.8695652173913043
+      "rate": null
      },
-     "lo": -0.11169796557120501,
+     "lo": null,
      "recall": {
-      "hi": 0.5323103391206598,
-      "k": 3,
-      "lo": 0.08894003962896137,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 12,
-      "rate": 0.25
+      "rate": null
      }
     },
     "heterogeneity": {
@@ -442,43 +442,43 @@
     },
     "pooled": {
      "a": {
-      "hi": 0.8823817688407467,
-      "k": 3,
-      "lo": 0.23071993220883702,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 5,
-      "rate": 0.6
+      "rate": null
      },
      "b": {
-      "hi": 0.25548181233642975,
-      "k": 17,
-      "lo": 0.10893476059773155,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 100,
-      "rate": 0.17
+      "rate": null
      },
-     "diff": 0.42999999999999994,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.08178858150288171,
-      "k": 2,
-      "lo": 0.006476375454219535,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 85,
-      "rate": 0.023529411764705882
+      "rate": null
      },
-     "fisher_p": 0.04657310391233298,
-     "hi": 0.8627450980392157,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.8910652394022684,
-      "k": 83,
-      "lo": 0.7445181876635703,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 100,
-      "rate": 0.83
+      "rate": null
      },
-     "lo": -0.16728547854785478,
+     "lo": null,
      "recall": {
-      "hi": 0.36042329588695743,
-      "k": 3,
-      "lo": 0.05236779195949584,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 20,
-      "rate": 0.15
+      "rate": null
      }
     }
    }
@@ -487,84 +487,84 @@
    "all": {
     "1": {
      "a": {
-      "hi": 0.6576280471103807,
-      "k": 0,
-      "lo": 0.0,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 2,
-      "rate": 0.0
+      "rate": null
      },
      "b": {
-      "hi": 0.4206962427064874,
-      "k": 9,
-      "lo": 0.14162868726550137,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 35,
-      "rate": 0.2571428571428571
+      "rate": null
      },
-     "diff": -0.2571428571428571,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.2264573842591785,
-      "k": 2,
-      "lo": 0.01981164744777079,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 28,
-      "rate": 0.07142857142857142
+      "rate": null
      },
-     "fisher_p": 1.0,
+     "fisher_p": null,
      "hi": null,
      "kept_accuracy": {
-      "hi": 0.8583713127344986,
-      "k": 26,
-      "lo": 0.5793037572935126,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 35,
-      "rate": 0.7428571428571429
+      "rate": null
      },
      "lo": null,
      "recall": {
-      "hi": 0.2991527535509594,
-      "k": 0,
-      "lo": 0.0,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 9,
-      "rate": 0.0
+      "rate": null
      }
     },
     "2": {
      "a": {
-      "hi": 0.6462032231083628,
-      "k": 4,
-      "lo": 0.15166223614131386,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 11,
-      "rate": 0.36363636363636365
+      "rate": null
      },
      "b": {
-      "hi": 0.2077650492890617,
-      "k": 10,
-      "lo": 0.0667761844053888,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 83,
-      "rate": 0.12048192771084337
+      "rate": null
      },
-     "diff": 0.24315443592552027,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.1697698277708346,
-      "k": 7,
-      "lo": 0.043031454647439876,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 80,
-      "rate": 0.0875
+      "rate": null
      },
-     "fisher_p": 0.055898578184839884,
-     "hi": 0.5567799070847851,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.9332238155946112,
-      "k": 73,
-      "lo": 0.7922349507109382,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 83,
-      "rate": 0.8795180722891566
+      "rate": null
      },
-     "lo": -0.06570543537787513,
+     "lo": null,
      "recall": {
-      "hi": 0.546495411724844,
-      "k": 4,
-      "lo": 0.11721187910109102,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 14,
-      "rate": 0.2857142857142857
+      "rate": null
      }
     },
     "heterogeneity": {
@@ -617,84 +617,84 @@
    "correct": {
     "1": {
      "a": {
-      "hi": 0.6576280471103807,
-      "k": 0,
-      "lo": 0.0,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 2,
-      "rate": 0.0
+      "rate": null
      },
      "b": {
-      "hi": 0.6993639475573634,
-      "k": 1,
-      "lo": 0.045586062644636216,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 4,
-      "rate": 0.25
+      "rate": null
      },
-     "diff": -0.25,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.769280067791163,
-      "k": 2,
-      "lo": 0.11761823115925325,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 5,
-      "rate": 0.4
+      "rate": null
      },
-     "fisher_p": 1.0,
+     "fisher_p": null,
      "hi": null,
      "kept_accuracy": {
-      "hi": 0.9544139373553637,
-      "k": 3,
-      "lo": 0.30063605244263664,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 4,
-      "rate": 0.75
+      "rate": null
      },
      "lo": null,
      "recall": {
-      "hi": 0.7934567085261071,
-      "k": 0,
-      "lo": 0.0,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 1,
-      "rate": 0.0
+      "rate": null
      }
     },
     "2": {
      "a": {
-      "hi": 0.5635094365636462,
-      "k": 1,
-      "lo": 0.030052585871730285,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 6,
-      "rate": 0.16666666666666666
+      "rate": null
      },
      "b": {
-      "hi": 0.3146926955395781,
-      "k": 1,
-      "lo": 0.012721886112291648,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 14,
-      "rate": 0.07142857142857142
+      "rate": null
      },
-     "diff": 0.09523809523809523,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.5087307754619452,
-      "k": 5,
-      "lo": 0.12499569146355476,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 18,
-      "rate": 0.2777777777777778
+      "rate": null
      },
-     "fisher_p": 0.5210526315789473,
-     "hi": 0.5,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.9872781138877084,
-      "k": 13,
-      "lo": 0.6853073044604219,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 14,
-      "rate": 0.9285714285714286
+      "rate": null
      },
-     "lo": -0.17687165775401067,
+     "lo": null,
      "recall": {
-      "hi": 0.9054713451991339,
-      "k": 1,
-      "lo": 0.09452865480086611,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 2,
-      "rate": 0.5
+      "rate": null
      }
     },
     "heterogeneity": {
@@ -704,43 +704,43 @@
     },
     "pooled": {
      "a": {
-      "hi": 0.47089480576986154,
-      "k": 1,
-      "lo": 0.02241690886329618,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 8,
-      "rate": 0.125
+      "rate": null
      },
      "b": {
-      "hi": 0.3280024486660422,
-      "k": 2,
-      "lo": 0.031018868453582777,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 18,
-      "rate": 0.1111111111111111
+      "rate": null
      },
-     "diff": 0.013888888888888895,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.5086612906057262,
-      "k": 7,
-      "lo": 0.15603828020972457,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 23,
-      "rate": 0.30434782608695654
+      "rate": null
      },
-     "fisher_p": 1.0,
-     "hi": 0.3333333333333333,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.9689811315464172,
-      "k": 16,
-      "lo": 0.6719975513339578,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 18,
-      "rate": 0.8888888888888888
+      "rate": null
      },
-     "lo": -0.23529411764705882,
+     "lo": null,
      "recall": {
-      "hi": 0.7923450448735121,
-      "k": 1,
-      "lo": 0.061490315276160515,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 3,
-      "rate": 0.3333333333333333
+      "rate": null
      }
     }
    },
@@ -748,7 +748,7 @@
     "1": {
      "a": {
       "hi": null,
-      "k": 0,
+      "k": null,
       "lo": null,
       "n": 0,
       "rate": null
@@ -768,7 +768,7 @@
       "n": 23,
       "rate": 0.0
      },
-     "fisher_p": 1.0,
+     "fisher_p": null,
      "hi": null,
      "kept_accuracy": {
       "hi": 0.8629845626313024,
@@ -788,43 +788,43 @@
     },
     "2": {
      "a": {
-      "hi": 0.8823817688407467,
-      "k": 3,
-      "lo": 0.23071993220883702,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 5,
-      "rate": 0.6
+      "rate": null
      },
      "b": {
-      "hi": 0.2296851491140428,
-      "k": 9,
-      "lo": 0.07016548568804834,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 69,
-      "rate": 0.13043478260869565
+      "rate": null
      },
-     "diff": 0.4695652173913043,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.1102067713101822,
-      "k": 2,
-      "lo": 0.008891184997076395,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 62,
-      "rate": 0.03225806451612903
+      "rate": null
      },
-     "fisher_p": 0.027780033278779176,
-     "hi": 0.9027777777777778,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.9298345143119516,
-      "k": 60,
-      "lo": 0.7703148508859572,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 69,
-      "rate": 0.8695652173913043
+      "rate": null
      },
-     "lo": -0.1232876712328767,
+     "lo": null,
      "recall": {
-      "hi": 0.5323103391206598,
-      "k": 3,
-      "lo": 0.08894003962896137,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 12,
-      "rate": 0.25
+      "rate": null
      }
     },
     "heterogeneity": {
@@ -834,43 +834,43 @@
     },
     "pooled": {
      "a": {
-      "hi": 0.8823817688407467,
-      "k": 3,
-      "lo": 0.23071993220883702,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 5,
-      "rate": 0.6
+      "rate": null
      },
      "b": {
-      "hi": 0.25548181233642975,
-      "k": 17,
-      "lo": 0.10893476059773155,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 100,
-      "rate": 0.17
+      "rate": null
      },
-     "diff": 0.42999999999999994,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.08178858150288171,
-      "k": 2,
-      "lo": 0.006476375454219535,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 85,
-      "rate": 0.023529411764705882
+      "rate": null
      },
-     "fisher_p": 0.04657310391233298,
-     "hi": 0.8617598524558336,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.8910652394022684,
-      "k": 83,
-      "lo": 0.7445181876635703,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 100,
-      "rate": 0.83
+      "rate": null
      },
-     "lo": -0.1460237007424329,
+     "lo": null,
      "recall": {
-      "hi": 0.36042329588695743,
-      "k": 3,
-      "lo": 0.05236779195949584,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 20,
-      "rate": 0.15
+      "rate": null
      }
     }
    }
@@ -1010,7 +1010,7 @@
     "1": {
      "a": {
       "hi": null,
-      "k": 0,
+      "k": null,
       "lo": null,
       "n": 0,
       "rate": null
@@ -1030,7 +1030,7 @@
       "n": 5,
       "rate": 0.0
      },
-     "fisher_p": 1.0,
+     "fisher_p": null,
      "hi": null,
      "kept_accuracy": {
       "hi": 0.9699474141282698,
@@ -1041,17 +1041,17 @@
      },
      "lo": null,
      "recall": {
-      "hi": 0.7934567085261071,
-      "k": 0,
-      "lo": 0.0,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 1,
-      "rate": 0.0
+      "rate": null
      }
     },
     "2": {
      "a": {
       "hi": null,
-      "k": 0,
+      "k": null,
       "lo": null,
       "n": 0,
       "rate": null
@@ -1071,7 +1071,7 @@
       "n": 18,
       "rate": 0.0
      },
-     "fisher_p": 1.0,
+     "fisher_p": null,
      "hi": null,
      "kept_accuracy": {
       "hi": 0.9721341060158468,
@@ -1082,11 +1082,11 @@
      },
      "lo": null,
      "recall": {
-      "hi": 0.6576280471103807,
-      "k": 0,
-      "lo": 0.0,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 2,
-      "rate": 0.0
+      "rate": null
      }
     },
     "heterogeneity": {
@@ -1097,7 +1097,7 @@
     "pooled": {
      "a": {
       "hi": null,
-      "k": 0,
+      "k": null,
       "lo": null,
       "n": 0,
       "rate": null
@@ -1117,7 +1117,7 @@
       "n": 23,
       "rate": 0.0
      },
-     "fisher_p": 1.0,
+     "fisher_p": null,
      "hi": null,
      "kept_accuracy": {
       "hi": 0.959968281788505,
@@ -1128,11 +1128,11 @@
      },
      "lo": null,
      "recall": {
-      "hi": 0.5615060804490177,
-      "k": 0,
-      "lo": 0.0,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 3,
-      "rate": 0.0
+      "rate": null
      }
     }
    },
@@ -1401,84 +1401,84 @@
    "correct": {
     "1": {
      "a": {
-      "hi": 0.5615060804490177,
-      "k": 0,
-      "lo": 0.0,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 3,
-      "rate": 0.0
+      "rate": null
      },
      "b": {
-      "hi": 0.7923450448735121,
-      "k": 1,
-      "lo": 0.061490315276160515,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 3,
-      "rate": 0.3333333333333333
+      "rate": null
      },
-     "diff": -0.3333333333333333,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.8823817688407467,
-      "k": 3,
-      "lo": 0.23071993220883702,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 5,
-      "rate": 0.6
+      "rate": null
      },
-     "fisher_p": 1.0,
+     "fisher_p": null,
      "hi": null,
      "kept_accuracy": {
-      "hi": 0.9385096847238394,
-      "k": 2,
-      "lo": 0.20765495512648788,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 3,
-      "rate": 0.6666666666666666
+      "rate": null
      },
      "lo": null,
      "recall": {
-      "hi": 0.7934567085261071,
-      "k": 0,
-      "lo": 0.0,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 1,
-      "rate": 0.0
+      "rate": null
      }
     },
     "2": {
      "a": {
-      "hi": 0.5635094365636462,
-      "k": 1,
-      "lo": 0.030052585871730285,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 6,
-      "rate": 0.16666666666666666
+      "rate": null
      },
      "b": {
-      "hi": 0.3146926955395781,
-      "k": 1,
-      "lo": 0.012721886112291648,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 14,
-      "rate": 0.07142857142857142
+      "rate": null
      },
-     "diff": 0.09523809523809523,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.5087307754619452,
-      "k": 5,
-      "lo": 0.12499569146355476,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 18,
-      "rate": 0.2777777777777778
+      "rate": null
      },
-     "fisher_p": 0.5210526315789473,
-     "hi": 0.5,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.9872781138877084,
-      "k": 13,
-      "lo": 0.6853073044604219,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 14,
-      "rate": 0.9285714285714286
+      "rate": null
      },
-     "lo": -0.18181818181818182,
+     "lo": null,
      "recall": {
-      "hi": 0.9054713451991339,
-      "k": 1,
-      "lo": 0.09452865480086611,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 2,
-      "rate": 0.5
+      "rate": null
      }
     },
     "heterogeneity": {
@@ -1488,173 +1488,173 @@
     },
     "pooled": {
      "a": {
-      "hi": 0.43500621476806023,
-      "k": 1,
-      "lo": 0.019890371327130518,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 9,
-      "rate": 0.1111111111111111
+      "rate": null
      },
      "b": {
-      "hi": 0.3433684249770991,
-      "k": 2,
-      "lo": 0.03287908001292091,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 17,
-      "rate": 0.11764705882352941
+      "rate": null
      },
-     "diff": -0.006535947712418305,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.5511002309310837,
-      "k": 8,
-      "lo": 0.18811054636982238,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 23,
-      "rate": 0.34782608695652173
+      "rate": null
      },
-     "fisher_p": 1.0,
-     "hi": 0.3,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.967120919987079,
-      "k": 15,
-      "lo": 0.6566315750229009,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 17,
-      "rate": 0.8823529411764706
+      "rate": null
      },
-     "lo": -0.23529411764705882,
+     "lo": null,
      "recall": {
-      "hi": 0.7923450448735121,
-      "k": 1,
-      "lo": 0.061490315276160515,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 3,
-      "rate": 0.3333333333333333
+      "rate": null
      }
     }
    },
    "incorrect": {
     "1": {
      "a": {
-      "hi": 0.47576971896558296,
-      "k": 7,
-      "lo": 0.14283673837381572,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 25,
-      "rate": 0.28
+      "rate": null
      },
      "b": {
-      "hi": 0.5635094365636462,
-      "k": 1,
-      "lo": 0.030052585871730285,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 6,
-      "rate": 0.16666666666666666
+      "rate": null
      },
-     "diff": 0.11333333333333337,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.9033616439828094,
-      "k": 18,
-      "lo": 0.5809611981726509,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 23,
-      "rate": 0.782608695652174
+      "rate": null
      },
-     "fisher_p": 1.0,
-     "hi": 0.4074074074074074,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.9699474141282698,
-      "k": 5,
-      "lo": 0.4364905634363539,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 6,
-      "rate": 0.8333333333333334
+      "rate": null
      },
-     "lo": -0.30026785714285714,
+     "lo": null,
      "recall": {
-      "hi": 0.9775830911367038,
-      "k": 7,
-      "lo": 0.5291051942301385,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 8,
-      "rate": 0.875
+      "rate": null
      }
     },
     "2": {
      "a": {
-      "hi": 0.3184485732747717,
-      "k": 11,
-      "lo": 0.11338480016444107,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 56,
-      "rate": 0.19642857142857142
+      "rate": null
      },
      "b": {
-      "hi": 0.2575779980200753,
-      "k": 1,
-      "lo": 0.009874935830924522,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 18,
-      "rate": 0.05555555555555555
+      "rate": null
      },
-     "diff": 0.14087301587301587,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.8211908140090787,
-      "k": 45,
-      "lo": 0.6040722415667276,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 62,
-      "rate": 0.7258064516129032
+      "rate": null
      },
-     "fisher_p": 0.2719407536049335,
-     "hi": 0.28072092381302893,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.9901250641690755,
-      "k": 17,
-      "lo": 0.7424220019799247,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 18,
-      "rate": 0.9444444444444444
+      "rate": null
      },
-     "lo": -0.02150653503893213,
+     "lo": null,
      "recall": {
-      "hi": 0.9851352905492265,
-      "k": 11,
-      "lo": 0.6461140782014047,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 12,
-      "rate": 0.9166666666666666
+      "rate": null
      }
     },
     "heterogeneity": {
-     "did": -0.027539682539682503,
-     "hi": 0.33028508771929815,
-     "lo": -0.4491881729381729
+     "did": null,
+     "hi": null,
+     "lo": null
     },
     "pooled": {
      "a": {
-      "hi": 0.3241549022412208,
-      "k": 18,
-      "lo": 0.14544491671551743,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 81,
-      "rate": 0.2222222222222222
+      "rate": null
      },
      "b": {
-      "hi": 0.25849215201450604,
-      "k": 2,
-      "lo": 0.023158327842973492,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 24,
-      "rate": 0.08333333333333333
+      "rate": null
      },
-     "diff": 0.1388888888888889,
+     "diff": null,
      "false_alarm": {
-      "hi": 0.8224202671134392,
-      "k": 63,
-      "lo": 0.6390752485008677,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 85,
-      "rate": 0.7411764705882353
+      "rate": null
      },
-     "fisher_p": 0.15172094587064194,
-     "hi": 0.2677984665936473,
+     "fisher_p": null,
+     "hi": null,
      "kept_accuracy": {
-      "hi": 0.9768416721570264,
-      "k": 22,
-      "lo": 0.741507847985494,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 24,
-      "rate": 0.9166666666666666
+      "rate": null
      },
-     "lo": -0.011145833333333348,
+     "lo": null,
      "recall": {
-      "hi": 0.9721341060158468,
-      "k": 18,
-      "lo": 0.6989617935882066,
+      "hi": null,
+      "k": null,
+      "lo": null,
       "n": 20,
-      "rate": 0.9
+      "rate": null
      }
     }
    }
@@ -2143,84 +2143,84 @@
   "P2": {
    "1": {
     "a": {
-     "hi": 0.6576280471103807,
-     "k": 0,
-     "lo": 0.0,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 2,
-     "rate": 0.0
+     "rate": null
     },
     "b": {
-     "hi": 0.4206962427064874,
-     "k": 9,
-     "lo": 0.14162868726550137,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 35,
-     "rate": 0.2571428571428571
+     "rate": null
     },
-    "diff": -0.2571428571428571,
+    "diff": null,
     "false_alarm": {
-     "hi": 0.2264573842591785,
-     "k": 2,
-     "lo": 0.01981164744777079,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 28,
-     "rate": 0.07142857142857142
+     "rate": null
     },
-    "fisher_p": 1.0,
+    "fisher_p": null,
     "hi": null,
     "kept_accuracy": {
-     "hi": 0.8583713127344986,
-     "k": 26,
-     "lo": 0.5793037572935126,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 35,
-     "rate": 0.7428571428571429
+     "rate": null
     },
     "lo": null,
     "recall": {
-     "hi": 0.2991527535509594,
-     "k": 0,
-     "lo": 0.0,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 9,
-     "rate": 0.0
+     "rate": null
     }
    },
    "2": {
     "a": {
-     "hi": 0.6462032231083628,
-     "k": 4,
-     "lo": 0.15166223614131386,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 11,
-     "rate": 0.36363636363636365
+     "rate": null
     },
     "b": {
-     "hi": 0.2077650492890617,
-     "k": 10,
-     "lo": 0.0667761844053888,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 83,
-     "rate": 0.12048192771084337
+     "rate": null
     },
-    "diff": 0.24315443592552027,
+    "diff": null,
     "false_alarm": {
-     "hi": 0.1697698277708346,
-     "k": 7,
-     "lo": 0.043031454647439876,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 80,
-     "rate": 0.0875
+     "rate": null
     },
-    "fisher_p": 0.055898578184839884,
-    "hi": 0.5640778809015968,
+    "fisher_p": null,
+    "hi": null,
     "kept_accuracy": {
-     "hi": 0.9332238155946112,
-     "k": 73,
-     "lo": 0.7922349507109382,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 83,
-     "rate": 0.8795180722891566
+     "rate": null
     },
-    "lo": -0.041051416256157644,
+    "lo": null,
     "recall": {
-     "hi": 0.546495411724844,
-     "k": 4,
-     "lo": 0.11721187910109102,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 14,
-     "rate": 0.2857142857142857
+     "rate": null
     }
    },
    "heterogeneity": {
@@ -2291,9 +2291,10 @@
   }
  },
  "provenance": {
-  "cities_read_at": "2026-11-13T15:46:33+00:00 (saved response; API down on 2026-11-14)",
+  "cities_read_at": "2026-11-13T15:46:33+00:00",
+  "cities_response": "saved",
   "cityparams_sha256": "eed92cfd7658762f981c082f135fa1474041d688c7b3ef63f21278263026a899",
-  "git_commit": "b2a22dedf17cb33eb96999a9f6f73815691b6f44",
+  "git_commit": "01572c184b74ad1741436c5a78e9219f6f2fc81c",
   "gold_matches_pin": true,
   "gold_sha256": "2b472651cb01011a8640b86eb4103e1794ab482186ba3a3471e7d019273edcae",
   "n_boot": 2000,
@@ -2857,11 +2858,11 @@
      },
      "margin": {
       "agree": {
-       "hi": 0.9269323397589488,
-       "k": 18,
-       "lo": 0.6148297802336214,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 22,
-       "rate": 0.8181818181818182
+       "rate": null
       },
       "correct": {
        "hi": 0.9689811315464172,
@@ -2881,11 +2882,11 @@
      "n": 92,
      "symmetric2": {
       "agree": {
-       "hi": 0.9546489414551025,
-       "k": 31,
-       "lo": 0.7404820521187976,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 35,
-       "rate": 0.8857142857142857
+       "rate": null
       },
       "correct": {
        "hi": 0.9821255922249368,
@@ -2904,11 +2905,11 @@
      },
      "symmetric3": {
       "agree": {
-       "hi": 0.9476322080405042,
-       "k": 17,
-       "lo": 0.6395767041130426,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 20,
-       "rate": 0.85
+       "rate": null
       },
       "correct": {
        "hi": 0.9689811315464172,
@@ -2927,11 +2928,11 @@
      },
      "unanimous3": {
       "agree": {
-       "hi": 0.9851352905492265,
-       "k": 11,
-       "lo": 0.6461140782014047,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 12,
-       "rate": 0.9166666666666666
+       "rate": null
       },
       "correct": {
        "hi": 0.9837682477371741,
@@ -2982,11 +2983,11 @@
      },
      "majority2": {
       "agree": {
-       "hi": 0.9671167756500444,
-       "k": 44,
-       "lo": 0.804464348389337,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 48,
-       "rate": 0.9166666666666666
+       "rate": null
       },
       "correct": {
        "hi": 0.9648894518657968,
@@ -3005,11 +3006,11 @@
      },
      "margin": {
       "agree": {
-       "hi": 1.0,
-       "k": 23,
-       "lo": 0.8568788745827373,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 23,
-       "rate": 1.0
+       "rate": null
       },
       "correct": {
        "hi": 1.0,
@@ -3029,11 +3030,11 @@
      "n": 151,
      "symmetric2": {
       "agree": {
-       "hi": 0.9664064205302869,
-       "k": 43,
-       "lo": 0.8006819480497736,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 47,
-       "rate": 0.9148936170212766
+       "rate": null
       },
       "correct": {
        "hi": 0.9640783885211635,
@@ -3052,11 +3053,11 @@
      },
      "symmetric3": {
       "agree": {
-       "hi": 1.0,
-       "k": 22,
-       "lo": 0.8513404742740388,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 22,
-       "rate": 1.0
+       "rate": null
       },
       "correct": {
        "hi": 1.0,
@@ -3130,11 +3131,11 @@
      },
      "majority2": {
       "agree": {
-       "hi": 0.9426004368047677,
-       "k": 75,
-       "lo": 0.8087519975771198,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 84,
-       "rate": 0.8928571428571429
+       "rate": null
       },
       "correct": {
        "hi": 0.9633164944785457,
@@ -3144,20 +3145,20 @@
        "rate": 0.9210526315789473
       },
       "incorrect": {
-       "hi": 0.863158240538479,
-       "k": 5,
-       "lo": 0.3057378545838018,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 8,
-       "rate": 0.625
+       "rate": null
       }
      },
      "margin": {
       "agree": {
-       "hi": 0.9648894518657968,
-       "k": 41,
-       "lo": 0.792661488316343,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 45,
-       "rate": 0.9111111111111111
+       "rate": null
       },
       "correct": {
        "hi": 0.9854460975514632,
@@ -3167,21 +3168,21 @@
        "rate": 0.9473684210526315
       },
       "incorrect": {
-       "hi": 0.9177828342909845,
-       "k": 5,
-       "lo": 0.35892909014821267,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 7,
-       "rate": 0.7142857142857143
+       "rate": null
       }
      },
      "n": 243,
      "symmetric2": {
       "agree": {
-       "hi": 0.9497319129062151,
-       "k": 74,
-       "lo": 0.8191260766932333,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 82,
-       "rate": 0.9024390243902439
+       "rate": null
       },
       "correct": {
        "hi": 0.9628203821056319,
@@ -3191,20 +3192,20 @@
        "rate": 0.92
       },
       "incorrect": {
-       "hi": 0.9177828342909845,
-       "k": 5,
-       "lo": 0.35892909014821267,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 7,
-       "rate": 0.7142857142857143
+       "rate": null
       }
      },
      "symmetric3": {
       "agree": {
-       "hi": 0.9754100364488272,
-       "k": 39,
-       "lo": 0.8099028671147485,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 42,
-       "rate": 0.9285714285714286
+       "rate": null
       },
       "correct": {
        "hi": 0.9854460975514632,
@@ -3223,11 +3224,11 @@
      },
      "unanimous3": {
       "agree": {
-       "hi": 0.9931781910230101,
-       "k": 25,
-       "lo": 0.8110682300804161,
+       "hi": null,
+       "k": null,
+       "lo": null,
        "n": 26,
-       "rate": 0.9615384615384616
+       "rate": null
       },
       "correct": {
        "hi": 0.9929039496133009,
@@ -3336,84 +3337,84 @@
   "masked-only|n/a (train targets)": {
    "1": {
     "a": {
-     "hi": 0.6576280471103807,
-     "k": 0,
-     "lo": 0.0,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 2,
-     "rate": 0.0
+     "rate": null
     },
     "b": {
-     "hi": 0.4206962427064874,
-     "k": 9,
-     "lo": 0.14162868726550137,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 35,
-     "rate": 0.2571428571428571
+     "rate": null
     },
-    "diff": -0.2571428571428571,
+    "diff": null,
     "false_alarm": {
-     "hi": 0.2264573842591785,
-     "k": 2,
-     "lo": 0.01981164744777079,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 28,
-     "rate": 0.07142857142857142
+     "rate": null
     },
-    "fisher_p": 1.0,
+    "fisher_p": null,
     "hi": null,
     "kept_accuracy": {
-     "hi": 0.8583713127344986,
-     "k": 26,
-     "lo": 0.5793037572935126,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 35,
-     "rate": 0.7428571428571429
+     "rate": null
     },
     "lo": null,
     "recall": {
-     "hi": 0.2991527535509594,
-     "k": 0,
-     "lo": 0.0,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 9,
-     "rate": 0.0
+     "rate": null
     }
    },
    "2": {
     "a": {
-     "hi": 0.6462032231083628,
-     "k": 4,
-     "lo": 0.15166223614131386,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 11,
-     "rate": 0.36363636363636365
+     "rate": null
     },
     "b": {
-     "hi": 0.2077650492890617,
-     "k": 10,
-     "lo": 0.0667761844053888,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 83,
-     "rate": 0.12048192771084337
+     "rate": null
     },
-    "diff": 0.24315443592552027,
+    "diff": null,
     "false_alarm": {
-     "hi": 0.1697698277708346,
-     "k": 7,
-     "lo": 0.043031454647439876,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 80,
-     "rate": 0.0875
+     "rate": null
     },
-    "fisher_p": 0.055898578184839884,
-    "hi": 0.5640778809015968,
+    "fisher_p": null,
+    "hi": null,
     "kept_accuracy": {
-     "hi": 0.9332238155946112,
-     "k": 73,
-     "lo": 0.7922349507109382,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 83,
-     "rate": 0.8795180722891566
+     "rate": null
     },
-    "lo": -0.041051416256157644,
+    "lo": null,
     "recall": {
-     "hi": 0.546495411724844,
-     "k": 4,
-     "lo": 0.11721187910109102,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 14,
-     "rate": 0.2857142857142857
+     "rate": null
     }
    },
    "heterogeneity": {
@@ -3633,84 +3634,84 @@
   "with meeting verdicts|n/a (train targets)": {
    "1": {
     "a": {
-     "hi": 0.6576280471103807,
-     "k": 0,
-     "lo": 0.0,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 2,
-     "rate": 0.0
+     "rate": null
     },
     "b": {
-     "hi": 0.4206962427064874,
-     "k": 9,
-     "lo": 0.14162868726550137,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 35,
-     "rate": 0.2571428571428571
+     "rate": null
     },
-    "diff": -0.2571428571428571,
+    "diff": null,
     "false_alarm": {
-     "hi": 0.2264573842591785,
-     "k": 2,
-     "lo": 0.01981164744777079,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 28,
-     "rate": 0.07142857142857142
+     "rate": null
     },
-    "fisher_p": 1.0,
+    "fisher_p": null,
     "hi": null,
     "kept_accuracy": {
-     "hi": 0.8583713127344986,
-     "k": 26,
-     "lo": 0.5793037572935126,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 35,
-     "rate": 0.7428571428571429
+     "rate": null
     },
     "lo": null,
     "recall": {
-     "hi": 0.2991527535509594,
-     "k": 0,
-     "lo": 0.0,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 9,
-     "rate": 0.0
+     "rate": null
     }
    },
    "2": {
     "a": {
-     "hi": 0.6462032231083628,
-     "k": 4,
-     "lo": 0.15166223614131386,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 11,
-     "rate": 0.36363636363636365
+     "rate": null
     },
     "b": {
-     "hi": 0.2077650492890617,
-     "k": 10,
-     "lo": 0.0667761844053888,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 83,
-     "rate": 0.12048192771084337
+     "rate": null
     },
-    "diff": 0.24315443592552027,
+    "diff": null,
     "false_alarm": {
-     "hi": 0.1697698277708346,
-     "k": 7,
-     "lo": 0.043031454647439876,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 80,
-     "rate": 0.0875
+     "rate": null
     },
-    "fisher_p": 0.055898578184839884,
-    "hi": 0.5640778809015968,
+    "fisher_p": null,
+    "hi": null,
     "kept_accuracy": {
-     "hi": 0.9332238155946112,
-     "k": 73,
-     "lo": 0.7922349507109382,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 83,
-     "rate": 0.8795180722891566
+     "rate": null
     },
-    "lo": -0.041051416256157644,
+    "lo": null,
     "recall": {
-     "hi": 0.546495411724844,
-     "k": 4,
-     "lo": 0.11721187910109102,
+     "hi": null,
+     "k": null,
+     "lo": null,
      "n": 14,
-     "rate": 0.2857142857142857
+     "rate": null
     }
    },
    "heterogeneity": {

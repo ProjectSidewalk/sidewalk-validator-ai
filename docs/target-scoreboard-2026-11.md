@@ -236,7 +236,7 @@ Heterogeneity check (round 1's difference minus round 2's, resampled within roun
 
 Kept minus all rows of the margin rule (what applying the stricter rule changes in the share of `incorrect` targets the expert confirms; P1 rescaled by the dropped share): round 1 -3.3 pts [-20.1, +14.1]; round 2 +2.9 pts [-4.5, +10.5]; pooled +1.7 pts [-5.2, +8.6].
 
-Check, not pre-stated: kept minus dropped within label type (Mantel-Haenszel risk difference, label-level bootstrap; 5 of 5 types hold both groups) -0.5 pts [-12.6, +11.8]; within type x round (10 of 10 cells) -1.1 pts [-14.4, +11.5]. Each type trains its own model, so the pooled row's mix of types never reaches one; P1 by type is under Slices.
+Check, not pre-stated: kept minus dropped within label type (Mantel-Haenszel risk difference, label-level bootstrap; 5 of 5 types hold both groups) -0.5 pts [-12.6, +11.8]; within type x round (10 of 10 cells) -1.1 pts [-14.4, +11.5] (approximate: the ends of this interval move by about a point between resampling seeds). Each type trains its own model, so the pooled row's mix of types never reaches one; P1 by type is under Slices.
 
 The gain is kept minus dropped times the dropped share, which is 56.7% (85 of 150) in the gold set against 49.6% of the pool's margin-`incorrect` AI Disagrees: the gain is a gold-sample quantity.
 
@@ -244,11 +244,13 @@ The gain is kept minus dropped times the dropped share, which is 56.7% (85 of 15
 
 | Rows | flagged | unflagged | flagged minus unflagged [95%] | Fisher p | Recall | False alarms |
 |---|---|---|---|---:|---|---|
-| round 1 | 0/2 (0.0% [0.0, 65.8]) | 9/35 (25.7% [14.2, 42.1]) | -25.7 pts | 1 | 0/9 (0.0% [0.0, 29.9]) | 2/28 (7.1% [2.0, 22.6]) |
-| round 2 | 4/11 (36.4% [15.2, 64.6]) | 10/83 (12.0% [6.7, 20.8]) | +24.3 pts [-4.1, +56.4] | 0.0559 | 4/14 (28.6% [11.7, 54.6]) | 7/80 (8.8% [4.3, 17.0]) |
+| round 1 | n 2 | n 35 | n/a | n/a | n 9 | n 28 |
+| round 2 | n 11 | n 83 | n/a | n/a | n 14 | n 80 |
 | **pooled (primary estimate)** | 4/13 (30.8% [12.7, 57.6]) | 19/118 (16.1% [10.6, 23.8]) | +14.7 pts [-10.1, +43.2] | 0.242 | 4/23 (17.4% [7.0, 37.1]) | 9/108 (8.3% [4.4, 15.1]) |
 
 Heterogeneity check (round 1's difference minus round 2's, resampled within round): not computable (a group in one round has 2 rows; it needs 5).
+
+The round 1 and round 2 rows show sizes only: a cell has fewer than 5 rows, and the pooled row is round 1 plus round 2, so the other round's counts would give it away.
 
 Of the pooled P2's 13 flagged rows, 2 are from round 1 and 11 from round 2; with 2 flagged round-1 rows the rounds cannot be compared.
 
@@ -365,13 +367,13 @@ clipped bounds; both are gone.
 | `majority` | pooled (sample rate; descriptive) | 7/12 (58.3% [32.0, 80.7]) | 129/137 (94.2% [88.9, 97.0]) |
 | `majority2` | round 1 | 2/5 (40.0% [11.8, 76.9]) | 29/31 (93.5% [79.3, 98.2]) |
 | `majority2` | round 2 | n 3 | 41/45 (91.1% [79.3, 96.5]) |
-| `majority2` | pooled (sample rate; descriptive) | 5/8 (62.5% [30.6, 86.3]) | 70/76 (92.1% [83.8, 96.3]) |
+| `majority2` | pooled (sample rate; descriptive) | n 8 | 70/76 (92.1% [83.8, 96.3]) |
 | `symmetric2` | round 1 | n 4 | 29/31 (93.5% [79.3, 98.2]) |
 | `symmetric2` | round 2 | n 3 | 40/44 (90.9% [78.8, 96.4]) |
-| `symmetric2` | pooled (sample rate; descriptive) | 5/7 (71.4% [35.9, 91.8]) | 69/75 (92.0% [83.6, 96.3]) |
+| `symmetric2` | pooled (sample rate; descriptive) | n 7 | 69/75 (92.0% [83.6, 96.3]) |
 | `margin` | round 1 | n 4 | 16/18 (88.9% [67.2, 96.9]) |
 | `margin` | round 2 | n 3 | 20/20 (100.0% [83.9, 100.0]) |
-| `margin` | pooled (sample rate; descriptive) | 5/7 (71.4% [35.9, 91.8]) | 36/38 (94.7% [82.7, 98.5]) |
+| `margin` | pooled (sample rate; descriptive) | n 7 | 36/38 (94.7% [82.7, 98.5]) |
 | `symmetric3` | round 1 | n 2 | 16/18 (88.9% [67.2, 96.9]) |
 | `symmetric3` | round 2 | n 2 | 20/20 (100.0% [83.9, 100.0]) |
 | `symmetric3` | pooled (sample rate; descriptive) | n 4 | 36/38 (94.7% [82.7, 98.5]) |
@@ -379,7 +381,7 @@ clipped bounds; both are gone.
 | `unanimous3` | round 2 | n 0 | 14/14 (100.0% [78.5, 100.0]) |
 | `unanimous3` | pooled (sample rate; descriptive) | n 1 | 24/25 (96.0% [80.5, 99.3]) |
 
-A cell under 5 items shows its size only.
+A cell under 5 items shows its size only, and so does every cell its count could be worked out from: the pooled cell when either round's is hidden (pooled = round 1 + round 2), the other class's cell in a round where the rule leaves no item without a target (with the expert reference row, the two cells fix each other), and, in `scoreboard.json`, the rule's `agree` count.
 
 <!-- END GENERATED: rules -->
 
@@ -397,19 +399,19 @@ target is right at least 88% of the time.
 | Variant | Target class | Rows | Touched: wrong target | Untouched: wrong target | touched minus untouched [95%] | Fisher p |
 |---|---|---|---|---|---|---:|
 | `symmetric` | incorrect | 105 | 14/61 (23.0% [14.2, 34.9]) | 6/44 (13.6% [6.4, 26.7]) | +9.3 pts [-5.6, +23.6] | 0.315 |
-| `symmetric` | correct | 26 | 0/0 | 3/26 (11.5% [4.0, 29.0]) | n/a | 1 |
+| `symmetric` | correct | 26 | n 0 | 3/26 (11.5% [4.0, 29.0]) | n/a | n/a |
 | `symmetric` | all (descriptive pool) | 131 | 14/61 (23.0% [14.2, 34.9]) | 9/70 (12.9% [6.9, 22.7]) | +10.1 pts [-3.3, +23.0] | 0.168 |
-| `unanimous3` | incorrect | 105 | 18/81 (22.2% [14.5, 32.4]) | 2/24 (8.3% [2.3, 25.8]) | +13.9 pts [-1.1, +26.8] | 0.152 |
-| `unanimous3` | correct | 26 | 1/9 (11.1% [2.0, 43.5]) | 2/17 (11.8% [3.3, 34.3]) | -0.7 pts [-23.5, +30.0] | 1 |
+| `unanimous3` | incorrect | 105 | n 81 | n 24 | n/a | n/a |
+| `unanimous3` | correct | 26 | n 9 | n 17 | n/a | n/a |
 | `unanimous3` | all (descriptive pool) | 131 | 19/90 (21.1% [14.0, 30.6]) | 4/41 (9.8% [3.9, 22.5]) | +11.4 pts [-1.9, +23.3] | 0.141 |
-| `cl-drop` | incorrect | 105 | 3/5 (60.0% [23.1, 88.2]) | 17/100 (17.0% [10.9, 25.5]) | +43.0 pts [-16.7, +86.3] | 0.0466 |
-| `cl-drop` | correct | 26 | 1/8 (12.5% [2.2, 47.1]) | 2/18 (11.1% [3.1, 32.8]) | +1.4 pts [-22.2, +33.3] | 1 |
+| `cl-drop` | incorrect | 105 | n 5 | n 100 | n/a | n/a |
+| `cl-drop` | correct | 26 | n 8 | n 18 | n/a | n/a |
 | `cl-drop` | all (descriptive pool) | 131 | 4/13 (30.8% [12.7, 57.6]) | 19/118 (16.1% [10.6, 23.8]) | +14.7 pts [-10.1, +43.2] | 0.242 |
-| `cl-flip` | incorrect | 105 | 3/5 (60.0% [23.1, 88.2]) | 17/100 (17.0% [10.9, 25.5]) | +43.0 pts [-14.6, +86.2] | 0.0466 |
-| `cl-flip` | correct | 26 | 1/8 (12.5% [2.2, 47.1]) | 2/18 (11.1% [3.1, 32.8]) | +1.4 pts [-23.5, +33.3] | 1 |
+| `cl-flip` | incorrect | 105 | n 5 | n 100 | n/a | n/a |
+| `cl-flip` | correct | 26 | n 8 | n 18 | n/a | n/a |
 | `cl-flip` | all (descriptive pool) | 131 | 4/13 (30.8% [12.7, 57.6]) | 19/118 (16.1% [10.6, 23.8]) | +14.7 pts [-10.8, +43.5] | 0.242 |
 
-Rounds pooled (round 1 has 37 train rows); per-round rows of every cell are in `scoreboard.json`. Touched = dropped (`symmetric`, `unanimous3`, `cl-drop`) or flipped (`cl-flip`).
+Rounds pooled (round 1 has 37 train rows); per-round rows are in `scoreboard.json`. Touched = dropped (`symmetric`, `unanimous3`, `cl-drop`) or flipped (`cl-flip`). A cell under 5 rows shows its size only, and so does every cell of a row from which such a cell's count could be worked out: the other target class's row of the same round and the pooled rows (the row over both classes stays, because P2 and check B publish it).
 
 <!-- END GENERATED: detector -->
 
@@ -592,9 +594,9 @@ the same point with a different resampling stream.
 | round-3 splits, noisy targets and variant splits (sha256 of the sorted per-file list) | `761fb89088deea286859cfbe7c600a92f2894ed4e5fb5bd2aebcd9cf66e1dcff` (30 files) |
 | verdicts.csv (private) | `e17a408a5db6c49dbe7e7ee2deef83c230a84068f383a32be033f5af6382e4f1` |
 | cityparams.conf (deployment ids and schemas for the privacy check) | `eed92cfd7658762f981c082f135fa1474041d688c7b3ef63f21278263026a899` |
-| code | commit `b2a22dedf17cb33eb96999a9f6f73815691b6f44`; Python 3.11.15, pandas 2.3.1, numpy 2.4.6 |
+| code | commit `01572c184b74ad1741436c5a78e9219f6f2fc81c`; Python 3.11.15, pandas 2.3.1, numpy 2.4.6 |
 | intervals | 2000 label-level resamples (AUC: 1,000 panorama resamples), seed 0 |
-| public-deployment list | live `/v3/api/cities`, read 2026-11-13T15:46:33+00:00 (saved response; API down on 2026-11-14) (46 public) |
+| public-deployment list | saved `/v3/api/cities` response, read 2026-11-13T15:46:33+00:00 (46 public) |
 
 <!-- END GENERATED: provenance -->
 

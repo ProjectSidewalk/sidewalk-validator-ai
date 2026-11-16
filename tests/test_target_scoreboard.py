@@ -909,7 +909,7 @@ def test_committed_json_thin_cells_carry_no_verdict_count():
             cells += [((name, r, x), rows[r][x]) for x in ts.DETECTOR_CELLS]
             if rows[r]["a"]["k"] is None or rows[r]["b"]["k"] is None:  # a difference or p would give the k back
                 assert rows[r]["diff"] is None and rows[r]["lo"] is None and rows[r]["fisher_p"] is None, (name, r)
-    assert len(cells) > 400
+    assert len(cells) >= 300  # 108 rule cells, 180 detector cells, P2 and its two sensitivity rows
     for key, cell in cells:
         if cell["n"] < ts.MIN_CELL:  # thin; a larger cell can be blank too (its count would give a thin one)
             assert cell["k"] is None, key
