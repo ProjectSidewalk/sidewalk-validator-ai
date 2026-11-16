@@ -56,6 +56,7 @@ Example (the vote rules on one tally each; ``""`` means the rule leaves no targe
     [['incorrect', 'incorrect', '', ''], ['correct', '', '', ''], ['incorrect', 'incorrect', 'incorrect', 'incorrect'], ['incorrect', 'incorrect', 'incorrect', '']]
 """
 import argparse
+import copy
 import hashlib
 import json
 import math
@@ -92,6 +93,7 @@ VOTE_CLASSES = ("no decisive vote", "1 vote", "tie", "light", "margin_incorrect"
 N_BOOT = 2000
 SLICE_MIN_N = 20
 MIN_CELL = gr.MIN_CELL
+ROUNDS = ("1", "2", "pooled")
 CONSENSUS = "r2_consensus"
 BEGIN = "<!-- BEGIN GENERATED: {name} (analysis/target_scoreboard.py) -->"
 END = "<!-- END GENERATED: {name} -->"
@@ -666,25 +668,136 @@ def p2_rows(g, variant="cl-drop", target_class=None, n_boot=N_BOOT, seed=0):
     return out
 
 
+def detector_rows(g, variant, n_boot=N_BOOT, seed=0):
+    """:func:`p2_rows` for each target class (``incorrect``, ``correct``) and for both (``all``), with thin cells
+    and every cell they could be worked out from reduced to their size (:func:`_seal_detector`). P2 is
+    ``detector_rows(g, "cl-drop")["all"]``."""
+    raw = {c or "all": p2_rows(g, variant, c, n_boot, seed) for c in ("incorrect", "correct", None)}
+    return _seal_detector(raw)
+
+
 def rule_rows(g, population="ai_disagree"):
     """Descriptive: per round and pooled, per rule, how often the expert agrees with an ``incorrect`` target and
     with a ``correct`` target the rule gives (Wilson), on the decided AI Disagrees or on the decoys. A cell under
-    ``MIN_CELL`` items keeps only its size (:func:`_thin_rate`; round 1's decoy cells can be a single item from a
-    non-public deployment). Coverage is not reported here (the sampling design fixes it; see :func:`pool_shares`)."""
+    ``MIN_CELL`` items keeps only its size, and so does every cell its count could be worked out from
+    (:func:`_seal_rules`; round 1's decoy cells can be a single item from a non-public deployment). Coverage is not
+    reported here (the sampling design fixes it; see :func:`pool_shares`)."""
     x = g[g.ai_vote == "Disagree"] if population == "ai_disagree" else g[g.ai_vote != "Disagree"]
-    out = {}
-    for r in ("1", "2", "pooled"):
+    out, abstain = {}, {}
+    for r in ROUNDS:
         f = x if r == "pooled" else x[x["round"] == r]
         rows = {"n": int(len(f)), "expert_incorrect": rate(int((f.expert == "incorrect").sum()), len(f))}
         for rule in TALLY_RULES:
             v = f[f"rule_{rule}"]
-            rows[rule] = {c: _thin_rate(int(((v == c) & (f.expert == c)).sum()), int((v == c).sum()), MIN_CELL)
-                          for c in cl.CLASSES}
-            rows[rule]["agree"] = _thin_rate(int(((v != "") & (v == f.expert)).sum()), int((v != "").sum()),
-                                             MIN_CELL)
+            rows[rule] = {c: rate(int(((v == c) & (f.expert == c)).sum()), int((v == c).sum())) for c in cl.CLASSES}
+            rows[rule]["agree"] = rate(int(((v != "") & (v == f.expert)).sum()), int((v != "").sum()))
+            abstain[r, rule] = int((v == "").sum())
         out[r] = rows
+    _seal_rules(out, abstain)
     same = bool((x.rule_majority == x.rule_majority2).all())
     return {"rows": out, "majority_equals_majority2": same}
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Thin cells
+# ---------------------------------------------------------------------------------------------------------------------
+# A cell under MIN_CELL items publishes its size and no count of verdicts (it can consist only of items from a
+# non-public deployment). Blanking the cell alone is not enough when published counts add up to it: a pooled row
+# is round 1 plus round 2, a rule's "agree" is its two target classes, a detector row over both target classes is
+# the two class rows, and P2 and check B publish the detector's pooled cl-drop row. So the blanking is closed
+# under those sums (:func:`_seal`), which is what tests/test_target_scoreboard.py checks on the committed JSON.
+
+DETECTOR_CELLS = ("a", "b", "recall", "false_alarm", "kept_accuracy")
+
+
+def _size_only(cell):
+    """A rate cell reduced to its size."""
+    return {"n": int(cell["n"]), "k": None, "rate": None, "lo": None, "hi": None}
+
+
+def _seal(hidden, relations, keep, fixed=()):
+    """Close ``hidden`` under additive ``relations``: while a relation (groups whose counts add up, such as round 1,
+    round 2 and pooled) has exactly one hidden group, that group's count is the others' sum or difference, so hide
+    one more of them, the one latest in ``keep`` (most-kept first). Groups in ``fixed`` (published elsewhere, or
+    with a count their sizes already fix) are never chosen; a relation whose other groups are all fixed is left
+    as it is.
+
+    >>> sorted(_seal({"C1"}, [("I1", "C1", "A1"), ("C1", "C2", "Cp")], keep=["A1", "I1", "Cp", "C2", "C1"]))
+    ['C1', 'C2', 'I1']
+    >>> sorted(_seal({"C1"}, [("I1", "C1", "A1")], keep=["A1", "I1", "C1"], fixed={"I1"}))
+    ['A1', 'C1']
+    """
+    hidden = set(hidden)
+    changed = True
+    while changed:
+        changed = False
+        for rel in relations:
+            if sum(k in hidden for k in rel) != 1:
+                continue
+            free = [k for k in rel if k not in hidden and k not in fixed]
+            if free:
+                hidden.add(max(free, key=keep.index))
+                changed = True
+    return hidden
+
+
+def _seal_rules(rows, abstain):
+    """Thin cells of :func:`rule_rows` (in place). Per rule, the groups are (class, round) with class
+    ``incorrect``, ``correct`` or ``agree``. Sums: round 1 + round 2 = pooled; ``incorrect`` + ``correct`` =
+    ``agree``; and, in a round where the rule leaves no item without a target, ``expert_incorrect`` = the
+    ``incorrect`` cell's k + the ``correct`` cell's n - k. A group with n = 0 has a known k (0). Hidden first:
+    ``agree``, then the pooled row, then a round. A pooled cell is hidden whenever a round's cell of its class is,
+    even when the other round's is too: with every other rule's cells published, the pooled count bounds the
+    round counts tightly enough to pin one on the 2026-11 decoys (found with an integer program; see the test)."""
+    for r in ROUNDS:  # the reference row; never thin on real data, and thin only when the whole round is
+        if 0 < rows[r]["n"] < MIN_CELL:
+            rows[r]["expert_incorrect"] = _size_only(rows[r]["expert_incorrect"])
+    classes = ("incorrect", "correct", "agree")
+    keep = [(c, r) for r in ("1", "2", "pooled") for c in ("incorrect", "correct")] + [("agree", r) for r in ROUNDS]
+    for rule in TALLY_RULES:
+        cell = {(c, r): rows[r][rule][c] for c in classes for r in ROUNDS}
+        thin = {k for k, v in cell.items() if 0 < v["n"] < MIN_CELL}
+        fixed = {k for k, v in cell.items() if v["n"] == 0} | {("E", r) for r in ROUNDS}
+        rel = [tuple((c, r) for r in ROUNDS) for c in classes]
+        rel += [tuple((c, r) for c in classes) for r in ROUNDS]
+        rel += [(("incorrect", r), ("correct", r), ("E", r)) for r in ROUNDS
+                if abstain[r, rule] == 0 and rows[r]["expert_incorrect"]["k"] is not None]
+        hidden = _seal(thin, rel, keep, fixed)
+        hidden = _seal(hidden | ({(c, "pooled") for c in classes if any((c, r) in hidden for r in ("1", "2"))} - fixed),
+                       rel, keep, fixed)
+        for c, r in hidden | {k for k, v in cell.items() if v["n"] < MIN_CELL}:
+            rows[r][rule][c] = _size_only(cell[c, r])
+
+
+def _seal_detector(raw):
+    """Thin cells of :func:`detector_rows`. The groups are (class, round) with class ``incorrect``, ``correct`` or
+    ``all``; a group's touched, untouched and wrong-target sizes leave one count free, so one hidden cell hides the
+    group (all five cells, the difference and the Fisher p). A group is thin when a cell has 1 to ``MIN_CELL`` - 1
+    items; a group with an empty cell has every count fixed by its sizes. Sums: round 1 + round 2 = pooled;
+    ``incorrect`` + ``correct`` = ``all``. The pooled ``all`` row is never hidden (P2 and check B publish it);
+    after it, rounds and ``all`` are kept before the class rows. A displayed cell under ``MIN_CELL`` keeps only its
+    size anyway, and a row whose touched or untouched cell does so shows no difference or p."""
+    out = copy.deepcopy(raw)
+    groups = [(c, r) for c in out for r in ROUNDS]
+    sizes = {(c, r): [out[c][r][x]["n"] for x in ("a", "b", "recall", "false_alarm")] for c, r in groups}
+    fixed = {k for k, ns in sizes.items() if 0 in ns} | {("all", "pooled")}
+    thin = {k for k, ns in sizes.items() if any(0 < n < MIN_CELL for n in ns)} - fixed
+    rel = [tuple((c, r) for r in ROUNDS) for c in out] + [(("incorrect", r), ("correct", r), ("all", r))
+                                                           for r in ROUNDS]
+    keep = [("all", "pooled"), ("all", "2"), ("all", "1"), ("incorrect", "pooled"), ("incorrect", "2"),
+            ("incorrect", "1"), ("correct", "pooled"), ("correct", "2"), ("correct", "1")]
+    hidden = _seal(thin, rel, keep, fixed)
+    for c, r in groups:
+        row = out[c][r]
+        for x in DETECTOR_CELLS:
+            if (c, r) in hidden or row[x]["n"] < MIN_CELL:
+                row[x] = _size_only(row[x])
+        if row["a"]["k"] is None or row["b"]["k"] is None:
+            row.update(diff=None, lo=None, hi=None, fisher_p=None)
+    for c in out:
+        if any((c, r) in hidden for r in ("1", "2")):
+            out[c]["heterogeneity"] = {"did": None, "lo": None, "hi": None}
+    return out
 
 
 def ranking_rows(g, n_boot=1000, seed=0):
@@ -989,17 +1102,25 @@ def contrast_table(rows, a_name, b_name, extra=False, role="descriptive"):
     for k in ("1", "2", "pooled"):
         r = rows[k]
         name = POOLED_NAMES[role] if k == "pooled" else ROUND_NAMES[k]
-        line = f"| {name} | {_p(r['a'])} | {_p(r['b'])} | {_pp(r['diff'], r['lo'], r['hi'])} | " \
+        line = f"| {name} | {_pn(r['a'])} | {_pn(r['b'])} | {_pp(r['diff'], r['lo'], r['hi'])} | " \
                f"{_ps(r['fisher_p'])} |"
         if extra:
-            line += f" {_p(r['recall'])} | {_p(r['false_alarm'])} |"
+            line += f" {_pn(r['recall'])} | {_pn(r['false_alarm'])} |"
         lines.append(line)
     h = rows["heterogeneity"]
     het = _pp(h["did"], h["lo"], h["hi"])
     if h["did"] is None:
         small = min(min(rows[k]["a"]["n"], rows[k]["b"]["n"]) for k in ("1", "2"))
-        het = f"not computable (a group in one round has {small} rows; it needs {MIN_CELL})"
+        het = (f"not computable (a group in one round has {small} rows; it needs {MIN_CELL})" if small < MIN_CELL
+               else "not shown (a round's row shows sizes only)")
+    hidden = [ROUND_NAMES[k].split(" (")[0] for k in ("1", "2", "pooled")
+              if any(rows[k][x]["k"] is None and rows[k][x]["n"] for x in ("a", "b"))]
     lines += ["", f"Heterogeneity check (round 1's difference minus round 2's, resampled within round): {het}."]
+    if hidden:
+        many = len(hidden) > 1
+        lines += ["", f"The {' and '.join(hidden)} row{'s' if many else ''} show{'' if many else 's'} "
+                      f"sizes only: a cell has fewer than {MIN_CELL} rows, and the pooled row is round 1 plus "
+                      "round 2, so the other round's counts would give it away."]
     if all("gain" in rows[k] for k in ("1", "2", "pooled")):
         lines += ["", "Kept minus all rows of the margin rule (what applying the stricter rule changes in the share "
                       "of `incorrect` targets the expert confirms; P1 rescaled by the dropped share): " +
@@ -1099,7 +1220,8 @@ def _p1_checks(j):
         out += ["Check, not pre-stated: kept minus dropped within label type (Mantel-Haenszel risk difference, "
                 f"label-level bootstrap; {t['strata_used']} of {t['strata']} types hold both groups) "
                 f"{_pp(t['diff'], t['lo'], t['hi'])}; within type x round ({tr['strata_used']} of {tr['strata']} "
-                f"cells) {_pp(tr['diff'], tr['lo'], tr['hi'])}. Each type trains its own model, so the pooled row's "
+                f"cells) {_pp(tr['diff'], tr['lo'], tr['hi'])} (approximate: the ends of this interval move by about "
+                "a point between resampling seeds). Each type trains its own model, so the pooled row's "
                 "mix of types never reaches one; P1 by type is under Slices.", ""]
     pool = next((r for r in j.get("pool", []) if r["label_type"] == "all"), None)
     pooled = p["P1"]["pooled"]
@@ -1163,7 +1285,10 @@ def render_rules(j):
                 row = rr["rows"][r][rule]
                 out.append(f"| {name} | {ROUND_NAMES[r]} | {_pn(row['incorrect'])} | {_pn(row['correct'])} |")
         out.append("")
-    out.append(f"A cell under {MIN_CELL} items shows its size only.")
+    out.append(f"A cell under {MIN_CELL} items shows its size only, and so does every cell its count could be "
+               "worked out from: the pooled cell when either round's is hidden (pooled = round 1 + round 2), the "
+               "other class's cell in a round where the rule leaves no item without a target (with the expert "
+               "reference row, the two cells fix each other), and, in `scoreboard.json`, the rule's `agree` count.")
     return "\n".join(out).rstrip()
 
 
@@ -1174,11 +1299,14 @@ def render_detector(j):
         for c in ("incorrect", "correct", "all"):
             r = j["detector"][v][c]["pooled"]
             n = r["a"]["n"] + r["b"]["n"]
-            lines.append(f"| `{v}` | {c}{' (descriptive pool)' if c == 'all' else ''} | {n} | {_p(r['a'])} | "
-                         f"{_p(r['b'])} | {_pp(r['diff'], r['lo'], r['hi'])} | {_ps(r['fisher_p'])} |")
+            lines.append(f"| `{v}` | {c}{' (descriptive pool)' if c == 'all' else ''} | {n} | {_pn(r['a'])} | "
+                         f"{_pn(r['b'])} | {_pp(r['diff'], r['lo'], r['hi'])} | {_ps(r['fisher_p'])} |")
     lines += ["", "Rounds pooled (round 1 has " + str(j["gold_counts"]["train_rows_by_round"]["1"]) +
-              " train rows); per-round rows of every cell are in `scoreboard.json`. Touched = dropped "
-              "(`symmetric`, `unanimous3`, `cl-drop`) or flipped (`cl-flip`)."]
+              " train rows); per-round rows are in `scoreboard.json`. Touched = dropped "
+              "(`symmetric`, `unanimous3`, `cl-drop`) or flipped (`cl-flip`). A cell under "
+              f"{MIN_CELL} rows shows its size only, and so does every cell of a row from which such a cell's count "
+              "could be worked out: the other target class's row of the same round and the pooled rows (the row "
+              "over both classes stays, because P2 and check B publish it)."]
     return "\n".join(lines)
 
 
@@ -1234,7 +1362,7 @@ def render_sensitivity(j):
     for name, r in s.items():
         p = r["pooled"]
         gold, tallies = name.split("|")
-        lines.append(f"| {r['label']} | {gold} | {tallies} | {_p(p['a'])} | {_p(p['b'])} | "
+        lines.append(f"| {r['label']} | {gold} | {tallies} | {_pn(p['a'])} | {_pn(p['b'])} | "
                      f"{_pp(p['diff'], p['lo'], p['hi'])} |")
     lines += ["", "Pooled rows. Masked-only gold leaves out the decided items reached in the round-2 meeting; "
                   "`expert votes removed` takes the other expert's production vote (round 1's rater's were left "
@@ -1278,7 +1406,8 @@ def render_provenance(j):
                if "cityparams_sha256" in p else []),
              f"| code | commit `{p['git_commit']}`; Python {p['python']}, pandas {p['pandas']}, numpy {p['numpy']} |",
              f"| intervals | {p['n_boot']} label-level resamples (AUC: 1,000 panorama resamples), seed {p['seed']} |",
-             f"| public-deployment list | live `/v3/api/cities`, read {p['cities_read_at']} ({p['n_public']} public) |"]
+             f"| public-deployment list | {p.get('cities_response', 'live')} `/v3/api/cities` response, read "
+             f"{p['cities_read_at']} ({p['n_public']} public) |"]
     return "\n".join(lines)
 
 
@@ -1341,7 +1470,8 @@ def privacy_gate(text, lists, all_cities):
 
 def city_lists():
     """The live ``/v3/api/cities`` lists (``publish_to_hf.city_lists``); there is no saved-list option, because
-    visibility changes within days. Tests monkeypatch this function."""
+    visibility changes within days. Tests monkeypatch this function; a substitute that serves a saved response sets
+    ``saved`` (and ``read_at`` to when it was read), and the provenance row says so."""
     import publish_to_hf as ph
     return ph.city_lists()
 
@@ -1367,8 +1497,8 @@ def _git_commit():
 def refuse_private_out(path, what):
     """Exit when ``path`` is inside this repository (checked without git, so a copy without ``.git`` is covered) or
     inside any git checkout (``adjudicator.refuse_in_checkout``; skipped when git itself is missing)."""
-    p = os.path.abspath(path)
-    if p == REPO_DIR or p.startswith(REPO_DIR + os.sep):
+    p, repo = os.path.realpath(path), os.path.realpath(REPO_DIR)
+    if p == repo or p.startswith(repo + os.sep):
         sys.exit(f"refusing to write {what} inside the repository: {path}")
     try:
         adj.refuse_in_checkout(path, what)
@@ -1399,11 +1529,11 @@ def score(gold, pool, split_root, weights, n_boot=N_BOOT, seed=0):
     check = check_b(g, split_root)
     train = adj.train_rows_of(split_root)
     pr = pool_shares(pool)
-    det = {v: {c or "all": p2_rows(g, v, c, n_boot, seed) for c in ("incorrect", "correct", None)} for v in VARIANTS}
+    det = {v: detector_rows(g, v, n_boot, seed) for v in VARIANTS}
     j = {"gold_counts": gold_counts(gold, g_adj, g, g_keep, pool),
          "pool": pr,
          "pool_expert": pool_expert(pool),
-         "primary": {"P1": p1_rows(g, "symmetric3", n_boot, seed), "P2": p2_rows(g, "cl-drop", None, n_boot, seed),
+         "primary": {"P1": p1_rows(g, "symmetric3", n_boot, seed), "P2": det["cl-drop"]["all"],
                      "P1_unanimous3": p1_rows(g, "unanimous3", n_boot, seed), "roles": dict(ROLES),
                      "P1_stratified": p1_stratified(g, "symmetric3", n_boot, seed),
                      "design_boot": design_boot(g, n_boot, seed)},
@@ -1419,9 +1549,9 @@ def score(gold, pool, split_root, weights, n_boot=N_BOOT, seed=0):
              "masked-only|tallies as pulled": {"label": "P1", **p1_rows(g_keep_m, "symmetric3", n_boot, seed)},
              "with meeting verdicts|tallies as pulled": {"label": "P1",
                                                          **p1_rows(g_keep, "symmetric3", n_boot, seed)},
-             "masked-only|n/a (train targets)": {"label": "P2", **p2_rows(g, "cl-drop", None, n_boot, seed)},
+             "masked-only|n/a (train targets)": {"label": "P2", **det["cl-drop"]["all"]},
              "with meeting verdicts|n/a (train targets)": {"label": "P2",
-                                                           **p2_rows(g_adj, "cl-drop", None, n_boot, seed)}},
+                                                           **detector_rows(g_adj, "cl-drop", n_boot, seed)["all"]}},
          "crosscheck": crosscheck(g_keep, pr),
          "check_b": check,
          "n_boot": n_boot, "seed": seed}
@@ -1475,7 +1605,8 @@ def cmd_score(args):
                        "cityparams_sha256": rl.sha256_file(args.cityparams),
                        "git_commit": _git_commit(), "python": platform.python_version(), "pandas": pd.__version__,
                        "numpy": np.__version__, "n_boot": args.n_boot, "seed": args.seed,
-                       "cities_read_at": lists["read_at"], "n_public": len(lists["public"])}
+                       "cities_read_at": lists["read_at"], "n_public": len(lists["public"]),
+                       "cities_response": "saved" if lists.get("saved") else "live"}
     text = dumps(j)
     all_cities = {c: s for s, c in schema_city.items()}
     try:

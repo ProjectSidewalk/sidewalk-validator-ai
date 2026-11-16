@@ -9,7 +9,10 @@ rounds 1 and 2 ([#66](https://github.com/ProjectSidewalk/sidewalk-validator-ai/p
 [#74](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/74).
 
 **Status:** run 2026-11-13 on the Mac from files on disk (`analysis/target_scoreboard.py`), rerun 2026-11-14 for
-the third review round (the within-type P1 check and the expert-touched share added; no earlier number changed).
+the third review round (the within-type P1 check and the expert-touched share added; no earlier number changed),
+and rerun 2026-11-16 for the final review: thin cells of the rule and detector tables, and every cell from which
+their counts could be worked out, now show sizes only (P2's per-round rows among them); no published number changed
+otherwise.
 The VLM adjudicator of
 [#77](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/77) is not in this scoreboard: it has not
 been scored yet (that needs klone), and `adjudicator.py agree` already scores it against the same gold set with a
@@ -24,7 +27,8 @@ check are in Results.
   the expert says incorrect on 54/65 rows `symmetric` keeps and 68/85 rows it drops: kept minus dropped
   +3.1 pts [-9.4, +15.9], unresolved. The positive sign comes from the mix of label types: compared within type
   (a check, not pre-stated), kept minus dropped is -0.5 pts [-12.6, +11.8], and -1.1 pts [-14.4, +11.5] within
-  type x round. Each type trains its own model, so the pooled point estimate, and
+  type x round (an approximate interval: its ends move by about a point between resampling seeds). Each type
+  trains its own model, so the pooled point estimate, and
   the change from applying the rule (122/150 to 54/65 confirmed, +1.7 pts [-5.2, +8.6], a gold-sample quantity),
   say nothing about a gain for any one model. Pooled over types, the dropped two-vote Disagrees are not mostly
   wrong: the expert confirms 68/85, 95% lower bound 70.3% (round 1 alone 22/29, lower bound 57.9%). That does not
@@ -269,7 +273,8 @@ Kept minus all rows of the margin rule (what applying the stricter rule changes 
 (-10.6 pts [-40.7, +21.2]) is too wide to say whether the rounds agree. The positive sign of the pooled point is a
 composition effect: SurfaceProblem, the type whose margin-`incorrect` rows the expert confirms least often, has 22
 of its 31 rows in the dropped group, so it pulls the dropped share down. Within type (the check under the table,
-not pre-stated), kept minus dropped is -0.5 pts [-12.6, +11.8], and -1.1 pts [-14.4, +11.5] within type x round.
+not pre-stated), kept minus dropped is -0.5 pts [-12.6, +11.8], and -1.1 pts [-14.4, +11.5] within type x round
+(about: the ends of that interval move by about a point between resampling seeds).
 Kept minus dropped is not the gain from the rule: applying `symmetric` keeps the 65 rows and drops the 85, which
 moves the expert-confirmed share of the margin rule's `incorrect` targets from 122/150 to 54/65, +1.7 pts
 [-5.2, +8.6] (kept minus all rows, the line under the table). That gain is P1 times the dropped share, which is
@@ -283,9 +288,9 @@ within-type row. At 200 rows per group a 10-point kept-minus-dropped difference 
 power at 80% against 90%, and about 70% at 75% against 85%; this set has 65 and 85. The `unanimous3` twin's interval also spans 0 (+0.1 pts [-14.5, +13.2]).
 
 **P2.** Pooled (the primary estimate), flagged 4/13 against unflagged 19/118, +14.7 pts [-10.1, +43.2], Fisher p
-0.242. Round 1 has 2 flagged rows, so no round-1 interval and no heterogeneity check, and the pooled P2 is
-essentially round 2's (4/11 against 10/83 there). Recall is 4/23 wrong targets, and 9 of the 13 flagged targets are
-right. Flipping a flagged target unread helps only when it is wrong, so flipping all of them pays off only if more
+0.242. Round 1 has 2 flagged rows, so no heterogeneity check, and 11 of the 13 flagged rows are from round 2. The
+per-round rows show sizes only: round 1's flagged cell has 2 rows, and round 2's counts are the pooled ones minus
+round 1's. Recall is 4/23 wrong targets, and 9 of the 13 flagged targets are right. Flipping a flagged target unread helps only when it is wrong, so flipping all of them pays off only if more
 than half are wrong: the point estimate (30.8%) is well under half, but the interval [12.7, 57.6] does not exclude
 a majority, so the gold set neither licenses nor rules out acting on the flags unread. Dropping is a different
 trade (a dropped right target loses a row, it is not broken) and is not tested here. Recommending an expert look
@@ -409,10 +414,12 @@ Rounds pooled (round 1 has 37 train rows); per-round rows of every cell are in `
 <!-- END GENERATED: detector -->
 
 Split by the target's class, because the strata oversample `incorrect` targets (round 2 capped `margin_correct`),
-so a pooled recall or false-alarm rate reflects the sample's mix. Inside `incorrect` targets, `cl-drop` touches 5
-rows and 3 are wrong (17/100 among the rest), Fisher p 0.047, the only Fisher p under 0.05 in the table (`cl-flip`
-touches the same rows); it is a descriptive cell of 5 rows among 12 rows of comparisons, not a finding. The two
-rule variants touch rows with a wrong target about twice as often as the rows they leave (`symmetric` 23.0% against
+so a pooled recall or false-alarm rate reflects the sample's mix. The `correct` class holds 3 wrong targets in all
+(1 in round 1), so a variant that touches `correct` targets (`unanimous3`, `cl-drop`, `cl-flip`) shows sizes only
+in its `correct` rows, and in its `incorrect` rows too: the row over both classes, which P2 (for `cl-drop`, and
+`cl-flip`, which touches the same rows) and check B publish, minus the `incorrect` row would give the `correct`
+one. `symmetric` touches no `correct` target, so its counts there follow from the sizes and its rows are shown in
+full. The two rule variants touch rows with a wrong target about twice as often as the rows they leave (`symmetric` 23.0% against
 12.9%, +10.1 pts [-3.3, +23.0]; `unanimous3` +11.4 pts [-1.9, +23.3]); neither interval excludes 0, and neither
 excludes a difference of about 23 points. These are the counts the confident-learning report's `--gold` rerun
 promised (131 rated train rows instead of 37); they equal `confident_learning.expert_agreement` summed over types (check B,

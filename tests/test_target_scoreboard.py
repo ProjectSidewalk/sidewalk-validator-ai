@@ -5,6 +5,7 @@ binding of the committed doc and JSON to the numbers computed by hand before the
 Synthetic data only (cities city-a / city-b public, city-c private, as in tests/fixtures/adjudicator); no network,
 no ``~/Data``."""
 import doctest
+import itertools
 import json
 import os
 import re
@@ -223,7 +224,8 @@ def test_rule_rows_and_majority_collapse(tmp_path):
     r = ts.rule_rows(f)
     assert r["majority_equals_majority2"] is True  # no single-vote AI Disagree in this sample, as in the real one
     m = r["rows"]["pooled"]["margin"]
-    assert (m["incorrect"]["k"], m["incorrect"]["n"]) == (5, 7)
+    assert (m["incorrect"]["k"], m["incorrect"]["n"]) == (None, 7)  # round 1's cell has 2 items, so pooled hides
+    assert (r["rows"]["2"]["margin"]["incorrect"]["k"], r["rows"]["2"]["margin"]["incorrect"]["n"]) == (4, 5)
     d = ts.rule_rows(f, "decoys")
     assert d["majority_equals_majority2"] is False  # the (1, 0) decoy has a majority but not two votes
 
@@ -895,11 +897,27 @@ def test_committed_json_thin_cells_carry_no_verdict_count():
         for r in s[key]:
             for grp in ("kept", "dropped"):
                 assert (r[grp]["k"] is None) == (r[grp]["n"] < mn), r
+    cells = []
     for pop in ("ai_disagree", "decoys"):
-        for rows in j["rules"][pop]["rows"].values():
-            for rule in ts.TALLY_RULES:
-                for c in ("incorrect", "correct", "agree"):
-                    assert (rows[rule][c]["k"] is None) == (rows[rule][c]["n"] < ts.MIN_CELL), (pop, rule, c)
+        for r, rows in j["rules"][pop]["rows"].items():
+            cells += [((pop, r, rule, c), rows[rule][c]) for rule in ts.TALLY_RULES for c in ("incorrect", "correct",
+                                                                                                "agree")]
+    det = [(f"{v}/{c}", rows) for v, by in j["detector"].items() for c, rows in by.items()]
+    det += [("P2", j["primary"]["P2"])] + [(k, r) for k, r in j["sensitivity"].items() if r["label"] == "P2"]
+    for name, rows in det:
+        for r in ts.ROUNDS:
+            cells += [((name, r, x), rows[r][x]) for x in ts.DETECTOR_CELLS]
+            if rows[r]["a"]["k"] is None or rows[r]["b"]["k"] is None:  # a difference or p would give the k back
+                assert rows[r]["diff"] is None and rows[r]["lo"] is None and rows[r]["fisher_p"] is None, (name, r)
+    assert len(cells) > 400
+    for key, cell in cells:
+        if cell["n"] < ts.MIN_CELL:  # thin; a larger cell can be blank too (its count would give a thin one)
+            assert cell["k"] is None, key
+        if cell["k"] is None:
+            assert cell["rate"] is None and cell["lo"] is None and cell["hi"] is None, key
+    rd = j["rules"]["decoys"]["rows"]
+    assert rd["1"]["unanimous3"]["incorrect"]["n"] == 1 and rd["1"]["unanimous3"]["agree"]["k"] is None
+    assert j["detector"]["cl-drop"]["correct"]["1"]["recall"]["n"] == 1
 
 
 def test_doc_prose_quotes_the_type_stratified_p1():
@@ -942,3 +960,358 @@ def test_committed_json_recomputes_from_the_private_verdicts():
     for key in ("p1_type",):
         assert [(r["kept"]["n"], r["dropped"]["n"], r["kept"]["k"], r["dropped"]["k"]) for r in mine[key]] == \
             [(r["kept"]["n"], r["dropped"]["n"], r["kept"]["k"], r["dropped"]["k"]) for r in j["slices"][key]]
+
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Thin cells cannot be worked out from published counts (rule and detector blocks)
+# ---------------------------------------------------------------------------------------------------------------------
+# A published count is a linear function of "atoms" (counts of rows sharing every attribute the tables read). For
+# each thin cell (1 to MIN_CELL - 1 items) the check asks whether its count lies in the span of the published
+# counts and sizes but not in the span of the sizes alone, after dropping the atoms a published zero fixes. The
+# integer-program check (SciPy, so skipped in CI) also uses that counts are whole and non-negative.
+
+DET_CELLS = {"a": ("t", 1, None), "b": ("t", 0, None), "recall": ("w", 1, ("t", 1)),
+             "false_alarm": ("w", 0, ("t", 1)), "kept_accuracy": ("t", 0, ("w", 0))}
+
+
+def _vec(atoms, pred):
+    return np.array([1.0 if pred(a) else 0.0 for a in atoms])
+
+
+def _detector_system(variants, extra=()):
+    """Atoms (round, target class, wrong, touched by each variant); equations from ``{variant: {class: rows}}``
+    (:func:`ts.detector_rows`) plus ``extra`` rows given as ``(variant, class, rows, label)``."""
+    vs = list(variants)
+    atoms = [dict(r=r, c=c, w=w, t=dict(zip(vs, t))) for r in ("1", "2") for c in ("incorrect", "correct")
+             for w in (0, 1) for t in itertools.product((0, 1), repeat=len(vs))]
+    sizes, counts, thin = [], [], []
+
+    def val(a, v, key):
+        return a["t"][v] if key == "t" else a["w"]
+
+    def add(v, c, rows, label):
+        for r in ts.ROUNDS:
+            for x, (key, want, also) in DET_CELLS.items():
+                def grp(a, r=r, key=key, want=want):
+                    return (c == "all" or a["c"] == c) and (r == "pooled" or a["r"] == r) and val(a, v, key) == want
+                if also is None:
+                    def hit(a, grp=grp):
+                        return grp(a) and a["w"] == 1
+                else:
+                    def hit(a, grp=grp, also=also):
+                        return grp(a) and val(a, v, also[0]) == also[1]
+                cell = rows[r][x]
+                sizes.append((_vec(atoms, grp), cell["n"]))
+                if cell["k"] is not None:
+                    counts.append((_vec(atoms, hit), cell["k"]))
+                if 0 < cell["n"] < ts.MIN_CELL:
+                    thin.append((f"{label} {v}/{c}/{r}/{x} n={cell['n']}", _vec(atoms, hit)))
+    for v, by_class in variants.items():
+        for c, rows in by_class.items():
+            add(v, c, rows, "detector")
+    for v, c, rows, label in extra:
+        add(v, c, rows, label)
+    return atoms, sizes, counts, thin
+
+
+def _rules_system(rows, p1=(), hmax=12):
+    """Atoms (round, the verdicts every rule gives together, as :func:`ts.tally_verdicts` can give them, and the
+    expert's verdict); equations from :func:`ts.rule_rows`'s ``rows`` and from ``p1``, ``(rule, P1 rows)`` pairs
+    that read the same rows (the AI Disagrees)."""
+    tv = ts.tally_verdicts(*zip(*[(a, d) for a in range(hmax) for d in range(hmax)]))
+    rules = list(ts.TALLY_RULES)
+    atoms = [dict(r=r, v=dict(zip(rules, v)), e=e) for r in ("1", "2")
+             for v in sorted(set(map(tuple, tv.values.tolist()))) for e in ("incorrect", "correct")]
+    sizes, counts, thin = [], [], []
+
+    def ing(a, r):
+        return r == "pooled" or a["r"] == r
+    for r in ts.ROUNDS:
+        x = rows[r]
+        sizes.append((_vec(atoms, lambda a: ing(a, r)), x["n"]))
+        if x["expert_incorrect"]["k"] is not None:
+            counts.append((_vec(atoms, lambda a: ing(a, r) and a["e"] == "incorrect"), x["expert_incorrect"]["k"]))
+        for rule in rules:
+            for c in ("incorrect", "correct", "agree"):
+                if c == "agree":
+                    def grp(a, rule=rule):
+                        return ing(a, r) and a["v"][rule] != ""
+
+                    def hit(a, grp=grp, rule=rule):
+                        return grp(a) and a["v"][rule] == a["e"]
+                else:
+                    def grp(a, rule=rule, c=c):
+                        return ing(a, r) and a["v"][rule] == c
+
+                    def hit(a, grp=grp, c=c):
+                        return grp(a) and a["e"] == c
+                cell = x[rule][c]
+                sizes.append((_vec(atoms, grp), cell["n"]))
+                if cell["k"] is not None:
+                    counts.append((_vec(atoms, hit), cell["k"]))
+                if 0 < cell["n"] < ts.MIN_CELL:
+                    thin.append((f"rules {rule}/{c}/{r} n={cell['n']}", _vec(atoms, hit)))
+    for rule, prow in p1:
+        for r in ts.ROUNDS:
+            for name, kept in (("a", True), ("b", False)):
+                def grp(a, r=r, kept=kept, rule=rule):
+                    return ing(a, r) and a["v"]["margin"] == "incorrect" and (a["v"][rule] == "incorrect") == kept
+                cell = prow[r][name]
+                sizes.append((_vec(atoms, grp), cell["n"]))
+                if cell["k"] is not None:
+                    counts.append((_vec(atoms, lambda a, grp=grp: grp(a) and a["e"] == "incorrect"), cell["k"]))
+    return atoms, sizes, counts, thin
+
+
+def _committed_systems(j):
+    """The rule and detector systems of a scoreboard.json, with every other block that publishes the same counts:
+    P2 and its masked-only sensitivity row, check B, the out-of-fold ranking rows' sizes, P1 and its twin."""
+    det = _detector_system(j["detector"], [("cl-drop", "all", j["primary"]["P2"], "P2"),
+                                           ("cl-drop", "all", j["sensitivity"]["masked-only|n/a (train targets)"],
+                                            "sensitivity")])
+    atoms, sizes, counts, _ = det
+    for v, b in j["check_b"].items():
+        sizes += [(_vec(atoms, lambda a: True), b["n_rated_train"]),
+                  (_vec(atoms, lambda a: a["w"] == 0), b["target_matches_expert"]),
+                  (_vec(atoms, lambda a, v=v: a["t"][v] == 1), b["touched"]),
+                  (_vec(atoms, lambda a, v=v: a["t"][v] == 0), b["untouched"])]
+        counts += [(_vec(atoms, lambda a, v=v: a["t"][v] == 1 and a["w"] == 1), b["touched_overturned"]),
+                   (_vec(atoms, lambda a, v=v: a["t"][v] == 0 and a["w"] == 1), b["untouched_overturned"])]
+    for row in j["ranking"]:
+        if row["score"].startswith("oof"):
+            sizes += [(_vec(atoms, lambda a, c=row["target_class"]: a["c"] == c), row["n"]),
+                      (_vec(atoms, lambda a, c=row["target_class"]: a["c"] == c and a["w"] == 1), row["n_wrong"])]
+    p1 = (("symmetric3", j["primary"]["P1"]), ("unanimous3", j["primary"]["P1_unanimous3"]))
+    return {"detector": det, "decoys": _rules_system(j["rules"]["decoys"]["rows"]),
+            "ai_disagree": _rules_system(j["rules"]["ai_disagree"]["rows"], p1)}
+
+
+def _determined(eqs, target):
+    """Whether the equations ``[(vector over atoms, value)]`` fix ``target``'s value (linear algebra over the
+    reals, after dropping the atoms of every published zero)."""
+    a = np.array([c for c, _ in eqs])
+    zero = np.zeros(a.shape[1], bool)
+    for c, v in eqs:
+        if v == 0:
+            zero |= c > 0
+    t = target[~zero]
+    if not t.any():
+        return True
+    a = a[:, ~zero]
+    return np.linalg.matrix_rank(np.vstack([a, t])) == np.linalg.matrix_rank(a)
+
+
+def _linear_leaks(system):
+    _, sizes, counts, thin = system
+    return [label for label, t in thin if _determined(sizes + counts, t) and not _determined(sizes, t)]
+
+
+def test_determined_sees_a_difference_and_a_sum():
+    atoms = [0, 1, 2]
+    sizes = [(np.array([1.0, 1, 0]), 3)]
+    t = np.array([1.0, 0, 0])
+    assert not _determined(sizes, t)
+    assert _determined(sizes + [(np.array([0.0, 1, 0]), 2)], t)  # 3 - 2
+    assert _determined(sizes + [(np.array([0.0, 1, 0]), 0)], t)  # a published zero
+    assert not _determined(sizes + [(np.array([0.0, 1, 1]), 2)], t)
+    assert len(atoms) == 3
+
+
+def test_committed_json_no_thin_count_can_be_worked_out():
+    """Every thin cell of the rule and detector blocks keeps its count hidden: no combination of published counts
+    (with the sizes, P2, check B and P1, which publish counts over the same rows) gives it."""
+    j, _ = _committed()
+    systems = _committed_systems(j)
+    assert sum(len(s[3]) for s in systems.values()) >= 30  # the round-1 decoy and correct-target cells are in
+    for name, system in systems.items():
+        assert _linear_leaks(system) == [], name
+
+
+def test_committed_json_no_thin_count_is_pinned_by_whole_numbers():
+    """The same as an integer program: counts are whole and non-negative, so a pooled count can pin a round's
+    when the bounds are tight. The thin cell's range given the sizes alone must stay a range."""
+    scipy_opt = pytest.importorskip("scipy.optimize")
+    j, _ = _committed()
+
+    def span(atoms, eqs, t):
+        a = np.array([c for c, _ in eqs])
+        b = np.array([v for _, v in eqs], float)
+        out = []
+        for sign in (1, -1):
+            r = scipy_opt.milp(sign * t, constraints=scipy_opt.LinearConstraint(a, b, b),
+                               integrality=np.ones(len(atoms)), bounds=scipy_opt.Bounds(0, np.inf))
+            assert r.success, r.message
+            out.append(round(sign * r.fun))
+        return out
+    pinned = []
+    for name, (atoms, sizes, counts, thin) in _committed_systems(j).items():
+        for label, t in thin:
+            lo, hi = span(atoms, sizes, t)
+            lo2, hi2 = span(atoms, sizes + counts, t)
+            if lo < hi and lo2 == hi2:
+                pinned.append(label)
+    assert pinned == []
+
+
+def _decoy_frame(r1_abstain=True, r2_incorrect=6):
+    """Decoys only, from vote tallies: round 1 has 10 (3, 0) items, 2 (0, 3) items (a thin `incorrect` cell for
+    every rule) and, unless ``r1_abstain`` is False, 3 (0, 0) items that no rule gives a target; round 2 has 10
+    (3, 0) items, ``r2_incorrect`` (0, 3) items and 2 (1, 1) items (no target)."""
+    rows = ([("1", 3, 0, "correct")] * 9 + [("1", 3, 0, "incorrect")] + [("1", 0, 3, "incorrect"),
+                                                                           ("1", 0, 3, "correct")]
+            + ([("1", 0, 0, "incorrect")] * 3 if r1_abstain else [])
+            + [("2", 3, 0, "correct")] * 8 + [("2", 3, 0, "incorrect")] * 2
+            + [("2", 0, 3, "incorrect")] * (r2_incorrect - 1) + [("2", 0, 3, "correct")] + [("2", 1, 1, "correct")] * 2)
+    g = pd.DataFrame(rows, columns=["round", "h_agree", "h_dis", "expert"])
+    g["ai_vote"] = "Agree"
+    tv = ts.tally_verdicts(g.h_agree, g.h_dis)
+    for r in ts.TALLY_RULES:
+        g[f"rule_{r}"] = tv[r].to_numpy()
+    return g
+
+
+def test_rule_rows_blank_agree_and_the_pooled_cell_with_a_thin_cell():
+    rows = ts.rule_rows(_decoy_frame(), "decoys")["rows"]
+    for rule in ts.TALLY_RULES:
+        k = {(c, r): rows[r][rule][c]["k"] for c in ("incorrect", "correct", "agree") for r in ts.ROUNDS}
+        assert rows["1"][rule]["incorrect"]["n"] == 2 and k["incorrect", "1"] is None
+        assert k["agree", "1"] is None  # agree - correct would give the thin cell
+        assert k["incorrect", "pooled"] is None and k["agree", "pooled"] is None  # pooled - round 2 would
+        assert k["correct", "1"] == 9 and k["incorrect", "2"] == 5 and k["agree", "2"] == 13  # abstentions in round 1
+        assert rows["1"][rule]["incorrect"]["rate"] is None and rows["pooled"][rule]["agree"]["lo"] is None
+    assert _linear_leaks(_rules_system(rows)) == []
+
+
+def test_rule_rows_blank_the_other_class_when_no_item_is_left_without_a_target():
+    """With no abstention in a round, the expert-incorrect count is the `incorrect` cell's k plus the `correct`
+    cell's n - k, so the `correct` cell would give the thin one away."""
+    rows = ts.rule_rows(_decoy_frame(r1_abstain=False), "decoys")["rows"]
+    assert rows["1"]["n"] == 12 and rows["1"]["expert_incorrect"]["k"] == 2
+    for rule in ts.TALLY_RULES:
+        assert rows["1"][rule]["correct"]["k"] is None and rows["1"][rule]["correct"]["n"] == 10
+        assert rows["pooled"][rule]["correct"]["k"] is None
+        assert rows["2"][rule]["correct"]["k"] == 8
+    assert _linear_leaks(_rules_system(rows)) == []
+
+
+def test_rule_rows_hide_the_pooled_cell_when_both_rounds_are_thin():
+    rows = ts.rule_rows(_decoy_frame(r2_incorrect=3), "decoys")["rows"]
+    for rule in ts.TALLY_RULES:
+        assert rows["pooled"][rule]["incorrect"]["n"] == 5 and rows["pooled"][rule]["incorrect"]["k"] is None
+        assert rows["pooled"][rule]["correct"]["k"] == 17
+
+
+def _detector_frame():
+    """Train rows by round, target class, wrong and touched. `cl-drop` (and `cl-flip`, as in the real run) touches
+    both classes, and the `correct` class has 1 + 2 wrong targets, so its rows are thin; `symmetric` and
+    `unanimous3` never touch a `correct` target, so its rows' counts follow from their sizes."""
+    spec = [  # (round, target class, touched by cl-*, touched by the rules, wrong, rows)
+        ("1", "incorrect", 1, 1, 1, 3), ("1", "incorrect", 1, 1, 0, 2), ("1", "incorrect", 0, 0, 1, 2),
+        ("1", "incorrect", 0, 0, 0, 3),
+        ("2", "incorrect", 1, 1, 1, 3), ("2", "incorrect", 1, 1, 0, 3), ("2", "incorrect", 0, 0, 1, 2),
+        ("2", "incorrect", 0, 0, 0, 4),
+        ("1", "correct", 1, 0, 1, 1), ("1", "correct", 1, 0, 0, 4), ("1", "correct", 0, 0, 0, 5),
+        ("2", "correct", 1, 0, 1, 1), ("2", "correct", 1, 0, 0, 4), ("2", "correct", 0, 0, 1, 1),
+        ("2", "correct", 0, 0, 0, 5)]
+    rows = [dict(round=r, target=c, wrong=bool(w), **{"touch_cl-drop": bool(t), "touch_cl-flip": bool(t),
+                                                      "touch_symmetric": bool(u), "touch_unanimous3": bool(u)})
+            for r, c, t, u, w, n in spec for _ in range(n)]
+    g = pd.DataFrame(rows)
+    g["train_row"] = True
+    return g
+
+
+def test_detector_rows_hide_the_class_rows_and_keep_the_pooled_row():
+    g = _detector_frame()
+    det = {v: ts.detector_rows(g, v, n_boot=0) for v in ts.VARIANTS}
+    cl_ = det["cl-drop"]
+    assert cl_["correct"]["1"]["recall"]["n"] == 1 and cl_["correct"]["2"]["recall"]["n"] == 2
+    for c in ("incorrect", "correct"):  # all - correct would give incorrect, so both go
+        for r in ts.ROUNDS:
+            row = cl_[c][r]
+            assert all(row[x]["k"] is None for x in ts.DETECTOR_CELLS), (c, r)
+            assert row["diff"] is None and row["fisher_p"] is None
+        assert cl_[c]["heterogeneity"]["did"] is None
+    assert all(cl_["all"][r]["a"]["k"] is not None for r in ts.ROUNDS)  # P2 and check B publish the pooled row
+    raw = ts.p2_rows(g, "cl-drop", "correct", n_boot=0)
+    assert raw["heterogeneity"]["did"] is not None  # sealing, not did_boot, blanks it
+    sy = det["symmetric"]
+    assert sy["incorrect"]["pooled"]["a"]["k"] is not None and sy["all"]["pooled"]["b"]["k"] is not None
+    c1 = sy["correct"]["1"]
+    assert c1["a"]["n"] == 0 and c1["b"]["k"] == 1 and c1["recall"]["k"] is None and c1["fisher_p"] is None
+    assert _linear_leaks(_detector_system(det)) == []
+    j = {"detector": det, "gold_counts": {"train_rows_by_round": {"1": 1}}}
+    text = ts.render_detector(j)
+    assert "| `cl-drop` | correct | 21 | n 10 | n 11 | n/a | n/a |" in text
+
+
+def test_seal_detector_without_the_class_rows_leaks():
+    """The check the sealing is for: blanking only the thin cells leaves them computable."""
+    g = _detector_frame()
+    raw = {v: {c or "all": ts.p2_rows(g, v, c, n_boot=0) for c in ("incorrect", "correct", None)}
+           for v in ts.VARIANTS}
+    for v in raw.values():
+        for rows in v.values():
+            for r in ts.ROUNDS:
+                for x in ts.DETECTOR_CELLS:
+                    if rows[r][x]["n"] < ts.MIN_CELL:
+                        rows[r][x] = ts._size_only(rows[r][x])
+    assert _linear_leaks(_detector_system(raw)) != []
+
+
+def test_provenance_row_names_a_saved_city_list():
+    live = ts.render_provenance({"provenance": _prov()})
+    assert "| public-deployment list | live `/v3/api/cities` response, read t (2 public) |" in live
+    saved = ts.render_provenance({"provenance": {**_prov(), "cities_response": "saved"}})
+    assert "| public-deployment list | saved `/v3/api/cities` response, read t (2 public) |" in saved
+    assert "live" not in saved.split("public-deployment list")[1]
+
+
+def test_refuse_private_out_follows_a_symlink_into_the_repo(tmp_path, monkeypatch):
+    monkeypatch.setattr(ts.adj, "refuse_in_checkout", lambda path, what: None)
+    link = tmp_path / "looks-private"
+    link.symlink_to(ROOT)
+    with pytest.raises(SystemExit, match="inside the repository"):
+        ts.refuse_private_out(str(link / "out"), "verdicts")
+
+
+def test_rule_rows_show_an_empty_cell_by_size():
+    g = _decoy_frame()
+    g = g[~((g["round"] == "2") & (g.h_dis == 3))]
+    rows = ts.rule_rows(g, "decoys")["rows"]
+    for rule in ts.TALLY_RULES:
+        assert rows["2"][rule]["incorrect"] == {"n": 0, "k": None, "rate": None, "lo": None, "hi": None}
+
+
+def _one_variant_frame(spec):
+    rows = [dict(round=r, target=c, wrong=bool(w), **{f"touch_{v}": bool(t) for v in ts.VARIANTS})
+            for r, c, t, w, n in spec for _ in range(n)]
+    return pd.DataFrame(rows).assign(train_row=True)
+
+
+def test_detector_rows_close_over_rounds():
+    """Only round 1's `correct` row is thin; round 2's and the pooled one are not, so one of them goes too, and the
+    `incorrect` rows follow (the row over both classes stays)."""
+    inc = [(r, "incorrect", t, w, 4) for r in ("1", "2") for t in (0, 1) for w in (0, 1)]
+    g = _one_variant_frame(inc + [("1", "correct", 1, 1, 1), ("1", "correct", 1, 0, 1), ("1", "correct", 0, 1, 1),
+                                  ("1", "correct", 0, 0, 5), ("2", "correct", 1, 1, 3), ("2", "correct", 1, 0, 5),
+                                  ("2", "correct", 0, 1, 2), ("2", "correct", 0, 0, 6)])
+    det = ts.detector_rows(g, "cl-drop", n_boot=0)
+    assert det["correct"]["1"]["a"]["n"] == 2 and det["correct"]["pooled"]["recall"]["n"] == 7
+    assert det["correct"]["1"]["a"]["k"] is None
+    assert det["correct"]["2"]["a"]["k"] is None or det["correct"]["pooled"]["a"]["k"] is None
+    assert all(det["all"][r]["a"]["k"] is not None for r in ts.ROUNDS)
+    assert _linear_leaks(_detector_system({"cl-drop": det})) == []
+
+
+def test_detector_rows_never_hide_the_pooled_row_over_both_classes():
+    """Check B publishes each variant's pooled row over both classes outside this table, so it is never hidden
+    here. (When the other class's counts follow from its sizes, the thin class's pooled count then follows from
+    check B; the committed-JSON test above checks that this does not happen in the real run.)"""
+    g = _one_variant_frame([(r, "incorrect", 0, w, 6) for r in ("1", "2") for w in (0, 1)]
+                           + [(r, "correct", t, w, n) for r in ("1", "2")
+                              for t, w, n in ((1, 1, 1), (1, 0, 5), (0, 1, 1), (0, 0, 5))])
+    det = ts.detector_rows(g, "cl-drop", n_boot=0)
+    assert det["incorrect"]["pooled"]["a"]["n"] == 0  # no incorrect target touched: its counts follow from sizes
+    assert det["all"]["pooled"]["a"]["k"] == 2 and det["all"]["1"]["a"]["k"] is None
