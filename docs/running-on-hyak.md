@@ -265,6 +265,15 @@ RUN=$RUN RUNS=/gscratch/scrubbed/$USER/nosidewalk-runs/gate2 STORE=/gscratch/scr
 
 Copy `manifest.csv`, `crops_run.json` and `predictions_fold<k>.csv` back for `nosidewalk_round.py build`.
 
+To score a further list of labels with the same fold models (`nosidewalk_round.py neighbours`, issue #102), give it
+its **own** `RUN` directory: `crops` rewrites `manifest.csv` when it resumes, and the job rescores every fold whose
+prediction file is older than the manifest, so reusing a run directory overwrites prediction files that a key pins.
+Submit the scoring job with `--dependency=afterok:<stage job> --kill-on-invalid-dep=yes` (the staging job is not
+requeued, so a preempted one would otherwise leave the scoring job waiting forever). The staging job pulls from the
+makelab2 pano store and removes the staged store's `.pano-store` marker while it runs, so no other crop job can use
+that store until it ends. The gate2 fold weights and the crops of this study are kept on durable storage under
+`/gscratch/makelab/$USER/nosidewalk-2026-11-keep/` (`docs/nosidewalk-2026-11.md`).
+
 Design, bar and results: [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md).
 
 ## Depth agreement (issue #21)
