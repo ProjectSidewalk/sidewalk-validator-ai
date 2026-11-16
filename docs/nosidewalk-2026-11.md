@@ -773,7 +773,10 @@ per-deployment count of step (c) (100 decided pass-stratum labels) on its own.
 
   Read it with `report --key <round b key> --sheet <round b votes> --topup <top-up key> <top-up votes>`: the
   top-up's rows join round b's, and round b's Chicago rows take the combined weights (`report` refuses the top-up
-  key alone). The touched-face check used round b's 2026-11-11 pull because the API was unreachable on 2026-11-14.
+  key alone). With `--topup` the report's headline bar is still pooled over the four cities; the per-deployment bar
+  of step (c) is read off the city's row (a per-city reading on untouched faces only is a follow-up). `--doc` with
+  `--topup` writes only between a `round-b-topup-results` marker pair, which must already be in the doc, and never
+  over round b's published block. The touched-face check used round b's 2026-11-11 pull because the API was unreachable on 2026-11-14.
   Re-check against a fresh pull by rerunning `topup` into a scratch dir; the key's sha256 must not change. Votes on
   round b's labels are ignored, since they are its Gallery ratings. A re-check after the top-up is rated also
   needs `--ignore-votes-on <top-up key.csv>`, in case the pull shows those ratings as the rater's votes. Key sha256

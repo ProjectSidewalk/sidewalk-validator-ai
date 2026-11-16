@@ -85,6 +85,8 @@ LABEL_TYPE = "NoSidewalk"
 STRATA = ("pass", "agree_below", "model_incorrect")
 POOLED = ("train", "val", "test")
 START, END = "<!-- round-b-results:start -->", "<!-- round-b-results:end -->"
+# ``report --topup --doc`` writes here, never over round b's published block; the pair must already be in the doc
+TOPUP_START, TOPUP_END = "<!-- round-b-topup-results:start -->", "<!-- round-b-topup-results:end -->"
 MIN_DECIDED = 100  # the bar's count of decided labels in the pass stratum
 KEY_COLUMNS = ["packet_id", "label_uid", "label_uid_city", "schema", "city_id", "label_id", "label_type", "rater",
                "shared", "stratum", "weight", "face_id", "n_pass_models", "median_p_correct", "h_agree", "h_dis",
@@ -1052,6 +1054,13 @@ def cmd_topup(args):
     gone = ~picked["label_uid"].isin(live)  # deleted since the round's pull: Gallery could not show it
     if gone.any():
         sys.exit(f"{int(gone.sum())} picked labels are not in {rpath}; pull again and rerun")
+    for stratum in wants:
+        c = counts["cells"][stratum]
+        c["picked_base"] = int(((base["city_id"] == args.city) & (base["stratum"] == stratum)).sum())
+        c["picked_total"] = c["picked_base"] + c["picked"]
+        if c["picked_total"] == 0:  # N/n * M/m has no m: refuse before anything is written
+            sys.exit(f"{args.city}/{stratum}: round b has no items in this cell and none are available to add; "
+                     f"drop it from --n")
     weight = {}
     for stratum, n in wants.items():
         c = counts["cells"][stratum]
@@ -1060,8 +1069,6 @@ def cmd_topup(args):
         if not c["prefix_sample"]:
             print(f"warning: {args.city}/{stratum} skipped {c['touched_before_last_pick']} touched faces before its "
                   f"last pick, so base + top-up is not a prefix sample and its weights are approximate")
-        c["picked_base"] = int(((base["city_id"] == args.city) & (base["stratum"] == stratum)).sum())
-        c["picked_total"] = c["picked_base"] + c["picked"]
         weight[stratum] = (kman["eligible"][args.city] / kman["scored"][args.city] * c["cell_scored"]
                            / c["picked_total"])
     picked = picked.assign(label_uid_city=picked["label_uid"], city_id=args.city, label_type=LABEL_TYPE,
@@ -1274,16 +1281,17 @@ def markdown(rep):
     return "\n".join(lines) + "\n"
 
 
-def splice(doc_text, block):
-    """Replace what lies between the round markers of ``doc_text`` with ``block``; ValueError without markers.
+def splice(doc_text, block, start=START, end=END):
+    """Replace what lies between the ``start`` and ``end`` markers of ``doc_text`` (by default round b's) with
+    ``block``; ValueError without markers.
 
     >>> splice("a\\n<!-- round-b-results:start -->\\nold\\n<!-- round-b-results:end -->\\nb", "new\\n")
     'a\\n<!-- round-b-results:start -->\\nnew\\n<!-- round-b-results:end -->\\nb'
     """
-    i, j = doc_text.find(START), doc_text.find(END)
+    i, j = doc_text.find(start), doc_text.find(end)
     if i < 0 or j < i:
-        raise ValueError(f"no {START} ... {END} markers in the document")
-    return doc_text[:i + len(START)] + "\n" + block + doc_text[j:]
+        raise ValueError(f"no {start} ... {end} markers in the document")
+    return doc_text[:i + len(start)] + "\n" + block + doc_text[j:]
 
 
 def with_topups(m, man, topups, allow_unpinned=False):
@@ -1319,6 +1327,15 @@ def cmd_report(args):
     man = json.load(open(mpath))
     if "base_key_sha256" in man:
         sys.exit(f"{args.key} is a top-up key: pass its round's base key with --key and this one with --topup")
+    markers = (TOPUP_START, TOPUP_END) if args.topup else (START, END)
+    if args.doc:  # checked before anything is written; with --topup, round b's published block is never touched
+        with open(args.doc) as f:
+            doc = f.read()
+        i, j = doc.find(markers[0]), doc.find(markers[1])
+        if i < 0 or j < i:
+            sys.exit(f"{args.doc} has no {markers[0]} ... {markers[1]} pair"
+                     + (": with --topup, --doc writes the combined tables there and never over round b's block; "
+                        "add the pair where they belong, or drop --doc" if args.topup else ""))
     rl.check_pin(mpath, "key", args.key, args.allow_unpinned)
     rl.check_pin(mpath, f"votes_{man['design_json']['rater']}", args.sheet, args.allow_unpinned)
     if rl.sha256_file(args.scores) != man["scores_sha256"] and not args.allow_unpinned:
@@ -1345,10 +1362,8 @@ def cmd_report(args):
             with open(path, "w") as f:
                 f.write(text)
     if args.doc:
-        with open(args.doc) as f:
-            doc = f.read()
         with open(args.doc, "w") as f:
-            f.write(splice(doc, md))
+            f.write(splice(doc, md, *markers))
     print(md)
     return 0
 
@@ -1437,7 +1452,8 @@ def build_parser():
     r.add_argument("--allow-unpinned", action="store_true")
     r.add_argument("--out-json")
     r.add_argument("--out-md")
-    r.add_argument("--doc")
+    r.add_argument("--doc", help="splice the tables between round b's markers; with --topup, between the "
+                                  f"{TOPUP_START} pair, which must already be in the doc")
     r.add_argument("--n-boot", type=int, default=1000)
     r.add_argument("--seed", type=int, default=0)
     r.set_defaults(func=cmd_report)

@@ -352,6 +352,30 @@ def test_topup_refuses_bad_inputs(run, monkeypatch):
     assert not (run["tmp"] / "t4").exists()
 
 
+def repin_copy(src, dst, edit_csv=None, **fields):
+    """A copy of key dir ``src`` at ``dst`` with ``edit_csv = {name: fn(DataFrame) -> DataFrame}`` applied and the
+    manifest's ``fields`` set; a ``<x>_sha256`` field given as ``<name>`` is set to that edited file's sha256."""
+    shutil.copytree(src, dst)
+    for name, fn in (edit_csv or {}).items():
+        fn(pd.read_csv(dst / name, dtype=str, keep_default_na=False)).to_csv(dst / name, index=False)
+    man = json.loads((dst / "manifest.json").read_text())
+    man.update({k: rl.sha256_file(str(dst / v)) if k.endswith("_sha256") and v in (edit_csv or {}) else v
+                for k, v in fields.items()})
+    (dst / "manifest.json").write_text(json.dumps(man))
+    return dst
+
+
+def test_topup_refuses_a_cell_with_no_base_items_and_none_available(run, monkeypatch):
+    t = topup_inputs(run, monkeypatch)
+    drop = lambda d: d[~((d.get("city_id", d.get("city")) == "chicago-il") & (d["stratum"] == "model_incorrect"))]
+    empty = repin_copy(t["key_dir"], run["tmp"] / "key_empty", {"key.csv": drop, "scores.csv": drop},
+                       key_sha256="key.csv", scores_sha256="scores.csv")
+    with pytest.raises(SystemExit, match="chicago-il/model_incorrect: round b has no items in this cell"):
+        topup(run, empty, t["raw_dir"], out="t_empty")
+    assert not (run["tmp"] / "t_empty").exists()
+    assert topup(run, empty, t["raw_dir"], out="t_rest", n=("pass=3", "agree_below=1")) == 0  # the other cells still work
+
+
 def man_base_ratio(key_dir):
     m = json.loads((key_dir / "manifest.json").read_text())
     return m["eligible"]["chicago-il"] / m["scored"]["chicago-il"]
@@ -429,6 +453,56 @@ def test_report_reads_a_topup_beside_its_base_key(run, monkeypatch):
                  str(key_dir / "scores.csv")])
     with pytest.raises(SystemExit, match="not the pinned votes_jon"):
         nr.main(args + ["--topup", str(out / "key.csv"), str(sheets[key_dir])])
+    # --doc with --topup never splices over round b's block: it needs its own pair, checked before anything is written
+    doc = run["tmp"] / "doc.md"
+    published = f"x\n{nr.START}\nROUND B\n{nr.END}\ny\n"
+    doc.write_text(published)
+    late = ["--out-json", str(run["tmp"] / "late.json")]
+    with pytest.raises(SystemExit, match="round-b-topup-results:start .* pair: with --topup"):
+        nr.main(args + tops + late + ["--doc", str(doc)])
+    assert doc.read_text() == published and not (run["tmp"] / "late.json").exists()
+    doc.write_text(published + f"{nr.TOPUP_START}\nSTALE\n{nr.TOPUP_END}\nz\n")
+    assert nr.main(args + tops + ["--doc", str(doc)]) == 0
+    text = doc.read_text()
+    assert text.startswith(published) and "STALE" not in text and text.endswith(f"{nr.TOPUP_END}\nz\n")
+    assert "DOES NOT PASS" in text.split(nr.TOPUP_START)[1]
+    with pytest.raises(SystemExit, match="round-b-results:start .* pair$"):    # and without --topup, round b's own
+        nr.main(args + ["--doc", str(run["tmp"] / "r.json")])
+
+
+def test_with_topups_refuses_foreign_tampered_and_overlapping_keys(run, monkeypatch):
+    t = topup_inputs(run, monkeypatch)
+    key_dir, out = t["key_dir"], run["tmp"] / "topup"
+    assert topup(run, key_dir, t["raw_dir"]) == 0
+    sheets = {}
+    for d in (key_dir, out):
+        k = pd.read_csv(d / "key.csv", dtype=str)
+        sheets[d] = d / "votes_jon.csv"
+        sheet_for(k).to_csv(sheets[d], index=False)
+        rl.pin(str(d / "manifest.json"), "votes_jon", str(sheets[d]), len(k))
+    man = json.loads((key_dir / "manifest.json").read_text())
+    base = pd.read_csv(key_dir / "key.csv", dtype=str)
+    base_m = rl.unmask(pd.read_csv(key_dir / "key.csv", dtype={"tags": str, "label_id": str}),
+                       pd.read_csv(sheets[key_dir], dtype=str, keep_default_na=False))
+
+    def read(d):
+        return nr.with_topups(base_m.copy(), man, [(str(d / "key.csv"), str(sheets[out]))])
+
+    assert len(read(out)[0]) == len(base) + len(pd.read_csv(out / "key.csv"))
+    for field in ("base_key_sha256", "scores_sha256"):                  # a top-up of another key or scores file
+        with pytest.raises(SystemExit, match="not a top-up of this key and scores file"):
+            read(repin_copy(out, run["tmp"] / f"foreign_{field}", **{field: "0" * 64}))
+    tampered = repin_copy(out, run["tmp"] / "tampered")                 # the key no longer matches its pin
+    with open(tampered / "key.csv", "a") as f:
+        f.write("\n")
+    with pytest.raises(SystemExit, match="not the pinned key file"):
+        read(tampered)
+    chi = base[base["city_id"] == "chicago-il"].iloc[0]
+    for col in ("label_uid", "face_id"):                                # one of the two repeated, the other distinct
+        def dup(d, col=col):
+            return d.assign(**{col: [chi[col]] + d[col].tolist()[1:]})
+        with pytest.raises(SystemExit, match="a label or face is in more than one key"):
+            read(repin_copy(out, run["tmp"] / f"dup_{col}", {"key.csv": dup}, key_sha256="key.csv"))
 
 
 def test_bar_needs_the_count_and_the_bound():
