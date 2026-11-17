@@ -1,0 +1,7 @@
+stack,w_insample,w_fold_min,w_fold_max
+pooled,1.6313,1.2789,1.8266
+CurbRamp,1.9345,1.6418,2.3479
+NoCurbRamp,1.0720,0.7719,1.3960
+Obstacle,1.1090,0.8830,1.4160
+SurfaceProblem,2.8584,2.2083,3.4031
+Crosswalk,1.0542,0.2557,1.3503

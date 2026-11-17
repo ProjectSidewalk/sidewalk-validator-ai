@@ -1,0 +1,9 @@
+check,n
+round-3 split = train,0
+round-3 split = val,0
+round-3 split = test,7030
+round-3 split = test_heldout,542
+panorama shared with a train/val row of the same label type,0
+trained on (either),0
+panorama shared with a train/val row of a different label type (not a leak: each type has its own classifier),821
+"round-3 manifest rows: train 42,267, val 9,054, test 9,058, test_heldout 4,086",64465

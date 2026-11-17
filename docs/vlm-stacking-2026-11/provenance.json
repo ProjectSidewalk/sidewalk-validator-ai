@@ -1,0 +1,76 @@
+{
+ "seed": 20261115,
+ "n_boot": 2000,
+ "n_folds": 5,
+ "clip": {
+  "p_r3": 1e-12,
+  "p_vlm": 0.01
+ },
+ "threshold": 0.5,
+ "min_gain": 0.005,
+ "sensitivity": {
+  "first_version_clip": 1e-06,
+  "fold_seeds": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17,
+   18,
+   19
+  ],
+  "refit_boot": 300
+ },
+ "counts": {
+  "n_vlm": 7572,
+  "n_classifier": 13144,
+  "n_both": 7572,
+  "vlm_unscored": 0,
+  "n_r3_clipped": 837
+ },
+ "n_trained_on": 0,
+ "commit": "2e7486a4b701b634c4ab303c52148b9178f50957",
+ "code_dirty": false,
+ "versions": {
+  "python": "3.11.5",
+  "numpy": "1.24.3",
+  "pandas": "2.0.3",
+  "scipy": "1.11.1",
+  "scikit-learn": "1.3.0"
+ },
+ "inputs": {
+  "scores/round3/CurbRamp.csv": "5076033066dfd3d48e8dd30a9d7e2d2f7ac72093af50441a39ee9f7e207e1c5f",
+  "scores/round3/NoCurbRamp.csv": "3c418ea893e993adc4a66f51192b538a4f479e69eff1e37236685f3b34ab94da",
+  "scores/round3/Obstacle.csv": "5789f267f0aaf8b78b807ff93e96aa8a89e8b0e8cbb7bbdf48bbe2c880ea5c80",
+  "scores/round3/SurfaceProblem.csv": "e9b7fb1cda4a331c9d74a8e1b9b58f7fd2f27e829c0c3ac57fae795830246930",
+  "scores/round3/Crosswalk.csv": "0121de46182e4ee3f7f283c63eb8cb0a661de10b1bb77fb4b184294ba15fd62d",
+  "scores/gemini-3.8-flash/CurbRamp.csv": "3c941d2f3797bced3d43e3189e361032f8482301b552eee301a66685641c7de8",
+  "scores/gemini-3.8-flash/NoCurbRamp.csv": "7cc2052480f4f986c9b9b406c18d348cfe37f402e9295f2afd2778a8f45c55cf",
+  "scores/gemini-3.8-flash/Obstacle.csv": "ab5f6444b9905eecc04d156669960637e1e2896f0f1cff138a94c1ad49f4b01e",
+  "scores/gemini-3.8-flash/SurfaceProblem.csv": "a7ed7ddf101a5ab9fa93fb4d4c3c3ac9dba47f98eda7cae2d7c8a466bc060a0a",
+  "scores/gemini-3.8-flash/Crosswalk.csv": "f1037178ef29b21f48c583a1ce3c930c827071a0b935eca1ed2425e653aab2ca",
+  "staging/splits/CurbRamp.csv": "fcef25b07959682e00f9d27fabef552781176e418c2f191f25750008bb6fa0f1",
+  "staging/splits/NoCurbRamp.csv": "db9e21132a954f4bb08ce48ae07b69241461586998c276d998f91966d9443567",
+  "staging/splits/Obstacle.csv": "e63859082a6b16b783d2db30f42a0e7a65622d52ee0e59508ab751f0cf208626",
+  "staging/splits/SurfaceProblem.csv": "d6896263e6898845b9d8563dc18a431e4e6bf603371083c2d7c568b6161a7f32",
+  "staging/splits/Crosswalk.csv": "8056548da4aec2031a4cc17e3d426dbb14072dc8d434477aa411c6a60d28afc2",
+  "round3/CurbRamp/split.csv": "f2ec89f8032c9b6b7c1533bea7ac82d82b7c139847b14286dd53d932a2195610",
+  "round3/NoCurbRamp/split.csv": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+  "round3/Obstacle/split.csv": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+  "round3/SurfaceProblem/split.csv": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+  "round3/Crosswalk/split.csv": "91001f64b778ec3d59b381d50911c6bd8ea35449052574d97eb4c9380d37f00f"
+ }
+}
