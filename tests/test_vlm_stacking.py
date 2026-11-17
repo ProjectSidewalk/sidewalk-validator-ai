@@ -71,7 +71,7 @@ def test_stack_gains_when_the_second_score_is_independent_and_holdout_flags_trai
     n = rows.set_index("check").n
     assert trained.sum() == 2 and n["round-3 split = train"] == 1
     assert n[[c for c in n.index if "different label type" in c][0]] == 2   # crop 0 and its panorama mate
-    assert "pre-stated rule: YES" in vs.render({"n_both": len(df), "n_vlm": len(df), "n_classifier": len(df),
+    assert "post-hoc rule: YES" in vs.render({"n_both": len(df), "n_vlm": len(df), "n_classifier": len(df),
                                         "vlm_unscored": 0}, rows, res, None, 0)
 
 
@@ -100,4 +100,4 @@ def test_sensitivity_is_reported_apart_from_the_primary():
     assert (sens.set_index("variant").x0_alone_diff[["normal_rank", "loco"]] == 0).all()   # same ranking as round 3
     page = vs.render({"n_both": len(df), "n_vlm": len(df), "n_classifier": len(df), "vlm_unscored": 0},
                      vs.holdout_check(df, df.assign(split="test"))[0], res, None, 0, sens, seeds)
-    assert "Verdict under the pre-stated rule" in page and "Sensitivity analyses (not the primary result)" in page
+    assert "Verdict under the post-hoc rule" in page and "Sensitivity analyses (not the primary result)" in page
