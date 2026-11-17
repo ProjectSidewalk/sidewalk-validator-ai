@@ -42,7 +42,7 @@
   "n_r3_clipped": 837
  },
  "n_trained_on": 0,
- "commit": "55ae95cd01c8929be45cd8b052e2f012f99ce3cb",
+ "commit": "2e7486a4b701b634c4ab303c52148b9178f50957",
  "code_dirty": false,
  "versions": {
   "python": "3.11.5",
