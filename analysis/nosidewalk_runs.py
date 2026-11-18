@@ -1322,11 +1322,25 @@ def recommendation(block, min_added=10, max_new_incorrect=1, max_precision_drop=
     return out
 
 
+def auc_delta_vs_single(dd, col, n_boot, seed, single_col="median_p_correct"):
+    """Paired delta of the weighted AUC and of the within-city weighted AUC, ``col`` minus ``single_col``, on the
+    decided step (b) rows ``dd``, each with a 95 % interval from one resample of rows within (city, stratum) shared
+    by both scores (``nr.boot_ci``; ``[None, None]`` when ``n_boot`` is 0)."""
+    wc = lambda x, c: nr.within_city_weighted_auc(x, c)[0]  # noqa: E731
+    out = {}
+    for stat, fn in (("auc_weighted", nr.weighted_auc), ("within_city_auc_weighted", wc)):
+        delta = lambda x, fn=fn: fn(x, col) - fn(x, single_col)  # noqa: E731
+        out[stat] = {"delta": float(delta(dd)), "ci95": nr.boot_ci(dd, delta, n_boot, seed)}
+    return out
+
+
 def step_b_pooling(rated, fs, maps, pi_deploy, gate=ng.GATE, pass_models=3, n_boot=1000, seed=0, groups=GROUPS,
-                   members=None, n_models=5):
+                   members=None, n_models=5, train_n=None):
     """Item 2 on step (b) (primary): per group, score pooling through ``maps[group]`` (a :func:`pooled_map` of the
     same group, fitted on step (a)) and vote pooling (plain and strict), against the round's own single-label rule.
-    Nothing is recalibrated on step (b). ``members`` filters the neighbours (sensitivities)."""
+    Nothing is recalibrated on step (b). ``members`` filters the neighbours (sensitivities). Each pooled score's
+    weighted AUCs carry a paired delta against the single label (:func:`auc_delta_vs_single`); ``train_n``
+    (``{tag: training rows}``) is printed beside each tag slice."""
     decided = rated[rated["verdict"].isin(["correct", "incorrect"])].copy()
     single = (decided["stratum"] == "pass").to_numpy()
     out = {"decided": int(len(decided)), "incorrect": int((decided["verdict"] == "incorrect").sum()),
@@ -1349,24 +1363,38 @@ def step_b_pooling(rated, fs, maps, pi_deploy, gate=ng.GATE, pass_models=3, n_bo
         block["score"]["auc_weighted"] = nr.weighted_auc(dd, "pooled_median_p")
         block["score"]["within_city_auc_weighted"] = nr.within_city_weighted_auc(dd, "pooled_median_p")
         if g != "single":
+            block["score"]["delta_vs_single"] = auc_delta_vs_single(dd, "pooled_median_p", n_boot, seed)
             block["vote"] = gate_block(decided, vote_pooled(decided, fs, g, members), single, n_boot, seed)
             block["vote_strict"] = gate_block(decided, vote_pooled(decided, fs, g, members, strict=True), single,
                                               n_boot, seed)
-        block["tags"] = tag_rates(decided, score_pass, single)
+        block["tags"] = tag_rates(decided, score_pass, single, train_n=train_n)
         if g != "single":
-            block["tags_vote"] = tag_rates(decided, vote_pooled(decided, fs, g, members), single)
-            block["tags_vote_strict"] = tag_rates(decided, vote_pooled(decided, fs, g, members, strict=True), single)
+            block["tags_vote"] = tag_rates(decided, vote_pooled(decided, fs, g, members), single, train_n=train_n)
+            block["tags_vote_strict"] = tag_rates(decided, vote_pooled(decided, fs, g, members, strict=True), single,
+                                                  train_n=train_n)
         out["groups"][g] = block
     return out
 
 
-def tag_rates(decided, passed, single, min_n=slices.MIN_N):
+def tag_training_rows(train):
+    """``{tag: rows}`` of the training pool ``train`` (gate2's train, val and test split rows, the pool the fold
+    models draw from), as the step (a) tag table counts them.
+
+    >>> tag_training_rows(pd.DataFrame({"tags": ['["a"]', '["a", "b"]', "[]"]}))
+    {'(none)': 1, 'a': 2, 'b': 1}
+    """
+    return {str(k): int(v) for k, v in slices.with_slice(train, "tag").groupby("slice").size().items()}
+
+
+def tag_rates(decided, passed, single, min_n=slices.MIN_N, train_n=None):
     """Per tag with at least ``min_n`` decided labels: raw precision of the pooled gate ``passed`` and of the single
-    rule ``single`` among that tag's labels (NoSidewalk has no severity)."""
+    rule ``single`` among that tag's labels (NoSidewalk has no severity), with the tag's training rows from
+    ``train_n`` when given."""
     tags = {}
     for t, sub in slices.with_slice(decided.assign(_pass=passed, _single=single), "tag").groupby("slice"):
         if len(sub) >= min_n:
             tags[t] = {"decided": int(len(sub)), "incorrect": int((sub["verdict"] == "incorrect").sum()),
+                       **({"train_n": int(train_n.get(t, 0))} if train_n is not None else {}),
                        "pooled": nr.rate(int((sub["_pass"] & (sub["verdict"] == "correct")).sum()),
                                          int(sub["_pass"].sum())),
                        "single": nr.rate(int((sub["_single"] & (sub["verdict"] == "correct")).sum()),
@@ -1484,10 +1512,11 @@ def face_weights(df):
     return 1.0 / df.groupby("face_id")["face_id"].transform("size").to_numpy(float)
 
 
-def second_stage(train, test_sets, n_boot, seed):
+def second_stage(train, test_sets, n_boot, seed, train_n=None):
     """Leave-one-fold-out over the step (a) folds: models a (image logit), b (image + features), c (features) fitted
     on ``train`` (label-level truth, faces weighted equally) and scored on each held-back fold; per evaluation set
-    in ``test_sets`` (uids) the AUC, within-city AUC and the paired face-bootstrap delta b - a."""
+    in ``test_sets`` (uids) the AUC, within-city AUC and the paired face-bootstrap delta b - a. ``train_n``
+    (``{tag: training rows}`` of the image models) is recorded beside each tag slice."""
     preds = {m: pd.Series(np.nan, index=train.index) for m in MODEL_COLUMNS}
     for k in sorted(train["fold"].unique()):
         tr, te = train[train["fold"] != k], train[train["fold"] == k]
@@ -1516,14 +1545,18 @@ def second_stage(train, test_sets, n_boot, seed):
             if len(sub) >= slices.MIN_N:
                 y = (sub["truth"] == "incorrect").to_numpy()
                 out["tags_ii_all"][t] = {"rows": int(len(sub)), "incorrect": int(y.sum()),
+                                         **({"train_n": int(train_n.get(t, 0))} if train_n is not None else {}),
                                          **{m: _plain_auc(y, sub[f"_p_{m}"].to_numpy()) for m in MODEL_COLUMNS}}
     return out
 
 
-def transfer(train, rated, n_models, n_boot, seed):
+def transfer(train, rated, n_models, n_boot, seed, train_n=None):
     """Step (b) transfer (primary for item 3): models fitted once on all of ``train``, frozen, applied to each model
     k's image logit of the decided rated labels and averaged over k. Weighted AUC and within-city weighted AUC
-    against model a, with a paired bootstrap of the deltas within (city, stratum)."""
+    against model a, with a paired bootstrap of the deltas within (city, stratum). Model a averages five
+    second-stage probabilities, so it is not item 2's single score (the median ``p_correct``); that score's AUCs on
+    the same rows are recorded as ``median_p_correct`` when the column is there. ``train_n`` as in
+    :func:`second_stage`."""
     y = (train["truth"] == "incorrect").astype(int).to_numpy()
     fitted = {m: fit_second_stage(train[list(c)].to_numpy(float), y, face_weights(train)) for m, c in
               MODEL_COLUMNS.items()}
@@ -1538,6 +1571,9 @@ def transfer(train, rated, n_models, n_boot, seed):
     for m in MODEL_COLUMNS:
         out["models"][m] = {"auc_weighted": nr.weighted_auc(d, f"pc_{m}"),
                             "within_city_auc_weighted": nr.within_city_weighted_auc(d, f"pc_{m}")[0]}
+    if "median_p_correct" in d:
+        out["median_p_correct"] = {"auc_weighted": nr.weighted_auc(d, "median_p_correct"),
+                                   "within_city_auc_weighted": nr.within_city_weighted_auc(d, "median_p_correct")[0]}
     for other in ("b_image_features", "c_features"):
         for stat, fn in (("auc_weighted", lambda x, c: nr.weighted_auc(x, c)),
                          ("within_city_auc_weighted", lambda x, c: nr.within_city_weighted_auc(x, c)[0])):
@@ -1548,6 +1584,7 @@ def transfer(train, rated, n_models, n_boot, seed):
         for t, sub in slices.with_slice(d, "tag").groupby("slice"):
             if len(sub) >= slices.MIN_N:
                 out["tags"][t] = {"decided": int(len(sub)), "incorrect": int((sub["verdict"] == "incorrect").sum()),
+                                  **({"train_n": int(train_n.get(t, 0))} if train_n is not None else {}),
                                   **{m: nr.weighted_auc(sub, f"pc_{m}") for m in MODEL_COLUMNS}}
     return out
 
@@ -1811,6 +1848,37 @@ def step_b_members(fs, rated, step_a_heldout=()):
             "_touched_faces": set(fs.loc[touched, "face_id"])}
 
 
+def step_b_maps(t, pi_deploy, groups=GROUPS, label_level_only=False):
+    """Per group, the map step (b) is served through: fitted on step (a)'s pooled scores of the same group over the
+    scored out-of-fold split rows of all five folds, never a held-out row. ``label_level_only`` keeps only the split
+    rows whose class is label-level (margin / expert), dropping the face-copied ones, which a face-pooled score
+    predicts by construction (a sensitivity)."""
+    scored = t[t["scored"] == 1]
+    fit = scored[(scored["fold"] >= 0) & (scored["in_split"] == 1)]
+    if label_level_only:
+        fit = fit[fit["truth_source"] == "split_label"]
+    return {g: pooled_map(fit.assign(pooled=pooled_scores(scored, g).loc[fit.index]), pi_deploy, g) for g in groups}
+
+
+def neighbour_mask_counts(rated, fs, members, groups=("run", "face")):
+    """Per group, the scored neighbours of the decided rated labels (same run or same face, the rated labels
+    themselves left out) and how many of them each sensitivity mask in ``members`` removes. A mask that removes
+    almost nothing from a group cannot move that group's row."""
+    d = rated[rated["verdict"].isin(["correct", "incorrect"])]
+    scored = fs[fs["p_correct_0"].notna()]
+    keys = {"run": ("run_id", set(run_ids(d["face_id"].fillna(""), LABEL_TYPE, d["labeler_idx"]))),
+            "face": ("face_id", set(d["face_id"]))}
+    out = {}
+    for g in groups:
+        col, k = keys[g]
+        nb = scored[scored[col].isin(k) & ~scored["label_uid"].isin(set(d["label_uid"]))]
+        out[g] = {"neighbours": int(len(nb)), "rater_placed": int((nb["rater_placed"] == 1).sum()),
+                  "rater_voted": int((nb["rater_voted"] == 1).sum()),
+                  **{f"{name}_removes": int((~m.reindex(nb.index).fillna(False).astype(bool)).sum())
+                     for name, m in members.items() if not name.startswith("_")}}
+    return out
+
+
 def cmd_pooling(args):
     t, split, gate_preds, inputs, n_folds = load_step_a(args)
     pi_deploy, _ = cal.load_prior(args.priors, LABEL_TYPE)
@@ -1825,24 +1893,26 @@ def cmd_pooling(args):
         out["step_a_gate1"] = gate_run_stability(args.gate1, split, args.seed)
     rated, fs, b_inputs = load_step_b(args)
     out["inputs"].update(b_inputs)
-    scored = t[(t["scored"] == 1)]
-    fit = scored[(scored["fold"] >= 0) & (scored["in_split"] == 1)]
-    maps = {}
-    for g in GROUPS:
-        p = pooled_scores(scored, g).loc[fit.index]
-        maps[g] = pooled_map(fit.assign(pooled=p), pi_deploy, g)
-    out["step_b"] = step_b_pooling(rated, fs, maps, pi_deploy, n_boot=args.n_boot, seed=args.seed)
+    maps = step_b_maps(t, pi_deploy)
+    train_n = tag_training_rows(train)
+    out["step_b"] = step_b_pooling(rated, fs, maps, pi_deploy, n_boot=args.n_boot, seed=args.seed, train_n=train_n)
+    out["step_b"]["tag_training_rows"] = train_n
     out["step_b"]["singleton_runs"] = singleton_runs(rated, fs)
     out["recommendation"] = recommendation(out["step_b"]["groups"]["run"]["score"],
                                            refit_single=out["step_b"]["groups"]["single"]["score"])
     mem = step_b_members(fs, rated, step_a_heldout=t.loc[t["fold"] < 0, "label_uid"])
-    sens = {}
-    for name in ("no_rater_placed_or_voted", "no_trained_pano_or_pilot_heldout"):
-        sens[name] = step_b_pooling(rated, fs, maps, pi_deploy, n_boot=0, seed=args.seed, groups=("run",),
-                                    members=mem[name])["groups"]["run"]["score"]
+    sens = {"neighbours_removed": neighbour_mask_counts(rated, fs, mem)}
     untouched = rated[~rated["face_id"].isin(mem["_touched_faces"])]
-    sens["without_touched_faces"] = step_b_pooling(untouched, fs, maps, pi_deploy, n_boot=0, seed=args.seed,
-                                                   groups=("run",))["groups"]["run"]["score"]
+    # the run pool's rows keep their flat keys; the face pool (post hoc, where the rater's own labels sit) is beside
+    for g, dest in (("run", sens), ("face", sens.setdefault("face", {}))):
+        for name in ("no_rater_placed_or_voted", "no_trained_pano_or_pilot_heldout"):
+            dest[name] = step_b_pooling(rated, fs, maps, pi_deploy, n_boot=0, seed=args.seed, groups=(g,),
+                                        members=mem[name])["groups"][g]["score"]
+        dest["without_touched_faces"] = step_b_pooling(untouched, fs, maps, pi_deploy, n_boot=0, seed=args.seed,
+                                                       groups=(g,))["groups"][g]["score"]
+    ll_maps = step_b_maps(t, pi_deploy, groups=("run", "face"), label_level_only=True)
+    sens["label_level_map"] = {g: step_b_pooling(rated, fs, ll_maps, pi_deploy, n_boot=0, seed=args.seed,
+                                                 groups=(g,))["groups"][g]["score"] for g in ("run", "face")}
     sens["touched_faces_rated"] = int(rated["face_id"].isin(mem["_touched_faces"]).sum())
     sens["per_city"] = {c: step_b_pooling(rated[rated["city_id"] == c], fs, maps, pi_deploy, n_boot=0,
                                           seed=args.seed, groups=("run",))["groups"]["run"]["score"]
@@ -1878,6 +1948,9 @@ def features_frames(t, args, experts):
 
 def cmd_features(args):
     experts = expert_order(os.environ.get("EXPERTS", ""))
+    if not experts:  # the pre-registered "without expert placed" variant would silently equal the other one
+        sys.exit("EXPERTS is empty: item 3's without-expert-placed variant needs the expert accounts "
+                 "(EXPERTS=\"<name>=<uuid>,...\")")
     t, split, gate_preds, inputs, n_folds = load_step_a(args)
     inputs["cities_json"] = check_cities(args.cities_json, args.allow_unpinned)
     inputs["ns_pull_sums"], _ = pull_sums(args.ns_pull, "ns_pull_2026_11_05_sums", args.allow_unpinned)
@@ -1887,7 +1960,9 @@ def cmd_features(args):
     rated, fs, b_inputs = load_step_b(args)
     inputs.update(b_inputs)
     out = {"inputs": inputs, "settings": {"n_boot": args.n_boot, "seed": args.seed, "dist_cap_m": DIST_CAP_M,
-                                          "C": 1.0, "features": list(FEATURES)}}
+                                          "C": 1.0, "features": list(FEATURES)}, "experts": len(experts)}
+    train_n = tag_training_rows(split[split["split"].isin(["train", "val", "test"])][["label_uid", "tags"]])
+    out["tag_training_rows"] = train_n
     contra = fresh[fresh["label_type"].isin(CONTRA_TYPES) & (fresh["face_id"] != "")]
     fresh_ns = fresh[fresh["label_type"] == LABEL_TYPE]
     # step (a): the labels the second stage learns from (label-level truth, out of fold, scored)
@@ -1903,6 +1978,13 @@ def cmd_features(args):
     out["face_check"] = {"step_a": check_a, "step_b": check_b}
     a_t = a_t[a_t["label_uid"].isin(kept_a)]
     dec = dec[dec["label_uid"].isin(kept_b)]
+    # what the without-expert-placed variant leaves out of the counts (labels on the target faces)
+    out["expert_placed_excluded"] = {
+        step: {"nosidewalk_labels": int(len(n)), "nosidewalk_expert_placed": int(n["expert_placed"].sum()),
+               "contra_labels": int(len(c)), "contra_expert_placed": int(c["expert_placed"].sum())}
+        for step, n, c in ((step, n[n["face_id"].isin(faces)], contra[contra["face_id"].isin(faces)])
+                           for step, n, faces in (("step_a", a_ns, set(a_t["face_id"])),
+                                                  ("step_b", b_ns, set(dec["face_id"]))))}
     out["variants"] = {}
     for variant, excl in (("with_expert_placed", False), ("without_expert_placed", True)):
         fa = neighbour_features(a_t, a_ns, contra, excl)
@@ -1912,10 +1994,10 @@ def cmd_features(args):
                 "ii_split": set(da.loc[da["truth_source"] == "split_label", "label_uid"]),
                 "ii_extra": set(da.loc[da["truth_source"] == "own_expert", "label_uid"])}
         block = {"step_a_rows": int(len(da)), "step_a_incorrect": int((da["truth"] == "incorrect").sum()),
-                 "step_a": second_stage(da, sets, args.n_boot, args.seed)}
+                 "step_a": second_stage(da, sets, args.n_boot, args.seed, train_n=train_n)}
         fb = neighbour_features(dec, b_ns.assign(expert_placed=b_ns["expert_placed"]), contra, excl)
         db = dec.merge(fb, on="label_uid", how="inner", validate="one_to_one")
-        block["step_b"] = transfer(da, db, n_folds, args.n_boot, args.seed)
+        block["step_b"] = transfer(da, db, n_folds, args.n_boot, args.seed, train_n=train_n)
         block["feature_means"] = {"step_a": {c: float(da[c].mean()) for c in FEATURES},
                                   "step_b": {c: float(db[c].mean()) for c in FEATURES}}
         out["variants"][variant] = block
@@ -2095,6 +2177,14 @@ def step_b_markdown(p):
         for v in ("vote", "vote_strict"):
             if v in block:
                 lines.append(_gate_row(name, v.replace("_", " "), block[v], auc=False))
+    deltas = [(g, blk["score"]["delta_vs_single"]) for g, blk in b["groups"].items()
+              if blk["score"].get("delta_vs_single")]
+    if deltas:
+        lines += ["", "Score pooling against the single label on the same rows, paired (95 % CI from resampling rows "
+                  "within city x stratum, the same resample for both scores): " + "; ".join(
+                      f"{GROUP_TEXT[g]} weighted AUC {_signed(d['auc_weighted']['delta'])}"
+                      f"{_ci(d['auc_weighted']['ci95'])}, within city {_signed(d['within_city_auc_weighted']['delta'])}"
+                      f"{_ci(d['within_city_auc_weighted']['ci95'])}" for g, d in deltas) + "."]
     prim = b["groups"]["run"]["score"]
     lines += ["", f"**Rule (fixed before any pooled number was computed):** {rec['rule']}, on the run, score "
               f"pooling. Added outside the pass stratum: {prim['added_outside_pass']} "
@@ -2118,23 +2208,40 @@ def step_b_markdown(p):
         lines.append(f"| {r['stratum']} | {'yes' if r['single_pass'] else 'no'} | {'yes' if r['pooled_pass'] else 'no'} "
                      f"| {r['verdict']} | {r['n']} | {r['weight']:.1f} |")
     s = b["sensitivity"]
-    lines += ["", "Sensitivities of the primary gate (run, score pooling):", "", GATE_HEAD,
-              "|---|---|---|---|---|---|---|---|---|---|"]
-    for name, text in (("no_rater_placed_or_voted", "without neighbours the rater placed or voted on"),
-                       ("no_trained_pano_or_pilot_heldout", "without neighbours on trained panoramas or on step (a) "
-                                                            "held-out faces"),
-                       ("without_touched_faces", f"without the {s['touched_faces_rated']} faces the rater had touched")):
-        lines.append(_gate_row(text, "score", s[name]))
+    masks = (("no_rater_placed_or_voted", "without neighbours the rater placed or voted on"),
+             ("no_trained_pano_or_pilot_heldout", "without neighbours on trained panoramas or on step (a) held-out "
+                                                  "faces"),
+             ("without_touched_faces", f"without the {s['touched_faces_rated']} faces the rater had touched"))
+    nb = s.get("neighbours_removed", {})
+    head = "Sensitivities of the primary gate (run, score pooling)"
+    if s.get("face"):
+        head += " and of the post hoc whole-face pool (F, score pooling)"
+    lines += ["", head + "."]
+    if nb:
+        lines[-1] += " " + " ".join(
+            f"The decided labels have {v['neighbours']:,} scored neighbours in their {g}; {v['rater_placed']:,} were "
+            f"placed and {v['rater_voted']:,} voted on by the rater, and the trained-panorama / held-out mask removes "
+            f"{v['no_trained_pano_or_pilot_heldout_removes']:,}." for g, v in nb.items())
+    lines += ["", GATE_HEAD, "|---|---|---|---|---|---|---|---|---|---|"]
+    for name, text in masks:
+        lines.append(_gate_row(f"R: {text}", "score", s[name]))
+    for name, text in masks:
+        if name in s.get("face", {}):
+            lines.append(_gate_row(f"F: {text}", "score", s["face"][name]))
+    for g, blk in s.get("label_level_map", {}).items():
+        lines.append(_gate_row(f"{g[0].upper()}: map fitted on the label-level split rows only (no face-copied "
+                               "class)", "score", blk))
     for c, blk in s["per_city"].items():
-        lines.append(_gate_row(c, "score", blk))
+        lines.append(_gate_row(f"R: {c}", "score", blk))
     run = b["groups"]["run"]
     for key, text in (("tags", "score pooling"), ("tags_vote", "vote pooling"), ("tags_vote_strict", "strict vote "
                                                                                                     "pooling")):
         tags = run.get(key, {})
         if tags:
             lines += ["", f"By tag, run, {text} (>= {slices.MIN_N} decided; raw precision of passers, Wilson 95 % "
-                      "lower; NoSidewalk has no severity): " + "; ".join(
-                          f"{t} ({v['decided']} decided, {v.get('incorrect', 'n/a')} incorrect): pooled "
+                      "lower; training rows as in step (a)'s tag table; NoSidewalk has no severity): " + "; ".join(
+                          f"{t} ({v['decided']} decided, {v.get('incorrect', 'n/a')} incorrect"
+                          f"{_train(v)}): pooled "
                           f"{_rate(v['pooled'])}, single {_rate(v['single'])}" for t, v in tags.items()) + "."]
     return lines
 
@@ -2220,6 +2327,15 @@ def step_a_markdown(p):
     return lines
 
 
+def _train(v):
+    """``", N training rows"`` when a slice carries ``train_n``.
+
+    >>> _train({"train_n": 1325}), _train({})
+    (', 1,325 training rows', '')
+    """
+    return f", {v['train_n']:,} training rows" if "train_n" in v else ""
+
+
 def _face_check(c):
     """``{'same_face': n, 'moved': n, 'missing': n}`` as text.
 
@@ -2258,14 +2374,31 @@ def features_markdown(f):
         lines.append(f"| {v.replace('_', ' ')} | {t['decided']} | " + " / ".join(_f(m[k]['auc_weighted']) for k in m)
                      + " | " + " / ".join(_f(m[k]['within_city_auc_weighted']) for k in m)
                      + f" | {_f(d['delta'])}{_ci(d['ci95'])} |")
+    med = [(v, blk["step_b"]["median_p_correct"]) for v, blk in f["variants"].items()
+           if blk["step_b"].get("median_p_correct")]
+    if med:
+        lines += ["", "Model a is the mean over the five fold models of a second-stage probability, not item 2's "
+                  "single score (the median `p_correct`); on the same rows that score gives weighted AUC "
+                  f"{_f(med[0][1]['auc_weighted'])}, within city {_f(med[0][1]['within_city_auc_weighted'])}. Both "
+                  "arms of the delta use model a, so the comparison is like for like."]
+    ex = f.get("expert_placed_excluded")
+    if ex:
+        lines += ["", f"Expert accounts given: {f.get('experts', 'n/a')}. Without expert placed leaves out, on the "
+                  "target faces, " + "; ".join(
+                      f"step ({k[-1]}) {e['nosidewalk_expert_placed']:,} of {e['nosidewalk_labels']:,} NoSidewalk "
+                      f"labels and {e['contra_expert_placed']:,} of {e['contra_labels']:,} contradicting labels"
+                      for k, e in ex.items()) + "."]
     for v, blk in f["variants"].items():
         ta, tb = blk["step_a"].get("tags_ii_all", {}), blk["step_b"].get("tags", {})
         if ta or tb:
-            lines += ["", f"By tag, {v.replace('_', ' ')} (>= {slices.MIN_N} rows; AUC a / b / c; NoSidewalk has no "
-                      "severity): step (a) (ii) " + ("; ".join(
-                          f"{t} {x['rows']} ({x['incorrect']}): " + " / ".join(_f(x[m]) for m in MODEL_COLUMNS)
+            lines += ["", f"By tag, {v.replace('_', ' ')} (>= {slices.MIN_N} rows; rows (incorrect, the image models' "
+                      "training rows as in step (a)'s tag table): AUC a / b / c; the second stage is fitted on step "
+                      "(a) (ii) itself; NoSidewalk has no severity): step (a) (ii) " + ("; ".join(
+                          f"{t} {x['rows']} ({x['incorrect']}{_train(x)}): " + " / ".join(_f(x[m]) for m in
+                                                                                         MODEL_COLUMNS)
                           for t, x in ta.items()) or "none") + "; step (b), weighted " + ("; ".join(
-                          f"{t} {x['decided']} ({x['incorrect']}): " + " / ".join(_f(x[m]) for m in MODEL_COLUMNS)
+                          f"{t} {x['decided']} ({x['incorrect']}{_train(x)}): " + " / ".join(_f(x[m]) for m in
+                                                                                           MODEL_COLUMNS)
                           for t, x in tb.items()) or "none") + "."]
     w = f["variants"].get("without_expert_placed", {}).get("step_b", {})
     d = w.get("delta_b_image_features_within_city_auc_weighted", {})

@@ -6141,8 +6141,8 @@
  },
  "inputs_sha256": {
   "agreement": "960fbfa67ef5ea0ca11fcc554d09ec0fca296d770cbf45a76d038b2a2d0a5baa",
-  "pooling": "e45ffb20366f6591a06e32a0514f662ea216fd3f948dd9ce0f871fd7caeff28d",
-  "features": "4182fb563cb1df3311b151b35758db2c362fff357bfe34554b087a8c245fd96b"
+  "pooling": "971474167e94d7d3d010fe4eadb558966c024c50266ef71830b15ec8d1afdd9c",
+  "features": "06aab548f7388cd82c27d67af9e63d4856f8ef282ce789e34cfbf3dc5c165f61"
  },
  "pooling": {
   "inputs": {
@@ -8102,6 +8102,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 23,
         "n": 23,
@@ -8118,6 +8119,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 95,
         "n": 95,
@@ -8241,7 +8243,23 @@
       "within_city_auc_weighted": [
        0.9864282912927298,
        4
-      ]
+      ],
+      "delta_vs_single": {
+       "auc_weighted": {
+        "delta": 0.03586776121058344,
+        "ci95": [
+         0.006520307525494235,
+         0.06784087586197267
+        ]
+       },
+       "within_city_auc_weighted": {
+        "delta": 0.03768998044454985,
+        "ci95": [
+         -0.005233763357915357,
+         0.08370417958440703
+        ]
+       }
+      }
      },
      "vote": {
       "transition": [
@@ -8455,6 +8473,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 19,
         "n": 19,
@@ -8471,6 +8490,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 79,
         "n": 79,
@@ -8489,6 +8509,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 23,
         "n": 23,
@@ -8505,6 +8526,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 95,
         "n": 95,
@@ -8523,6 +8545,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 19,
         "n": 19,
@@ -8539,6 +8562,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 86,
         "n": 86,
@@ -8670,7 +8694,23 @@
       "within_city_auc_weighted": [
        0.97891488989071,
        4
-      ]
+      ],
+      "delta_vs_single": {
+       "auc_weighted": {
+        "delta": 0.03676092792547603,
+        "ci95": [
+         -0.004783411641233356,
+         0.07526802231862839
+        ]
+       },
+       "within_city_auc_weighted": {
+        "delta": 0.030176579042530016,
+        "ci95": [
+         -0.029842065667287136,
+         0.08406413327373694
+        ]
+       }
+      }
      },
      "vote": {
       "transition": [
@@ -8884,6 +8924,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 27,
         "n": 27,
@@ -8900,6 +8941,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 109,
         "n": 109,
@@ -8918,6 +8960,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 23,
         "n": 23,
@@ -8934,6 +8977,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 96,
         "n": 96,
@@ -8952,6 +8996,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 19,
         "n": 19,
@@ -8968,6 +9013,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 86,
         "n": 86,
@@ -9099,7 +9145,23 @@
       "within_city_auc_weighted": [
        0.9599939826384626,
        4
-      ]
+      ],
+      "delta_vs_single": {
+       "auc_weighted": {
+        "delta": 0.010627545703271624,
+        "ci95": [
+         -0.04721782064449818,
+         0.059122260800341775
+        ]
+       },
+       "within_city_auc_weighted": {
+        "delta": 0.01125567179028264,
+        "ci95": [
+         -0.07515016204800222,
+         0.07673847324545807
+        ]
+       }
+      }
      },
      "vote": {
       "transition": [
@@ -9313,6 +9375,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 18,
         "n": 18,
@@ -9329,6 +9392,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 78,
         "n": 78,
@@ -9347,6 +9411,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 22,
         "n": 22,
@@ -9363,6 +9428,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 91,
         "n": 91,
@@ -9381,6 +9447,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 18,
         "n": 18,
@@ -9397,6 +9464,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 78,
         "n": 78,
@@ -9520,7 +9588,23 @@
       "within_city_auc_weighted": [
        0.9812581452734672,
        4
-      ]
+      ],
+      "delta_vs_single": {
+       "auc_weighted": {
+        "delta": 0.0351306429297622,
+        "ci95": [
+         0.006528837276255503,
+         0.06449948523045572
+        ]
+       },
+       "within_city_auc_weighted": {
+        "delta": 0.032519834425287275,
+        "ci95": [
+         -0.006821064599915981,
+         0.06937207583888262
+        ]
+       }
+      }
      },
      "vote": {
       "transition": [
@@ -9734,6 +9818,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 19,
         "n": 19,
@@ -9750,6 +9835,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 79,
         "n": 79,
@@ -9768,6 +9854,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 24,
         "n": 24,
@@ -9784,6 +9871,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 95,
         "n": 95,
@@ -9802,6 +9890,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 20,
         "n": 20,
@@ -9818,6 +9907,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 86,
         "n": 86,
@@ -9941,7 +10031,23 @@
       "within_city_auc_weighted": [
        0.9741328918728651,
        4
-      ]
+      ],
+      "delta_vs_single": {
+       "auc_weighted": {
+        "delta": 0.026586891412513025,
+        "ci95": [
+         -0.012856199484841516,
+         0.06299614036755752
+        ]
+       },
+       "within_city_auc_weighted": {
+        "delta": 0.02539458102468517,
+        "ci95": [
+         -0.04062789049249413,
+         0.07925736588608166
+        ]
+       }
+      }
      },
      "vote": {
       "transition": [
@@ -10155,6 +10261,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 23,
         "n": 23,
@@ -10171,6 +10278,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 94,
         "n": 94,
@@ -10189,6 +10297,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 23,
         "n": 23,
@@ -10205,6 +10314,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 93,
         "n": 93,
@@ -10223,6 +10333,7 @@
       "(none)": {
        "decided": 48,
        "incorrect": 9,
+       "train_n": 325,
        "pooled": {
         "k": 20,
         "n": 20,
@@ -10239,6 +10350,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "pooled": {
         "k": 86,
         "n": 86,
@@ -10340,8 +10452,434 @@
     0.9487383108481799,
     4
    ],
+   "tag_training_rows": {
+    "(none)": 325,
+    "ends abruptly": 47,
+    "gravel/dirt road": 38,
+    "pedestrian lane marking": 5,
+    "shared pedestrian/car space": 40,
+    "street has a sidewalk": 93,
+    "street has no sidewalks": 278
+   },
    "singleton_runs": 58,
    "sensitivity": {
+    "neighbours_removed": {
+     "run": {
+      "neighbours": 1193,
+      "rater_placed": 0,
+      "rater_voted": 3,
+      "no_rater_placed_or_voted_removes": 3,
+      "no_trained_pano_or_pilot_heldout_removes": 57
+     },
+     "face": {
+      "neighbours": 2269,
+      "rater_placed": 480,
+      "rater_voted": 112,
+      "no_rater_placed_or_voted_removes": 592,
+      "no_trained_pano_or_pilot_heldout_removes": 130
+     }
+    },
+    "face": {
+     "no_rater_placed_or_voted": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 20,
+        "weight": 3311.262044172815
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 22,
+        "weight": 5042.983299468015
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 17,
+        "weight": 932.0910238181585
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 3,
+        "weight": 192.8835771658061
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 12,
+        "weight": 399.98079180600786
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 130,
+        "weight": 7682.041316990121
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 155,
+       "n": 156,
+       "rate": 0.9935897435897436,
+       "wilson95_lower": 0.9645862554536859
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 25,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 25,
+      "newly_admitted_incorrect": 0,
+      "dropped": 13,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.6459542506388356,
+      "precision_weighted": {
+       "weighted": 0.9993683425314656,
+       "n_eff": 68.41031633959592,
+       "wilson95_lower_n_eff": 0.945641280618516,
+       "ci95": [
+        null,
+        null
+       ]
+      },
+      "auc_weighted": 0.9650474882276036,
+      "within_city_auc_weighted": [
+       0.9788973643056352,
+       4
+      ],
+      "delta_vs_single": {
+       "auc_weighted": {
+        "delta": 0.036376996890279734,
+        "ci95": [
+         null,
+         null
+        ]
+       },
+       "within_city_auc_weighted": {
+        "delta": 0.030159053457455287,
+        "ci95": [
+         null,
+         null
+        ]
+       }
+      }
+     },
+     "no_trained_pano_or_pilot_heldout": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 17,
+        "weight": 3254.837071555071
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 25,
+        "weight": 5099.408272085759
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 15,
+        "weight": 914.8500599627369
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 5,
+        "weight": 210.12454102122777
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 10,
+        "weight": 356.2891066176431
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 132,
+        "weight": 7725.7330021784865
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 162,
+       "n": 163,
+       "rate": 0.9938650306748467,
+       "wilson95_lower": 0.966070916482625
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 30,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 30,
+      "newly_admitted_incorrect": 0,
+      "dropped": 11,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.6518189594562702,
+      "precision_weighted": {
+       "weighted": 0.9993740258382664,
+       "n_eff": 69.58583856533805,
+       "wilson95_lower_n_eff": 0.9465021758797992,
+       "ci95": [
+        null,
+        null
+       ]
+      },
+      "auc_weighted": 0.9659978724672301,
+      "within_city_auc_weighted": [
+       0.9789803386643681,
+       4
+      ],
+      "delta_vs_single": {
+       "auc_weighted": {
+        "delta": 0.0373273811299063,
+        "ci95": [
+         null,
+         null
+        ]
+       },
+       "within_city_auc_weighted": {
+        "delta": 0.030242027816188122,
+        "ci95": [
+         null,
+         null
+        ]
+       }
+      }
+     },
+     "without_touched_faces": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 16,
+        "weight": 3217.6854550556286
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 19,
+        "weight": 4968.215034556743
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 14,
+        "weight": 901.4275404532608
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 2,
+        "weight": 100.75202954675846
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 10,
+        "weight": 356.2891066176431
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 101,
+        "weight": 6677.930855711336
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 122,
+       "n": 123,
+       "rate": 0.991869918699187,
+       "wilson95_lower": 0.9553822752365937
+      },
+      "raw_single": {
+       "k": 111,
+       "n": 113,
+       "rate": 0.9823008849557522,
+       "wilson95_lower": 0.9377540468123469
+      },
+      "added_outside_pass": 21,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 21,
+      "newly_admitted_incorrect": 0,
+      "dropped": 11,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.629559809328489,
+      "precision_weighted": {
+       "weighted": 0.9993054183770284,
+       "n_eff": 57.886247879643975,
+       "wilson95_lower_n_eff": 0.9364699402642573,
+       "ci95": [
+        null,
+        null
+       ]
+      },
+      "auc_weighted": 0.9629296480487151,
+      "within_city_auc_weighted": [
+       0.9786457549267058,
+       4
+      ],
+      "delta_vs_single": {
+       "auc_weighted": {
+        "delta": 0.03426497132501172,
+        "ci95": [
+         null,
+         null
+        ]
+       },
+       "within_city_auc_weighted": {
+        "delta": 0.028472038244708564,
+        "ci95": [
+         null,
+         null
+        ]
+       }
+      }
+     }
+    },
     "no_rater_placed_or_voted": {
      "transition": [
       {
@@ -10449,7 +10987,23 @@
      "within_city_auc_weighted": [
       0.9864282912927298,
       4
-     ]
+     ],
+     "delta_vs_single": {
+      "auc_weighted": {
+       "delta": 0.03586776121058344,
+       "ci95": [
+        null,
+        null
+       ]
+      },
+      "within_city_auc_weighted": {
+       "delta": 0.03768998044454985,
+       "ci95": [
+        null,
+        null
+       ]
+      }
+     }
     },
     "no_trained_pano_or_pilot_heldout": {
      "transition": [
@@ -10558,7 +11112,23 @@
      "within_city_auc_weighted": [
       0.9864871114783368,
       4
-     ]
+     ],
+     "delta_vs_single": {
+      "auc_weighted": {
+       "delta": 0.03643089156395818,
+       "ci95": [
+        null,
+        null
+       ]
+      },
+      "within_city_auc_weighted": {
+       "delta": 0.03774880063015684,
+       "ci95": [
+        null,
+        null
+       ]
+      }
+     }
     },
     "without_touched_faces": {
      "transition": [
@@ -10667,7 +11237,283 @@
      "within_city_auc_weighted": [
       0.9862983403067187,
       4
-     ]
+     ],
+     "delta_vs_single": {
+      "auc_weighted": {
+       "delta": 0.03431380765211722,
+       "ci95": [
+        null,
+        null
+       ]
+      },
+      "within_city_auc_weighted": {
+       "delta": 0.036124623624721464,
+       "ci95": [
+        null,
+        null
+       ]
+      }
+     }
+    },
+    "label_level_map": {
+     "run": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 35,
+        "weight": 6892.207913317911
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 7,
+        "weight": 1462.0374303229182
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 20,
+        "weight": 1124.9746009839646
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 31,
+        "weight": 1535.3334573533343
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 111,
+        "weight": 6546.688651442795
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 118,
+       "n": 119,
+       "rate": 0.9915966386554622,
+       "wilson95_lower": 0.9539309817174007
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 7,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 7,
+      "newly_admitted_incorrect": 0,
+      "dropped": 32,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.4006278439667355,
+      "precision_weighted": {
+       "weighted": 0.9989815440117498,
+       "n_eff": 57.693163140684334,
+       "wilson95_lower_n_eff": 0.9356756186097419,
+       "ci95": [
+        null,
+        null
+       ]
+      },
+      "auc_weighted": 0.9645382525479073,
+      "within_city_auc_weighted": [
+       0.9864282912927298,
+       4
+      ],
+      "delta_vs_single": {
+       "auc_weighted": {
+        "delta": 0.03586776121058344,
+        "ci95": [
+         null,
+         null
+        ]
+       },
+       "within_city_auc_weighted": {
+        "delta": 0.03768998044454985,
+        "ci95": [
+         null,
+         null
+        ]
+       }
+      }
+     },
+     "face": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 27,
+        "weight": 5739.177104789636
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 15,
+        "weight": 2615.0682388511937
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 19,
+        "weight": 1116.3541190562537
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 1,
+        "weight": 8.620481927710843
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 17,
+        "weight": 537.0823690638607
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 125,
+        "weight": 7544.939739732268
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 141,
+       "n": 142,
+       "rate": 0.9929577464788732,
+       "wilson95_lower": 0.9611897670033634
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 16,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 16,
+      "newly_admitted_incorrect": 0,
+      "dropped": 18,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.5085645791023513,
+      "precision_weighted": {
+       "weighted": 0.999197699085792,
+       "n_eff": 65.80546445904437,
+       "wilson95_lower_n_eff": 0.943336534554259,
+       "ci95": [
+        null,
+        null
+       ]
+      },
+      "auc_weighted": 0.9654314192627999,
+      "within_city_auc_weighted": [
+       0.97891488989071,
+       4
+      ],
+      "delta_vs_single": {
+       "auc_weighted": {
+        "delta": 0.03676092792547603,
+        "ci95": [
+         null,
+         null
+        ]
+       },
+       "within_city_auc_weighted": {
+        "delta": 0.030176579042530016,
+        "ci95": [
+         null,
+         null
+        ]
+       }
+      }
+     }
     },
     "touched_faces_rated": 42,
     "per_city": {
@@ -10762,7 +11608,23 @@
       "within_city_auc_weighted": [
        0.9805597580535106,
        1
-      ]
+      ],
+      "delta_vs_single": {
+       "auc_weighted": {
+        "delta": 0.1000743976650581,
+        "ci95": [
+         null,
+         null
+        ]
+       },
+       "within_city_auc_weighted": {
+        "delta": 0.1000743976650581,
+        "ci95": [
+         null,
+         null
+        ]
+       }
+      }
      },
      "chicago-il": {
       "transition": [
@@ -10855,7 +11717,23 @@
       "within_city_auc_weighted": [
        0.9885798615655047,
        1
-      ]
+      ],
+      "delta_vs_single": {
+       "auc_weighted": {
+        "delta": 0.018686941537186752,
+        "ci95": [
+         null,
+         null
+        ]
+       },
+       "within_city_auc_weighted": {
+        "delta": 0.018686941537186752,
+        "ci95": [
+         null,
+         null
+        ]
+       }
+      }
      },
      "oradell-nj": {
       "transition": [
@@ -10948,7 +11826,23 @@
       "within_city_auc_weighted": [
        0.9875495189586871,
        1
-      ]
+      ],
+      "delta_vs_single": {
+       "auc_weighted": {
+        "delta": 0.016719217398334485,
+        "ci95": [
+         null,
+         null
+        ]
+       },
+       "within_city_auc_weighted": {
+        "delta": 0.016719217398334596,
+        "ci95": [
+         null,
+         null
+        ]
+       }
+      }
      },
      "tucson-az": {
       "transition": [
@@ -11057,7 +11951,23 @@
       "within_city_auc_weighted": [
        0.9441398113424645,
        1
-      ]
+      ],
+      "delta_vs_single": {
+       "auc_weighted": {
+        "delta": 0.059757831311895715,
+        "ci95": [
+         null,
+         null
+        ]
+       },
+       "within_city_auc_weighted": {
+        "delta": 0.059757831311895715,
+        "ci95": [
+         null,
+         null
+        ]
+       }
+      }
      }
     }
    }
@@ -11133,6 +12043,16 @@
     "log_n_contra_same_labeler"
    ]
   },
+  "experts": 2,
+  "tag_training_rows": {
+   "(none)": 325,
+   "ends abruptly": 47,
+   "gravel/dirt road": 38,
+   "pedestrian lane marking": 5,
+   "shared pedestrian/car space": 40,
+   "street has a sidewalk": 93,
+   "street has no sidewalks": 278
+  },
   "face_check": {
    "step_a": {
     "same_face": 1125,
@@ -11143,6 +12063,20 @@
     "same_face": 234,
     "moved": 0,
     "missing": 1
+   }
+  },
+  "expert_placed_excluded": {
+   "step_a": {
+    "nosidewalk_labels": 5744,
+    "nosidewalk_expert_placed": 681,
+    "contra_labels": 1617,
+    "contra_expert_placed": 123
+   },
+   "step_b": {
+    "nosidewalk_labels": 2498,
+    "nosidewalk_expert_placed": 516,
+    "contra_labels": 893,
+    "contra_expert_placed": 67
    }
   },
   "variants": {
@@ -11362,6 +12296,7 @@
       "(none)": {
        "rows": 631,
        "incorrect": 137,
+       "train_n": 325,
        "a_image": 0.9826827033895801,
        "b_image_features": 0.996143503058601,
        "c_features": 0.9745559856969768
@@ -11369,6 +12304,7 @@
       "ends abruptly": {
        "rows": 53,
        "incorrect": 23,
+       "train_n": 47,
        "a_image": 0.8492753623188406,
        "b_image_features": 0.9188405797101449,
        "c_features": 0.8268115942028985
@@ -11376,6 +12312,7 @@
       "shared pedestrian/car space": {
        "rows": 34,
        "incorrect": 15,
+       "train_n": 40,
        "a_image": 0.9017543859649123,
        "b_image_features": 0.9649122807017545,
        "c_features": 0.9438596491228071
@@ -11383,6 +12320,7 @@
       "street has a sidewalk": {
        "rows": 64,
        "incorrect": 27,
+       "train_n": 93,
        "a_image": 0.952952952952953,
        "b_image_features": 0.9489489489489489,
        "c_features": 0.8358358358358359
@@ -11390,6 +12328,7 @@
       "street has no sidewalks": {
        "rows": 377,
        "incorrect": 51,
+       "train_n": 278,
        "a_image": 0.9381089859256586,
        "b_image_features": 0.9579574160952725,
        "c_features": 0.9071334055094431
@@ -11411,6 +12350,10 @@
        "auc_weighted": 0.7460925306791344,
        "within_city_auc_weighted": 0.7880624589083178
       }
+     },
+     "median_p_correct": {
+      "auc_weighted": 0.9314883864756625,
+      "within_city_auc_weighted": 0.9504934722175346
      },
      "delta_b_image_features_auc_weighted": {
       "delta": -0.04846298823576367,
@@ -11444,6 +12387,7 @@
       "(none)": {
        "decided": 47,
        "incorrect": 9,
+       "train_n": 325,
        "a_image": 0.9843818831491874,
        "b_image_features": 0.9542315293893591,
        "c_features": 0.7218047659618058
@@ -11451,6 +12395,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "a_image": 0.8697414992709099,
        "b_image_features": 0.5680048557564598,
        "c_features": 0.3728404914052403
@@ -11694,6 +12639,7 @@
       "(none)": {
        "rows": 631,
        "incorrect": 137,
+       "train_n": 325,
        "a_image": 0.9826827033895801,
        "b_image_features": 0.9979904843523745,
        "c_features": 0.973698986376666
@@ -11701,6 +12647,7 @@
       "ends abruptly": {
        "rows": 53,
        "incorrect": 23,
+       "train_n": 47,
        "a_image": 0.8492753623188406,
        "b_image_features": 0.9231884057971015,
        "c_features": 0.8318840579710145
@@ -11708,6 +12655,7 @@
       "shared pedestrian/car space": {
        "rows": 34,
        "incorrect": 15,
+       "train_n": 40,
        "a_image": 0.9017543859649123,
        "b_image_features": 0.9578947368421052,
        "c_features": 0.9333333333333333
@@ -11715,6 +12663,7 @@
       "street has a sidewalk": {
        "rows": 64,
        "incorrect": 27,
+       "train_n": 93,
        "a_image": 0.952952952952953,
        "b_image_features": 0.967967967967968,
        "c_features": 0.8583583583583583
@@ -11722,6 +12671,7 @@
       "street has no sidewalks": {
        "rows": 377,
        "incorrect": 51,
+       "train_n": 278,
        "a_image": 0.9381089859256586,
        "b_image_features": 0.9459280644773247,
        "c_features": 0.8904426801395404
@@ -11743,6 +12693,10 @@
        "auc_weighted": 0.7146325097951788,
        "within_city_auc_weighted": 0.7516203634861442
       }
+     },
+     "median_p_correct": {
+      "auc_weighted": 0.9314883864756625,
+      "within_city_auc_weighted": 0.9504934722175346
      },
      "delta_b_image_features_auc_weighted": {
       "delta": -0.05464503537441723,
@@ -11776,6 +12730,7 @@
       "(none)": {
        "decided": 47,
        "incorrect": 9,
+       "train_n": 325,
        "a_image": 0.9843818831491874,
        "b_image_features": 0.9600318378992615,
        "c_features": 0.6962492466422714
@@ -11783,6 +12738,7 @@
       "street has no sidewalks": {
        "decided": 127,
        "incorrect": 4,
+       "train_n": 278,
        "a_image": 0.8697414992709099,
        "b_image_features": 0.49731337509568146,
        "c_features": 0.3323489632869233

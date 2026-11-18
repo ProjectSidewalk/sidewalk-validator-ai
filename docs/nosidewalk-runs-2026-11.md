@@ -127,6 +127,8 @@ Exploratory, post hoc; the step (b) bar is as published above and is not re-read
 | labels within 50 m on the face (D) | vote | 139 / 140 = 0.993 (0.961) | 13 (0) | 13 (0) | 17 (1) | 0.425 | 0.999 [0.997, 1.000]; Kish n 78.9, 0.952 | | |
 | labels within 50 m on the face (D) | vote strict | 126 / 127 = 0.992 (0.957) | 0 (0) | 0 (0) | 17 (1) | 0.391 | 0.999 [0.997, 1.000]; Kish n 79.5, 0.952 | | |
 
+Score pooling against the single label on the same rows, paired (95 % CI from resampling rows within city x stratum, the same resample for both scores): the labeler's run on the face (R, primary) weighted AUC +0.036 [0.007, 0.068], within city +0.038 [-0.005, 0.084]; the whole face (F) weighted AUC +0.037 [-0.005, 0.075], within city +0.030 [-0.030, 0.084]; the face without the label itself weighted AUC +0.011 [-0.047, 0.059], within city +0.011 [-0.075, 0.077]; the run, one vote per panorama (P) weighted AUC +0.035 [0.007, 0.064], within city +0.033 [-0.007, 0.069]; labels within 50 m on the face (D) weighted AUC +0.027 [-0.013, 0.063], within city +0.025 [-0.041, 0.079].
+
 **Rule (fixed before any pooled number was computed):** >= 10 added outside the pass stratum, <= 1 newly admitted incorrect, raw precision within 0.01 of the single rule, on the run, score pooling. Added outside the pass stratum: 7 (not met); newly admitted incorrect: 0 (met); raw precision 0.992 against 0.986 (met). **Do not pursue a per-run gate on this evidence.** The rule compares the run pool under its refitted map with the round's own rule, so part of any change is the change of map. Without pooling, the single label under its own refitted map: added outside the pass stratum 0, newly admitted incorrect 0, raw precision 0.986 (it does not meet the rule on its own). **What pooling adds (run minus single, both refitted):** +7 added outside the pass stratum, +0 newly admitted incorrect, raw precision +0.005.
 
 Transitions of the primary gate (stratum, single pass, pooled pass, verdict: labels, summed weight):
@@ -143,23 +145,28 @@ Transitions of the primary gate (stratum, single pass, pooled pass, verdict: lab
 | pass | yes | yes | correct | 111 | 6546.7 |
 | pass | yes | yes | incorrect | 1 | 8.2 |
 
-Sensitivities of the primary gate (run, score pooling):
+Sensitivities of the primary gate (run, score pooling) and of the post hoc whole-face pool (F, score pooling). The decided labels have 1,193 scored neighbours in their run; 0 were placed and 3 voted on by the rater, and the trained-panorama / held-out mask removes 57. The decided labels have 2,269 scored neighbours in their face; 480 were placed and 112 voted on by the rater, and the trained-panorama / held-out mask removes 130.
 
 | group | gate | passing: correct / decided (Wilson 95 % lower) | added outside the pass stratum (incorrect) | newly admitted (incorrect) | dropped (incorrect) | weighted coverage | weighted precision [95 % CI]; Wilson at the Kish n | weighted AUC | within-city weighted AUC |
 |---|---|---|---|---|---|---|---|---|---|
-| without neighbours the rater placed or voted on | score | 118 / 119 = 0.992 (0.954) | 7 (0) | 7 (0) | 32 (1) | 0.401 | 0.999; Kish n 57.7, 0.936 | 0.965 | 0.986 |
-| without neighbours on trained panoramas or on step (a) held-out faces | score | 118 / 119 = 0.992 (0.954) | 7 (0) | 7 (0) | 32 (1) | 0.401 | 0.999; Kish n 57.7, 0.936 | 0.965 | 0.986 |
-| without the 42 faces the rater had touched | score | 92 / 93 = 0.989 (0.942) | 6 (0) | 6 (0) | 26 (1) | 0.381 | 0.999; Kish n 47.1, 0.922 | 0.963 | 0.986 |
-| cdmx | score | 27 / 27 = 1.000 (0.875) | 1 (0) | 1 (0) | 3 (0) | 0.195 | 1.000; Kish n 7.3, 0.656 | 0.981 | 0.981 |
-| chicago-il | score | 44 / 44 = 1.000 (0.920) | 3 (0) | 3 (0) | 10 (0) | 0.443 | 1.000; Kish n 36.4, 0.904 | 0.989 | 0.989 |
-| oradell-nj | score | 30 / 30 = 1.000 (0.886) | 2 (0) | 2 (0) | 5 (0) | 0.731 | 1.000; Kish n 29.6, 0.885 | 0.988 | 0.988 |
-| tucson-az | score | 17 / 18 = 0.944 (0.742) | 1 (0) | 1 (0) | 14 (1) | 0.214 | 0.954; Kish n 12.3, 0.697 | 0.944 | 0.944 |
+| R: without neighbours the rater placed or voted on | score | 118 / 119 = 0.992 (0.954) | 7 (0) | 7 (0) | 32 (1) | 0.401 | 0.999; Kish n 57.7, 0.936 | 0.965 | 0.986 |
+| R: without neighbours on trained panoramas or on step (a) held-out faces | score | 118 / 119 = 0.992 (0.954) | 7 (0) | 7 (0) | 32 (1) | 0.401 | 0.999; Kish n 57.7, 0.936 | 0.965 | 0.986 |
+| R: without the 42 faces the rater had touched | score | 92 / 93 = 0.989 (0.942) | 6 (0) | 6 (0) | 26 (1) | 0.381 | 0.999; Kish n 47.1, 0.922 | 0.963 | 0.986 |
+| F: without neighbours the rater placed or voted on | score | 155 / 156 = 0.994 (0.965) | 25 (0) | 25 (0) | 13 (1) | 0.646 | 0.999; Kish n 68.4, 0.946 | 0.965 | 0.979 |
+| F: without neighbours on trained panoramas or on step (a) held-out faces | score | 162 / 163 = 0.994 (0.966) | 30 (0) | 30 (0) | 11 (1) | 0.652 | 0.999; Kish n 69.6, 0.947 | 0.966 | 0.979 |
+| F: without the 42 faces the rater had touched | score | 122 / 123 = 0.992 (0.955) | 21 (0) | 21 (0) | 11 (1) | 0.630 | 0.999; Kish n 57.9, 0.936 | 0.963 | 0.979 |
+| R: map fitted on the label-level split rows only (no face-copied class) | score | 118 / 119 = 0.992 (0.954) | 7 (0) | 7 (0) | 32 (1) | 0.401 | 0.999; Kish n 57.7, 0.936 | 0.965 | 0.986 |
+| F: map fitted on the label-level split rows only (no face-copied class) | score | 141 / 142 = 0.993 (0.961) | 16 (0) | 16 (0) | 18 (1) | 0.509 | 0.999; Kish n 65.8, 0.943 | 0.965 | 0.979 |
+| R: cdmx | score | 27 / 27 = 1.000 (0.875) | 1 (0) | 1 (0) | 3 (0) | 0.195 | 1.000; Kish n 7.3, 0.656 | 0.981 | 0.981 |
+| R: chicago-il | score | 44 / 44 = 1.000 (0.920) | 3 (0) | 3 (0) | 10 (0) | 0.443 | 1.000; Kish n 36.4, 0.904 | 0.989 | 0.989 |
+| R: oradell-nj | score | 30 / 30 = 1.000 (0.886) | 2 (0) | 2 (0) | 5 (0) | 0.731 | 1.000; Kish n 29.6, 0.885 | 0.988 | 0.988 |
+| R: tucson-az | score | 17 / 18 = 0.944 (0.742) | 1 (0) | 1 (0) | 14 (1) | 0.214 | 0.954; Kish n 12.3, 0.697 | 0.944 | 0.944 |
 
-By tag, run, score pooling (>= 30 decided; raw precision of passers, Wilson 95 % lower; NoSidewalk has no severity): (none) (48 decided, 9 incorrect): pooled 19 / 19 = 1.000 (0.832), single 23 / 23 = 1.000 (0.857); street has no sidewalks (127 decided, 4 incorrect): pooled 79 / 79 = 1.000 (0.954), single 95 / 95 = 1.000 (0.961).
+By tag, run, score pooling (>= 30 decided; raw precision of passers, Wilson 95 % lower; training rows as in step (a)'s tag table; NoSidewalk has no severity): (none) (48 decided, 9 incorrect, 325 training rows): pooled 19 / 19 = 1.000 (0.832), single 23 / 23 = 1.000 (0.857); street has no sidewalks (127 decided, 4 incorrect, 278 training rows): pooled 79 / 79 = 1.000 (0.954), single 95 / 95 = 1.000 (0.961).
 
-By tag, run, vote pooling (>= 30 decided; raw precision of passers, Wilson 95 % lower; NoSidewalk has no severity): (none) (48 decided, 9 incorrect): pooled 23 / 23 = 1.000 (0.857), single 23 / 23 = 1.000 (0.857); street has no sidewalks (127 decided, 4 incorrect): pooled 95 / 95 = 1.000 (0.961), single 95 / 95 = 1.000 (0.961).
+By tag, run, vote pooling (>= 30 decided; raw precision of passers, Wilson 95 % lower; training rows as in step (a)'s tag table; NoSidewalk has no severity): (none) (48 decided, 9 incorrect, 325 training rows): pooled 23 / 23 = 1.000 (0.857), single 23 / 23 = 1.000 (0.857); street has no sidewalks (127 decided, 4 incorrect, 278 training rows): pooled 95 / 95 = 1.000 (0.961), single 95 / 95 = 1.000 (0.961).
 
-By tag, run, strict vote pooling (>= 30 decided; raw precision of passers, Wilson 95 % lower; NoSidewalk has no severity): (none) (48 decided, 9 incorrect): pooled 19 / 19 = 1.000 (0.832), single 23 / 23 = 1.000 (0.857); street has no sidewalks (127 decided, 4 incorrect): pooled 86 / 86 = 1.000 (0.957), single 95 / 95 = 1.000 (0.961).
+By tag, run, strict vote pooling (>= 30 decided; raw precision of passers, Wilson 95 % lower; training rows as in step (a)'s tag table; NoSidewalk has no severity): (none) (48 decided, 9 incorrect, 325 training rows): pooled 19 / 19 = 1.000 (0.832), single 23 / 23 = 1.000 (0.857); street has no sidewalks (127 decided, 4 incorrect, 278 training rows): pooled 86 / 86 = 1.000 (0.957), single 95 / 95 = 1.000 (0.961).
 
 #### Item 2 on step (a), out of fold (secondary; exploratory)
 
@@ -261,9 +268,13 @@ Logistic regression (standardised, C = 1, no tuning): a = image logit, b = image
 | with expert placed | 234 | 0.909 / 0.861 / 0.746 | 0.931 / 0.898 / 0.788 | -0.033 [-0.110, 0.046] |
 | without expert placed | 234 | 0.909 / 0.854 / 0.715 | 0.931 / 0.905 / 0.752 | -0.026 [-0.106, 0.052] |
 
-By tag, with expert placed (>= 30 rows; AUC a / b / c; NoSidewalk has no severity): step (a) (ii) (none) 631 (137): 0.983 / 0.996 / 0.975; ends abruptly 53 (23): 0.849 / 0.919 / 0.827; shared pedestrian/car space 34 (15): 0.902 / 0.965 / 0.944; street has a sidewalk 64 (27): 0.953 / 0.949 / 0.836; street has no sidewalks 377 (51): 0.938 / 0.958 / 0.907; step (b), weighted (none) 47 (9): 0.984 / 0.954 / 0.722; street has no sidewalks 127 (4): 0.870 / 0.568 / 0.373.
+Model a is the mean over the five fold models of a second-stage probability, not item 2's single score (the median `p_correct`); on the same rows that score gives weighted AUC 0.931, within city 0.950. Both arms of the delta use model a, so the comparison is like for like.
 
-By tag, without expert placed (>= 30 rows; AUC a / b / c; NoSidewalk has no severity): step (a) (ii) (none) 631 (137): 0.983 / 0.998 / 0.974; ends abruptly 53 (23): 0.849 / 0.923 / 0.832; shared pedestrian/car space 34 (15): 0.902 / 0.958 / 0.933; street has a sidewalk 64 (27): 0.953 / 0.968 / 0.858; street has no sidewalks 377 (51): 0.938 / 0.946 / 0.890; step (b), weighted (none) 47 (9): 0.984 / 0.960 / 0.696; street has no sidewalks 127 (4): 0.870 / 0.497 / 0.332.
+Expert accounts given: 2. Without expert placed leaves out, on the target faces, step (a) 681 of 5,744 NoSidewalk labels and 123 of 1,617 contradicting labels; step (b) 516 of 2,498 NoSidewalk labels and 67 of 893 contradicting labels.
+
+By tag, with expert placed (>= 30 rows; rows (incorrect, the image models' training rows as in step (a)'s tag table): AUC a / b / c; the second stage is fitted on step (a) (ii) itself; NoSidewalk has no severity): step (a) (ii) (none) 631 (137, 325 training rows): 0.983 / 0.996 / 0.975; ends abruptly 53 (23, 47 training rows): 0.849 / 0.919 / 0.827; shared pedestrian/car space 34 (15, 40 training rows): 0.902 / 0.965 / 0.944; street has a sidewalk 64 (27, 93 training rows): 0.953 / 0.949 / 0.836; street has no sidewalks 377 (51, 278 training rows): 0.938 / 0.958 / 0.907; step (b), weighted (none) 47 (9, 325 training rows): 0.984 / 0.954 / 0.722; street has no sidewalks 127 (4, 278 training rows): 0.870 / 0.568 / 0.373.
+
+By tag, without expert placed (>= 30 rows; rows (incorrect, the image models' training rows as in step (a)'s tag table): AUC a / b / c; the second stage is fitted on step (a) (ii) itself; NoSidewalk has no severity): step (a) (ii) (none) 631 (137, 325 training rows): 0.983 / 0.998 / 0.974; ends abruptly 53 (23, 47 training rows): 0.849 / 0.923 / 0.832; shared pedestrian/car space 34 (15, 40 training rows): 0.902 / 0.958 / 0.933; street has a sidewalk 64 (27, 93 training rows): 0.953 / 0.968 / 0.858; street has no sidewalks 377 (51, 278 training rows): 0.938 / 0.946 / 0.890; step (b), weighted (none) 47 (9, 325 training rows): 0.984 / 0.960 / 0.696; street has no sidewalks 127 (4, 278 training rows): 0.870 / 0.497 / 0.332.
 
 **Rule:** the features count as adding only if the step (b) within-city weighted delta (b - a) without expert-placed labels has a 95 % CI above 0: **they do not add**.
 
@@ -333,16 +344,23 @@ NoSidewalk on the 2026-11-05 pull, cities with >= 1,000 labels:
   step (b), score pooling over the run admits 7 labels outside the pass stratum (all agree-below, all correct)
   against the 10 the rule asks for. It admits no incorrect label and its raw precision is 0.992 against 0.986, so the
   other two conditions hold. The step (c) decision stands.
-- **Pooling ranks better than it gates.** The run pool raises step (b)'s weighted AUC from 0.929 to 0.965
-  (within city 0.949 to 0.986), but at the served threshold it also drops 32 pass-stratum labels (1 of them
-  incorrect), so it passes 119 labels against the single rule's 144 and weighted coverage is flat (0.401 against
-  0.405). The refitted single-label map reproduces the round's rule exactly (0 added, 0 dropped), so these changes
-  come from pooling, not from the new map.
-- **Other groups admit more, but they are not the pre-registered arm.** Pooling over the whole face admits 30
-  outside the pass stratum, none incorrect, and raises weighted coverage to 0.652. This is post hoc, on 31 incorrect
-  ratings of which only 2 sit in the pass stratum. Every pooled gate passes exactly 1 incorrect label, one of the
-  2 that the single rule passes, so step (b) cannot tell their precisions apart. It is a reason to put the face pool into the
-  masked follow-up round, not to serve it.
+- **Pooling may rank better, but it does not gate better.** The run pool raises step (b)'s weighted AUC from 0.929
+  to 0.965, a paired +0.036 [0.007, 0.068] on 31 incorrect ratings. Within city (0.949 to 0.986) the paired delta
+  is +0.038 [-0.005, 0.084], which includes 0, so the within-city gain is not established. At the served threshold
+  the run pool also drops 32 pass-stratum labels (1 of them incorrect), so it passes 119 labels against the single
+  rule's 144 and weighted coverage is flat (0.401 against 0.405). The refitted single-label map reproduces the
+  round's rule exactly (0 added, 0 dropped), so these changes come from pooling, not from the new map.
+- **Other groups admit more, but they are not the pre-registered arm, and the face pool's count is not stable.**
+  Pooling over the whole face admits 30 outside the pass stratum, none incorrect, and raises weighted coverage to
+  0.652. This is post hoc, on 31 incorrect ratings of which only 2 sit in the pass stratum. The number moves with
+  reasonable choices: with the face map fitted on the 283 label-level split rows only (the full fit also uses 463
+  face-copied classes, which a face-pooled score predicts by construction) it admits 16 (141 / 142 passing,
+  coverage 0.509); without the neighbours the rater placed or voted on, 25 (155 / 156). So the face pool's effect is
+  somewhere between about half and five sixths of the headline 30. The run pool's sensitivity rows equal its main
+  row because the masks remove few run neighbours (3 rater-voted and 57 on trained panoramas or held-out faces, of
+  1,193); the rater's own labels (480 placed, 112 voted) sit on the face, outside the run. Every pooled gate passes
+  exactly 1 incorrect label, one of the 2 that the single rule passes, so step (b) cannot tell their precisions
+  apart. It is a reason to put the face pool into the masked follow-up round, not to serve it.
 - **Step (a) agrees, weakly.** Out of fold, pooling changes the AUC by -0.002 to +0.013 against the single label,
   and almost every 95 % CI includes 0. The exceptions are the 50 m pool (+0.008 [0.002, 0.015] on all label-level
   truth, +0.011 [0.003, 0.020] on the circular split rows) and the face pool on the circular split rows (+0.013
@@ -351,12 +369,16 @@ NoSidewalk on the 2026-11-05 pull, cities with >= 1,000 labels:
   |delta logit| of 0.000 (max 0.034 out of fold, 0.048 held out), with no verdict or gate flip. Of five tag slices,
   only "ends abruptly" moves (+0.064 [0.013, 0.130] on 53 rows, 47 training rows), with no correction for the
   five comparisons.
-- **Item 3: neighbour features do not add on the masked round.** On step (a) the second stage gains +0.018
-  [0.007, 0.030] AUC (+0.029 on one row per face), but it gains only +0.006 on each of the two subsets alone (split
-  rows, and the other labels' own expert verdicts, CIs across 0). The union gains more than either part, which is
-  what a feature that tells the two subsets apart would give: their incorrect shares are 70 % and 5 %. On step (b)
-  the frozen second stage loses ground (within-city weighted delta -0.026 [-0.106, 0.052] without expert-placed
-  labels), so by the rule fixed in advance the features do not add.
+- **Item 3: neighbour features do not add on the masked round.** All numbers here are the pre-registered variant,
+  without expert-placed labels. On step (a) the second stage gains +0.017 [0.005, 0.032] AUC (+0.033 on one row per
+  face), but on the two subsets alone it gains +0.004 (split rows) and +0.000 (the other labels' own expert
+  verdicts), CIs across 0. The union gains more than either part, which is what a feature that tells the two subsets
+  apart would give: their incorrect shares are 70 % and 5 %. (With expert-placed labels the pattern is the same:
+  +0.018 on the union, +0.006 on each subset.) On step (b) the frozen second stage loses ground (within-city weighted
+  delta -0.026 [-0.106, 0.052]), so by the rule fixed in advance the features do not add. Model a there (0.909,
+  within city 0.931) sits below item 2's single score (0.929 / 0.949) because it averages five second-stage
+  probabilities instead of taking the median `p_correct`; the median gives 0.931 / 0.950 on the same 234 rows, and
+  both arms of the delta use model a.
 - **No table fell back to subset pooling.** R3 scored 7,736 of the 7,759 step (a) labels (99.7 %, above the plan's
   90 %). The 23 unscored labels are all in Seattle, on the 18 panoramas that staging could not find.
 
@@ -409,17 +431,19 @@ NoSidewalk on the 2026-11-05 pull, cities with >= 1,000 labels:
   `57607ba98ae7…`, fold 3 `checkpoint-120` `36c870211075…`, fold 4 `checkpoint-165` `6db6671eb1ab…`.
 - **Crops.** `ai_labels_eval.py crops --fixed-crop-half-px 1024`, tilt beta 0.95, torch renderer,
   `sidewalk-panorama-tools@7ce25ff`. Manifests: `a` `29c8b7839bf7…`, `b` `e57b4aebcfe2…`.
-- **Predictions**: the ten `predictions_fold<k>.csv` sha256s are the `r3_*` entries of `PINS`; they and the
-  manifests, provenance files and job logs are in
-  `~/Data/sidewalk-validator-ai-nosidewalk-2026-11/runs/step-a-scores/`.
+- **Predictions**: the ten `predictions_fold<k>.csv` sha256s are the `r3_*` entries of `PINS`; they, the manifests
+  and the provenance files are in `~/Data/sidewalk-validator-ai-nosidewalk-2026-11/runs/step-a-scores/{a,b}/`, and
+  the job logs (all six jobs, copied back from klone on 2026-11-18; `ns-runs-a-43335519.out` `147db31e46e6…`,
+  `ns-runs-b-43335520.out` `68cb171c4d9b…`) are in its `klone-logs/`.
 - **Outputs** (in `~/Data/sidewalk-validator-ai-nosidewalk-2026-11/runs/`): `agreement.json` `960fbfa67ef5…`,
-  `pooling.json` `e45ffb20366f…`, `features.json` `4182fb563cb1…`, `step_a_scores.csv` `a57d2f6ec313…`.
+  `pooling.json` `971474167e94…`, `features.json` `06aab548f738…`, `step_a_scores.csv` `a57d2f6ec313…`.
   `runs.json` records the full sha256 of the three JSONs it was built from.
 
 ## Follow-ups (one issue, filed by Jon or at his word)
 
 - **A masked round that rates 2-3 labels per run**, in separate sittings. It is the only clean test of item 1 and
-  the pre-registered test of a per-run gate. It needs a rater. Items 2 and 3 suggest rating the face pool there too.
+  the pre-registered test of a per-run gate. It needs a rater. A post hoc reading of item 2 suggests rating the face
+  pool there too (its step (b) gain ranges from 16 to 30 added labels across the sensitivities).
 - Scoring labels on neighbouring faces within a distance along the street, and true along-street distance from the
   street geometry.
 
@@ -470,7 +494,8 @@ deployment priors. Pins are keyed by input, not by file name. The R3 step (a) pr
 `pooling` and `features` stop unless the files they read are exactly the `r3_*` files in `PINS`, whatever the score
 directories are called, and they stop while none is pinned. They also stop when R3 scored under the plan's 90 % of
 the step (a) labels (the plan's fallback, subset pooling over the split rows, is a different run that this code does
-not report). `report` checks the cities snapshot and records the sha256 of the three JSONs it reads, which
+not report). `features` stops when `EXPERTS` is empty (its without-expert-placed variant would otherwise equal the
+other one) and records the number of expert accounts and the labels that variant leaves out. `report` checks the cities snapshot and records the sha256 of the three JSONs it reads, which
 are this page's own outputs. `agreement`, `pooling` and `features` refuse to replace an output whose bytes would
 change unless given `--force`. Seeds: `--seed 0`, 1,000 permutations and 1,000 bootstrap resamples; 50 m for group
 D; vote-gap strata at 1 h and 1 day.

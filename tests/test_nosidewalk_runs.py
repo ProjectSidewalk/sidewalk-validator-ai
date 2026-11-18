@@ -10,7 +10,7 @@ import pytest
 from analysis import nosidewalk_gate as gate
 from analysis import nosidewalk_round as nr
 from analysis import nosidewalk_runs as runs
-from tests.test_nosidewalk_gate import write_pilot_split
+from tests.test_nosidewalk_gate import write_fold_predictions, write_pilot_split
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 E1 = "00000000-0000-4000-8000-0000000000e1"
@@ -709,3 +709,129 @@ def test_heldout_sensitivity_drops_every_label_on_a_step_a_heldout_face():
     mem = runs.step_b_members(fs, rated, step_a_heldout={"c:1:left:2", "c:1:left:3"})
     m = dict(zip(fs["label_uid"], mem["no_trained_pano_or_pilot_heldout"]))
     assert not m["c:1:left:2"] and not m["c:1:left:3"] and m["c:1:left:1"] and m["c:2:left:1"]
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# review round 3
+# ---------------------------------------------------------------------------------------------------------------------
+
+def step_a_files(tmp_path, monkeypatch, unscored=0.0):
+    """Synthetic files for ``pooling``'s step (a) side: a gate run with predictions, ``step_a_faces.csv`` from
+    ``step-a-neighbours`` and two R3 score directories that leave a share ``unscored`` of the labels unscored. The
+    R3 files are pinned in ``PINS`` (only them), so the guards run as in the published run."""
+    monkeypatch.setenv("EXPERTS", EXPERTS)
+    split, g = make_gate(tmp_path)
+    for k in range(5):   # gate2's split.csv carries class_source (margin / expert / face)
+        path = g / f"fold{k}" / "split.csv"
+        f = pd.read_csv(path, dtype=str, keep_default_na=False)
+        f.assign(class_source=np.where(f.index % 2 == 0, "margin", "face")).to_csv(path, index=False)
+    write_fold_predictions(str(g))
+    write_pull(tmp_path / "pull", split)
+    cj = cities_json(tmp_path / "cities.json", sorted(set(split["city"])))
+    out = tmp_path / "step-a"
+    assert runs.main(["step-a-neighbours", "--pull", str(tmp_path / "pull"), "--gate", str(g), "--cities-json", cj,
+                      "--out", str(out), "--allow-unpinned"]) == 0
+    uids = pd.read_csv(out / "step_a_faces.csv", dtype=str)["label_uid"]
+    uids = uids.iloc[:int(round(len(uids) * (1 - unscored)))]
+    rng = np.random.default_rng(0)
+    dirs = []
+    for name, part in (("a", uids.iloc[::2]), ("b", uids.iloc[1::2])):
+        d = tmp_path / "scores" / name
+        os.makedirs(d)
+        for k in range(5):
+            pd.DataFrame({"label_uid": part, "p_correct": rng.uniform(0.05, 0.95, len(part))}).to_csv(
+                d / f"predictions_fold{k}.csv", index=False)
+        dirs.append(str(d))
+    _, shas = runs.read_predictions(dirs, 5)
+    monkeypatch.setattr(runs, "PINS", {f"r3_{i}": v for i, v in enumerate(shas.values())})
+    args = runs.build_parser().parse_args(["pooling", "--step-a", str(out), "--scores", *dirs, "--gate", str(g),
+                                           "--key", "k", "--sheet", "s", "--face-scores", "f", "--priors", "p",
+                                           "--out-json", str(tmp_path / "pooling.json")])
+    return args, dirs
+
+
+def test_load_step_a_runs_the_r3_pin_check(tmp_path, monkeypatch):
+    """T5: the content check is called where the predictions are read: a changed R3 file stops the run."""
+    args, dirs = step_a_files(tmp_path, monkeypatch)
+    t, *_ = runs.load_step_a(args)
+    assert t["scored"].all() and (t["fold"] < 0).any()
+    path = os.path.join(dirs[1], "predictions_fold3.csv")
+    p = pd.read_csv(path)
+    p.loc[0, "p_correct"] = 0.5
+    p.to_csv(path, index=False)
+    with pytest.raises(SystemExit, match="do not match"):
+        runs.load_step_a(args)
+
+
+def test_load_step_a_runs_the_coverage_gate(tmp_path, monkeypatch):
+    """T5: with a fifth of the step (a) labels unscored (and the files pinned), the run stops on coverage."""
+    args, _ = step_a_files(tmp_path, monkeypatch, unscored=0.2)
+    with pytest.raises(SystemExit, match="under the plan's 90%"):
+        runs.load_step_a(args)
+
+
+def pooling_frames():
+    """A step (a) table with held-out faces (fold -1, split rows with a class) and step (b) frames, as ``pooling``
+    gets them from ``load_step_a`` / ``load_step_b``."""
+    t = synthetic_step_a()
+    held = t["face_id"].isin(sorted(set(t["face_id"]))[-6:])
+    t.loc[held, "fold"] = -1
+    split = t[["label_uid", "tags", "severity"]].assign(split=np.where(held, "test_heldout", "test"))
+    rated, fs = step_b_frames()
+    rated = pd.concat([rated] * 20, ignore_index=True)
+    rated["label_uid"] = [f"{u}#{i}" for i, u in enumerate(rated["label_uid"])]
+    rated = rated.assign(verdict=np.where(np.arange(len(rated)) % 4 == 0, "incorrect", "correct"),
+                         stratum=np.where(np.arange(len(rated)) % 2 == 0, "pass", "agree_below"),
+                         median_p_correct=0.9, tags='["ends abruptly"]')
+    fs = pd.concat([fs, rated[fs.columns.drop(["stratum"]).tolist() + ["stratum"]]], ignore_index=True)
+    fs = fs.assign(trained_pano=0, pilot_heldout=0)
+    return t, split, rated, fs
+
+
+def test_pooling_end_to_end_fits_maps_out_of_fold_and_masks_heldout_faces(tmp_path, monkeypatch):
+    """T5: through ``pooling`` itself, every map is fitted on out-of-fold rows only (never a held-out split row), the
+    label-level sensitivity map on split-label rows only, and the held-out sensitivity is given every label on a
+    step (a) held-out face."""
+    t, split, rated, fs = pooling_frames()
+    monkeypatch.setattr(runs, "load_step_a", lambda args: (t, split, {}, {}, 5))
+    monkeypatch.setattr(runs, "load_step_b", lambda args: (rated, fs, {}))
+    monkeypatch.setattr(runs, "crop_parity", lambda *a, **k: {})
+    fits, held = [], []
+    real_map, real_members = runs.pooled_map, runs.step_b_members
+
+    def map_spy(fit_rows, pi, group):
+        fits.append((group, set(fit_rows["fold"]), set(fit_rows["truth_source"])))
+        return real_map(fit_rows, pi, group)
+
+    def members_spy(fs_, rated_, step_a_heldout=()):
+        held.append(set(step_a_heldout))
+        return real_members(fs_, rated_, step_a_heldout=step_a_heldout)
+
+    monkeypatch.setattr(runs, "pooled_map", map_spy)
+    monkeypatch.setattr(runs, "step_b_members", members_spy)
+    with open(tmp_path / "priors.json", "w") as f:
+        json.dump({"NoSidewalk": {"correct": 80, "incorrect": 20, "source": "test"}}, f)
+    out = tmp_path / "pooling.json"
+    assert runs.main(["pooling", "--step-a", "x", "--scores", "x", "--gate", "x", "--key", "k", "--sheet", "s",
+                      "--face-scores", "f", "--priors", str(tmp_path / "priors.json"), "--out-json", str(out),
+                      "--n-boot", "0", "--allow-unpinned"]) == 0
+    assert fits and all(min(folds) >= 0 for _, folds, _ in fits)
+    assert any(src == {"split_label"} for _, _, src in fits)          # the label-level map
+    assert held == [set(t.loc[t["fold"] < 0, "label_uid"])]
+    p = json.loads(out.read_text())
+    sens = p["step_b"]["sensitivity"]
+    assert set(sens["face"]) >= {"no_rater_placed_or_voted", "no_trained_pano_or_pilot_heldout"}
+    assert set(sens["label_level_map"]) == {"run", "face"} and sens["neighbours_removed"]["face"]["rater_placed"] > 0
+    assert "delta_vs_single" in p["step_b"]["groups"]["run"]["score"]
+    trained = split[split["split"] != "test_heldout"]          # held-out rows are not in the training pool
+    assert p["step_b"]["groups"]["run"]["tags"]["ends abruptly"]["train_n"] == int(
+        trained["tags"].str.contains("ends abruptly").sum())
+
+
+def test_features_stops_without_experts(monkeypatch):
+    """T3: without EXPERTS the without-expert-placed variant would equal the other one, so features stops first."""
+    monkeypatch.delenv("EXPERTS", raising=False)
+    with pytest.raises(SystemExit, match="EXPERTS is empty"):
+        runs.main(["features", "--step-a", "x", "--scores", "x", "--gate", "x", "--key", "k", "--sheet", "s",
+                   "--face-scores", "f", "--ns-pull", "n", "--round-b-pull", "r", "--contra-pull", "c",
+                   "--cities-json", "j", "--out-json", "o.json"])
