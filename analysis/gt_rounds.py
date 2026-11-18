@@ -11,9 +11,11 @@ fetch, rating page, Gallery lists, vote pull and sha256 pins, and adds what #74 
   ``margin_correct`` (net Agree >= 3: the AI contradicts its training target, the hard examples) can score a
   target-cleaning method on exactly the rows it touches; ``lone`` (no human vote; hidden on the AI's vote alone)
   and ``light_voted`` (at least two decisive votes with a majority, short of the margin rule) measure the AI
-  itself. AI Disagrees in none of these (one decisive human vote, only Unsure votes, or a tie) are never sampled;
-  ``build`` prints how many there are (``unsampled_disagrees``), and no rate from a round covers them. ``decoy``
-  items are AI Agree votes (Unsure where a type has no Agree), mixed in so the rater cannot tell the AI's verdict;
+  itself. AI Disagrees in none of these (one decisive human vote, only Unsure votes, or a tie) are sampled only
+  when a design names them (#106): as three strata of their own, ``one_decisive`` / ``unsure_only`` / ``tie``
+  (``unsampled_group``), or lumped as ``thin_voted``; otherwise ``build`` prints how many there are
+  (``unsampled_disagrees``) and no rate from the round covers them. ``decoy`` items are AI Agree votes (Unsure
+  where a type has no Agree), mixed in so the rater cannot tell the AI's verdict;
 * **per-type quotas** and **severity buckets** (1-2 / 3-5 / none) filled in proportion to the eligible pool, so
   the degraded, low-severity cases are not left to chance;
 * **shared** items rated by every rater, for inter-rater agreement;
@@ -35,7 +37,9 @@ Labels either rater has voted on or placed are excluded everywhere (every ``expe
 ``per_type`` is the AI-Disagree quota per type in each city; ``shares`` splits it over the Disagree cells;
 ``margin_correct_cap`` is the most of the margin cell that ``margin_correct`` rows may take (they are scarce, so
 the cell is topped up with ``margin_incorrect``); ``shared`` is the number of each city's items that the other
-raters also rate.
+raters also rate. ``shares`` may add ``thin_voted``, or all three of ``one_decisive``, ``unsure_only`` and ``tie``
+(not both; a share may be 0, so a round can sample only the new strata: ``gt_rounds/unsampled_draft.json``). An
+optional ``"draft": true`` marks sizes that are proposals: ``check-design`` runs on it, ``build`` refuses it.
 
 **Subcommands** (every file with label-level rows goes outside the repo, under ``~/Data/...``)::
 
@@ -43,6 +47,8 @@ raters also rate.
     ssh -fNM makelab1                     # one master; the pull and the build go through it
     ssh makelab1 "SCHEMAS='sidewalk_seattle sidewalk_chicago' EXPERT1_ID=... EXPERT2_ID=... bash -s" \\
         < analysis/pull_relabel_pool.sh > $D/pool.csv
+    python analysis/gt_rounds.py check-design --design analysis/gt_rounds/round2.json --pool $D/pool.csv \\
+        --out $D/check.json             # local: population, quota, status, expected precision per cell
     python analysis/gt_rounds.py build --design analysis/gt_rounds/round2.json --pool $D/pool.csv \\
         --packet-dir $D/packet --key-dir $D/private-key-do-not-share --seed $SECRET_SEED \\
         --round3-splits ~/Data/sidewalk-validator-ai-retrain-2026-10/round3
@@ -80,6 +86,19 @@ of the round) and prints the counts before and after; ``score --pool --author-ex
 
 ``score`` gives a (stratum, type) cell with fewer than ``--min-cell`` (5) decided items no population weight and
 names it. A design that names ``thin_voted`` in ``shares`` also samples the AI Disagrees in no other stratum.
+``score --pool`` recounts under the round's own design (the manifest's ``design_json``); ``--design`` is refused
+unless it is that design.
+
+**The three split strata (#106).** ``check-design`` sizes a design before a build, locally (no crop check): per
+rater, Disagree cell and type the population, quota, available and expected decided items and a status
+(``no_weight`` > ``short`` > ``under_min`` > ``ok``), per cell the expected 95% half-width of the weighted rate at
+p = 0.5 and the Kish effective n, plus the population of the three split strata by type x severity and type x tag.
+It reports the counts before and after ``--author-excluded`` and refuses a pool without exclusion information
+unless ``--no-author-excluded`` is passed; ``build`` refuses a pool without the ``author_excluded`` column, so a
+new round counts its population without excluded authors from the start. On a key holding split-strata items
+``score`` also prints ``one_decisive`` split by the single human vote's direction and the standing type x severity
+and type x tag slices (``--slices`` / ``--no-slices``; training counts with ``--round3-splits``; the single human
+vote as a baseline on ``one_decisive``).
 
 ``build`` needs the crop check and fetch on the database host (two calls through the master). ``gallery`` writes
 one page per rater: their own city's list first, then the other raters' shared items, with the masking CSS and the
@@ -111,6 +130,7 @@ import hashlib
 import html
 import io
 import json
+import math
 import os
 import subprocess
 import sys
@@ -125,11 +145,17 @@ from analysis.rating_page import render_page  # noqa: E402
 LABEL_TYPES = rl.LABEL_TYPES
 DISAGREE_STRATA = ("lone", "light_voted", "margin_incorrect", "margin_correct")
 DISAGREE_STRATA_THIN = DISAGREE_STRATA + ("thin_voted",)  # opt-in: a design whose shares name thin_voted (#85)
+# The AI Disagrees in none of the four strata above, as three strata of their own (#106): a design opts in by naming
+# all three in ``shares`` (see :func:`unsampled_group`). ``thin_voted`` is the same rows lumped into one stratum.
+UNSAMPLED_STRATA = ("one_decisive", "unsure_only", "tie")
+DISAGREE_STRATA_SPLIT = DISAGREE_STRATA + UNSAMPLED_STRATA
 STRATA = DISAGREE_STRATA + ("decoy_agree", "decoy_unsure")
+REPORT_STRATA = DISAGREE_STRATA + ("thin_voted",) + UNSAMPLED_STRATA + ("decoy_agree", "decoy_unsure")  # table order
 CELLS = ("lone", "light_voted", "margin", "decoy")  # margin = margin_correct (capped) topped up with margin_incorrect
 SHARE_CELLS = {"lone", "light_voted", "margin"}  # the Disagree cells every design's shares must name
 DEFAULT_DESIGN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gt_rounds", "round2.json")
 MIN_CELL = 5  # score: a (stratum, type) cell with fewer decided items carries no population weight (#85)
+Z95 = 1.96
 SEV_BUCKETS = ("1-2", "3-5", "none")
 KEY_COLUMNS = ["packet_id", "label_uid", "label_uid_city", "schema", "city_id", "label_id", "label_type", "rater",
                "shared", "stratum", "cell", "margin_class", "round3_split", "sev_bucket", "ai_vote", "ai_accuracy",
@@ -153,6 +179,10 @@ def load_design(path_or_dict):
     """The design as a dict, checked: every rater has a distinct schema, the shares cover the Disagree cells and
     sum to one, and the quotas are positive integers.
 
+    ``shares`` must name ``lone``, ``light_voted`` and ``margin`` (a share may be 0) and may add either
+    ``thin_voted`` or all three of :data:`UNSAMPLED_STRATA`, never both (#106). An optional ``"draft": true`` marks
+    a design whose sizes are proposals: ``check-design`` runs on it, ``build`` refuses it.
+
     >>> d = load_design({"raters": {"A": "sidewalk_a", "B": "sidewalk_b"}, "per_type": {t: 10 for t in LABEL_TYPES},
     ...                  "shares": {"margin": 0.5, "lone": 0.3, "light_voted": 0.2}, "margin_correct_cap": 0.4,
     ...                  "decoys_per_type": 4, "shared": 5})
@@ -162,15 +192,32 @@ def load_design(path_or_dict):
     Traceback (most recent call last):
     ...
     ValueError: shares must sum to 1
+    >>> load_design({**d, "shares": {"margin": 0, "lone": 0, "light_voted": 0, "tie": 0.5, "one_decisive": 0.5}})
+    Traceback (most recent call last):
+    ...
+    ValueError: shares must name all three of one_decisive, unsure_only and tie, or none of them (a share may be 0)
     """
     d = json.load(open(path_or_dict)) if isinstance(path_or_dict, str) else dict(path_or_dict)
     raters = d.get("raters") or {}
     if len(set(raters.values())) != len(raters) or not raters:
         raise ValueError("raters must map distinct roles to distinct schemas")
-    if set(d.get("shares", {})) - {"thin_voted"} != SHARE_CELLS:
-        raise ValueError("shares must have lone, light_voted and margin (and optionally thin_voted)")
+    named = set(d.get("shares", {}))
+    split = named & set(UNSAMPLED_STRATA)
+    if not SHARE_CELLS <= named or named - SHARE_CELLS - {"thin_voted"} - split:
+        raise ValueError("shares must have lone, light_voted and margin (and optionally thin_voted, or "
+                         "one_decisive, unsure_only and tie)")
+    if "thin_voted" in named and split:
+        raise ValueError("thin_voted lumps one_decisive, unsure_only and tie into one stratum: name it or them, "
+                         "not both")
+    if split and split != set(UNSAMPLED_STRATA):
+        raise ValueError("shares must name all three of one_decisive, unsure_only and tie, or none of them "
+                         "(a share may be 0)")
+    if any(float(v) < 0 for v in d["shares"].values()):
+        raise ValueError("shares must be non-negative")
     if abs(sum(d["shares"].values()) - 1) > 1e-9:
         raise ValueError("shares must sum to 1")
+    if not isinstance(d.get("draft", False), bool):
+        raise ValueError("draft must be true or false")
     if set(d.get("per_type", {})) != set(LABEL_TYPES) or any(int(v) <= 0 for v in d["per_type"].values()):
         raise ValueError("per_type needs a positive quota for every label type")
     for k in ("decoys_per_type", "shared"):
@@ -231,48 +278,110 @@ def margin_class(df):
     return pd.Series(np.where(net > 2, "correct", np.where(-net > 1, "incorrect", "")), index=df.index)
 
 
-def assign_stratum(df, thin=False):
-    """The stratum of each row (empty string if none): for AI Disagrees ``lone`` (no human vote at all),
-    ``margin_incorrect`` / ``margin_correct`` (a training row under the margin rule), ``light_voted`` (at least
-    two decisive human votes with a majority, short of the margin rule); for AI Agree / Unsure the decoys.
+def _thin_arg(thin):
+    """``thin`` of :func:`assign_stratum` normalised to ``False``, ``"lumped"`` or ``"split"``; anything else
+    raises (a string must never reach a boolean mask).
 
-    With ``thin=True`` the AI Disagrees in none of those strata (one decisive vote, only Unsure votes, or a tie:
-    exactly the rows :func:`unsampled_disagrees` counts) become ``thin_voted``, so a later round can sample them
-    (#85). Off by default, so round 2's design and key are unchanged.
-
-    >>> d = pd.DataFrame({"ai_vote": ["Disagree"] * 5 + ["Agree", "Unsure"],
-    ...                   "h_agree": [0, 0, 3, 2, 0, 0, 0], "h_dis": [0, 2, 0, 1, 0, 0, 0],
-    ...                   "h_unsure": [0, 0, 0, 0, 1, 0, 0]})
-    >>> list(assign_stratum(d))
-    ['lone', 'margin_incorrect', 'margin_correct', 'light_voted', '', 'decoy_agree', 'decoy_unsure']
-    >>> list(assign_stratum(d, thin=True))[4]
-    'thin_voted'
+    >>> _thin_arg(False), _thin_arg(True), _thin_arg("lumped"), _thin_arg("split")
+    (False, 'lumped', 'lumped', 'split')
+    >>> _thin_arg("Split")
+    Traceback (most recent call last):
+    ...
+    ValueError: thin must be False, True, 'lumped' or 'split', not 'Split'
     """
+    if thin is False or thin is None:
+        return False
+    if thin is True or (isinstance(thin, str) and thin == "lumped"):
+        return "lumped"
+    if isinstance(thin, str) and thin == "split":
+        return "split"
+    raise ValueError(f"thin must be False, True, 'lumped' or 'split', not {thin!r}")
+
+
+def _base_stratum(df):
+    """The four Disagree strata and the decoys of :func:`assign_stratum`, empty where none applies."""
     dec = df.h_agree + df.h_dis
     n_h = dec + df.h_unsure
     dis = df.ai_vote == "Disagree"
     mc = margin_class(df)
     return pd.Series(np.select(
         [dis & (n_h == 0), dis & (mc == "incorrect"), dis & (mc == "correct"),
-         dis & (dec >= 2) & (df.h_agree != df.h_dis), dis & thin, df.ai_vote == "Agree", df.ai_vote == "Unsure"],
-        ["lone", "margin_incorrect", "margin_correct", "light_voted", "thin_voted", "decoy_agree", "decoy_unsure"],
+         dis & (dec >= 2) & (df.h_agree != df.h_dis), df.ai_vote == "Agree", df.ai_vote == "Unsure"],
+        ["lone", "margin_incorrect", "margin_correct", "light_voted", "decoy_agree", "decoy_unsure"],
         ""), index=df.index)
 
 
+def _group_of_rest(df, base):
+    """:func:`unsampled_group` given the base strata (so callers that hold them do not recompute them)."""
+    rest = (df.ai_vote == "Disagree") & (base == "")
+    dec = df.h_agree + df.h_dis
+    g = pd.Series(np.select([rest & (dec == 1), rest & (dec == 0) & (df.h_unsure > 0),
+                             rest & (dec >= 2) & (df.h_agree == df.h_dis)], list(UNSAMPLED_STRATA), ""),
+                  index=df.index)
+    bad = rest & (g == "")
+    if bad.any():
+        raise ValueError(f"{int(bad.sum())} AI Disagrees in no stratum fall in no unsampled group (missing or "
+                         "non-integer vote tallies?)")
+    return g
+
+
+def assign_stratum(df, thin=False):
+    """The stratum of each row (empty string if none): for AI Disagrees ``lone`` (no human vote at all),
+    ``margin_incorrect`` / ``margin_correct`` (a training row under the margin rule), ``light_voted`` (at least
+    two decisive human votes with a majority, short of the margin rule); for AI Agree / Unsure the decoys.
+
+    The AI Disagrees in none of those strata (one decisive vote, only Unsure votes, or a tie: exactly the rows
+    :func:`unsampled_disagrees` counts) get a stratum only on request, so round 2's design and key are unchanged:
+    with ``thin=True`` (or ``"lumped"``) they become one ``thin_voted`` stratum (#85); with ``thin="split"`` each
+    gets its group from :func:`unsampled_group`, ``one_decisive`` / ``unsure_only`` / ``tie`` (#106). Any other
+    value of ``thin`` raises.
+
+    >>> d = pd.DataFrame({"ai_vote": ["Disagree"] * 7 + ["Agree", "Unsure"],
+    ...                   "h_agree": [0, 0, 3, 2, 0, 1, 1, 0, 0], "h_dis": [0, 2, 0, 1, 0, 0, 1, 0, 0],
+    ...                   "h_unsure": [0, 0, 0, 0, 1, 0, 0, 0, 0]})
+    >>> list(assign_stratum(d))
+    ['lone', 'margin_incorrect', 'margin_correct', 'light_voted', '', '', '', 'decoy_agree', 'decoy_unsure']
+    >>> list(assign_stratum(d, thin=True))[4:7], list(assign_stratum(d, thin="lumped"))[4:7]
+    (['thin_voted', 'thin_voted', 'thin_voted'], ['thin_voted', 'thin_voted', 'thin_voted'])
+    >>> list(assign_stratum(d, thin="split"))[4:7]
+    ['unsure_only', 'one_decisive', 'tie']
+    """
+    mode = _thin_arg(thin)
+    base = _base_stratum(df)
+    if not mode:
+        return base
+    rest = (df.ai_vote == "Disagree") & (base == "")
+    if mode == "lumped":
+        return base.where(~rest, "thin_voted")
+    return base.where(~rest, _group_of_rest(df, base))
+
+
+def unsampled_group(df):
+    """The group of each AI Disagree that :func:`assign_stratum` puts in none of its four Disagree strata, ``""``
+    for every other row: ``one_decisive`` (exactly one Agree or Disagree, with or without Unsure votes),
+    ``unsure_only`` (only Unsure votes) or ``tie`` (two or more decisive votes, split evenly, short of the margin
+    rule). Raises if such a row falls in none of the three (only possible with missing or fractional tallies).
+
+    >>> d = pd.DataFrame({"ai_vote": ["Disagree"] * 6 + ["Agree"], "h_agree": [1, 0, 1, 0, 2, 1, 1],
+    ...                   "h_dis": [0, 0, 1, 2, 2, 3, 0], "h_unsure": [1, 2, 0, 0, 1, 0, 0]})
+    >>> list(unsampled_group(d))
+    ['one_decisive', 'unsure_only', 'tie', '', 'tie', '', '']
+    """
+    return _group_of_rest(df, _base_stratum(df))
+
+
 def unsampled_disagrees(df):
-    """Counts of the AI Disagrees that ``assign_stratum`` puts in no stratum, so a round never samples them:
-    ``one_decisive`` (exactly one Agree or Disagree, with or without Unsure votes), ``unsure_only`` and ``tie``
-    (two or more decisive votes, split evenly, short of the margin rule).
+    """Counts of the AI Disagrees that ``assign_stratum`` puts in no stratum, so a round never samples them unless
+    its design names ``thin_voted`` or the three split strata: :func:`unsampled_group` counted, in the order of
+    :data:`UNSAMPLED_STRATA`.
 
     >>> d = pd.DataFrame({"ai_vote": ["Disagree"] * 5 + ["Agree"], "h_agree": [1, 0, 1, 0, 0, 1],
     ...                   "h_dis": [0, 0, 1, 0, 2, 0], "h_unsure": [1, 2, 0, 0, 0, 0]})
     >>> unsampled_disagrees(d)
     {'one_decisive': 1, 'unsure_only': 1, 'tie': 1}
     """
-    d = df[(df.ai_vote == "Disagree") & (assign_stratum(df) == "")]
-    dec = d.h_agree + d.h_dis
-    return {"one_decisive": int((dec == 1).sum()), "unsure_only": int(((dec == 0) & (d.h_unsure > 0)).sum()),
-            "tie": int(((dec >= 2) & (d.h_agree == d.h_dis)).sum())}
+    g = unsampled_group(df)
+    return {k: int((g == k).sum()) for k in UNSAMPLED_STRATA}
 
 
 def sev_bucket(severity):
@@ -310,8 +419,30 @@ def eligible(pool):
     return pool[ok]
 
 
+def thin_mode(design):
+    """How a design samples the AI Disagrees in none of the four Disagree strata: ``"lumped"`` when its ``shares``
+    name ``thin_voted`` (#85), ``"split"`` when they name ``one_decisive`` / ``unsure_only`` / ``tie`` (#106),
+    else ``False``. The value is :func:`assign_stratum`'s ``thin``.
+
+    >>> thin_mode({"shares": {"margin": 0.5, "lone": 0.35, "light_voted": 0.15}}), thin_mode(None)
+    (False, False)
+    >>> thin_mode({"shares": {"margin": 0.4, "lone": 0.25, "light_voted": 0.15, "thin_voted": 0.2}})
+    'lumped'
+    >>> thin_mode({"shares": {"margin": 0, "lone": 0, "light_voted": 0, "tie": 0.5, "one_decisive": 0.3,
+    ...                       "unsure_only": 0.2}})
+    'split'
+    """
+    shares = (design or {}).get("shares") or {}
+    if "thin_voted" in shares:
+        return "lumped"
+    if any(s in shares for s in UNSAMPLED_STRATA):
+        return "split"
+    return False
+
+
 def uses_thin(design):
-    """True when a design samples the ``thin_voted`` stratum (its ``shares`` name it).
+    """True when a design samples the Disagrees in no other stratum, lumped as ``thin_voted`` or split
+    (:func:`thin_mode`).
 
     A later round opts in with, for example,
     ``"shares": {"margin": 0.4, "lone": 0.25, "light_voted": 0.15, "thin_voted": 0.2}``.
@@ -321,15 +452,21 @@ def uses_thin(design):
     >>> uses_thin({"shares": {"margin": 0.4, "lone": 0.25, "light_voted": 0.15, "thin_voted": 0.2}})
     True
     """
-    return "thin_voted" in ((design or {}).get("shares") or {})
+    return bool(thin_mode(design))
+
+
+def disagree_strata(design):
+    """The Disagree strata a design's population is counted in: the four of round 2, plus ``thin_voted`` or the
+    three split strata (:func:`thin_mode`)."""
+    return {False: DISAGREE_STRATA, "lumped": DISAGREE_STRATA_THIN, "split": DISAGREE_STRATA_SPLIT}[thin_mode(design)]
 
 
 def prepare(pool, schema, design=None):
     """The eligible rows of one city with ``stratum``, ``cell``, ``margin_class`` and ``sev_bucket``; rows in no
-    stratum dropped. A design that samples ``thin_voted`` (:func:`uses_thin`) keeps the thin Disagrees as their
-    own cell."""
+    stratum dropped. A design that samples the thin Disagrees (:func:`thin_mode`) keeps them as their own cell,
+    ``thin_voted`` or the three split ones."""
     d = eligible(pool[pool.schema == schema]).copy()
-    d["stratum"] = assign_stratum(d, thin=uses_thin(design))
+    d["stratum"] = assign_stratum(d, thin=thin_mode(design))
     d = d[d.stratum != ""].copy()
     d["cell"] = d.stratum.where(~d.stratum.str.startswith("decoy"), "decoy")
     d["cell"] = d.cell.where(~d.cell.str.startswith("margin"), "margin")
@@ -346,8 +483,9 @@ def recount_population(pool, design):
     rater's own city (what ``build`` pins in the manifest as ``population`` and ``score`` weights by), each city's
     eligible AI Disagrees, and how many of them fall in no stratum. :func:`eligible` drops excluded authors' labels
     when the pool has an ``author_excluded`` column (:func:`apply_author_excluded`), so the same call gives the
-    counts before and after the exclusion. A design that samples ``thin_voted`` gets that stratum too."""
-    strata = DISAGREE_STRATA_THIN if uses_thin(design) else DISAGREE_STRATA
+    counts before and after the exclusion. A design that samples ``thin_voted``, or the three split strata, gets
+    those strata too (:func:`disagree_strata`)."""
+    strata = disagree_strata(design)
     out = {"population": {}, "eligible_disagrees": {}, "unsampled": {}}
     for rater, schema in design["raters"].items():
         p = prepare(pool, schema, design)
@@ -547,6 +685,183 @@ def rater_items(key, rater):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# Design check: what a design will sample, before a build (pure, unit-tested; #106)
+# ---------------------------------------------------------------------------------------------------------------------
+
+CANT_TELL = 0.25  # check-design: share of a cell's items assumed to come back can't tell (round 2: 4-5%, 14% max)
+TAG_MIN = 30      # check-design: a tag gets its own population row with at least this many labels in the type
+CELL_ORDER = ("margin", "lone", "light_voted", "thin_voted") + UNSAMPLED_STRATA
+
+
+def one_decisive_direction(rows):
+    """``{type: {"agree": n, "disagree": n}}``: the ``one_decisive`` AI Disagrees of ``rows`` (eligible rows of one
+    city) by their single decisive human vote. With a single human Agree the AI's Disagree turns a 1-0 label into
+    a 1-1; with a single human Disagree it concurs."""
+    g = unsampled_group(rows)
+    od = rows[g == "one_decisive"]
+    return {t: {"agree": int(((od.label_type == t) & (od.h_agree == 1)).sum()),
+                "disagree": int(((od.label_type == t) & (od.h_dis == 1)).sum())} for t in LABEL_TYPES}
+
+
+def unsampled_slices(rows, tag_min=TAG_MIN):
+    """Population counts of the three split strata of ``rows`` (eligible rows of one city) per label type x
+    severity and x tag: ``{"severity": [row, ...], "tag": [row, ...]}``, each row ``label_type``, the slice, one
+    count per stratum and ``all``. A label with several tags counts once per tag; tags with fewer than ``tag_min``
+    labels in the type (over the three strata, chosen on counts only) are folded into ``(other tags)``;
+    ``(none)`` is untagged, or no severity."""
+    g = unsampled_group(rows)
+    x = rows[g != ""].assign(stratum=g[g != ""])
+    order = {t: i for i, t in enumerate(LABEL_TYPES)}
+    out = {}
+    for by in ("severity", "tag"):
+        s = rl.with_slice(x, by)
+        if by == "tag" and len(s):
+            n = s.groupby(["label_type", "tag"]).size()
+            keep = {k for k, v in n.items() if v >= tag_min or k[1] == "(none)"}
+            s["tag"] = [v if (t, v) in keep else "(other tags)" for t, v in zip(s.label_type, s.tag)]
+        rows_out = []
+        for (t, v), grp in s.groupby(["label_type", by]):
+            rows_out.append({"label_type": t, by: str(v), **{u: int((grp.stratum == u).sum()) for u in UNSAMPLED_STRATA},
+                             "all": int(len(grp))})
+        out[by] = sorted(rows_out, key=lambda r: (order[r["label_type"]], r[by]))
+    return out
+
+
+def _cell_available(cell, pop, t, quota, design):
+    """Items a cell of one type can fill from its eligible population (crops not checked), as :func:`pick` fills
+    it: the margin cell takes ``margin_correct`` up to its cap and tops up with ``margin_incorrect``."""
+    if cell == "margin":
+        mc = min(margin_correct_cap(design, quota), pop["margin_correct"][t])
+        return pop["margin_correct"][t] + pop["margin_incorrect"][t], mc + min(quota - mc, pop["margin_incorrect"][t])
+    return pop[cell][t], min(quota, pop[cell][t])
+
+
+def design_check(pool, design, min_cell=MIN_CELL, cant_tell=CANT_TELL):
+    """What ``build`` would sample with ``design`` from ``pool``, without the crop check: a JSON-native dict.
+
+    For each rater's own city (eligibility as in :func:`prepare`), each Disagree cell with a quota and each type
+    with one: ``population``, ``quota`` (:func:`quotas`), ``available`` (``min(quota, population)``; the margin
+    cell as :func:`pick` fills it), ``shortfall``, ``expected_decided`` (``floor(available * (1 - cant_tell))``),
+    ``need`` (``ceil(min_cell / (1 - cant_tell))``, the quota that leaves ``min_cell`` decided items) and one
+    ``status``, by precedence ``no_weight`` (population under ``min_cell``: the cell can never carry weight in
+    ``score``) > ``short`` (population under the quota) > ``under_min`` (quota under ``need``) > ``ok``.
+
+    Per cell (``strata``): population, quota, items, expected decided, the types expected to carry weight
+    (expected decided >= ``min_cell``) and, over them with the population weights renormalised as
+    :func:`score_table` does, the expected 95% half-width of the population-weighted rate at p = 0.5,
+    ``1.96 * sqrt(sum_t W_t^2 * 0.25 / expected_decided_t)``, and the Kish effective n, ``0.25 / variance``. The
+    margin cell is treated as one stratum here although ``score`` weights its two strata apart.
+
+    Per rater also: ``own_items`` (every cell's available items, decoys included), ``rated_items`` (own plus the
+    ``shared`` items of every other rater), the decoys, the severity-bucket mix each cell is filled in
+    (:func:`bucket_shares`), the ``one_decisive`` population by its single vote (:func:`one_decisive_direction`)
+    and the split strata's population by type x severity and type x tag (:func:`unsampled_slices`).
+    ``eligible_disagrees`` and ``unsampled`` are :func:`recount_population`'s, so they equal ``recount``'s."""
+    if not 0 <= cant_tell < 1:
+        raise ValueError("cant_tell must be in [0, 1)")
+    need = int(np.ceil(round(min_cell / (1 - cant_tell), 9)))
+    rc = recount_population(pool, design)
+    q = quotas(design)
+    out = {"eligible_disagrees": rc["eligible_disagrees"], "unsampled": rc["unsampled"], "raters": {}}
+    for rater, schema in design["raters"].items():
+        pop = rc["population"][rater]
+        prep = prepare(pool, schema, design)
+        e = eligible(pool[pool.schema == schema])
+        cells, strata = {}, {}
+        for cell in (c for c in CELL_ORDER if c in design["shares"]):
+            if not any(q[(cell, t)] for t in LABEL_TYPES):
+                continue
+            cells[cell] = {}
+            for t in LABEL_TYPES:
+                quota = q[(cell, t)]
+                if not quota:
+                    continue
+                n_pop, avail = _cell_available(cell, pop, t, quota, design)
+                status = ("no_weight" if n_pop < min_cell else "short" if avail < quota
+                          else "under_min" if quota < need else "ok")
+                cells[cell][t] = {"population": int(n_pop), "quota": int(quota), "available": int(avail),
+                                  "expected_decided": int(np.floor(avail * (1 - cant_tell) + 1e-9)), "need": need,
+                                  "status": status, "shortfall": int(quota - avail)}
+            c = cells[cell]
+            kept = [t for t in c if c[t]["expected_decided"] >= min_cell and c[t]["population"] > 0]
+            tot = sum(c[t]["population"] for t in kept)
+            # math.fsum: correctly rounded, so the committed JSON is the same on every Python (3.12's sum() differs)
+            var = math.fsum((c[t]["population"] / tot) ** 2 * 0.25 / c[t]["expected_decided"] for t in kept)
+            strata[cell] = {"population": int(sum(_cell_available(cell, pop, t, 0, design)[0] for t in LABEL_TYPES)),
+                            "quota": sum(x["quota"] for x in c.values()), "items": sum(x["available"] for x in c.values()),
+                            "expected_decided": sum(x["expected_decided"] for x in c.values()),
+                            "weighted_types": kept, "weighted_population": int(tot),
+                            "half_width": round(Z95 * math.sqrt(var), 6) if kept else None,
+                            "kish_n": round(0.25 / var, 6) if kept else None}
+        dec = prep[prep.cell == "decoy"]
+        decoys = {t: {"population": int((dec.label_type == t).sum()), "quota": int(q[("decoy", t)]),
+                      "available": int(min(q[("decoy", t)], (dec.label_type == t).sum()))} for t in LABEL_TYPES}
+        buckets = {}
+        for (cell, t), b in bucket_shares(prep).items():
+            if cell in cells and t in cells[cell]:
+                buckets.setdefault(cell, {})[t] = {k: b[k] for k in SEV_BUCKETS if k in b}
+        out["raters"][rater] = {
+            "schema": schema, "cells": cells, "strata": strata, "decoys": decoys, "severity_buckets": buckets,
+            "own_items": int(sum(x["available"] for c in cells.values() for x in c.values())
+                             + sum(x["available"] for x in decoys.values())),
+            "one_decisive_direction": one_decisive_direction(e), "slices": unsampled_slices(e)}
+    for rater, r in out["raters"].items():
+        r["rated_items"] = r["own_items"] + sum(min(int(design["shared"]), o["own_items"])
+                                                for other, o in out["raters"].items() if other != rater)
+    return out
+
+
+STATUS_NOTE = ("no_weight: population under the minimum n, so the cell can never carry weight (it takes every "
+               "label it has); short: population under the quota; under_min: the quota leaves fewer than the "
+               "minimum decided items at the assumed can't-tell share; ok: none of these.")
+
+
+def design_check_markdown(r, design, min_cell=MIN_CELL, cant_tell=CANT_TELL):
+    """One half of :func:`design_check` as Markdown tables (aggregates only)."""
+    pct = lambda x: "" if x is None else f"±{100 * x:.1f}"  # noqa: E731
+    lines = []
+    for rater, x in r["raters"].items():
+        lines += [f"### Rater {rater}, {x['schema']}: {x['own_items']} own-city items, {x['rated_items']} rated in "
+                  "all (own + the other raters' shared items)", "",
+                  "| Stratum | Type | Population | Quota | Available | Expected decided | Status |",
+                  "|---|---|---:|---:|---:|---:|---|"]
+        for cell, c in x["cells"].items():
+            for t, y in c.items():
+                short = f" ({y['shortfall']} short)" if y["shortfall"] else ""
+                lines.append(f"| {cell} | {t} | {y['population']:,} | {y['quota']} | {y['available']} | "
+                             f"{y['expected_decided']} | {y['status']}{short} |")
+        lines += ["", f"| Stratum | Population | Items | Expected decided | Types with weight | 95% half-width, p = 0.5 "
+                  "(points) | Kish effective n |", "|---|---:|---:|---:|---|---:|---:|"]
+        for cell, s in x["strata"].items():
+            kish = "" if s["kish_n"] is None else f"{s['kish_n']:.0f}"
+            lines.append(f"| {cell} | {s['population']:,} | {s['items']} | {s['expected_decided']} | "
+                         f"{', '.join(s['weighted_types']) or 'none'} | {pct(s['half_width'])} | {kish} |")
+        lines += ["", "| Decoys | " + " | ".join(LABEL_TYPES) + " |", "|---|" + "---:|" * len(LABEL_TYPES),
+                  "| population | " + " | ".join(f"{x['decoys'][t]['population']:,}" for t in LABEL_TYPES) + " |",
+                  "| items | " + " | ".join(str(x["decoys"][t]["available"]) for t in LABEL_TYPES) + " |"]
+        od = x["one_decisive_direction"]
+        lines += ["", "`one_decisive` population by the single human vote:", "",
+                  "| Single vote | " + " | ".join(LABEL_TYPES) + " | all |", "|---|" + "---:|" * (len(LABEL_TYPES) + 1)]
+        for d in ("agree", "disagree"):
+            lines.append(f"| {d.capitalize()} | " + " | ".join(f"{od[t][d]:,}" for t in LABEL_TYPES)
+                         + f" | {sum(od[t][d] for t in LABEL_TYPES):,} |")
+        for by in ("severity", "tag"):
+            lines += ["", f"Population of the three split strata by type x {by}"
+                      + (f" (tags under {TAG_MIN} labels in the type folded; a label counts once per tag)"
+                         if by == "tag" else "") + ":", "",
+                      f"| Type | {by} | " + " | ".join(UNSAMPLED_STRATA) + " | all |",
+                      "|---|---|" + "---:|" * (len(UNSAMPLED_STRATA) + 1)]
+            for row in x["slices"][by]:
+                lines.append(f"| {row['label_type']} | {row[by]} | "
+                             + " | ".join(f"{row[u]:,}" for u in UNSAMPLED_STRATA) + f" | {row['all']:,} |")
+        lines.append("")
+    lines += [f"Minimum n {min_cell}; can't tell assumed {100 * cant_tell:.0f}%, so a cell needs a quota of "
+              f"{int(np.ceil(round(min_cell / (1 - cant_tell), 9)))} for {min_cell} decided items. {STATUS_NOTE} "
+              "Crop availability is not checked: `build` may find fewer items (short is a lower bound)."]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # Scoring (pure, unit-tested)
 # ---------------------------------------------------------------------------------------------------------------------
 
@@ -562,7 +877,7 @@ def score_table(m, population=None, min_cell=MIN_CELL):
     out, ``w_rate`` is NaN and :func:`score_markdown` prints "unestimable"."""
     rows = []
     decided = m[m.verdict.isin(["correct", "incorrect"])]
-    for s in STRATA + ("thin_voted",):
+    for s in REPORT_STRATA:
         for t in ("all",) + tuple(LABEL_TYPES):
             sub = m[(m.stratum == s) & ((m.label_type == t) if t != "all" else True)]
             if not len(sub):
@@ -645,6 +960,126 @@ def cohen_kappa(a, b):
     return float("nan") if pe == 1 else float((po - pe) / (1 - pe))
 
 
+VOTE_OF_VERDICT = {"correct": "Agree", "incorrect": "Disagree"}
+DISAGREE_REPORT_STRATA = tuple(s for s in REPORT_STRATA if not s.startswith("decoy"))
+
+
+def _rate_cols(prefix, k, n, min_n):
+    """``rl._rate`` as columns with a name prefix; the rate and interval are blank (NaN) when ``n < min_n``."""
+    r = rl._rate(k, n)
+    show = r["n"] >= min_n
+    return {f"{prefix}n": r["n"], f"{prefix}k": r["k"], f"{prefix}rate": r["rate"] if show else np.nan,
+            f"{prefix}lo": r["lo"] if show else np.nan, f"{prefix}hi": r["hi"] if show else np.nan}
+
+
+def slice_rates(m, by, strata=None, min_n=MIN_CELL, trains=None, population=None):
+    """The standing slices of one rater's AI Disagree items: per label type x ``by`` (``severity`` or ``tag``, via
+    ``rl.with_slice``: a label with several tags counts once per tag, ``(none)`` kept), ``items``, the decided
+    ``n``, ``k`` (the expert confirms the AI, i.e. calls the label incorrect), the rate with its Wilson interval
+    (blank when ``n < min_n``; the count is kept) and ``cant_tell``.
+
+    ``strata`` limits the items (default: every Disagree stratum). The baseline, ``base_*``, is the single human
+    vote on the ``one_decisive`` items of the slice against the expert on the same decided items (the share where
+    they match); ``tie`` and ``unsure_only`` have no crowd verdict, so ``base_n`` is 0 there. For each
+    ``(name, train_df)`` in ``trains`` a column with that training set's rows in the slice (``rl.train_counts``,
+    missing -> 0), and with ``population`` (a frame ``label_type, <by>, population``) the eligible population.
+    These are unweighted rates in a stratified sample, not population estimates."""
+    strata = DISAGREE_REPORT_STRATA if strata is None else tuple(strata)
+    d = rl.with_slice(m[(m.ai_vote == "Disagree") & m.stratum.isin(strata)], by)
+    order = {t: i for i, t in enumerate(LABEL_TYPES)}
+    rows = []
+    for (t, v), g in sorted(d.groupby(["label_type", by]), key=lambda kv: (order.get(kv[0][0], 99), kv[0][1])):
+        dec = g[g.verdict.isin(["correct", "incorrect"])]
+        od = dec[dec.stratum == "one_decisive"]
+        match = sum(c == VOTE_OF_VERDICT[x] for c, x in zip(od.crowd, od.verdict))
+        rows.append({"label_type": t, by: v, "items": len(g),
+                     **_rate_cols("", int((dec.verdict == "incorrect").sum()), len(dec), min_n),
+                     "cant_tell": int((g.verdict == "cant_tell").sum()),
+                     **_rate_cols("base_", int(match), len(od), min_n)})
+    cols = ["label_type", by, "items", "n", "k", "rate", "lo", "hi", "cant_tell", "base_n", "base_k", "base_rate",
+            "base_lo", "base_hi"]
+    out = pd.DataFrame(rows, columns=cols)
+    for name, train in (trains or []):
+        tc = rl.train_counts(train, by).rename(columns={"train_n": name})
+        out = out.merge(tc, on=["label_type", by], how="left", validate="one_to_one")
+        out[name] = out[name].fillna(0).astype(int)
+    if population is not None:
+        out = out.merge(population, on=["label_type", by], how="left", validate="one_to_one")
+        out["population"] = out.population.fillna(0).astype(int)
+    return out
+
+
+def slice_population(prepared, by, strata=None):
+    """``label_type, <by>, population``: the eligible AI Disagrees of one city's prepared pool in ``strata``
+    (default every Disagree stratum), per slice as :func:`slice_rates` cuts them."""
+    strata = DISAGREE_REPORT_STRATA if strata is None else tuple(strata)
+    d = rl.with_slice(prepared[(prepared.ai_vote == "Disagree") & prepared.stratum.isin(strata)], by)
+    return d.groupby(["label_type", by]).size().rename("population").reset_index()
+
+
+def slices_markdown(t, by, trains=()):
+    """One :func:`slice_rates` table as Markdown (aggregates only: no ids). The single-vote baseline column is
+    printed only when the table holds ``one_decisive`` items."""
+    base = bool(t.base_n.sum()) if len(t) else False
+    pop = "population" in t.columns
+    head = (f"| Type | {by} | items | expert confirms the AI | decided n | can't tell |"
+            + (" single vote matches the expert (one_decisive) | n |" if base else "")
+            + "".join(f" {name} |" for name in trains) + (" population |" if pop else ""))
+    out = [head, "|---|---|" + "---:|" * (head.count("|") - 3)]
+    for r in t.to_dict("records"):
+        line = (f"| {r['label_type']} | {r[by]} | {r['items']} | {rl._pct(r['rate'], r['lo'], r['hi'])} | {r['n']} | "
+                f"{r['cant_tell']} |")
+        if base:
+            line += f" {rl._pct(r['base_rate'], r['base_lo'], r['base_hi'])} | {r['base_n']} |"
+        line += "".join(f" {r[name]:,} |" for name in trains) + (f" {r['population']:,} |" if pop else "")
+        out.append(line)
+    return "\n".join(out)
+
+
+def direction_rates(m, population=None, min_n=MIN_CELL):
+    """The ``one_decisive`` items of one rater, per label type and overall, split by the single human vote's
+    direction (``Agree``: ``h_agree == 1``; ``Disagree``: ``h_dis == 1``): items, decided n, how often the expert
+    confirms the AI (blank when ``n < min_n``) and can't tell. With ``population`` (``{type: {"agree": n,
+    "disagree": n}}``, :func:`one_decisive_direction`) also each direction's population and its share of the
+    type's (or all) ``one_decisive`` population. A secondary analysis fixed before rating (#106)."""
+    d = m[m.stratum == "one_decisive"]
+    rows = []
+    for t in ("all",) + tuple(LABEL_TYPES):
+        x = d if t == "all" else d[d.label_type == t]
+        if not len(x) and t != "all":
+            continue
+        types = LABEL_TYPES if t == "all" else (t,)
+        for direction, col in (("Agree", "h_agree"), ("Disagree", "h_dis")):
+            y = x[x[col] == 1]
+            dec = y[y.verdict.isin(["correct", "incorrect"])]
+            row = {"label_type": t, "direction": direction, "items": len(y),
+                   **_rate_cols("", int((dec.verdict == "incorrect").sum()), len(dec), min_n),
+                   "cant_tell": int((y.verdict == "cant_tell").sum())}
+            if population is not None:
+                p = {k: sum(population.get(u, {}).get(k, 0) for u in types) for k in ("agree", "disagree")}
+                tot = p["agree"] + p["disagree"]
+                row["population"] = p[direction.lower()]
+                row["pop_share"] = p[direction.lower()] / tot if tot else np.nan
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def direction_markdown(t):
+    """:func:`direction_rates` as Markdown."""
+    pop = "population" in t.columns
+    out = ["| Type | Single human vote | items | expert confirms the AI | decided n | can't tell |"
+           + (" population | share of the type's one_decisive |" if pop else ""),
+           "|---|---|---:|---|---:|---:|" + ("---:|---:|" if pop else "")]
+    for r in t.to_dict("records"):
+        line = (f"| {r['label_type']} | {r['direction']} | {r['items']} | {rl._pct(r['rate'], r['lo'], r['hi'])} | "
+                f"{r['n']} | {r['cant_tell']} |")
+        if pop:
+            share = "" if _isna(r["pop_share"]) else f"{100 * r['pop_share']:.0f}%"
+            line += f" {r['population']:,} | {share} |"
+        out.append(line)
+    return "\n".join(out)
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------------------------------------------------
@@ -681,18 +1116,25 @@ def cmd_build(args):
         sys.exit(f"{args.key_dir}/key.csv exists: rebuilding would replace the key and wipe every rating pin in "
                  "its manifest; build into a new key dir")
     design = load_design(args.design)
+    if design.get("draft"):
+        sys.exit(f"{args.design} is a draft design: its sizes are proposals; remove \"draft\" once they are approved")
     design_name = os.path.splitext(os.path.basename(args.design))[0]
     pool = rl.load_pool(args.pool)
+    if "author_excluded" not in pool.columns:
+        sys.exit("the pool has no author_excluded column: pull it with the current analysis/pull_relabel_pool.sh, "
+                 "which emits it, so the population leaves out excluded authors' labels from the start (#106)")
     missing = sorted(set(design["raters"].values()) - set(pool.schema))
     if missing:
         sys.exit(f"the pool has no rows for {missing}")
     prepared = {s: prepare(pool, s, design) for s in design["raters"].values()}
     recount = recount_population(pool, design)
     population = recount["population"]
+    sampled_as = {False: " and are never sampled", "lumped": " (sampled as thin_voted)",
+                  "split": " (sampled as one_decisive / unsure_only / tie)"}[thin_mode(design)]
     for s in design["raters"].values():
         u = recount["unsampled"][s]
         print(f"{s}: {sum(u.values()):,} of {recount['eligible_disagrees'][s]:,} eligible AI Disagrees are in no "
-              f"stratum{' (sampled as thin_voted)' if uses_thin(design) else ' and are never sampled'} "
+              f"stratum{sampled_as} "
               f"({u['one_decisive']:,} one decisive vote, {u['unsure_only']:,} only Unsure, {u['tie']:,} ties)")
     cands = {s: candidates(p, args.seed, design, args.oversample) for s, p in prepared.items()}
     all_cands = pd.concat(cands.values())
@@ -743,6 +1185,9 @@ def cmd_build(args):
                 "round3_in_train": {r: int(((key.rater == r) & (key.round3_split == "train")).sum())
                                     for r in design["raters"]},
                 "rating": {"round3_splits": split_shas} if split_shas else {}}
+    if thin_mode(design) == "split":
+        manifest["one_decisive_direction"] = {
+            r: one_decisive_direction(eligible(pool[pool.schema == s])) for r, s in design["raters"].items()}
     rl.write_manifest(os.path.join(args.key_dir, "manifest.json"), manifest)
     print(f"{len(key)} items ({manifest['shared']} shared) -> {args.packet_dir}/rater_*/rate.html\n"
           f"key -> {kpath} (sha256 {manifest['key_sha256']})")
@@ -849,11 +1294,21 @@ def cmd_score(args):
     apart = m[m.packet_id.isin(unmasked)]
     m = m[~m.packet_id.isin(unmasked)]
     own = m[m.rater == args.rater]
-    population = score_population(args, man)
+    population, prepared = score_population(args, man)
     print(f"## Rater {args.rater}, own city ({len(own)} items)\n")
     print(score_markdown(score_table(own, population, args.min_cell)))
     print(f"\nPopulation-weighted rows leave out every (stratum, type) cell with fewer than {args.min_cell} decided "
           "items (named in the last-but-one column); a stratum with none left is unestimable.")
+    if (own.stratum == "one_decisive").any():
+        direction = (one_decisive_direction(prepared) if prepared is not None
+                     else man.get("one_decisive_direction", {}).get(args.rater))
+        print(f"\n## one_decisive by the single vote's direction, rater {args.rater}, own city\n")
+        print(direction_markdown(direction_rates(own, direction, args.min_cell)))
+        print("\nA secondary analysis fixed before rating (#106): with a single human Agree the AI's Disagree turns a "
+              "1-0 label into a 1-1; with a single human Disagree it concurs. Unweighted sample rates; blank under "
+              f"{args.min_cell} decided items.")
+    if args.slices if args.slices is not None else key.stratum.isin(UNSAMPLED_STRATA).any():
+        print_slices(own, args, mpath, prepared)
     other = m[m.rater != args.rater]
     if len(other):
         print(f"\n## Rater {args.rater}, shared items from the other city ({len(other)} items)\n")
@@ -867,28 +1322,70 @@ def cmd_score(args):
         print(f"\nWARNING: {int((m.verdict == '').sum())} items unanswered")
 
 
+def print_slices(own, args, mpath, prepared=None):
+    """``score``'s standing slices for the rater's own city: type x severity and type x tag over every Disagree
+    stratum, then per split stratum with items; training counts with ``--round3-splits``, the eligible population
+    with ``--pool``."""
+    trains, names = [], ()
+    if args.round3_splits:
+        train, shas = rl.load_round_train(args.round3_splits)
+        rl.check_split_pins(mpath, shas, args.allow_unpinned)
+        trains, names = [("round3_train", train)], ("round3_train",)
+        print(f"\nTraining counts: round-3 train rows of {args.round3_splits} (split.csv sha256 "
+              + ", ".join(f"{t} {h[:12]}" for t, h in shas.items()) + ")")
+    print(f"\n## Slices of the AI Disagrees, rater {args.rater}, own city\n")
+    print("Unweighted sample rates in a stratified sample, not population estimates. A label with several tags counts "
+          f"once per tag; a rate is blank under {args.min_cell} decided items (the count is kept). The single-vote "
+          "baseline exists only for one_decisive items; tie and unsure_only have no crowd verdict.")
+    groups = [("every Disagree stratum", None)] + [(s, (s,)) for s in UNSAMPLED_STRATA if (own.stratum == s).any()]
+    for name, strata in groups:
+        for by in ("severity", "tag"):
+            pop = slice_population(prepared, by, strata) if prepared is not None else None
+            print(f"\n### {name}, type x {by}\n")
+            print(slices_markdown(slice_rates(own, by, strata, args.min_cell, trains, pop), by, names))
+
+
+def score_design(design_path, man, allow_unpinned=False):
+    """``(design, source)``: the design ``score`` recounts the population with. ``--design`` when given, refused
+    unless its sha256 is the manifest's ``design_sha256`` (``allow_unpinned`` makes that a warning); else the
+    round's own design, the manifest's ``design_json``; else round 2's (a manifest without one)."""
+    if design_path:
+        pinned = man.get("design_sha256")
+        if pinned and rl.sha256_file(design_path) != pinned:
+            msg = f"--design {design_path} is not the design the manifest pins (design_sha256 differs)"
+            if not allow_unpinned:
+                sys.exit(msg + "; drop --design to use the round's own, or pass --allow-unpinned")
+            print(f"WARNING: {msg}", file=sys.stderr)
+        return load_design(design_path), design_path
+    if man.get("design_json"):
+        return load_design(man["design_json"]), "the manifest's design_json"
+    return load_design(DEFAULT_DESIGN), DEFAULT_DESIGN
+
+
 def score_population(args, man):
-    """The population weights ``score`` uses for the rater's own city: recounted from ``--pool`` (with the
-    ``--author-excluded`` flags when given, #85) when a pool is passed, else the manifest's, with a warning. Prints
-    the population per stratum before (manifest) and after (recount)."""
+    """``(population, prepared)``: the population weights ``score`` uses for the rater's own city, and that city's
+    prepared pool (None without ``--pool``). Recounted from ``--pool`` (with the ``--author-excluded`` flags when
+    given, #85) under :func:`score_design`'s design when a pool is passed, else the manifest's, with a warning.
+    Prints the population per stratum before (manifest) and after (recount)."""
     before = man.get("population", {}).get(args.rater)
     if not args.pool:
         if before:
             print(f"WARNING: population weights from the manifest, which count excluded authors' labels (#85); pass "
                   f"--pool and --author-excluded to recount them\n")
-        return before
+        return before, None
+    design, source = score_design(args.design, man, args.allow_unpinned)
     pool = rl.load_pool(args.pool)
     if args.author_excluded:
         pool, missing = apply_author_excluded(pool, pd.read_csv(args.author_excluded))
         print(f"author_excluded flags joined; {missing:,} pool labels not in the flags count as not excluded")
-    after = recount_population(pool, load_design(args.design))["population"].get(args.rater)
+    after = recount_population(pool, design)["population"].get(args.rater)
     if after is None:
-        sys.exit(f"rater {args.rater} is not in the design {args.design}")
+        sys.exit(f"rater {args.rater} is not in the design ({source})")
     for st in after:
         b = sum((before or {}).get(st, {}).values()) if before else None
         print(f"population {st}: {'?' if b is None else f'{b:,}'} -> {sum(after[st].values()):,}")
     print()
-    return after
+    return after, prepare(pool, design["raters"][args.rater], design)
 
 
 def cmd_recount(args):
@@ -959,6 +1456,65 @@ def recount_markdown(r, design):
             lines.append(f"| {schema} | {x['ai_disagrees_absent']:,} | {x['of_which_flagged_excluded']:,} | "
                          f"{x['flagged_excluded_present_in_export']:,} |")
     lines += ["", f"{r['pool_labels_missing_from_flags']:,} pool labels are not in the flags and count as not excluded."]
+    return "\n".join(lines)
+
+
+def cmd_check_design(args):
+    """``check-design``: what a design would sample from a pool, before a build (#106). Local only: no crop check,
+    no remote call; works on a draft design. Aggregates only, as Markdown and an optional JSON."""
+    design = load_design(args.design)
+    if args.author_excluded and args.no_author_excluded:
+        sys.exit("pass --author-excluded or --no-author-excluded, not both")
+    pool = rl.load_pool(args.pool)
+    has_col = "author_excluded" in pool.columns
+    if not (has_col or args.author_excluded or args.no_author_excluded):
+        sys.exit("the pool has no author_excluded column: pass --author-excluded with pull_author_excluded.sh output, "
+                 "or --no-author-excluded to count excluded authors' labels on purpose (#106)")
+    check = lambda p: design_check(p, design, args.min_cell, args.cant_tell)  # noqa: E731
+    before = check(pool.drop(columns=["author_excluded"], errors="ignore"))
+    missing, after = None, None
+    if args.author_excluded:
+        flagged, missing = apply_author_excluded(pool, pd.read_csv(args.author_excluded))
+        after = check(flagged)
+    elif has_col and not args.no_author_excluded:
+        after = check(pool)
+    out = {"design": os.path.basename(args.design), "design_sha256": rl.sha256_file(args.design),
+           "draft": bool(design.get("draft")), "pool_sha256": rl.sha256_file(args.pool),
+           "author_excluded_sha256": rl.sha256_file(args.author_excluded) if args.author_excluded else None,
+           "pool_labels_missing_from_flags": missing, "min_cell": args.min_cell, "cant_tell": args.cant_tell,
+           "crops_checked": False, "before": before, "after": after}
+    md = check_design_markdown(out, design)
+    print(md)
+    if args.markdown:
+        with open(args.markdown, "w") as f:
+            f.write(md + "\n")
+    if args.out:
+        with open(args.out, "w") as f:
+            json.dump(out, f, indent=1, sort_keys=True)
+            f.write("\n")
+        print(f"\n-> {args.out}")
+
+
+def check_design_markdown(r, design):
+    """``check-design``'s printout: the pins, the eligible and unsampled counts before -> after the exclusion, and
+    the tables of the half the design is sized on (after, or before when no exclusion was applied)."""
+    lines = [f"## Design check: {r['design']}{' (DRAFT)' if r['draft'] else ''}", "",
+             f"design sha256 `{r['design_sha256']}`; pool sha256 `{r['pool_sha256']}`; author_excluded flags "
+             + (f"sha256 `{r['author_excluded_sha256']}` ({r['pool_labels_missing_from_flags']:,} pool labels not in "
+                "the flags count as not excluded)" if r["author_excluded_sha256"]
+                else "from the pool's own column" if r["after"] else "NOT applied (--no-author-excluded)"), "",
+             "| City (schema) | Eligible AI Disagrees | one_decisive | unsure_only | tie |", "|---|---:|---:|---:|---:|"]
+    halves = [("before", r["before"])] + ([("after", r["after"])] if r["after"] else [])
+    for schema in design["raters"].values():
+        cells = []
+        for k in ["eligible_disagrees"] + list(UNSAMPLED_STRATA):
+            vals = [(h["eligible_disagrees"][schema] if k == "eligible_disagrees" else h["unsampled"][schema][k])
+                    for _, h in halves]
+            cells.append(" -> ".join(f"{v:,}" for v in vals))
+        lines.append(f"| {schema} | " + " | ".join(cells) + " |")
+    lines += ["", ("Counts before -> after leaving out excluded authors' labels; the tables below are the after half."
+                   if r["after"] else "The tables below count excluded authors' labels."), "",
+              design_check_markdown(r["after"] or r["before"], design, r["min_cell"], r["cant_tell"])]
     return "\n".join(lines)
 
 
@@ -1143,9 +1699,10 @@ def gold_table(g, by="label_type"):
     """Per ``by`` (``label_type`` or ``stratum``), unmasked items left out: shared items, gold labels (from matched
     verdicts / from consensus), items left without one, and on the gold labels the share of AI Disagrees the
     experts call incorrect (``confirms_ai``) and of AI Agree decoys they call correct. These are rates in this
-    stratified sample, not population estimates; the per-stratum view shows what the pooled rate mixes."""
+    stratified sample, not population estimates; the per-stratum view shows what the pooled rate mixes. Every
+    stratum with items gets a row (:data:`REPORT_STRATA`: ``thin_voted`` and the split strata too)."""
     g = g[~g.unmasked]
-    groups = ("all",) + (tuple(LABEL_TYPES) if by == "label_type" else STRATA)
+    groups = ("all",) + (tuple(LABEL_TYPES) if by == "label_type" else REPORT_STRATA)
     rows = []
     for v in groups:
         x = g if v == "all" else g[g[by] == v]
@@ -1525,9 +2082,14 @@ def build_parser():
     s.add_argument("--pool", help="recount the population weights from this pool (the round's pinned pool.csv) "
                                   "instead of the manifest's (#85)")
     s.add_argument("--author-excluded", help="pull_author_excluded.sh output joined onto --pool (#85)")
-    s.add_argument("--design", default=DEFAULT_DESIGN, help="design JSON for --pool (default: round 2)")
+    s.add_argument("--design", help="design JSON for --pool (default: the round's own, from the manifest's "
+                                    "design_json; refused unless it is the design the manifest pins)")
     s.add_argument("--min-cell", type=int, default=MIN_CELL,
                    help="cells with fewer decided items get no population weight (default %(default)s)")
+    s.add_argument("--slices", action=argparse.BooleanOptionalAction, default=None,
+                   help="type x severity and type x tag tables of the AI Disagree items (default: on when the key "
+                        "holds one_decisive / unsure_only / tie items)")
+    s.add_argument("--round3-splits", help="run dir with <Type>/split.csv: training counts in the slice tables")
     s.set_defaults(func=cmd_score)
     rc = sub.add_parser("recount", help="the round's population without excluded authors' labels (aggregates only)")
     rc.add_argument("--pool", required=True, help="the round's pinned pool.csv (the population as of the round)")
@@ -1540,6 +2102,21 @@ def build_parser():
                                   "docs/ai-disagree-relabel-2026-10/round2_recount.json)")
     rc.add_argument("--markdown", help="also write the Markdown tables here (with --out)")
     rc.set_defaults(func=cmd_recount)
+    cd = sub.add_parser("check-design", help="what a design would sample from a pool, before a build: population, "
+                                             "quota, expected decided items, status and expected precision per cell "
+                                             "(local, no crop check; aggregates only; works on a draft)")
+    cd.add_argument("--design", required=True)
+    cd.add_argument("--pool", required=True, help="pull_relabel_pool.sh output (the population as of the pull)")
+    cd.add_argument("--author-excluded", help="pull_author_excluded.sh output joined onto --pool")
+    cd.add_argument("--no-author-excluded", action="store_true",
+                    help="count excluded authors' labels on purpose (a pool without the column needs this or "
+                         "--author-excluded)")
+    cd.add_argument("--min-cell", type=int, default=MIN_CELL, help="as score's (default %(default)s)")
+    cd.add_argument("--cant-tell", type=float, default=CANT_TELL,
+                    help="share of items assumed to come back can't tell (default %(default)s)")
+    cd.add_argument("--out", help="JSON of the check (aggregates only)")
+    cd.add_argument("--markdown", help="also write the printout here")
+    cd.set_defaults(func=cmd_check_design)
     a = sub.add_parser("agreement", help="inter-rater agreement on the shared items")
     a.add_argument("--key", required=True)
     a.add_argument("--sheets", nargs=2, required=True, metavar="RATER=SHEET")
