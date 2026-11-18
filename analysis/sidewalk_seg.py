@@ -929,7 +929,7 @@ def _md_table(df, cols=None):
 def cmd_report(args):
     from evaluate import slice_metrics
     cities = load_cities(args.cities_json)
-    feats = pd.read_csv(args.features)
+    feats = pd.read_csv(args.features, dtype={"pano_id": str})
     z = np.load(args.cls, allow_pickle=False)
     cls_df = pd.DataFrame({"label_uid": z["label_uid"], "p_incorrect": z["p_incorrect"]})
     cls_df["cls_row"] = np.arange(len(cls_df))
@@ -1227,7 +1227,7 @@ def cmd_sheets(args):
     ids = {g: class_ids(run["id2label"], names) for g, names in
            (("sidewalk", SIDEWALK_CLASSES), ("road", ROAD_CLASSES), ("curb", CURB_CLASSES))}
     from calibration.per_city import public_name
-    df = pd.read_csv(args.features)
+    df = pd.read_csv(args.features, dtype={"pano_id": str})
     df = df[(df.status == "ok") & df.city.map(lambda c: public_name(c, cities) is not None)]
     os.makedirs(args.out_dir, exist_ok=True)
     rng = np.random.default_rng(args.seed)

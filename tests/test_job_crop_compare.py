@@ -223,3 +223,19 @@ def test_restrict_keeps_all_digit_pano_ids_as_strings(tmp_path):
                        str(tmp_path / "manifest.csv"), "--out", str(tmp_path / "job" / "split.csv")])
     assert not pd.api.types.is_numeric_dtype(out.pano_id)
     assert out.pano_id.tolist() == ids
+
+
+def test_compare_bootstraps_on_all_digit_pano_ids_as_strings(tmp_path, monkeypatch):
+    # Issue #114 (PR #115 review R2): compare's split read feeds the paired panorama bootstrap's group, so all-digit
+    # Mapillary pano_ids must reach rr.cluster_boot as the strings in the file.
+    split, job, depth = _synthetic()
+    split["pano_id"] = split.pano_id.map(lambda p: str(1792391791667719 + int(p[1:])))
+    split.to_csv(tmp_path / "split.csv", index=False)
+    job.to_csv(tmp_path / "job.csv", index=False)
+    depth.to_csv(tmp_path / "depth.csv", index=False)
+    seen, boot = [], jcc.rr.cluster_boot
+    monkeypatch.setattr(jcc.rr, "cluster_boot", lambda y, p, g, *a, **k: seen.append(g) or boot(y, p, g, *a, **k))
+    jcc.main(["compare", "--job-pred", str(tmp_path / "job.csv"), "--depth-pred", str(tmp_path / "depth.csv"),
+              "--split", str(tmp_path / "split.csv"), "--out-dir", str(tmp_path / "out"), "--n-boot", "5"])
+    assert seen and all(isinstance(v, str) for g in seen for v in g)
+    assert set(seen[0]) == set(split.pano_id)  # the pooled row: every panorama, ids unchanged

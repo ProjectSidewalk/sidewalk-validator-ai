@@ -902,12 +902,15 @@ def pano_store_path(store, city, pano_id):
     store serves both. Nothing in it is provider-specific.
 
     ``pano_id`` must be a ``str``. A number means the CSV was read without :data:`PANO_ID_DTYPE` (all-digit Mapillary
-    ids, issue #114), so this raises rather than coerce: ``str()`` of a float id is a different, wrong path.
+    ids, issue #114), so this raises rather than coerce: ``str()`` of a float id is a different, wrong path. A missing
+    value (NaN, None, ``pd.NA``) is a blank cell and raises saying so.
 
     >>> pano_store_path("/store", "seattle-wa", "abcDEF")
     '/store/seattle-wa/ab/abcDEF.jpg'
     """
     if not isinstance(pano_id, str):
+        if pd.api.types.is_scalar(pano_id) and pd.isna(pano_id):  # what a correctly typed read gives a blank cell
+            raise TypeError(f"pano_id is blank ({pano_id!r}) for a label in {city}: the CSV has no pano_id there")
         raise TypeError(f"pano_id must be a str, got {type(pano_id).__name__} ({pano_id!r}): read the CSV with "
                         "dtype=PANO_ID_DTYPE")
     return os.path.join(store, city, pano_id[:2], f"{pano_id}.jpg")

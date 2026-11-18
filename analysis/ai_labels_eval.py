@@ -492,6 +492,9 @@ def cmd_crops(args):
     # a stage that stopped early must not become a run of no_pano rows: stop after MAX_CONSECUTIVE_MISSING_PANOS
     # panoramas in a row with a status in MISSING_STATUSES, ignoring panoramas known to be missing before this run
     last_counted, consecutive_missing = None, 0
+    # and after MAX_CONSECUTIVE_ERRORS labels in a row with an error:* status, as data_generation.py does: a bug that
+    # fails every label (issue #114's untyped pano_id) must end the run, not write a crops_run.json and exit 0
+    consecutive_errors = 0
     status_counts, t0 = Counter(), time.time()
     with open(manifest_path, "a", newline="") as f:
         import csv
@@ -534,6 +537,11 @@ def cmd_crops(args):
             w.writerow(rec)
             f.flush()
             status_counts[rec["status"]] += 1
+            consecutive_errors = consecutive_errors + 1 if rec["status"].startswith("error:") else 0
+            if consecutive_errors >= dg.MAX_CONSECUTIVE_ERRORS:
+                sys.exit(f"STOP: {consecutive_errors} labels in a row failed with error:* (last: {rec['status']}); "
+                         f"the traceback above says why. The manifest is resumable once the cause is fixed "
+                         f"(data_generation.MAX_CONSECUTIVE_ERRORS)")
             if last[0] != last_counted and last[0] not in known_missing and row.city not in missing_cities:
                 last_counted = last[0]
                 consecutive_missing = consecutive_missing + 1 if rec["status"] in dg.MISSING_STATUSES else 0
