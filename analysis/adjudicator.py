@@ -398,7 +398,7 @@ def _sheets(pairs):
 def cmd_gold(args):
     refuse_in_checkout(args.out_dir, "the gold table")
     schema_city = schema_city_map(open(args.cityparams).read())
-    joined = pd.read_csv(args.r1_joined, dtype={"tags": str})
+    joined = pd.read_csv(args.r1_joined, dtype={"tags": str, "pano_id": str})
     key = pd.read_csv(args.r2_key, dtype=str, keep_default_na=False)
     try:
         check_key_forms(key, schema_city)

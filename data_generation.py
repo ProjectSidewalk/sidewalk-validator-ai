@@ -211,7 +211,8 @@ DEPTH_DEVICE_HELP = "CUDA is required; --allow-cpu renders with numpy and runs d
 # ---------------------------------------------------------------------------------------------------------------------
 
 #: Mapillary pano_ids are all digits, so without this read_csv makes them int64: a mixed frame then cannot be sorted
-#: by pano_id and ``pano_id[:2]`` (the store path) fails. Every pano_id is a string.
+#: by pano_id and ``pano_id[:2]`` (the store path) fails. Every pano_id is a string. Every reader of a file with a
+#: ``pano_id`` column passes a dtype for it; ``tests/test_pano_id_dtype.py`` checks reads whose ``usecols`` names it.
 PANO_ID_DTYPE = {"pano_id": str}
 
 

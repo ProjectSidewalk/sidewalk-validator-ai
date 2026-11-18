@@ -520,7 +520,7 @@ def load_labels(path, city, expert_ids=()):
     """CurbRamp / Crosswalk rows of one rawLabels CSV with human vote counts, majority and the AI's cast vote, plus
     ``expert1``, ``expert2``, ... (one per id in ``expert_ids``) read from the same ``validations``."""
     head = pd.read_csv(path, nrows=0).columns
-    df = pd.read_csv(path, usecols=[c for c in RAW_COLUMNS if c in head], low_memory=False)
+    df = pd.read_csv(path, usecols=[c for c in RAW_COLUMNS if c in head], dtype={"pano_id": str}, low_memory=False)
     df = df[df.label_type.isin(LABEL_TYPES)].dropna(subset=["latitude", "longitude"]).copy()
     votes = df["validations"].map(human_votes)
     df[["h_agree", "h_dis", "h_unsure", "h_maj", "ai_vote"]] = pd.DataFrame(votes.tolist(), index=df.index)
