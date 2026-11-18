@@ -724,8 +724,8 @@ question: better on test in every seed, no worse on the held-out cities on avera
 absence along the whole street. **NoSidewalk is not served yet**: the test half of the bar passes, and the gate half
 passes on the prior-weighted basis in the 5-fold run of 2026-11-11 (weighted lower bound 0.966 on 240 labels) but not
 unweighted (0.890) and not on the held-out cities; see "The 5-fold out-of-fold gate" above. The masked expert round of step (b)
-meets its bar pooled over four cities outside Seattle (0.986, lower bound 0.951, on 144 labels; only Chicago
-clears it alone).
+meets its bar pooled over four cities outside Seattle (0.986, lower bound 0.951, on 144 labels). No city meets the
+per-deployment count of step (c) (100 decided pass-stratum labels) on its own.
 
 - (a) **5-fold out-of-fold training over the 758 pooled train / val / test crops** (whole view; the 127 held-out
    rows stay held out), calibrating on the pooled out-of-fold predictions, so each fold's Agree map is fitted on
@@ -735,12 +735,53 @@ clears it alone).
 - (b) **A masked expert round outside Seattle**, before any serving work (decided 2026-11-11): one rater, 250
    labels chosen score-first from four cities' deployment population, so the gate is read where step (a) could
    not reach. Design and results in "The masked expert round outside Seattle" above. **Done 2026-11-13: the bar
-   is met pooled over the four cities** (142 / 144 = 0.986, lower bound 0.951; only Chicago clears it alone), with the caveats in that section's reading; whether that
-   unlocks step (c) is the maintainer's decision.
-- (c) **Cross-repository work** (sidewalk-ai-api, SidewalkWebpage; listed above) after step (b), if its bar is
-   met; a final model on all 758 rows with a map fitted on
-   the pooled out-of-fold predictions is the configuration to ship, gated per deployment as
-   [#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52) asks.
+   is met pooled over the four cities** (142 / 144 = 0.986, lower bound 0.951), with the caveats in that section's
+   reading.
+- (c) **Serving, decided 2026-11-14** ([#42](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/42#issuecomment-6877957778)):
+  1. serve the **five step (b) fold models as an ensemble**, an AI Agree when at least 3 of 5 pass the gate (the
+     rule the step (b) evidence is about; a retrained or sixth model is not covered by it, so the preserved fold
+     weights are what ships);
+  2. **each deployment needs its own masked round with at least 100 decided pass-stratum labels**, gated per
+     deployment as [#52](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/52) asks
+     ([#111](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/111));
+  3. **no AI vote below the gate** (not AI Unsure);
+  4. **an AI Agree counts as a normal vote**, `label.correct` and `validated_no_sidewalk_count` included.
+
+  Pass-stratum counts after step (b), correct / decided, on all rated faces and on faces the rater never placed or
+  voted a label on: Chicago 51 / 51 and 50 / 50, Tucson 29 / 31 and 24 / 26, CDMX 29 / 29 and 29 / 29, Oradell
+  33 / 33 and 8 / 8. Whether the 100 counts only untouched faces is open (it matters most for Oradell).
+
+  **Chicago top-up (built 2026-11-14, `nosidewalk_round.py topup`)**: 91 more labels from round b's scored
+  Chicago pool, continuing each cell's seeded rank order under the same one-label-per-face rule, leaving out every
+  face already in round b's key and every face carrying a NoSidewalk label the rater placed or voted on. Chicago has
+  75 such faces; 6 are among its 357 scored faces, 2 of them already in round b's key, so 4 candidate faces were
+  left out (1 pass, 3 agree-below). None of the 4 ranked before its cell's last pick, so the top-up is exactly the
+  next ranks of each cell, and round b's items plus the top-up are a prefix of each cell's face order: the
+  equal-probability sample that the weights `N/n · M/(base + top-up)` assume. That holds only because no touched
+  face was skipped. Round b's items were drawn without the touched-face rule, so in a city where a touched face
+  ranks before a cell's last pick the combined weights are approximate; the manifest records
+  `touched_before_last_pick` and `prefix_sample` per cell. For the same reason a city's count toward the 100 mixes
+  two eligibility rules (round b's items may sit on touched faces, the top-up's may not) unless only untouched
+  faces are counted.
+
+  55 pass, 18 agree-below and 18 model-incorrect: the decoys keep the list masked to the model's verdict, as round
+  b's 60 / 20 / 20 shares did. 55 leaves room for Unsure votes: the count needs 50 decided of the 55 on untouched
+  faces (49 counting all faces). At round b's Chicago pass-stratum Unsure rate (2 / 53) the binomial chance of
+  falling short is about 2 % (0.5 % counting all faces); at CDMX's rate (3 / 33) it would be about 38 %. 51
+  untouched pass faces remain in the scored pool, but `topup` leaves out only round b's faces, so a second run
+  would draw these 91 again; a second top-up needs that exclusion added first.
+
+  Read it with `report --key <round b key> --sheet <round b votes> --topup <top-up key> <top-up votes>`: the
+  top-up's rows join round b's, and round b's Chicago rows take the combined weights (`report` refuses the top-up
+  key alone). With `--topup` the report's headline bar is still pooled over the four cities; the per-deployment bar
+  of step (c) is read off the city's row (a per-city reading on untouched faces only is a follow-up). `--doc` with
+  `--topup` writes only between a `round-b-topup-results` marker pair, which must already be in the doc, and never
+  over round b's published block. The touched-face check used round b's 2026-11-11 pull because the API was unreachable on 2026-11-14.
+  Re-check against a fresh pull by rerunning `topup` into a scratch dir; the key's sha256 must not change. Votes on
+  round b's labels are ignored, since they are its Gallery ratings. A re-check after the top-up is rated also
+  needs `--ignore-votes-on <top-up key.csv>`, in case the pull shows those ratings as the rater's votes. Key sha256
+  `c0f03f3225fb45f02e101f8e6f2bafde38e1fdcd2fc5f2c1285e24b27f5b0097` (91 items, packet ids distinct from round
+  b's); key, manifest and Gallery list in `~/Data/sidewalk-validator-ai-nosidewalk-2026-11/round-c-chicago/`.
 
 ## Provenance
 
