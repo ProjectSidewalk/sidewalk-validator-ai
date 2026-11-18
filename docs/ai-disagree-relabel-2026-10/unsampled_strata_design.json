@@ -1,0 +1,2935 @@
+{
+ "after": {
+  "eligible_disagrees": {
+   "sidewalk_chicago": 10751,
+   "sidewalk_seattle": 16840
+  },
+  "raters": {
+   "jon": {
+    "cells": {
+     "one_decisive": {
+      "Crosswalk": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 42,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "CurbRamp": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 4794,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "NoCurbRamp": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 881,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "Obstacle": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 103,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "SurfaceProblem": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 878,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      }
+     },
+     "tie": {
+      "Crosswalk": {
+       "available": 13,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 13,
+       "quota": 16,
+       "shortfall": 3,
+       "status": "short"
+      },
+      "CurbRamp": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 574,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "NoCurbRamp": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 390,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "Obstacle": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 91,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "SurfaceProblem": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 471,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      }
+     },
+     "unsure_only": {
+      "Crosswalk": {
+       "available": 3,
+       "expected_decided": 2,
+       "need": 7,
+       "population": 3,
+       "quota": 8,
+       "shortfall": 5,
+       "status": "no_weight"
+      },
+      "CurbRamp": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 192,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "NoCurbRamp": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 113,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "Obstacle": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 12,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "SurfaceProblem": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 51,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      }
+     }
+    },
+    "decoys": {
+     "Crosswalk": {
+      "available": 14,
+      "population": 3956,
+      "quota": 14
+     },
+     "CurbRamp": {
+      "available": 14,
+      "population": 79469,
+      "quota": 14
+     },
+     "NoCurbRamp": {
+      "available": 14,
+      "population": 34536,
+      "quota": 14
+     },
+     "Obstacle": {
+      "available": 14,
+      "population": 11296,
+      "quota": 14
+     },
+     "SurfaceProblem": {
+      "available": 14,
+      "population": 27642,
+      "quota": 14
+     }
+    },
+    "one_decisive_direction": {
+     "Crosswalk": {
+      "agree": 8,
+      "disagree": 34
+     },
+     "CurbRamp": {
+      "agree": 2309,
+      "disagree": 2485
+     },
+     "NoCurbRamp": {
+      "agree": 388,
+      "disagree": 493
+     },
+     "Obstacle": {
+      "agree": 37,
+      "disagree": 66
+     },
+     "SurfaceProblem": {
+      "agree": 423,
+      "disagree": 455
+     }
+    },
+    "own_items": 242,
+    "rated_items": 292,
+    "schema": "sidewalk_seattle",
+    "severity_buckets": {
+     "one_decisive": {
+      "Crosswalk": {
+       "1-2": 30,
+       "3-5": 10,
+       "none": 2
+      },
+      "CurbRamp": {
+       "1-2": 4210,
+       "3-5": 254,
+       "none": 330
+      },
+      "NoCurbRamp": {
+       "1-2": 544,
+       "3-5": 292,
+       "none": 45
+      },
+      "Obstacle": {
+       "1-2": 53,
+       "3-5": 35,
+       "none": 15
+      },
+      "SurfaceProblem": {
+       "1-2": 771,
+       "3-5": 82,
+       "none": 25
+      }
+     },
+     "tie": {
+      "Crosswalk": {
+       "1-2": 9,
+       "3-5": 2,
+       "none": 2
+      },
+      "CurbRamp": {
+       "1-2": 527,
+       "3-5": 30,
+       "none": 17
+      },
+      "NoCurbRamp": {
+       "1-2": 234,
+       "3-5": 134,
+       "none": 22
+      },
+      "Obstacle": {
+       "1-2": 49,
+       "3-5": 29,
+       "none": 13
+      },
+      "SurfaceProblem": {
+       "1-2": 405,
+       "3-5": 45,
+       "none": 21
+      }
+     },
+     "unsure_only": {
+      "Crosswalk": {
+       "1-2": 2,
+       "3-5": 1
+      },
+      "CurbRamp": {
+       "1-2": 160,
+       "3-5": 14,
+       "none": 18
+      },
+      "NoCurbRamp": {
+       "1-2": 69,
+       "3-5": 38,
+       "none": 6
+      },
+      "Obstacle": {
+       "1-2": 6,
+       "3-5": 5,
+       "none": 1
+      },
+      "SurfaceProblem": {
+       "1-2": 37,
+       "3-5": 11,
+       "none": 3
+      }
+     }
+    },
+    "slices": {
+     "severity": [
+      {
+       "all": 365,
+       "label_type": "CurbRamp",
+       "one_decisive": 330,
+       "severity": "(none)",
+       "tie": 17,
+       "unsure_only": 18
+      },
+      {
+       "all": 4283,
+       "label_type": "CurbRamp",
+       "one_decisive": 3688,
+       "severity": "1",
+       "tie": 451,
+       "unsure_only": 144
+      },
+      {
+       "all": 614,
+       "label_type": "CurbRamp",
+       "one_decisive": 522,
+       "severity": "2",
+       "tie": 76,
+       "unsure_only": 16
+      },
+      {
+       "all": 298,
+       "label_type": "CurbRamp",
+       "one_decisive": 254,
+       "severity": "3",
+       "tie": 30,
+       "unsure_only": 14
+      },
+      {
+       "all": 73,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 45,
+       "severity": "(none)",
+       "tie": 22,
+       "unsure_only": 6
+      },
+      {
+       "all": 196,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 128,
+       "severity": "1",
+       "tie": 53,
+       "unsure_only": 15
+      },
+      {
+       "all": 651,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 416,
+       "severity": "2",
+       "tie": 181,
+       "unsure_only": 54
+      },
+      {
+       "all": 464,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 292,
+       "severity": "3",
+       "tie": 134,
+       "unsure_only": 38
+      },
+      {
+       "all": 29,
+       "label_type": "Obstacle",
+       "one_decisive": 15,
+       "severity": "(none)",
+       "tie": 13,
+       "unsure_only": 1
+      },
+      {
+       "all": 59,
+       "label_type": "Obstacle",
+       "one_decisive": 30,
+       "severity": "1",
+       "tie": 26,
+       "unsure_only": 3
+      },
+      {
+       "all": 49,
+       "label_type": "Obstacle",
+       "one_decisive": 23,
+       "severity": "2",
+       "tie": 23,
+       "unsure_only": 3
+      },
+      {
+       "all": 69,
+       "label_type": "Obstacle",
+       "one_decisive": 35,
+       "severity": "3",
+       "tie": 29,
+       "unsure_only": 5
+      },
+      {
+       "all": 49,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 25,
+       "severity": "(none)",
+       "tie": 21,
+       "unsure_only": 3
+      },
+      {
+       "all": 963,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 617,
+       "severity": "1",
+       "tie": 329,
+       "unsure_only": 17
+      },
+      {
+       "all": 250,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 154,
+       "severity": "2",
+       "tie": 76,
+       "unsure_only": 20
+      },
+      {
+       "all": 138,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 82,
+       "severity": "3",
+       "tie": 45,
+       "unsure_only": 11
+      },
+      {
+       "all": 4,
+       "label_type": "Crosswalk",
+       "one_decisive": 2,
+       "severity": "(none)",
+       "tie": 2,
+       "unsure_only": 0
+      },
+      {
+       "all": 29,
+       "label_type": "Crosswalk",
+       "one_decisive": 21,
+       "severity": "1",
+       "tie": 7,
+       "unsure_only": 1
+      },
+      {
+       "all": 12,
+       "label_type": "Crosswalk",
+       "one_decisive": 9,
+       "severity": "2",
+       "tie": 2,
+       "unsure_only": 1
+      },
+      {
+       "all": 13,
+       "label_type": "Crosswalk",
+       "one_decisive": 10,
+       "severity": "3",
+       "tie": 2,
+       "unsure_only": 1
+      }
+     ],
+     "tag": [
+      {
+       "all": 3609,
+       "label_type": "CurbRamp",
+       "one_decisive": 3118,
+       "tag": "(none)",
+       "tie": 375,
+       "unsure_only": 116
+      },
+      {
+       "all": 2,
+       "label_type": "CurbRamp",
+       "one_decisive": 2,
+       "tag": "(other tags)",
+       "tie": 0,
+       "unsure_only": 0
+      },
+      {
+       "all": 1078,
+       "label_type": "CurbRamp",
+       "one_decisive": 933,
+       "tag": "missing tactile warning",
+       "tie": 107,
+       "unsure_only": 38
+      },
+      {
+       "all": 273,
+       "label_type": "CurbRamp",
+       "one_decisive": 238,
+       "tag": "narrow",
+       "tie": 23,
+       "unsure_only": 12
+      },
+      {
+       "all": 145,
+       "label_type": "CurbRamp",
+       "one_decisive": 131,
+       "tag": "not enough landing space",
+       "tie": 11,
+       "unsure_only": 3
+      },
+      {
+       "all": 497,
+       "label_type": "CurbRamp",
+       "one_decisive": 420,
+       "tag": "not level with street",
+       "tie": 65,
+       "unsure_only": 12
+      },
+      {
+       "all": 561,
+       "label_type": "CurbRamp",
+       "one_decisive": 488,
+       "tag": "points into traffic",
+       "tie": 48,
+       "unsure_only": 25
+      },
+      {
+       "all": 117,
+       "label_type": "CurbRamp",
+       "one_decisive": 102,
+       "tag": "steep",
+       "tie": 10,
+       "unsure_only": 5
+      },
+      {
+       "all": 69,
+       "label_type": "CurbRamp",
+       "one_decisive": 57,
+       "tag": "surface problem",
+       "tie": 8,
+       "unsure_only": 4
+      },
+      {
+       "all": 647,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 417,
+       "tag": "(none)",
+       "tie": 182,
+       "unsure_only": 48
+      },
+      {
+       "all": 399,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 254,
+       "tag": "alternate route present",
+       "tie": 108,
+       "unsure_only": 37
+      },
+      {
+       "all": 277,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 178,
+       "tag": "no alternate route",
+       "tie": 78,
+       "unsure_only": 21
+      },
+      {
+       "all": 139,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 85,
+       "tag": "unclear if needed",
+       "tie": 39,
+       "unsure_only": 15
+      },
+      {
+       "all": 37,
+       "label_type": "Obstacle",
+       "one_decisive": 19,
+       "tag": "(none)",
+       "tie": 16,
+       "unsure_only": 2
+      },
+      {
+       "all": 81,
+       "label_type": "Obstacle",
+       "one_decisive": 44,
+       "tag": "(other tags)",
+       "tie": 31,
+       "unsure_only": 6
+      },
+      {
+       "all": 30,
+       "label_type": "Obstacle",
+       "one_decisive": 15,
+       "tag": "parked car",
+       "tie": 13,
+       "unsure_only": 2
+      },
+      {
+       "all": 38,
+       "label_type": "Obstacle",
+       "one_decisive": 18,
+       "tag": "pole",
+       "tie": 17,
+       "unsure_only": 3
+      },
+      {
+       "all": 37,
+       "label_type": "Obstacle",
+       "one_decisive": 15,
+       "tag": "trash/recycling can",
+       "tie": 22,
+       "unsure_only": 0
+      },
+      {
+       "all": 204,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 116,
+       "tag": "(none)",
+       "tie": 69,
+       "unsure_only": 19
+      },
+      {
+       "all": 71,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 49,
+       "tag": "(other tags)",
+       "tie": 19,
+       "unsure_only": 3
+      },
+      {
+       "all": 119,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 71,
+       "tag": "bumpy",
+       "tie": 40,
+       "unsure_only": 8
+      },
+      {
+       "all": 479,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 352,
+       "tag": "cracks",
+       "tie": 114,
+       "unsure_only": 13
+      },
+      {
+       "all": 566,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 325,
+       "tag": "grass",
+       "tie": 230,
+       "unsure_only": 11
+      },
+      {
+       "all": 106,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 70,
+       "tag": "narrow sidewalk",
+       "tie": 29,
+       "unsure_only": 7
+      },
+      {
+       "all": 99,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 54,
+       "tag": "uneven/slanted",
+       "tie": 38,
+       "unsure_only": 7
+      },
+      {
+       "all": 42,
+       "label_type": "Crosswalk",
+       "one_decisive": 33,
+       "tag": "(none)",
+       "tie": 7,
+       "unsure_only": 2
+      },
+      {
+       "all": 20,
+       "label_type": "Crosswalk",
+       "one_decisive": 9,
+       "tag": "(other tags)",
+       "tie": 10,
+       "unsure_only": 1
+      }
+     ]
+    },
+    "strata": {
+     "one_decisive": {
+      "expected_decided": 45,
+      "half_width": 0.241609,
+      "items": 60,
+      "kish_n": 16.452255,
+      "population": 6698,
+      "quota": 60,
+      "weighted_population": 6698,
+      "weighted_types": [
+       "CurbRamp",
+       "NoCurbRamp",
+       "Obstacle",
+       "SurfaceProblem",
+       "Crosswalk"
+      ]
+     },
+     "tie": {
+      "expected_decided": 57,
+      "half_width": 0.155101,
+      "items": 77,
+      "kish_n": 39.923192,
+      "population": 1539,
+      "quota": 80,
+      "weighted_population": 1539,
+      "weighted_types": [
+       "CurbRamp",
+       "NoCurbRamp",
+       "Obstacle",
+       "SurfaceProblem",
+       "Crosswalk"
+      ]
+     },
+     "unsure_only": {
+      "expected_decided": 26,
+      "half_width": 0.248815,
+      "items": 35,
+      "kish_n": 15.513078,
+      "population": 371,
+      "quota": 40,
+      "weighted_population": 368,
+      "weighted_types": [
+       "CurbRamp",
+       "NoCurbRamp",
+       "Obstacle",
+       "SurfaceProblem"
+      ]
+     }
+    }
+   },
+   "mikey": {
+    "cells": {
+     "one_decisive": {
+      "Crosswalk": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 817,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "CurbRamp": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 1227,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "NoCurbRamp": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 312,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "Obstacle": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 80,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "SurfaceProblem": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 560,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      }
+     },
+     "tie": {
+      "Crosswalk": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 95,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "CurbRamp": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 214,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "NoCurbRamp": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 195,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "Obstacle": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 26,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "SurfaceProblem": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 176,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      }
+     },
+     "unsure_only": {
+      "Crosswalk": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 28,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "CurbRamp": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 56,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "NoCurbRamp": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 34,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "Obstacle": {
+       "available": 2,
+       "expected_decided": 1,
+       "need": 7,
+       "population": 2,
+       "quota": 8,
+       "shortfall": 6,
+       "status": "no_weight"
+      },
+      "SurfaceProblem": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 25,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      }
+     }
+    },
+    "decoys": {
+     "Crosswalk": {
+      "available": 14,
+      "population": 24224,
+      "quota": 14
+     },
+     "CurbRamp": {
+      "available": 14,
+      "population": 71740,
+      "quota": 14
+     },
+     "NoCurbRamp": {
+      "available": 14,
+      "population": 1123,
+      "quota": 14
+     },
+     "Obstacle": {
+      "available": 14,
+      "population": 6882,
+      "quota": 14
+     },
+     "SurfaceProblem": {
+      "available": 14,
+      "population": 20921,
+      "quota": 14
+     }
+    },
+    "one_decisive_direction": {
+     "Crosswalk": {
+      "agree": 492,
+      "disagree": 325
+     },
+     "CurbRamp": {
+      "agree": 605,
+      "disagree": 622
+     },
+     "NoCurbRamp": {
+      "agree": 49,
+      "disagree": 263
+     },
+     "Obstacle": {
+      "agree": 16,
+      "disagree": 64
+     },
+     "SurfaceProblem": {
+      "agree": 305,
+      "disagree": 255
+     }
+    },
+    "own_items": 244,
+    "rated_items": 294,
+    "schema": "sidewalk_chicago",
+    "severity_buckets": {
+     "one_decisive": {
+      "Crosswalk": {
+       "1-2": 613,
+       "3-5": 163,
+       "none": 41
+      },
+      "CurbRamp": {
+       "1-2": 1056,
+       "3-5": 108,
+       "none": 63
+      },
+      "NoCurbRamp": {
+       "1-2": 139,
+       "3-5": 46,
+       "none": 127
+      },
+      "Obstacle": {
+       "1-2": 60,
+       "3-5": 7,
+       "none": 13
+      },
+      "SurfaceProblem": {
+       "1-2": 444,
+       "3-5": 60,
+       "none": 56
+      }
+     },
+     "tie": {
+      "Crosswalk": {
+       "1-2": 66,
+       "3-5": 27,
+       "none": 2
+      },
+      "CurbRamp": {
+       "1-2": 177,
+       "3-5": 28,
+       "none": 9
+      },
+      "NoCurbRamp": {
+       "1-2": 95,
+       "3-5": 72,
+       "none": 28
+      },
+      "Obstacle": {
+       "1-2": 20,
+       "3-5": 1,
+       "none": 5
+      },
+      "SurfaceProblem": {
+       "1-2": 140,
+       "3-5": 22,
+       "none": 14
+      }
+     },
+     "unsure_only": {
+      "Crosswalk": {
+       "1-2": 21,
+       "3-5": 4,
+       "none": 3
+      },
+      "CurbRamp": {
+       "1-2": 50,
+       "3-5": 5,
+       "none": 1
+      },
+      "NoCurbRamp": {
+       "1-2": 16,
+       "3-5": 5,
+       "none": 13
+      },
+      "Obstacle": {
+       "none": 2
+      },
+      "SurfaceProblem": {
+       "1-2": 24,
+       "none": 1
+      }
+     }
+    },
+    "slices": {
+     "severity": [
+      {
+       "all": 73,
+       "label_type": "CurbRamp",
+       "one_decisive": 63,
+       "severity": "(none)",
+       "tie": 9,
+       "unsure_only": 1
+      },
+      {
+       "all": 998,
+       "label_type": "CurbRamp",
+       "one_decisive": 826,
+       "severity": "1",
+       "tie": 131,
+       "unsure_only": 41
+      },
+      {
+       "all": 285,
+       "label_type": "CurbRamp",
+       "one_decisive": 230,
+       "severity": "2",
+       "tie": 46,
+       "unsure_only": 9
+      },
+      {
+       "all": 141,
+       "label_type": "CurbRamp",
+       "one_decisive": 108,
+       "severity": "3",
+       "tie": 28,
+       "unsure_only": 5
+      },
+      {
+       "all": 168,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 127,
+       "severity": "(none)",
+       "tie": 28,
+       "unsure_only": 13
+      },
+      {
+       "all": 135,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 84,
+       "severity": "1",
+       "tie": 45,
+       "unsure_only": 6
+      },
+      {
+       "all": 115,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 55,
+       "severity": "2",
+       "tie": 50,
+       "unsure_only": 10
+      },
+      {
+       "all": 123,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 46,
+       "severity": "3",
+       "tie": 72,
+       "unsure_only": 5
+      },
+      {
+       "all": 20,
+       "label_type": "Obstacle",
+       "one_decisive": 13,
+       "severity": "(none)",
+       "tie": 5,
+       "unsure_only": 2
+      },
+      {
+       "all": 53,
+       "label_type": "Obstacle",
+       "one_decisive": 41,
+       "severity": "1",
+       "tie": 12,
+       "unsure_only": 0
+      },
+      {
+       "all": 27,
+       "label_type": "Obstacle",
+       "one_decisive": 19,
+       "severity": "2",
+       "tie": 8,
+       "unsure_only": 0
+      },
+      {
+       "all": 8,
+       "label_type": "Obstacle",
+       "one_decisive": 7,
+       "severity": "3",
+       "tie": 1,
+       "unsure_only": 0
+      },
+      {
+       "all": 71,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 56,
+       "severity": "(none)",
+       "tie": 14,
+       "unsure_only": 1
+      },
+      {
+       "all": 309,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 244,
+       "severity": "1",
+       "tie": 49,
+       "unsure_only": 16
+      },
+      {
+       "all": 299,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 200,
+       "severity": "2",
+       "tie": 91,
+       "unsure_only": 8
+      },
+      {
+       "all": 82,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 60,
+       "severity": "3",
+       "tie": 22,
+       "unsure_only": 0
+      },
+      {
+       "all": 46,
+       "label_type": "Crosswalk",
+       "one_decisive": 41,
+       "severity": "(none)",
+       "tie": 2,
+       "unsure_only": 3
+      },
+      {
+       "all": 535,
+       "label_type": "Crosswalk",
+       "one_decisive": 466,
+       "severity": "1",
+       "tie": 48,
+       "unsure_only": 21
+      },
+      {
+       "all": 165,
+       "label_type": "Crosswalk",
+       "one_decisive": 147,
+       "severity": "2",
+       "tie": 18,
+       "unsure_only": 0
+      },
+      {
+       "all": 194,
+       "label_type": "Crosswalk",
+       "one_decisive": 163,
+       "severity": "3",
+       "tie": 27,
+       "unsure_only": 4
+      }
+     ],
+     "tag": [
+      {
+       "all": 607,
+       "label_type": "CurbRamp",
+       "one_decisive": 508,
+       "tag": "(none)",
+       "tie": 74,
+       "unsure_only": 25
+      },
+      {
+       "all": 27,
+       "label_type": "CurbRamp",
+       "one_decisive": 23,
+       "tag": "(other tags)",
+       "tie": 1,
+       "unsure_only": 3
+      },
+      {
+       "all": 55,
+       "label_type": "CurbRamp",
+       "one_decisive": 42,
+       "tag": "debris / pooled water",
+       "tie": 12,
+       "unsure_only": 1
+      },
+      {
+       "all": 697,
+       "label_type": "CurbRamp",
+       "one_decisive": 561,
+       "tag": "missing tactile warning",
+       "tie": 110,
+       "unsure_only": 26
+      },
+      {
+       "all": 93,
+       "label_type": "CurbRamp",
+       "one_decisive": 78,
+       "tag": "narrow",
+       "tie": 10,
+       "unsure_only": 5
+      },
+      {
+       "all": 35,
+       "label_type": "CurbRamp",
+       "one_decisive": 28,
+       "tag": "not enough landing space",
+       "tie": 6,
+       "unsure_only": 1
+      },
+      {
+       "all": 111,
+       "label_type": "CurbRamp",
+       "one_decisive": 86,
+       "tag": "not level with street",
+       "tie": 22,
+       "unsure_only": 3
+      },
+      {
+       "all": 69,
+       "label_type": "CurbRamp",
+       "one_decisive": 59,
+       "tag": "points into traffic",
+       "tie": 7,
+       "unsure_only": 3
+      },
+      {
+       "all": 197,
+       "label_type": "CurbRamp",
+       "one_decisive": 151,
+       "tag": "surface problem",
+       "tie": 36,
+       "unsure_only": 10
+      },
+      {
+       "all": 279,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 162,
+       "tag": "(none)",
+       "tie": 101,
+       "unsure_only": 16
+      },
+      {
+       "all": 80,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 41,
+       "tag": "alternate route present",
+       "tie": 34,
+       "unsure_only": 5
+      },
+      {
+       "all": 138,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 80,
+       "tag": "no alternate route",
+       "tie": 48,
+       "unsure_only": 10
+      },
+      {
+       "all": 60,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 38,
+       "tag": "unclear if needed",
+       "tie": 18,
+       "unsure_only": 4
+      },
+      {
+       "all": 20,
+       "label_type": "Obstacle",
+       "one_decisive": 15,
+       "tag": "(none)",
+       "tie": 4,
+       "unsure_only": 1
+      },
+      {
+       "all": 62,
+       "label_type": "Obstacle",
+       "one_decisive": 44,
+       "tag": "(other tags)",
+       "tie": 17,
+       "unsure_only": 1
+      },
+      {
+       "all": 36,
+       "label_type": "Obstacle",
+       "one_decisive": 28,
+       "tag": "pole",
+       "tie": 8,
+       "unsure_only": 0
+      },
+      {
+       "all": 57,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 46,
+       "tag": "(none)",
+       "tie": 9,
+       "unsure_only": 2
+      },
+      {
+       "all": 113,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 92,
+       "tag": "(other tags)",
+       "tie": 20,
+       "unsure_only": 1
+      },
+      {
+       "all": 60,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 49,
+       "tag": "bumpy",
+       "tie": 8,
+       "unsure_only": 3
+      },
+      {
+       "all": 168,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 134,
+       "tag": "cracks",
+       "tie": 24,
+       "unsure_only": 10
+      },
+      {
+       "all": 87,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 70,
+       "tag": "grass",
+       "tie": 10,
+       "unsure_only": 7
+      },
+      {
+       "all": 341,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 231,
+       "tag": "narrow sidewalk",
+       "tie": 106,
+       "unsure_only": 4
+      },
+      {
+       "all": 63,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 49,
+       "tag": "uneven/slanted",
+       "tie": 10,
+       "unsure_only": 4
+      },
+      {
+       "all": 390,
+       "label_type": "Crosswalk",
+       "one_decisive": 342,
+       "tag": "(none)",
+       "tie": 30,
+       "unsure_only": 18
+      },
+      {
+       "all": 20,
+       "label_type": "Crosswalk",
+       "one_decisive": 19,
+       "tag": "(other tags)",
+       "tie": 1,
+       "unsure_only": 0
+      },
+      {
+       "all": 48,
+       "label_type": "Crosswalk",
+       "one_decisive": 43,
+       "tag": "brick/cobblestone",
+       "tie": 4,
+       "unsure_only": 1
+      },
+      {
+       "all": 87,
+       "label_type": "Crosswalk",
+       "one_decisive": 68,
+       "tag": "broken surface",
+       "tie": 18,
+       "unsure_only": 1
+      },
+      {
+       "all": 62,
+       "label_type": "Crosswalk",
+       "one_decisive": 49,
+       "tag": "bumpy",
+       "tie": 11,
+       "unsure_only": 2
+      },
+      {
+       "all": 466,
+       "label_type": "Crosswalk",
+       "one_decisive": 403,
+       "tag": "paint fading",
+       "tie": 55,
+       "unsure_only": 8
+      },
+      {
+       "all": 55,
+       "label_type": "Crosswalk",
+       "one_decisive": 45,
+       "tag": "uneven surface",
+       "tie": 9,
+       "unsure_only": 1
+      }
+     ]
+    },
+    "strata": {
+     "one_decisive": {
+      "expected_decided": 45,
+      "half_width": 0.175486,
+      "items": 60,
+      "kish_n": 31.18643,
+      "population": 2996,
+      "quota": 60,
+      "weighted_population": 2996,
+      "weighted_types": [
+       "CurbRamp",
+       "NoCurbRamp",
+       "Obstacle",
+       "SurfaceProblem",
+       "Crosswalk"
+      ]
+     },
+     "tie": {
+      "expected_decided": 60,
+      "half_width": 0.141388,
+      "items": 80,
+      "kish_n": 48.042796,
+      "population": 706,
+      "quota": 80,
+      "weighted_population": 706,
+      "weighted_types": [
+       "CurbRamp",
+       "NoCurbRamp",
+       "Obstacle",
+       "SurfaceProblem",
+       "Crosswalk"
+      ]
+     },
+     "unsure_only": {
+      "expected_decided": 25,
+      "half_width": 0.211247,
+      "items": 34,
+      "kish_n": 21.521487,
+      "population": 145,
+      "quota": 40,
+      "weighted_population": 143,
+      "weighted_types": [
+       "CurbRamp",
+       "NoCurbRamp",
+       "SurfaceProblem",
+       "Crosswalk"
+      ]
+     }
+    }
+   }
+  },
+  "unsampled": {
+   "sidewalk_chicago": {
+    "one_decisive": 2996,
+    "tie": 706,
+    "unsure_only": 145
+   },
+   "sidewalk_seattle": {
+    "one_decisive": 6698,
+    "tie": 1539,
+    "unsure_only": 371
+   }
+  }
+ },
+ "author_excluded_sha256": "767c3d5b0fca35b57deb09e28995549bd382c383fd4f1634b55e14e6c469bfd7",
+ "before": {
+  "eligible_disagrees": {
+   "sidewalk_chicago": 10769,
+   "sidewalk_seattle": 17284
+  },
+  "raters": {
+   "jon": {
+    "cells": {
+     "one_decisive": {
+      "Crosswalk": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 45,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "CurbRamp": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 4794,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "NoCurbRamp": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 881,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "Obstacle": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 103,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "SurfaceProblem": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 878,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      }
+     },
+     "tie": {
+      "Crosswalk": {
+       "available": 13,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 13,
+       "quota": 16,
+       "shortfall": 3,
+       "status": "short"
+      },
+      "CurbRamp": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 574,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "NoCurbRamp": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 390,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "Obstacle": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 91,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "SurfaceProblem": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 471,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      }
+     },
+     "unsure_only": {
+      "Crosswalk": {
+       "available": 3,
+       "expected_decided": 2,
+       "need": 7,
+       "population": 3,
+       "quota": 8,
+       "shortfall": 5,
+       "status": "no_weight"
+      },
+      "CurbRamp": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 192,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "NoCurbRamp": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 113,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "Obstacle": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 12,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "SurfaceProblem": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 51,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      }
+     }
+    },
+    "decoys": {
+     "Crosswalk": {
+      "available": 14,
+      "population": 3957,
+      "quota": 14
+     },
+     "CurbRamp": {
+      "available": 14,
+      "population": 79746,
+      "quota": 14
+     },
+     "NoCurbRamp": {
+      "available": 14,
+      "population": 34620,
+      "quota": 14
+     },
+     "Obstacle": {
+      "available": 14,
+      "population": 13251,
+      "quota": 14
+     },
+     "SurfaceProblem": {
+      "available": 14,
+      "population": 27923,
+      "quota": 14
+     }
+    },
+    "one_decisive_direction": {
+     "Crosswalk": {
+      "agree": 10,
+      "disagree": 35
+     },
+     "CurbRamp": {
+      "agree": 2309,
+      "disagree": 2485
+     },
+     "NoCurbRamp": {
+      "agree": 388,
+      "disagree": 493
+     },
+     "Obstacle": {
+      "agree": 37,
+      "disagree": 66
+     },
+     "SurfaceProblem": {
+      "agree": 423,
+      "disagree": 455
+     }
+    },
+    "own_items": 242,
+    "rated_items": 292,
+    "schema": "sidewalk_seattle",
+    "severity_buckets": {
+     "one_decisive": {
+      "Crosswalk": {
+       "1-2": 30,
+       "3-5": 11,
+       "none": 4
+      },
+      "CurbRamp": {
+       "1-2": 4210,
+       "3-5": 254,
+       "none": 330
+      },
+      "NoCurbRamp": {
+       "1-2": 544,
+       "3-5": 292,
+       "none": 45
+      },
+      "Obstacle": {
+       "1-2": 53,
+       "3-5": 35,
+       "none": 15
+      },
+      "SurfaceProblem": {
+       "1-2": 771,
+       "3-5": 82,
+       "none": 25
+      }
+     },
+     "tie": {
+      "Crosswalk": {
+       "1-2": 9,
+       "3-5": 2,
+       "none": 2
+      },
+      "CurbRamp": {
+       "1-2": 527,
+       "3-5": 30,
+       "none": 17
+      },
+      "NoCurbRamp": {
+       "1-2": 234,
+       "3-5": 134,
+       "none": 22
+      },
+      "Obstacle": {
+       "1-2": 49,
+       "3-5": 29,
+       "none": 13
+      },
+      "SurfaceProblem": {
+       "1-2": 405,
+       "3-5": 45,
+       "none": 21
+      }
+     },
+     "unsure_only": {
+      "Crosswalk": {
+       "1-2": 2,
+       "3-5": 1
+      },
+      "CurbRamp": {
+       "1-2": 160,
+       "3-5": 14,
+       "none": 18
+      },
+      "NoCurbRamp": {
+       "1-2": 69,
+       "3-5": 38,
+       "none": 6
+      },
+      "Obstacle": {
+       "1-2": 6,
+       "3-5": 5,
+       "none": 1
+      },
+      "SurfaceProblem": {
+       "1-2": 37,
+       "3-5": 11,
+       "none": 3
+      }
+     }
+    },
+    "slices": {
+     "severity": [
+      {
+       "all": 365,
+       "label_type": "CurbRamp",
+       "one_decisive": 330,
+       "severity": "(none)",
+       "tie": 17,
+       "unsure_only": 18
+      },
+      {
+       "all": 4283,
+       "label_type": "CurbRamp",
+       "one_decisive": 3688,
+       "severity": "1",
+       "tie": 451,
+       "unsure_only": 144
+      },
+      {
+       "all": 614,
+       "label_type": "CurbRamp",
+       "one_decisive": 522,
+       "severity": "2",
+       "tie": 76,
+       "unsure_only": 16
+      },
+      {
+       "all": 298,
+       "label_type": "CurbRamp",
+       "one_decisive": 254,
+       "severity": "3",
+       "tie": 30,
+       "unsure_only": 14
+      },
+      {
+       "all": 73,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 45,
+       "severity": "(none)",
+       "tie": 22,
+       "unsure_only": 6
+      },
+      {
+       "all": 196,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 128,
+       "severity": "1",
+       "tie": 53,
+       "unsure_only": 15
+      },
+      {
+       "all": 651,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 416,
+       "severity": "2",
+       "tie": 181,
+       "unsure_only": 54
+      },
+      {
+       "all": 464,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 292,
+       "severity": "3",
+       "tie": 134,
+       "unsure_only": 38
+      },
+      {
+       "all": 29,
+       "label_type": "Obstacle",
+       "one_decisive": 15,
+       "severity": "(none)",
+       "tie": 13,
+       "unsure_only": 1
+      },
+      {
+       "all": 59,
+       "label_type": "Obstacle",
+       "one_decisive": 30,
+       "severity": "1",
+       "tie": 26,
+       "unsure_only": 3
+      },
+      {
+       "all": 49,
+       "label_type": "Obstacle",
+       "one_decisive": 23,
+       "severity": "2",
+       "tie": 23,
+       "unsure_only": 3
+      },
+      {
+       "all": 69,
+       "label_type": "Obstacle",
+       "one_decisive": 35,
+       "severity": "3",
+       "tie": 29,
+       "unsure_only": 5
+      },
+      {
+       "all": 49,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 25,
+       "severity": "(none)",
+       "tie": 21,
+       "unsure_only": 3
+      },
+      {
+       "all": 963,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 617,
+       "severity": "1",
+       "tie": 329,
+       "unsure_only": 17
+      },
+      {
+       "all": 250,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 154,
+       "severity": "2",
+       "tie": 76,
+       "unsure_only": 20
+      },
+      {
+       "all": 138,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 82,
+       "severity": "3",
+       "tie": 45,
+       "unsure_only": 11
+      },
+      {
+       "all": 6,
+       "label_type": "Crosswalk",
+       "one_decisive": 4,
+       "severity": "(none)",
+       "tie": 2,
+       "unsure_only": 0
+      },
+      {
+       "all": 29,
+       "label_type": "Crosswalk",
+       "one_decisive": 21,
+       "severity": "1",
+       "tie": 7,
+       "unsure_only": 1
+      },
+      {
+       "all": 12,
+       "label_type": "Crosswalk",
+       "one_decisive": 9,
+       "severity": "2",
+       "tie": 2,
+       "unsure_only": 1
+      },
+      {
+       "all": 14,
+       "label_type": "Crosswalk",
+       "one_decisive": 11,
+       "severity": "3",
+       "tie": 2,
+       "unsure_only": 1
+      }
+     ],
+     "tag": [
+      {
+       "all": 3609,
+       "label_type": "CurbRamp",
+       "one_decisive": 3118,
+       "tag": "(none)",
+       "tie": 375,
+       "unsure_only": 116
+      },
+      {
+       "all": 2,
+       "label_type": "CurbRamp",
+       "one_decisive": 2,
+       "tag": "(other tags)",
+       "tie": 0,
+       "unsure_only": 0
+      },
+      {
+       "all": 1078,
+       "label_type": "CurbRamp",
+       "one_decisive": 933,
+       "tag": "missing tactile warning",
+       "tie": 107,
+       "unsure_only": 38
+      },
+      {
+       "all": 273,
+       "label_type": "CurbRamp",
+       "one_decisive": 238,
+       "tag": "narrow",
+       "tie": 23,
+       "unsure_only": 12
+      },
+      {
+       "all": 145,
+       "label_type": "CurbRamp",
+       "one_decisive": 131,
+       "tag": "not enough landing space",
+       "tie": 11,
+       "unsure_only": 3
+      },
+      {
+       "all": 497,
+       "label_type": "CurbRamp",
+       "one_decisive": 420,
+       "tag": "not level with street",
+       "tie": 65,
+       "unsure_only": 12
+      },
+      {
+       "all": 561,
+       "label_type": "CurbRamp",
+       "one_decisive": 488,
+       "tag": "points into traffic",
+       "tie": 48,
+       "unsure_only": 25
+      },
+      {
+       "all": 117,
+       "label_type": "CurbRamp",
+       "one_decisive": 102,
+       "tag": "steep",
+       "tie": 10,
+       "unsure_only": 5
+      },
+      {
+       "all": 69,
+       "label_type": "CurbRamp",
+       "one_decisive": 57,
+       "tag": "surface problem",
+       "tie": 8,
+       "unsure_only": 4
+      },
+      {
+       "all": 647,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 417,
+       "tag": "(none)",
+       "tie": 182,
+       "unsure_only": 48
+      },
+      {
+       "all": 399,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 254,
+       "tag": "alternate route present",
+       "tie": 108,
+       "unsure_only": 37
+      },
+      {
+       "all": 277,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 178,
+       "tag": "no alternate route",
+       "tie": 78,
+       "unsure_only": 21
+      },
+      {
+       "all": 139,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 85,
+       "tag": "unclear if needed",
+       "tie": 39,
+       "unsure_only": 15
+      },
+      {
+       "all": 37,
+       "label_type": "Obstacle",
+       "one_decisive": 19,
+       "tag": "(none)",
+       "tie": 16,
+       "unsure_only": 2
+      },
+      {
+       "all": 81,
+       "label_type": "Obstacle",
+       "one_decisive": 44,
+       "tag": "(other tags)",
+       "tie": 31,
+       "unsure_only": 6
+      },
+      {
+       "all": 30,
+       "label_type": "Obstacle",
+       "one_decisive": 15,
+       "tag": "parked car",
+       "tie": 13,
+       "unsure_only": 2
+      },
+      {
+       "all": 38,
+       "label_type": "Obstacle",
+       "one_decisive": 18,
+       "tag": "pole",
+       "tie": 17,
+       "unsure_only": 3
+      },
+      {
+       "all": 37,
+       "label_type": "Obstacle",
+       "one_decisive": 15,
+       "tag": "trash/recycling can",
+       "tie": 22,
+       "unsure_only": 0
+      },
+      {
+       "all": 204,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 116,
+       "tag": "(none)",
+       "tie": 69,
+       "unsure_only": 19
+      },
+      {
+       "all": 71,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 49,
+       "tag": "(other tags)",
+       "tie": 19,
+       "unsure_only": 3
+      },
+      {
+       "all": 119,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 71,
+       "tag": "bumpy",
+       "tie": 40,
+       "unsure_only": 8
+      },
+      {
+       "all": 479,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 352,
+       "tag": "cracks",
+       "tie": 114,
+       "unsure_only": 13
+      },
+      {
+       "all": 566,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 325,
+       "tag": "grass",
+       "tie": 230,
+       "unsure_only": 11
+      },
+      {
+       "all": 106,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 70,
+       "tag": "narrow sidewalk",
+       "tie": 29,
+       "unsure_only": 7
+      },
+      {
+       "all": 99,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 54,
+       "tag": "uneven/slanted",
+       "tie": 38,
+       "unsure_only": 7
+      },
+      {
+       "all": 45,
+       "label_type": "Crosswalk",
+       "one_decisive": 36,
+       "tag": "(none)",
+       "tie": 7,
+       "unsure_only": 2
+      },
+      {
+       "all": 20,
+       "label_type": "Crosswalk",
+       "one_decisive": 9,
+       "tag": "(other tags)",
+       "tie": 10,
+       "unsure_only": 1
+      }
+     ]
+    },
+    "strata": {
+     "one_decisive": {
+      "expected_decided": 45,
+      "half_width": 0.241502,
+      "items": 60,
+      "kish_n": 16.466821,
+      "population": 6701,
+      "quota": 60,
+      "weighted_population": 6701,
+      "weighted_types": [
+       "CurbRamp",
+       "NoCurbRamp",
+       "Obstacle",
+       "SurfaceProblem",
+       "Crosswalk"
+      ]
+     },
+     "tie": {
+      "expected_decided": 57,
+      "half_width": 0.155101,
+      "items": 77,
+      "kish_n": 39.923192,
+      "population": 1539,
+      "quota": 80,
+      "weighted_population": 1539,
+      "weighted_types": [
+       "CurbRamp",
+       "NoCurbRamp",
+       "Obstacle",
+       "SurfaceProblem",
+       "Crosswalk"
+      ]
+     },
+     "unsure_only": {
+      "expected_decided": 26,
+      "half_width": 0.248815,
+      "items": 35,
+      "kish_n": 15.513078,
+      "population": 371,
+      "quota": 40,
+      "weighted_population": 368,
+      "weighted_types": [
+       "CurbRamp",
+       "NoCurbRamp",
+       "Obstacle",
+       "SurfaceProblem"
+      ]
+     }
+    }
+   },
+   "mikey": {
+    "cells": {
+     "one_decisive": {
+      "Crosswalk": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 818,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "CurbRamp": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 1228,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "NoCurbRamp": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 315,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "Obstacle": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 80,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "SurfaceProblem": {
+       "available": 12,
+       "expected_decided": 9,
+       "need": 7,
+       "population": 561,
+       "quota": 12,
+       "shortfall": 0,
+       "status": "ok"
+      }
+     },
+     "tie": {
+      "Crosswalk": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 95,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "CurbRamp": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 214,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "NoCurbRamp": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 195,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "Obstacle": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 26,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "SurfaceProblem": {
+       "available": 16,
+       "expected_decided": 12,
+       "need": 7,
+       "population": 176,
+       "quota": 16,
+       "shortfall": 0,
+       "status": "ok"
+      }
+     },
+     "unsure_only": {
+      "Crosswalk": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 28,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "CurbRamp": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 56,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "NoCurbRamp": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 34,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      },
+      "Obstacle": {
+       "available": 2,
+       "expected_decided": 1,
+       "need": 7,
+       "population": 2,
+       "quota": 8,
+       "shortfall": 6,
+       "status": "no_weight"
+      },
+      "SurfaceProblem": {
+       "available": 8,
+       "expected_decided": 6,
+       "need": 7,
+       "population": 25,
+       "quota": 8,
+       "shortfall": 0,
+       "status": "ok"
+      }
+     }
+    },
+    "decoys": {
+     "Crosswalk": {
+      "available": 14,
+      "population": 24226,
+      "quota": 14
+     },
+     "CurbRamp": {
+      "available": 14,
+      "population": 71762,
+      "quota": 14
+     },
+     "NoCurbRamp": {
+      "available": 14,
+      "population": 1125,
+      "quota": 14
+     },
+     "Obstacle": {
+      "available": 14,
+      "population": 6886,
+      "quota": 14
+     },
+     "SurfaceProblem": {
+      "available": 14,
+      "population": 20930,
+      "quota": 14
+     }
+    },
+    "one_decisive_direction": {
+     "Crosswalk": {
+      "agree": 492,
+      "disagree": 326
+     },
+     "CurbRamp": {
+      "agree": 606,
+      "disagree": 622
+     },
+     "NoCurbRamp": {
+      "agree": 49,
+      "disagree": 266
+     },
+     "Obstacle": {
+      "agree": 16,
+      "disagree": 64
+     },
+     "SurfaceProblem": {
+      "agree": 305,
+      "disagree": 256
+     }
+    },
+    "own_items": 244,
+    "rated_items": 294,
+    "schema": "sidewalk_chicago",
+    "severity_buckets": {
+     "one_decisive": {
+      "Crosswalk": {
+       "1-2": 613,
+       "3-5": 163,
+       "none": 42
+      },
+      "CurbRamp": {
+       "1-2": 1057,
+       "3-5": 108,
+       "none": 63
+      },
+      "NoCurbRamp": {
+       "1-2": 141,
+       "3-5": 46,
+       "none": 128
+      },
+      "Obstacle": {
+       "1-2": 60,
+       "3-5": 7,
+       "none": 13
+      },
+      "SurfaceProblem": {
+       "1-2": 445,
+       "3-5": 60,
+       "none": 56
+      }
+     },
+     "tie": {
+      "Crosswalk": {
+       "1-2": 66,
+       "3-5": 27,
+       "none": 2
+      },
+      "CurbRamp": {
+       "1-2": 177,
+       "3-5": 28,
+       "none": 9
+      },
+      "NoCurbRamp": {
+       "1-2": 95,
+       "3-5": 72,
+       "none": 28
+      },
+      "Obstacle": {
+       "1-2": 20,
+       "3-5": 1,
+       "none": 5
+      },
+      "SurfaceProblem": {
+       "1-2": 140,
+       "3-5": 22,
+       "none": 14
+      }
+     },
+     "unsure_only": {
+      "Crosswalk": {
+       "1-2": 21,
+       "3-5": 4,
+       "none": 3
+      },
+      "CurbRamp": {
+       "1-2": 50,
+       "3-5": 5,
+       "none": 1
+      },
+      "NoCurbRamp": {
+       "1-2": 16,
+       "3-5": 5,
+       "none": 13
+      },
+      "Obstacle": {
+       "none": 2
+      },
+      "SurfaceProblem": {
+       "1-2": 24,
+       "none": 1
+      }
+     }
+    },
+    "slices": {
+     "severity": [
+      {
+       "all": 73,
+       "label_type": "CurbRamp",
+       "one_decisive": 63,
+       "severity": "(none)",
+       "tie": 9,
+       "unsure_only": 1
+      },
+      {
+       "all": 999,
+       "label_type": "CurbRamp",
+       "one_decisive": 827,
+       "severity": "1",
+       "tie": 131,
+       "unsure_only": 41
+      },
+      {
+       "all": 285,
+       "label_type": "CurbRamp",
+       "one_decisive": 230,
+       "severity": "2",
+       "tie": 46,
+       "unsure_only": 9
+      },
+      {
+       "all": 141,
+       "label_type": "CurbRamp",
+       "one_decisive": 108,
+       "severity": "3",
+       "tie": 28,
+       "unsure_only": 5
+      },
+      {
+       "all": 169,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 128,
+       "severity": "(none)",
+       "tie": 28,
+       "unsure_only": 13
+      },
+      {
+       "all": 135,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 84,
+       "severity": "1",
+       "tie": 45,
+       "unsure_only": 6
+      },
+      {
+       "all": 117,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 57,
+       "severity": "2",
+       "tie": 50,
+       "unsure_only": 10
+      },
+      {
+       "all": 123,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 46,
+       "severity": "3",
+       "tie": 72,
+       "unsure_only": 5
+      },
+      {
+       "all": 20,
+       "label_type": "Obstacle",
+       "one_decisive": 13,
+       "severity": "(none)",
+       "tie": 5,
+       "unsure_only": 2
+      },
+      {
+       "all": 53,
+       "label_type": "Obstacle",
+       "one_decisive": 41,
+       "severity": "1",
+       "tie": 12,
+       "unsure_only": 0
+      },
+      {
+       "all": 27,
+       "label_type": "Obstacle",
+       "one_decisive": 19,
+       "severity": "2",
+       "tie": 8,
+       "unsure_only": 0
+      },
+      {
+       "all": 8,
+       "label_type": "Obstacle",
+       "one_decisive": 7,
+       "severity": "3",
+       "tie": 1,
+       "unsure_only": 0
+      },
+      {
+       "all": 71,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 56,
+       "severity": "(none)",
+       "tie": 14,
+       "unsure_only": 1
+      },
+      {
+       "all": 310,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 245,
+       "severity": "1",
+       "tie": 49,
+       "unsure_only": 16
+      },
+      {
+       "all": 299,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 200,
+       "severity": "2",
+       "tie": 91,
+       "unsure_only": 8
+      },
+      {
+       "all": 82,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 60,
+       "severity": "3",
+       "tie": 22,
+       "unsure_only": 0
+      },
+      {
+       "all": 47,
+       "label_type": "Crosswalk",
+       "one_decisive": 42,
+       "severity": "(none)",
+       "tie": 2,
+       "unsure_only": 3
+      },
+      {
+       "all": 535,
+       "label_type": "Crosswalk",
+       "one_decisive": 466,
+       "severity": "1",
+       "tie": 48,
+       "unsure_only": 21
+      },
+      {
+       "all": 165,
+       "label_type": "Crosswalk",
+       "one_decisive": 147,
+       "severity": "2",
+       "tie": 18,
+       "unsure_only": 0
+      },
+      {
+       "all": 194,
+       "label_type": "Crosswalk",
+       "one_decisive": 163,
+       "severity": "3",
+       "tie": 27,
+       "unsure_only": 4
+      }
+     ],
+     "tag": [
+      {
+       "all": 607,
+       "label_type": "CurbRamp",
+       "one_decisive": 508,
+       "tag": "(none)",
+       "tie": 74,
+       "unsure_only": 25
+      },
+      {
+       "all": 27,
+       "label_type": "CurbRamp",
+       "one_decisive": 23,
+       "tag": "(other tags)",
+       "tie": 1,
+       "unsure_only": 3
+      },
+      {
+       "all": 55,
+       "label_type": "CurbRamp",
+       "one_decisive": 42,
+       "tag": "debris / pooled water",
+       "tie": 12,
+       "unsure_only": 1
+      },
+      {
+       "all": 697,
+       "label_type": "CurbRamp",
+       "one_decisive": 561,
+       "tag": "missing tactile warning",
+       "tie": 110,
+       "unsure_only": 26
+      },
+      {
+       "all": 93,
+       "label_type": "CurbRamp",
+       "one_decisive": 78,
+       "tag": "narrow",
+       "tie": 10,
+       "unsure_only": 5
+      },
+      {
+       "all": 35,
+       "label_type": "CurbRamp",
+       "one_decisive": 28,
+       "tag": "not enough landing space",
+       "tie": 6,
+       "unsure_only": 1
+      },
+      {
+       "all": 111,
+       "label_type": "CurbRamp",
+       "one_decisive": 86,
+       "tag": "not level with street",
+       "tie": 22,
+       "unsure_only": 3
+      },
+      {
+       "all": 70,
+       "label_type": "CurbRamp",
+       "one_decisive": 60,
+       "tag": "points into traffic",
+       "tie": 7,
+       "unsure_only": 3
+      },
+      {
+       "all": 197,
+       "label_type": "CurbRamp",
+       "one_decisive": 151,
+       "tag": "surface problem",
+       "tie": 36,
+       "unsure_only": 10
+      },
+      {
+       "all": 282,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 165,
+       "tag": "(none)",
+       "tie": 101,
+       "unsure_only": 16
+      },
+      {
+       "all": 80,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 41,
+       "tag": "alternate route present",
+       "tie": 34,
+       "unsure_only": 5
+      },
+      {
+       "all": 138,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 80,
+       "tag": "no alternate route",
+       "tie": 48,
+       "unsure_only": 10
+      },
+      {
+       "all": 60,
+       "label_type": "NoCurbRamp",
+       "one_decisive": 38,
+       "tag": "unclear if needed",
+       "tie": 18,
+       "unsure_only": 4
+      },
+      {
+       "all": 20,
+       "label_type": "Obstacle",
+       "one_decisive": 15,
+       "tag": "(none)",
+       "tie": 4,
+       "unsure_only": 1
+      },
+      {
+       "all": 62,
+       "label_type": "Obstacle",
+       "one_decisive": 44,
+       "tag": "(other tags)",
+       "tie": 17,
+       "unsure_only": 1
+      },
+      {
+       "all": 36,
+       "label_type": "Obstacle",
+       "one_decisive": 28,
+       "tag": "pole",
+       "tie": 8,
+       "unsure_only": 0
+      },
+      {
+       "all": 58,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 47,
+       "tag": "(none)",
+       "tie": 9,
+       "unsure_only": 2
+      },
+      {
+       "all": 113,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 92,
+       "tag": "(other tags)",
+       "tie": 20,
+       "unsure_only": 1
+      },
+      {
+       "all": 60,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 49,
+       "tag": "bumpy",
+       "tie": 8,
+       "unsure_only": 3
+      },
+      {
+       "all": 168,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 134,
+       "tag": "cracks",
+       "tie": 24,
+       "unsure_only": 10
+      },
+      {
+       "all": 87,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 70,
+       "tag": "grass",
+       "tie": 10,
+       "unsure_only": 7
+      },
+      {
+       "all": 341,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 231,
+       "tag": "narrow sidewalk",
+       "tie": 106,
+       "unsure_only": 4
+      },
+      {
+       "all": 63,
+       "label_type": "SurfaceProblem",
+       "one_decisive": 49,
+       "tag": "uneven/slanted",
+       "tie": 10,
+       "unsure_only": 4
+      },
+      {
+       "all": 391,
+       "label_type": "Crosswalk",
+       "one_decisive": 343,
+       "tag": "(none)",
+       "tie": 30,
+       "unsure_only": 18
+      },
+      {
+       "all": 20,
+       "label_type": "Crosswalk",
+       "one_decisive": 19,
+       "tag": "(other tags)",
+       "tie": 1,
+       "unsure_only": 0
+      },
+      {
+       "all": 48,
+       "label_type": "Crosswalk",
+       "one_decisive": 43,
+       "tag": "brick/cobblestone",
+       "tie": 4,
+       "unsure_only": 1
+      },
+      {
+       "all": 87,
+       "label_type": "Crosswalk",
+       "one_decisive": 68,
+       "tag": "broken surface",
+       "tie": 18,
+       "unsure_only": 1
+      },
+      {
+       "all": 62,
+       "label_type": "Crosswalk",
+       "one_decisive": 49,
+       "tag": "bumpy",
+       "tie": 11,
+       "unsure_only": 2
+      },
+      {
+       "all": 466,
+       "label_type": "Crosswalk",
+       "one_decisive": 403,
+       "tag": "paint fading",
+       "tie": 55,
+       "unsure_only": 8
+      },
+      {
+       "all": 55,
+       "label_type": "Crosswalk",
+       "one_decisive": 45,
+       "tag": "uneven surface",
+       "tie": 9,
+       "unsure_only": 1
+      }
+     ]
+    },
+    "strata": {
+     "one_decisive": {
+      "expected_decided": 45,
+      "half_width": 0.175375,
+      "items": 60,
+      "kish_n": 31.225976,
+      "population": 3002,
+      "quota": 60,
+      "weighted_population": 3002,
+      "weighted_types": [
+       "CurbRamp",
+       "NoCurbRamp",
+       "Obstacle",
+       "SurfaceProblem",
+       "Crosswalk"
+      ]
+     },
+     "tie": {
+      "expected_decided": 60,
+      "half_width": 0.141388,
+      "items": 80,
+      "kish_n": 48.042796,
+      "population": 706,
+      "quota": 80,
+      "weighted_population": 706,
+      "weighted_types": [
+       "CurbRamp",
+       "NoCurbRamp",
+       "Obstacle",
+       "SurfaceProblem",
+       "Crosswalk"
+      ]
+     },
+     "unsure_only": {
+      "expected_decided": 25,
+      "half_width": 0.211247,
+      "items": 34,
+      "kish_n": 21.521487,
+      "population": 145,
+      "quota": 40,
+      "weighted_population": 143,
+      "weighted_types": [
+       "CurbRamp",
+       "NoCurbRamp",
+       "SurfaceProblem",
+       "Crosswalk"
+      ]
+     }
+    }
+   }
+  },
+  "unsampled": {
+   "sidewalk_chicago": {
+    "one_decisive": 3002,
+    "tie": 706,
+    "unsure_only": 145
+   },
+   "sidewalk_seattle": {
+    "one_decisive": 6701,
+    "tie": 1539,
+    "unsure_only": 371
+   }
+  }
+ },
+ "cant_tell": 0.25,
+ "crops_checked": false,
+ "design": "unsampled_draft.json",
+ "design_sha256": "76071e768803d70ef0bc54fbd7b232f60522877a201633f93397d9e620469df6",
+ "draft": true,
+ "min_cell": 5,
+ "pool_labels_missing_from_flags": 0,
+ "pool_sha256": "8dd0c178ba88e2000886a42aaf1157f12ec4e48e3995f57d3a6753dec7f74959"
+}

@@ -1194,3 +1194,69 @@ def test_cli_check_design_needs_exclusion_info_and_writes_aggregates_only(tmp_pa
     assert not any(k in ("label_id", "label_uid") or k.endswith("_id") for k in _keys(r))
     assert "sidewalk_a:" not in out.read_text()
     assert "Crop availability is not checked" in printed and "| tie | CurbRamp |" in printed and md.read_text().strip() in printed
+
+
+def test_draft_design_in_repo_is_a_draft_of_250_per_city():
+    d = gr.load_design(DRAFT)
+    assert d["draft"] is True and gr.thin_mode(d) == "split"
+    assert not any(k.lower().endswith("_id") for k in d)  # no rater ids in the design
+    q = gr.quotas(d)
+    assert sum(q.values()) == 250
+    dis = {k: n for k, n in q.items() if k[0] != "decoy" and n}
+    assert {c for c, _ in dis} == set(gr.UNSAMPLED_STRATA) and min(dis.values()) >= 8
+    assert [q[(c, "CurbRamp")] for c in ("tie", "one_decisive", "unsure_only")] == [16, 12, 8]
+
+
+@pytest.mark.skipif(not os.path.exists(os.path.join(ROUND2, "pool.csv.gz")), reason="committed round-2 pool absent")
+def test_committed_design_check_reproduces_from_the_committed_pool():
+    r = json.load(open(DESIGN_JSON))
+    pool = os.path.join(ROUND2, "pool.csv.gz")
+    assert r["pool_sha256"] == rl.sha256_file(pool)
+    sums = dict(reversed(ln.split()) for ln in open(os.path.join(ROUND2, "SHA256SUMS")) if ln.strip())
+    assert r["pool_sha256"] == sums["pool.csv.gz"]
+    assert r["design_sha256"] == rl.sha256_file(DRAFT)
+    design = gr.load_design(DRAFT)
+    before = gr.design_check(rl.load_pool(pool).drop(columns=["author_excluded"], errors="ignore"), design,
+                             r["min_cell"], r["cant_tell"])
+    assert json.loads(json.dumps(before)) == r["before"]
+    rc = json.load(open(os.path.join(ROOT, "docs", "ai-disagree-relabel-2026-10", "round2_recount.json")))
+    assert r["after"]["unsampled"] == rc["after"]["unsampled"]
+    assert r["after"]["eligible_disagrees"] == rc["after"]["eligible_disagrees"]
+    assert r["before"]["unsampled"] == rc["before"]["unsampled"]
+    assert r["author_excluded_sha256"] == rc["author_excluded_sha256"]
+    for rater in design["raters"]:
+        for g in gr.UNSAMPLED_STRATA:  # the after cells partition the recount's unsampled counts
+            schema = design["raters"][rater]
+            assert r["after"]["raters"][rater]["strata"][g]["population"] == rc["after"]["unsampled"][schema][g]
+    assert not any(k in ("label_id", "label_uid") or k.endswith("_id") for k in _keys(r))
+
+
+@pytest.mark.skipif(not (os.path.exists(FLAGS) and os.path.exists(os.path.join(ROUND2, "pool.csv.gz"))),
+                    reason="author_excluded flags are not committed (label ids); local only")
+def test_committed_design_check_after_reproduces_with_the_local_flags():
+    r = json.load(open(DESIGN_JSON))
+    assert rl.sha256_file(FLAGS) == r["author_excluded_sha256"]
+    pool, missing = gr.apply_author_excluded(rl.load_pool(os.path.join(ROUND2, "pool.csv.gz")), pd.read_csv(FLAGS))
+    after = gr.design_check(pool, gr.load_design(DRAFT), r["min_cell"], r["cant_tell"])
+    assert json.loads(json.dumps(after)) == r["after"] and missing == r["pool_labels_missing_from_flags"]
+
+
+def test_design_doc_quotes_the_committed_check():
+    """The page's population rows, precision rows, item counts and pins are the committed JSON's."""
+    r = json.load(open(DESIGN_JSON))
+    doc = open(os.path.join(ROOT, "docs", "ai-disagree-relabel-2026-10", "unsampled_strata_design.md")).read()
+    assert f"`{rl.sha256_file(DESIGN_JSON)}`" in doc and f"`{r['design_sha256']}`" in doc
+    assert f"`{r['pool_sha256']}`" in doc and f"`{r['author_excluded_sha256']}`" in doc
+    flat = " ".join(doc.split())
+    for rater, city in (("jon", "Seattle"), ("mikey", "Chicago")):
+        x = r["after"]["raters"][rater]
+        for g in gr.UNSAMPLED_STRATA:
+            row = " | ".join(f"{x['cells'][g][t]['population']:,}" for t in gr.LABEL_TYPES)
+            assert f"| {g} | {row} | {x['strata'][g]['population']:,} |" in doc, (city, g)
+            s = x["strata"][g]
+            assert (f"| {g} | {s['expected_decided']} | ±{100 * s['half_width']:.1f}" in doc
+                    and f" | {round(s['kish_n'])} | " in doc), (city, g)
+            for t, c in x["cells"][g].items():  # every cell that is not ok is named in the cells table
+                assert c["status"] == "ok" or f"**{c['status']}**" in doc, (city, g, t)
+        assert f"{x['own_items']} and" in flat or f"and {x['own_items']} own-city" in flat, city
+        assert f"({x['rated_items']} and" in flat or f"and {x['rated_items']} rated" in flat, city
