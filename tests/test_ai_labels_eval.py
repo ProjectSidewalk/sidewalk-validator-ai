@@ -408,3 +408,32 @@ def test_report_leaves_out_labels_with_no_human_reference(tmp_path):
     md = (tmp_path / "rep" / "tables.md").read_text()
     assert "Labels with no human reference left out of every table: 3." in md
     assert "| unseen, all three | 2 | 1 |" in md  # the two voted AI labels only, not 5
+
+
+# Issue #114: Mapillary pano_ids are all digits. Synthetic ids (the ones tests/test_generation_run.py uses).
+MLY_A, MLY_B = "1792391791667719", "2001774006895864"
+
+
+def test_read_labels_keeps_all_digit_pano_ids_as_strings(tmp_path):
+    (tmp_path / "labels.csv").write_text(f"label_uid,label_id,pano_id\nm:1,1,{MLY_A}\nm:2,2,{MLY_B}\n")
+    df = ae.read_labels(str(tmp_path / "labels.csv"))
+    assert not pd.api.types.is_numeric_dtype(df.pano_id)
+    assert df.pano_id.tolist() == [MLY_A, MLY_B]
+    assert ae.dg.pano_store_path("/store", "m", df.pano_id.iloc[0]) == f"/store/m/17/{MLY_A}.jpg"
+
+
+def test_read_labels_blank_pano_id_does_not_float_the_others(tmp_path):
+    (tmp_path / "labels.csv").write_text(f"label_uid,label_id,pano_id\nm:1,1,{MLY_A}\nm:2,2,\nm:3,3,{MLY_B}\n")
+    df = ae.read_labels(str(tmp_path / "labels.csv"))
+    assert df.pano_id.iloc[[0, 2]].tolist() == [MLY_A, MLY_B]  # not '1792391791667719.0'
+    assert df.pano_id.isna().iloc[1]
+
+
+def test_load_run_keeps_all_digit_pano_ids_as_strings(tmp_path):
+    run = _ablation_run(tmp_path)
+    labels = pd.read_csv(run / "labels.csv", dtype=str, keep_default_na=False)
+    ids = [str(int(MLY_A) + i) for i in range(len(labels))]
+    labels.assign(pano_id=ids).to_csv(run / "labels.csv", index=False)
+    df = ae.load_run(str(run), str(run / "predictions_with.csv"))
+    assert not pd.api.types.is_numeric_dtype(df.pano_id)
+    assert df.pano_id.tolist() == ids

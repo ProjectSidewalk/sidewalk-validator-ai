@@ -794,3 +794,16 @@ def test_fine_tune_records_job_window_crops_only_when_set(tmp_path):
 def _write_priors_many(path, label_type):  # module level, so a spawned process can import it
     for i in range(40):
         dg.update_deployment_priors(path, label_type, {"correct": i, "incorrect": i})
+
+
+@pytest.mark.parametrize("bad", [1792391791667719, np.int64(1792391791667719), float("nan")])
+def test_pano_store_path_refuses_a_pano_id_that_is_not_a_string(bad):
+    # Issue #114: an all-digit Mapillary pano_id read without PANO_ID_DTYPE arrives as a number. Raise rather than
+    # coerce: str() of a float id ('1792391791667719.0') is a different, wrong path.
+    with pytest.raises(TypeError, match="PANO_ID_DTYPE"):
+        dg.pano_store_path("/store", "m", bad)
+
+
+def test_pano_store_path_accepts_str_and_numpy_str():
+    assert dg.pano_store_path("/store", "m", "1792391791667719") == "/store/m/17/1792391791667719.jpg"
+    assert dg.pano_store_path("/store", "m", np.str_("1792391791667719")) == "/store/m/17/1792391791667719.jpg"

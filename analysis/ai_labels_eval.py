@@ -591,8 +591,14 @@ def read_labels(path):
     >>> import io
     >>> read_labels(io.StringIO("label_uid,label_id,expert_class,tier\\nx:1,1,,core\\nx:2,2,correct,")).expert_class.tolist()
     ['', 'correct']
+
+    ``pano_id`` is always a string: Mapillary ids are all digits, and pandas would otherwise read them as numbers
+    (issue #114).
+
+    >>> read_labels(io.StringIO("label_uid,label_id,pano_id\\nx:1,1,1792391791667719")).pano_id.tolist()
+    ['1792391791667719']
     """
-    df = pd.read_csv(path, dtype={"label_id": str}, low_memory=False)
+    df = pd.read_csv(path, dtype={"label_id": str, **dg.PANO_ID_DTYPE}, low_memory=False)
     for c in TEXT_COLS:
         if c in df:
             df[c] = df[c].astype(object).fillna("").astype(str)
