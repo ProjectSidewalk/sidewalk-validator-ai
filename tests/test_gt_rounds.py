@@ -1080,7 +1080,7 @@ def test_build_writes_direction_from_eligible_rows_and_records_the_exclusion(tmp
     """The manifest's one_decisive_direction counts eligible rows only (#106 review R5), and the manifest records
     that excluded authors' labels are out, so ``score`` without ``--pool`` does not warn (R4)."""
     args, pp, dp, kdir = _split_round(tmp_path, monkeypatch)
-    pool = pd.read_csv(pp)
+    pool = pd.read_csv(pp, dtype={"expert1": object})  # all empty: float64 otherwise, which pandas 3 won't set
     od = pool[(pool.schema == "sidewalk_a") & (pool.label_type == "CurbRamp") & (pool.h_agree == 1)
               & (pool.h_dis == 0) & (pool.h_unsure == 0) & (pool.ai_vote == "Disagree")].index
     assert len(od) == 12
