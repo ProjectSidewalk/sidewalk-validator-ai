@@ -622,7 +622,8 @@ def test_step_b_and_features_markdown():
     rec = runs.recommendation(run, refit_single=b["groups"]["single"]["score"])
     cp = {"rows": 1, "median_abs_delta_logit": 0.0, "p90_abs_delta_logit": 0.0, "max_abs_delta_logit": 0.0,
           "verdict_flips": 0, "pass_flips": 0, "heldout": {"rows": 0}, "split_rows_without_face": 13}
-    p = {"step_b": b, "recommendation": rec, "step_a": a, "crop_parity": cp, "r3_coverage": {"labels": 1, "scored": 1}}
+    p = {"step_b": b, "recommendation": rec, "step_a": a, "crop_parity": cp,
+         "r3_coverage": runs.r3_coverage(pd.DataFrame({"city": ["c"], "scored": [1]}))}
     md = "\n".join(runs.step_b_markdown(p) + runs.step_a_markdown(p))
     assert "What pooling adds" in md and "13 split rows without a face" in md and "Per city" in md
     train = synthetic_second_stage()
@@ -631,3 +632,80 @@ def test_step_b_and_features_markdown():
     f = {"face_check": {"step_a": {}, "step_b": {}}, "variants": {"without_expert_placed": blk}}
     fmd = "\n".join(runs.features_markdown(f))
     assert "By tag, without expert placed" in fmd and "ends abruptly" in fmd
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# review round 2
+# ---------------------------------------------------------------------------------------------------------------------
+
+def write_scores(root, name, n_folds, seed):
+    d = root / name
+    os.makedirs(d)
+    for k in range(n_folds):
+        pd.DataFrame({"label_uid": [f"c{seed}:{i}" for i in range(3)],
+                      "p_correct": [0.1 * (seed + k + i + 1) for i in range(3)]}).to_csv(
+            d / f"predictions_fold{k}.csv", index=False)
+    return str(d)
+
+
+def test_r3_pins_match_by_content_not_directory_name(tmp_path, monkeypatch):
+    """S2: score directories copied back under other names are still checked; nothing pinned, a changed file or an
+    extra file stops the run."""
+    a, b = write_scores(tmp_path, "a", 2, 0), write_scores(tmp_path, "b", 2, 5)
+    _, shas = runs.read_predictions([a, b], 2)
+    pins = {f"r3_{n.replace('/', '_').removesuffix('.csv')}": v for n, v in shas.items()}
+    monkeypatch.setattr(runs, "PINS", {k: v for k, v in runs.PINS.items() if not k.startswith("r3_")})
+    with pytest.raises(SystemExit, match="no R3 prediction is pinned"):
+        runs.check_r3_pins(shas, allow_unpinned=False)
+    monkeypatch.setattr(runs, "PINS", {**runs.PINS, **pins})
+    assert runs.check_r3_pins(shas, allow_unpinned=False) == shas
+    renamed = [write_scores(tmp_path, "klone-a", 2, 0), write_scores(tmp_path, "klone-b", 2, 5)]
+    _, shas2 = runs.read_predictions(renamed, 2)
+    assert runs.check_r3_pins(shas2, allow_unpinned=False) == shas2
+    changed = [write_scores(tmp_path, "klone-a2", 2, 1), b]
+    _, shas3 = runs.read_predictions(changed, 2)
+    with pytest.raises(SystemExit, match="do not match"):
+        runs.check_r3_pins(shas3, allow_unpinned=False)
+    with pytest.raises(SystemExit, match="do not match"):
+        runs.check_r3_pins({k: v for k, v in shas.items() if "fold1" not in k}, allow_unpinned=False)
+    with pytest.raises(ValueError, match="share the name"):      # two directories named a would share one key
+        runs.read_predictions([a, write_scores(tmp_path / "x", "a", 2, 7)], 2)
+
+
+def test_r3_coverage_threshold_stops_and_is_printed():
+    """S3: under the plan's 90 % the run stops; the page prints the threshold, the outcome and the cities that are
+    not fully scored."""
+    t = pd.DataFrame({"city": ["s"] * 8 + ["o"] * 2, "scored": [1] * 6 + [0, 0] + [1, 1]})
+    cov = runs.r3_coverage(t)
+    assert cov["threshold"] == 0.9 and not cov["meets_threshold"]
+    assert cov["per_city"]["s"] == {"labels": 8, "scored": 6, "share": 0.75}
+    with pytest.raises(SystemExit, match="under the plan's 90%"):
+        runs.require_coverage(cov)
+    ok = runs.r3_coverage(pd.DataFrame({"city": ["s"] * 19 + ["o"], "scored": [1] * 18 + [0, 1]}))
+    assert ok["meets_threshold"] and runs.require_coverage(ok) is ok
+    t = synthetic_step_a()
+    pi = {"correct": 0.8, "incorrect": 0.2}
+    a = runs.step_a_pooling(t, pi, n_boot=0, seed=0, groups=("single", "run"), train=t[["label_uid", "tags", "severity"]])
+    cp = {"rows": 1, "median_abs_delta_logit": 0.0, "p90_abs_delta_logit": 0.0, "max_abs_delta_logit": 0.0,
+          "verdict_flips": 0, "pass_flips": 0}
+    md = "\n".join(runs.step_a_markdown({"step_a": a, "crop_parity": cp, "r3_coverage": ok}))
+    assert "the plan's threshold is 90 %: met" in md and "s 18 of 19" in md and "o 1 of 1" not in md
+
+
+def test_step_a_table_refuses_a_face_in_two_folds():
+    """S5: the two-fold check in step_a_table itself (the same condition is checked downstream too)."""
+    faces, p, split, gate_preds = step_a_inputs()
+    faces.loc[1, "fold_of_face"] = 3.0
+    with pytest.raises(ValueError, match="two folds"):
+        runs.step_a_table(faces, p, split, gate_preds)
+
+
+def test_heldout_sensitivity_drops_every_label_on_a_step_a_heldout_face():
+    """S6: pilot_heldout marks only the held-out split rows; a neighbour on the same held-out face with
+    pilot_heldout = 0 must leave the held-out sensitivity too."""
+    rated, fs = step_b_frames()
+    fs = fs.assign(trained_pano=0, pilot_heldout=0)
+    fs.loc[fs["label_uid"] == "c:1:left:2", "pilot_heldout"] = 1
+    mem = runs.step_b_members(fs, rated, step_a_heldout={"c:1:left:2", "c:1:left:3"})
+    m = dict(zip(fs["label_uid"], mem["no_trained_pano_or_pilot_heldout"]))
+    assert not m["c:1:left:2"] and not m["c:1:left:3"] and m["c:1:left:1"] and m["c:2:left:1"]

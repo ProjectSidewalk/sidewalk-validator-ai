@@ -188,6 +188,11 @@ NoSidewalk on the 2026-11-05 pull, cities with >= 1,000 labels:
   re-scored nor pooled.
 - **Distance is a straight line** between label points, a proxy for distance along the street.
 - Shared panoramas: a panorama can carry labels of two faces, so face-grouped resampling is not panorama-grouped.
+- **Step (b) and step (a) held-out faces.** 7 of the 250 rated step (b) labels sit on step (a) held-out faces (3 of
+  them were held-out split rows). Nothing is fitted on held-out rows, so this is not a leak. `pilot_heldout` in
+  `face_scores.csv` marks only the held-out split rows, so the step (b) sensitivity "without neighbours on trained
+  panoramas or on step (a) held-out faces" drops every label on those faces, taken from the step (a) table; a rated
+  label itself always counts in its own pool.
 
 ## Follow-ups (one issue, filed by Jon or at his word)
 
@@ -239,9 +244,11 @@ python analysis/nosidewalk_runs.py report --agreement $D/runs/agreement.json --p
 `slices.rawlabels_files_sha256`), the cities snapshot, the cityparams snapshot, the expert vote times, gate2's
 `folds.csv`, `folds.json`, five `split.csv` and five out-of-fold prediction files (as in
 `docs/nosidewalk-2026-11/neighbours.json`), `step_a_faces.csv`, and round (b)'s key, sheet, `face_scores.csv` and
-deployment priors. Pins are keyed by input, not by file name. **Not yet pinned:** the R3 step (a) predictions, which
-are added to `PINS` when they are copied back from klone (until then `pooling` and `features` record their sha256
-without a check). `report` checks the cities snapshot and records the sha256 of the three JSONs it reads, which
+deployment priors. Pins are keyed by input, not by file name. The R3 step (a) predictions are matched by content:
+`pooling` and `features` stop unless the files they read are exactly the `r3_*` files in `PINS`, whatever the score
+directories are called, and they stop while none is pinned. They also stop when R3 scored under the plan's 90 % of
+the step (a) labels (the plan's fallback, subset pooling over the split rows, is a different run that this code does
+not report). `report` checks the cities snapshot and records the sha256 of the three JSONs it reads, which
 are this page's own outputs. `agreement`, `pooling` and `features` refuse to replace an output whose bytes would
 change unless given `--force`. Seeds: `--seed 0`, 1,000 permutations and 1,000 bootstrap resamples; 50 m for group
 D; vote-gap strata at 1 h and 1 day.

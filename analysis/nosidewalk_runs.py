@@ -79,6 +79,9 @@ GROUP_TEXT = {"single": "the label alone", "run": "the labeler's run on the face
               "face": "the whole face (F)", "face_loo": "the face without the label itself",
               "run_pano": "the run, one vote per panorama (P)", "near50": "labels within 50 m on the face (D)"}
 NEAR_M = 50.0
+#: The plan's R3 threshold: under this share of step (a) labels scored, the re-scored tables are not the plan's and
+#: its fallback (subset pooling over the split rows, labelled so) applies instead.
+R3_MIN_COVERAGE = 0.9
 START, END = "<!-- nosidewalk-runs-results:start -->", "<!-- nosidewalk-runs-results:end -->"
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 #: ``label_validation.source`` values grouped for the source stratum.
@@ -922,7 +925,10 @@ def read_predictions(dirs, n_folds):
         for d in dirs:
             path = os.path.join(d, f"predictions_fold{k}.csv")
             frames.append(pd.read_csv(path, dtype={"label_uid": str}))
-            shas[f"{os.path.basename(os.path.normpath(d))}/predictions_fold{k}.csv"] = rl.sha256_file(path)
+            name = f"{os.path.basename(os.path.normpath(d))}/predictions_fold{k}.csv"
+            if name in shas:
+                raise ValueError(f"two score directories share the name {name.split('/')[0]!r}")
+            shas[name] = rl.sha256_file(path)
         preds[k] = pd.concat(frames, ignore_index=True)
         if not preds[k]["label_uid"].is_unique:
             raise ValueError(f"fold {k}: a label was scored twice")
@@ -1582,7 +1588,7 @@ PINS = {
     "cities_json": "8d09c714b45602ad9358da578b5b57c2f8d9aa84be070e85c91d6732aabf064c",
     "cityparams_snapshot.conf": "eed92cfd7658762f981c082f135fa1474041d688c7b3ef63f21278263026a899",
     # TODO(#102 results run): the R3 step (a) predictions, keyed "r3_<a|b>_predictions_fold<k>", once copied back
-    # from klone; until then read_predictions records their sha256 without a check.
+    # from klone. check_r3_pins matches them by content, not by name, and stops the run while none is pinned.
 }
 
 
@@ -1592,6 +1598,26 @@ def check_pin(name, sha, allow_unpinned):
     if want is not None and sha != want and not allow_unpinned:
         sys.exit(f"{name}: sha256 {sha[:12]}... is not the pinned {want[:12]}... (pass --allow-unpinned only in tests)")
     return sha
+
+
+def check_r3_pins(shas, allow_unpinned):
+    """Stop unless the R3 prediction files read (``{name: sha256}``) are exactly the files pinned under ``r3_*`` in
+    ``PINS``. Matched by content, not by name, so a score directory copied back under another name is still
+    checked; a missing, extra or changed file stops the run, and so does an empty ``r3_*`` pin set (unless
+    ``allow_unpinned``). Returns ``shas``."""
+    want = sorted(v for k, v in PINS.items() if k.startswith("r3_"))
+    if allow_unpinned:
+        return shas
+    if not want:
+        sys.exit("no R3 prediction is pinned in PINS (r3_*): pin the copied-back predictions first "
+                 "(--allow-unpinned only in tests)")
+    got = sorted(shas.values())
+    if got != want:
+        extra = [n for n, v in sorted(shas.items()) if v not in want]
+        missing = len([v for v in want if v not in got])
+        sys.exit(f"R3 predictions do not match the {len(want)} pinned r3_* files: {len(extra)} unpinned "
+                 f"({', '.join(extra[:3])}{'...' if len(extra) > 3 else ''}), {missing} pinned file(s) not read")
+    return shas
 
 
 def pull_sums(directory, name, allow_unpinned):
@@ -1707,6 +1733,30 @@ def cmd_agreement(args):
     return 0
 
 
+def r3_coverage(t, threshold=R3_MIN_COVERAGE):
+    """How much of the step (a) table the R3 scores cover, against the plan's threshold, overall and per city.
+
+    >>> r3_coverage(pd.DataFrame({"city": ["a", "a", "b"], "scored": [1, 0, 1]}))["per_city"]["a"]
+    {'labels': 2, 'scored': 1, 'share': 0.5}
+    """
+    share = float(t["scored"].mean()) if len(t) else 0.0
+    per = t.groupby("city")["scored"].agg(["size", "sum"])
+    return {"labels": int(len(t)), "scored": int(t["scored"].sum()), "share": share, "threshold": threshold,
+            "meets_threshold": bool(share >= threshold),
+            "per_city": {c: {"labels": int(r["size"]), "scored": int(r["sum"]), "share": float(r["sum"] / r["size"])}
+                         for c, r in per.iterrows()}}
+
+
+def require_coverage(cov):
+    """Stop when R3 scored under the plan's threshold: the tables would pool runs over a fraction of their labels
+    without saying so, and the plan's fallback (subset pooling over the split rows) is a different run."""
+    if not cov["meets_threshold"]:
+        sys.exit(f"R3 scored {cov['scored']:,} of {cov['labels']:,} step (a) labels ({cov['share']:.1%}), under the "
+                 f"plan's {cov['threshold']:.0%}: resubmit the scoring job, or run the plan's fallback (subset "
+                 "pooling over the split rows, every table labelled so); this code does not report a partial run")
+    return cov
+
+
 def load_step_a(args):
     faces_path = os.path.join(args.step_a, "step_a_faces.csv")
     check_pin("step_a_faces.csv", rl.sha256_file(faces_path), args.allow_unpinned)
@@ -1717,10 +1767,10 @@ def load_step_a(args):
     split, trained, n_folds = gate_split(args.gate)
     gate_pins = check_gate_pins(args.gate, n_folds, args.allow_unpinned, predictions=True)
     preds, shas = read_predictions(args.scores, n_folds)
-    for name, sha in shas.items():  # "<a|b>/predictions_fold<k>.csv" -> "r3_<a|b>_predictions_fold<k>"
-        check_pin("r3_" + name.replace("/", "_").removesuffix(".csv"), sha, args.allow_unpinned)
+    check_r3_pins(shas, args.allow_unpinned)
     gate_preds = {k: pd.read_csv(ng.predictions_path(args.gate, k), dtype={"label_uid": str}) for k in range(n_folds)}
     t = step_a_table(faces, preds, split, gate_preds)
+    require_coverage(r3_coverage(t))
     inputs = {"step_a_faces": rl.sha256_file(faces_path), "r3_predictions": shas, "gate2": gate_pins}
     return t, split, gate_preds, inputs, n_folds
 
@@ -1739,12 +1789,15 @@ def load_step_b(args):
     return rated, fs, inputs
 
 
-def step_b_members(fs, rated):
-    """Neighbour filters of the step (b) sensitivities, masks on ``fs``."""
+def step_b_members(fs, rated, step_a_heldout=()):
+    """Neighbour filters of the step (b) sensitivities, masks on ``fs``. ``step_a_heldout`` holds the label uids of
+    every label on a step (a) held-out face: ``pilot_heldout`` in ``face_scores.csv`` marks only the held-out *split*
+    rows, so the labels beside them on the same faces would otherwise stay in the held-out sensitivity."""
     scored = fs["p_correct_0"].notna()
     touched = fs.groupby("face_id")[["rater_placed", "rater_voted"]].transform("max").max(axis=1) == 1
+    held = (fs["pilot_heldout"] == 1) | fs["label_uid"].isin(set(step_a_heldout))
     return {"no_rater_placed_or_voted": scored & (fs["rater_placed"] == 0) & (fs["rater_voted"] == 0),
-            "no_trained_pano_or_pilot_heldout": scored & (fs["trained_pano"] == 0) & (fs["pilot_heldout"] == 0),
+            "no_trained_pano_or_pilot_heldout": scored & (fs["trained_pano"] == 0) & ~held,
             "_touched_faces": set(fs.loc[touched, "face_id"])}
 
 
@@ -1755,8 +1808,7 @@ def cmd_pooling(args):
     out = {"inputs": inputs, "gate": ng.GATE, "prior": pi_deploy,
            "settings": {"n_boot": args.n_boot, "seed": args.seed, "near_m": NEAR_M, "groups": list(GROUPS)}}
     out["crop_parity"] = crop_parity(t, gate_preds, pi_deploy, split=split)
-    out["r3_coverage"] = {"labels": int(len(t)), "scored": int(t["scored"].sum()),
-                          "share": float(t["scored"].mean())}
+    out["r3_coverage"] = r3_coverage(t)
     train = split[split["split"].isin(["train", "val", "test"])][["label_uid", "tags", "severity"]]
     out["step_a"] = step_a_pooling(t, pi_deploy, args.n_boot, args.seed, train=train)
     if args.gate1:
@@ -1773,7 +1825,7 @@ def cmd_pooling(args):
     out["step_b"]["singleton_runs"] = singleton_runs(rated, fs)
     out["recommendation"] = recommendation(out["step_b"]["groups"]["run"]["score"],
                                            refit_single=out["step_b"]["groups"]["single"]["score"])
-    mem = step_b_members(fs, rated)
+    mem = step_b_members(fs, rated, step_a_heldout=t.loc[t["fold"] < 0, "label_uid"])
     sens = {}
     for name in ("no_rater_placed_or_voted", "no_trained_pano_or_pilot_heldout"):
         sens[name] = step_b_pooling(rated, fs, maps, pi_deploy, n_boot=0, seed=args.seed, groups=("run",),
@@ -2059,8 +2111,8 @@ def step_b_markdown(p):
     lines += ["", "Sensitivities of the primary gate (run, score pooling):", "", GATE_HEAD,
               "|---|---|---|---|---|---|---|---|---|---|"]
     for name, text in (("no_rater_placed_or_voted", "without neighbours the rater placed or voted on"),
-                       ("no_trained_pano_or_pilot_heldout", "without neighbours on trained panoramas or pilot "
-                                                            "held-out rows"),
+                       ("no_trained_pano_or_pilot_heldout", "without neighbours on trained panoramas or on step (a) "
+                                                            "held-out faces"),
                        ("without_touched_faces", f"without the {s['touched_faces_rated']} faces the rater had touched")):
         lines.append(_gate_row(text, "score", s[name]))
     for c, blk in s["per_city"].items():
@@ -2083,7 +2135,13 @@ def step_a_markdown(p):
     lines = ["#### Item 2 on step (a), out of fold (secondary; exploratory)", "",
              f"Every NoSidewalk label on the {a['counts']['oof_faces']} out-of-fold faces and the held-out faces was "
              f"re-cropped and scored with the kept gate2 weights ({cov['scored']:,} of {cov['labels']:,} labels "
-             f"scored), each out-of-fold face by its own fold's model only. Both arms use these re-scored values; "
+             f"scored, {100 * cov['share']:.1f} %; the plan's threshold is "
+             f"{100 * cov.get('threshold', R3_MIN_COVERAGE):.0f} %: "
+             f"{'met' if cov.get('meets_threshold', cov['share'] >= R3_MIN_COVERAGE) else 'NOT MET'}"
+             + ("; " + ", ".join(f"{c} {v['scored']:,} of {v['labels']:,}" for c, v in cov['per_city'].items()
+                                 if v['scored'] < v['labels']) + " (every other city fully scored)"
+                if any(v['scored'] < v['labels'] for v in cov.get('per_city', {}).values()) else "")
+             + "), each out-of-fold face by its own fold's model only. Both arms use these re-scored values; "
              f"against gate2's own predictions for the {cp['rows']} split rows (other crop path) the median |delta "
              f"logit| is {_f(cp['median_abs_delta_logit'])} (90th percentile {_f(cp['p90_abs_delta_logit'])}, max "
              f"{_f(cp['max_abs_delta_logit'])}), {cp['verdict_flips']} verdicts flip at 0.5 and {cp['pass_flips']} "
