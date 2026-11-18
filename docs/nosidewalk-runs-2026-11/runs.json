@@ -1,0 +1,6145 @@
+{
+ "agreement": {
+  "inputs": {
+   "cities_json": "8d09c714b45602ad9358da578b5b57c2f8d9aa84be070e85c91d6732aabf064c",
+   "cityparams": "eed92cfd7658762f981c082f135fa1474041d688c7b3ef63f21278263026a899",
+   "vote_times": "6662148df20f55ae728883c9b9324a15946ca002c8772037f12878146cf413ad",
+   "ns_pull_sums": "0907a87e52e04dec27d11828b59109c2e4bfa2a924cba2f2774d9bb5b1fec178",
+   "all_pull_public_files_sums": "5260f4b648a5de46c3762cfc1621cd776fe4d9471b26a7b88eca090d326efab6",
+   "all_pull_public_files": 46,
+   "all_pull_files_sha256": "99e286e784c01f5a940716d8ee0e4aef91c0b057989bcedc280e19e298525e7b",
+   "all_pull_files": 54,
+   "all_pull_same_as": "docs/deployment-gate-2026-11/provenance.json slices.rawlabels_files_sha256"
+  },
+  "experts": 2,
+  "public_cities": 46,
+  "settings": {
+   "n_perm": 1000,
+   "n_boot": 1000,
+   "seed": 0,
+   "min_runs": 10,
+   "gap_edges_hours": [
+    1.0,
+    24.0
+   ],
+   "ns_as_of": "2026-11-06",
+   "all_as_of": "2026-10-19"
+  },
+  "nosidewalk": {
+   "counts": {
+    "labels": 237421,
+    "expert_placed": 19835,
+    "ai_placed": 0,
+    "experts_split": 1,
+    "crowd_contradicts_dropped": 0,
+    "with_verdict": 2400,
+    "without_face": 119
+   },
+   "per_city": {
+    "seattle-wa": {
+     "labels": 700,
+     "labels_in_multi_runs": 235,
+     "multi_runs": 77,
+     "labelers": 194,
+     "pairs": 368,
+     "share_correct": 0.76,
+     "pair_agreement": 0.9836956521739131,
+     "pair_agreement_run_weighted": 0.9688311688311687,
+     "homogeneous_share": 0.961038961038961,
+     "icc": 0.9551646019571309,
+     "pair_agreement_ci95": [
+      0.9546570872452484,
+      1.0
+     ],
+     "null_city": {
+      "mean": 0.6361032608695653,
+      "sd": 0.0366334528519306,
+      "p": 0.000999000999000999
+     },
+     "null_labeler": {
+      "mean": 0.9435326086956521,
+      "sd": 0.012137206145594538,
+      "p": 0.001998001998001998
+     },
+     "same_labeler_other_face": 0.9408090422367639,
+     "same_labeler_other_face_pairs": 6724,
+     "same_face_other_labeler": 0.96,
+     "same_face_other_labeler_pairs": 25,
+     "city_any": 0.6346781115879828
+    },
+    "chicago-il": {
+     "labels": 215,
+     "labels_in_multi_runs": 86,
+     "multi_runs": 22,
+     "labelers": 78,
+     "pairs": 300,
+     "share_correct": 0.627906976744186,
+     "pair_agreement": 1.0,
+     "pair_agreement_run_weighted": 1.0,
+     "homogeneous_share": 1.0,
+     "icc": 1.0,
+     "pair_agreement_ci95": [
+      1.0,
+      1.0
+     ],
+     "null_city": {
+      "mean": 0.5323966666666667,
+      "sd": 0.0385913166794862,
+      "p": 0.000999000999000999
+     },
+     "null_labeler": {
+      "mean": 0.8036666666666666,
+      "sd": 0.030328348085355315,
+      "p": 0.000999000999000999
+     },
+     "same_labeler_other_face": 0.7256317689530686,
+     "same_labeler_other_face_pairs": 554,
+     "same_face_other_labeler": 1.0,
+     "same_face_other_labeler_pairs": 243,
+     "city_any": 0.5305368398174309
+    },
+    "oradell-nj": {
+     "labels": 1076,
+     "labels_in_multi_runs": 1000,
+     "multi_runs": 142,
+     "labelers": 23,
+     "pairs": 6570,
+     "share_correct": 0.9786245353159851,
+     "pair_agreement": 0.989041095890411,
+     "pair_agreement_run_weighted": 0.9852448021462108,
+     "homogeneous_share": 0.9647887323943662,
+     "icc": 0.640965760804992,
+     "pair_agreement_ci95": [
+      0.9691514654493055,
+      0.9991190938565522
+     ],
+     "null_city": {
+      "mean": 0.9586042617960426,
+      "sd": 0.00718953806890929,
+      "p": 0.000999000999000999
+     },
+     "null_labeler": {
+      "mean": 0.9699462709284628,
+      "sd": 0.006120263490397731,
+      "p": 0.000999000999000999
+     },
+     "same_labeler_other_face": 0.9257279006112521,
+     "same_labeler_other_face_pairs": 70511,
+     "same_face_other_labeler": 0.9415556510528578,
+     "same_face_other_labeler_pairs": 2327,
+     "city_any": 0.9581239733725253
+    },
+    "other": {
+     "labels": 290,
+     "labels_in_multi_runs": 99,
+     "multi_runs": 40,
+     "labelers": 97,
+     "pairs": 84,
+     "share_correct": 0.9586206896551724,
+     "pair_agreement": 0.9523809523809523,
+     "pair_agreement_run_weighted": 0.9833333333333332,
+     "homogeneous_share": 0.975,
+     "icc": null,
+     "pair_agreement_ci95": [
+      0.8680952380952381,
+      1.0
+     ],
+     "null_city": {
+      "mean": 0.9153214285714284,
+      "sd": 0.031436696740535224,
+      "p": 0.15684315684315683
+     },
+     "null_labeler": {
+      "mean": 0.9342142857142858,
+      "sd": 0.0243320679870356,
+      "p": 0.2987012987012987
+     },
+     "same_labeler_other_face": 0.9249394673123487,
+     "same_labeler_other_face_pairs": 826,
+     "same_face_other_labeler": 0.8888888888888888,
+     "same_face_other_labeler_pairs": 9,
+     "city_any": 0.928369994359842,
+     "n_cities": 24
+    }
+   },
+   "macro": {
+    "cities": [
+     "chicago-il",
+     "oradell-nj",
+     "seattle-wa"
+    ],
+    "n_cities": 3,
+    "pair_agreement": 0.9909122493547747,
+    "pair_agreement_ci95": [
+     0.9790854408089785,
+     0.9979610887761539
+    ],
+    "icc": 0.8653767875873744,
+    "homogeneous_share": 0.975275897811109,
+    "null_city": {
+     "mean": 0.7090347297774248,
+     "sd": 0.01774718722944559,
+     "p": 0.000999000999000999
+    },
+    "null_labeler": {
+     "mean": 0.9057151820969273,
+     "sd": 0.011201334394787965,
+     "p": 0.000999000999000999
+    },
+    "same_labeler_other_face": 0.8640562372670283,
+    "same_face_other_labeler": 0.9671852170176193,
+    "city_any": 0.7077796415926464,
+    "labels": 1991,
+    "pairs": 7238
+   },
+   "pairs_total": 7322,
+   "vote_times_match": {
+    "matched": 2289,
+    "revote": 0,
+    "no_time": 2
+   },
+   "strata": {
+    "all": {
+     "expert": {
+      "different expert": {
+       "pairs": 7,
+       "agreement": null
+      },
+      "same expert": {
+       "pairs": 7315,
+       "agreement": 0.9887901572112099
+      }
+     },
+     "gap": {
+      "1 h - 1 day": {
+       "pairs": 176,
+       "agreement": 1.0
+      },
+      "< 1 h": {
+       "pairs": 2188,
+       "agreement": 0.9840036563071298
+      },
+      ">= 1 day": {
+       "pairs": 4950,
+       "agreement": 0.9905050505050506
+      },
+      "different expert": {
+       "pairs": 7,
+       "agreement": null
+      },
+      "unknown": {
+       "pairs": 1,
+       "agreement": null
+      }
+     },
+     "source": {
+      "AdminUserDashboard": {
+       "pairs": 77,
+       "agreement": 0.922077922077922
+      },
+      "Gallery": {
+       "pairs": 11,
+       "agreement": null
+      },
+      "LabelMap": {
+       "pairs": 275,
+       "agreement": 1.0
+      },
+      "Old data": {
+       "pairs": 364,
+       "agreement": 0.989010989010989
+      },
+      "Validate": {
+       "pairs": 6554,
+       "agreement": 0.9890143423863289
+      },
+      "mixed": {
+       "pairs": 32,
+       "agreement": 1.0
+      },
+      "other": {
+       "pairs": 1,
+       "agreement": null
+      },
+      "unknown": {
+       "pairs": 1,
+       "agreement": null
+      }
+     }
+    },
+    "seattle-wa": {
+     "expert": {
+      "same expert": {
+       "pairs": 368,
+       "agreement": 0.9836956521739131
+      }
+     },
+     "gap": {
+      "< 1 h": {
+       "pairs": 360,
+       "agreement": 0.9833333333333333
+      },
+      ">= 1 day": {
+       "pairs": 8,
+       "agreement": null
+      }
+     },
+     "source": {
+      "AdminUserDashboard": {
+       "pairs": 19,
+       "agreement": null
+      },
+      "Old data": {
+       "pairs": 340,
+       "agreement": 0.9882352941176471
+      },
+      "Validate": {
+       "pairs": 4,
+       "agreement": null
+      },
+      "mixed": {
+       "pairs": 5,
+       "agreement": null
+      }
+     }
+    },
+    "chicago-il": {
+     "expert": {
+      "same expert": {
+       "pairs": 300,
+       "agreement": 1.0
+      }
+     },
+     "gap": {
+      "< 1 h": {
+       "pairs": 299,
+       "agreement": 1.0
+      },
+      "unknown": {
+       "pairs": 1,
+       "agreement": null
+      }
+     },
+     "source": {
+      "AdminUserDashboard": {
+       "pairs": 19,
+       "agreement": null
+      },
+      "Gallery": {
+       "pairs": 1,
+       "agreement": null
+      },
+      "LabelMap": {
+       "pairs": 275,
+       "agreement": 1.0
+      },
+      "Old data": {
+       "pairs": 3,
+       "agreement": null
+      },
+      "other": {
+       "pairs": 1,
+       "agreement": null
+      },
+      "unknown": {
+       "pairs": 1,
+       "agreement": null
+      }
+     }
+    },
+    "oradell-nj": {
+     "expert": {
+      "different expert": {
+       "pairs": 1,
+       "agreement": null
+      },
+      "same expert": {
+       "pairs": 6569,
+       "agreement": 0.9890394276145532
+      }
+     },
+     "gap": {
+      "1 h - 1 day": {
+       "pairs": 176,
+       "agreement": 1.0
+      },
+      "< 1 h": {
+       "pairs": 1458,
+       "agreement": 0.9828532235939643
+      },
+      ">= 1 day": {
+       "pairs": 4935,
+       "agreement": 0.9904761904761905
+      },
+      "different expert": {
+       "pairs": 1,
+       "agreement": null
+      }
+     },
+     "source": {
+      "Old data": {
+       "pairs": 12,
+       "agreement": null
+      },
+      "Validate": {
+       "pairs": 6530,
+       "agreement": 0.9889739663093415
+      },
+      "mixed": {
+       "pairs": 27,
+       "agreement": null
+      }
+     }
+    }
+   },
+   "slices": {
+    "tag": {
+     "street has no sidewalks": {
+      "pairs": 1915,
+      "agreement": 0.9655352480417755
+     },
+     "street has a sidewalk": {
+      "pairs": 200,
+      "agreement": 1.0
+     },
+     "gravel/dirt road": {
+      "pairs": 67,
+      "agreement": 1.0
+     },
+     "shared pedestrian/car space": {
+      "pairs": 29,
+      "agreement": null
+     },
+     "ends abruptly": {
+      "pairs": 11,
+      "agreement": null
+     }
+    },
+    "severity": {}
+   }
+  },
+  "census": {
+   "NoSidewalk_2026_11_05": {
+    "amsterdam": {
+     "labels": 4002,
+     "in_run_2": 0.7833583208395802,
+     "in_run_3": 0.7073963018490754,
+     "median_run_length": 7.0,
+     "multi_faces_one_labeler": 0.7380410022779044,
+     "multi_faces": 439
+    },
+    "auckland": {
+     "labels": 210,
+     "in_run_2": 0.6285714285714286,
+     "in_run_3": 0.45714285714285713,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.46153846153846156,
+     "multi_faces": 52
+    },
+    "bayonne-fr": {
+     "labels": 3,
+     "in_run_2": 1.0,
+     "in_run_3": 1.0,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 1
+    },
+    "blackhawk-hills-il": {
+     "labels": 37,
+     "in_run_2": 0.4594594594594595,
+     "in_run_3": 0.2972972972972973,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 5
+    },
+    "burnaby": {
+     "labels": 6916,
+     "in_run_2": 0.9337767495662233,
+     "in_run_3": 0.891844997108155,
+     "median_run_length": 9.0,
+     "multi_faces_one_labeler": 0.38619402985074625,
+     "multi_faces": 536
+    },
+    "cdmx": {
+     "labels": 5744,
+     "in_run_2": 0.5821727019498607,
+     "in_run_3": 0.4272284122562674,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.4014002333722287,
+     "multi_faces": 857
+    },
+    "chandigarh-india": {
+     "labels": 591,
+     "in_run_2": 0.805414551607445,
+     "in_run_3": 0.7106598984771574,
+     "median_run_length": 7.0,
+     "multi_faces_one_labeler": 0.8493150684931506,
+     "multi_faces": 73
+    },
+    "chicago-il": {
+     "labels": 14733,
+     "in_run_2": 0.8178918075069572,
+     "in_run_3": 0.7209665377044729,
+     "median_run_length": 6.0,
+     "multi_faces_one_labeler": 0.8417300380228137,
+     "multi_faces": 2104
+    },
+    "cliffside-park-nj": {
+     "labels": 40,
+     "in_run_2": 0.725,
+     "in_run_3": 0.475,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 10
+    },
+    "clifton-nj": {
+     "labels": 72,
+     "in_run_2": 0.9166666666666666,
+     "in_run_3": 0.8055555555555556,
+     "median_run_length": 17.0,
+     "multi_faces_one_labeler": 0.5714285714285714,
+     "multi_faces": 7
+    },
+    "columbus-oh": {
+     "labels": 9371,
+     "in_run_2": 0.8766407000320137,
+     "in_run_3": 0.7863621811973108,
+     "median_run_length": 6.0,
+     "multi_faces_one_labeler": 0.4321880650994575,
+     "multi_faces": 1106
+    },
+    "cuenca": {
+     "labels": 494,
+     "in_run_2": 0.6497975708502024,
+     "in_run_3": 0.48785425101214575,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.5609756097560976,
+     "multi_faces": 82
+    },
+    "danville-il": {
+     "labels": 5890,
+     "in_run_2": 0.9371816638370118,
+     "in_run_3": 0.9025466893039049,
+     "median_run_length": 8.0,
+     "multi_faces_one_labeler": 0.8575498575498576,
+     "multi_faces": 702
+    },
+    "detroit-mi": {
+     "labels": 23,
+     "in_run_2": 0.6086956521739131,
+     "in_run_3": 0.43478260869565216,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.75,
+     "multi_faces": 4
+    },
+    "fort-wayne-in": {
+     "labels": 246,
+     "in_run_2": 0.9308943089430894,
+     "in_run_3": 0.8902439024390244,
+     "median_run_length": 9.0,
+     "multi_faces_one_labeler": 0.7931034482758621,
+     "multi_faces": 29
+    },
+    "gainesville-fl": {
+     "labels": 7962,
+     "in_run_2": 0.9446119065561417,
+     "in_run_3": 0.8117307209243908,
+     "median_run_length": 5.0,
+     "multi_faces_one_labeler": 0.9861778846153846,
+     "multi_faces": 1664
+    },
+    "hackensack-nj": {
+     "labels": 81,
+     "in_run_2": 0.7654320987654321,
+     "in_run_3": 0.49382716049382713,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.17647058823529413,
+     "multi_faces": 17
+    },
+    "houston-tx": {
+     "labels": 339,
+     "in_run_2": 0.8112094395280236,
+     "in_run_3": 0.640117994100295,
+     "median_run_length": 4.0,
+     "multi_faces_one_labeler": 0.8805970149253731,
+     "multi_faces": 67
+    },
+    "knox-oh": {
+     "labels": 12617,
+     "in_run_2": 0.941903780613458,
+     "in_run_3": 0.9008480621383848,
+     "median_run_length": 48.0,
+     "multi_faces_one_labeler": 0.9187878787878788,
+     "multi_faces": 825
+    },
+    "la-piedad": {
+     "labels": 53,
+     "in_run_2": 0.6226415094339622,
+     "in_run_3": 0.4716981132075472,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 8
+    },
+    "laurens-ia": {
+     "labels": 1250,
+     "in_run_2": 0.888,
+     "in_run_3": 0.8512,
+     "median_run_length": 11.0,
+     "multi_faces_one_labeler": 0.9147286821705426,
+     "multi_faces": 129
+    },
+    "madison-wi": {
+     "labels": 270,
+     "in_run_2": 0.8777777777777778,
+     "in_run_3": 0.7888888888888889,
+     "median_run_length": 9.0,
+     "multi_faces_one_labeler": 0.8378378378378378,
+     "multi_faces": 37
+    },
+    "maywood-nj": {
+     "labels": 1524,
+     "in_run_2": 0.8963254593175853,
+     "in_run_3": 0.8097112860892388,
+     "median_run_length": 5.0,
+     "multi_faces_one_labeler": 0.47317073170731705,
+     "multi_faces": 205
+    },
+    "mendota-il": {
+     "labels": 12412,
+     "in_run_2": 0.9123428939735739,
+     "in_run_3": 0.8453109893651305,
+     "median_run_length": 11.0,
+     "multi_faces_one_labeler": 0.13497822931785197,
+     "multi_faces": 689
+    },
+    "newberg-or": {
+     "labels": 7037,
+     "in_run_2": 0.9182890436265454,
+     "in_run_3": 0.8426886457297144,
+     "median_run_length": 9.0,
+     "multi_faces_one_labeler": 0.291350531107739,
+     "multi_faces": 659
+    },
+    "newport-ky": {
+     "labels": 117,
+     "in_run_2": 0.9658119658119658,
+     "in_run_3": 0.9316239316239316,
+     "median_run_length": 12.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 15
+    },
+    "niagara-falls-ny": {
+     "labels": 108,
+     "in_run_2": 0.8981481481481481,
+     "in_run_3": 0.6944444444444444,
+     "median_run_length": 6.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 23
+    },
+    "oradell-nj": {
+     "labels": 5679,
+     "in_run_2": 0.9066737101602395,
+     "in_run_3": 0.8365909491107589,
+     "median_run_length": 11.0,
+     "multi_faces_one_labeler": 0.1355421686746988,
+     "multi_faces": 332
+    },
+    "paterson-nj": {
+     "labels": 1268,
+     "in_run_2": 0.7547318611987381,
+     "in_run_3": 0.5922712933753943,
+     "median_run_length": 4.0,
+     "multi_faces_one_labeler": 0.7227272727272728,
+     "multi_faces": 220
+    },
+    "pittsburgh-pa": {
+     "labels": 3509,
+     "in_run_2": 0.7586206896551724,
+     "in_run_3": 0.6332288401253918,
+     "median_run_length": 4.0,
+     "multi_faces_one_labeler": 0.7783687943262412,
+     "multi_faces": 564
+    },
+    "rancagua-chile": {
+     "labels": 92,
+     "in_run_2": 0.8586956521739131,
+     "in_run_3": 0.7934782608695652,
+     "median_run_length": 51.0,
+     "multi_faces_one_labeler": 0.8571428571428571,
+     "multi_faces": 7
+    },
+    "richmond-va": {
+     "labels": 7,
+     "in_run_2": 0.2857142857142857,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 1
+    },
+    "santiago-chile": {
+     "labels": 17,
+     "in_run_2": 0.6470588235294118,
+     "in_run_3": 0.4117647058823529,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 4
+    },
+    "sao-paulo-brazil": {
+     "labels": 3,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "seattle-wa": {
+     "labels": 51646,
+     "in_run_2": 0.8191534678387484,
+     "in_run_3": 0.7398830499941912,
+     "median_run_length": 6.0,
+     "multi_faces_one_labeler": 0.49712062256809336,
+     "multi_faces": 6425
+    },
+    "spgg": {
+     "labels": 7470,
+     "in_run_2": 0.6531459170013387,
+     "in_run_3": 0.5008032128514056,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.3263598326359833,
+     "multi_faces": 1195
+    },
+    "st-louis-mo": {
+     "labels": 14535,
+     "in_run_2": 0.9523219814241486,
+     "in_run_3": 0.9012727898176814,
+     "median_run_length": 9.0,
+     "multi_faces_one_labeler": 0.949746192893401,
+     "multi_faces": 1970
+    },
+    "teaneck-nj": {
+     "labels": 7226,
+     "in_run_2": 0.8533075006919457,
+     "in_run_3": 0.7481317464710767,
+     "median_run_length": 6.0,
+     "multi_faces_one_labeler": 0.30665163472378804,
+     "multi_faces": 887
+    },
+    "tucson-az": {
+     "labels": 1215,
+     "in_run_2": 0.8814814814814815,
+     "in_run_3": 0.7958847736625514,
+     "median_run_length": 8.0,
+     "multi_faces_one_labeler": 0.4251968503937008,
+     "multi_faces": 127
+    },
+    "vancouver-wa": {
+     "labels": 116,
+     "in_run_2": 0.7327586206896551,
+     "in_run_3": 0.4396551724137931,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 26
+    },
+    "virden-il": {
+     "labels": 400,
+     "in_run_2": 0.71,
+     "in_run_3": 0.545,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.6265060240963856,
+     "multi_faces": 83
+    },
+    "walla-walla-wa": {
+     "labels": 6420,
+     "in_run_2": 0.9118380062305296,
+     "in_run_3": 0.811214953271028,
+     "median_run_length": 6.0,
+     "multi_faces_one_labeler": 0.6719367588932806,
+     "multi_faces": 1012
+    },
+    "waltham-ma": {
+     "labels": 326,
+     "in_run_2": 0.48773006134969327,
+     "in_run_3": 0.34049079754601225,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.723404255319149,
+     "multi_faces": 47
+    },
+    "washington-dc": {
+     "labels": 45213,
+     "in_run_2": 0.8809192046535288,
+     "in_run_3": 0.818945878397806,
+     "median_run_length": 10.0,
+     "multi_faces_one_labeler": 0.38891877353415816,
+     "multi_faces": 3718
+    },
+    "west-chester-pa": {
+     "labels": 137,
+     "in_run_2": 0.3357664233576642,
+     "in_run_3": 0.043795620437956206,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.6666666666666666,
+     "multi_faces": 27
+    },
+    "all": {
+     "labels": 237421,
+     "in_run_2": 0.8587024736649244,
+     "in_run_3": 0.7788527552322667,
+     "median_run_length": 7.0,
+     "multi_faces_one_labeler": 0.5792145238977399,
+     "multi_faces": 26990
+    }
+   },
+   "NoSidewalk_2026_10_18": {
+    "amsterdam": {
+     "labels": 4002,
+     "in_run_2": 0.7386306846576711,
+     "in_run_3": 0.6466766616691654,
+     "median_run_length": 4.5,
+     "multi_faces_one_labeler": 0.7861060329067642,
+     "multi_faces": 547
+    },
+    "auckland": {
+     "labels": 210,
+     "in_run_2": 0.5761904761904761,
+     "in_run_3": 0.4142857142857143,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.43137254901960786,
+     "multi_faces": 51
+    },
+    "bayonne-fr": {
+     "labels": 3,
+     "in_run_2": 1.0,
+     "in_run_3": 1.0,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 1
+    },
+    "blackhawk-hills-il": {
+     "labels": 37,
+     "in_run_2": 0.4594594594594595,
+     "in_run_3": 0.2972972972972973,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 5
+    },
+    "burnaby": {
+     "labels": 6908,
+     "in_run_2": 0.9228430804863926,
+     "in_run_3": 0.8782570932252461,
+     "median_run_length": 9.0,
+     "multi_faces_one_labeler": 0.3920552677029361,
+     "multi_faces": 579
+    },
+    "cdmx": {
+     "labels": 5716,
+     "in_run_2": 0.5575577326801959,
+     "in_run_3": 0.40745276417074877,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.409297052154195,
+     "multi_faces": 882
+    },
+    "chandigarh-india": {
+     "labels": 590,
+     "in_run_2": 0.7915254237288135,
+     "in_run_3": 0.7067796610169491,
+     "median_run_length": 7.0,
+     "multi_faces_one_labeler": 0.8356164383561644,
+     "multi_faces": 73
+    },
+    "chicago-il": {
+     "labels": 14568,
+     "in_run_2": 0.8021691378363537,
+     "in_run_3": 0.6992037342119715,
+     "median_run_length": 5.0,
+     "multi_faces_one_labeler": 0.8495860165593376,
+     "multi_faces": 2174
+    },
+    "cliffside-park-nj": {
+     "labels": 40,
+     "in_run_2": 0.725,
+     "in_run_3": 0.475,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 10
+    },
+    "clifton-nj": {
+     "labels": 72,
+     "in_run_2": 0.8888888888888888,
+     "in_run_3": 0.6944444444444444,
+     "median_run_length": 8.0,
+     "multi_faces_one_labeler": 0.9166666666666666,
+     "multi_faces": 12
+    },
+    "columbus-oh": {
+     "labels": 9371,
+     "in_run_2": 0.8692775584249279,
+     "in_run_3": 0.7775050688293672,
+     "median_run_length": 6.0,
+     "multi_faces_one_labeler": 0.43056768558951963,
+     "multi_faces": 1145
+    },
+    "cuenca": {
+     "labels": 494,
+     "in_run_2": 0.6417004048582996,
+     "in_run_3": 0.4757085020242915,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.5662650602409639,
+     "multi_faces": 83
+    },
+    "danville-il": {
+     "labels": 5890,
+     "in_run_2": 0.9348047538200339,
+     "in_run_3": 0.8933786078098472,
+     "median_run_length": 7.0,
+     "multi_faces_one_labeler": 0.867948717948718,
+     "multi_faces": 780
+    },
+    "detroit-mi": {
+     "labels": 23,
+     "in_run_2": 0.6086956521739131,
+     "in_run_3": 0.43478260869565216,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.75,
+     "multi_faces": 4
+    },
+    "fort-wayne-in": {
+     "labels": 246,
+     "in_run_2": 0.9308943089430894,
+     "in_run_3": 0.8902439024390244,
+     "median_run_length": 9.0,
+     "multi_faces_one_labeler": 0.7931034482758621,
+     "multi_faces": 29
+    },
+    "gainesville-fl": {
+     "labels": 7776,
+     "in_run_2": 0.9390432098765432,
+     "in_run_3": 0.7854938271604939,
+     "median_run_length": 4.0,
+     "multi_faces_one_labeler": 0.9880681818181818,
+     "multi_faces": 1760
+    },
+    "hackensack-nj": {
+     "labels": 81,
+     "in_run_2": 0.7037037037037037,
+     "in_run_3": 0.48148148148148145,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.29411764705882354,
+     "multi_faces": 17
+    },
+    "houston-tx": {
+     "labels": 144,
+     "in_run_2": 0.8263888888888888,
+     "in_run_3": 0.6597222222222222,
+     "median_run_length": 4.0,
+     "multi_faces_one_labeler": 0.9655172413793104,
+     "multi_faces": 29
+    },
+    "knox-oh": {
+     "labels": 12617,
+     "in_run_2": 0.9358009035428391,
+     "in_run_3": 0.8910993104541491,
+     "median_run_length": 44.0,
+     "multi_faces_one_labeler": 0.9302325581395349,
+     "multi_faces": 860
+    },
+    "la-piedad": {
+     "labels": 53,
+     "in_run_2": 0.6226415094339622,
+     "in_run_3": 0.4716981132075472,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 8
+    },
+    "laurens-ia": {
+     "labels": 856,
+     "in_run_2": 0.8679906542056075,
+     "in_run_3": 0.8165887850467289,
+     "median_run_length": 9.0,
+     "multi_faces_one_labeler": 0.8979591836734694,
+     "multi_faces": 98
+    },
+    "madison-wi": {
+     "labels": 123,
+     "in_run_2": 0.8536585365853658,
+     "in_run_3": 0.7560975609756098,
+     "median_run_length": 9.0,
+     "multi_faces_one_labeler": 0.8947368421052632,
+     "multi_faces": 19
+    },
+    "maywood-nj": {
+     "labels": 1524,
+     "in_run_2": 0.8877952755905512,
+     "in_run_3": 0.7959317585301837,
+     "median_run_length": 5.0,
+     "multi_faces_one_labeler": 0.4744186046511628,
+     "multi_faces": 215
+    },
+    "mendota-il": {
+     "labels": 12412,
+     "in_run_2": 0.9072671608121173,
+     "in_run_3": 0.8368514340960361,
+     "median_run_length": 11.0,
+     "multi_faces_one_labeler": 0.13535911602209943,
+     "multi_faces": 724
+    },
+    "newberg-or": {
+     "labels": 7037,
+     "in_run_2": 0.8904362654540287,
+     "in_run_3": 0.7949410260054001,
+     "median_run_length": 7.0,
+     "multi_faces_one_labeler": 0.3178391959798995,
+     "multi_faces": 796
+    },
+    "newport-ky": {
+     "labels": 97,
+     "in_run_2": 0.9690721649484536,
+     "in_run_3": 0.9278350515463918,
+     "median_run_length": 16.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 10
+    },
+    "niagara-falls-ny": {
+     "labels": 93,
+     "in_run_2": 0.8387096774193549,
+     "in_run_3": 0.6451612903225806,
+     "median_run_length": 6.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 18
+    },
+    "oradell-nj": {
+     "labels": 5679,
+     "in_run_2": 0.9020954393379116,
+     "in_run_3": 0.830251804895228,
+     "median_run_length": 10.0,
+     "multi_faces_one_labeler": 0.13920454545454544,
+     "multi_faces": 352
+    },
+    "paterson-nj": {
+     "labels": 1213,
+     "in_run_2": 0.7287716405605935,
+     "in_run_3": 0.5589447650453421,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.7351598173515982,
+     "multi_faces": 219
+    },
+    "pittsburgh-pa": {
+     "labels": 3509,
+     "in_run_2": 0.6355086919350242,
+     "in_run_3": 0.4286121402108863,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.8913043478260869,
+     "multi_faces": 736
+    },
+    "rancagua-chile": {
+     "labels": 92,
+     "in_run_2": 0.8152173913043478,
+     "in_run_3": 0.7934782608695652,
+     "median_run_length": 51.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 5
+    },
+    "richmond-va": {
+     "labels": 1,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "santiago-chile": {
+     "labels": 17,
+     "in_run_2": 0.5294117647058824,
+     "in_run_3": 0.4117647058823529,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 3
+    },
+    "sao-paulo-brazil": {
+     "labels": 1,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "seattle-wa": {
+     "labels": 51642,
+     "in_run_2": 0.8070175438596491,
+     "in_run_3": 0.7241005383215212,
+     "median_run_length": 6.0,
+     "multi_faces_one_labeler": 0.5176230702009904,
+     "multi_faces": 6866
+    },
+    "spgg": {
+     "labels": 7470,
+     "in_run_2": 0.6322623828647925,
+     "in_run_3": 0.47643908969210175,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.3498799039231385,
+     "multi_faces": 1249
+    },
+    "st-louis-mo": {
+     "labels": 13471,
+     "in_run_2": 0.9449187142751095,
+     "in_run_3": 0.8883527577759632,
+     "median_run_length": 8.0,
+     "multi_faces_one_labeler": 0.9557344064386318,
+     "multi_faces": 1988
+    },
+    "teaneck-nj": {
+     "labels": 7222,
+     "in_run_2": 0.8399335364165051,
+     "in_run_3": 0.7319302132373304,
+     "median_run_length": 5.0,
+     "multi_faces_one_labeler": 0.3076923076923077,
+     "multi_faces": 936
+    },
+    "tucson-az": {
+     "labels": 1206,
+     "in_run_2": 0.8822553897180763,
+     "in_run_3": 0.7910447761194029,
+     "median_run_length": 8.0,
+     "multi_faces_one_labeler": 0.47761194029850745,
+     "multi_faces": 134
+    },
+    "vancouver-wa": {
+     "labels": 116,
+     "in_run_2": 0.6982758620689655,
+     "in_run_3": 0.4396551724137931,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 24
+    },
+    "virden-il": {
+     "labels": 400,
+     "in_run_2": 0.695,
+     "in_run_3": 0.52,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.654320987654321,
+     "multi_faces": 81
+    },
+    "walla-walla-wa": {
+     "labels": 3562,
+     "in_run_2": 0.8868613138686131,
+     "in_run_3": 0.774564851207187,
+     "median_run_length": 6.0,
+     "multi_faces_one_labeler": 0.7102966841186736,
+     "multi_faces": 573
+    },
+    "waltham-ma": {
+     "labels": 324,
+     "in_run_2": 0.48148148148148145,
+     "in_run_3": 0.3395061728395062,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.7727272727272727,
+     "multi_faces": 44
+    },
+    "washington-dc": {
+     "labels": 45213,
+     "in_run_2": 0.8794152124389003,
+     "in_run_3": 0.816999535531816,
+     "median_run_length": 10.0,
+     "multi_faces_one_labeler": 0.39114093959731544,
+     "multi_faces": 3725
+    },
+    "west-chester-pa": {
+     "labels": 137,
+     "in_run_2": 0.29927007299270075,
+     "in_run_3": 0.021897810218978103,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.6296296296296297,
+     "multi_faces": 27
+    },
+    "all": {
+     "labels": 232258,
+     "in_run_2": 0.8455682904356362,
+     "in_run_3": 0.7604560445711235,
+     "median_run_length": 7.0,
+     "multi_faces_one_labeler": 0.5913377075042129,
+     "multi_faces": 27891
+    }
+   },
+   "CurbRamp_2026_10_18": {
+    "amsterdam": {
+     "labels": 12258,
+     "in_run_2": 0.5583292543644967,
+     "in_run_3": 0.32387012563224016,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.27197346600331673,
+     "multi_faces": 2412
+    },
+    "auckland": {
+     "labels": 1782,
+     "in_run_2": 0.5600448933782267,
+     "in_run_3": 0.24354657687991021,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.17142857142857143,
+     "multi_faces": 385
+    },
+    "bayonne-fr": {
+     "labels": 13,
+     "in_run_2": 0.23076923076923078,
+     "in_run_3": 0.23076923076923078,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 1
+    },
+    "blackhawk-hills-il": {
+     "labels": 65,
+     "in_run_2": 0.6153846153846154,
+     "in_run_3": 0.15384615384615385,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.8888888888888888,
+     "multi_faces": 18
+    },
+    "burnaby": {
+     "labels": 4613,
+     "in_run_2": 0.49945805332755255,
+     "in_run_3": 0.19249945805332755,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.12791783380018673,
+     "multi_faces": 1071
+    },
+    "cdmx": {
+     "labels": 13075,
+     "in_run_2": 0.3341491395793499,
+     "in_run_3": 0.12183556405353728,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.18655403027103132,
+     "multi_faces": 2841
+    },
+    "chandigarh-india": {
+     "labels": 119,
+     "in_run_2": 0.6890756302521008,
+     "in_run_3": 0.47058823529411764,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.92,
+     "multi_faces": 25
+    },
+    "chicago-il": {
+     "labels": 79458,
+     "in_run_2": 0.5818042236149916,
+     "in_run_3": 0.25944524151123866,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.5569861707200763,
+     "multi_faces": 18873
+    },
+    "cliffside-park-nj": {
+     "labels": 358,
+     "in_run_2": 0.5279329608938548,
+     "in_run_3": 0.18156424581005587,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.6629213483146067,
+     "multi_faces": 89
+    },
+    "clifton-nj": {
+     "labels": 80,
+     "in_run_2": 0.4625,
+     "in_run_3": 0.2125,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.3157894736842105,
+     "multi_faces": 19
+    },
+    "columbus-oh": {
+     "labels": 18041,
+     "in_run_2": 0.6538994512499308,
+     "in_run_3": 0.4224266947508453,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.09858630952380952,
+     "multi_faces": 2688
+    },
+    "cuenca": {
+     "labels": 3885,
+     "in_run_2": 0.3812097812097812,
+     "in_run_3": 0.12072072072072072,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.0772626931567329,
+     "multi_faces": 453
+    },
+    "danville-il": {
+     "labels": 1893,
+     "in_run_2": 0.6354992076069731,
+     "in_run_3": 0.2752245113576334,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.5769230769230769,
+     "multi_faces": 520
+    },
+    "detroit-mi": {
+     "labels": 1072,
+     "in_run_2": 0.6651119402985075,
+     "in_run_3": 0.28451492537313433,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.027624309392265192,
+     "multi_faces": 181
+    },
+    "fort-wayne-in": {
+     "labels": 243,
+     "in_run_2": 0.4897119341563786,
+     "in_run_3": 0.2345679012345679,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.7254901960784313,
+     "multi_faces": 51
+    },
+    "gainesville-fl": {
+     "labels": 4531,
+     "in_run_2": 0.6843963804899581,
+     "in_run_3": 0.37011697197086735,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.9047619047619048,
+     "multi_faces": 1155
+    },
+    "hackensack-nj": {
+     "labels": 133,
+     "in_run_2": 0.5037593984962406,
+     "in_run_3": 0.3082706766917293,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.15151515151515152,
+     "multi_faces": 33
+    },
+    "houston-tx": {
+     "labels": 166,
+     "in_run_2": 0.42168674698795183,
+     "in_run_3": 0.26506024096385544,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.5925925925925926,
+     "multi_faces": 27
+    },
+    "knox-oh": {
+     "labels": 1198,
+     "in_run_2": 0.5601001669449082,
+     "in_run_3": 0.2579298831385643,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.7137681159420289,
+     "multi_faces": 276
+    },
+    "la-ca": {
+     "labels": 71,
+     "in_run_2": 0.5774647887323944,
+     "in_run_3": 0.43661971830985913,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.75,
+     "multi_faces": 16
+    },
+    "la-piedad": {
+     "labels": 45,
+     "in_run_2": 0.3111111111111111,
+     "in_run_3": 0.08888888888888889,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.8571428571428571,
+     "multi_faces": 7
+    },
+    "laurens-ia": {
+     "labels": 1929,
+     "in_run_2": 0.8481078278900985,
+     "in_run_3": 0.7910834629341628,
+     "median_run_length": 7.0,
+     "multi_faces_one_labeler": 0.36597938144329895,
+     "multi_faces": 194
+    },
+    "madison-wi": {
+     "labels": 349,
+     "in_run_2": 0.4355300859598854,
+     "in_run_3": 0.1318051575931232,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.6901408450704225,
+     "multi_faces": 71
+    },
+    "maywood-nj": {
+     "labels": 1161,
+     "in_run_2": 0.4590869939707149,
+     "in_run_3": 0.16106804478897502,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.14057507987220447,
+     "multi_faces": 313
+    },
+    "mendota-il": {
+     "labels": 1976,
+     "in_run_2": 0.39979757085020245,
+     "in_run_3": 0.1680161943319838,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.05277777777777778,
+     "multi_faces": 360
+    },
+    "newberg-or": {
+     "labels": 4613,
+     "in_run_2": 0.5497507045306742,
+     "in_run_3": 0.26793843485801,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.09692898272552783,
+     "multi_faces": 1042
+    },
+    "newport-ky": {
+     "labels": 47,
+     "in_run_2": 0.7021276595744681,
+     "in_run_3": 0.3617021276595745,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 13
+    },
+    "niagara-falls-ny": {
+     "labels": 542,
+     "in_run_2": 0.5018450184501845,
+     "in_run_3": 0.15129151291512916,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 120
+    },
+    "oradell-nj": {
+     "labels": 1893,
+     "in_run_2": 0.5974643423137876,
+     "in_run_3": 0.3555203380876915,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.10597826086956522,
+     "multi_faces": 368
+    },
+    "paterson-nj": {
+     "labels": 12677,
+     "in_run_2": 0.6116589098367121,
+     "in_run_3": 0.2781415161315769,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.23608247422680412,
+     "multi_faces": 2910
+    },
+    "pittsburgh-pa": {
+     "labels": 9511,
+     "in_run_2": 0.5592471874671433,
+     "in_run_3": 0.26274839659341814,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.5607202680067002,
+     "multi_faces": 2388
+    },
+    "rancagua-chile": {
+     "labels": 483,
+     "in_run_2": 0.6273291925465838,
+     "in_run_3": 0.3498964803312629,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.8292682926829268,
+     "multi_faces": 123
+    },
+    "richmond-va": {
+     "labels": 13079,
+     "in_run_2": 0.9157427937915743,
+     "in_run_3": 0.901827356831562,
+     "median_run_length": 18.0,
+     "multi_faces_one_labeler": 0.9468208092485549,
+     "multi_faces": 865
+    },
+    "santiago-chile": {
+     "labels": 309,
+     "in_run_2": 0.44660194174757284,
+     "in_run_3": 0.20064724919093851,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.7121212121212122,
+     "multi_faces": 66
+    },
+    "sao-paulo-brazil": {
+     "labels": 185,
+     "in_run_2": 0.2972972972972973,
+     "in_run_3": 0.04864864864864865,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.65625,
+     "multi_faces": 32
+    },
+    "seattle-wa": {
+     "labels": 100933,
+     "in_run_2": 0.5435883209653929,
+     "in_run_3": 0.26318448872024014,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.11471059483276587,
+     "multi_faces": 19972
+    },
+    "spgg": {
+     "labels": 4185,
+     "in_run_2": 0.32879330943847074,
+     "in_run_3": 0.13954599761051373,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.26108374384236455,
+     "multi_faces": 812
+    },
+    "st-louis-mo": {
+     "labels": 16907,
+     "in_run_2": 0.4667297569054238,
+     "in_run_3": 0.12722540959365944,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.6580581077725354,
+     "multi_faces": 4027
+    },
+    "teaneck-nj": {
+     "labels": 7274,
+     "in_run_2": 0.5343689854275502,
+     "in_run_3": 0.2338465768490514,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.07750865051903114,
+     "multi_faces": 1445
+    },
+    "tucson-az": {
+     "labels": 2169,
+     "in_run_2": 0.4896265560165975,
+     "in_run_3": 0.1917934532042416,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.0625,
+     "multi_faces": 432
+    },
+    "vancouver-wa": {
+     "labels": 64847,
+     "in_run_2": 0.957268647740065,
+     "in_run_3": 0.9164957515382361,
+     "median_run_length": 9.0,
+     "multi_faces_one_labeler": 0.9967622571692877,
+     "multi_faces": 8648
+    },
+    "virden-il": {
+     "labels": 51,
+     "in_run_2": 0.2549019607843137,
+     "in_run_3": 0.058823529411764705,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.5,
+     "multi_faces": 12
+    },
+    "walla-walla-wa": {
+     "labels": 3068,
+     "in_run_2": 0.5547588005215124,
+     "in_run_3": 0.2790091264667536,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.2871536523929471,
+     "multi_faces": 794
+    },
+    "waltham-ma": {
+     "labels": 480,
+     "in_run_2": 0.22708333333333333,
+     "in_run_3": 0.06041666666666667,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.4065934065934066,
+     "multi_faces": 91
+    },
+    "washington-dc": {
+     "labels": 149635,
+     "in_run_2": 0.7278711531393056,
+     "in_run_3": 0.4750559695258462,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.0730473388054308,
+     "multi_faces": 19371
+    },
+    "west-chester-pa": {
+     "labels": 534,
+     "in_run_2": 0.5131086142322098,
+     "in_run_3": 0.21348314606741572,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.6428571428571429,
+     "multi_faces": 126
+    },
+    "all": {
+     "labels": 541936,
+     "in_run_2": 0.6553762805940185,
+     "in_run_3": 0.41300817808744944,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.3455231052059831,
+     "multi_faces": 95736
+    }
+   },
+   "NoCurbRamp_2026_10_18": {
+    "amsterdam": {
+     "labels": 1539,
+     "in_run_2": 0.4223521767381416,
+     "in_run_3": 0.23391812865497075,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.6180555555555556,
+     "multi_faces": 288
+    },
+    "auckland": {
+     "labels": 180,
+     "in_run_2": 0.4666666666666667,
+     "in_run_3": 0.16666666666666666,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.7777777777777778,
+     "multi_faces": 45
+    },
+    "bayonne-fr": {
+     "labels": 4,
+     "in_run_2": 0.75,
+     "in_run_3": 0.75,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 1
+    },
+    "blackhawk-hills-il": {
+     "labels": 30,
+     "in_run_2": 0.4666666666666667,
+     "in_run_3": 0.26666666666666666,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 5
+    },
+    "burnaby": {
+     "labels": 987,
+     "in_run_2": 0.3434650455927052,
+     "in_run_3": 0.10233029381965553,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.17647058823529413,
+     "multi_faces": 221
+    },
+    "cdmx": {
+     "labels": 11116,
+     "in_run_2": 0.3101835192515293,
+     "in_run_3": 0.10147535084562792,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.21472937000887313,
+     "multi_faces": 2254
+    },
+    "chandigarh-india": {
+     "labels": 225,
+     "in_run_2": 0.7555555555555555,
+     "in_run_3": 0.6133333333333333,
+     "median_run_length": 4.0,
+     "multi_faces_one_labeler": 0.7037037037037037,
+     "multi_faces": 27
+    },
+    "chicago-il": {
+     "labels": 5995,
+     "in_run_2": 0.46688907422852377,
+     "in_run_3": 0.24236864053377816,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.7695690413368513,
+     "multi_faces": 1137
+    },
+    "cliffside-park-nj": {
+     "labels": 24,
+     "in_run_2": 0.08333333333333333,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 1
+    },
+    "clifton-nj": {
+     "labels": 19,
+     "in_run_2": 0.3684210526315789,
+     "in_run_3": 0.15789473684210525,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.4,
+     "multi_faces": 5
+    },
+    "columbus-oh": {
+     "labels": 1463,
+     "in_run_2": 0.3725222146274778,
+     "in_run_3": 0.14149008885850992,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.3706070287539936,
+     "multi_faces": 313
+    },
+    "cuenca": {
+     "labels": 2390,
+     "in_run_2": 0.3497907949790795,
+     "in_run_3": 0.12552301255230125,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.21428571428571427,
+     "multi_faces": 392
+    },
+    "danville-il": {
+     "labels": 415,
+     "in_run_2": 0.40240963855421685,
+     "in_run_3": 0.13253012048192772,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.7341772151898734,
+     "multi_faces": 79
+    },
+    "detroit-mi": {
+     "labels": 94,
+     "in_run_2": 0.40425531914893614,
+     "in_run_3": 0.10638297872340426,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.2631578947368421,
+     "multi_faces": 19
+    },
+    "fort-wayne-in": {
+     "labels": 107,
+     "in_run_2": 0.6355140186915887,
+     "in_run_3": 0.3364485981308411,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.8695652173913043,
+     "multi_faces": 23
+    },
+    "gainesville-fl": {
+     "labels": 59,
+     "in_run_2": 0.2711864406779661,
+     "in_run_3": 0.1016949152542373,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 7
+    },
+    "hackensack-nj": {
+     "labels": 24,
+     "in_run_2": 0.16666666666666666,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.4,
+     "multi_faces": 5
+    },
+    "houston-tx": {
+     "labels": 39,
+     "in_run_2": 0.48717948717948717,
+     "in_run_3": 0.3333333333333333,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 7
+    },
+    "knox-oh": {
+     "labels": 290,
+     "in_run_2": 0.46206896551724136,
+     "in_run_3": 0.2,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.8095238095238095,
+     "multi_faces": 63
+    },
+    "la-ca": {
+     "labels": 16,
+     "in_run_2": 0.5,
+     "in_run_3": 0.375,
+     "median_run_length": 1.5,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 3
+    },
+    "la-piedad": {
+     "labels": 97,
+     "in_run_2": 0.5154639175257731,
+     "in_run_3": 0.14432989690721648,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 22
+    },
+    "laurens-ia": {
+     "labels": 93,
+     "in_run_2": 0.46236559139784944,
+     "in_run_3": 0.13978494623655913,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.9,
+     "multi_faces": 20
+    },
+    "madison-wi": {
+     "labels": 14,
+     "in_run_2": 0.2857142857142857,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 2
+    },
+    "maywood-nj": {
+     "labels": 73,
+     "in_run_2": 0.273972602739726,
+     "in_run_3": 0.1643835616438356,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.7272727272727273,
+     "multi_faces": 11
+    },
+    "mendota-il": {
+     "labels": 1366,
+     "in_run_2": 0.4253294289897511,
+     "in_run_3": 0.2042459736456808,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.17763157894736842,
+     "multi_faces": 304
+    },
+    "newberg-or": {
+     "labels": 2154,
+     "in_run_2": 0.5264623955431755,
+     "in_run_3": 0.23119777158774374,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.19463087248322147,
+     "multi_faces": 447
+    },
+    "newport-ky": {
+     "labels": 3,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "niagara-falls-ny": {
+     "labels": 77,
+     "in_run_2": 0.18181818181818182,
+     "in_run_3": 0.05194805194805195,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 6
+    },
+    "oradell-nj": {
+     "labels": 823,
+     "in_run_2": 0.42284325637910086,
+     "in_run_3": 0.17253948967193194,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.35678391959798994,
+     "multi_faces": 199
+    },
+    "paterson-nj": {
+     "labels": 306,
+     "in_run_2": 0.24836601307189543,
+     "in_run_3": 0.0196078431372549,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.5172413793103449,
+     "multi_faces": 58
+    },
+    "pittsburgh-pa": {
+     "labels": 1259,
+     "in_run_2": 0.30420969023034156,
+     "in_run_3": 0.0659253375694996,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.746268656716418,
+     "multi_faces": 201
+    },
+    "rancagua-chile": {
+     "labels": 105,
+     "in_run_2": 0.4857142857142857,
+     "in_run_3": 0.21904761904761905,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.7692307692307693,
+     "multi_faces": 26
+    },
+    "richmond-va": {
+     "labels": 6,
+     "in_run_2": 0.3333333333333333,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 1
+    },
+    "santiago-chile": {
+     "labels": 47,
+     "in_run_2": 0.2127659574468085,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 5
+    },
+    "sao-paulo-brazil": {
+     "labels": 43,
+     "in_run_2": 0.13953488372093023,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 3
+    },
+    "seattle-wa": {
+     "labels": 44663,
+     "in_run_2": 0.4415959519064998,
+     "in_run_3": 0.185948100217182,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.1906321325791406,
+     "multi_faces": 10077
+    },
+    "spgg": {
+     "labels": 20651,
+     "in_run_2": 0.4283569802915113,
+     "in_run_3": 0.1810081836230691,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.11461752082807372,
+     "multi_faces": 3961
+    },
+    "st-louis-mo": {
+     "labels": 3438,
+     "in_run_2": 0.3022105875509017,
+     "in_run_3": 0.12827225130890052,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.7282157676348547,
+     "multi_faces": 482
+    },
+    "teaneck-nj": {
+     "labels": 1459,
+     "in_run_2": 0.33858807402330365,
+     "in_run_3": 0.10829335161069226,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.26332288401253917,
+     "multi_faces": 319
+    },
+    "tucson-az": {
+     "labels": 93,
+     "in_run_2": 0.3225806451612903,
+     "in_run_3": 0.17204301075268819,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.29411764705882354,
+     "multi_faces": 17
+    },
+    "vancouver-wa": {
+     "labels": 34,
+     "in_run_2": 0.23529411764705882,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 4
+    },
+    "virden-il": {
+     "labels": 32,
+     "in_run_2": 0.3125,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.7142857142857143,
+     "multi_faces": 7
+    },
+    "walla-walla-wa": {
+     "labels": 956,
+     "in_run_2": 0.4027196652719665,
+     "in_run_3": 0.1412133891213389,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.3474178403755869,
+     "multi_faces": 213
+    },
+    "waltham-ma": {
+     "labels": 193,
+     "in_run_2": 0.29015544041450775,
+     "in_run_3": 0.05181347150259067,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.5277777777777778,
+     "multi_faces": 36
+    },
+    "washington-dc": {
+     "labels": 19595,
+     "in_run_2": 0.4926767032406226,
+     "in_run_3": 0.27262056647103855,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.36369974436439695,
+     "multi_faces": 4303
+    },
+    "west-chester-pa": {
+     "labels": 79,
+     "in_run_2": 0.10126582278481013,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.6666666666666666,
+     "multi_faces": 6
+    },
+    "all": {
+     "labels": 122675,
+     "in_run_2": 0.4265416751579376,
+     "in_run_3": 0.18857958019156307,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.2714146341463415,
+     "multi_faces": 25625
+    }
+   },
+   "Obstacle_2026_10_18": {
+    "amsterdam": {
+     "labels": 6068,
+     "in_run_2": 0.702537903757416,
+     "in_run_3": 0.5265326301911668,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.5788514129443938,
+     "multi_faces": 1097
+    },
+    "auckland": {
+     "labels": 609,
+     "in_run_2": 0.5977011494252874,
+     "in_run_3": 0.33497536945812806,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.37777777777777777,
+     "multi_faces": 135
+    },
+    "bayonne-fr": {
+     "labels": 8,
+     "in_run_2": 0.75,
+     "in_run_3": 0.75,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 2
+    },
+    "blackhawk-hills-il": {
+     "labels": 8,
+     "in_run_2": 0.625,
+     "in_run_3": 0.375,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 2
+    },
+    "burnaby": {
+     "labels": 1426,
+     "in_run_2": 0.6346423562412342,
+     "in_run_3": 0.42426367461430575,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.6310679611650486,
+     "multi_faces": 309
+    },
+    "cdmx": {
+     "labels": 26866,
+     "in_run_2": 0.69102210972977,
+     "in_run_3": 0.5460805479044145,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.40584498094027954,
+     "multi_faces": 3935
+    },
+    "chandigarh-india": {
+     "labels": 1356,
+     "in_run_2": 0.9041297935103245,
+     "in_run_3": 0.8421828908554573,
+     "median_run_length": 16.0,
+     "multi_faces_one_labeler": 0.9186991869918699,
+     "multi_faces": 123
+    },
+    "chicago-il": {
+     "labels": 8184,
+     "in_run_2": 0.5924975562072337,
+     "in_run_3": 0.40725806451612906,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.7841140529531568,
+     "multi_faces": 1473
+    },
+    "cliffside-park-nj": {
+     "labels": 232,
+     "in_run_2": 0.7112068965517241,
+     "in_run_3": 0.5905172413793104,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.7659574468085106,
+     "multi_faces": 47
+    },
+    "clifton-nj": {
+     "labels": 4,
+     "in_run_2": 0.5,
+     "in_run_3": 0.0,
+     "median_run_length": 1.5,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 1
+    },
+    "columbus-oh": {
+     "labels": 3681,
+     "in_run_2": 0.7114914425427873,
+     "in_run_3": 0.5484922575387123,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.43577235772357725,
+     "multi_faces": 615
+    },
+    "cuenca": {
+     "labels": 2942,
+     "in_run_2": 0.6213460231135283,
+     "in_run_3": 0.41468388851121685,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.36585365853658536,
+     "multi_faces": 492
+    },
+    "danville-il": {
+     "labels": 468,
+     "in_run_2": 0.5405982905982906,
+     "in_run_3": 0.2799145299145299,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.8514851485148515,
+     "multi_faces": 101
+    },
+    "detroit-mi": {
+     "labels": 78,
+     "in_run_2": 0.46153846153846156,
+     "in_run_3": 0.1794871794871795,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.47368421052631576,
+     "multi_faces": 19
+    },
+    "fort-wayne-in": {
+     "labels": 49,
+     "in_run_2": 0.673469387755102,
+     "in_run_3": 0.46938775510204084,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.9090909090909091,
+     "multi_faces": 11
+    },
+    "gainesville-fl": {
+     "labels": 207,
+     "in_run_2": 0.6811594202898551,
+     "in_run_3": 0.45893719806763283,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 45
+    },
+    "hackensack-nj": {
+     "labels": 37,
+     "in_run_2": 0.5405405405405406,
+     "in_run_3": 0.2702702702702703,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.8,
+     "multi_faces": 10
+    },
+    "houston-tx": {
+     "labels": 55,
+     "in_run_2": 0.4,
+     "in_run_3": 0.2545454545454545,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.8333333333333334,
+     "multi_faces": 6
+    },
+    "knox-oh": {
+     "labels": 114,
+     "in_run_2": 0.39473684210526316,
+     "in_run_3": 0.30701754385964913,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.9333333333333333,
+     "multi_faces": 15
+    },
+    "la-ca": {
+     "labels": 4,
+     "in_run_2": 0.5,
+     "in_run_3": 0.0,
+     "median_run_length": 1.5,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 1
+    },
+    "la-piedad": {
+     "labels": 251,
+     "in_run_2": 0.8446215139442231,
+     "in_run_3": 0.7808764940239044,
+     "median_run_length": 5.0,
+     "multi_faces_one_labeler": 0.8809523809523809,
+     "multi_faces": 42
+    },
+    "laurens-ia": {
+     "labels": 23,
+     "in_run_2": 0.6086956521739131,
+     "in_run_3": 0.43478260869565216,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 5
+    },
+    "madison-wi": {
+     "labels": 28,
+     "in_run_2": 0.17857142857142858,
+     "in_run_3": 0.10714285714285714,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 2
+    },
+    "maywood-nj": {
+     "labels": 92,
+     "in_run_2": 0.34782608695652173,
+     "in_run_3": 0.043478260869565216,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.6,
+     "multi_faces": 15
+    },
+    "mendota-il": {
+     "labels": 262,
+     "in_run_2": 0.48854961832061067,
+     "in_run_3": 0.22137404580152673,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.6440677966101694,
+     "multi_faces": 59
+    },
+    "newberg-or": {
+     "labels": 1026,
+     "in_run_2": 0.6247563352826511,
+     "in_run_3": 0.4083820662768031,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.5,
+     "multi_faces": 212
+    },
+    "newport-ky": {
+     "labels": 7,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "niagara-falls-ny": {
+     "labels": 81,
+     "in_run_2": 0.5185185185185185,
+     "in_run_3": 0.2716049382716049,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 15
+    },
+    "oradell-nj": {
+     "labels": 325,
+     "in_run_2": 0.48307692307692307,
+     "in_run_3": 0.26153846153846155,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.45454545454545453,
+     "multi_faces": 66
+    },
+    "paterson-nj": {
+     "labels": 1044,
+     "in_run_2": 0.49616858237547895,
+     "in_run_3": 0.2509578544061303,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.7962085308056872,
+     "multi_faces": 211
+    },
+    "pittsburgh-pa": {
+     "labels": 5546,
+     "in_run_2": 0.6878831590335377,
+     "in_run_3": 0.46826541651640824,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.8531746031746031,
+     "multi_faces": 1260
+    },
+    "rancagua-chile": {
+     "labels": 455,
+     "in_run_2": 0.7692307692307693,
+     "in_run_3": 0.6153846153846154,
+     "median_run_length": 4.0,
+     "multi_faces_one_labeler": 0.9411764705882353,
+     "multi_faces": 85
+    },
+    "richmond-va": {
+     "labels": 11,
+     "in_run_2": 0.45454545454545453,
+     "in_run_3": 0.2727272727272727,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 2
+    },
+    "santiago-chile": {
+     "labels": 129,
+     "in_run_2": 0.6046511627906976,
+     "in_run_3": 0.4186046511627907,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.9583333333333334,
+     "multi_faces": 24
+    },
+    "sao-paulo-brazil": {
+     "labels": 91,
+     "in_run_2": 0.6593406593406593,
+     "in_run_3": 0.5494505494505495,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.9375,
+     "multi_faces": 16
+    },
+    "seattle-wa": {
+     "labels": 17982,
+     "in_run_2": 0.6097764431097764,
+     "in_run_3": 0.413135357579802,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.6208930075821398,
+     "multi_faces": 3561
+    },
+    "spgg": {
+     "labels": 49130,
+     "in_run_2": 0.8306330144514553,
+     "in_run_3": 0.708385914919601,
+     "median_run_length": 5.0,
+     "multi_faces_one_labeler": 0.22838412473423103,
+     "multi_faces": 5644
+    },
+    "st-louis-mo": {
+     "labels": 4126,
+     "in_run_2": 0.642510906446922,
+     "in_run_3": 0.4408628211342705,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.9397874852420307,
+     "multi_faces": 847
+    },
+    "teaneck-nj": {
+     "labels": 618,
+     "in_run_2": 0.5436893203883495,
+     "in_run_3": 0.3333333333333333,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.6615384615384615,
+     "multi_faces": 130
+    },
+    "tucson-az": {
+     "labels": 597,
+     "in_run_2": 0.5946398659966499,
+     "in_run_3": 0.35343383584589616,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.302158273381295,
+     "multi_faces": 139
+    },
+    "vancouver-wa": {
+     "labels": 15,
+     "in_run_2": 0.3333333333333333,
+     "in_run_3": 0.2,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 2
+    },
+    "virden-il": {
+     "labels": 14,
+     "in_run_2": 0.14285714285714285,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 1
+    },
+    "walla-walla-wa": {
+     "labels": 741,
+     "in_run_2": 0.6774628879892037,
+     "in_run_3": 0.4939271255060729,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.6692307692307692,
+     "multi_faces": 130
+    },
+    "waltham-ma": {
+     "labels": 776,
+     "in_run_2": 0.8015463917525774,
+     "in_run_3": 0.6443298969072165,
+     "median_run_length": 4.0,
+     "multi_faces_one_labeler": 0.7862068965517242,
+     "multi_faces": 145
+    },
+    "washington-dc": {
+     "labels": 22222,
+     "in_run_2": 0.7210872108721087,
+     "in_run_3": 0.5424354243542435,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.5768958185683912,
+     "multi_faces": 4233
+    },
+    "west-chester-pa": {
+     "labels": 25,
+     "in_run_2": 0.28,
+     "in_run_3": 0.12,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.75,
+     "multi_faces": 4
+    },
+    "all": {
+     "labels": 158013,
+     "in_run_2": 0.7194597912829958,
+     "in_run_3": 0.5587768095030156,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.517655897821187,
+     "multi_faces": 25289
+    }
+   },
+   "SurfaceProblem_2026_10_18": {
+    "amsterdam": {
+     "labels": 1981,
+     "in_run_2": 0.5224634023220596,
+     "in_run_3": 0.3377082281675921,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.7202216066481995,
+     "multi_faces": 361
+    },
+    "auckland": {
+     "labels": 2267,
+     "in_run_2": 0.8610498456109396,
+     "in_run_3": 0.7525363917071018,
+     "median_run_length": 6.0,
+     "multi_faces_one_labeler": 0.49473684210526314,
+     "multi_faces": 285
+    },
+    "bayonne-fr": {
+     "labels": 33,
+     "in_run_2": 0.42424242424242425,
+     "in_run_3": 0.36363636363636365,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 5
+    },
+    "blackhawk-hills-il": {
+     "labels": 27,
+     "in_run_2": 0.37037037037037035,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.8,
+     "multi_faces": 5
+    },
+    "burnaby": {
+     "labels": 4082,
+     "in_run_2": 0.8143067123958844,
+     "in_run_3": 0.6521313081822636,
+     "median_run_length": 4.0,
+     "multi_faces_one_labeler": 0.6165730337078652,
+     "multi_faces": 712
+    },
+    "cdmx": {
+     "labels": 15107,
+     "in_run_2": 0.6004501224597869,
+     "in_run_3": 0.4309922552459125,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.46722560975609756,
+     "multi_faces": 2624
+    },
+    "chandigarh-india": {
+     "labels": 939,
+     "in_run_2": 0.8296059637912673,
+     "in_run_3": 0.759318423855165,
+     "median_run_length": 11.0,
+     "multi_faces_one_labeler": 0.8791208791208791,
+     "multi_faces": 91
+    },
+    "chicago-il": {
+     "labels": 25547,
+     "in_run_2": 0.785062825380671,
+     "in_run_3": 0.6532273848201354,
+     "median_run_length": 4.0,
+     "multi_faces_one_labeler": 0.8603634690591212,
+     "multi_faces": 4347
+    },
+    "cliffside-park-nj": {
+     "labels": 128,
+     "in_run_2": 0.75,
+     "in_run_3": 0.59375,
+     "median_run_length": 4.0,
+     "multi_faces_one_labeler": 0.5882352941176471,
+     "multi_faces": 17
+    },
+    "clifton-nj": {
+     "labels": 70,
+     "in_run_2": 0.8285714285714286,
+     "in_run_3": 0.6,
+     "median_run_length": 4.0,
+     "multi_faces_one_labeler": 0.7333333333333333,
+     "multi_faces": 15
+    },
+    "columbus-oh": {
+     "labels": 6816,
+     "in_run_2": 0.82981220657277,
+     "in_run_3": 0.7139084507042254,
+     "median_run_length": 5.0,
+     "multi_faces_one_labeler": 0.5605911330049261,
+     "multi_faces": 1015
+    },
+    "cuenca": {
+     "labels": 2541,
+     "in_run_2": 0.6536796536796536,
+     "in_run_3": 0.46792601338055884,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.3891891891891892,
+     "multi_faces": 370
+    },
+    "danville-il": {
+     "labels": 5288,
+     "in_run_2": 0.94232223903177,
+     "in_run_3": 0.8738653555219364,
+     "median_run_length": 9.0,
+     "multi_faces_one_labeler": 0.8002853067047075,
+     "multi_faces": 701
+    },
+    "detroit-mi": {
+     "labels": 328,
+     "in_run_2": 0.6280487804878049,
+     "in_run_3": 0.4634146341463415,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.38235294117647056,
+     "multi_faces": 68
+    },
+    "fort-wayne-in": {
+     "labels": 355,
+     "in_run_2": 0.895774647887324,
+     "in_run_3": 0.8112676056338028,
+     "median_run_length": 6.0,
+     "multi_faces_one_labeler": 0.9344262295081968,
+     "multi_faces": 61
+    },
+    "gainesville-fl": {
+     "labels": 168,
+     "in_run_2": 0.5,
+     "in_run_3": 0.09523809523809523,
+     "median_run_length": 1.5,
+     "multi_faces_one_labeler": 0.9736842105263158,
+     "multi_faces": 38
+    },
+    "hackensack-nj": {
+     "labels": 36,
+     "in_run_2": 0.4166666666666667,
+     "in_run_3": 0.08333333333333333,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.625,
+     "multi_faces": 8
+    },
+    "houston-tx": {
+     "labels": 140,
+     "in_run_2": 0.7214285714285714,
+     "in_run_3": 0.55,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.9655172413793104,
+     "multi_faces": 29
+    },
+    "knox-oh": {
+     "labels": 923,
+     "in_run_2": 0.6923076923076923,
+     "in_run_3": 0.5319609967497292,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.8705882352941177,
+     "multi_faces": 170
+    },
+    "la-ca": {
+     "labels": 55,
+     "in_run_2": 0.9090909090909091,
+     "in_run_3": 0.8727272727272727,
+     "median_run_length": 6.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 9
+    },
+    "la-piedad": {
+     "labels": 90,
+     "in_run_2": 0.6444444444444445,
+     "in_run_3": 0.4666666666666667,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.8947368421052632,
+     "multi_faces": 19
+    },
+    "laurens-ia": {
+     "labels": 528,
+     "in_run_2": 0.9204545454545454,
+     "in_run_3": 0.875,
+     "median_run_length": 8.0,
+     "multi_faces_one_labeler": 0.9866666666666667,
+     "multi_faces": 75
+    },
+    "madison-wi": {
+     "labels": 237,
+     "in_run_2": 0.7805907172995781,
+     "in_run_3": 0.5864978902953587,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.9661016949152542,
+     "multi_faces": 59
+    },
+    "maywood-nj": {
+     "labels": 497,
+     "in_run_2": 0.6659959758551308,
+     "in_run_3": 0.45271629778672035,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.7863247863247863,
+     "multi_faces": 117
+    },
+    "mendota-il": {
+     "labels": 1165,
+     "in_run_2": 0.6755364806866953,
+     "in_run_3": 0.4575107296137339,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.22580645161290322,
+     "multi_faces": 186
+    },
+    "newberg-or": {
+     "labels": 2196,
+     "in_run_2": 0.75,
+     "in_run_3": 0.5623861566484517,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.5612472160356348,
+     "multi_faces": 449
+    },
+    "newport-ky": {
+     "labels": 47,
+     "in_run_2": 0.9148936170212766,
+     "in_run_3": 0.8297872340425532,
+     "median_run_length": 14.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 6
+    },
+    "niagara-falls-ny": {
+     "labels": 428,
+     "in_run_2": 0.8130841121495327,
+     "in_run_3": 0.7289719626168224,
+     "median_run_length": 5.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 76
+    },
+    "oradell-nj": {
+     "labels": 4006,
+     "in_run_2": 0.9201198202695956,
+     "in_run_3": 0.8552171742386421,
+     "median_run_length": 15.0,
+     "multi_faces_one_labeler": 0.39937106918238996,
+     "multi_faces": 318
+    },
+    "paterson-nj": {
+     "labels": 2883,
+     "in_run_2": 0.5855012140131807,
+     "in_run_3": 0.3399236906000694,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.6136363636363636,
+     "multi_faces": 616
+    },
+    "pittsburgh-pa": {
+     "labels": 4312,
+     "in_run_2": 0.6549165120593692,
+     "in_run_3": 0.4049165120593692,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.8832997987927566,
+     "multi_faces": 994
+    },
+    "rancagua-chile": {
+     "labels": 554,
+     "in_run_2": 0.7888086642599278,
+     "in_run_3": 0.5505415162454874,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.9007633587786259,
+     "multi_faces": 131
+    },
+    "richmond-va": {
+     "labels": 123,
+     "in_run_2": 0.8861788617886179,
+     "in_run_3": 0.8373983739837398,
+     "median_run_length": 6.0,
+     "multi_faces_one_labeler": 0.7058823529411765,
+     "multi_faces": 17
+    },
+    "santiago-chile": {
+     "labels": 204,
+     "in_run_2": 0.7598039215686274,
+     "in_run_3": 0.5147058823529411,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.9215686274509803,
+     "multi_faces": 51
+    },
+    "sao-paulo-brazil": {
+     "labels": 92,
+     "in_run_2": 0.75,
+     "in_run_3": 0.6195652173913043,
+     "median_run_length": 4.0,
+     "multi_faces_one_labeler": 0.8823529411764706,
+     "multi_faces": 17
+    },
+    "seattle-wa": {
+     "labels": 37545,
+     "in_run_2": 0.7147423092289253,
+     "in_run_3": 0.5368224796910375,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.6281481481481481,
+     "multi_faces": 7425
+    },
+    "spgg": {
+     "labels": 21451,
+     "in_run_2": 0.7431355181576617,
+     "in_run_3": 0.5760570602769102,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.3294452347083926,
+     "multi_faces": 3515
+    },
+    "st-louis-mo": {
+     "labels": 32792,
+     "in_run_2": 0.9055562332276165,
+     "in_run_3": 0.8018114174188826,
+     "median_run_length": 5.0,
+     "multi_faces_one_labeler": 0.9427057459844345,
+     "multi_faces": 6039
+    },
+    "teaneck-nj": {
+     "labels": 2787,
+     "in_run_2": 0.757086472909939,
+     "in_run_3": 0.5870111230714029,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.6050583657587548,
+     "multi_faces": 514
+    },
+    "tucson-az": {
+     "labels": 1102,
+     "in_run_2": 0.7568058076225045,
+     "in_run_3": 0.5553539019963702,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.4892703862660944,
+     "multi_faces": 233
+    },
+    "vancouver-wa": {
+     "labels": 10,
+     "in_run_2": 0.2,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 1
+    },
+    "virden-il": {
+     "labels": 120,
+     "in_run_2": 0.575,
+     "in_run_3": 0.425,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.8,
+     "multi_faces": 20
+    },
+    "walla-walla-wa": {
+     "labels": 1147,
+     "in_run_2": 0.8116826503923278,
+     "in_run_3": 0.6896251089799477,
+     "median_run_length": 5.0,
+     "multi_faces_one_labeler": 0.8100558659217877,
+     "multi_faces": 179
+    },
+    "waltham-ma": {
+     "labels": 1850,
+     "in_run_2": 0.8605405405405405,
+     "in_run_3": 0.7243243243243244,
+     "median_run_length": 5.0,
+     "multi_faces_one_labeler": 0.7927927927927928,
+     "multi_faces": 333
+    },
+    "washington-dc": {
+     "labels": 8952,
+     "in_run_2": 0.5783065236818588,
+     "in_run_3": 0.38304289544235925,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.60625,
+     "multi_faces": 1760
+    },
+    "west-chester-pa": {
+     "labels": 68,
+     "in_run_2": 0.5,
+     "in_run_3": 0.29411764705882354,
+     "median_run_length": 1.5,
+     "multi_faces_one_labeler": 0.9166666666666666,
+     "multi_faces": 12
+    },
+    "all": {
+     "labels": 192017,
+     "in_run_2": 0.7612919689402501,
+     "in_run_3": 0.6104824052037059,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.6785850467837973,
+     "multi_faces": 34093
+    }
+   },
+   "Crosswalk_2026_10_18": {
+    "amsterdam": {
+     "labels": 2976,
+     "in_run_2": 0.3743279569892473,
+     "in_run_3": 0.16263440860215053,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.21581196581196582,
+     "multi_faces": 468
+    },
+    "auckland": {
+     "labels": 273,
+     "in_run_2": 0.21978021978021978,
+     "in_run_3": 0.02197802197802198,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.18867924528301888,
+     "multi_faces": 53
+    },
+    "bayonne-fr": {
+     "labels": 7,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "blackhawk-hills-il": {
+     "labels": 38,
+     "in_run_2": 0.2631578947368421,
+     "in_run_3": 0.15789473684210525,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.6,
+     "multi_faces": 5
+    },
+    "burnaby": {
+     "labels": 1726,
+     "in_run_2": 0.23001158748551565,
+     "in_run_3": 0.08748551564310544,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.21967213114754097,
+     "multi_faces": 305
+    },
+    "cdmx": {
+     "labels": 3918,
+     "in_run_2": 0.19346605410923942,
+     "in_run_3": 0.04134762633996937,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.31625441696113077,
+     "multi_faces": 566
+    },
+    "chandigarh-india": {
+     "labels": 94,
+     "in_run_2": 0.6063829787234043,
+     "in_run_3": 0.32978723404255317,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.7368421052631579,
+     "multi_faces": 19
+    },
+    "chicago-il": {
+     "labels": 27945,
+     "in_run_2": 0.10305958132045089,
+     "in_run_3": 0.02555018786902845,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.4584733557369179,
+     "multi_faces": 2083
+    },
+    "cliffside-park-nj": {
+     "labels": 200,
+     "in_run_2": 0.06,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.5454545454545454,
+     "multi_faces": 11
+    },
+    "clifton-nj": {
+     "labels": 18,
+     "in_run_2": 0.2222222222222222,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.25,
+     "multi_faces": 4
+    },
+    "columbus-oh": {
+     "labels": 889,
+     "in_run_2": 0.13498312710911137,
+     "in_run_3": 0.03374578177727784,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.38372093023255816,
+     "multi_faces": 86
+    },
+    "cuenca": {
+     "labels": 1768,
+     "in_run_2": 0.167420814479638,
+     "in_run_3": 0.0418552036199095,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.09644670050761421,
+     "multi_faces": 197
+    },
+    "danville-il": {
+     "labels": 488,
+     "in_run_2": 0.14959016393442623,
+     "in_run_3": 0.006147540983606557,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.5192307692307693,
+     "multi_faces": 52
+    },
+    "detroit-mi": {
+     "labels": 283,
+     "in_run_2": 0.1166077738515901,
+     "in_run_3": 0.024734982332155476,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.10810810810810811,
+     "multi_faces": 37
+    },
+    "fort-wayne-in": {
+     "labels": 75,
+     "in_run_2": 0.12,
+     "in_run_3": 0.04,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.75,
+     "multi_faces": 4
+    },
+    "gainesville-fl": {
+     "labels": 2382,
+     "in_run_2": 0.24223341729638959,
+     "in_run_3": 0.07010915197313182,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.822463768115942,
+     "multi_faces": 276
+    },
+    "hackensack-nj": {
+     "labels": 98,
+     "in_run_2": 0.2857142857142857,
+     "in_run_3": 0.12244897959183673,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.17647058823529413,
+     "multi_faces": 17
+    },
+    "houston-tx": {
+     "labels": 36,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "knox-oh": {
+     "labels": 355,
+     "in_run_2": 0.09859154929577464,
+     "in_run_3": 0.030985915492957747,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.7,
+     "multi_faces": 20
+    },
+    "la-ca": {
+     "labels": 47,
+     "in_run_2": 0.0851063829787234,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.5,
+     "multi_faces": 4
+    },
+    "la-piedad": {
+     "labels": 29,
+     "in_run_2": 0.13793103448275862,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 2
+    },
+    "laurens-ia": {
+     "labels": 20,
+     "in_run_2": 0.35,
+     "in_run_3": 0.15,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 3
+    },
+    "madison-wi": {
+     "labels": 126,
+     "in_run_2": 0.12698412698412698,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.5,
+     "multi_faces": 14
+    },
+    "maywood-nj": {
+     "labels": 505,
+     "in_run_2": 0.21188118811881188,
+     "in_run_3": 0.0297029702970297,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.13402061855670103,
+     "multi_faces": 97
+    },
+    "mendota-il": {
+     "labels": 983,
+     "in_run_2": 0.12614445574771108,
+     "in_run_3": 0.022380467955239063,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.032,
+     "multi_faces": 125
+    },
+    "newberg-or": {
+     "labels": 47,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "newport-ky": {
+     "labels": 2,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "niagara-falls-ny": {
+     "labels": 115,
+     "in_run_2": 0.05217391304347826,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 3
+    },
+    "oradell-nj": {
+     "labels": 675,
+     "in_run_2": 0.2962962962962963,
+     "in_run_3": 0.12444444444444444,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.18548387096774194,
+     "multi_faces": 124
+    },
+    "paterson-nj": {
+     "labels": 5139,
+     "in_run_2": 0.1408834403580463,
+     "in_run_3": 0.02957773885970033,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.2239884393063584,
+     "multi_faces": 692
+    },
+    "pittsburgh-pa": {
+     "labels": 1018,
+     "in_run_2": 0.13359528487229863,
+     "in_run_3": 0.029469548133595286,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.8051948051948052,
+     "multi_faces": 77
+    },
+    "rancagua-chile": {
+     "labels": 148,
+     "in_run_2": 0.16216216216216217,
+     "in_run_3": 0.04054054054054054,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.6,
+     "multi_faces": 15
+    },
+    "richmond-va": {
+     "labels": 68,
+     "in_run_2": 0.3382352941176471,
+     "in_run_3": 0.04411764705882353,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.46153846153846156,
+     "multi_faces": 13
+    },
+    "santiago-chile": {
+     "labels": 128,
+     "in_run_2": 0.2109375,
+     "in_run_3": 0.0546875,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.7142857142857143,
+     "multi_faces": 14
+    },
+    "sao-paulo-brazil": {
+     "labels": 102,
+     "in_run_2": 0.0392156862745098,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 2
+    },
+    "seattle-wa": {
+     "labels": 6280,
+     "in_run_2": 0.14267515923566879,
+     "in_run_3": 0.033121019108280254,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.2270081490104773,
+     "multi_faces": 859
+    },
+    "spgg": {
+     "labels": 130,
+     "in_run_2": 0.13076923076923078,
+     "in_run_3": 0.06923076923076923,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 7
+    },
+    "st-louis-mo": {
+     "labels": 2811,
+     "in_run_2": 0.09711846318036287,
+     "in_run_3": 0.013162575595873355,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.5223880597014925,
+     "multi_faces": 201
+    },
+    "teaneck-nj": {
+     "labels": 3363,
+     "in_run_2": 0.2530478739220934,
+     "in_run_3": 0.07641986321736545,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.119281045751634,
+     "multi_faces": 612
+    },
+    "tucson-az": {
+     "labels": 687,
+     "in_run_2": 0.11790393013100436,
+     "in_run_3": 0.027656477438136828,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.041237113402061855,
+     "multi_faces": 97
+    },
+    "vancouver-wa": {
+     "labels": 12,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "virden-il": {
+     "labels": 17,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "walla-walla-wa": {
+     "labels": 696,
+     "in_run_2": 0.19827586206896552,
+     "in_run_3": 0.07183908045977011,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.2727272727272727,
+     "multi_faces": 99
+    },
+    "waltham-ma": {
+     "labels": 281,
+     "in_run_2": 0.014234875444839857,
+     "in_run_3": 0.014234875444839857,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.1111111111111111,
+     "multi_faces": 9
+    },
+    "west-chester-pa": {
+     "labels": 327,
+     "in_run_2": 0.1437308868501529,
+     "in_run_3": 0.027522935779816515,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.5882352941176471,
+     "multi_faces": 34
+    },
+    "all": {
+     "labels": 67325,
+     "in_run_2": 0.15114741923505384,
+     "in_run_3": 0.04123282584478277,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.3283602518477963,
+     "multi_faces": 7306
+    }
+   },
+   "Signal_2026_10_18": {
+    "amsterdam": {
+     "labels": 1034,
+     "in_run_2": 0.40038684719535783,
+     "in_run_3": 0.1450676982591876,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.132,
+     "multi_faces": 250
+    },
+    "auckland": {
+     "labels": 271,
+     "in_run_2": 0.6088560885608856,
+     "in_run_3": 0.25461254612546125,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.16071428571428573,
+     "multi_faces": 56
+    },
+    "burnaby": {
+     "labels": 891,
+     "in_run_2": 0.3367003367003367,
+     "in_run_3": 0.04264870931537598,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.1411764705882353,
+     "multi_faces": 255
+    },
+    "cdmx": {
+     "labels": 109,
+     "in_run_2": 0.1559633027522936,
+     "in_run_3": 0.027522935779816515,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.6363636363636364,
+     "multi_faces": 11
+    },
+    "chandigarh-india": {
+     "labels": 6,
+     "in_run_2": 0.3333333333333333,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 1
+    },
+    "chicago-il": {
+     "labels": 5807,
+     "in_run_2": 0.26192526261408644,
+     "in_run_3": 0.05183399345617359,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.4400360685302074,
+     "multi_faces": 1109
+    },
+    "cliffside-park-nj": {
+     "labels": 9,
+     "in_run_2": 0.4444444444444444,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 2
+    },
+    "clifton-nj": {
+     "labels": 3,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "columbus-oh": {
+     "labels": 725,
+     "in_run_2": 0.34758620689655173,
+     "in_run_3": 0.07172413793103448,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.3167701863354037,
+     "multi_faces": 161
+    },
+    "cuenca": {
+     "labels": 801,
+     "in_run_2": 0.18726591760299627,
+     "in_run_3": 0.012484394506866416,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.03208556149732621,
+     "multi_faces": 187
+    },
+    "danville-il": {
+     "labels": 100,
+     "in_run_2": 0.54,
+     "in_run_3": 0.3,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.8636363636363636,
+     "multi_faces": 22
+    },
+    "detroit-mi": {
+     "labels": 17,
+     "in_run_2": 0.23529411764705882,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.3333333333333333,
+     "multi_faces": 6
+    },
+    "fort-wayne-in": {
+     "labels": 17,
+     "in_run_2": 0.47058823529411764,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.4,
+     "multi_faces": 5
+    },
+    "gainesville-fl": {
+     "labels": 719,
+     "in_run_2": 0.6342141863699583,
+     "in_run_3": 0.2698191933240612,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.7960199004975125,
+     "multi_faces": 201
+    },
+    "hackensack-nj": {
+     "labels": 16,
+     "in_run_2": 0.8125,
+     "in_run_3": 0.5625,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 0.8,
+     "multi_faces": 5
+    },
+    "houston-tx": {
+     "labels": 13,
+     "in_run_2": 0.3076923076923077,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 2
+    },
+    "knox-oh": {
+     "labels": 19,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "la-ca": {
+     "labels": 57,
+     "in_run_2": 0.7719298245614035,
+     "in_run_3": 0.5263157894736842,
+     "median_run_length": 3.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 14
+    },
+    "madison-wi": {
+     "labels": 10,
+     "in_run_2": 0.2,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 1
+    },
+    "maywood-nj": {
+     "labels": 31,
+     "in_run_2": 0.6451612903225806,
+     "in_run_3": 0.0,
+     "median_run_length": 2.0,
+     "multi_faces_one_labeler": 0.75,
+     "multi_faces": 12
+    },
+    "mendota-il": {
+     "labels": 31,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.0,
+     "multi_faces": 9
+    },
+    "niagara-falls-ny": {
+     "labels": 70,
+     "in_run_2": 0.2,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 7
+    },
+    "oradell-nj": {
+     "labels": 21,
+     "in_run_2": 0.19047619047619047,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.2857142857142857,
+     "multi_faces": 7
+    },
+    "paterson-nj": {
+     "labels": 159,
+     "in_run_2": 0.16352201257861634,
+     "in_run_3": 0.03773584905660377,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.36,
+     "multi_faces": 25
+    },
+    "pittsburgh-pa": {
+     "labels": 218,
+     "in_run_2": 0.3532110091743119,
+     "in_run_3": 0.0779816513761468,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.9722222222222222,
+     "multi_faces": 36
+    },
+    "rancagua-chile": {
+     "labels": 143,
+     "in_run_2": 0.35664335664335667,
+     "in_run_3": 0.14685314685314685,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.8260869565217391,
+     "multi_faces": 23
+    },
+    "richmond-va": {
+     "labels": 51,
+     "in_run_2": 0.21568627450980393,
+     "in_run_3": 0.058823529411764705,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.15384615384615385,
+     "multi_faces": 13
+    },
+    "santiago-chile": {
+     "labels": 116,
+     "in_run_2": 0.25862068965517243,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.9375,
+     "multi_faces": 16
+    },
+    "sao-paulo-brazil": {
+     "labels": 10,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "seattle-wa": {
+     "labels": 1671,
+     "in_run_2": 0.2495511669658887,
+     "in_run_3": 0.06642728904847396,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.4389438943894389,
+     "multi_faces": 303
+    },
+    "spgg": {
+     "labels": 14,
+     "in_run_2": 0.14285714285714285,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 1.0,
+     "multi_faces": 1
+    },
+    "st-louis-mo": {
+     "labels": 1325,
+     "in_run_2": 0.36830188679245285,
+     "in_run_3": 0.11773584905660377,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.7427385892116183,
+     "multi_faces": 241
+    },
+    "teaneck-nj": {
+     "labels": 227,
+     "in_run_2": 0.21145374449339208,
+     "in_run_3": 0.01762114537444934,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.32075471698113206,
+     "multi_faces": 53
+    },
+    "tucson-az": {
+     "labels": 137,
+     "in_run_2": 0.34306569343065696,
+     "in_run_3": 0.1386861313868613,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.15151515151515152,
+     "multi_faces": 33
+    },
+    "vancouver-wa": {
+     "labels": 6,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "virden-il": {
+     "labels": 5,
+     "in_run_2": 0.0,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": null,
+     "multi_faces": 0
+    },
+    "walla-walla-wa": {
+     "labels": 218,
+     "in_run_2": 0.44954128440366975,
+     "in_run_3": 0.22018348623853212,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.5,
+     "multi_faces": 52
+    },
+    "waltham-ma": {
+     "labels": 47,
+     "in_run_2": 0.0425531914893617,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.16666666666666666,
+     "multi_faces": 6
+    },
+    "west-chester-pa": {
+     "labels": 44,
+     "in_run_2": 0.18181818181818182,
+     "in_run_3": 0.0,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.5714285714285714,
+     "multi_faces": 7
+    },
+    "all": {
+     "labels": 15168,
+     "in_run_2": 0.31335706751054854,
+     "in_run_3": 0.08379483122362869,
+     "median_run_length": 1.0,
+     "multi_faces_one_labeler": 0.415389527458493,
+     "multi_faces": 3132
+    }
+   }
+  },
+  "types": {
+   "NoSidewalk": {
+    "counts": {
+     "labels": 232258,
+     "expert_placed": 19434,
+     "ai_placed": 0,
+     "experts_split": 1,
+     "crowd_contradicts_dropped": 0,
+     "with_verdict": 2325,
+     "without_face": 118
+    },
+    "macro": {
+     "cities": [
+      "chicago-il",
+      "oradell-nj",
+      "seattle-wa"
+     ],
+     "n_cities": 3,
+     "pair_agreement": 0.9923725392631099,
+     "pair_agreement_ci95": [
+      0.981085871948189,
+      0.999350674003194
+     ],
+     "icc": 0.8722266640577301,
+     "homogeneous_share": 0.983836777954425,
+     "null_city": {
+      "mean": 0.6988650834189784,
+      "sd": 0.01619000229689009,
+      "p": 0.000999000999000999
+     },
+     "null_labeler": {
+      "mean": 0.9079524886401187,
+      "sd": 0.010982735128994179,
+      "p": 0.000999000999000999
+     },
+     "same_labeler_other_face": 0.8603849844251109,
+     "same_face_other_labeler": 0.9808099123602297,
+     "city_any": 0.6990190744205812,
+     "labels": 1949,
+     "pairs": 6853
+    },
+    "strata": {
+     "all": {
+      "expert": {
+       "different expert": {
+        "pairs": 7,
+        "agreement": null
+       },
+       "same expert": {
+        "pairs": 6910,
+        "agreement": 0.9890014471780029
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 171,
+        "agreement": 1.0
+       },
+       "< 1 h": {
+        "pairs": 2019,
+        "agreement": 0.9856364536899456
+       },
+       ">= 1 day": {
+        "pairs": 4719,
+        "agreement": 0.9900402627675355
+       },
+       "different expert": {
+        "pairs": 7,
+        "agreement": null
+       },
+       "unknown": {
+        "pairs": 1,
+        "agreement": null
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 58,
+        "agreement": 1.0
+       },
+       "Gallery": {
+        "pairs": 11,
+        "agreement": null
+       },
+       "LabelMap": {
+        "pairs": 275,
+        "agreement": 1.0
+       },
+       "Old data": {
+        "pairs": 354,
+        "agreement": 0.9887005649717514
+       },
+       "Validate": {
+        "pairs": 6180,
+        "agreement": 0.9883495145631068
+       },
+       "mixed": {
+        "pairs": 30,
+        "agreement": 1.0
+       },
+       "other": {
+        "pairs": 1,
+        "agreement": null
+       },
+       "unknown": {
+        "pairs": 1,
+        "agreement": null
+       }
+      }
+     },
+     "seattle-wa": {
+      "expert": {
+       "same expert": {
+        "pairs": 355,
+        "agreement": 0.9887323943661972
+       }
+      },
+      "gap": {
+       "< 1 h": {
+        "pairs": 348,
+        "agreement": 0.9885057471264368
+       },
+       ">= 1 day": {
+        "pairs": 7,
+        "agreement": null
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 17,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 331,
+        "agreement": 0.9879154078549849
+       },
+       "Validate": {
+        "pairs": 3,
+        "agreement": null
+       },
+       "mixed": {
+        "pairs": 4,
+        "agreement": null
+       }
+      }
+     },
+     "chicago-il": {
+      "expert": {
+       "same expert": {
+        "pairs": 299,
+        "agreement": 1.0
+       }
+      },
+      "gap": {
+       "< 1 h": {
+        "pairs": 298,
+        "agreement": 1.0
+       },
+       "unknown": {
+        "pairs": 1,
+        "agreement": null
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 18,
+        "agreement": null
+       },
+       "Gallery": {
+        "pairs": 1,
+        "agreement": null
+       },
+       "LabelMap": {
+        "pairs": 275,
+        "agreement": 1.0
+       },
+       "Old data": {
+        "pairs": 3,
+        "agreement": null
+       },
+       "other": {
+        "pairs": 1,
+        "agreement": null
+       },
+       "unknown": {
+        "pairs": 1,
+        "agreement": null
+       }
+      }
+     },
+     "oradell-nj": {
+      "expert": {
+       "different expert": {
+        "pairs": 1,
+        "agreement": null
+       },
+       "same expert": {
+        "pairs": 6198,
+        "agreement": 0.9883833494675702
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 171,
+        "agreement": 1.0
+       },
+       "< 1 h": {
+        "pairs": 1322,
+        "agreement": 0.981089258698941
+       },
+       ">= 1 day": {
+        "pairs": 4705,
+        "agreement": 0.9900106269925611
+       },
+       "different expert": {
+        "pairs": 1,
+        "agreement": null
+       }
+      },
+      "source": {
+       "Old data": {
+        "pairs": 12,
+        "agreement": null
+       },
+       "Validate": {
+        "pairs": 6160,
+        "agreement": 0.9883116883116884
+       },
+       "mixed": {
+        "pairs": 26,
+        "agreement": null
+       }
+      }
+     }
+    },
+    "slices": {
+     "tag": {
+      "street has no sidewalks": {
+       "pairs": 1656,
+       "agreement": 0.9625603864734299
+      },
+      "street has a sidewalk": {
+       "pairs": 199,
+       "agreement": 1.0
+      },
+      "gravel/dirt road": {
+       "pairs": 67,
+       "agreement": 1.0
+      },
+      "shared pedestrian/car space": {
+       "pairs": 29,
+       "agreement": null
+      },
+      "ends abruptly": {
+       "pairs": 10,
+       "agreement": null
+      }
+     },
+     "severity": {}
+    },
+    "pairs_total": 6917,
+    "per_city_named": {
+     "seattle-wa": {
+      "labels": 691,
+      "labels_in_multi_runs": 215,
+      "multi_runs": 68,
+      "labelers": 192,
+      "pairs": 355,
+      "share_correct": 0.7568740955137482,
+      "pair_agreement": 0.9887323943661972,
+      "pair_agreement_run_weighted": 0.9941176470588234,
+      "homogeneous_share": 0.9852941176470589,
+      "icc": 0.9786222941628953,
+      "pair_agreement_ci95": [
+       0.9589528795811518,
+       1.0
+      ],
+      "same_labeler_other_face": 0.9410267923963479,
+      "same_labeler_other_face_pairs": 6681,
+      "same_face_other_labeler": 1.0,
+      "same_face_other_labeler_pairs": 19,
+      "city_any": 0.6314352230541748
+     },
+     "chicago-il": {
+      "labels": 182,
+      "labels_in_multi_runs": 84,
+      "multi_runs": 21,
+      "labelers": 54,
+      "pairs": 299,
+      "share_correct": 0.5714285714285714,
+      "pair_agreement": 1.0,
+      "pair_agreement_run_weighted": 1.0,
+      "homogeneous_share": 1.0,
+      "icc": 1.0,
+      "pair_agreement_ci95": [
+       1.0,
+       1.0
+      ],
+      "same_labeler_other_face": 0.7140115163147792,
+      "same_labeler_other_face_pairs": 521,
+      "same_face_other_labeler": 1.0,
+      "same_face_other_labeler_pairs": 243,
+      "city_any": 0.5074980268350434
+     },
+     "oradell-nj": {
+      "labels": 1076,
+      "labels_in_multi_runs": 997,
+      "multi_runs": 148,
+      "labelers": 23,
+      "pairs": 6199,
+      "share_correct": 0.9786245353159851,
+      "pair_agreement": 0.9883852234231327,
+      "pair_agreement_run_weighted": 0.985842985842986,
+      "homogeneous_share": 0.9662162162162162,
+      "icc": 0.638057698010295,
+      "pair_agreement_ci95": [
+       0.9688404193807231,
+       0.9991599619183378
+      ],
+      "same_labeler_other_face": 0.9261166445642053,
+      "same_labeler_other_face_pairs": 70882,
+      "same_face_other_labeler": 0.942429737080689,
+      "same_face_other_labeler_pairs": 2206,
+      "city_any": 0.9581239733725253
+     },
+     "other": {
+      "labels": 258,
+      "labels_in_multi_runs": 83,
+      "multi_runs": 35,
+      "labelers": 89,
+      "pairs": 64,
+      "share_correct": 0.9651162790697675,
+      "pair_agreement": 1.0,
+      "pair_agreement_run_weighted": 1.0,
+      "homogeneous_share": 1.0,
+      "icc": null,
+      "pair_agreement_ci95": [
+       1.0,
+       1.0
+      ],
+      "same_labeler_other_face": 0.9546142208774584,
+      "same_labeler_other_face_pairs": 661,
+      "same_face_other_labeler": 1.0,
+      "same_face_other_labeler_pairs": 8,
+      "city_any": 0.9433900523560209,
+      "n_cities": 23
+     }
+    }
+   },
+   "CurbRamp": {
+    "counts": {
+     "labels": 541936,
+     "expert_placed": 18424,
+     "ai_placed": 79351,
+     "experts_split": 8,
+     "crowd_contradicts_dropped": 0,
+     "with_verdict": 22398,
+     "without_face": 599
+    },
+    "macro": {
+     "cities": [
+      "amsterdam",
+      "burnaby",
+      "cdmx",
+      "chicago-il",
+      "columbus-oh",
+      "knox-oh",
+      "maywood-nj",
+      "newberg-or",
+      "oradell-nj",
+      "paterson-nj",
+      "pittsburgh-pa",
+      "seattle-wa",
+      "spgg",
+      "st-louis-mo",
+      "teaneck-nj",
+      "walla-walla-wa"
+     ],
+     "n_cities": 16,
+     "pair_agreement": 0.9492599924011871,
+     "pair_agreement_ci95": [
+      0.9381484198498804,
+      0.9607197477487261
+     ],
+     "icc": 0.5459825419966031,
+     "homogeneous_share": 0.9519368673702691,
+     "null_city": {
+      "mean": 0.9006579816704928,
+      "sd": 0.007837795243656907,
+      "p": 0.000999000999000999
+     },
+     "null_labeler": {
+      "mean": 0.9278846576637041,
+      "sd": 0.004546645866303629,
+      "p": 0.000999000999000999
+     },
+     "same_labeler_other_face": 0.9469866654779404,
+     "same_face_other_labeler": 0.9468834296511867,
+     "city_any": 0.9006526082399755,
+     "labels": 20917,
+     "pairs": 3806
+    },
+    "strata": {
+     "all": {
+      "expert": {
+       "different expert": {
+        "pairs": 468,
+        "agreement": 0.9273504273504274
+       },
+       "same expert": {
+        "pairs": 3469,
+        "agreement": 0.906313058518305
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 220,
+        "agreement": 0.9318181818181818
+       },
+       "< 1 h": {
+        "pairs": 1476,
+        "agreement": 0.8963414634146342
+       },
+       ">= 1 day": {
+        "pairs": 1773,
+        "agreement": 0.9114495205865765
+       },
+       "different expert": {
+        "pairs": 468,
+        "agreement": 0.9273504273504274
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 148,
+        "agreement": 0.8986486486486487
+       },
+       "Gallery": {
+        "pairs": 57,
+        "agreement": 1.0
+       },
+       "LabelMap": {
+        "pairs": 8,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 580,
+        "agreement": 0.7879310344827586
+       },
+       "Validate": {
+        "pairs": 2276,
+        "agreement": 0.9367311072056239
+       },
+       "mixed": {
+        "pairs": 395,
+        "agreement": 0.8911392405063291
+       },
+       "other": {
+        "pairs": 5,
+        "agreement": null
+       }
+      }
+     },
+     "seattle-wa": {
+      "expert": {
+       "different expert": {
+        "pairs": 198,
+        "agreement": 0.8888888888888888
+       },
+       "same expert": {
+        "pairs": 819,
+        "agreement": 0.811965811965812
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 42,
+        "agreement": 0.8571428571428571
+       },
+       "< 1 h": {
+        "pairs": 457,
+        "agreement": 0.7964989059080962
+       },
+       ">= 1 day": {
+        "pairs": 320,
+        "agreement": 0.828125
+       },
+       "different expert": {
+        "pairs": 198,
+        "agreement": 0.8888888888888888
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 53,
+        "agreement": 0.9245283018867925
+       },
+       "Gallery": {
+        "pairs": 12,
+        "agreement": null
+       },
+       "LabelMap": {
+        "pairs": 5,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 422,
+        "agreement": 0.7488151658767772
+       },
+       "Validate": {
+        "pairs": 250,
+        "agreement": 0.88
+       },
+       "mixed": {
+        "pairs": 77,
+        "agreement": 0.8181818181818182
+       }
+      }
+     },
+     "chicago-il": {
+      "expert": {
+       "different expert": {
+        "pairs": 80,
+        "agreement": 0.9125
+       },
+       "same expert": {
+        "pairs": 570,
+        "agreement": 0.9017543859649123
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 27,
+        "agreement": null
+       },
+       "< 1 h": {
+        "pairs": 141,
+        "agreement": 0.8794326241134752
+       },
+       ">= 1 day": {
+        "pairs": 402,
+        "agreement": 0.9054726368159204
+       },
+       "different expert": {
+        "pairs": 80,
+        "agreement": 0.9125
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 69,
+        "agreement": 0.8695652173913043
+       },
+       "Old data": {
+        "pairs": 23,
+        "agreement": null
+       },
+       "Validate": {
+        "pairs": 366,
+        "agreement": 0.9316939890710383
+       },
+       "mixed": {
+        "pairs": 109,
+        "agreement": 0.8532110091743119
+       },
+       "other": {
+        "pairs": 3,
+        "agreement": null
+       }
+      }
+     },
+     "oradell-nj": {
+      "expert": {
+       "different expert": {
+        "pairs": 9,
+        "agreement": null
+       },
+       "same expert": {
+        "pairs": 447,
+        "agreement": 0.9821029082774049
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 33,
+        "agreement": 1.0
+       },
+       "< 1 h": {
+        "pairs": 124,
+        "agreement": 0.967741935483871
+       },
+       ">= 1 day": {
+        "pairs": 290,
+        "agreement": 0.9862068965517241
+       },
+       "different expert": {
+        "pairs": 9,
+        "agreement": null
+       }
+      },
+      "source": {
+       "Gallery": {
+        "pairs": 1,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 1,
+        "agreement": null
+       },
+       "Validate": {
+        "pairs": 425,
+        "agreement": 0.9811764705882353
+       },
+       "mixed": {
+        "pairs": 20,
+        "agreement": null
+       }
+      }
+     }
+    },
+    "slices": {
+     "tag": {
+      "missing tactile warning": {
+       "pairs": 689,
+       "agreement": 0.9404934687953556
+      },
+      "points into traffic": {
+       "pairs": 295,
+       "agreement": 0.911864406779661
+      },
+      "narrow": {
+       "pairs": 82,
+       "agreement": 0.9146341463414634
+      },
+      "surface problem": {
+       "pairs": 75,
+       "agreement": 0.96
+      },
+      "not level with street": {
+       "pairs": 66,
+       "agreement": 0.9848484848484849
+      },
+      "not enough landing space": {
+       "pairs": 52,
+       "agreement": 0.9423076923076923
+      },
+      "steep": {
+       "pairs": 49,
+       "agreement": 1.0
+      },
+      "parallel lines": {
+       "pairs": 39,
+       "agreement": 1.0
+      },
+      "debris / pooled water": {
+       "pairs": 4,
+       "agreement": null
+      }
+     },
+     "severity": {
+      "1": {
+       "pairs": 2722,
+       "agreement": 0.9283614988978692
+      },
+      "2": {
+       "pairs": 206,
+       "agreement": 0.912621359223301
+      },
+      "3": {
+       "pairs": 93,
+       "agreement": 0.9354838709677419
+      }
+     }
+    },
+    "pairs_total": 3937,
+    "per_city_named": {
+     "seattle-wa": {
+      "labels": 7274,
+      "labels_in_multi_runs": 1289,
+      "multi_runs": 557,
+      "labelers": 961,
+      "pairs": 1017,
+      "share_correct": 0.8425900467418201,
+      "pair_agreement": 0.8269419862340216,
+      "pair_agreement_run_weighted": 0.8607257494151569,
+      "homogeneous_share": 0.8366247755834829,
+      "icc": 0.6758974949799399,
+      "pair_agreement_ci95": [
+       0.7810929600171421,
+       0.8701730655258453
+      ],
+      "same_labeler_other_face": 0.833375496996311,
+      "same_labeler_other_face_pairs": 264841,
+      "same_face_other_labeler": 0.8136094674556213,
+      "same_face_other_labeler_pairs": 1014,
+      "city_any": 0.7346994078043767
+     },
+     "chicago-il": {
+      "labels": 3397,
+      "labels_in_multi_runs": 922,
+      "multi_runs": 408,
+      "labelers": 392,
+      "pairs": 650,
+      "share_correct": 0.9499558433912275,
+      "pair_agreement": 0.9030769230769231,
+      "pair_agreement_run_weighted": 0.9291666666666667,
+      "homogeneous_share": 0.9117647058823529,
+      "icc": 0.36043675434386174,
+      "pair_agreement_ci95": [
+       0.8713332331436721,
+       0.9359475173542026
+      ],
+      "same_labeler_other_face": 0.944064406193663,
+      "same_labeler_other_face_pairs": 121479,
+      "same_face_other_labeler": 0.9212218649517685,
+      "same_face_other_labeler_pairs": 1244,
+      "city_any": 0.9048925245132458
+     },
+     "oradell-nj": {
+      "labels": 898,
+      "labels_in_multi_runs": 453,
+      "multi_runs": 181,
+      "labelers": 71,
+      "pairs": 456,
+      "share_correct": 0.9420935412026726,
+      "pair_agreement": 0.9824561403508771,
+      "pair_agreement_run_weighted": 0.9769797421731122,
+      "homogeneous_share": 0.9723756906077348,
+      "icc": 0.8161659668412622,
+      "pair_agreement_ci95": [
+       0.9621208133971292,
+       0.9973267351309948
+      ],
+      "same_labeler_other_face": 0.9711984093334698,
+      "same_labeler_other_face_pairs": 136798,
+      "same_face_other_labeler": 0.9570747217806042,
+      "same_face_other_labeler_pairs": 629,
+      "city_any": 0.8907717633388206
+     },
+     "other": {
+      "labels": 10230,
+      "labels_in_multi_runs": 2330,
+      "multi_runs": 1023,
+      "labelers": 955,
+      "pairs": 1814,
+      "share_correct": 0.9368523949169111,
+      "pair_agreement": 0.938257993384785,
+      "pair_agreement_run_weighted": 0.9602609674457182,
+      "homogeneous_share": 0.9521016617790812,
+      "icc": null,
+      "pair_agreement_ci95": [
+       0.9079112846916639,
+       0.9617815536701739
+      ],
+      "same_labeler_other_face": 0.9766078062703878,
+      "same_labeler_other_face_pairs": 353152,
+      "same_face_other_labeler": 0.9441576724542469,
+      "same_face_other_labeler_pairs": 2131,
+      "city_any": 0.8930638187554376,
+      "n_cities": 30
+     }
+    }
+   },
+   "NoCurbRamp": {
+    "counts": {
+     "labels": 122675,
+     "expert_placed": 3029,
+     "ai_placed": 0,
+     "experts_split": 132,
+     "crowd_contradicts_dropped": 0,
+     "with_verdict": 12960,
+     "without_face": 397
+    },
+    "macro": {
+     "cities": [
+      "burnaby",
+      "cdmx",
+      "chicago-il",
+      "columbus-oh",
+      "knox-oh",
+      "newberg-or",
+      "oradell-nj",
+      "pittsburgh-pa",
+      "seattle-wa",
+      "spgg",
+      "st-louis-mo",
+      "teaneck-nj",
+      "walla-walla-wa"
+     ],
+     "n_cities": 13,
+     "pair_agreement": 0.9151731420845896,
+     "pair_agreement_ci95": [
+      0.8913796179061162,
+      0.9345362728280875
+     ],
+     "icc": 0.6050799061774418,
+     "homogeneous_share": 0.8999215560910427,
+     "null_city": {
+      "mean": 0.6953179049185512,
+      "sd": 0.018354592134563617,
+      "p": 0.000999000999000999
+     },
+     "null_labeler": {
+      "mean": 0.8033286891217941,
+      "sd": 0.012568650135956164,
+      "p": 0.000999000999000999
+     },
+     "same_labeler_other_face": 0.7700343011056712,
+     "same_face_other_labeler": 0.9262185264473233,
+     "city_any": 0.6954961462341784,
+     "labels": 12192,
+     "pairs": 2305
+    },
+    "strata": {
+     "all": {
+      "expert": {
+       "different expert": {
+        "pairs": 212,
+        "agreement": 0.8537735849056604
+       },
+       "same expert": {
+        "pairs": 2131,
+        "agreement": 0.9056780854059128
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 146,
+        "agreement": 0.910958904109589
+       },
+       "< 1 h": {
+        "pairs": 598,
+        "agreement": 0.9013377926421404
+       },
+       ">= 1 day": {
+        "pairs": 1387,
+        "agreement": 0.9069935111751982
+       },
+       "different expert": {
+        "pairs": 212,
+        "agreement": 0.8537735849056604
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 23,
+        "agreement": null
+       },
+       "Gallery": {
+        "pairs": 3,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 155,
+        "agreement": 0.8838709677419355
+       },
+       "Validate": {
+        "pairs": 1750,
+        "agreement": 0.9062857142857143
+       },
+       "mixed": {
+        "pairs": 200,
+        "agreement": 0.915
+       }
+      }
+     },
+     "seattle-wa": {
+      "expert": {
+       "different expert": {
+        "pairs": 116,
+        "agreement": 0.9051724137931034
+       },
+       "same expert": {
+        "pairs": 370,
+        "agreement": 0.8918918918918919
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 25,
+        "agreement": null
+       },
+       "< 1 h": {
+        "pairs": 138,
+        "agreement": 0.8405797101449275
+       },
+       ">= 1 day": {
+        "pairs": 207,
+        "agreement": 0.9178743961352657
+       },
+       "different expert": {
+        "pairs": 116,
+        "agreement": 0.9051724137931034
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 14,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 92,
+        "agreement": 0.8152173913043478
+       },
+       "Validate": {
+        "pairs": 243,
+        "agreement": 0.934156378600823
+       },
+       "mixed": {
+        "pairs": 21,
+        "agreement": null
+       }
+      }
+     },
+     "chicago-il": {
+      "expert": {
+       "different expert": {
+        "pairs": 30,
+        "agreement": 0.8333333333333334
+       },
+       "same expert": {
+        "pairs": 842,
+        "agreement": 0.8978622327790974
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 56,
+        "agreement": 0.875
+       },
+       "< 1 h": {
+        "pairs": 110,
+        "agreement": 0.9181818181818182
+       },
+       ">= 1 day": {
+        "pairs": 676,
+        "agreement": 0.8964497041420119
+       },
+       "different expert": {
+        "pairs": 30,
+        "agreement": 0.8333333333333334
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 6,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 52,
+        "agreement": 1.0
+       },
+       "Validate": {
+        "pairs": 640,
+        "agreement": 0.8796875
+       },
+       "mixed": {
+        "pairs": 144,
+        "agreement": 0.9375
+       }
+      }
+     },
+     "oradell-nj": {
+      "expert": {
+       "same expert": {
+        "pairs": 67,
+        "agreement": 0.8955223880597015
+       }
+      },
+      "gap": {
+       "< 1 h": {
+        "pairs": 28,
+        "agreement": null
+       },
+       ">= 1 day": {
+        "pairs": 39,
+        "agreement": 0.8974358974358975
+       }
+      },
+      "source": {
+       "Old data": {
+        "pairs": 5,
+        "agreement": null
+       },
+       "Validate": {
+        "pairs": 61,
+        "agreement": 0.8852459016393442
+       },
+       "mixed": {
+        "pairs": 1,
+        "agreement": null
+       }
+      }
+     }
+    },
+    "slices": {
+     "tag": {
+      "no alternate route": {
+       "pairs": 825,
+       "agreement": 0.9078787878787878
+      },
+      "unclear if needed": {
+       "pairs": 202,
+       "agreement": 0.9752475247524752
+      },
+      "alternate route present": {
+       "pairs": 138,
+       "agreement": 0.8768115942028986
+      }
+     },
+     "severity": {
+      "3": {
+       "pairs": 1219,
+       "agreement": 0.9310910582444627
+      },
+      "2": {
+       "pairs": 320,
+       "agreement": 0.86875
+      },
+      "1": {
+       "pairs": 158,
+       "agreement": 0.9050632911392406
+      }
+     }
+    },
+    "pairs_total": 2343,
+    "per_city_named": {
+     "seattle-wa": {
+      "labels": 5013,
+      "labels_in_multi_runs": 744,
+      "multi_runs": 342,
+      "labelers": 704,
+      "pairs": 486,
+      "share_correct": 0.8663474965090764,
+      "pair_agreement": 0.8950617283950617,
+      "pair_agreement_run_weighted": 0.8882066276803119,
+      "homogeneous_share": 0.8801169590643275,
+      "icc": 0.5844204488582003,
+      "pair_agreement_ci95": [
+       0.8616247578735922,
+       0.926007815236335
+      ],
+      "same_labeler_other_face": 0.8559156557232397,
+      "same_labeler_other_face_pairs": 175661,
+      "same_face_other_labeler": 0.9120879120879121,
+      "same_face_other_labeler_pairs": 728,
+      "city_any": 0.7683747714840059
+     },
+     "chicago-il": {
+      "labels": 1730,
+      "labels_in_multi_runs": 764,
+      "multi_runs": 284,
+      "labelers": 286,
+      "pairs": 872,
+      "share_correct": 0.2971098265895954,
+      "pair_agreement": 0.8956422018348624,
+      "pair_agreement_run_weighted": 0.8643863179074446,
+      "homogeneous_share": 0.8345070422535211,
+      "icc": 0.6437735502056497,
+      "pair_agreement_ci95": [
+       0.8543746444823663,
+       0.9318419152852155
+      ],
+      "same_labeler_other_face": 0.8871539974708444,
+      "same_labeler_other_face_pairs": 56936,
+      "same_face_other_labeler": 0.7380352644836272,
+      "same_face_other_labeler_pairs": 397,
+      "city_any": 0.5820872768849648
+     },
+     "oradell-nj": {
+      "labels": 365,
+      "labels_in_multi_runs": 105,
+      "multi_runs": 48,
+      "labelers": 38,
+      "pairs": 67,
+      "share_correct": 0.5178082191780822,
+      "pair_agreement": 0.8955223880597015,
+      "pair_agreement_run_weighted": 0.9340277777777778,
+      "homogeneous_share": 0.9166666666666666,
+      "icc": 0.833364409407207,
+      "pair_agreement_ci95": [
+       0.8,
+       0.984375
+      ],
+      "same_labeler_other_face": 0.6540832049306625,
+      "same_labeler_other_face_pairs": 7788,
+      "same_face_other_labeler": 0.9050632911392406,
+      "same_face_other_labeler_pairs": 158,
+      "city_any": 0.4992623814541623
+     },
+     "other": {
+      "labels": 5455,
+      "labels_in_multi_runs": 1308,
+      "multi_runs": 584,
+      "labelers": 776,
+      "pairs": 918,
+      "share_correct": 0.8135655362053162,
+      "pair_agreement": 0.9095860566448801,
+      "pair_agreement_run_weighted": 0.9041095890410958,
+      "homogeneous_share": 0.8938356164383562,
+      "icc": null,
+      "pair_agreement_ci95": [
+       0.8872683018562804,
+       0.9321725325583898
+      ],
+      "same_labeler_other_face": 0.7796282410513438,
+      "same_labeler_other_face_pairs": 101356,
+      "same_face_other_labeler": 0.9271523178807947,
+      "same_face_other_labeler_pairs": 1359,
+      "city_any": 0.7464991596020072,
+      "n_cities": 24
+     }
+    }
+   },
+   "Obstacle": {
+    "counts": {
+     "labels": 158013,
+     "expert_placed": 2752,
+     "ai_placed": 0,
+     "experts_split": 78,
+     "crowd_contradicts_dropped": 0,
+     "with_verdict": 8291,
+     "without_face": 140
+    },
+    "macro": {
+     "cities": [
+      "amsterdam",
+      "cdmx",
+      "chicago-il",
+      "columbus-oh",
+      "gainesville-fl",
+      "knox-oh",
+      "newberg-or",
+      "oradell-nj",
+      "pittsburgh-pa",
+      "seattle-wa",
+      "spgg",
+      "st-louis-mo",
+      "tucson-az",
+      "walla-walla-wa"
+     ],
+     "n_cities": 14,
+     "pair_agreement": 0.8950165926370065,
+     "pair_agreement_ci95": [
+      0.8578594827996522,
+      0.9172787530160565
+     ],
+     "icc": 0.584209949312742,
+     "homogeneous_share": 0.8193209860162456,
+     "null_city": {
+      "mean": 0.6229405902992194,
+      "sd": 0.018275585381576913,
+      "p": 0.000999000999000999
+     },
+     "null_labeler": {
+      "mean": 0.7978981037680195,
+      "sd": 0.012236952973105937,
+      "p": 0.000999000999000999
+     },
+     "same_labeler_other_face": 0.7572319280228862,
+     "same_face_other_labeler": 0.8900775243947091,
+     "city_any": 0.6235680780684972,
+     "labels": 7700,
+     "pairs": 4344
+    },
+    "strata": {
+     "all": {
+      "expert": {
+       "different expert": {
+        "pairs": 1066,
+        "agreement": 0.8348968105065666
+       },
+       "same expert": {
+        "pairs": 3384,
+        "agreement": 0.8708628841607565
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 166,
+        "agreement": 0.8253012048192772
+       },
+       "< 1 h": {
+        "pairs": 1726,
+        "agreement": 0.906720741599073
+       },
+       ">= 1 day": {
+        "pairs": 1491,
+        "agreement": 0.8343393695506371
+       },
+       "different expert": {
+        "pairs": 1066,
+        "agreement": 0.8348968105065666
+       },
+       "unknown": {
+        "pairs": 1,
+        "agreement": null
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 113,
+        "agreement": 0.8141592920353983
+       },
+       "Gallery": {
+        "pairs": 613,
+        "agreement": 0.9412724306688418
+       },
+       "LabelMap": {
+        "pairs": 1,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 672,
+        "agreement": 0.8943452380952381
+       },
+       "Validate": {
+        "pairs": 1369,
+        "agreement": 0.8276113951789628
+       },
+       "mixed": {
+        "pairs": 605,
+        "agreement": 0.8809917355371901
+       },
+       "other": {
+        "pairs": 10,
+        "agreement": null
+       },
+       "unknown": {
+        "pairs": 1,
+        "agreement": null
+       }
+      }
+     },
+     "seattle-wa": {
+      "expert": {
+       "different expert": {
+        "pairs": 544,
+        "agreement": 0.7757352941176471
+       },
+       "same expert": {
+        "pairs": 1581,
+        "agreement": 0.8317520556609741
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 76,
+        "agreement": 0.8157894736842105
+       },
+       "< 1 h": {
+        "pairs": 527,
+        "agreement": 0.872865275142315
+       },
+       ">= 1 day": {
+        "pairs": 978,
+        "agreement": 0.810838445807771
+       },
+       "different expert": {
+        "pairs": 544,
+        "agreement": 0.7757352941176471
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 34,
+        "agreement": 0.8235294117647058
+       },
+       "Gallery": {
+        "pairs": 41,
+        "agreement": 0.7804878048780488
+       },
+       "Old data": {
+        "pairs": 450,
+        "agreement": 0.9066666666666666
+       },
+       "Validate": {
+        "pairs": 777,
+        "agreement": 0.7824967824967825
+       },
+       "mixed": {
+        "pairs": 274,
+        "agreement": 0.8540145985401459
+       },
+       "other": {
+        "pairs": 5,
+        "agreement": null
+       }
+      }
+     },
+     "chicago-il": {
+      "expert": {
+       "different expert": {
+        "pairs": 56,
+        "agreement": 0.8214285714285714
+       },
+       "same expert": {
+        "pairs": 200,
+        "agreement": 0.895
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 1,
+        "agreement": null
+       },
+       "< 1 h": {
+        "pairs": 131,
+        "agreement": 0.9083969465648855
+       },
+       ">= 1 day": {
+        "pairs": 67,
+        "agreement": 0.8656716417910447
+       },
+       "different expert": {
+        "pairs": 56,
+        "agreement": 0.8214285714285714
+       },
+       "unknown": {
+        "pairs": 1,
+        "agreement": null
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 42,
+        "agreement": 0.8095238095238095
+       },
+       "Gallery": {
+        "pairs": 63,
+        "agreement": 1.0
+       },
+       "Old data": {
+        "pairs": 8,
+        "agreement": null
+       },
+       "Validate": {
+        "pairs": 45,
+        "agreement": 0.8666666666666667
+       },
+       "mixed": {
+        "pairs": 38,
+        "agreement": 0.868421052631579
+       },
+       "other": {
+        "pairs": 3,
+        "agreement": null
+       },
+       "unknown": {
+        "pairs": 1,
+        "agreement": null
+       }
+      }
+     },
+     "oradell-nj": {
+      "expert": {
+       "different expert": {
+        "pairs": 7,
+        "agreement": null
+       },
+       "same expert": {
+        "pairs": 76,
+        "agreement": 0.881578947368421
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 3,
+        "agreement": null
+       },
+       "< 1 h": {
+        "pairs": 22,
+        "agreement": null
+       },
+       ">= 1 day": {
+        "pairs": 51,
+        "agreement": 0.8235294117647058
+       },
+       "different expert": {
+        "pairs": 7,
+        "agreement": null
+       }
+      },
+      "source": {
+       "Old data": {
+        "pairs": 22,
+        "agreement": null
+       },
+       "Validate": {
+        "pairs": 31,
+        "agreement": 0.7741935483870968
+       },
+       "mixed": {
+        "pairs": 23,
+        "agreement": null
+       }
+      }
+     }
+    },
+    "slices": {
+     "tag": {
+      "pole": {
+       "pairs": 764,
+       "agreement": 0.8455497382198953
+      },
+      "trash/recycling can": {
+       "pairs": 521,
+       "agreement": 0.9846449136276392
+      },
+      "parked car": {
+       "pairs": 452,
+       "agreement": 0.9269911504424779
+      },
+      "tree": {
+       "pairs": 360,
+       "agreement": 0.95
+      },
+      "vegetation": {
+       "pairs": 303,
+       "agreement": 0.8679867986798679
+      },
+      "narrow": {
+       "pairs": 269,
+       "agreement": 0.9144981412639405
+      },
+      "sign": {
+       "pairs": 62,
+       "agreement": 0.9193548387096774
+      },
+      "construction": {
+       "pairs": 55,
+       "agreement": 0.9090909090909091
+      },
+      "fire hydrant": {
+       "pairs": 48,
+       "agreement": 0.8125
+      },
+      "parked bike": {
+       "pairs": 26,
+       "agreement": null
+      },
+      "height difference": {
+       "pairs": 19,
+       "agreement": null
+      },
+      "litter/garbage": {
+       "pairs": 14,
+       "agreement": null
+      },
+      "mailbox": {
+       "pairs": 6,
+       "agreement": null
+      },
+      "garage entrance": {
+       "pairs": 1,
+       "agreement": null
+      }
+     },
+     "severity": {
+      "1": {
+       "pairs": 1335,
+       "agreement": 0.9280898876404494
+      },
+      "3": {
+       "pairs": 1106,
+       "agreement": 0.9104882459312839
+      },
+      "2": {
+       "pairs": 553,
+       "agreement": 0.8372513562386981
+      }
+     }
+    },
+    "pairs_total": 4450,
+    "per_city_named": {
+     "seattle-wa": {
+      "labels": 4195,
+      "labels_in_multi_runs": 1744,
+      "multi_runs": 651,
+      "labelers": 621,
+      "pairs": 2125,
+      "share_correct": 0.5454112038140644,
+      "pair_agreement": 0.8174117647058824,
+      "pair_agreement_run_weighted": 0.8281382804017663,
+      "homogeneous_share": 0.7818740399385561,
+      "icc": 0.6502505515175102,
+      "pair_agreement_ci95": [
+       0.7710150440554244,
+       0.8600639461372245
+      ],
+      "same_labeler_other_face": 0.6011696845598962,
+      "same_labeler_other_face_pairs": 74721,
+      "same_face_other_labeler": 0.7453531598513011,
+      "same_face_other_labeler_pairs": 538,
+      "city_any": 0.5040061203274102
+     },
+     "chicago-il": {
+      "labels": 693,
+      "labels_in_multi_runs": 201,
+      "multi_runs": 76,
+      "labelers": 214,
+      "pairs": 256,
+      "share_correct": 0.5930735930735931,
+      "pair_agreement": 0.87890625,
+      "pair_agreement_run_weighted": 0.7826441102756893,
+      "homogeneous_share": 0.75,
+      "icc": 0.660682410554604,
+      "pair_agreement_ci95": [
+       0.7807354410295587,
+       0.9431909824046921
+      ],
+      "same_labeler_other_face": 0.6883289124668435,
+      "same_labeler_other_face_pairs": 3016,
+      "same_face_other_labeler": 0.847457627118644,
+      "same_face_other_labeler_pairs": 59,
+      "city_any": 0.5166278807897305
+     },
+     "oradell-nj": {
+      "labels": 158,
+      "labels_in_multi_runs": 63,
+      "multi_runs": 23,
+      "labelers": 22,
+      "pairs": 83,
+      "share_correct": 0.689873417721519,
+      "pair_agreement": 0.891566265060241,
+      "pair_agreement_run_weighted": 0.8571428571428572,
+      "homogeneous_share": 0.8260869565217391,
+      "icc": 0.7709532664491632,
+      "pair_agreement_ci95": [
+       0.7635753052917232,
+       0.9846153846153847
+      ],
+      "same_labeler_other_face": 0.8680394431554525,
+      "same_labeler_other_face_pairs": 3448,
+      "same_face_other_labeler": 0.7575757575757576,
+      "same_face_other_labeler_pairs": 33,
+      "city_any": 0.5693783761993066
+     },
+     "other": {
+      "labels": 3105,
+      "labels_in_multi_runs": 1175,
+      "multi_runs": 408,
+      "labelers": 597,
+      "pairs": 1986,
+      "share_correct": 0.6673107890499195,
+      "pair_agreement": 0.9068479355488419,
+      "pair_agreement_run_weighted": 0.8542676413999943,
+      "homogeneous_share": 0.8186274509803921,
+      "icc": null,
+      "pair_agreement_ci95": [
+       0.8635075526187243,
+       0.9369525471748159
+      ],
+      "same_labeler_other_face": 0.780424103669786,
+      "same_labeler_other_face_pairs": 89978,
+      "same_face_other_labeler": 0.8595505617977528,
+      "same_face_other_labeler_pairs": 356,
+      "city_any": 0.6477276475956939,
+      "n_cities": 31
+     }
+    }
+   },
+   "SurfaceProblem": {
+    "counts": {
+     "labels": 192017,
+     "expert_placed": 11656,
+     "ai_placed": 0,
+     "experts_split": 54,
+     "crowd_contradicts_dropped": 0,
+     "with_verdict": 14899,
+     "without_face": 286
+    },
+    "macro": {
+     "cities": [
+      "amsterdam",
+      "auckland",
+      "burnaby",
+      "cdmx",
+      "chicago-il",
+      "columbus-oh",
+      "detroit-mi",
+      "knox-oh",
+      "maywood-nj",
+      "newberg-or",
+      "oradell-nj",
+      "pittsburgh-pa",
+      "seattle-wa",
+      "spgg",
+      "st-louis-mo",
+      "teaneck-nj",
+      "tucson-az",
+      "walla-walla-wa"
+     ],
+     "n_cities": 18,
+     "pair_agreement": 0.9430178265974861,
+     "pair_agreement_ci95": [
+      0.9256074511113016,
+      0.9545804821527015
+     ],
+     "icc": 0.4158113071128009,
+     "homogeneous_share": 0.9055007786456896,
+     "null_city": {
+      "mean": 0.8495187086693164,
+      "sd": 0.010557914622108356,
+      "p": 0.000999000999000999
+     },
+     "null_labeler": {
+      "mean": 0.9007562743277053,
+      "sd": 0.006330739320811014,
+      "p": 0.000999000999000999
+     },
+     "same_labeler_other_face": 0.9112138543930917,
+     "same_face_other_labeler": 0.9241946445084036,
+     "city_any": 0.8492499626650301,
+     "labels": 14367,
+     "pairs": 14734
+    },
+    "strata": {
+     "all": {
+      "expert": {
+       "different expert": {
+        "pairs": 1502,
+        "agreement": 0.8169107856191744
+       },
+       "same expert": {
+        "pairs": 13336,
+        "agreement": 0.9256898620275945
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 899,
+        "agreement": 0.9343715239154616
+       },
+       "< 1 h": {
+        "pairs": 3216,
+        "agreement": 0.9135572139303483
+       },
+       ">= 1 day": {
+        "pairs": 9221,
+        "agreement": 0.9290749376423382
+       },
+       "different expert": {
+        "pairs": 1502,
+        "agreement": 0.8169107856191744
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 415,
+        "agreement": 0.7253012048192771
+       },
+       "Gallery": {
+        "pairs": 60,
+        "agreement": 0.9666666666666667
+       },
+       "LabelMap": {
+        "pairs": 1,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 432,
+        "agreement": 0.8541666666666666
+       },
+       "Validate": {
+        "pairs": 11866,
+        "agreement": 0.9335917748188101
+       },
+       "mixed": {
+        "pairs": 552,
+        "agreement": 0.9583333333333334
+       },
+       "other": {
+        "pairs": 10,
+        "agreement": null
+       }
+      }
+     },
+     "seattle-wa": {
+      "expert": {
+       "different expert": {
+        "pairs": 347,
+        "agreement": 0.7723342939481268
+       },
+       "same expert": {
+        "pairs": 1303,
+        "agreement": 0.8334612432847276
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 95,
+        "agreement": 0.8947368421052632
+       },
+       "< 1 h": {
+        "pairs": 466,
+        "agreement": 0.8433476394849786
+       },
+       ">= 1 day": {
+        "pairs": 742,
+        "agreement": 0.8194070080862533
+       },
+       "different expert": {
+        "pairs": 347,
+        "agreement": 0.7723342939481268
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 88,
+        "agreement": 0.7954545454545454
+       },
+       "Gallery": {
+        "pairs": 30,
+        "agreement": 0.9333333333333333
+       },
+       "Old data": {
+        "pairs": 305,
+        "agreement": 0.819672131147541
+       },
+       "Validate": {
+        "pairs": 795,
+        "agreement": 0.8339622641509434
+       },
+       "mixed": {
+        "pairs": 83,
+        "agreement": 0.891566265060241
+       },
+       "other": {
+        "pairs": 2,
+        "agreement": null
+       }
+      }
+     },
+     "chicago-il": {
+      "expert": {
+       "different expert": {
+        "pairs": 300,
+        "agreement": 0.9133333333333333
+       },
+       "same expert": {
+        "pairs": 1860,
+        "agreement": 0.9220430107526881
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 86,
+        "agreement": 0.9534883720930233
+       },
+       "< 1 h": {
+        "pairs": 558,
+        "agreement": 0.8279569892473119
+       },
+       ">= 1 day": {
+        "pairs": 1216,
+        "agreement": 0.9629934210526315
+       },
+       "different expert": {
+        "pairs": 300,
+        "agreement": 0.9133333333333333
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 238,
+        "agreement": 0.634453781512605
+       },
+       "Gallery": {
+        "pairs": 1,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 62,
+        "agreement": 0.9838709677419355
+       },
+       "Validate": {
+        "pairs": 1443,
+        "agreement": 0.9646569646569647
+       },
+       "mixed": {
+        "pairs": 109,
+        "agreement": 0.944954128440367
+       },
+       "other": {
+        "pairs": 7,
+        "agreement": null
+       }
+      }
+     },
+     "oradell-nj": {
+      "expert": {
+       "different expert": {
+        "pairs": 291,
+        "agreement": 0.5360824742268041
+       },
+       "same expert": {
+        "pairs": 6423,
+        "agreement": 0.9313404950957497
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 450,
+        "agreement": 0.9288888888888889
+       },
+       "< 1 h": {
+        "pairs": 794,
+        "agreement": 0.947103274559194
+       },
+       ">= 1 day": {
+        "pairs": 5179,
+        "agreement": 0.9291368990152539
+       },
+       "different expert": {
+        "pairs": 291,
+        "agreement": 0.5360824742268041
+       }
+      },
+      "source": {
+       "LabelMap": {
+        "pairs": 1,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 10,
+        "agreement": null
+       },
+       "Validate": {
+        "pairs": 6268,
+        "agreement": 0.9305998723675813
+       },
+       "mixed": {
+        "pairs": 144,
+        "agreement": 0.9791666666666666
+       }
+      }
+     }
+    },
+    "slices": {
+     "tag": {
+      "cracks": {
+       "pairs": 3586,
+       "agreement": 0.8948689347462354
+      },
+      "grass": {
+       "pairs": 3079,
+       "agreement": 0.975641442026632
+      },
+      "uneven/slanted": {
+       "pairs": 1391,
+       "agreement": 0.9403306973400432
+      },
+      "height difference": {
+       "pairs": 938,
+       "agreement": 0.9925373134328358
+      },
+      "bumpy": {
+       "pairs": 678,
+       "agreement": 0.8967551622418879
+      },
+      "narrow sidewalk": {
+       "pairs": 485,
+       "agreement": 0.8639175257731959
+      },
+      "very broken": {
+       "pairs": 187,
+       "agreement": 0.8556149732620321
+      },
+      "brick/cobblestone": {
+       "pairs": 174,
+       "agreement": 0.9827586206896551
+      },
+      "sand/gravel": {
+       "pairs": 128,
+       "agreement": 0.8984375
+      },
+      "utility panel": {
+       "pairs": 16,
+       "agreement": null
+      },
+      "construction": {
+       "pairs": 12,
+       "agreement": null
+      },
+      "debris": {
+       "pairs": 8,
+       "agreement": null
+      },
+      "rail/tram track": {
+       "pairs": 2,
+       "agreement": null
+      }
+     },
+     "severity": {
+      "1": {
+       "pairs": 6675,
+       "agreement": 0.9045692883895131
+      },
+      "2": {
+       "pairs": 1552,
+       "agreement": 0.9072164948453608
+      },
+      "3": {
+       "pairs": 1178,
+       "agreement": 0.9142614601018676
+      }
+     }
+    },
+    "pairs_total": 14838,
+    "per_city_named": {
+     "seattle-wa": {
+      "labels": 4301,
+      "labels_in_multi_runs": 1616,
+      "multi_runs": 645,
+      "labelers": 431,
+      "pairs": 1650,
+      "share_correct": 0.7465705649848873,
+      "pair_agreement": 0.8206060606060606,
+      "pair_agreement_run_weighted": 0.8309585332841147,
+      "homogeneous_share": 0.8,
+      "icc": 0.5741602963247359,
+      "pair_agreement_ci95": [
+       0.7706173138628103,
+       0.8650848123105267
+      ],
+      "same_labeler_other_face": 0.7308504015911816,
+      "same_labeler_other_face_pairs": 197589,
+      "same_face_other_labeler": 0.8017241379310345,
+      "same_face_other_labeler_pairs": 232,
+      "city_any": 0.6215060856588246
+     },
+     "chicago-il": {
+      "labels": 2199,
+      "labels_in_multi_runs": 1314,
+      "multi_runs": 431,
+      "labelers": 239,
+      "pairs": 2160,
+      "share_correct": 0.8622100954979536,
+      "pair_agreement": 0.9208333333333333,
+      "pair_agreement_run_weighted": 0.8815121717673922,
+      "homogeneous_share": 0.8468677494199536,
+      "icc": 0.5047034847732821,
+      "pair_agreement_ci95": [
+       0.8885565372235601,
+       0.9480006960556844
+      ],
+      "same_labeler_other_face": 0.9273878528225806,
+      "same_labeler_other_face_pairs": 63488,
+      "same_face_other_labeler": 0.8796680497925311,
+      "same_face_other_labeler_pairs": 723,
+      "city_any": 0.7622842047899182
+     },
+     "oradell-nj": {
+      "labels": 1101,
+      "labels_in_multi_runs": 903,
+      "multi_runs": 148,
+      "labelers": 45,
+      "pairs": 6714,
+      "share_correct": 0.9500454132606722,
+      "pair_agreement": 0.9142091152815014,
+      "pair_agreement_run_weighted": 0.9506460079206736,
+      "homogeneous_share": 0.8918918918918919,
+      "icc": 0.33165464551786306,
+      "pair_agreement_ci95": [
+       0.8691863213512073,
+       0.9683486089598808
+      ],
+      "same_labeler_other_face": 0.9478561567549902,
+      "same_labeler_other_face_pairs": 299882,
+      "same_face_other_labeler": 0.955700325732899,
+      "same_face_other_labeler_pairs": 1535,
+      "city_any": 0.9049954586739328
+     },
+     "other": {
+      "labels": 7012,
+      "labels_in_multi_runs": 3278,
+      "multi_runs": 1188,
+      "labelers": 617,
+      "pairs": 4314,
+      "share_correct": 0.9338277239018825,
+      "pair_agreement": 0.9483078349559574,
+      "pair_agreement_run_weighted": 0.9315994237711409,
+      "homogeneous_share": 0.9158249158249159,
+      "icc": null,
+      "pair_agreement_ci95": [
+       0.9310839949690586,
+       0.9627678395892431
+      ],
+      "same_labeler_other_face": 0.9474096866771207,
+      "same_labeler_other_face_pairs": 337990,
+      "same_face_other_labeler": 0.9272943980929678,
+      "same_face_other_labeler_pairs": 839,
+      "city_any": 0.8906259419597977,
+      "n_cities": 29
+     }
+    }
+   },
+   "Crosswalk": {
+    "counts": {
+     "labels": 67325,
+     "expert_placed": 967,
+     "ai_placed": 0,
+     "experts_split": 10,
+     "crowd_contradicts_dropped": 0,
+     "with_verdict": 4659,
+     "without_face": 1694
+    },
+    "macro": {
+     "cities": [
+      "burnaby",
+      "chicago-il",
+      "maywood-nj",
+      "oradell-nj",
+      "seattle-wa",
+      "teaneck-nj"
+     ],
+     "n_cities": 6,
+     "pair_agreement": 0.9822792754243331,
+     "pair_agreement_ci95": [
+      0.9603432053615878,
+      0.9975524237472767
+     ],
+     "icc": 0.9172190683569216,
+     "homogeneous_share": 0.9796473589577038,
+     "null_city": {
+      "mean": 0.8179268584071894,
+      "sd": 0.026964031641718907,
+      "p": 0.000999000999000999
+     },
+     "null_labeler": {
+      "mean": 0.9190489303550996,
+      "sd": 0.014744394693230294,
+      "p": 0.000999000999000999
+     },
+     "same_labeler_other_face": 0.9422716736978027,
+     "same_face_other_labeler": 0.9668900624649521,
+     "city_any": 0.8178275105252558,
+     "labels": 2442,
+     "pairs": 230
+    },
+    "strata": {
+     "all": {
+      "expert": {
+       "different expert": {
+        "pairs": 16,
+        "agreement": null
+       },
+       "same expert": {
+        "pairs": 245,
+        "agreement": 0.9836734693877551
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 12,
+        "agreement": null
+       },
+       "< 1 h": {
+        "pairs": 106,
+        "agreement": 0.9811320754716981
+       },
+       ">= 1 day": {
+        "pairs": 127,
+        "agreement": 0.984251968503937
+       },
+       "different expert": {
+        "pairs": 16,
+        "agreement": null
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 21,
+        "agreement": null
+       },
+       "Gallery": {
+        "pairs": 4,
+        "agreement": null
+       },
+       "LabelMap": {
+        "pairs": 1,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 18,
+        "agreement": null
+       },
+       "Validate": {
+        "pairs": 187,
+        "agreement": 0.983957219251337
+       },
+       "mixed": {
+        "pairs": 13,
+        "agreement": null
+       },
+       "other": {
+        "pairs": 1,
+        "agreement": null
+       }
+      }
+     },
+     "seattle-wa": {
+      "expert": {
+       "different expert": {
+        "pairs": 7,
+        "agreement": null
+       },
+       "same expert": {
+        "pairs": 24,
+        "agreement": null
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 2,
+        "agreement": null
+       },
+       "< 1 h": {
+        "pairs": 12,
+        "agreement": null
+       },
+       ">= 1 day": {
+        "pairs": 10,
+        "agreement": null
+       },
+       "different expert": {
+        "pairs": 7,
+        "agreement": null
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 7,
+        "agreement": null
+       },
+       "Gallery": {
+        "pairs": 1,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 2,
+        "agreement": null
+       },
+       "Validate": {
+        "pairs": 11,
+        "agreement": null
+       },
+       "mixed": {
+        "pairs": 2,
+        "agreement": null
+       },
+       "other": {
+        "pairs": 1,
+        "agreement": null
+       }
+      }
+     },
+     "chicago-il": {
+      "expert": {
+       "same expert": {
+        "pairs": 57,
+        "agreement": 0.9824561403508771
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 3,
+        "agreement": null
+       },
+       "< 1 h": {
+        "pairs": 24,
+        "agreement": null
+       },
+       ">= 1 day": {
+        "pairs": 30,
+        "agreement": 1.0
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 7,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 2,
+        "agreement": null
+       },
+       "Validate": {
+        "pairs": 48,
+        "agreement": 1.0
+       }
+      }
+     },
+     "oradell-nj": {
+      "expert": {
+       "same expert": {
+        "pairs": 41,
+        "agreement": 0.9512195121951219
+       }
+      },
+      "gap": {
+       "< 1 h": {
+        "pairs": 16,
+        "agreement": null
+       },
+       ">= 1 day": {
+        "pairs": 25,
+        "agreement": null
+       }
+      },
+      "source": {
+       "Old data": {
+        "pairs": 4,
+        "agreement": null
+       },
+       "Validate": {
+        "pairs": 33,
+        "agreement": 0.9393939393939394
+       },
+       "mixed": {
+        "pairs": 4,
+        "agreement": null
+       }
+      }
+     }
+    },
+    "slices": {
+     "tag": {
+      "paint fading": {
+       "pairs": 17,
+       "agreement": null
+      },
+      "broken surface": {
+       "pairs": 13,
+       "agreement": null
+      },
+      "rail/tram track": {
+       "pairs": 11,
+       "agreement": null
+      },
+      "very long crossing": {
+       "pairs": 7,
+       "agreement": null
+      },
+      "bumpy": {
+       "pairs": 3,
+       "agreement": null
+      },
+      "brick/cobblestone": {
+       "pairs": 1,
+       "agreement": null
+      },
+      "uneven surface": {
+       "pairs": 1,
+       "agreement": null
+      }
+     },
+     "severity": {
+      "1": {
+       "pairs": 176,
+       "agreement": 0.9943181818181818
+      },
+      "3": {
+       "pairs": 24,
+       "agreement": null
+      },
+      "2": {
+       "pairs": 7,
+       "agreement": null
+      }
+     }
+    },
+    "pairs_total": 261,
+    "per_city_named": {
+     "seattle-wa": {
+      "labels": 677,
+      "labels_in_multi_runs": 53,
+      "multi_runs": 25,
+      "labelers": 141,
+      "pairs": 31,
+      "share_correct": 0.8330871491875923,
+      "pair_agreement": 1.0,
+      "pair_agreement_run_weighted": 1.0,
+      "homogeneous_share": 1.0,
+      "icc": 1.0,
+      "pair_agreement_ci95": [
+       1.0,
+       1.0
+      ],
+      "same_labeler_other_face": 0.9300518134715026,
+      "same_labeler_other_face_pairs": 5404,
+      "same_face_other_labeler": 0.9710144927536232,
+      "same_face_other_labeler_pairs": 69,
+      "city_any": 0.7214826986443849
+     },
+     "chicago-il": {
+      "labels": 619,
+      "labels_in_multi_runs": 82,
+      "multi_runs": 37,
+      "labelers": 145,
+      "pairs": 57,
+      "share_correct": 0.8497576736672051,
+      "pair_agreement": 0.9824561403508771,
+      "pair_agreement_run_weighted": 0.972972972972973,
+      "homogeneous_share": 0.972972972972973,
+      "icc": 0.9449977250897326,
+      "pair_agreement_ci95": [
+       0.9318181818181818,
+       1.0
+      ],
+      "same_labeler_other_face": 0.9349392629194976,
+      "same_labeler_other_face_pairs": 4857,
+      "same_face_other_labeler": 0.8936170212765957,
+      "same_face_other_labeler_pairs": 47,
+      "city_any": 0.7442476904496761
+     },
+     "oradell-nj": {
+      "labels": 244,
+      "labels_in_multi_runs": 64,
+      "multi_runs": 29,
+      "labelers": 29,
+      "pairs": 41,
+      "share_correct": 0.8524590163934426,
+      "pair_agreement": 0.9512195121951219,
+      "pair_agreement_run_weighted": 0.9770114942528736,
+      "homogeneous_share": 0.9655172413793104,
+      "icc": 0.7828238398944358,
+      "pair_agreement_ci95": [
+       0.8536585365853658,
+       1.0
+      ],
+      "same_labeler_other_face": 0.8858670914883933,
+      "same_labeler_other_face_pairs": 8788,
+      "same_face_other_labeler": 0.9620253164556962,
+      "same_face_other_labeler_pairs": 79,
+      "city_any": 0.7474195506982392
+     },
+     "other": {
+      "labels": 1425,
+      "labels_in_multi_runs": 208,
+      "multi_runs": 96,
+      "labelers": 209,
+      "pairs": 132,
+      "share_correct": 0.9122807017543859,
+      "pair_agreement": 0.9848484848484849,
+      "pair_agreement_run_weighted": 0.9791666666666666,
+      "homogeneous_share": 0.9791666666666666,
+      "icc": null,
+      "pair_agreement_ci95": [
+       0.9583333333333334,
+       1.0
+      ],
+      "same_labeler_other_face": 0.9440727110516338,
+      "same_labeler_other_face_pairs": 17934,
+      "same_face_other_labeler": 0.9904761904761905,
+      "same_face_other_labeler_pairs": 210,
+      "city_any": 0.8235064797643115,
+      "n_cities": 24
+     }
+    }
+   },
+   "Signal": {
+    "counts": {
+     "labels": 15168,
+     "expert_placed": 363,
+     "ai_placed": 0,
+     "experts_split": 1,
+     "crowd_contradicts_dropped": 0,
+     "with_verdict": 1321,
+     "without_face": 15
+    },
+    "macro": {
+     "cities": [
+      "burnaby",
+      "chicago-il",
+      "pittsburgh-pa"
+     ],
+     "n_cities": 3,
+     "pair_agreement": 0.9861111111111112,
+     "pair_agreement_ci95": [
+      0.9583333333333334,
+      1.0
+     ],
+     "icc": 8.326672684688673e-17,
+     "homogeneous_share": 0.9861111111111112,
+     "null_city": {
+      "mean": 0.926086111111111,
+      "sd": 0.03313980530675827,
+      "p": 0.03696303696303696
+     },
+     "null_labeler": {
+      "mean": 0.9870888888888887,
+      "sd": 0.01272364047076537,
+      "p": 0.7282717282717283
+     },
+     "same_labeler_other_face": 0.9773100162355951,
+     "same_face_other_labeler": 0.9583333333333333,
+     "city_any": 0.9256182072061178,
+     "labels": 721,
+     "pairs": 64
+    },
+    "strata": {
+     "all": {
+      "expert": {
+       "different expert": {
+        "pairs": 1,
+        "agreement": null
+       },
+       "same expert": {
+        "pairs": 109,
+        "agreement": 0.9908256880733946
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 7,
+        "agreement": null
+       },
+       "< 1 h": {
+        "pairs": 65,
+        "agreement": 1.0
+       },
+       ">= 1 day": {
+        "pairs": 37,
+        "agreement": 0.972972972972973
+       },
+       "different expert": {
+        "pairs": 1,
+        "agreement": null
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 14,
+        "agreement": null
+       },
+       "Gallery": {
+        "pairs": 5,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 3,
+        "agreement": null
+       },
+       "Validate": {
+        "pairs": 82,
+        "agreement": 0.9878048780487805
+       },
+       "mixed": {
+        "pairs": 5,
+        "agreement": null
+       }
+      }
+     },
+     "seattle-wa": {
+      "expert": {
+       "same expert": {
+        "pairs": 8,
+        "agreement": null
+       }
+      },
+      "gap": {
+       "< 1 h": {
+        "pairs": 5,
+        "agreement": null
+       },
+       ">= 1 day": {
+        "pairs": 3,
+        "agreement": null
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 4,
+        "agreement": null
+       },
+       "Old data": {
+        "pairs": 2,
+        "agreement": null
+       },
+       "Validate": {
+        "pairs": 2,
+        "agreement": null
+       }
+      }
+     },
+     "chicago-il": {
+      "expert": {
+       "same expert": {
+        "pairs": 25,
+        "agreement": null
+       }
+      },
+      "gap": {
+       "1 h - 1 day": {
+        "pairs": 2,
+        "agreement": null
+       },
+       "< 1 h": {
+        "pairs": 20,
+        "agreement": null
+       },
+       ">= 1 day": {
+        "pairs": 3,
+        "agreement": null
+       }
+      },
+      "source": {
+       "AdminUserDashboard": {
+        "pairs": 10,
+        "agreement": null
+       },
+       "Gallery": {
+        "pairs": 3,
+        "agreement": null
+       },
+       "Validate": {
+        "pairs": 10,
+        "agreement": null
+       },
+       "mixed": {
+        "pairs": 2,
+        "agreement": null
+       }
+      }
+     },
+     "oradell-nj": {
+      "expert": {
+       "same expert": {
+        "pairs": 1,
+        "agreement": null
+       }
+      },
+      "gap": {
+       "< 1 h": {
+        "pairs": 1,
+        "agreement": null
+       }
+      },
+      "source": {
+       "Old data": {
+        "pairs": 1,
+        "agreement": null
+       }
+      }
+     }
+    },
+    "slices": {
+     "tag": {
+      "one button": {
+       "pairs": 50,
+       "agreement": 1.0
+      },
+      "button waist height": {
+       "pairs": 29,
+       "agreement": null
+      },
+      "two buttons": {
+       "pairs": 9,
+       "agreement": null
+      },
+      "APS": {
+       "pairs": 5,
+       "agreement": null
+      }
+     },
+     "severity": {}
+    },
+    "pairs_total": 110,
+    "per_city_named": {
+     "seattle-wa": {
+      "labels": 182,
+      "labels_in_multi_runs": 16,
+      "multi_runs": 8,
+      "labelers": 42,
+      "pairs": 8,
+      "share_correct": 0.8681318681318682,
+      "pair_agreement": 1.0,
+      "pair_agreement_run_weighted": 1.0,
+      "homogeneous_share": 1.0,
+      "icc": 1.0,
+      "pair_agreement_ci95": [
+       1.0,
+       1.0
+      ],
+      "same_labeler_other_face": 0.9030837004405287,
+      "same_labeler_other_face_pairs": 908,
+      "same_face_other_labeler": 1.0,
+      "same_face_other_labeler_pairs": 3,
+      "city_any": 0.769777184141825
+     },
+     "chicago-il": {
+      "labels": 377,
+      "labels_in_multi_runs": 44,
+      "multi_runs": 21,
+      "labelers": 87,
+      "pairs": 25,
+      "share_correct": 0.9151193633952255,
+      "pair_agreement": 1.0,
+      "pair_agreement_run_weighted": 1.0,
+      "homogeneous_share": 1.0,
+      "icc": null,
+      "pair_agreement_ci95": [
+       1.0,
+       1.0
+      ],
+      "same_labeler_other_face": 0.9911144960649911,
+      "same_labeler_other_face_pairs": 3939,
+      "same_face_other_labeler": 0.9166666666666666,
+      "same_face_other_labeler_pairs": 12,
+      "city_any": 0.8442350019752808
+     },
+     "oradell-nj": {
+      "labels": 9,
+      "labels_in_multi_runs": 2,
+      "multi_runs": 1,
+      "labelers": 4,
+      "pairs": 1,
+      "share_correct": 0.4444444444444444,
+      "pair_agreement": 1.0,
+      "pair_agreement_run_weighted": 1.0,
+      "homogeneous_share": 1.0,
+      "icc": null,
+      "pair_agreement_ci95": [
+       1.0,
+       1.0
+      ],
+      "same_labeler_other_face": 1.0,
+      "same_labeler_other_face_pairs": 8,
+      "same_face_other_labeler": null,
+      "same_face_other_labeler_pairs": 0,
+      "city_any": 0.4444444444444444
+     },
+     "other": {
+      "labels": 738,
+      "labels_in_multi_runs": 129,
+      "multi_runs": 61,
+      "labelers": 104,
+      "pairs": 76,
+      "share_correct": 0.9769647696476965,
+      "pair_agreement": 0.9868421052631579,
+      "pair_agreement_run_weighted": 0.9836065573770492,
+      "homogeneous_share": 0.9836065573770492,
+      "icc": null,
+      "pair_agreement_ci95": [
+       0.9577464788732394,
+       1.0
+      ],
+      "same_labeler_other_face": 0.9766760288191476,
+      "same_labeler_other_face_pairs": 8189,
+      "same_face_other_labeler": 1.0,
+      "same_face_other_labeler_pairs": 91,
+      "city_any": 0.9666444888001774,
+      "n_cities": 18
+     }
+    }
+   }
+  },
+  "sensitivity": {
+   "dg_strict": {
+    "counts": {
+     "labels": 237421,
+     "expert_placed": 19835,
+     "ai_placed": 0,
+     "experts_split": 1,
+     "crowd_contradicts_dropped": 113,
+     "with_verdict": 2287,
+     "without_face": 113
+    },
+    "macro": {
+     "cities": [
+      "chicago-il",
+      "oradell-nj",
+      "seattle-wa"
+     ],
+     "n_cities": 3,
+     "pair_agreement": 0.9924189403564686,
+     "pair_agreement_ci95": [
+      0.98207909748977,
+      0.9984396244325096
+     ],
+     "icc": 0.7516424812243899,
+     "homogeneous_share": 0.9774891774891775,
+     "null_city": {
+      "mean": 0.7759155444772248,
+      "sd": 0.0349840639174175,
+      "p": 0.000999000999000999
+     },
+     "null_labeler": {
+      "mean": 0.9248144650278872,
+      "sd": 0.017873330619819952,
+      "p": 0.000999000999000999
+     },
+     "same_labeler_other_face": 0.9244243350117775,
+     "same_face_other_labeler": 0.9767210567210567,
+     "city_any": 0.7748598382242244,
+     "labels": 1893,
+     "pairs": 6449
+    }
+   },
+   "without_oradell": {
+    "macro": {
+     "cities": [
+      "chicago-il",
+      "seattle-wa"
+     ],
+     "n_cities": 2,
+     "pair_agreement": 0.9918478260869565,
+     "pair_agreement_ci95": [
+      0.9773285436226242,
+      1.0
+     ],
+     "icc": 0.9775823009785655,
+     "homogeneous_share": 0.9805194805194806,
+     "null_city": {
+      "mean": 0.584249963768116,
+      "sd": 0.026316300864167298,
+      "p": 0.000999000999000999
+     },
+     "null_labeler": {
+      "mean": 0.8735996376811593,
+      "sd": 0.016412181146262445,
+      "p": 0.000999000999000999
+     },
+     "same_labeler_other_face": 0.8332204055949162,
+     "same_face_other_labeler": 0.98,
+     "city_any": 0.5826074757027069,
+     "labels": 915,
+     "pairs": 668
+    }
+   },
+   "october_pull": {
+    "counts": {
+     "labels": 232258,
+     "expert_placed": 19434,
+     "ai_placed": 0,
+     "experts_split": 1,
+     "crowd_contradicts_dropped": 0,
+     "with_verdict": 2325,
+     "without_face": 118
+    },
+    "macro": {
+     "cities": [
+      "chicago-il",
+      "oradell-nj",
+      "seattle-wa"
+     ],
+     "n_cities": 3,
+     "pair_agreement": 0.9923725392631099,
+     "pair_agreement_ci95": [
+      0.981085871948189,
+      0.999350674003194
+     ],
+     "icc": 0.8722266640577301,
+     "homogeneous_share": 0.983836777954425,
+     "null_city": {
+      "mean": 0.6988650834189784,
+      "sd": 0.01619000229689009,
+      "p": 0.000999000999000999
+     },
+     "null_labeler": {
+      "mean": 0.9079524886401187,
+      "sd": 0.010982735128994179,
+      "p": 0.000999000999000999
+     },
+     "same_labeler_other_face": 0.8603849844251109,
+     "same_face_other_labeler": 0.9808099123602297,
+     "city_any": 0.6990190744205812,
+     "labels": 1949,
+     "pairs": 6853
+    }
+   }
+  }
+ },
+ "inputs_sha256": {
+  "agreement": "960fbfa67ef5ea0ca11fcc554d09ec0fca296d770cbf45a76d038b2a2d0a5baa"
+ }
+}

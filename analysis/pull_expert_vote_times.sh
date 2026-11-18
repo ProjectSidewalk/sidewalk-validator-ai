@@ -4,8 +4,14 @@
 # vote's value but not its time, and "do the labels of a run get the same verdict" cannot be told apart from "the
 # expert judged the run in one sitting" without the time between the two votes.
 #
-#   ssh makelab1 "SCHEMAS='sidewalk_seattle sidewalk_chicago' EXPERT1_ID=<uuid> EXPERT2_ID=<uuid> bash -s" \
-#       < analysis/pull_expert_vote_times.sh > ~/Data/sidewalk-validator-ai-nosidewalk-2026-11/runs/expert_vote_times.csv
+#   E1=$(echo "$EXPERTS" | cut -d, -f1 | cut -d= -f2); E2=$(echo "$EXPERTS" | cut -d, -f2 | cut -d= -f2)
+#   OUT=~/Data/sidewalk-validator-ai-nosidewalk-2026-11/runs/expert_vote_times.csv
+#   ssh makelab1 "SCHEMAS='sidewalk_seattle sidewalk_chicago' EXPERT1_ID=$E1 EXPERT2_ID=$E2 bash -s" \
+#       < analysis/pull_expert_vote_times.sh > "$OUT" || { echo "vote-time pull failed" >&2; mv "$OUT" "$OUT.failed"; }
+#
+# EXPERT1_ID and EXPERT2_ID must be the first and second ids of EXPERTS, in that order: nosidewalk_runs.py numbers the
+# experts by their position in EXPERTS and matches expert_idx to it, so deriving both from EXPERTS (as above) is the
+# safe form. A swap does not fail; it shows only as a large no_time count in agreement.json's vote_times_match.
 #
 # Output: schema,label_id,label_type,expert_idx,validation_result,start_timestamp,end_timestamp,source,mission_id,
 # label_author_is_expert; one row per expert vote (every label type, non-deleted and non-tutorial labels), times in
@@ -26,6 +32,7 @@ for E in "$E1" "$E2"; do  # checked, never echoed: the value is a user id
   case "$E" in *[!0-9a-f-]*) echo "EXPERT1_ID and EXPERT2_ID must both be user_id UUIDs" >&2; exit 2 ;; esac
   [ "${#E}" = 36 ] || { echo "EXPERT1_ID and EXPERT2_ID must both be user_id UUIDs" >&2; exit 2; }
 done
+[ "$E1" != "$E2" ] || { echo "EXPERT1_ID and EXPERT2_ID are the same id" >&2; exit 2; }
 for S in $SCHEMAS; do
   case "$S" in sidewalk_[a-z0-9_]*) ;; *) echo "$S: not a city schema name" >&2; exit 2 ;; esac
   case "$S" in *[!a-z0-9_]*) echo "$S: not a city schema name" >&2; exit 2 ;; esac

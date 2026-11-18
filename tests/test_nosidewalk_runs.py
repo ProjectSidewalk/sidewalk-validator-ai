@@ -178,7 +178,10 @@ def test_no_user_id_in_outputs(tmp_path, monkeypatch):
     cj = cities_json(tmp_path / "cities.json", sorted(set(split["city"])))
     out = tmp_path / "step-a"
     assert runs.main(["step-a-neighbours", "--pull", str(tmp_path / "pull"), "--gate", str(g), "--cities-json", cj,
-                      "--out", str(out)]) == 0
+                      "--out", str(out), "--allow-unpinned"]) == 0
+    with pytest.raises(SystemExit, match="not the pinned"):   # the pins are checked without --allow-unpinned
+        runs.main(["step-a-neighbours", "--pull", str(tmp_path / "pull"), "--gate", str(g), "--cities-json", cj,
+                   "--out", str(out)])
     faces = pd.read_csv(out / "step_a_faces.csv", dtype=str, keep_default_na=False)
     assert len(faces) == 2 * len(split[split["face_id"] != ""])
     assert set(faces["expert_set"]) <= {"", "1"}
@@ -372,3 +375,259 @@ def test_doc_points_at_runs_page():
     text = open(os.path.join(ROOT, "docs", "nosidewalk-2026-11.md")).read()
     assert "it is not answered here" not in text
     assert "nosidewalk-runs-2026-11.md" in text
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# review round 1: tests that fail on the leak-critical mutations of items 2 and 3, and the report path
+# ---------------------------------------------------------------------------------------------------------------------
+
+def step_a_inputs():
+    """Four labels for ``step_a_table``: two out-of-fold rows on a fold-2 face (a margin-truth split row and a split
+    row whose class was copied from its face but which carries its own expert vote), one non-split row with its own
+    expert verdict, and one held-out row; five fold models that give every label a different score."""
+    faces = pd.DataFrame({"label_uid": ["a:1", "a:2", "a:3", "a:4"], "face_id": ["a:7:left"] * 3 + ["a:8:left"],
+                          "heldout": [0, 0, 0, 1], "fold_of_face": [2.0, 2.0, 2.0, np.nan], "labeler_idx": [0, 0, 1, 0],
+                          "in_split": [1, 1, 0, 1], "own_expert_verdict": ["", "incorrect", "incorrect", ""],
+                          **{f"trained_pano_{k}": 0 for k in range(5)}})
+    p = {k: pd.DataFrame({"label_uid": faces["label_uid"], "p_correct": [0.1 + 0.15 * k + 0.01 * i for i in range(4)]})
+         for k in range(5)}
+    split = pd.DataFrame({"label_uid": ["a:1", "a:2", "a:4"], "label_class": ["correct", "correct", "incorrect"],
+                          "class_source": ["margin", "face", "expert"], "split": ["test", "test", "test_heldout"],
+                          "face_id": ["a:7:left", "a:7:left", "a:8:left"]})
+    # as gate2 writes them: a split row is a test row of its own fold only; every fold scores the held-out rows
+    gate_preds = {k: pd.DataFrame({"label_uid": ["a:1", "a:2", "a:4"], "split": ["test", "test", "test_heldout"],
+                                   "true": ["correct", "correct", "incorrect"],
+                                   "p_correct": [0.3 + 0.1 * k, 0.4, 0.2 + 0.1 * k]}).iloc[0 if k == 2 else 2:]
+                  .assign(p_incorrect=lambda x: 1 - x["p_correct"]) for k in range(5)}
+    return faces, p, split, gate_preds
+
+
+def test_step_a_table_scores_each_face_by_its_own_fold():
+    """An out-of-fold row takes only its fold's model (the mean of all five would leak the in-fold models); a
+    held-out row takes the five-model mean; gate2's held-out logit is the same mean."""
+    faces, p, split, gate_preds = step_a_inputs()
+    t = runs.step_a_table(faces, p, split, gate_preds).set_index("label_uid")
+    assert t.at["a:1", "logit"] == pytest.approx(float(runs.logit(p[2].at[0, "p_correct"])))
+    assert t.at["a:3", "logit"] == pytest.approx(float(runs.logit(p[2].at[2, "p_correct"])))
+    assert t.at["a:4", "logit"] == pytest.approx(np.mean([runs.logit(p[k].at[3, "p_correct"]) for k in range(5)]))
+    assert t.at["a:1", "logit_gate2"] == pytest.approx(float(runs.logit(0.3 + 0.1 * 2)))
+    assert t.at["a:4", "logit_gate2"] == pytest.approx(np.mean([runs.logit(0.2 + 0.1 * k) for k in range(5)]))
+    assert (t["run_id"] == ["a:7:left:NoSidewalk:L0", "a:7:left:NoSidewalk:L0", "a:7:left:NoSidewalk:L1",
+                            "a:8:left:NoSidewalk:L0"]).all()
+
+
+def test_face_copied_class_is_not_label_level_truth():
+    """A split row whose class the face rule copied has no label-level truth, even when it carries its own expert
+    vote; a margin row keeps its class; a non-split row takes its own expert verdict."""
+    faces, p, split, gate_preds = step_a_inputs()
+    t = runs.step_a_table(faces, p, split, gate_preds).set_index("label_uid")
+    assert (t.at["a:1", "truth"], t.at["a:1", "truth_source"]) == ("correct", "split_label")
+    assert (t.at["a:2", "truth"], t.at["a:2", "truth_source"]) == ("", "")
+    assert t.at["a:2", "true"] == "correct"          # still in the circular set (i)
+    assert (t.at["a:3", "truth"], t.at["a:3", "truth_source"]) == ("incorrect", "own_expert")
+
+
+def test_crop_parity_covers_heldout_rows():
+    faces, p, split, gate_preds = step_a_inputs()
+    t = runs.step_a_table(faces, p, split, gate_preds)
+    rng = np.random.default_rng(0)   # more test rows of other labels, so the gate2 map can be fitted
+    y = np.array(["correct", "incorrect"] * 40)
+    pc = np.clip(np.where(y == "correct", 0.85, 0.3) + rng.normal(0, 0.1, 80), 0.01, 0.99)
+    extra = pd.DataFrame({"label_uid": [f"z:{i}" for i in range(80)], "split": "test", "true": y, "p_correct": pc,
+                          "p_incorrect": 1 - pc})
+    gate_preds = {**gate_preds, 0: pd.concat([gate_preds[0], extra], ignore_index=True)}
+    cp = runs.crop_parity(t, gate_preds, {"correct": 0.8, "incorrect": 0.2},
+                          split=pd.concat([split, split.iloc[:1].assign(label_uid="a:9", face_id="")]))
+    assert cp["rows"] == 2 and cp["heldout"]["rows"] == 1 and cp["split_rows_without_face"] == 1
+
+
+def test_lofo_map_never_sees_its_own_fold(monkeypatch):
+    t = synthetic_step_a()
+    seen = []
+    real = runs.pooled_map
+
+    def spy(fit_rows, pi, group):
+        seen.append(set(fit_rows["fold"]))
+        return real(fit_rows, pi, group)
+
+    monkeypatch.setattr(runs, "pooled_map", spy)
+    fit = t[t["in_split"] == 1].assign(pooled=t["logit"])
+    runs.lofo_served(fit, t.assign(pooled=t["logit"]), {"correct": 0.8, "incorrect": 0.2}, "single")
+    assert seen == [set(range(5)) - {k} for k in range(5)]
+
+
+def synthetic_second_stage(n_faces=60, seed=0):
+    rng = np.random.default_rng(seed)
+    rows = []
+    for f in range(n_faces):
+        bad = f % 3 == 0
+        for j in range(2):
+            rows.append({"label_uid": f"x:{f}:{j}", "face_id": f"x:{f}:left", "city": "x" if f % 2 else "y",
+                         "fold": f % 5, "truth": "incorrect" if bad else "correct",
+                         "image_logit": (-1.0 if bad else 1.5) + rng.normal(0, 1),
+                         "tags": '["ends abruptly"]', "verdict": "incorrect" if bad else "correct", "weight": 1.0 + j,
+                         "city_id": "x" if f % 2 else "y", "stratum": "pass",
+                         **{c: rng.normal() for c in runs.FEATURES},
+                         **{f"p_correct_{k}": float(runs.sigmoid((-1.0 if bad else 1.5) + rng.normal(0, 1)))
+                            for k in range(5)}})
+    return pd.DataFrame(rows)
+
+
+def test_second_stage_holds_out_its_fold(monkeypatch):
+    train = synthetic_second_stage()
+    sizes = []
+    real = runs.fit_second_stage
+
+    def spy(X, y, w):
+        sizes.append(len(X))
+        return real(X, y, w)
+
+    monkeypatch.setattr(runs, "fit_second_stage", spy)
+    out = runs.second_stage(train, {"ii_all": set(train["label_uid"])}, n_boot=0, seed=0)
+    want = [len(train) - int((train["fold"] == k).sum()) for k in range(5) for _ in runs.MODEL_COLUMNS]
+    assert sizes == want
+    assert out["tags_ii_all"]["ends abruptly"]["rows"] == len(train)
+    bad = train.copy()
+    bad.loc[0, "fold"] = (bad.loc[1, "fold"] + 1) % 5   # one face on both sides of a fold
+    with pytest.raises(ValueError, match="both sides"):
+        runs.second_stage(bad, {"ii_all": set(bad["label_uid"])}, n_boot=0, seed=0)
+
+
+def step_b_frames():
+    """Two faces: face f with a rated label and three scored neighbours of one run (pass, pass, below, below), face
+    g with a rated label and two neighbours (pass, below, below)."""
+    rows = []
+    for face, strata in (("c:1:left", ["pass", "pass", "agree_below", "agree_below"]),
+                         ("c:2:left", ["agree_below", "pass", "agree_below"])):
+        for j, st in enumerate(strata):
+            rows.append({"label_uid": f"{face}:{j}", "face_id": face, "labeler_idx": 0, "pano_id": f"{face}{j}",
+                         "latitude": 47.0, "longitude": -122.0, "stratum": st, "rater_placed": int(j == 1),
+                         "rater_voted": 0, **{f"p_correct_{k}": 0.95 if st == "pass" else 0.6 for k in range(5)}})
+    fs = pd.DataFrame(rows)
+    fs["run_id"] = runs.run_ids(fs["face_id"], "NoSidewalk", fs["labeler_idx"]).to_numpy()
+    rated = fs[fs["label_uid"].str.endswith(":0")].assign(verdict="correct", weight=1.0, city_id="c")
+    return rated.reset_index(drop=True), fs
+
+
+def test_vote_pooling_needs_half_of_the_group():
+    """Face 1's run: 2 of 4 pass, so the vote passes; face 2's run: 1 of 3, so it does not (a threshold of 0 would
+    pass both). Strict also needs the label itself to pass."""
+    rated, fs = step_b_frames()
+    assert runs.vote_pooled(rated, fs, "run").tolist() == [True, False]
+    assert runs.vote_pooled(rated, fs, "run", strict=True).tolist() == [True, False]
+    no_second = fs["rater_placed"] == 0      # drop the second (passing) label of each face: face 1 falls to 1 of 3
+    assert runs.vote_pooled(rated, fs, "run", members=no_second).tolist() == [False, False]
+    assert runs.vote_pooled(rated, fs.assign(stratum="agree_below"), "run").tolist() == [False, False]
+
+
+def test_step_b_members_filter_changes_the_pool():
+    rated, fs = step_b_frames()
+    base = runs.step_b_pooled(rated, fs, "run")
+    filt = runs.step_b_pooled(rated, fs, "run", members=fs["rater_placed"] == 0)
+    hi, lo = runs.logit(0.95), runs.logit(0.6)
+    assert base["pooled_0"].tolist() == pytest.approx([(2 * hi + 2 * lo) / 4, (hi + 2 * lo) / 3])
+    assert filt["pooled_0"].tolist() == pytest.approx([(hi + 2 * lo) / 3, lo])
+
+
+def test_near50_without_coordinates_keeps_own_score():
+    d = pd.DataFrame({"face_id": ["f", "f"], "run_id": "r", "pano_id": ["p", "q"], "logit": [1.0, 3.0],
+                      "latitude": [np.nan, 47.0], "longitude": [np.nan, -122.0]})
+    assert runs.pooled_scores(d, "near50").tolist() == [1.0, 3.0]
+
+
+def test_vote_times_as_of_and_city(tmp_path):
+    """A vote after the pull is not the pull's vote; the same label_id in two cities is two labels."""
+    times = tmp_path / "times.csv"
+    pd.DataFrame({"schema": ["sidewalk_a", "sidewalk_a", "sidewalk_a", "sidewalk_b", "sidewalk_b"],
+                  "label_id": ["1", "2", "1", "1", "2"], "label_type": "NoSidewalk", "expert_idx": 1,
+                  "validation_result": ["Agree", "Agree", "Disagree", "Agree", "Agree"],
+                  "start_timestamp": "", "source": "Validate", "mission_id": 1, "label_author_is_expert": "f",
+                  "end_timestamp": ["2026-01-01 00:00:00+00", "2026-01-01 00:30:00+00", "2026-03-01 00:00:00+00",
+                                    "2026-01-01 00:00:00+00", "2026-01-03 00:00:00+00"]}).to_csv(times, index=False)
+    t = runs.vote_times(str(times), {"sidewalk_a": "a", "sidewalk_b": "b"}, "2026-02-01")
+    assert sorted(t) == [("a", "1", 1), ("a", "2", 1), ("b", "1", 1), ("b", "2", 1)]
+    assert t[("a", "1", 1)][1] == "Agree"      # the 2026-03 Disagree is after the pull
+    d = pd.DataFrame({"run_id": ["ra", "ra", "rb", "rb"], "city": ["a", "a", "b", "b"],
+                      "label_id": ["1", "2", "1", "2"], "verdict": "correct", "e1": "Agree", "tags": "[]",
+                      "severity": None})
+    p = runs.pair_table(d, t).set_index("city")
+    assert p.at["a", "gap"] == "< 1 h" and p.at["b", "gap"] == ">= 1 day"
+
+
+def test_pins_are_checked_by_name_not_basename(tmp_path):
+    cj = cities_json(tmp_path / "anything.json", ["a"])
+    with pytest.raises(SystemExit, match="cities_json"):
+        runs.check_cities(cj, allow_unpinned=False)
+
+
+def item1_agreement(tmp_path, monkeypatch):
+    monkeypatch.setenv("EXPERTS", EXPERTS)
+    pull = tmp_path / "pull"
+    os.makedirs(pull)
+    rows = [label("pubcity", i, f"u{(i // 3) % 5}", i // 3, "correct" if i % 4 else "incorrect") for i in range(90)]
+    pd.DataFrame(rows).drop(columns="city").to_csv(pull / "pubcity.csv", index=False)
+    cj = cities_json(tmp_path / "cities.json", ["pubcity"], ["hiddencity"])
+    conf = tmp_path / "c.conf"
+    conf.write_text('city-params {\n  db-schema {\n    pubcity = "sidewalk_pub"\n  }\n  landing-page-url {\n'
+                    '    prod {\n      pubcity = "https://p.example.edu"\n    }\n  }\n}\n')
+    out = tmp_path / "agreement.json"
+    assert runs.main(["agreement", "--ns-pull", str(pull), "--cityparams", str(conf), "--cities-json", cj,
+                      "--n-perm", "20", "--n-boot", "20", "--allow-unpinned", "--out-json", str(out)]) == 0
+    return out, cj
+
+
+def test_report_end_to_end_and_refuses_private_names(tmp_path, monkeypatch):
+    agreement, cj = item1_agreement(tmp_path, monkeypatch)
+    doc = tmp_path / "doc.md"
+    doc.write_text(f"head\n{runs.START}\n{runs.END}\ntail\n")
+    args = ["report", "--agreement", str(agreement), "--cities-json", cj, "--out-json", str(tmp_path / "r.json"),
+            "--out-md", str(tmp_path / "r.md"), "--doc", str(doc), "--allow-unpinned"]
+    assert runs.main(args) == 0
+    md = (tmp_path / "r.md").read_text()
+    assert "Item 1" in md and "pair-weighted" in md and "pubcity" in (tmp_path / "r.json").read_text()
+    assert md in doc.read_text() and not runs.UUID_RE.search(md + (tmp_path / "r.json").read_text())
+    a = json.loads(agreement.read_text())
+    a["settings"]["note"] = "from hiddencity"
+    agreement.write_text(json.dumps(a))
+    with pytest.raises(ValueError, match="non-public"):
+        runs.main(args)
+    with pytest.raises(SystemExit, match="refusing to replace"):   # agreement output is guarded
+        out = tmp_path / "agreement.json"
+        runs.main(["agreement", "--ns-pull", str(tmp_path / "pull"), "--cityparams", str(tmp_path / "c.conf"),
+                   "--cities-json", cj, "--n-perm", "20", "--n-boot", "20", "--allow-unpinned", "--out-json", str(out)])
+
+
+def test_step_b_and_features_markdown():
+    """The markdown of items 2 and 3 renders from synthetic step (a) / step (b) results, with the refitted-single
+    comparison next to the rule (review R3)."""
+    pi = {"correct": 0.8, "incorrect": 0.2}
+    t = synthetic_step_a()
+    a = runs.step_a_pooling(t, pi, n_boot=0, seed=0, groups=("single", "run", "face"),
+                            train=t[["label_uid", "tags", "severity"]])
+    fit = t[t["in_split"] == 1]
+    maps = {g: runs.pooled_map(fit.assign(pooled=runs.pooled_scores(t, g).loc[fit.index]), pi, g) for g in runs.GROUPS}
+    rated, fs = step_b_frames()
+    rated = pd.concat([rated] * 20, ignore_index=True)
+    rated["label_uid"] = [f"{u}#{i}" for i, u in enumerate(rated["label_uid"])]   # distinct rows, same groups
+    rated = rated.assign(verdict=np.where(np.arange(len(rated)) % 4 == 0, "incorrect", "correct"),
+                         stratum=np.where(np.arange(len(rated)) % 2 == 0, "pass", "agree_below"),
+                         median_p_correct=0.9, tags='["ends abruptly"]')
+    fs2 = pd.concat([fs, rated[fs.columns.drop(["stratum"]).tolist() + ["stratum"]]], ignore_index=True)
+    b = runs.step_b_pooling(rated, fs2, maps, pi, n_boot=0, seed=0, groups=("single", "run"))
+    assert set(b["groups"]["run"]) >= {"score", "vote", "vote_strict", "tags", "tags_vote"}
+    b["singleton_runs"] = 0
+    run = b["groups"]["run"]["score"]
+    b["sensitivity"] = {"no_rater_placed_or_voted": run, "no_trained_pano_or_pilot_heldout": run,
+                        "without_touched_faces": run, "touched_faces_rated": 0, "per_city": {"c": run}}
+    rec = runs.recommendation(run, refit_single=b["groups"]["single"]["score"])
+    cp = {"rows": 1, "median_abs_delta_logit": 0.0, "p90_abs_delta_logit": 0.0, "max_abs_delta_logit": 0.0,
+          "verdict_flips": 0, "pass_flips": 0, "heldout": {"rows": 0}, "split_rows_without_face": 13}
+    p = {"step_b": b, "recommendation": rec, "step_a": a, "crop_parity": cp, "r3_coverage": {"labels": 1, "scored": 1}}
+    md = "\n".join(runs.step_b_markdown(p) + runs.step_a_markdown(p))
+    assert "What pooling adds" in md and "13 split rows without a face" in md and "Per city" in md
+    train = synthetic_second_stage()
+    blk = {"step_a": runs.second_stage(train, {"ii_all": set(train["label_uid"])}, n_boot=0, seed=0),
+           "step_b": runs.transfer(train, train, 5, n_boot=0, seed=0)}
+    f = {"face_check": {"step_a": {}, "step_b": {}}, "variants": {"without_expert_placed": blk}}
+    fmd = "\n".join(runs.features_markdown(f))
+    assert "By tag, without expert placed" in fmd and "ends abruptly" in fmd
