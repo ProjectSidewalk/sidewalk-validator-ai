@@ -1587,8 +1587,18 @@ PINS = {
     "expert_vote_times.csv": "6662148df20f55ae728883c9b9324a15946ca002c8772037f12878146cf413ad",
     "cities_json": "8d09c714b45602ad9358da578b5b57c2f8d9aa84be070e85c91d6732aabf064c",
     "cityparams_snapshot.conf": "eed92cfd7658762f981c082f135fa1474041d688c7b3ef63f21278263026a899",
-    # TODO(#102 results run): the R3 step (a) predictions, keyed "r3_<a|b>_predictions_fold<k>", once copied back
-    # from klone. check_r3_pins matches them by content, not by name, and stops the run while none is pinned.
+    # The R3 step (a) predictions (klone jobs 43335519 + 43339134 for a, 43335520 + 43339142 for b, at abd6f96), as
+    # copied back to runs/step-a-scores/<a|b>/. check_r3_pins matches them by content, not by name.
+    "r3_a_predictions_fold0": "319d846e380cd1cb6b4f3a4c43d117913ceb4c5a0b3d83b0d7bc4c10ac247f66",
+    "r3_a_predictions_fold1": "fd8ca7e6ca83227f370805f9fc42ca2e940bf2491bc4c674fa88af1e532ca50c",
+    "r3_a_predictions_fold2": "9a15bf7de73fea5f223285b71cd1ecabb0a14d4368a3c1d34dfb54df92d4df06",
+    "r3_a_predictions_fold3": "223fa2b8bda39fcb20fae63da44459466079252896211935c62e9877a1e9900d",
+    "r3_a_predictions_fold4": "642022de940a7609b2e19a2517bf3637e657864d34482f620ef0aeeafa9c4852",
+    "r3_b_predictions_fold0": "08d9239366ea8bae681d2efd6528ae7c06275c189c831a6ac1ea86a251fa0ddb",
+    "r3_b_predictions_fold1": "7ddca4d4a254fabbd5cebb51ece4f1a47a7b4948d919fd5ea5e95d2115d0e6ba",
+    "r3_b_predictions_fold2": "6279d8ee4e41451f67f0310d923210ff7ae971fd4d11e960a0f8648193f350c5",
+    "r3_b_predictions_fold3": "4cd2a4bb7c9f7deea09de8e25722ad5a030334992a0a2f9fe68ee195f802f4af",
+    "r3_b_predictions_fold4": "ea49969c957c528b27ed9d6f28b9cedec7beae0b792c81789cd5d08fbd6dc069",
 }
 
 
@@ -2197,13 +2207,26 @@ def step_a_markdown(p):
     if tag.get("run"):
         rows = [r for r in tag["run"] if r.get("delta") is not None]
         if rows:
-            lines += ["", "Tag slices on (ii), run pooled against single (training rows are the pooled split rows "
-                      "the fold models draw from; NoSidewalk has no severity):", "",
-                      "| tag | rows (incorrect) | single AUC | run AUC | delta [95 % CI] |", "|---|---|---|---|---|"]
+            train_n = {r["slice"]: r.get("train_n") for r in tag.get("single", [])}
+            lines += ["", "Tag slices on (ii), run pooled against single (training rows: the split's train, val and "
+                      "test rows carrying the tag, the pool the fold models draw from; NoSidewalk has no severity):",
+                      "", "| tag | training rows | rows (incorrect) | single AUC | run AUC | delta [95 % CI] |",
+                      "|---|---|---|---|---|---|"]
             for r in rows:
-                lines.append(f"| {r['slice']} | {r['n']} ({r['n_incorrect']}) | {_f(r['auc_b'])} | {_f(r['auc_a'])} "
-                             f"| {_f(r['delta'])}{_ci([r['delta_lo'], r['delta_hi']])} |")
+                tn = train_n.get(r["slice"])
+                lines.append(f"| {r['slice']} | {'n/a' if tn is None else f'{tn:,}'} | {r['n']} ({r['n_incorrect']}) "
+                             f"| {_f(r['auc_b'])} | {_f(r['auc_a'])} | {_f(r['delta'])}"
+                             f"{_ci([r['delta_lo'], r['delta_hi']])} |")
     return lines
+
+
+def _face_check(c):
+    """``{'same_face': n, 'moved': n, 'missing': n}`` as text.
+
+    >>> _face_check({"same_face": 234, "moved": 0, "missing": 1})
+    '234 on the same face, 0 moved, 1 missing'
+    """
+    return f"{c.get('same_face', 0):,} on the same face, {c.get('moved', 0):,} moved, {c.get('missing', 0):,} missing"
 
 
 def features_markdown(f):
@@ -2212,8 +2235,8 @@ def features_markdown(f):
              "c = features only. Fitted on step (a) label-level truth (faces weighted equally), leave-one-fold-out; "
              "then fitted on all of it, frozen, and applied to each fold model's logit of the step (b) ratings "
              "(averaged over the five). Contradicting labels come from a fresh public pull; labels whose own row "
-             f"moved face or vanished there are dropped (step (a): {f['face_check']['step_a']}; step (b): "
-             f"{f['face_check']['step_b']}). The face-size prior already uses the face's label count at "
+             f"moved face or vanished there are dropped (step (a): {_face_check(f['face_check']['step_a'])}; step "
+             f"(b): {_face_check(f['face_check']['step_b'])}). The face-size prior already uses the face's label count at "
              "calibration, so `n_ns_face` is not new to the served map.", "",
              "| variant | step (a) set | rows | AUC a | AUC b | AUC c | delta b - a [95 % CI] | within-city a / b |",
              "|---|---|---|---|---|---|---|---|"]

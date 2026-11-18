@@ -6140,6 +6140,5677 @@
   }
  },
  "inputs_sha256": {
-  "agreement": "960fbfa67ef5ea0ca11fcc554d09ec0fca296d770cbf45a76d038b2a2d0a5baa"
+  "agreement": "960fbfa67ef5ea0ca11fcc554d09ec0fca296d770cbf45a76d038b2a2d0a5baa",
+  "pooling": "e45ffb20366f6591a06e32a0514f662ea216fd3f948dd9ce0f871fd7caeff28d",
+  "features": "4182fb563cb1df3311b151b35758db2c362fff357bfe34554b087a8c245fd96b"
+ },
+ "pooling": {
+  "inputs": {
+   "step_a_faces": "e571f6acd0dd7cdf0430e9be7677d8dedee4b77d124c00752db8e0def8d8cfff",
+   "r3_predictions": {
+    "a/predictions_fold0.csv": "319d846e380cd1cb6b4f3a4c43d117913ceb4c5a0b3d83b0d7bc4c10ac247f66",
+    "b/predictions_fold0.csv": "08d9239366ea8bae681d2efd6528ae7c06275c189c831a6ac1ea86a251fa0ddb",
+    "a/predictions_fold1.csv": "fd8ca7e6ca83227f370805f9fc42ca2e940bf2491bc4c674fa88af1e532ca50c",
+    "b/predictions_fold1.csv": "7ddca4d4a254fabbd5cebb51ece4f1a47a7b4948d919fd5ea5e95d2115d0e6ba",
+    "a/predictions_fold2.csv": "9a15bf7de73fea5f223285b71cd1ecabb0a14d4368a3c1d34dfb54df92d4df06",
+    "b/predictions_fold2.csv": "6279d8ee4e41451f67f0310d923210ff7ae971fd4d11e960a0f8648193f350c5",
+    "a/predictions_fold3.csv": "223fa2b8bda39fcb20fae63da44459466079252896211935c62e9877a1e9900d",
+    "b/predictions_fold3.csv": "4cd2a4bb7c9f7deea09de8e25722ad5a030334992a0a2f9fe68ee195f802f4af",
+    "a/predictions_fold4.csv": "642022de940a7609b2e19a2517bf3637e657864d34482f620ef0aeeafa9c4852",
+    "b/predictions_fold4.csv": "ea49969c957c528b27ed9d6f28b9cedec7beae0b792c81789cd5d08fbd6dc069"
+   },
+   "gate2": {
+    "gate2_folds.csv": "895d00b4f5fb5567cf5b2b0253db5dba986ac42085c4827fe6123e3101df25ac",
+    "gate2_folds.json": "e74d4455f199bfe005217b41e72cee69422ad77e4e99ba384d8c0d87bb773afb",
+    "gate2_split_fold0": "d2615554686963b76fd605a2a36d774de812b3c7f4bf7e513ab23d80b50a30a6",
+    "gate2_predictions_fold0": "b44a555fb2e063d330bd11cd54d2b15a49bafd20cf6a2802b972f793a2af8e1c",
+    "gate2_split_fold1": "7e78497d221cc9e88c7537bfc63bb2ed5d235801a1aabe7fadfac00848251fc6",
+    "gate2_predictions_fold1": "ed0c74735a7347e84a352128a9d6b799631fadcadf01b1cd265168536e3127a4",
+    "gate2_split_fold2": "57a68ce9f2789812848bdd5507348a99532c24224aaac09439caf238b3948b83",
+    "gate2_predictions_fold2": "c6306f54914bca59daae87892665c630c8dcd64a46457ca49f9842219c7d4ede",
+    "gate2_split_fold3": "8286f3b4f999b40b6a060941e569e74aa38c52922743867b8c1b7801ca398800",
+    "gate2_predictions_fold3": "a2a9270f17b3ad26627794ee81e12cc111b84d15bf5e497bc454656cbc1a70e8",
+    "gate2_split_fold4": "bf834900701141ef5ff6f322858e8d86bb0cec7a46197a8e0d595c2102399ec7",
+    "gate2_predictions_fold4": "f36ed206947435bfbcc4acdad8fd15675f2efdc35db4161436724bf13d217b4f"
+   },
+   "priors": "e33be7279bcf8d10a8a4b346c3633f7999b65b923073e6a6d783c8b99392ee2f",
+   "key": "d2d30d05912e1a12cd75f56822a32413cb250dd048a5c17ff5bc13ae949172a8",
+   "sheet": "09a2624f93ff5ca203dfd8f0a4038129252d12334d863046986931e99ce957c9",
+   "face_scores": "6da73f9e4e3c93de1102e8657b18e1e457c15b3d14c6ebf8de4b796775c54bd3"
+  },
+  "gate": 0.92,
+  "prior": {
+   "correct": 0.8305856976206722,
+   "incorrect": 0.1694143023793278
+  },
+  "settings": {
+   "n_boot": 1000,
+   "seed": 0,
+   "near_m": 50.0,
+   "groups": [
+    "single",
+    "run",
+    "face",
+    "face_loo",
+    "run_pano",
+    "near50"
+   ]
+  },
+  "crop_parity": {
+   "rows": 746,
+   "median_abs_delta_logit": 4.923831732339679e-07,
+   "p90_abs_delta_logit": 0.0024894118916327646,
+   "max_abs_delta_logit": 0.034217447251243094,
+   "verdict_flips": 0,
+   "pass_flips": 0,
+   "pass_gate2": 262,
+   "pass_rescored": 262,
+   "heldout": {
+    "rows": 126,
+    "median_abs_delta_logit": 0.0007753925263958017,
+    "p90_abs_delta_logit": 0.0023324130330295567,
+    "max_abs_delta_logit": 0.048162737257978705,
+    "verdict_flips": 0,
+    "pass_flips": 0,
+    "pass_gate2": 28,
+    "pass_rescored": 28
+   },
+   "split_rows_without_face": 13
+  },
+  "r3_coverage": {
+   "labels": 7759,
+   "scored": 7736,
+   "share": 0.9970357004768656,
+   "threshold": 0.9,
+   "meets_threshold": true,
+   "per_city": {
+    "amsterdam": {
+     "labels": 183,
+     "scored": 183,
+     "share": 1.0
+    },
+    "blackhawk-hills-il": {
+     "labels": 9,
+     "scored": 9,
+     "share": 1.0
+    },
+    "burnaby": {
+     "labels": 156,
+     "scored": 156,
+     "share": 1.0
+    },
+    "cdmx": {
+     "labels": 324,
+     "scored": 324,
+     "share": 1.0
+    },
+    "chicago-il": {
+     "labels": 491,
+     "scored": 491,
+     "share": 1.0
+    },
+    "clifton-nj": {
+     "labels": 40,
+     "scored": 40,
+     "share": 1.0
+    },
+    "columbus-oh": {
+     "labels": 195,
+     "scored": 195,
+     "share": 1.0
+    },
+    "danville-il": {
+     "labels": 20,
+     "scored": 20,
+     "share": 1.0
+    },
+    "gainesville-fl": {
+     "labels": 10,
+     "scored": 10,
+     "share": 1.0
+    },
+    "hackensack-nj": {
+     "labels": 9,
+     "scored": 9,
+     "share": 1.0
+    },
+    "houston-tx": {
+     "labels": 64,
+     "scored": 64,
+     "share": 1.0
+    },
+    "knox-oh": {
+     "labels": 79,
+     "scored": 79,
+     "share": 1.0
+    },
+    "laurens-ia": {
+     "labels": 111,
+     "scored": 111,
+     "share": 1.0
+    },
+    "madison-wi": {
+     "labels": 11,
+     "scored": 11,
+     "share": 1.0
+    },
+    "mendota-il": {
+     "labels": 107,
+     "scored": 107,
+     "share": 1.0
+    },
+    "newberg-or": {
+     "labels": 796,
+     "scored": 796,
+     "share": 1.0
+    },
+    "newport-ky": {
+     "labels": 45,
+     "scored": 45,
+     "share": 1.0
+    },
+    "oradell-nj": {
+     "labels": 1994,
+     "scored": 1994,
+     "share": 1.0
+    },
+    "paterson-nj": {
+     "labels": 34,
+     "scored": 34,
+     "share": 1.0
+    },
+    "seattle-wa": {
+     "labels": 2507,
+     "scored": 2484,
+     "share": 0.9908256880733946
+    },
+    "st-louis-mo": {
+     "labels": 79,
+     "scored": 79,
+     "share": 1.0
+    },
+    "teaneck-nj": {
+     "labels": 114,
+     "scored": 114,
+     "share": 1.0
+    },
+    "tucson-az": {
+     "labels": 83,
+     "scored": 83,
+     "share": 1.0
+    },
+    "virden-il": {
+     "labels": 7,
+     "scored": 7,
+     "share": 1.0
+    },
+    "walla-walla-wa": {
+     "labels": 291,
+     "scored": 291,
+     "share": 1.0
+    }
+   }
+  },
+  "step_a": {
+   "counts": {
+    "oof_labels": 7185,
+    "oof_scored": 7162,
+    "oof_faces": 440,
+    "split_rows_scored": 746,
+    "set_ii_all": 1125,
+    "set_ii_split": 283,
+    "set_ii_extra": 842,
+    "set_iii": 365,
+    "set_i_circular": 746,
+    "set_iii_circular": 440,
+    "set_ii_all_incorrect": 242
+   },
+   "groups": {
+    "single": {
+     "ii_all": {
+      "n": 1125,
+      "n_incorrect": 242,
+      "faces": 365,
+      "auc": 0.9680676319459394,
+      "auc_ci95": [
+       0.9512338745448145,
+       0.9809526069852297
+      ],
+      "within_city_auc": 0.9615526167284147,
+      "within_city_n_cities": 4,
+      "agree_gate": {
+       "n": 1125,
+       "n_agree_verdicts": 859,
+       "n_pass": 610,
+       "coverage": 0.5422222222222223,
+       "precision": 0.9918032786885246,
+       "precision_wilson95_lower": 0.9809568938397804,
+       "precision_weighted": 0.9938868852152124,
+       "weight_ratio": 0.7442364920622961,
+       "precision_weighted_wilson95_lower": 0.9857580596523616
+      }
+     },
+     "ii_split": {
+      "n": 283,
+      "n_incorrect": 197,
+      "faces": 195,
+      "auc": 0.9587120764962814,
+      "auc_ci95": [
+       0.9326798286161286,
+       0.9804886207367552
+      ],
+      "within_city_auc": 0.9542502951593861,
+      "within_city_n_cities": 2,
+      "agree_gate": {
+       "n": 283,
+       "n_agree_verdicts": 97,
+       "n_pass": 59,
+       "coverage": 0.20848056537102475,
+       "precision": 0.9152542372881356,
+       "precision_wilson95_lower": 0.8164797538583944,
+       "precision_weighted": 0.9918227335069738,
+       "weight_ratio": 0.08904260322045006,
+       "precision_weighted_wilson95_lower": 0.9803785892452825
+      }
+     },
+     "ii_extra": {
+      "n": 842,
+      "n_incorrect": 45,
+      "faces": 239,
+      "auc": 0.976327896277708,
+      "auc_ci95": [
+       0.9527561213969632,
+       0.9981392155828424
+      ],
+      "within_city_auc": 0.9690636144978021,
+      "within_city_n_cities": 2,
+      "agree_gate": {
+       "n": 842,
+       "n_agree_verdicts": 762,
+       "n_pass": 551,
+       "coverage": 0.6543942992874109,
+       "precision": 1.0,
+       "precision_wilson95_lower": 0.9930762221145639,
+       "precision_weighted": 1.0,
+       "weight_ratio": 3.612529738769934,
+       "precision_weighted_wilson95_lower": 0.9754320457821765
+      }
+     },
+     "iii": {
+      "n": 365,
+      "n_incorrect": 120,
+      "faces": 365,
+      "auc": 0.9377380952380953,
+      "auc_ci95": [
+       0.9069828799915711,
+       0.9642107779549564
+      ],
+      "within_city_auc": 0.9361642029940686,
+      "within_city_n_cities": 3,
+      "agree_gate": {
+       "n": 365,
+       "n_agree_verdicts": 234,
+       "n_pass": 135,
+       "coverage": 0.3698630136986301,
+       "precision": 0.9703703703703703,
+       "precision_wilson95_lower": 0.9262927103040972,
+       "precision_weighted": 0.9874439907064629,
+       "weight_ratio": 0.416438105080913,
+       "precision_weighted_wilson95_lower": 0.9679258793119881
+      }
+     },
+     "i_circular": {
+      "n": 746,
+      "n_incorrect": 309,
+      "faces": 440,
+      "auc": 0.936593277198907,
+      "auc_ci95": [
+       0.9058987141307574,
+       0.9616597822511976
+      ],
+      "within_city_auc": 0.939416112709594,
+      "within_city_n_cities": 7,
+      "agree_gate": {
+       "n": 746,
+       "n_agree_verdicts": 445,
+       "n_pass": 262,
+       "coverage": 0.3512064343163539,
+       "precision": 0.950381679389313,
+       "precision_wilson95_lower": 0.9169697925606437,
+       "precision_weighted": 0.985163182351413,
+       "weight_ratio": 0.28846198045628524,
+       "precision_weighted_wilson95_lower": 0.9745450873370953
+      }
+     },
+     "iii_circular": {
+      "n": 440,
+      "n_incorrect": 123,
+      "faces": 440,
+      "auc": 0.9349337026493294,
+      "auc_ci95": [
+       0.9037677881028378,
+       0.9626159767166625
+      ],
+      "within_city_auc": 0.9350402605627431,
+      "within_city_n_cities": 4,
+      "agree_gate": {
+       "n": 440,
+       "n_agree_verdicts": 305,
+       "n_pass": 184,
+       "coverage": 0.41818181818181815,
+       "precision": 0.9728260869565217,
+       "precision_wilson95_lower": 0.9379739283673749,
+       "precision_weighted": 0.9855287500241523,
+       "weight_ratio": 0.5256779663938255,
+       "precision_weighted_wilson95_lower": 0.9664059115507916
+      }
+     }
+    },
+    "run": {
+     "ii_all": {
+      "n": 1125,
+      "n_incorrect": 242,
+      "faces": 365,
+      "auc": 0.9706134234343851,
+      "auc_ci95": [
+       0.953015454402434,
+       0.9841107138412251
+      ],
+      "within_city_auc": 0.9580072134848001,
+      "within_city_n_cities": 4,
+      "agree_gate": {
+       "n": 1125,
+       "n_agree_verdicts": 889,
+       "n_pass": 603,
+       "coverage": 0.536,
+       "precision": 0.9850746268656716,
+       "precision_wilson95_lower": 0.9718794380213295,
+       "precision_weighted": 0.9888494268392627,
+       "weight_ratio": 0.7442364920622961,
+       "precision_weighted_wilson95_lower": 0.9789200400238339
+      },
+      "delta_vs_single": {
+       "delta": 0.0025457914884456923,
+       "delta_ci95": [
+        -0.006679556297782596,
+        0.012000029414048645
+       ]
+      }
+     },
+     "ii_split": {
+      "n": 283,
+      "n_incorrect": 197,
+      "faces": 195,
+      "auc": 0.958357927045213,
+      "auc_ci95": [
+       0.9328515546786086,
+       0.9803934462704809
+      ],
+      "within_city_auc": 0.943772136953955,
+      "within_city_n_cities": 2,
+      "agree_gate": {
+       "n": 283,
+       "n_agree_verdicts": 104,
+       "n_pass": 61,
+       "coverage": 0.21554770318021202,
+       "precision": 0.8688524590163934,
+       "precision_wilson95_lower": 0.761978875735935,
+       "precision_weighted": 0.986737855494432,
+       "weight_ratio": 0.08904260322045006,
+       "precision_weighted_wilson95_lower": 0.9729382609803136
+      },
+      "delta_vs_single": {
+       "delta": -0.00035414945106837514,
+       "delta_ci95": [
+        -0.012784853630021348,
+        0.011656955787457044
+       ]
+      }
+     },
+     "ii_extra": {
+      "n": 842,
+      "n_incorrect": 45,
+      "faces": 239,
+      "auc": 0.9798410706817231,
+      "auc_ci95": [
+       0.953657372578292,
+       0.9978846073118967
+      ],
+      "within_city_auc": 0.9830803682508087,
+      "within_city_n_cities": 2,
+      "agree_gate": {
+       "n": 842,
+       "n_agree_verdicts": 785,
+       "n_pass": 542,
+       "coverage": 0.6437054631828979,
+       "precision": 0.9981549815498155,
+       "precision_wilson95_lower": 0.9896237511018205,
+       "precision_weighted": 0.9933667891546625,
+       "weight_ratio": 3.612529738769934,
+       "precision_weighted_wilson95_lower": 0.963504813246762
+      },
+      "delta_vs_single": {
+       "delta": 0.003513174404015107,
+       "delta_ci95": [
+        -0.020712612445955732,
+        0.01992265963875505
+       ]
+      }
+     },
+     "iii": {
+      "n": 365,
+      "n_incorrect": 120,
+      "faces": 365,
+      "auc": 0.9358843537414967,
+      "auc_ci95": [
+       0.9005822603742265,
+       0.9656455560590494
+      ],
+      "within_city_auc": 0.9351285189718482,
+      "within_city_n_cities": 3,
+      "agree_gate": {
+       "n": 365,
+       "n_agree_verdicts": 241,
+       "n_pass": 139,
+       "coverage": 0.38082191780821917,
+       "precision": 0.9424460431654677,
+       "precision_wilson95_lower": 0.8905422354788564,
+       "precision_weighted": 0.9751993782501035,
+       "weight_ratio": 0.416438105080913,
+       "precision_weighted_wilson95_lower": 0.9513073547122051
+      },
+      "delta_vs_single": {
+       "delta": -0.00185374149659856,
+       "delta_ci95": [
+        -0.021555007845059173,
+        0.016247826086956532
+       ]
+      }
+     },
+     "i_circular": {
+      "n": 746,
+      "n_incorrect": 309,
+      "faces": 440,
+      "auc": 0.9437211644560959,
+      "auc_ci95": [
+       0.9157933660133167,
+       0.9681852324009192
+      ],
+      "within_city_auc": 0.9470557594999504,
+      "within_city_n_cities": 7,
+      "agree_gate": {
+       "n": 746,
+       "n_agree_verdicts": 457,
+       "n_pass": 249,
+       "coverage": 0.33378016085790885,
+       "precision": 0.9317269076305221,
+       "precision_wilson95_lower": 0.893394317221391,
+       "precision_weighted": 0.9793002368182907,
+       "weight_ratio": 0.28846198045628524,
+       "precision_weighted_wilson95_lower": 0.9667242121241673
+      },
+      "delta_vs_single": {
+       "delta": 0.007127887257188936,
+       "delta_ci95": [
+        -0.0027709068280324482,
+        0.017292150766871857
+       ]
+      }
+     },
+     "iii_circular": {
+      "n": 440,
+      "n_incorrect": 123,
+      "faces": 440,
+      "auc": 0.9392936831576517,
+      "auc_ci95": [
+       0.908484031462418,
+       0.9664225938241664
+      ],
+      "within_city_auc": 0.9411019632678911,
+      "within_city_n_cities": 4,
+      "agree_gate": {
+       "n": 440,
+       "n_agree_verdicts": 317,
+       "n_pass": 181,
+       "coverage": 0.4113636363636364,
+       "precision": 0.9558011049723757,
+       "precision_wilson95_lower": 0.9152197167625562,
+       "precision_weighted": 0.9762680868192222,
+       "weight_ratio": 0.5256779663938255,
+       "precision_weighted_wilson95_lower": 0.9535655993019309
+      },
+      "delta_vs_single": {
+       "delta": 0.004359980508322314,
+       "delta_ci95": [
+        -0.013143424069816811,
+        0.021790774366076487
+       ]
+      }
+     }
+    },
+    "face": {
+     "ii_all": {
+      "n": 1125,
+      "n_incorrect": 242,
+      "faces": 365,
+      "auc": 0.9733089673633274,
+      "auc_ci95": [
+       0.954943488516653,
+       0.9857261192073532
+      ],
+      "within_city_auc": 0.9619451873297838,
+      "within_city_n_cities": 4,
+      "agree_gate": {
+       "n": 1125,
+       "n_agree_verdicts": 905,
+       "n_pass": 556,
+       "coverage": 0.49422222222222223,
+       "precision": 0.987410071942446,
+       "precision_wilson95_lower": 0.9742425659731024,
+       "precision_weighted": 0.9905998471999583,
+       "weight_ratio": 0.7442364920622961,
+       "precision_weighted_wilson95_lower": 0.9807032543287342
+      },
+      "delta_vs_single": {
+       "delta": 0.005241335417388027,
+       "delta_ci95": [
+        -0.005678866140552774,
+        0.015165453694676204
+       ]
+      }
+     },
+     "ii_split": {
+      "n": 283,
+      "n_incorrect": 197,
+      "faces": 195,
+      "auc": 0.9659131153346713,
+      "auc_ci95": [
+       0.9425308179950685,
+       0.9836456644949414
+      ],
+      "within_city_auc": 0.9567591499409681,
+      "within_city_n_cities": 2,
+      "agree_gate": {
+       "n": 283,
+       "n_agree_verdicts": 108,
+       "n_pass": 55,
+       "coverage": 0.19434628975265017,
+       "precision": 0.8909090909090909,
+       "precision_wilson95_lower": 0.7817420620476804,
+       "precision_weighted": 0.9892144211587931,
+       "weight_ratio": 0.08904260322045006,
+       "precision_weighted_wilson95_lower": 0.9757428489134905
+      },
+      "delta_vs_single": {
+       "delta": 0.0072010388383898505,
+       "delta_ci95": [
+        -0.010342777981428977,
+        0.02509784891169889
+       ]
+      }
+     },
+     "ii_extra": {
+      "n": 842,
+      "n_incorrect": 45,
+      "faces": 239,
+      "auc": 0.9815000697058414,
+      "auc_ci95": [
+       0.9499189740453097,
+       0.9968705456186967
+      ],
+      "within_city_auc": 0.9835365347930662,
+      "within_city_n_cities": 2,
+      "agree_gate": {
+       "n": 842,
+       "n_agree_verdicts": 797,
+       "n_pass": 501,
+       "coverage": 0.5950118764845606,
+       "precision": 0.998003992015968,
+       "precision_wilson95_lower": 0.988781268091048,
+       "precision_weighted": 0.9928267675535319,
+       "weight_ratio": 3.612529738769934,
+       "precision_weighted_wilson95_lower": 0.9606260199880405
+      },
+      "delta_vs_single": {
+       "delta": 0.005172173428133364,
+       "delta_ci95": [
+        -0.02470958923749363,
+        0.024003641074937326
+       ]
+      }
+     },
+     "iii": {
+      "n": 365,
+      "n_incorrect": 120,
+      "faces": 365,
+      "auc": 0.9438095238095239,
+      "auc_ci95": [
+       0.9108304015350844,
+       0.9708070457300968
+      ],
+      "within_city_auc": 0.9459561246586952,
+      "within_city_n_cities": 3,
+      "agree_gate": {
+       "n": 365,
+       "n_agree_verdicts": 251,
+       "n_pass": 134,
+       "coverage": 0.36712328767123287,
+       "precision": 0.9552238805970149,
+       "precision_wilson95_lower": 0.9057540887888655,
+       "precision_weighted": 0.9808532192505984,
+       "weight_ratio": 0.416438105080913,
+       "precision_weighted_wilson95_lower": 0.958468233853657
+      },
+      "delta_vs_single": {
+       "delta": 0.0060714285714286165,
+       "delta_ci95": [
+        -0.01608639708824926,
+        0.026105652173913037
+       ]
+      }
+     },
+     "i_circular": {
+      "n": 746,
+      "n_incorrect": 309,
+      "faces": 440,
+      "auc": 0.9498752156880169,
+      "auc_ci95": [
+       0.9208878759613166,
+       0.9733704851516177
+      ],
+      "within_city_auc": 0.9559108046433178,
+      "within_city_n_cities": 7,
+      "agree_gate": {
+       "n": 746,
+       "n_agree_verdicts": 460,
+       "n_pass": 242,
+       "coverage": 0.32439678284182305,
+       "precision": 0.9421487603305785,
+       "precision_wilson95_lower": 0.9052489206627263,
+       "precision_weighted": 0.982595697317093,
+       "weight_ratio": 0.28846198045628524,
+       "precision_weighted_wilson95_lower": 0.970692000094938
+      },
+      "delta_vs_single": {
+       "delta": 0.013281938489109968,
+       "delta_ci95": [
+        1.8061384704917826e-05,
+        0.026082164215646672
+       ]
+      }
+     },
+     "iii_circular": {
+      "n": 440,
+      "n_incorrect": 123,
+      "faces": 440,
+      "auc": 0.9413197917468134,
+      "auc_ci95": [
+       0.9103624445729709,
+       0.969525331892388
+      ],
+      "within_city_auc": 0.945354202478965,
+      "within_city_n_cities": 4,
+      "agree_gate": {
+       "n": 440,
+       "n_agree_verdicts": 323,
+       "n_pass": 174,
+       "coverage": 0.39545454545454545,
+       "precision": 0.9655172413793104,
+       "precision_wilson95_lower": 0.9268205486728962,
+       "precision_weighted": 0.9815717625707922,
+       "weight_ratio": 0.5256779663938255,
+       "precision_weighted_wilson95_lower": 0.9601478829059517
+      },
+      "delta_vs_single": {
+       "delta": 0.006386089097483949,
+       "delta_ci95": [
+        -0.013825755608831578,
+        0.02690495223730513
+       ]
+      }
+     }
+    },
+    "face_loo": {
+     "ii_all": {
+      "n": 1125,
+      "n_incorrect": 242,
+      "faces": 365,
+      "auc": 0.9708825098509027,
+      "auc_ci95": [
+       0.9501181533199955,
+       0.9841494409588418
+      ],
+      "within_city_auc": 0.957553303726967,
+      "within_city_n_cities": 4,
+      "agree_gate": {
+       "n": 1125,
+       "n_agree_verdicts": 903,
+       "n_pass": 553,
+       "coverage": 0.4915555555555556,
+       "precision": 0.9873417721518988,
+       "precision_wilson95_lower": 0.9741040969571658,
+       "precision_weighted": 0.9905486861614652,
+       "weight_ratio": 0.7442364920622961,
+       "precision_weighted_wilson95_lower": 0.9805988255782873
+      },
+      "delta_vs_single": {
+       "delta": 0.0028148779049633754,
+       "delta_ci95": [
+        -0.010871241995859487,
+        0.013455712043256051
+       ]
+      }
+     },
+     "ii_split": {
+      "n": 283,
+      "n_incorrect": 197,
+      "faces": 195,
+      "auc": 0.9633455318144256,
+      "auc_ci95": [
+       0.9389490823862516,
+       0.9817748302766208
+      ],
+      "within_city_auc": 0.957201889020071,
+      "within_city_n_cities": 2,
+      "agree_gate": {
+       "n": 283,
+       "n_agree_verdicts": 109,
+       "n_pass": 54,
+       "coverage": 0.19081272084805653,
+       "precision": 0.8888888888888888,
+       "precision_wilson95_lower": 0.7780505106792327,
+       "precision_weighted": 0.9889921950485215,
+       "weight_ratio": 0.08904260322045006,
+       "precision_weighted_wilson95_lower": 0.9752285953657785
+      },
+      "delta_vs_single": {
+       "delta": 0.004633455318144186,
+       "delta_ci95": [
+        -0.016666106571648458,
+        0.025038114308243115
+       ]
+      }
+     },
+     "ii_extra": {
+      "n": 842,
+      "n_incorrect": 45,
+      "faces": 239,
+      "auc": 0.9762721316046284,
+      "auc_ci95": [
+       0.9338219079062078,
+       0.9966589013066931
+      ],
+      "within_city_auc": 0.9790163390561499,
+      "within_city_n_cities": 2,
+      "agree_gate": {
+       "n": 842,
+       "n_agree_verdicts": 794,
+       "n_pass": 499,
+       "coverage": 0.5926365795724465,
+       "precision": 0.9979959919839679,
+       "precision_wilson95_lower": 0.9887366578966881,
+       "precision_weighted": 0.9927981668626755,
+       "weight_ratio": 3.612529738769934,
+       "precision_weighted_wilson95_lower": 0.9604739286059092
+      },
+      "delta_vs_single": {
+       "delta": -5.576467307955024e-05,
+       "delta_ci95": [
+        -0.04045401181731849,
+        0.018549337951511775
+       ]
+      }
+     },
+     "iii": {
+      "n": 365,
+      "n_incorrect": 120,
+      "faces": 365,
+      "auc": 0.9375510204081633,
+      "auc_ci95": [
+       0.900798941453138,
+       0.9656680771846126
+      ],
+      "within_city_auc": 0.9410601638263817,
+      "within_city_n_cities": 3,
+      "agree_gate": {
+       "n": 365,
+       "n_agree_verdicts": 249,
+       "n_pass": 129,
+       "coverage": 0.35342465753424657,
+       "precision": 0.9534883720930233,
+       "precision_wilson95_lower": 0.9022364923854131,
+       "precision_weighted": 0.9800903909648099,
+       "weight_ratio": 0.416438105080913,
+       "precision_weighted_wilson95_lower": 0.9568243326512879
+      },
+      "delta_vs_single": {
+       "delta": -0.00018707482993196578,
+       "delta_ci95": [
+        -0.025928426136683603,
+        0.022525920511634413
+       ]
+      }
+     },
+     "i_circular": {
+      "n": 746,
+      "n_incorrect": 309,
+      "faces": 440,
+      "auc": 0.9485903445824355,
+      "auc_ci95": [
+       0.9199533272047147,
+       0.9716290175080876
+      ],
+      "within_city_auc": 0.9560224228594106,
+      "within_city_n_cities": 7,
+      "agree_gate": {
+       "n": 746,
+       "n_agree_verdicts": 461,
+       "n_pass": 223,
+       "coverage": 0.29892761394101874,
+       "precision": 0.9551569506726457,
+       "precision_wilson95_lower": 0.919434773666104,
+       "precision_weighted": 0.9866381412109196,
+       "weight_ratio": 0.28846198045628524,
+       "precision_weighted_wilson95_lower": 0.9753467417645605
+      },
+      "delta_vs_single": {
+       "delta": 0.01199706738352857,
+       "delta_ci95": [
+        -0.0021645790345261456,
+        0.025044036137358082
+       ]
+      }
+     },
+     "iii_circular": {
+      "n": 440,
+      "n_incorrect": 123,
+      "faces": 440,
+      "auc": 0.9381908645584879,
+      "auc_ci95": [
+       0.9064236733002703,
+       0.9658937991191215
+      ],
+      "within_city_auc": 0.9458970415271872,
+      "within_city_n_cities": 4,
+      "agree_gate": {
+       "n": 440,
+       "n_agree_verdicts": 322,
+       "n_pass": 164,
+       "coverage": 0.37272727272727274,
+       "precision": 0.9695121951219512,
+       "precision_wilson95_lower": 0.9306230191625788,
+       "precision_weighted": 0.9837380683263527,
+       "weight_ratio": 0.5256779663938255,
+       "precision_weighted_wilson95_lower": 0.96228909592306
+      },
+      "delta_vs_single": {
+       "delta": 0.003257161909158479,
+       "delta_ci95": [
+        -0.020085153150040082,
+        0.02580885257410092
+       ]
+      }
+     }
+    },
+    "run_pano": {
+     "ii_all": {
+      "n": 1125,
+      "n_incorrect": 242,
+      "faces": 365,
+      "auc": 0.9707772151661784,
+      "auc_ci95": [
+       0.9534369451969333,
+       0.9842990123312145
+      ],
+      "within_city_auc": 0.9592830679392497,
+      "within_city_n_cities": 4,
+      "agree_gate": {
+       "n": 1125,
+       "n_agree_verdicts": 890,
+       "n_pass": 720,
+       "coverage": 0.64,
+       "precision": 0.9875,
+       "precision_wilson95_lower": 0.9764153547907446,
+       "precision_weighted": 0.9906672064991633,
+       "weight_ratio": 0.7442364920622961,
+       "precision_weighted_wilson95_lower": 0.9823409252264627
+      },
+      "delta_vs_single": {
+       "delta": 0.0027095832202390646,
+       "delta_ci95": [
+        -0.006450761459927515,
+        0.012113678830103967
+       ]
+      }
+     },
+     "ii_split": {
+      "n": 283,
+      "n_incorrect": 197,
+      "faces": 195,
+      "auc": 0.9582989021367018,
+      "auc_ci95": [
+       0.9330218766297155,
+       0.9807040028568701
+      ],
+      "within_city_auc": 0.9449527744982289,
+      "within_city_n_cities": 2,
+      "agree_gate": {
+       "n": 283,
+       "n_agree_verdicts": 104,
+       "n_pass": 72,
+       "coverage": 0.254416961130742,
+       "precision": 0.8888888888888888,
+       "precision_wilson95_lower": 0.7957685574140959,
+       "precision_weighted": 0.9889921950485216,
+       "weight_ratio": 0.08904260322045006,
+       "precision_weighted_wilson95_lower": 0.9776580709617044
+      },
+      "delta_vs_single": {
+       "delta": -0.00041317435957966,
+       "delta_ci95": [
+        -0.012596686178740546,
+        0.011644880556975015
+       ]
+      }
+     },
+     "ii_extra": {
+      "n": 842,
+      "n_incorrect": 45,
+      "faces": 239,
+      "auc": 0.9801198940471211,
+      "auc_ci95": [
+       0.9543279209440328,
+       0.9978846073118967
+      ],
+      "within_city_auc": 0.9830803682508087,
+      "within_city_n_cities": 2,
+      "agree_gate": {
+       "n": 842,
+       "n_agree_verdicts": 786,
+       "n_pass": 648,
+       "coverage": 0.7695961995249406,
+       "precision": 0.9984567901234568,
+       "precision_wilson95_lower": 0.9913107729909194,
+       "precision_weighted": 0.9944474943631653,
+       "weight_ratio": 3.612529738769934,
+       "precision_weighted_wilson95_lower": 0.9693066740401186
+      },
+      "delta_vs_single": {
+       "delta": 0.00379199776941308,
+       "delta_ci95": [
+        -0.02067453918957878,
+        0.020443259751722637
+       ]
+      }
+     },
+     "iii": {
+      "n": 365,
+      "n_incorrect": 120,
+      "faces": 365,
+      "auc": 0.9361224489795918,
+      "auc_ci95": [
+       0.9006825232959441,
+       0.965840839810727
+      ],
+      "within_city_auc": 0.935787590622352,
+      "within_city_n_cities": 3,
+      "agree_gate": {
+       "n": 365,
+       "n_agree_verdicts": 242,
+       "n_pass": 169,
+       "coverage": 0.46301369863013697,
+       "precision": 0.9526627218934911,
+       "precision_wilson95_lower": 0.9093821731173414,
+       "precision_weighted": 0.9797269254980787,
+       "weight_ratio": 0.416438105080913,
+       "precision_weighted_wilson95_lower": 0.9601563050397949
+      },
+      "delta_vs_single": {
+       "delta": -0.0016156462585034115,
+       "delta_ci95": [
+        -0.0212024164390689,
+        0.016404656739173764
+       ]
+      }
+     },
+     "i_circular": {
+      "n": 746,
+      "n_incorrect": 309,
+      "faces": 440,
+      "auc": 0.9437063532617952,
+      "auc_ci95": [
+       0.9160795809219124,
+       0.9682184734362637
+      ],
+      "within_city_auc": 0.9473286040281774,
+      "within_city_n_cities": 7,
+      "agree_gate": {
+       "n": 746,
+       "n_agree_verdicts": 458,
+       "n_pass": 314,
+       "coverage": 0.42091152815013405,
+       "precision": 0.9426751592356688,
+       "precision_wilson95_lower": 0.9112140893717404,
+       "precision_weighted": 0.9827607964132867,
+       "weight_ratio": 0.28846198045628524,
+       "precision_weighted_wilson95_lower": 0.9726615458150673
+      },
+      "delta_vs_single": {
+       "delta": 0.007113076062888246,
+       "delta_ci95": [
+        -0.0029526008327536266,
+        0.017097510037340755
+       ]
+      }
+     },
+     "iii_circular": {
+      "n": 440,
+      "n_incorrect": 123,
+      "faces": 440,
+      "auc": 0.9391910953809854,
+      "auc_ci95": [
+       0.9084030745513487,
+       0.9663951189971592
+      ],
+      "within_city_auc": 0.9418257486655205,
+      "within_city_n_cities": 4,
+      "agree_gate": {
+       "n": 440,
+       "n_agree_verdicts": 318,
+       "n_pass": 225,
+       "coverage": 0.5113636363636364,
+       "precision": 0.9644444444444444,
+       "precision_wilson95_lower": 0.9314199205433108,
+       "precision_weighted": 0.9809886047990315,
+       "weight_ratio": 0.5256779663938255,
+       "precision_weighted_wilson95_lower": 0.9627368279803495
+      },
+      "delta_vs_single": {
+       "delta": 0.00425739273165604,
+       "delta_ci95": [
+        -0.013915326171556996,
+        0.02151568703839885
+       ]
+      }
+     }
+    },
+    "near50": {
+     "ii_all": {
+      "n": 1125,
+      "n_incorrect": 242,
+      "faces": 365,
+      "auc": 0.9760513089299252,
+      "auc_ci95": [
+       0.9604569162685328,
+       0.9879842814426718
+      ],
+      "within_city_auc": 0.9728880928429472,
+      "within_city_n_cities": 4,
+      "agree_gate": {
+       "n": 1125,
+       "n_agree_verdicts": 885,
+       "n_pass": 606,
+       "coverage": 0.5386666666666666,
+       "precision": 0.9884488448844885,
+       "precision_wilson95_lower": 0.9763502157554423,
+       "precision_weighted": 0.9913777355302208,
+       "weight_ratio": 0.7442364920622961,
+       "precision_weighted_wilson95_lower": 0.9822918553644089
+      },
+      "delta_vs_single": {
+       "delta": 0.007983676983985832,
+       "delta_ci95": [
+        0.0020976958288655896,
+        0.014761666464528018
+       ]
+      }
+     },
+     "ii_split": {
+      "n": 283,
+      "n_incorrect": 197,
+      "faces": 195,
+      "auc": 0.9702514461102586,
+      "auc_ci95": [
+       0.9493605371502489,
+       0.9864818581459716
+      ],
+      "within_city_auc": 0.967827626918536,
+      "within_city_n_cities": 2,
+      "agree_gate": {
+       "n": 283,
+       "n_agree_verdicts": 103,
+       "n_pass": 61,
+       "coverage": 0.21554770318021202,
+       "precision": 0.8852459016393442,
+       "precision_wilson95_lower": 0.7815546169010974,
+       "precision_weighted": 0.9885891507319141,
+       "weight_ratio": 0.08904260322045006,
+       "precision_weighted_wilson95_lower": 0.9757168408262419
+      },
+      "delta_vs_single": {
+       "delta": 0.011539369613977168,
+       "delta_ci95": [
+        -0.0014117804260898952,
+        0.02709353595731083
+       ]
+      }
+     },
+     "ii_extra": {
+      "n": 842,
+      "n_incorrect": 45,
+      "faces": 239,
+      "auc": 0.9849993029415864,
+      "auc_ci95": [
+       0.9684188788165121,
+       0.998841166268699
+      ],
+      "within_city_auc": 0.9870614580741478,
+      "within_city_n_cities": 2,
+      "agree_gate": {
+       "n": 842,
+       "n_agree_verdicts": 782,
+       "n_pass": 545,
+       "coverage": 0.6472684085510689,
+       "precision": 1.0,
+       "precision_wilson95_lower": 0.9930005305720266,
+       "precision_weighted": 1.0,
+       "weight_ratio": 3.612529738769934,
+       "precision_weighted_wilson95_lower": 0.9751682891963014
+      },
+      "delta_vs_single": {
+       "delta": 0.008671406663878445,
+       "delta_ci95": [
+        -0.007958029868949511,
+        0.023729853270727925
+       ]
+      }
+     },
+     "iii": {
+      "n": 365,
+      "n_incorrect": 120,
+      "faces": 365,
+      "auc": 0.9498639455782313,
+      "auc_ci95": [
+       0.9198540394306622,
+       0.9737679047897966
+      ],
+      "within_city_auc": 0.9529234535354486,
+      "within_city_n_cities": 3,
+      "agree_gate": {
+       "n": 365,
+       "n_agree_verdicts": 248,
+       "n_pass": 150,
+       "coverage": 0.410958904109589,
+       "precision": 0.96,
+       "precision_wilson95_lower": 0.9154854608728422,
+       "precision_weighted": 0.9829443548117588,
+       "weight_ratio": 0.416438105080913,
+       "precision_weighted_wilson95_lower": 0.9629790731845178
+      },
+      "delta_vs_single": {
+       "delta": 0.012125850340136024,
+       "delta_ci95": [
+        -0.0012675379738393635,
+        0.02544610674446531
+       ]
+      }
+     },
+     "i_circular": {
+      "n": 746,
+      "n_incorrect": 309,
+      "faces": 440,
+      "auc": 0.9480497359904615,
+      "auc_ci95": [
+       0.9190041553102737,
+       0.9719424310832677
+      ],
+      "within_city_auc": 0.9539884909217182,
+      "within_city_n_cities": 7,
+      "agree_gate": {
+       "n": 746,
+       "n_agree_verdicts": 456,
+       "n_pass": 269,
+       "coverage": 0.3605898123324397,
+       "precision": 0.9330855018587361,
+       "precision_wilson95_lower": 0.8967173329286108,
+       "precision_weighted": 0.979732742431889,
+       "weight_ratio": 0.28846198045628524,
+       "precision_weighted_wilson95_lower": 0.9678437274943424
+      },
+      "delta_vs_single": {
+       "delta": 0.011456458791554547,
+       "delta_ci95": [
+        0.0027216728317545485,
+        0.020294564350472468
+       ]
+      }
+     },
+     "iii_circular": {
+      "n": 440,
+      "n_incorrect": 123,
+      "faces": 440,
+      "auc": 0.9427816675643096,
+      "auc_ci95": [
+       0.9137809756290136,
+       0.9691183709422524
+      ],
+      "within_city_auc": 0.948068397720076,
+      "within_city_n_cities": 4,
+      "agree_gate": {
+       "n": 440,
+       "n_agree_verdicts": 319,
+       "n_pass": 196,
+       "coverage": 0.44545454545454544,
+       "precision": 0.9591836734693877,
+       "precision_wilson95_lower": 0.9215380804136358,
+       "precision_weighted": 0.9781201609740576,
+       "weight_ratio": 0.5256779663938255,
+       "precision_weighted_wilson95_lower": 0.9571599531827544
+      },
+      "delta_vs_single": {
+       "delta": 0.007847964914980188,
+       "delta_ci95": [
+        -0.006011415981392942,
+        0.02151598595048261
+       ]
+      }
+     }
+    }
+   },
+   "sensitivity": {
+    "no_expert_placed": {
+     "single": {
+      "ii_all": {
+       "auc": 0.9680676319459394,
+       "within_city_auc": 0.9615526167284147,
+       "n_pass": 610,
+       "precision": 0.9918032786885246
+      },
+      "iii": {
+       "auc": 0.9377380952380953,
+       "within_city_auc": 0.9361642029940686,
+       "n_pass": 135,
+       "precision": 0.9703703703703703
+      }
+     },
+     "run": {
+      "ii_all": {
+       "auc": 0.9705104686315434,
+       "within_city_auc": 0.9574919645705032,
+       "n_pass": 568,
+       "precision": 0.9859154929577465
+      },
+      "iii": {
+       "auc": 0.9354421768707483,
+       "within_city_auc": 0.9337162225779116,
+       "n_pass": 132,
+       "precision": 0.946969696969697
+      }
+     },
+     "face": {
+      "ii_all": {
+       "auc": 0.9744742285409432,
+       "within_city_auc": 0.9597615133596683,
+       "n_pass": 530,
+       "precision": 0.9886792452830189
+      },
+      "iii": {
+       "auc": 0.9464965986394558,
+       "within_city_auc": 0.945014593729404,
+       "n_pass": 114,
+       "precision": 0.956140350877193
+      }
+     },
+     "face_loo": {
+      "ii_all": {
+       "auc": 0.9723051580356225,
+       "within_city_auc": 0.9532104914493216,
+       "n_pass": 566,
+       "precision": 0.9893992932862191
+      },
+      "iii": {
+       "auc": 0.9416326530612243,
+       "within_city_auc": 0.9402127859900198,
+       "n_pass": 132,
+       "precision": 0.9621212121212122
+      }
+     },
+     "run_pano": {
+      "ii_all": {
+       "auc": 0.9707584961111163,
+       "within_city_auc": 0.9587923546875383,
+       "n_pass": 609,
+       "precision": 0.9852216748768473
+      },
+      "iii": {
+       "auc": 0.9358163265306122,
+       "within_city_auc": 0.9344694473213445,
+       "n_pass": 145,
+       "precision": 0.9448275862068966
+      }
+     },
+     "near50": {
+      "ii_all": {
+       "auc": 0.9784660670329361,
+       "within_city_auc": 0.9743111612729102,
+       "n_pass": 607,
+       "precision": 0.9884678747940692
+      },
+      "iii": {
+       "auc": 0.9550000000000001,
+       "within_city_auc": 0.953205912814236,
+       "n_pass": 151,
+       "precision": 0.9602649006622517
+      }
+     }
+    },
+    "no_trained_pano": {
+     "single": {
+      "ii_all": {
+       "auc": 0.9680676319459394,
+       "within_city_auc": 0.9615526167284147,
+       "n_pass": 610,
+       "precision": 0.9918032786885246
+      },
+      "iii": {
+       "auc": 0.9377380952380953,
+       "within_city_auc": 0.9361642029940686,
+       "n_pass": 135,
+       "precision": 0.9703703703703703
+      }
+     },
+     "run": {
+      "ii_all": {
+       "auc": 0.97045665134824,
+       "within_city_auc": 0.9585347302303898,
+       "n_pass": 603,
+       "precision": 0.9850746268656716
+      },
+      "iii": {
+       "auc": 0.9363265306122449,
+       "within_city_auc": 0.9360700499011393,
+       "n_pass": 139,
+       "precision": 0.9424460431654677
+      }
+     },
+     "face": {
+      "ii_all": {
+       "auc": 0.9730071226004511,
+       "within_city_auc": 0.9606325293814559,
+       "n_pass": 556,
+       "precision": 0.987410071942446
+      },
+      "iii": {
+       "auc": 0.9435714285714285,
+       "within_city_auc": 0.9455795122869787,
+       "n_pass": 134,
+       "precision": 0.9552238805970149
+      }
+     },
+     "face_loo": {
+      "ii_all": {
+       "auc": 0.9701571464672464,
+       "within_city_auc": 0.9551978801187526,
+       "n_pass": 567,
+       "precision": 0.9876543209876543
+      },
+      "iii": {
+       "auc": 0.936156462585034,
+       "within_city_auc": 0.9382355710385086,
+       "n_pass": 129,
+       "precision": 0.9534883720930233
+      }
+     },
+     "run_pano": {
+      "ii_all": {
+       "auc": 0.9705549263873161,
+       "within_city_auc": 0.9597369776970827,
+       "n_pass": 717,
+       "precision": 0.9874476987447699
+      },
+      "iii": {
+       "auc": 0.9365986394557824,
+       "within_city_auc": 0.9366349684587141,
+       "n_pass": 164,
+       "precision": 0.9512195121951219
+      }
+     },
+     "near50": {
+      "ii_all": {
+       "auc": 0.9761027863313461,
+       "within_city_auc": 0.9732315921191452,
+       "n_pass": 583,
+       "precision": 0.9897084048027445
+      },
+      "iii": {
+       "auc": 0.9501700680272109,
+       "within_city_auc": 0.9533000659071651,
+       "n_pass": 141,
+       "precision": 0.9645390070921985
+      }
+     }
+    }
+   },
+   "heldout": {
+    "single": {
+     "n": 77,
+     "n_incorrect": 39,
+     "faces": 63,
+     "auc": 0.9520917678812415,
+     "auc_ci95": [
+      0.8926650704141305,
+      0.9907879892931034
+     ],
+     "within_city_auc": 0.9452830188679245,
+     "within_city_n_cities": 2,
+     "agree_gate": {
+      "n": 77,
+      "n_agree_verdicts": 48,
+      "n_pass": 27,
+      "coverage": 0.35064935064935066,
+      "precision": 0.9259259259259259,
+      "precision_wilson95_lower": 0.7663002270926939,
+      "precision_weighted": 0.9843496522460046,
+      "weight_ratio": 0.1987396922207183,
+      "precision_weighted_wilson95_lower": 0.9428536823887104
+     }
+    },
+    "run": {
+     "n": 77,
+     "n_incorrect": 39,
+     "faces": 63,
+     "auc": 0.9541160593792173,
+     "auc_ci95": [
+      0.895738974641067,
+      0.9889475308641976
+     ],
+     "within_city_auc": 0.9415094339622642,
+     "within_city_n_cities": 2,
+     "agree_gate": {
+      "n": 77,
+      "n_agree_verdicts": 49,
+      "n_pass": 19,
+      "coverage": 0.24675324675324675,
+      "precision": 1.0,
+      "precision_wilson95_lower": 0.8318156346315495,
+      "precision_weighted": 1.0,
+      "weight_ratio": 0.1987396922207183,
+      "precision_weighted_wilson95_lower": 0.9613692293370815
+     }
+    },
+    "face": {
+     "n": 77,
+     "n_incorrect": 39,
+     "faces": 63,
+     "auc": 0.9595141700404859,
+     "auc_ci95": [
+      0.9077797785780979,
+      0.9900605867346939
+     ],
+     "within_city_auc": 0.9490566037735849,
+     "within_city_n_cities": 2,
+     "agree_gate": {
+      "n": 77,
+      "n_agree_verdicts": 51,
+      "n_pass": 36,
+      "coverage": 0.4675324675324675,
+      "precision": 0.8611111111111112,
+      "precision_wilson95_lower": 0.7134014871960682,
+      "precision_weighted": 0.9689408068182026,
+      "weight_ratio": 0.1987396922207183,
+      "precision_weighted_wilson95_lower": 0.9260624887642377
+     }
+    },
+    "face_loo": {
+     "n": 77,
+     "n_incorrect": 39,
+     "faces": 63,
+     "auc": 0.937246963562753,
+     "auc_ci95": [
+      0.8742156319290466,
+      0.9810242744029282
+     ],
+     "within_city_auc": 0.918867924528302,
+     "within_city_n_cities": 2,
+     "agree_gate": {
+      "n": 77,
+      "n_agree_verdicts": 51,
+      "n_pass": 25,
+      "coverage": 0.3246753246753247,
+      "precision": 0.92,
+      "precision_wilson95_lower": 0.7503348787704218,
+      "precision_weighted": 0.9830118715819555,
+      "weight_ratio": 0.1987396922207183,
+      "precision_weighted_wilson95_lower": 0.9379734134864621
+     }
+    },
+    "run_pano": {
+     "n": 77,
+     "n_incorrect": 39,
+     "faces": 63,
+     "auc": 0.9554655870445344,
+     "auc_ci95": [
+      0.8992280366569387,
+      0.9892380538756959
+     ],
+     "within_city_auc": 0.9433962264150944,
+     "within_city_n_cities": 2,
+     "agree_gate": {
+      "n": 77,
+      "n_agree_verdicts": 49,
+      "n_pass": 19,
+      "coverage": 0.24675324675324675,
+      "precision": 1.0,
+      "precision_wilson95_lower": 0.8318156346315495,
+      "precision_weighted": 1.0,
+      "weight_ratio": 0.1987396922207183,
+      "precision_weighted_wilson95_lower": 0.9613692293370815
+     }
+    },
+    "near50": {
+     "n": 77,
+     "n_incorrect": 39,
+     "faces": 63,
+     "auc": 0.9507422402159245,
+     "auc_ci95": [
+      0.8906187332887701,
+      0.985531015037594
+     ],
+     "within_city_auc": 0.9424528301886792,
+     "within_city_n_cities": 2,
+     "agree_gate": {
+      "n": 77,
+      "n_agree_verdicts": 47,
+      "n_pass": 30,
+      "coverage": 0.38961038961038963,
+      "precision": 0.9333333333333333,
+      "precision_wilson95_lower": 0.7867618227892791,
+      "precision_weighted": 0.986003004736427,
+      "weight_ratio": 0.1987396922207183,
+      "precision_weighted_wilson95_lower": 0.9488881813788925
+     }
+    }
+   },
+   "per_city": {
+    "amsterdam": {
+     "rows": 38,
+     "incorrect": 36,
+     "single": 0.4027777777777778,
+     "run": 0.5277777777777778,
+     "face": 0.6527777777777777
+    },
+    "newberg-or": {
+     "rows": 17,
+     "incorrect": 0,
+     "single": null,
+     "run": null,
+     "face": null
+    },
+    "oradell-nj": {
+     "rows": 661,
+     "incorrect": 21,
+     "single": 0.9618303571428573,
+     "run": 0.9458705357142858,
+     "face": 0.9409598214285714
+    },
+    "seattle-wa": {
+     "rows": 330,
+     "incorrect": 169,
+     "single": 0.9628431768899995,
+     "run": 0.9650850821419383,
+     "face": 0.9730787607041788
+    },
+    "walla-walla-wa": {
+     "rows": 20,
+     "incorrect": 2,
+     "single": 1.0,
+     "run": 1.0,
+     "face": 1.0
+    }
+   },
+   "slices": {
+    "tag": {
+     "single": [
+      {
+       "slice": "(none)",
+       "n": 631,
+       "n_correct": 494,
+       "n_incorrect": 137,
+       "auc": 0.983702237063743,
+       "auc_lo": 0.9634879996175179,
+       "auc_hi": 0.9950807360328038,
+       "accuracy": 0.9572107765451664,
+       "max_city_share": 0.659270998415214,
+       "train_n": 325,
+       "needs_data": false
+      },
+      {
+       "slice": "street has no sidewalks",
+       "n": 377,
+       "n_correct": 326,
+       "n_incorrect": 51,
+       "auc": 0.9381089859256586,
+       "auc_lo": 0.8977113337708864,
+       "auc_hi": 0.9728544363349163,
+       "accuracy": 0.9177718832891246,
+       "max_city_share": 0.623342175066313,
+       "train_n": 278,
+       "needs_data": false
+      },
+      {
+       "slice": "street has a sidewalk",
+       "n": 64,
+       "n_correct": 37,
+       "n_incorrect": 27,
+       "auc": 0.950950950950951,
+       "auc_lo": 0.8879559178743961,
+       "auc_hi": 0.9911676701331874,
+       "accuracy": 0.875,
+       "max_city_share": 0.546875,
+       "train_n": 93,
+       "needs_data": true
+      },
+      {
+       "slice": "ends abruptly",
+       "n": 53,
+       "n_correct": 30,
+       "n_incorrect": 23,
+       "auc": 0.8536231884057971,
+       "auc_lo": 0.7327489500442086,
+       "auc_hi": 0.9476152119668673,
+       "accuracy": 0.7735849056603774,
+       "max_city_share": 0.5283018867924528,
+       "train_n": 47,
+       "needs_data": true
+      },
+      {
+       "slice": "shared pedestrian/car space",
+       "n": 34,
+       "n_correct": 19,
+       "n_incorrect": 15,
+       "auc": 0.8947368421052632,
+       "auc_lo": 0.7435714285714285,
+       "auc_hi": 1.0,
+       "accuracy": 0.9117647058823529,
+       "max_city_share": 0.6470588235294118,
+       "train_n": 40,
+       "needs_data": true
+      },
+      {
+       "slice": "gravel/dirt road",
+       "n": 23,
+       "n_correct": 16,
+       "n_incorrect": 7,
+       "auc": null,
+       "auc_lo": null,
+       "auc_hi": null,
+       "accuracy": null,
+       "max_city_share": 0.782608695652174,
+       "train_n": 38,
+       "needs_data": true
+      }
+     ],
+     "run": [
+      {
+       "slice": "(none)",
+       "n": 631,
+       "n_incorrect": 137,
+       "auc_a": 0.9842193918259996,
+       "auc_b": 0.983702237063743,
+       "delta": 0.0005171547622565553,
+       "delta_lo": -0.005864030192821248,
+       "delta_hi": 0.005188487729797999,
+       "max_city_share": 0.659270998415214
+      },
+      {
+       "slice": "street has no sidewalks",
+       "n": 377,
+       "n_incorrect": 51,
+       "auc_a": 0.9475520269457477,
+       "auc_b": 0.9381089859256586,
+       "delta": 0.009443041020089082,
+       "delta_lo": -0.04344272124452842,
+       "delta_hi": 0.04614680648386092,
+       "max_city_share": 0.623342175066313
+      },
+      {
+       "slice": "street has a sidewalk",
+       "n": 64,
+       "n_incorrect": 27,
+       "auc_a": 0.95995995995996,
+       "auc_b": 0.950950950950951,
+       "delta": 0.009009009009009028,
+       "delta_lo": -0.02155640929535234,
+       "delta_hi": 0.047297992436881285,
+       "max_city_share": 0.546875
+      },
+      {
+       "slice": "ends abruptly",
+       "n": 53,
+       "n_incorrect": 23,
+       "auc_a": 0.9173913043478261,
+       "auc_b": 0.8536231884057971,
+       "delta": 0.06376811594202902,
+       "delta_lo": 0.012807219662058545,
+       "delta_hi": 0.13043627568084093,
+       "max_city_share": 0.5283018867924528
+      },
+      {
+       "slice": "shared pedestrian/car space",
+       "n": 34,
+       "n_incorrect": 15,
+       "auc_a": 0.9263157894736842,
+       "auc_b": 0.8947368421052632,
+       "delta": 0.03157894736842104,
+       "delta_lo": -0.08695652173913038,
+       "delta_hi": 0.15885141093474414,
+       "max_city_share": 0.6470588235294118
+      },
+      {
+       "slice": "gravel/dirt road",
+       "n": 23,
+       "n_incorrect": 7,
+       "auc_a": null,
+       "auc_b": null,
+       "delta": null,
+       "delta_lo": null,
+       "delta_hi": null,
+       "max_city_share": 0.782608695652174
+      }
+     ],
+     "face": [
+      {
+       "slice": "(none)",
+       "n": 631,
+       "n_incorrect": 137,
+       "auc_a": 0.9839977540707467,
+       "auc_b": 0.983702237063743,
+       "delta": 0.0002955170070036983,
+       "delta_lo": -0.005856543656741773,
+       "delta_hi": 0.005095735465807191,
+       "max_city_share": 0.659270998415214
+      },
+      {
+       "slice": "street has no sidewalks",
+       "n": 377,
+       "n_incorrect": 51,
+       "auc_a": 0.9549500781907856,
+       "auc_b": 0.9381089859256586,
+       "delta": 0.016841092265126978,
+       "delta_lo": -0.043508611015934506,
+       "delta_hi": 0.05384279877543367,
+       "max_city_share": 0.623342175066313
+      },
+      {
+       "slice": "street has a sidewalk",
+       "n": 64,
+       "n_incorrect": 27,
+       "auc_a": 0.9739739739739739,
+       "auc_b": 0.950950950950951,
+       "delta": 0.023023023023022948,
+       "delta_lo": -0.012600110360304841,
+       "delta_hi": 0.07205428467683372,
+       "max_city_share": 0.546875
+      },
+      {
+       "slice": "ends abruptly",
+       "n": 53,
+       "n_incorrect": 23,
+       "auc_a": 0.9623188405797101,
+       "auc_b": 0.8536231884057971,
+       "delta": 0.10869565217391297,
+       "delta_lo": 0.02871601416009312,
+       "delta_hi": 0.21261752360542685,
+       "max_city_share": 0.5283018867924528
+      },
+      {
+       "slice": "shared pedestrian/car space",
+       "n": 34,
+       "n_incorrect": 15,
+       "auc_a": 0.9824561403508772,
+       "auc_b": 0.8947368421052632,
+       "delta": 0.08771929824561409,
+       "delta_lo": -0.030092539039907457,
+       "delta_hi": 0.23220201238390095,
+       "max_city_share": 0.6470588235294118
+      },
+      {
+       "slice": "gravel/dirt road",
+       "n": 23,
+       "n_incorrect": 7,
+       "auc_a": null,
+       "auc_b": null,
+       "delta": null,
+       "delta_lo": null,
+       "delta_hi": null,
+       "max_city_share": 0.782608695652174
+      }
+     ]
+    }
+   },
+   "severity_note": "NoSidewalk labels carry no severity, so there is no severity slice"
+  },
+  "step_a_gate1": {
+   "rows": 283,
+   "auc_single": 0.9564691299728485,
+   "auc_face_split_rows": 0.9558788808877346,
+   "files_sha256": {
+    "0": "1170b8f2e572cbe8da2b822a9e4756dd5b3f726f0c9b0a986b95d9c152a1e234",
+    "1": "4a18a0d774441330d1f01d166a46bf2b0c9a01b41d3193485a05e5cda36fd7b4",
+    "2": "dd424332c2f2b61162dfcfb8ff9a28fb3809a4b9fcca59958d6408d2b4e150db",
+    "3": "3c8bc0cfa63b0b7537380896812f7f946b0bfab354df5defec64f65cc3d25876",
+    "4": "c1527363c6de7357d82b0b0a789b8237802475ce139317896a45cb775ff9b1de"
+   }
+  },
+  "step_b": {
+   "decided": 235,
+   "incorrect": 31,
+   "single_rule": {
+    "k": 142,
+    "n": 144,
+    "rate": 0.9861111111111112,
+    "wilson95_lower": 0.9507765031823722
+   },
+   "groups": {
+    "single": {
+     "score": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 42,
+        "weight": 8354.24534364083
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 20,
+        "weight": 1124.9746009839646
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 142,
+        "weight": 8082.022108796129
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 2,
+        "weight": 16.329701154385585
+       }
+      ],
+      "raw": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 0,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 0,
+      "newly_admitted_incorrect": 0,
+      "dropped": 0,
+      "dropped_incorrect": 0,
+      "coverage_weighted": 0.40469868589772795,
+      "precision_weighted": {
+       "weighted": 0.9979835772095846,
+       "n_eff": 84.45194180686501,
+       "wilson95_lower_n_eff": 0.9527154580245503,
+       "ci95": [
+        0.9949589430239616,
+        1.0
+       ]
+      },
+      "auc_weighted": 0.9286704913373238,
+      "within_city_auc_weighted": [
+       0.9487383108481799,
+       4
+      ]
+     },
+     "tags": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     }
+    },
+    "run": {
+     "score": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 35,
+        "weight": 6892.207913317911
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 7,
+        "weight": 1462.0374303229182
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 20,
+        "weight": 1124.9746009839646
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 31,
+        "weight": 1535.3334573533343
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 111,
+        "weight": 6546.688651442795
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 118,
+       "n": 119,
+       "rate": 0.9915966386554622,
+       "wilson95_lower": 0.9539309817174007
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 7,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 7,
+      "newly_admitted_incorrect": 0,
+      "dropped": 32,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.4006278439667355,
+      "precision_weighted": {
+       "weighted": 0.9989815440117498,
+       "n_eff": 57.693163140684334,
+       "wilson95_lower_n_eff": 0.9356756186097419,
+       "ci95": [
+        0.9969446320352495,
+        1.0
+       ]
+      },
+      "auc_weighted": 0.9645382525479073,
+      "within_city_auc_weighted": [
+       0.9864282912927298,
+       4
+      ]
+     },
+     "vote": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 31,
+        "weight": 6780.288031907197
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 11,
+        "weight": 1573.9573117336327
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 16,
+        "weight": 839.9594761991109
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 4,
+        "weight": 285.0151247848537
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 14,
+        "weight": 403.31336227921946
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 128,
+        "weight": 7678.70874651691
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 143,
+       "n": 144,
+       "rate": 0.9930555555555556,
+       "wilson95_lower": 0.9617143276425165
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 15,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 15,
+      "newly_admitted_incorrect": 0,
+      "dropped": 15,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.47703427021265193,
+      "precision_weighted": {
+       "weighted": 0.9991446697811337,
+       "n_eff": 72.2693460623896,
+       "wilson95_lower_n_eff": 0.9479153340072599,
+       "ci95": [
+        0.9974340093434013,
+        1.0
+       ]
+      }
+     },
+     "vote_strict": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 42,
+        "weight": 8354.24534364083
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 20,
+        "weight": 1124.9746009839646
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 14,
+        "weight": 403.31336227921946
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 128,
+        "weight": 7678.70874651691
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 128,
+       "n": 129,
+       "rate": 0.9922480620155039,
+       "wilson95_lower": 0.9573955085729391
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 0,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 0,
+      "newly_admitted_incorrect": 0,
+      "dropped": 15,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.38413589782350216,
+      "precision_weighted": {
+       "weighted": 0.998937819065962,
+       "n_eff": 79.34405421152756,
+       "wilson95_lower_n_eff": 0.9518150368911416,
+       "ci95": [
+        0.9968134571978862,
+        1.0
+       ]
+      }
+     },
+     "tags": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 19,
+        "n": 19,
+        "rate": 1.0,
+        "wilson95_lower": 0.8318156346315495
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 79,
+        "n": 79,
+        "rate": 1.0,
+        "wilson95_lower": 0.9536271631644004
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     },
+     "tags_vote": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     },
+     "tags_vote_strict": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 19,
+        "n": 19,
+        "rate": 1.0,
+        "wilson95_lower": 0.8318156346315495
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 86,
+        "n": 86,
+        "rate": 1.0,
+        "wilson95_lower": 0.9572402984808818
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     }
+    },
+    "face": {
+     "score": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 17,
+        "weight": 3254.837071555071
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 25,
+        "weight": 5099.408272085759
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 15,
+        "weight": 914.8500599627369
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 5,
+        "weight": 210.12454102122777
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 10,
+        "weight": 356.2891066176431
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 132,
+        "weight": 7725.7330021784865
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 162,
+       "n": 163,
+       "rate": 0.9938650306748467,
+       "wilson95_lower": 0.966070916482625
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 30,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 30,
+      "newly_admitted_incorrect": 0,
+      "dropped": 11,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.6518189594562702,
+      "precision_weighted": {
+       "weighted": 0.9993740258382664,
+       "n_eff": 69.58583856533805,
+       "wilson95_lower_n_eff": 0.9465021758797992,
+       "ci95": [
+        0.9981220775147993,
+        1.0
+       ]
+      },
+      "auc_weighted": 0.9654314192627999,
+      "within_city_auc_weighted": [
+       0.97891488989071,
+       4
+      ]
+     },
+     "vote": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 29,
+        "weight": 7016.2325372011
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 13,
+        "weight": 1338.0128064397297
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 14,
+        "weight": 822.7185123436892
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 6,
+        "weight": 302.2560886402754
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 18,
+        "weight": 378.6868322596238
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 124,
+        "weight": 7703.335276536505
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 143,
+       "n": 144,
+       "rate": 0.9930555555555556,
+       "wilson95_lower": 0.9617143276425165
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 19,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 19,
+      "newly_admitted_incorrect": 0,
+      "dropped": 19,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.4673356656907201,
+      "precision_weighted": {
+       "weighted": 0.9991269191360675,
+       "n_eff": 73.58875732379336,
+       "wilson95_lower_n_eff": 0.948740989011532,
+       "ci95": [
+        0.9973807574082029,
+        1.0
+       ]
+      }
+     },
+     "vote_strict": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 42,
+        "weight": 8354.24534364083
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 20,
+        "weight": 1124.9746009839646
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 18,
+        "weight": 378.6868322596238
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 124,
+        "weight": 7703.335276536505
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 124,
+       "n": 125,
+       "rate": 0.992,
+       "wilson95_lower": 0.9560741652320811
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 0,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 0,
+      "newly_admitted_incorrect": 0,
+      "dropped": 19,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.3853665586506726,
+      "precision_weighted": {
+       "weighted": 0.998941211120715,
+       "n_eff": 78.60521692546101,
+       "wilson95_lower_n_eff": 0.9514082004373291,
+       "ci95": [
+        0.9968236333621451,
+        1.0
+       ]
+      }
+     },
+     "tags": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 27,
+        "n": 27,
+        "rate": 1.0,
+        "wilson95_lower": 0.8754409628553642
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 109,
+        "n": 109,
+        "rate": 1.0,
+        "wilson95_lower": 0.9659558177126165
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     },
+     "tags_vote": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 96,
+        "n": 96,
+        "rate": 1.0,
+        "wilson95_lower": 0.9615230525151841
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     },
+     "tags_vote_strict": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 19,
+        "n": 19,
+        "rate": 1.0,
+        "wilson95_lower": 0.8318156346315495
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 86,
+        "n": 86,
+        "rate": 1.0,
+        "wilson95_lower": 0.9572402984808818
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     }
+    },
+    "face_loo": {
+     "score": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 32,
+        "weight": 6817.43964840664
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 10,
+        "weight": 1536.8056952341901
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 17,
+        "weight": 1015.6020895094953
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 3,
+        "weight": 109.3725114744693
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 40,
+        "weight": 1727.1590113502668
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 102,
+        "weight": 6354.863097445863
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 115,
+       "n": 116,
+       "rate": 0.9913793103448276,
+       "wilson95_lower": 0.9527790060325537
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 13,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 13,
+      "newly_admitted_incorrect": 0,
+      "dropped": 41,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.400243812811551,
+      "precision_weighted": {
+       "weighted": 0.9989805668103113,
+       "n_eff": 57.26079116965545,
+       "wilson95_lower_n_eff": 0.9352328406755402,
+       "ci95": [
+        0.9969417004309337,
+        1.0
+       ]
+      },
+      "auc_weighted": 0.9392980370405954,
+      "within_city_auc_weighted": [
+       0.9599939826384626,
+       4
+      ]
+     },
+     "vote": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 25,
+        "weight": 6321.279848377624
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 17,
+        "weight": 2032.9654952632054
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 14,
+        "weight": 822.7185123436892
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 6,
+        "weight": 302.2560886402754
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 31,
+        "weight": 1032.7433687829293
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 111,
+        "weight": 7049.2787400132
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 134,
+       "n": 135,
+       "rate": 0.9925925925925926,
+       "wilson95_lower": 0.9592349092584949
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 23,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 23,
+      "newly_admitted_incorrect": 0,
+      "dropped": 32,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.46937936785167295,
+      "precision_weighted": {
+       "weighted": 0.9991307205755228,
+       "n_eff": 65.48159048844944,
+       "wilson95_lower_n_eff": 0.9429544979634539,
+       "ci95": [
+        0.9973921617265677,
+        1.0
+       ]
+      }
+     },
+     "vote_strict": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 42,
+        "weight": 8354.24534364083
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 20,
+        "weight": 1124.9746009839646
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 31,
+        "weight": 1032.7433687829293
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 111,
+        "weight": 7049.2787400132
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 111,
+       "n": 112,
+       "rate": 0.9910714285714286,
+       "wilson95_lower": 0.9511503338049636
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 0,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 0,
+      "newly_admitted_incorrect": 0,
+      "dropped": 32,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.3526814114694194,
+      "precision_weighted": {
+       "weighted": 0.9988430866683683,
+       "n_eff": 71.5638025134585,
+       "wilson95_lower_n_eff": 0.9468820155967889,
+       "ci95": [
+        0.9965292600051049,
+        1.0
+       ]
+      }
+     },
+     "tags": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 18,
+        "n": 18,
+        "rate": 1.0,
+        "wilson95_lower": 0.8241154494176252
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 78,
+        "n": 78,
+        "rate": 1.0,
+        "wilson95_lower": 0.9530605462258802
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     },
+     "tags_vote": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 22,
+        "n": 22,
+        "rate": 1.0,
+        "wilson95_lower": 0.8513404742740388
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 91,
+        "n": 91,
+        "rate": 1.0,
+        "wilson95_lower": 0.959494567784601
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     },
+     "tags_vote_strict": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 18,
+        "n": 18,
+        "rate": 1.0,
+        "wilson95_lower": 0.8241154494176252
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 78,
+        "n": 78,
+        "rate": 1.0,
+        "wilson95_lower": 0.9530605462258802
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     }
+    },
+    "run_pano": {
+     "score": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 35,
+        "weight": 6892.207913317911
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 7,
+        "weight": 1462.0374303229182
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 20,
+        "weight": 1124.9746009839646
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 31,
+        "weight": 1535.3334573533343
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 111,
+        "weight": 6546.688651442795
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 118,
+       "n": 119,
+       "rate": 0.9915966386554622,
+       "wilson95_lower": 0.9539309817174007
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 7,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 7,
+      "newly_admitted_incorrect": 0,
+      "dropped": 32,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.4006278439667355,
+      "precision_weighted": {
+       "weighted": 0.9989815440117498,
+       "n_eff": 57.693163140684334,
+       "wilson95_lower_n_eff": 0.9356756186097419,
+       "ci95": [
+        0.9969446320352495,
+        1.0
+       ]
+      },
+      "auc_weighted": 0.963801134267086,
+      "within_city_auc_weighted": [
+       0.9812581452734672,
+       4
+      ]
+     },
+     "vote": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 31,
+        "weight": 6780.288031907197
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 11,
+        "weight": 1573.9573117336327
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 16,
+        "weight": 839.9594761991109
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 4,
+        "weight": 285.0151247848537
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 13,
+        "weight": 395.14851170202667
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 129,
+        "weight": 7686.8735970941025
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 144,
+       "n": 145,
+       "rate": 0.993103448275862,
+       "wilson95_lower": 0.9619713263011486
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 15,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 15,
+      "newly_admitted_incorrect": 0,
+      "dropped": 14,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.47744229203939964,
+      "precision_weighted": {
+       "weighted": 0.9991454007457009,
+       "n_eff": 72.38919991838893,
+       "wilson95_lower_n_eff": 0.9479959427166995,
+       "ci95": [
+        0.9974362022371032,
+        1.0
+       ]
+      }
+     },
+     "vote_strict": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 42,
+        "weight": 8354.24534364083
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 20,
+        "weight": 1124.9746009839646
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 13,
+        "weight": 395.14851170202667
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 129,
+        "weight": 7686.8735970941025
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 129,
+       "n": 130,
+       "rate": 0.9923076923076923,
+       "wilson95_lower": 0.9577135163674925
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 0,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 0,
+      "newly_admitted_incorrect": 0,
+      "dropped": 14,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.38454391965024975,
+      "precision_weighted": {
+       "weighted": 0.9989389460971878,
+       "n_eff": 79.50558201555208,
+       "wilson95_lower_n_eff": 0.9519064934275088,
+       "ci95": [
+        0.996816838291563,
+        1.0
+       ]
+      }
+     },
+     "tags": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 19,
+        "n": 19,
+        "rate": 1.0,
+        "wilson95_lower": 0.8318156346315495
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 79,
+        "n": 79,
+        "rate": 1.0,
+        "wilson95_lower": 0.9536271631644004
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     },
+     "tags_vote": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 24,
+        "n": 24,
+        "rate": 1.0,
+        "wilson95_lower": 0.8620194241710247
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     },
+     "tags_vote_strict": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 20,
+        "n": 20,
+        "rate": 1.0,
+        "wilson95_lower": 0.8388698745050667
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 86,
+        "n": 86,
+        "rate": 1.0,
+        "wilson95_lower": 0.9572402984808818
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     }
+    },
+    "near50": {
+     "score": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 28,
+        "weight": 5794.672013582606
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 14,
+        "weight": 2559.5733300582233
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 20,
+        "weight": 1124.9746009839646
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 15,
+        "weight": 397.11335950360706
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 127,
+        "weight": 7684.908749292522
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 141,
+       "n": 142,
+       "rate": 0.9929577464788732,
+       "wilson95_lower": 0.9611897670033634
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 14,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 14,
+      "newly_admitted_incorrect": 0,
+      "dropped": 16,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.512355209663405,
+      "precision_weighted": {
+       "weighted": 0.9992036348629778,
+       "n_eff": 66.28127186039563,
+       "wilson95_lower_n_eff": 0.9437213398718945,
+       "ci95": [
+        0.9976109045889333,
+        1.0
+       ]
+      },
+      "auc_weighted": 0.9552573827498368,
+      "within_city_auc_weighted": [
+       0.9741328918728651,
+       4
+      ]
+     },
+     "vote": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 32,
+        "weight": 7783.317278700542
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 10,
+        "weight": 570.9280649402872
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 17,
+        "weight": 1015.6020895094953
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 3,
+        "weight": 109.3725114744693
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 16,
+        "weight": 266.07980673334936
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 126,
+        "weight": 7815.94230206278
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 139,
+       "n": 140,
+       "rate": 0.9928571428571429,
+       "wilson95_lower": 0.9606506328243919
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 13,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 13,
+      "newly_admitted_incorrect": 0,
+      "dropped": 17,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.424990505853062,
+      "precision_weighted": {
+       "weighted": 0.9990399271957179,
+       "n_eff": 78.87367263484273,
+       "wilson95_lower_n_eff": 0.9517435867317602,
+       "ci95": [
+        0.9971197815871533,
+        1.0
+       ]
+      }
+     },
+     "vote_strict": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 42,
+        "weight": 8354.24534364083
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 1298.034936940297
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 20,
+        "weight": 1124.9746009839646
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 23,
+        "weight": 1135.2114607258466
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 16,
+        "weight": 266.07980673334936
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 126,
+        "weight": 7815.94230206278
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 126,
+       "n": 127,
+       "rate": 0.9921259842519685,
+       "wilson95_lower": 0.9567449252236082
+      },
+      "raw_single": {
+       "k": 142,
+       "n": 144,
+       "rate": 0.9861111111111112,
+       "wilson95_lower": 0.9507765031823722
+      },
+      "added_outside_pass": 0,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 0,
+      "newly_admitted_incorrect": 0,
+      "dropped": 17,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.39099386607356584,
+      "precision_weighted": {
+       "weighted": 0.9989564495452444,
+       "n_eff": 79.51269755044589,
+       "wilson95_lower_n_eff": 0.9519430990753096,
+       "ci95": [
+        0.9968693486357337,
+        1.0
+       ]
+      }
+     },
+     "tags": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 94,
+        "n": 94,
+        "rate": 1.0,
+        "wilson95_lower": 0.9607365374237543
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     },
+     "tags_vote": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 93,
+        "n": 93,
+        "rate": 1.0,
+        "wilson95_lower": 0.9603310973796384
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     },
+     "tags_vote_strict": {
+      "(none)": {
+       "decided": 48,
+       "incorrect": 9,
+       "pooled": {
+        "k": 20,
+        "n": 20,
+        "rate": 1.0,
+        "wilson95_lower": 0.8388698745050667
+       },
+       "single": {
+        "k": 23,
+        "n": 23,
+        "rate": 1.0,
+        "wilson95_lower": 0.8568788745827373
+       }
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "pooled": {
+        "k": 86,
+        "n": 86,
+        "rate": 1.0,
+        "wilson95_lower": 0.9572402984808818
+       },
+       "single": {
+        "k": 95,
+        "n": 95,
+        "rate": 1.0,
+        "wilson95_lower": 0.9611337736337737
+       }
+      }
+     }
+    }
+   },
+   "single_block": {
+    "transition": [
+     {
+      "stratum": "agree_below",
+      "single_pass": false,
+      "pooled_pass": false,
+      "verdict": "correct",
+      "n": 42,
+      "weight": 8354.24534364083
+     },
+     {
+      "stratum": "agree_below",
+      "single_pass": false,
+      "pooled_pass": false,
+      "verdict": "incorrect",
+      "n": 6,
+      "weight": 1298.034936940297
+     },
+     {
+      "stratum": "model_incorrect",
+      "single_pass": false,
+      "pooled_pass": false,
+      "verdict": "correct",
+      "n": 20,
+      "weight": 1124.9746009839646
+     },
+     {
+      "stratum": "model_incorrect",
+      "single_pass": false,
+      "pooled_pass": false,
+      "verdict": "incorrect",
+      "n": 23,
+      "weight": 1135.2114607258466
+     },
+     {
+      "stratum": "pass",
+      "single_pass": true,
+      "pooled_pass": true,
+      "verdict": "correct",
+      "n": 142,
+      "weight": 8082.022108796129
+     },
+     {
+      "stratum": "pass",
+      "single_pass": true,
+      "pooled_pass": true,
+      "verdict": "incorrect",
+      "n": 2,
+      "weight": 16.329701154385585
+     }
+    ],
+    "raw": {
+     "k": 142,
+     "n": 144,
+     "rate": 0.9861111111111112,
+     "wilson95_lower": 0.9507765031823722
+    },
+    "raw_single": {
+     "k": 142,
+     "n": 144,
+     "rate": 0.9861111111111112,
+     "wilson95_lower": 0.9507765031823722
+    },
+    "added_outside_pass": 0,
+    "added_outside_pass_incorrect": 0,
+    "newly_admitted": 0,
+    "newly_admitted_incorrect": 0,
+    "dropped": 0,
+    "dropped_incorrect": 0,
+    "coverage_weighted": 0.40469868589772795,
+    "precision_weighted": {
+     "weighted": 0.9979835772095846,
+     "n_eff": 84.45194180686501,
+     "wilson95_lower_n_eff": 0.9527154580245503,
+     "ci95": [
+      0.9949589430239616,
+      1.0
+     ]
+    }
+   },
+   "single_auc_weighted": 0.9286704913373238,
+   "single_within_city_auc_weighted": [
+    0.9487383108481799,
+    4
+   ],
+   "singleton_runs": 58,
+   "sensitivity": {
+    "no_rater_placed_or_voted": {
+     "transition": [
+      {
+       "stratum": "agree_below",
+       "single_pass": false,
+       "pooled_pass": false,
+       "verdict": "correct",
+       "n": 35,
+       "weight": 6892.207913317911
+      },
+      {
+       "stratum": "agree_below",
+       "single_pass": false,
+       "pooled_pass": false,
+       "verdict": "incorrect",
+       "n": 6,
+       "weight": 1298.034936940297
+      },
+      {
+       "stratum": "agree_below",
+       "single_pass": false,
+       "pooled_pass": true,
+       "verdict": "correct",
+       "n": 7,
+       "weight": 1462.0374303229182
+      },
+      {
+       "stratum": "model_incorrect",
+       "single_pass": false,
+       "pooled_pass": false,
+       "verdict": "correct",
+       "n": 20,
+       "weight": 1124.9746009839646
+      },
+      {
+       "stratum": "model_incorrect",
+       "single_pass": false,
+       "pooled_pass": false,
+       "verdict": "incorrect",
+       "n": 23,
+       "weight": 1135.2114607258466
+      },
+      {
+       "stratum": "pass",
+       "single_pass": true,
+       "pooled_pass": false,
+       "verdict": "correct",
+       "n": 31,
+       "weight": 1535.3334573533343
+      },
+      {
+       "stratum": "pass",
+       "single_pass": true,
+       "pooled_pass": false,
+       "verdict": "incorrect",
+       "n": 1,
+       "weight": 8.164850577192793
+      },
+      {
+       "stratum": "pass",
+       "single_pass": true,
+       "pooled_pass": true,
+       "verdict": "correct",
+       "n": 111,
+       "weight": 6546.688651442795
+      },
+      {
+       "stratum": "pass",
+       "single_pass": true,
+       "pooled_pass": true,
+       "verdict": "incorrect",
+       "n": 1,
+       "weight": 8.164850577192793
+      }
+     ],
+     "raw": {
+      "k": 118,
+      "n": 119,
+      "rate": 0.9915966386554622,
+      "wilson95_lower": 0.9539309817174007
+     },
+     "raw_single": {
+      "k": 142,
+      "n": 144,
+      "rate": 0.9861111111111112,
+      "wilson95_lower": 0.9507765031823722
+     },
+     "added_outside_pass": 7,
+     "added_outside_pass_incorrect": 0,
+     "newly_admitted": 7,
+     "newly_admitted_incorrect": 0,
+     "dropped": 32,
+     "dropped_incorrect": 1,
+     "coverage_weighted": 0.4006278439667355,
+     "precision_weighted": {
+      "weighted": 0.9989815440117498,
+      "n_eff": 57.693163140684334,
+      "wilson95_lower_n_eff": 0.9356756186097419,
+      "ci95": [
+       null,
+       null
+      ]
+     },
+     "auc_weighted": 0.9645382525479073,
+     "within_city_auc_weighted": [
+      0.9864282912927298,
+      4
+     ]
+    },
+    "no_trained_pano_or_pilot_heldout": {
+     "transition": [
+      {
+       "stratum": "agree_below",
+       "single_pass": false,
+       "pooled_pass": false,
+       "verdict": "correct",
+       "n": 35,
+       "weight": 6892.207913317911
+      },
+      {
+       "stratum": "agree_below",
+       "single_pass": false,
+       "pooled_pass": false,
+       "verdict": "incorrect",
+       "n": 6,
+       "weight": 1298.034936940297
+      },
+      {
+       "stratum": "agree_below",
+       "single_pass": false,
+       "pooled_pass": true,
+       "verdict": "correct",
+       "n": 7,
+       "weight": 1462.0374303229182
+      },
+      {
+       "stratum": "model_incorrect",
+       "single_pass": false,
+       "pooled_pass": false,
+       "verdict": "correct",
+       "n": 20,
+       "weight": 1124.9746009839646
+      },
+      {
+       "stratum": "model_incorrect",
+       "single_pass": false,
+       "pooled_pass": false,
+       "verdict": "incorrect",
+       "n": 23,
+       "weight": 1135.2114607258466
+      },
+      {
+       "stratum": "pass",
+       "single_pass": true,
+       "pooled_pass": false,
+       "verdict": "correct",
+       "n": 31,
+       "weight": 1535.3334573533343
+      },
+      {
+       "stratum": "pass",
+       "single_pass": true,
+       "pooled_pass": false,
+       "verdict": "incorrect",
+       "n": 1,
+       "weight": 8.164850577192793
+      },
+      {
+       "stratum": "pass",
+       "single_pass": true,
+       "pooled_pass": true,
+       "verdict": "correct",
+       "n": 111,
+       "weight": 6546.688651442795
+      },
+      {
+       "stratum": "pass",
+       "single_pass": true,
+       "pooled_pass": true,
+       "verdict": "incorrect",
+       "n": 1,
+       "weight": 8.164850577192793
+      }
+     ],
+     "raw": {
+      "k": 118,
+      "n": 119,
+      "rate": 0.9915966386554622,
+      "wilson95_lower": 0.9539309817174007
+     },
+     "raw_single": {
+      "k": 142,
+      "n": 144,
+      "rate": 0.9861111111111112,
+      "wilson95_lower": 0.9507765031823722
+     },
+     "added_outside_pass": 7,
+     "added_outside_pass_incorrect": 0,
+     "newly_admitted": 7,
+     "newly_admitted_incorrect": 0,
+     "dropped": 32,
+     "dropped_incorrect": 1,
+     "coverage_weighted": 0.4006278439667355,
+     "precision_weighted": {
+      "weighted": 0.9989815440117498,
+      "n_eff": 57.693163140684334,
+      "wilson95_lower_n_eff": 0.9356756186097419,
+      "ci95": [
+       null,
+       null
+      ]
+     },
+     "auc_weighted": 0.965101382901282,
+     "within_city_auc_weighted": [
+      0.9864871114783368,
+      4
+     ]
+    },
+    "without_touched_faces": {
+     "transition": [
+      {
+       "stratum": "agree_below",
+       "single_pass": false,
+       "pooled_pass": false,
+       "verdict": "correct",
+       "n": 29,
+       "weight": 6742.671383495368
+      },
+      {
+       "stratum": "agree_below",
+       "single_pass": false,
+       "pooled_pass": false,
+       "verdict": "incorrect",
+       "n": 6,
+       "weight": 1298.034936940297
+      },
+      {
+       "stratum": "agree_below",
+       "single_pass": false,
+       "pooled_pass": true,
+       "verdict": "correct",
+       "n": 6,
+       "weight": 1443.2291061170038
+      },
+      {
+       "stratum": "model_incorrect",
+       "single_pass": false,
+       "pooled_pass": false,
+       "verdict": "correct",
+       "n": 16,
+       "weight": 1002.1795700000192
+      },
+      {
+       "stratum": "model_incorrect",
+       "single_pass": false,
+       "pooled_pass": false,
+       "verdict": "incorrect",
+       "n": 23,
+       "weight": 1135.2114607258466
+      },
+      {
+       "stratum": "pass",
+       "single_pass": true,
+       "pooled_pass": false,
+       "verdict": "correct",
+       "n": 25,
+       "weight": 1376.896417754261
+      },
+      {
+       "stratum": "pass",
+       "single_pass": true,
+       "pooled_pass": false,
+       "verdict": "incorrect",
+       "n": 1,
+       "weight": 8.164850577192793
+      },
+      {
+       "stratum": "pass",
+       "single_pass": true,
+       "pooled_pass": true,
+       "verdict": "correct",
+       "n": 86,
+       "weight": 5657.323544574719
+      },
+      {
+       "stratum": "pass",
+       "single_pass": true,
+       "pooled_pass": true,
+       "verdict": "incorrect",
+       "n": 1,
+       "weight": 8.164850577192793
+      }
+     ],
+     "raw": {
+      "k": 92,
+      "n": 93,
+      "rate": 0.989247311827957,
+      "wilson95_lower": 0.9415794088135158
+     },
+     "raw_single": {
+      "k": 111,
+      "n": 113,
+      "rate": 0.9823008849557522,
+      "wilson95_lower": 0.9377540468123469
+     },
+     "added_outside_pass": 6,
+     "added_outside_pass_incorrect": 0,
+     "newly_admitted": 6,
+     "newly_admitted_incorrect": 0,
+     "dropped": 26,
+     "dropped_incorrect": 1,
+     "coverage_weighted": 0.3807179019019138,
+     "precision_weighted": {
+      "weighted": 0.9988514312777608,
+      "n_eff": 47.103239225837946,
+      "wilson95_lower_n_eff": 0.9224847690621497,
+      "ci95": [
+       null,
+       null
+      ]
+     },
+     "auc_weighted": 0.9629784843758206,
+     "within_city_auc_weighted": [
+      0.9862983403067187,
+      4
+     ]
+    },
+    "touched_faces_rated": 42,
+    "per_city": {
+     "cdmx": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 7,
+        "weight": 2046.5863453815261
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 3,
+        "weight": 877.1084337349398
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 1,
+        "weight": 292.3694779116466
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 2,
+        "weight": 120.28915662650603
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 6,
+        "weight": 360.86746987951807
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 3,
+        "weight": 63.4859437751004
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 26,
+        "weight": 550.2115127175368
+       }
+      ],
+      "raw": {
+       "k": 27,
+       "n": 27,
+       "rate": 1.0,
+       "wilson95_lower": 0.8754409628553642
+      },
+      "raw_single": {
+       "k": 29,
+       "n": 29,
+       "rate": 1.0,
+       "wilson95_lower": 0.8830264055344442
+      },
+      "added_outside_pass": 1,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 1,
+      "newly_admitted_incorrect": 0,
+      "dropped": 3,
+      "dropped_incorrect": 0,
+      "coverage_weighted": 0.19545278387805196,
+      "precision_weighted": {
+       "weighted": 1.0,
+       "n_eff": 7.309692210914875,
+       "wilson95_lower_n_eff": 0.6555018084594855,
+       "ci95": [
+        null,
+        null
+       ]
+      },
+      "auc_weighted": 0.9805597580535106,
+      "within_city_auc_weighted": [
+       0.9805597580535106,
+       1
+      ]
+     },
+     "chicago-il": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 12,
+        "weight": 4379.59875
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 364.9665625
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 3,
+        "weight": 1094.8996875
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 10,
+        "weight": 921.3154761904763
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 7,
+        "weight": 644.9208333333333
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 10,
+        "weight": 1188.070283018868
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 41,
+        "weight": 4871.088160377359
+       }
+      ],
+      "raw": {
+       "k": 44,
+       "n": 44,
+       "rate": 1.0,
+       "wilson95_lower": 0.919701682217986
+      },
+      "raw_single": {
+       "k": 51,
+       "n": 51,
+       "rate": 1.0,
+       "wilson95_lower": 0.9299509861127317
+      },
+      "added_outside_pass": 3,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 3,
+      "newly_admitted_incorrect": 0,
+      "dropped": 10,
+      "dropped_incorrect": 0,
+      "coverage_weighted": 0.44307835041382854,
+      "precision_weighted": {
+       "weighted": 1.0,
+       "n_eff": 36.38171997001574,
+       "wilson95_lower_n_eff": 0.9044932143128985,
+       "ci95": [
+        null,
+        null
+       ]
+      },
+      "auc_weighted": 0.9885798615655047,
+      "within_city_auc_weighted": [
+       0.9885798615655047,
+       1
+      ]
+     },
+     "oradell-nj": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 7,
+        "weight": 131.65826944140198
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 18.80832420591457
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 2,
+        "weight": 37.61664841182914
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 5,
+        "weight": 43.102409638554214
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.620481927710843
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 5,
+        "weight": 177.63417305585983
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 28,
+        "weight": 994.7513691128149
+       }
+      ],
+      "raw": {
+       "k": 30,
+       "n": 30,
+       "rate": 1.0,
+       "wilson95_lower": 0.886482908609522
+      },
+      "raw_single": {
+       "k": 33,
+       "n": 33,
+       "rate": 1.0,
+       "wilson95_lower": 0.8957265699643882
+      },
+      "added_outside_pass": 2,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 2,
+      "newly_admitted_incorrect": 0,
+      "dropped": 5,
+      "dropped_incorrect": 0,
+      "coverage_weighted": 0.7310395856455787,
+      "precision_weighted": {
+       "weighted": 1.0,
+       "n_eff": 29.565786285437355,
+       "wilson95_lower_n_eff": 0.8850074660981607,
+       "ci95": [
+        null,
+        null
+       ]
+      },
+      "auc_weighted": 0.987549518958687,
+      "within_city_auc_weighted": [
+       0.9875495189586871,
+       1
+      ]
+     },
+     "tucson-az": {
+      "transition": [
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 9,
+        "weight": 334.3645484949833
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 37.15161649944259
+       },
+       {
+        "stratum": "agree_below",
+        "single_pass": false,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 1,
+        "weight": 37.15161649944259
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 3,
+        "weight": 40.26755852842809
+       },
+       {
+        "stratum": "model_incorrect",
+        "single_pass": false,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 9,
+        "weight": 120.80267558528428
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "correct",
+        "n": 13,
+        "weight": 106.1430575035063
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": false,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "correct",
+        "n": 16,
+        "weight": 130.63760923508468
+       },
+       {
+        "stratum": "pass",
+        "single_pass": true,
+        "pooled_pass": true,
+        "verdict": "incorrect",
+        "n": 1,
+        "weight": 8.164850577192793
+       }
+      ],
+      "raw": {
+       "k": 17,
+       "n": 18,
+       "rate": 0.9444444444444444,
+       "wilson95_lower": 0.7424220019799247
+      },
+      "raw_single": {
+       "k": 29,
+       "n": 31,
+       "rate": 0.9354838709677419,
+       "wilson95_lower": 0.7928101168125355
+      },
+      "added_outside_pass": 1,
+      "added_outside_pass_incorrect": 0,
+      "newly_admitted": 1,
+      "newly_admitted_incorrect": 0,
+      "dropped": 14,
+      "dropped_incorrect": 1,
+      "coverage_weighted": 0.2138353551393966,
+      "precision_weighted": {
+       "weighted": 0.9535966955222569,
+       "n_eff": 12.317205330046471,
+       "wilson95_lower_n_eff": 0.6969327069925899,
+       "ci95": [
+        null,
+        null
+       ]
+      },
+      "auc_weighted": 0.9441398113424645,
+      "within_city_auc_weighted": [
+       0.9441398113424645,
+       1
+      ]
+     }
+    }
+   }
+  },
+  "recommendation": {
+   "added_ok": false,
+   "incorrect_ok": true,
+   "precision_ok": true,
+   "study_further": false,
+   "rule": ">= 10 added outside the pass stratum, <= 1 newly admitted incorrect, raw precision within 0.01 of the single rule",
+   "refit_single": {
+    "added_outside_pass": 0,
+    "newly_admitted_incorrect": 0,
+    "raw_rate": 0.9861111111111112
+   },
+   "refit_single_meets_rule": false,
+   "run_minus_single": {
+    "added_outside_pass": 7,
+    "newly_admitted_incorrect": 0,
+    "raw_rate": 0.005485527544351054
+   }
+  }
+ },
+ "features": {
+  "inputs": {
+   "step_a_faces": "e571f6acd0dd7cdf0430e9be7677d8dedee4b77d124c00752db8e0def8d8cfff",
+   "r3_predictions": {
+    "a/predictions_fold0.csv": "319d846e380cd1cb6b4f3a4c43d117913ceb4c5a0b3d83b0d7bc4c10ac247f66",
+    "b/predictions_fold0.csv": "08d9239366ea8bae681d2efd6528ae7c06275c189c831a6ac1ea86a251fa0ddb",
+    "a/predictions_fold1.csv": "fd8ca7e6ca83227f370805f9fc42ca2e940bf2491bc4c674fa88af1e532ca50c",
+    "b/predictions_fold1.csv": "7ddca4d4a254fabbd5cebb51ece4f1a47a7b4948d919fd5ea5e95d2115d0e6ba",
+    "a/predictions_fold2.csv": "9a15bf7de73fea5f223285b71cd1ecabb0a14d4368a3c1d34dfb54df92d4df06",
+    "b/predictions_fold2.csv": "6279d8ee4e41451f67f0310d923210ff7ae971fd4d11e960a0f8648193f350c5",
+    "a/predictions_fold3.csv": "223fa2b8bda39fcb20fae63da44459466079252896211935c62e9877a1e9900d",
+    "b/predictions_fold3.csv": "4cd2a4bb7c9f7deea09de8e25722ad5a030334992a0a2f9fe68ee195f802f4af",
+    "a/predictions_fold4.csv": "642022de940a7609b2e19a2517bf3637e657864d34482f620ef0aeeafa9c4852",
+    "b/predictions_fold4.csv": "ea49969c957c528b27ed9d6f28b9cedec7beae0b792c81789cd5d08fbd6dc069"
+   },
+   "gate2": {
+    "gate2_folds.csv": "895d00b4f5fb5567cf5b2b0253db5dba986ac42085c4827fe6123e3101df25ac",
+    "gate2_folds.json": "e74d4455f199bfe005217b41e72cee69422ad77e4e99ba384d8c0d87bb773afb",
+    "gate2_split_fold0": "d2615554686963b76fd605a2a36d774de812b3c7f4bf7e513ab23d80b50a30a6",
+    "gate2_predictions_fold0": "b44a555fb2e063d330bd11cd54d2b15a49bafd20cf6a2802b972f793a2af8e1c",
+    "gate2_split_fold1": "7e78497d221cc9e88c7537bfc63bb2ed5d235801a1aabe7fadfac00848251fc6",
+    "gate2_predictions_fold1": "ed0c74735a7347e84a352128a9d6b799631fadcadf01b1cd265168536e3127a4",
+    "gate2_split_fold2": "57a68ce9f2789812848bdd5507348a99532c24224aaac09439caf238b3948b83",
+    "gate2_predictions_fold2": "c6306f54914bca59daae87892665c630c8dcd64a46457ca49f9842219c7d4ede",
+    "gate2_split_fold3": "8286f3b4f999b40b6a060941e569e74aa38c52922743867b8c1b7801ca398800",
+    "gate2_predictions_fold3": "a2a9270f17b3ad26627794ee81e12cc111b84d15bf5e497bc454656cbc1a70e8",
+    "gate2_split_fold4": "bf834900701141ef5ff6f322858e8d86bb0cec7a46197a8e0d595c2102399ec7",
+    "gate2_predictions_fold4": "f36ed206947435bfbcc4acdad8fd15675f2efdc35db4161436724bf13d217b4f"
+   },
+   "cities_json": "8d09c714b45602ad9358da578b5b57c2f8d9aa84be070e85c91d6732aabf064c",
+   "ns_pull_sums": "0907a87e52e04dec27d11828b59109c2e4bfa2a924cba2f2774d9bb5b1fec178",
+   "round_b_pull_sums": "71ce176114ed555531948661a6ca5dc2179413f0341bad0688cfaa8ace025c4d",
+   "contra_pull_sums": "6dd1f0c62cf6c08704351c913ecd1798b7452c1686d2524fdb23618ba730c527",
+   "key": "d2d30d05912e1a12cd75f56822a32413cb250dd048a5c17ff5bc13ae949172a8",
+   "sheet": "09a2624f93ff5ca203dfd8f0a4038129252d12334d863046986931e99ce957c9",
+   "face_scores": "6da73f9e4e3c93de1102e8657b18e1e457c15b3d14c6ebf8de4b796775c54bd3"
+  },
+  "settings": {
+   "n_boot": 1000,
+   "seed": 0,
+   "dist_cap_m": 200.0,
+   "C": 1.0,
+   "features": [
+    "log_n_ns_face",
+    "log_run_len",
+    "log_n_labelers_face",
+    "dist_nearest_ns_m",
+    "no_other_ns",
+    "log_n_contra_face",
+    "log_n_contra_same_labeler"
+   ]
+  },
+  "face_check": {
+   "step_a": {
+    "same_face": 1125,
+    "moved": 0,
+    "missing": 0
+   },
+   "step_b": {
+    "same_face": 234,
+    "moved": 0,
+    "missing": 1
+   }
+  },
+  "variants": {
+   "with_expert_placed": {
+    "step_a_rows": 1125,
+    "step_a_incorrect": 242,
+    "step_a": {
+     "ii_all": {
+      "a_image": {
+       "n": 1125,
+       "n_incorrect": 242,
+       "faces": 365,
+       "auc": 0.967342268562283,
+       "auc_ci95": [
+        0.9500606370547489,
+        0.9809371181182268
+       ],
+       "within_city_auc": 0.9613563314277302,
+       "within_city_n_cities": 4
+      },
+      "b_image_features": {
+       "n": 1125,
+       "n_incorrect": 242,
+       "faces": 365,
+       "auc": 0.9849498797300712,
+       "auc_ci95": [
+        0.9740593552963697,
+        0.9924913497819969
+       ],
+       "within_city_auc": 0.9820644306499497,
+       "within_city_n_cities": 4
+      },
+      "c_features": {
+       "n": 1125,
+       "n_incorrect": 242,
+       "faces": 365,
+       "auc": 0.9488338028696313,
+       "auc_ci95": [
+        0.9218684090044633,
+        0.9693106844045491
+       ],
+       "within_city_auc": 0.8837622985008711,
+       "within_city_n_cities": 4
+      },
+      "delta_b_minus_a": {
+       "delta": 0.017607611167788195,
+       "delta_ci95": [
+        0.00697698343955698,
+        0.030369621054928218
+       ]
+      },
+      "delta_c_minus_a": {
+       "delta": -0.018508465692651743,
+       "delta_ci95": [
+        -0.0431755073198135,
+        0.0040824314190938005
+       ]
+      }
+     },
+     "iii": {
+      "a_image": {
+       "n": 365,
+       "n_incorrect": 120,
+       "faces": 365,
+       "auc": 0.9360884353741497,
+       "auc_ci95": [
+        0.9053220152403952,
+        0.9630140401046401
+       ],
+       "within_city_auc": 0.9336220694849826,
+       "within_city_n_cities": 3
+      },
+      "b_image_features": {
+       "n": 365,
+       "n_incorrect": 120,
+       "faces": 365,
+       "auc": 0.9653401360544218,
+       "auc_ci95": [
+        0.9444403392172903,
+        0.9835849412296812
+       ],
+       "within_city_auc": 0.9743903587232841,
+       "within_city_n_cities": 3
+      },
+      "c_features": {
+       "n": 365,
+       "n_incorrect": 120,
+       "faces": 365,
+       "auc": 0.8971768707482993,
+       "auc_ci95": [
+        0.8618789235527766,
+        0.9318382878906833
+       ],
+       "within_city_auc": 0.9092364184163448,
+       "within_city_n_cities": 3
+      },
+      "delta_b_minus_a": {
+       "delta": 0.029251700680272164,
+       "delta_ci95": [
+        0.009264270740028857,
+        0.050978281333245945
+       ]
+      },
+      "delta_c_minus_a": {
+       "delta": -0.038911564625850326,
+       "delta_ci95": [
+        -0.08419889736562018,
+        0.0035565148588548898
+       ]
+      }
+     },
+     "ii_split": {
+      "a_image": {
+       "n": 283,
+       "n_incorrect": 197,
+       "faces": 195,
+       "auc": 0.9581808523196789,
+       "auc_ci95": [
+        0.9322532723253709,
+        0.9801624917232679
+       ],
+       "within_city_auc": 0.9527744982290437,
+       "within_city_n_cities": 2
+      },
+      "b_image_features": {
+       "n": 283,
+       "n_incorrect": 197,
+       "faces": 195,
+       "auc": 0.9646440798016763,
+       "auc_ci95": [
+        0.9447899427086477,
+        0.9816540200263779
+       ],
+       "within_city_auc": 0.9639905548996458,
+       "within_city_n_cities": 2
+      },
+      "c_features": {
+       "n": 283,
+       "n_incorrect": 197,
+       "faces": 195,
+       "auc": 0.8717978987132569,
+       "auc_ci95": [
+        0.8221501341510926,
+        0.9183326655982905
+       ],
+       "within_city_auc": 0.8028335301062574,
+       "within_city_n_cities": 2
+      },
+      "delta_b_minus_a": {
+       "delta": 0.006463227481997458,
+       "delta_ci95": [
+        -0.010540464154536388,
+        0.02485927766517081
+       ]
+      },
+      "delta_c_minus_a": {
+       "delta": -0.08638295360642201,
+       "delta_ci95": [
+        -0.14024834433979458,
+        -0.0365531987160505
+       ]
+      }
+     },
+     "ii_extra": {
+      "a_image": {
+       "n": 842,
+       "n_incorrect": 45,
+       "faces": 239,
+       "auc": 0.9771086017008226,
+       "auc_ci95": [
+        0.9534562572626976,
+        0.998075337789874
+       ],
+       "within_city_auc": 0.9708882806668325,
+       "within_city_n_cities": 2
+      },
+      "b_image_features": {
+       "n": 842,
+       "n_incorrect": 45,
+       "faces": 239,
+       "auc": 0.9832148334030392,
+       "auc_ci95": [
+        0.9449293208118659,
+        0.9990915710503089
+       ],
+       "within_city_auc": 0.9852367919051174,
+       "within_city_n_cities": 2
+      },
+      "c_features": {
+       "n": 842,
+       "n_incorrect": 45,
+       "faces": 239,
+       "auc": 0.9382545657326083,
+       "auc_ci95": [
+        0.8525815964691483,
+        0.9793477561086695
+       ],
+       "within_city_auc": 0.8835116529816704,
+       "within_city_n_cities": 2
+      },
+      "delta_b_minus_a": {
+       "delta": 0.00610623170221658,
+       "delta_ci95": [
+        -0.03063412463746946,
+        0.03105730765635886
+       ]
+      },
+      "delta_c_minus_a": {
+       "delta": -0.03885403596821424,
+       "delta_ci95": [
+        -0.1250149790827895,
+        0.010833118792412106
+       ]
+      }
+     },
+     "tags_ii_all": {
+      "(none)": {
+       "rows": 631,
+       "incorrect": 137,
+       "a_image": 0.9826827033895801,
+       "b_image_features": 0.996143503058601,
+       "c_features": 0.9745559856969768
+      },
+      "ends abruptly": {
+       "rows": 53,
+       "incorrect": 23,
+       "a_image": 0.8492753623188406,
+       "b_image_features": 0.9188405797101449,
+       "c_features": 0.8268115942028985
+      },
+      "shared pedestrian/car space": {
+       "rows": 34,
+       "incorrect": 15,
+       "a_image": 0.9017543859649123,
+       "b_image_features": 0.9649122807017545,
+       "c_features": 0.9438596491228071
+      },
+      "street has a sidewalk": {
+       "rows": 64,
+       "incorrect": 27,
+       "a_image": 0.952952952952953,
+       "b_image_features": 0.9489489489489489,
+       "c_features": 0.8358358358358359
+      },
+      "street has no sidewalks": {
+       "rows": 377,
+       "incorrect": 51,
+       "a_image": 0.9381089859256586,
+       "b_image_features": 0.9579574160952725,
+       "c_features": 0.9071334055094431
+      }
+     }
+    },
+    "step_b": {
+     "decided": 234,
+     "models": {
+      "a_image": {
+       "auc_weighted": 0.9091232538760243,
+       "within_city_auc_weighted": 0.9306562979023688
+      },
+      "b_image_features": {
+       "auc_weighted": 0.8606602656402607,
+       "within_city_auc_weighted": 0.8977840272068109
+      },
+      "c_features": {
+       "auc_weighted": 0.7460925306791344,
+       "within_city_auc_weighted": 0.7880624589083178
+      }
+     },
+     "delta_b_image_features_auc_weighted": {
+      "delta": -0.04846298823576367,
+      "ci95": [
+       -0.16706647570948607,
+       0.05341691559732065
+      ]
+     },
+     "delta_b_image_features_within_city_auc_weighted": {
+      "delta": -0.03287227069555787,
+      "ci95": [
+       -0.10982426243306968,
+       0.04588124908942976
+      ]
+     },
+     "delta_c_features_auc_weighted": {
+      "delta": -0.16303072319688994,
+      "ci95": [
+       -0.3205208588005667,
+       -0.025674852954163687
+      ]
+     },
+     "delta_c_features_within_city_auc_weighted": {
+      "delta": -0.14259383899405098,
+      "ci95": [
+       -0.2780611948123767,
+       -0.028083845312647328
+      ]
+     },
+     "tags": {
+      "(none)": {
+       "decided": 47,
+       "incorrect": 9,
+       "a_image": 0.9843818831491874,
+       "b_image_features": 0.9542315293893591,
+       "c_features": 0.7218047659618058
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "a_image": 0.8697414992709099,
+       "b_image_features": 0.5680048557564598,
+       "c_features": 0.3728404914052403
+      }
+     }
+    },
+    "feature_means": {
+     "step_a": {
+      "log_n_ns_face": 3.0601969635320074,
+      "log_run_len": 2.2731872878365795,
+      "log_n_labelers_face": 1.4470369324371573,
+      "dist_nearest_ns_m": 16.512325378625196,
+      "no_other_ns": 0.03911111111111111,
+      "log_n_contra_face": 1.0975110853294783,
+      "log_n_contra_same_labeler": 0.36492890375666526
+     },
+     "step_b": {
+      "log_n_ns_face": 2.034169600361661,
+      "log_run_len": 1.6070203991979506,
+      "log_n_labelers_face": 1.0231610339108024,
+      "dist_nearest_ns_m": 37.282454770601454,
+      "no_other_ns": 0.1111111111111111,
+      "log_n_contra_face": 0.9646266520013274,
+      "log_n_contra_same_labeler": 0.5358560833140511
+     }
+    }
+   },
+   "without_expert_placed": {
+    "step_a_rows": 1125,
+    "step_a_incorrect": 242,
+    "step_a": {
+     "ii_all": {
+      "a_image": {
+       "n": 1125,
+       "n_incorrect": 242,
+       "faces": 365,
+       "auc": 0.967342268562283,
+       "auc_ci95": [
+        0.9500606370547489,
+        0.9809371181182268
+       ],
+       "within_city_auc": 0.9613563314277302,
+       "within_city_n_cities": 4
+      },
+      "b_image_features": {
+       "n": 1125,
+       "n_incorrect": 242,
+       "faces": 365,
+       "auc": 0.9847252510693261,
+       "auc_ci95": [
+        0.972829842975488,
+        0.9931889298734389
+       ],
+       "within_city_auc": 0.976592977893368,
+       "within_city_n_cities": 4
+      },
+      "c_features": {
+       "n": 1125,
+       "n_incorrect": 242,
+       "faces": 365,
+       "auc": 0.9478510524788709,
+       "auc_ci95": [
+        0.9193283186268746,
+        0.969554660861848
+       ],
+       "within_city_auc": 0.8718379664842849,
+       "within_city_n_cities": 4
+      },
+      "delta_b_minus_a": {
+       "delta": 0.017382982507043065,
+       "delta_ci95": [
+        0.0047009212067025165,
+        0.031994306878542135
+       ]
+      },
+      "delta_c_minus_a": {
+       "delta": -0.01949121608341209,
+       "delta_ci95": [
+        -0.046318966171617945,
+        0.006688741027255891
+       ]
+      }
+     },
+     "iii": {
+      "a_image": {
+       "n": 365,
+       "n_incorrect": 120,
+       "faces": 365,
+       "auc": 0.9360884353741497,
+       "auc_ci95": [
+        0.9053220152403952,
+        0.9630140401046401
+       ],
+       "within_city_auc": 0.9336220694849826,
+       "within_city_n_cities": 3
+      },
+      "b_image_features": {
+       "n": 365,
+       "n_incorrect": 120,
+       "faces": 365,
+       "auc": 0.9686394557823129,
+       "auc_ci95": [
+        0.9522760471306662,
+        0.9834178052259378
+       ],
+       "within_city_auc": 0.9765558798606534,
+       "within_city_n_cities": 3
+      },
+      "c_features": {
+       "n": 365,
+       "n_incorrect": 120,
+       "faces": 365,
+       "auc": 0.8979591836734694,
+       "auc_ci95": [
+        0.864014040507365,
+        0.9302982725872382
+       ],
+       "within_city_auc": 0.9114019395537142,
+       "within_city_n_cities": 3
+      },
+      "delta_b_minus_a": {
+       "delta": 0.03255102040816327,
+       "delta_ci95": [
+        0.01260415924683279,
+        0.05476603354312292
+       ]
+      },
+      "delta_c_minus_a": {
+       "delta": -0.03812925170068027,
+       "delta_ci95": [
+        -0.08271516364842875,
+        0.004588007328695256
+       ]
+      }
+     },
+     "ii_split": {
+      "a_image": {
+       "n": 283,
+       "n_incorrect": 197,
+       "faces": 195,
+       "auc": 0.9581808523196789,
+       "auc_ci95": [
+        0.9322532723253709,
+        0.9801624917232679
+       ],
+       "within_city_auc": 0.9527744982290437,
+       "within_city_n_cities": 2
+      },
+      "b_image_features": {
+       "n": 283,
+       "n_incorrect": 197,
+       "faces": 195,
+       "auc": 0.9618108841931295,
+       "auc_ci95": [
+        0.9395959127271187,
+        0.9810905383813617
+       ],
+       "within_city_auc": 0.95543093270366,
+       "within_city_n_cities": 2
+      },
+      "c_features": {
+       "n": 283,
+       "n_incorrect": 197,
+       "faces": 195,
+       "auc": 0.8567170345885964,
+       "auc_ci95": [
+        0.795863526073122,
+        0.9098109224910099
+       ],
+       "within_city_auc": 0.8016528925619835,
+       "within_city_n_cities": 2
+      },
+      "delta_b_minus_a": {
+       "delta": 0.0036300318734506787,
+       "delta_ci95": [
+        -0.014441155909772482,
+        0.02408909151014677
+       ]
+      },
+      "delta_c_minus_a": {
+       "delta": -0.10146381773108248,
+       "delta_ci95": [
+        -0.16718287995269077,
+        -0.045981594612204406
+       ]
+      }
+     },
+     "ii_extra": {
+      "a_image": {
+       "n": 842,
+       "n_incorrect": 45,
+       "faces": 239,
+       "auc": 0.9771086017008226,
+       "auc_ci95": [
+        0.9534562572626976,
+        0.998075337789874
+       ],
+       "within_city_auc": 0.9708882806668325,
+       "within_city_n_cities": 2
+      },
+      "b_image_features": {
+       "n": 842,
+       "n_incorrect": 45,
+       "faces": 239,
+       "auc": 0.977192248710442,
+       "auc_ci95": [
+        0.9245437531436057,
+        0.9989148141251821
+       ],
+       "within_city_auc": 0.9722153106079456,
+       "within_city_n_cities": 2
+      },
+      "c_features": {
+       "n": 842,
+       "n_incorrect": 45,
+       "faces": 239,
+       "auc": 0.9310330405687997,
+       "auc_ci95": [
+        0.8287635638354357,
+        0.9767635607153534
+       ],
+       "within_city_auc": 0.8673384755743552,
+       "within_city_n_cities": 2
+      },
+      "delta_b_minus_a": {
+       "delta": 8.364700961938087e-05,
+       "delta_ci95": [
+        -0.051844714235928346,
+        0.028362101583591082
+       ]
+      },
+      "delta_c_minus_a": {
+       "delta": -0.046075561132022935,
+       "delta_ci95": [
+        -0.14708548207126312,
+        0.009065913675909261
+       ]
+      }
+     },
+     "tags_ii_all": {
+      "(none)": {
+       "rows": 631,
+       "incorrect": 137,
+       "a_image": 0.9826827033895801,
+       "b_image_features": 0.9979904843523745,
+       "c_features": 0.973698986376666
+      },
+      "ends abruptly": {
+       "rows": 53,
+       "incorrect": 23,
+       "a_image": 0.8492753623188406,
+       "b_image_features": 0.9231884057971015,
+       "c_features": 0.8318840579710145
+      },
+      "shared pedestrian/car space": {
+       "rows": 34,
+       "incorrect": 15,
+       "a_image": 0.9017543859649123,
+       "b_image_features": 0.9578947368421052,
+       "c_features": 0.9333333333333333
+      },
+      "street has a sidewalk": {
+       "rows": 64,
+       "incorrect": 27,
+       "a_image": 0.952952952952953,
+       "b_image_features": 0.967967967967968,
+       "c_features": 0.8583583583583583
+      },
+      "street has no sidewalks": {
+       "rows": 377,
+       "incorrect": 51,
+       "a_image": 0.9381089859256586,
+       "b_image_features": 0.9459280644773247,
+       "c_features": 0.8904426801395404
+      }
+     }
+    },
+    "step_b": {
+     "decided": 234,
+     "models": {
+      "a_image": {
+       "auc_weighted": 0.9091232538760243,
+       "within_city_auc_weighted": 0.9306562979023688
+      },
+      "b_image_features": {
+       "auc_weighted": 0.8544782185016071,
+       "within_city_auc_weighted": 0.9049300350225643
+      },
+      "c_features": {
+       "auc_weighted": 0.7146325097951788,
+       "within_city_auc_weighted": 0.7516203634861442
+      }
+     },
+     "delta_b_image_features_auc_weighted": {
+      "delta": -0.05464503537441723,
+      "ci95": [
+       -0.20201590275494602,
+       0.06016432729302063
+      ]
+     },
+     "delta_b_image_features_within_city_auc_weighted": {
+      "delta": -0.025726262879804507,
+      "ci95": [
+       -0.10610205990090407,
+       0.05166531572945952
+      ]
+     },
+     "delta_c_features_auc_weighted": {
+      "delta": -0.19449074408084555,
+      "ci95": [
+       -0.36477763110163125,
+       -0.04894474333109044
+      ]
+     },
+     "delta_c_features_within_city_auc_weighted": {
+      "delta": -0.17903593441622456,
+      "ci95": [
+       -0.31726298291803545,
+       -0.06052965060849924
+      ]
+     },
+     "tags": {
+      "(none)": {
+       "decided": 47,
+       "incorrect": 9,
+       "a_image": 0.9843818831491874,
+       "b_image_features": 0.9600318378992615,
+       "c_features": 0.6962492466422714
+      },
+      "street has no sidewalks": {
+       "decided": 127,
+       "incorrect": 4,
+       "a_image": 0.8697414992709099,
+       "b_image_features": 0.49731337509568146,
+       "c_features": 0.3323489632869233
+      }
+     }
+    },
+    "feature_means": {
+     "step_a": {
+      "log_n_ns_face": 2.9228234142847365,
+      "log_run_len": 2.2407040793320405,
+      "log_n_labelers_face": 1.3835071623290458,
+      "dist_nearest_ns_m": 19.630570663307907,
+      "no_other_ns": 0.052444444444444446,
+      "log_n_contra_face": 0.9827142850916306,
+      "log_n_contra_same_labeler": 0.3371100639374232
+     },
+     "step_b": {
+      "log_n_ns_face": 1.9151990021651824,
+      "log_run_len": 1.5958977937045986,
+      "log_n_labelers_face": 0.9872320667081997,
+      "dist_nearest_ns_m": 40.39591331588514,
+      "no_other_ns": 0.11965811965811966,
+      "log_n_contra_face": 0.9287102354810892,
+      "log_n_contra_same_labeler": 0.5358560833140511
+     }
+    }
+   }
+  },
+  "circular_sensitivity_note": "the all-rows fit (face-copied truth) is not run: plan 5.4 makes it a labelled sensitivity only"
  }
 }
