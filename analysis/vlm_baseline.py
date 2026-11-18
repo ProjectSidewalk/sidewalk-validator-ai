@@ -276,7 +276,7 @@ def verdict_from_score(p_incorrect):
 
 def load_sample(sample_dir):
     """``sample.csv`` with an absolute ``image`` column (``<dir>/crops/<label_type>/<crop_path>``); unique uids."""
-    df = pd.read_csv(os.path.join(sample_dir, "sample.csv"), dtype={"label_id": str})
+    df = pd.read_csv(os.path.join(sample_dir, "sample.csv"), dtype={"label_id": str, "pano_id": str})
     if df.label_uid.duplicated().any():
         raise ValueError("sample.csv has duplicate label_uid")
     df["image"] = [os.path.join(sample_dir, "crops", t, p) for t, p in zip(df.label_type, df.crop_path)]
@@ -646,7 +646,8 @@ def leg_name(model, variant="definition", fewshot=0):
 
 def load_split_rows(root, label_type, splits=HELDOUT_SPLITS):
     """Rows of ``<root>/<Type>/split.csv`` in ``splits`` with an absolute ``image`` column; unique uids."""
-    df = pd.read_csv(os.path.join(root, label_type, "split.csv"), dtype={"label_id": str}, low_memory=False)
+    df = pd.read_csv(os.path.join(root, label_type, "split.csv"), dtype={"label_id": str, "pano_id": str},
+                     low_memory=False)
     if "status" in df:
         df = df[df.status == "ok"]
     df = df[df.split.isin(splits)].copy()

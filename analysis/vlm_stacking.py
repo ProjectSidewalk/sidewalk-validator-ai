@@ -144,7 +144,7 @@ def load_run_splits(run_dir):
         p = os.path.join(run_dir, t, "split.csv")
         if not os.path.exists(p):
             raise SystemExit(f"missing split definition: {p}")
-        frames.append(pd.read_csv(p, usecols=cols))
+        frames.append(pd.read_csv(p, usecols=cols, dtype={"pano_id": str}))
     return with_uid(pd.concat(frames, ignore_index=True))
 
 

@@ -209,3 +209,17 @@ def test_height_only_dims_mismatch_is_caught():
     d = pd.DataFrame({"pano_path": ["/a", "/b"], "pano_native_w": [100, 100], "pano_native_h": [50, 50],
                       "pano_y": [10, 10], "pano_width": [100, 100], "pano_height": [50, 60]})
     assert jcc.job_crop_status(d).tolist() == ["ok", "dims_mismatch"]
+
+
+def test_restrict_keeps_all_digit_pano_ids_as_strings(tmp_path):
+    # Issue #114: Mapillary pano_ids are all digits; pano_id is the paired bootstrap's group, so it must stay a str.
+    ids = ["1792391791667719", "2001774006895864"]
+    split = pd.DataFrame({"label_uid": ["m:1", "m:2"], "label_class": ["correct", "incorrect"], "split": "test",
+                          "hard": 0, "pano_id": ids})
+    manifest = split.drop(columns=["split", "hard"]).assign(crop_path=["x/1.webp", "x/2.webp"], status="ok")
+    split.to_csv(tmp_path / "split.csv", index=False)
+    manifest.to_csv(tmp_path / "manifest.csv", index=False)
+    out, _ = jcc.main(["restrict", "--split", str(tmp_path / "split.csv"), "--manifest",
+                       str(tmp_path / "manifest.csv"), "--out", str(tmp_path / "job" / "split.csv")])
+    assert not pd.api.types.is_numeric_dtype(out.pano_id)
+    assert out.pano_id.tolist() == ids

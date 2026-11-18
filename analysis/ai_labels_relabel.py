@@ -490,7 +490,8 @@ def cmd_score(args):
     rater = os.environ.get("RATER", "")
     if not rater:
         sys.exit("RATER must be set")
-    key = pd.read_csv(os.path.join(args.out, "private-key-do-not-share", "key.csv"), dtype={"label_id": str})
+    key = pd.read_csv(os.path.join(args.out, "private-key-do-not-share", "key.csv"),
+                      dtype={"label_id": str, **dg.PANO_ID_DTYPE})
     man = json.load(open(os.path.join(args.out, "manifest.json")))
     assert key.city.nunique() == 1, "one city per packet"
     city = key.city.iloc[0]

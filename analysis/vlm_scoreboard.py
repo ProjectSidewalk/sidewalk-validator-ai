@@ -177,7 +177,7 @@ def load_splits(scores_dir):
     for t in LABEL_TYPES:
         p = os.path.join(scores_dir, "splits", f"{t}.csv")
         if os.path.exists(p):
-            frames.append(pd.read_csv(p, usecols=lambda c: c in SPLIT_COLUMNS))
+            frames.append(pd.read_csv(p, usecols=lambda c: c in SPLIT_COLUMNS, dtype={"pano_id": str}))
     if not frames:
         raise SystemExit(f"no splits under {scores_dir}/splits; run `stage` first")
     s = pd.concat(frames, ignore_index=True)

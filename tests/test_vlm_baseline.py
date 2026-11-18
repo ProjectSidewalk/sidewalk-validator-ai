@@ -592,3 +592,18 @@ def test_render_item(tmp_path):
 def test_mlx_scorer_imports():
     pytest.importorskip("mlx_vlm")
     assert callable(vb.MlxVlm)
+
+
+def test_loaders_keep_all_digit_pano_ids_as_strings(tmp_path):
+    # Issue #114: Mapillary pano_ids are all digits. The few-shot pool excludes the query's own panorama by
+    # comparing pano_id across frames; an int on one side and a str on the other never match, so it must be a str.
+    ids = ["1792391791667719", "2001774006895864"]
+    rows = pd.DataFrame({"label_uid": ["m:1", "m:2"], "label_id": ["1", "2"], "label_type": "CurbRamp",
+                         "label_class": ["correct", "incorrect"], "pano_id": ids, "crop_path": ["a.webp", "b.webp"],
+                         "split": "test", "status": "ok"})
+    rows.to_csv(tmp_path / "sample.csv", index=False)
+    (tmp_path / "CurbRamp").mkdir()
+    rows.to_csv(tmp_path / "CurbRamp" / "split.csv", index=False)
+    for df in (vb.load_sample(str(tmp_path)), vb.load_split_rows(str(tmp_path), "CurbRamp")):
+        assert not pd.api.types.is_numeric_dtype(df.pano_id)
+        assert df.pano_id.tolist() == ids

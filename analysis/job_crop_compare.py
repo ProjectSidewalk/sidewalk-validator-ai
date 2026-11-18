@@ -139,7 +139,7 @@ def counts_table(split, min_n=MIN_N, min_class=MIN_CLASS):
 
 
 def counts(args):
-    split = pd.read_csv(args.split, dtype={"label_uid": str}, low_memory=False)
+    split = pd.read_csv(args.split, dtype={"label_uid": str, "pano_id": str}, low_memory=False)
     assert split.label_uid.is_unique, f"{args.split}: label_uid is not unique"
     label_type = split.label_type.iloc[0]
     geo = recorded_geometry(args.rawlabels_cache, split.city.unique(), label_type)
@@ -195,8 +195,8 @@ def restrict_split(split, manifest):
 
 
 def restrict(args):
-    split = pd.read_csv(args.split, dtype={"label_uid": str}, low_memory=False)
-    manifest = pd.read_csv(args.manifest, dtype={"label_uid": str}, low_memory=False)
+    split = pd.read_csv(args.split, dtype={"label_uid": str, "pano_id": str}, low_memory=False)
+    manifest = pd.read_csv(args.manifest, dtype={"label_uid": str, "pano_id": str}, low_memory=False)
     out = restrict_split(split, manifest)
     if os.path.abspath(args.out) == os.path.abspath(args.split):
         raise SystemExit("--out must not overwrite the round-3 split")
@@ -312,7 +312,7 @@ def compare_tables(paired, n_boot=N_BOOT, seed=0):
 
 
 def compare(args):
-    split = pd.read_csv(args.split, dtype={"label_uid": str}, low_memory=False)
+    split = pd.read_csv(args.split, dtype={"label_uid": str, "pano_id": str}, low_memory=False)
     paired = paired_frame(pd.read_csv(args.job_pred, dtype={"label_uid": str}),
                           pd.read_csv(args.depth_pred, dtype={"label_uid": str}), split)
     head, prov, slices = compare_tables(paired, args.n_boot, args.seed)

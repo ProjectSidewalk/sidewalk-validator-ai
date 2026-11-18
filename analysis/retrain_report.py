@@ -127,7 +127,8 @@ def heldout_names(heldout_cities, public, us_cities):
 def load_type(run_dir, label_type):
     pred = pd.read_csv(f"{run_dir}/{label_type}/predictions.csv")
     split = pd.read_csv(f"{run_dir}/{label_type}/split.csv", usecols=[
-        "label_uid", "city", "pano_id", "label_class", "class_source", "author", "hard", "split", "severity", "tags"])
+        "label_uid", "city", "pano_id", "label_class", "class_source", "author", "hard", "split", "severity", "tags"],
+        dtype=PANO_ID_DTYPE)
     assert pred.label_uid.is_unique and split.label_uid.is_unique
     df = pred.merge(split.drop(columns=["split"]), on="label_uid", how="left", validate="one_to_one")
     assert df.city.notna().all(), f"{label_type}: predictions without a split row"

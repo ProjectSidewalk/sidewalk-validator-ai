@@ -80,7 +80,7 @@ def load_split(label_type, data_dir="."):
     base = os.path.normpath(os.path.join(data_dir, label_type))
     path = os.path.join(base, "split.csv")
     if os.path.exists(path):
-        df = pd.read_csv(path)
+        df = pd.read_csv(path, dtype={"pano_id": str})  # all-digit Mapillary ids stay strings (#114)
         missing = set(SPLIT_COLUMNS) - set(df.columns)
         if missing:
             raise ValueError(f"{path} is missing columns {sorted(missing)}")
