@@ -38,8 +38,10 @@ Labels either rater has voted on or placed are excluded everywhere (every ``expe
 ``margin_correct_cap`` is the most of the margin cell that ``margin_correct`` rows may take (they are scarce, so
 the cell is topped up with ``margin_incorrect``); ``shared`` is the number of each city's items that the other
 raters also rate. ``shares`` may add ``thin_voted``, or all three of ``one_decisive``, ``unsure_only`` and ``tie``
-(not both; a share may be 0, so a round can sample only the new strata: ``gt_rounds/unsampled_draft.json``). An
-optional ``"draft": true`` marks sizes that are proposals: ``check-design`` runs on it, ``build`` refuses it.
+(not both; a share may be 0, so a round can sample only the new strata: ``gt_rounds/unsampled_draft.json``). A
+design whose ``lone`` share is 0 draws its decoys only from labels with at least one human vote, as every Disagree
+item it can draw has one, so a label nobody has validated does not mark an item as a decoy. An optional
+``"draft": true`` marks sizes that are proposals: ``check-design`` runs on it, ``build`` refuses it.
 
 **Subcommands** (every file with label-level rows goes outside the repo, under ``~/Data/...``)::
 
@@ -94,8 +96,9 @@ rater, Disagree cell and type the population, quota, available and expected deci
 (``no_weight`` > ``short`` > ``under_min`` > ``ok``), per cell the expected 95% half-width of the weighted rate at
 p = 0.5 and the Kish effective n, plus the population of the three split strata by type x severity and type x tag.
 It reports the counts before and after ``--author-excluded`` and refuses a pool without exclusion information
-unless ``--no-author-excluded`` is passed; ``build`` refuses a pool without the ``author_excluded`` column, so a
-new round counts its population without excluded authors from the start. On a key holding split-strata items
+unless ``--no-author-excluded`` is passed; ``build`` refuses a pool without the ``author_excluded`` column (its
+``--no-author-excluded`` only replays an older pool, such as round 2's), so a new round counts its population
+without excluded authors from the start, and its manifest says so (``author_excluded_applied``). On a key holding split-strata items
 ``score`` also prints ``one_decisive`` split by the single human vote's direction and the standing type x severity
 and type x tag slices (``--slices`` / ``--no-slices``; training counts with ``--round3-splits``; the single human
 vote as a baseline on ``one_decisive``).
@@ -455,6 +458,21 @@ def uses_thin(design):
     return bool(thin_mode(design))
 
 
+def voted_decoys(design):
+    """True when a design samples no ``lone`` item (its ``lone`` share is 0): every Disagree item it can draw then
+    has at least one human vote, so :func:`prepare` keeps only decoys that have one too. Otherwise "no human vote"
+    would mark an item as an AI Agree decoy (#106 review R2); round 2's ``lone`` stratum balanced that cue.
+
+    >>> voted_decoys({"shares": {"margin": 0.5, "lone": 0.35, "light_voted": 0.15}}), voted_decoys(None)
+    (False, False)
+    >>> voted_decoys({"shares": {"margin": 0, "lone": 0, "light_voted": 0, "tie": 0.5, "one_decisive": 0.3,
+    ...                          "unsure_only": 0.2}})
+    True
+    """
+    shares = (design or {}).get("shares") or {}
+    return bool(shares) and not float(shares.get("lone", 0))
+
+
 def disagree_strata(design):
     """The Disagree strata a design's population is counted in: the four of round 2, plus ``thin_voted`` or the
     three split strata (:func:`thin_mode`)."""
@@ -464,11 +482,14 @@ def disagree_strata(design):
 def prepare(pool, schema, design=None):
     """The eligible rows of one city with ``stratum``, ``cell``, ``margin_class`` and ``sev_bucket``; rows in no
     stratum dropped. A design that samples the thin Disagrees (:func:`thin_mode`) keeps them as their own cell,
-    ``thin_voted`` or the three split ones."""
+    ``thin_voted`` or the three split ones. A design with no ``lone`` share keeps only decoys with at least one
+    human vote (:func:`voted_decoys`)."""
     d = eligible(pool[pool.schema == schema]).copy()
     d["stratum"] = assign_stratum(d, thin=thin_mode(design))
     d = d[d.stratum != ""].copy()
     d["cell"] = d.stratum.where(~d.stratum.str.startswith("decoy"), "decoy")
+    if voted_decoys(design):
+        d = d[(d.cell != "decoy") | (d.h_agree + d.h_dis + d.h_unsure > 0)].copy()
     d["cell"] = d.cell.where(~d.cell.str.startswith("margin"), "margin")
     d["margin_class"] = margin_class(d)
     d["sev_bucket"] = sev_bucket(d.severity)
@@ -1120,9 +1141,14 @@ def cmd_build(args):
         sys.exit(f"{args.design} is a draft design: its sizes are proposals; remove \"draft\" once they are approved")
     design_name = os.path.splitext(os.path.basename(args.design))[0]
     pool = rl.load_pool(args.pool)
-    if "author_excluded" not in pool.columns:
+    if args.no_author_excluded:
+        pool = pool.drop(columns=["author_excluded"], errors="ignore")
+        print("WARNING: --no-author-excluded: excluded authors' labels count in the population and can be drawn "
+              "(only to replay a round whose pool predates the column, such as round 2)")
+    elif "author_excluded" not in pool.columns:
         sys.exit("the pool has no author_excluded column: pull it with the current analysis/pull_relabel_pool.sh, "
-                 "which emits it, so the population leaves out excluded authors' labels from the start (#106)")
+                 "which emits it, so the population leaves out excluded authors' labels from the start (#106); "
+                 "--no-author-excluded replays an older pool on purpose")
     missing = sorted(set(design["raters"].values()) - set(pool.schema))
     if missing:
         sys.exit(f"the pool has no rows for {missing}")
@@ -1178,7 +1204,7 @@ def cmd_build(args):
                 "pool_sha256": rl.sha256_file(args.pool), "key_sha256": rl.sha256_file(kpath),
                 "seed_sha256": hashlib.sha256(str(args.seed).encode()).hexdigest(), "items": len(key),
                 "quotas": {f"{c}/{t}": n for (c, t), n in quotas(design).items()}, "shortfall": shortfall,
-                "population": population, "city_ids": cid,
+                "population": population, "author_excluded_applied": not args.no_author_excluded, "city_ids": cid,
                 "counts": {f"{r}/{s}/{t}": int(n) for (r, s, t), n in counts.items()},
                 "severity_buckets": {f"{r}/{b}": int(n) for (r, b), n in sev.items()},
                 "shared": {r: int(key[(key.rater == r) & key.shared].shape[0]) for r in design["raters"]},
@@ -1305,7 +1331,8 @@ def cmd_score(args):
         print(f"\n## one_decisive by the single vote's direction, rater {args.rater}, own city\n")
         print(direction_markdown(direction_rates(own, direction, args.min_cell)))
         print("\nA secondary analysis fixed before rating (#106): with a single human Agree the AI's Disagree turns a "
-              "1-0 label into a 1-1; with a single human Disagree it concurs. Unweighted sample rates; blank under "
+              "1-0 label into a 1-1; with a single human Disagree it concurs (on the pool's unfiltered human tallies; "
+              "the stored label.correct can differ). Unweighted sample rates; blank under "
               f"{args.min_cell} decided items.")
     if args.slices if args.slices is not None else key.stratum.isin(UNSAMPLED_STRATA).any():
         print_slices(own, args, mpath, prepared)
@@ -1324,7 +1351,8 @@ def cmd_score(args):
 
 def print_slices(own, args, mpath, prepared=None):
     """``score``'s standing slices for the rater's own city: type x severity and type x tag over every Disagree
-    stratum, then per split stratum with items; training counts with ``--round3-splits``, the eligible population
+    stratum the rater has items in (the population column counts those strata only), then per split stratum with
+    items; training counts with ``--round3-splits``, the eligible population
     with ``--pool``."""
     trains, names = [], ()
     if args.round3_splits:
@@ -1337,7 +1365,10 @@ def print_slices(own, args, mpath, prepared=None):
     print("Unweighted sample rates in a stratified sample, not population estimates. A label with several tags counts "
           f"once per tag; a rate is blank under {args.min_cell} decided items (the count is kept). The single-vote "
           "baseline exists only for one_decisive items; tie and unsure_only have no crowd verdict.")
-    groups = [("every Disagree stratum", None)] + [(s, (s,)) for s in UNSAMPLED_STRATA if (own.stratum == s).any()]
+    # the population of the strata the round sampled, not of every Disagree stratum in the pool (#106 review R3)
+    sampled = tuple(s for s in DISAGREE_REPORT_STRATA if (own.stratum == s).any())
+    groups = [("every sampled Disagree stratum", sampled)] + [(s, (s,)) for s in UNSAMPLED_STRATA
+                                                              if (own.stratum == s).any()]
     for name, strata in groups:
         for by in ("severity", "tag"):
             pop = slice_population(prepared, by, strata) if prepared is not None else None
@@ -1369,7 +1400,7 @@ def score_population(args, man):
     Prints the population per stratum before (manifest) and after (recount)."""
     before = man.get("population", {}).get(args.rater)
     if not args.pool:
-        if before:
+        if before and not man.get("author_excluded_applied"):
             print(f"WARNING: population weights from the manifest, which count excluded authors' labels (#85); pass "
                   f"--pool and --author-excluded to recount them\n")
         return before, None
@@ -2053,6 +2084,9 @@ def build_parser():
     b.add_argument("--cityparams", default=rl.DEFAULT_CITYPARAMS)
     b.add_argument("--host", default="makelab1")
     b.add_argument("--oversample", type=int, default=rl.OVERSAMPLE)
+    b.add_argument("--no-author-excluded", action="store_true",
+                   help="build from a pool without the author_excluded column (or ignore it), counting excluded "
+                        "authors' labels on purpose: only to replay a round whose pool predates the column")
     b.set_defaults(func=cmd_build)
     g = sub.add_parser("gallery", help="one rater's Gallery review lists (own city, then the shared items)")
     g.add_argument("--key", required=True)

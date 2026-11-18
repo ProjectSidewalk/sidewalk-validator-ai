@@ -26,8 +26,8 @@ fixed before any rating.
 | The same, decompressed (local only) | `~/Data/sidewalk-validator-ai-relabel-2026-10/round2/pool.csv` | `a85a573c303fe6538dba5821cbb7f3dc4667e244aa0c548354aa0e3bdcc23720` |
 | Author-exclusion flags of 2026-11-12 (label ids; never committed) | `~/Data/sidewalk-validator-ai-relabel-2026-10/round2/author_excluded.csv` | `767c3d5b0fca35b57deb09e28995549bd382c383fd4f1634b55e14e6c469bfd7` |
 | Draft design | `analysis/gt_rounds/unsampled_draft.json` | `76071e768803d70ef0bc54fbd7b232f60522877a201633f93397d9e620469df6` |
-| `check-design` output, committed (aggregates only) | [`unsampled_strata_design.json`](unsampled_strata_design.json) | `d084bcb66f0c1bac5ca0e9bf8f2af84bdc881fb8cb9b36609165e93b7788f629` |
-| Its printout (local) | `~/Data/sidewalk-validator-ai-relabel-2026-10/round2/unsampled_strata_design_tables.md` | `6ecbf1d323425fb7c702149fc28ee42a81a718e4c54c138085e843b4a894c7ad` |
+| `check-design` output, committed (aggregates only) | [`unsampled_strata_design.json`](unsampled_strata_design.json) | `abb07a90e66875d542662ee996897799215a351f1decca2ff43d4c001d0b9b93` |
+| Its printout (local) | `~/Data/sidewalk-validator-ai-relabel-2026-10/round2/unsampled_strata_design_tables.md` | `9a1294e6ae8f1c47aac63cf5c6626c6894de93093ea9ca8ec20a5df5cef1cbf5` |
 
 From the repo root (nothing is sampled, so there is no seed; Python 3.10 and 3.12 give the same JSON byte for
 byte):
@@ -72,9 +72,17 @@ were 6,701 / 371 / 1,539 (Seattle) and 3,002 / 145 / 706 (Chicago).
 | Cities and raters | Seattle (jon) and Chicago (mikey), the round-2 pairing; rater user_ids only on the command line |
 | Strata | only the three new ones: `shares` tie 0.45, one_decisive 0.33, unsure_only 0.22; `lone`, `light_voted`, `margin` 0 |
 | Per type and city | 36 AI-Disagree items: tie 16, one_decisive 12, unsure_only 8 (largest remainder of 36) |
-| Decoys | 14 per type (AI Agree, Unsure where a type has no Agree), so the rater cannot tell the AI's verdict |
+| Decoys | 14 per type (AI Agree, Unsure where a type has no Agree), so the rater cannot tell the AI's verdict; only labels with at least one human vote (below) |
 | Shared | 50 of each city's items rated by the other rater |
 | Load | 250 items per city as designed, 300 per rater with the shared items (round 2's load) |
+
+**Decoys have a human vote, as every item of these strata does.** Every `tie`, `one_decisive` and `unsure_only`
+label has at least one human vote, while 30% of Seattle's eligible decoys and 36% of Chicago's have none (79% of
+Seattle's Crosswalk decoys). Drawn from all of them, "nobody has validated this label" would mark an item as an AI
+Agree decoy through any cue of prior validation the masking misses. Round 2's `lone` stratum (no human vote either)
+balanced that; this design has none, so `gt_rounds.py` draws the decoys of any design with a zero `lone` share from
+labels with at least one human vote (`voted_decoys`). Every type keeps at least 820 eligible decoys (Seattle
+Crosswalk), so all 14-item decoy quotas still fill. The number of votes is not matched, so a weaker cue remains.
 
 ### Cells
 
@@ -117,11 +125,24 @@ mikey), highest for SurfaceProblem (14%, mikey), so 25% is a deliberately cautio
 A single type cell is wider still: a Wilson interval at p = 0.5 is about ±25 points on 12 decided items (a tie cell
 at 25% can't tell), ±27 on 9 (one_decisive) and ±31 on 6 (unsure_only).
 
+The half-widths have no finite-population correction, so they are conservative: with one on the sampled share of
+each cell (1 - items / population), Chicago `unsure_only` is ±18.9 instead of ±21.1, and every other stratum moves by
+under one point.
+
 **What this round can and cannot say.** It can tell whether the AI's Disagree in each stratum is mostly right or
 mostly wrong; it cannot place a rate within ten points. The quotas are equal per type, while Seattle's populations
-are dominated by one type (CurbRamp is 72% of its `one_decisive`), so the weighted estimate rests on few items. The
-alternative noted for Jon: ties only, 30 per type, gives Seattle's tie rate about ±11 points at 25% can't tell, and
-no estimate for the other two strata.
+are dominated by one type (CurbRamp is 72% of its `one_decisive`), so the weighted estimate rests on few items
+(Kish n 16 of 45 expected decided). Two alternatives for Jon, neither taken in the draft:
+
+- **Quotas in proportion to the type populations.** The same expected decided items spread in proportion to each
+  type's share of the stratum give a Kish n equal to the item count: Seattle `one_decisive` about ±14.6 points
+  instead of ±24.2, `tie` ±13.0 instead of ±15.5, `unsure_only` ±19.2 instead of ±24.9; Chicago ±14.6, ±12.7 and
+  ±19.6 (1.96 x sqrt(0.25 / n) at the expected decided n above: an ideal that ignores the minimum cell and
+  rounding). `per_type` can already lean toward CurbRamp without a schema change, but it is shared by both cities
+  (Chicago's `one_decisive` is 27% Crosswalk), and the per-type rows (secondary 1) get thinner for the small types.
+- **Ties only, 30 per type** (share 1 for `tie`, 0 for the others): Seattle's tie rate ±11.5 points at 25% can't
+  tell (97 expected decided, Kish n 73) and Chicago's ±10.4 (107, Kish n 88), from `check-design`'s computation on
+  the same pool and flags with that design; no estimate for the other two strata.
 
 ## Analysis plan, fixed before rating
 
@@ -149,6 +170,11 @@ design comes from the manifest).
    counts below are this PR's slice result.
 5. Inter-rater agreement on the shared items and, after the adjudication meeting, the gold labels per stratum
    (`adjudicate-report`).
+6. `tie` split by whether the AI's vote decides the stored `correct` (FALSE) or not (empty), per city, with each
+   part's population share (the caveat under "Why each stratum matters"). It needs each label's stored `correct`,
+   `agree_count` and `disagree_count` in the build-time pool, which `pull_relabel_pool.sh` does not pull yet (step
+   2 under "What a real round still needs"); without them this row is not computed and the `tie` rate is read with
+   the caveat.
 
 Anything else is exploratory and labelled so.
 
@@ -162,12 +188,69 @@ included (`conf/evolutions/default/355.sql` and `LabelTable.recalculateValidatio
 ([`../ai-disagree-reversal-2026-10.md`](../ai-disagree-reversal-2026-10.md)). So, while the AI's Disagree votes
 stand:
 
-- **`tie`**: humans 1-1 plus the AI's Disagree is 1-2, so the AI's vote alone sets `correct = FALSE`. These are the
-  labels where the AI breaks the tie.
+- **`tie`**: humans 1-1 plus the AI's Disagree is 1-2, so the AI's vote alone sets `correct = FALSE`. These are,
+  mostly, the labels where the AI breaks the tie (see the caveat below).
 - **`unsure_only`**: the AI's Disagree is the only decisive vote (0-1), as in `lone`, and alone hides the label.
 - **`one_decisive`**: with a single human Agree, the AI's Disagree turns 1-0 (shown as correct) into 1-1
   (`correct` empty); with a single human Disagree it concurs (0-2). These one-vote labels are also where the
   `majority` and `majority2` training targets differ ([`../target-scoreboard-2026-11.md`](../target-scoreboard-2026-11.md)).
+
+**Caveat: the strata use the pool's tallies, not those behind `label.correct`.** The strata come from the pool's
+human tallies, which `pull_relabel_pool.sh` takes as every non-AI vote, unfiltered. `label.correct` counts only
+verdict votes (`FilteredTables.isVerdictVote`: on the label's current type, not by its author, not by an excluded
+user), so a pool tie is not always a tie in production. One read-only aggregate on production (2026-11-17, on the
+drift query's basis below: the five types, excluded authors out, experts' labels in) gives the stored `correct` per
+stratum:
+
+| | Seattle | Chicago |
+|---|---:|---:|
+| `tie`: `correct` FALSE (the AI's vote decides) | 1,617 of 1,916 (84%) | 837 of 838 |
+| `tie`: `correct` empty (the AI's vote hides nothing) | 299 (16%) | 1 |
+| `tie`: stored Agree / Disagree counts differ from the unfiltered tallies plus the AI's vote | 646 (34%) | 22 |
+| `one_decisive`, single human Agree: `correct` FALSE rather than empty | 206 of 3,384 (6%) | 8 of 1,525 |
+| `one_decisive`, single human Disagree: `correct` FALSE | 4,196 of 4,196 | 1,759 of 1,759 |
+| `unsure_only`: `correct` FALSE | 407 of 407 | 166 of 166 |
+
+No label in these strata has `correct` TRUE. So Seattle's `tie` rate is not purely "how often the AI is right when
+it breaks a tie": about one Seattle tie in six is a label where its vote decides nothing. Chicago's ties are almost
+all decided by the AI's vote. Secondary analysis 6 splits `tie` by this.
+
+<details><summary>The query (read-only; the same joins as the drift query below; the AI validator's account id goes on the command line)</summary>
+
+```bash
+ssh -o BatchMode=yes -o ConnectTimeout=20 makelab1 "AI=$AI_ID bash -s" <<'EOF'
+export PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=600000'
+P="psql -X -q -d sidewalk_prod -p 5434 -At -F,"
+for S in sidewalk_seattle sidewalk_chicago; do
+$P -c "
+WITH ai AS (SELECT DISTINCT ON (label_id) label_id, validation_result::text AS r FROM $S.label_validation
+            WHERE user_id = '$AI' ORDER BY label_id, label_validation_id DESC),
+h AS (SELECT l.label_id, ai.r, l.correct, l.agree_count ac, l.disagree_count dc,
+        COALESCE(SUM(CASE WHEN v.validation_result::text = 'Agree' THEN 1 ELSE 0 END), 0) a,
+        COALESCE(SUM(CASE WHEN v.validation_result::text = 'Disagree' THEN 1 ELSE 0 END), 0) d,
+        COALESCE(SUM(CASE WHEN v.validation_result::text = 'Unsure' THEN 1 ELSE 0 END), 0) u
+      FROM ai JOIN $S.label l ON l.label_id = ai.label_id AND NOT l.deleted AND NOT l.tutorial
+      JOIN $S.label_point lp ON lp.label_id = l.label_id
+      LEFT JOIN $S.user_stat us ON us.user_id = l.user_id
+      LEFT JOIN $S.label_validation v ON v.label_id = l.label_id AND v.user_id <> '$AI'
+      WHERE NOT COALESCE(us.excluded, false) AND ai.r = 'Disagree'
+        AND l.label_type::text IN ('CurbRamp','NoCurbRamp','Obstacle','SurfaceProblem','Crosswalk')
+      GROUP BY l.label_id, ai.r, l.correct, l.agree_count, l.disagree_count),
+s AS (SELECT *, CASE WHEN a+d+u = 0 THEN 'lone' WHEN d-a > 1 THEN 'margin_incorrect'
+  WHEN a-d > 2 THEN 'margin_correct' WHEN a+d >= 2 AND a <> d THEN 'light_voted' WHEN a+d = 1 AND a = 1 THEN 'one_decisive_agree'
+  WHEN a+d = 1 THEN 'one_decisive_disagree' WHEN a+d = 0 THEN 'unsure_only' ELSE 'tie' END st FROM h)
+SELECT '$S', st, count(*), sum((correct IS TRUE)::int), sum((correct IS FALSE)::int), sum((correct IS NULL)::int),
+  sum((ac <> a OR dc <> d + 1)::int)
+FROM s WHERE st IN ('tie','one_decisive_agree','one_decisive_disagree','unsure_only') GROUP BY 1,2 ORDER BY 1,2" || echo "$S failed"
+done
+EOF
+```
+
+Columns: schema, stratum, labels, `correct` TRUE, FALSE, empty, and labels whose stored counts differ from the
+tallies plus the AI's vote. Run by the review (Fable 5.2) and again by the fix round (Opus 5.5) on 2026-11-17, through
+the existing SSH master; both gave the counts above.
+
+</details>
 
 Whether the reversal of the AI's Disagree votes
 ([SidewalkWebpage#5793](https://github.com/ProjectSidewalk/SidewalkWebpage/issues/5793)) has run is not checked
@@ -375,7 +458,9 @@ drop the labels the raters have voted on in prod since 2026-10-28.
 2. A fresh read-only pool: `pull_relabel_pool.sh` with `SCHEMAS='sidewalk_seattle sidewalk_chicago'` and both
    experts' ids on the command line only, into a new `~/Data/` round directory, sha256 pinned and `pool.err` checked
    empty (the script reports a failed schema only on stderr). The current script emits `author_excluded`, and
-   `build` now refuses a pool without it.
+   `build` now refuses a pool without it (`--no-author-excluded` exists only to replay an older pool). For
+   secondary analysis 6 the pull must also carry each label's stored `correct`, `agree_count` and `disagree_count`,
+   and `score` must split `tie` by them: a small change to both, not made in this PR.
 3. `check-design` on that pool, then `build` (crop check and fetch), `gallery`, rating, `votes`, `score`,
    `agreement` and the adjudication commands, as in round 2.
 
@@ -384,8 +469,9 @@ drop the labels the raters have voted on in prod since 2026-10-28.
 - **J1.** Its own round: only the three new strata plus decoys (shares 0 for `lone` / `light_voted` / `margin`).
 - **J2.** Seattle and Chicago, the same two raters as round 2, 50 shared items per city.
 - **J3.** 250 per city / 300 per rater; per type tie 16, one_decisive 12, unsure_only 8; 14 decoys per type.
-  Precision as above (about ±14 to ±25 points per stratum). Alternative: ties only, 30 per type (about ±11 for
-  Seattle ties).
+  Precision as above (about ±14 to ±25 points per stratum). Alternatives: quotas in proportion to the type
+  populations (Seattle `one_decisive` about ±14.6 instead of ±24.2, fewer items for the small types), or ties only,
+  30 per type (±11.5 for Seattle ties, ±10.4 for Chicago's).
 - **J4.** No top-up of round 2's seven cells under n = 5 in this round.
 - **J5.** `one_decisive` stays one stratum; the split by the single vote's direction is the pre-registered secondary
   analysis above.

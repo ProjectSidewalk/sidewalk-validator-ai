@@ -152,27 +152,27 @@
     "decoys": {
      "Crosswalk": {
       "available": 14,
-      "population": 3956,
+      "population": 820,
       "quota": 14
      },
      "CurbRamp": {
       "available": 14,
-      "population": 79469,
+      "population": 47454,
       "quota": 14
      },
      "NoCurbRamp": {
       "available": 14,
-      "population": 34536,
+      "population": 29094,
       "quota": 14
      },
      "Obstacle": {
       "available": 14,
-      "population": 11296,
+      "population": 9763,
       "quota": 14
      },
      "SurfaceProblem": {
       "available": 14,
-      "population": 27642,
+      "population": 22783,
       "quota": 14
      }
     },
@@ -862,27 +862,27 @@
     "decoys": {
      "Crosswalk": {
       "available": 14,
-      "population": 24224,
+      "population": 11656,
       "quota": 14
      },
      "CurbRamp": {
       "available": 14,
-      "population": 71740,
+      "population": 45644,
       "quota": 14
      },
      "NoCurbRamp": {
       "available": 14,
-      "population": 1123,
+      "population": 1033,
       "quota": 14
      },
      "Obstacle": {
       "available": 14,
-      "population": 6882,
+      "population": 6400,
       "quota": 14
      },
      "SurfaceProblem": {
       "available": 14,
-      "population": 20921,
+      "population": 15331,
       "quota": 14
      }
     },
@@ -1615,27 +1615,27 @@
     "decoys": {
      "Crosswalk": {
       "available": 14,
-      "population": 3957,
+      "population": 821,
       "quota": 14
      },
      "CurbRamp": {
       "available": 14,
-      "population": 79746,
+      "population": 47454,
       "quota": 14
      },
      "NoCurbRamp": {
       "available": 14,
-      "population": 34620,
+      "population": 29094,
       "quota": 14
      },
      "Obstacle": {
       "available": 14,
-      "population": 13251,
+      "population": 9764,
       "quota": 14
      },
      "SurfaceProblem": {
       "available": 14,
-      "population": 27923,
+      "population": 22784,
       "quota": 14
      }
     },
@@ -2325,27 +2325,27 @@
     "decoys": {
      "Crosswalk": {
       "available": 14,
-      "population": 24226,
+      "population": 11657,
       "quota": 14
      },
      "CurbRamp": {
       "available": 14,
-      "population": 71762,
+      "population": 45649,
       "quota": 14
      },
      "NoCurbRamp": {
       "available": 14,
-      "population": 1125,
+      "population": 1035,
       "quota": 14
      },
      "Obstacle": {
       "available": 14,
-      "population": 6886,
+      "population": 6404,
       "quota": 14
      },
      "SurfaceProblem": {
       "available": 14,
-      "population": 20930,
+      "population": 15338,
       "quota": 14
      }
     },

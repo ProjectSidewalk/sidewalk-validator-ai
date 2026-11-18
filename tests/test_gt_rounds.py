@@ -4,6 +4,7 @@ import doctest
 import io
 import json
 import os
+import re
 
 import numpy as np
 import pandas as pd
@@ -1058,6 +1059,78 @@ def test_build_refuses_a_draft_and_a_pool_without_author_excluded(tmp_path, monk
     assert not (kdir / "key.csv").exists()
 
 
+def test_a_design_without_lone_draws_only_voted_decoys():
+    """#106 review R2: every tie / one_decisive / unsure_only item has a human vote, so a decoy without one would
+    mark itself as an AI Agree; a design with a lone share keeps every decoy, as round 2 did."""
+    rows = _city("sidewalk_a", n_per_stratum=3) + _thin_rows("sidewalk_a")
+    rows += [{"schema": "sidewalk_a", "label_type": t, "ai_vote": "Agree"} for t in gr.LABEL_TYPES for _ in range(4)]
+    p = _pool(rows)
+    votes = lambda d: d.h_agree + d.h_dis + d.h_unsure  # noqa: E731
+    split = gr.prepare(p, "sidewalk_a", SPLIT_DESIGN)
+    dec = split[split.cell == "decoy"]
+    assert len(dec) == 15 and (votes(dec) > 0).all()  # 3 voted decoy_agree per type; unvoted Agree / Unsure out
+    assert (votes(split[split.cell.isin(gr.UNSAMPLED_STRATA)]) > 0).all()  # what the design can draw
+    old = gr.prepare(p, "sidewalk_a", DESIGN)
+    assert (old.cell == "decoy").sum() == 50 and (votes(old[old.cell == "decoy"]) == 0).sum() == 35
+    lumped = gr.prepare(p, "sidewalk_a", THIN_DESIGN)  # lone share > 0: unchanged
+    assert (lumped.cell == "decoy").sum() == 50
+
+
+def test_build_writes_direction_from_eligible_rows_and_records_the_exclusion(tmp_path, monkeypatch, capsys):
+    """The manifest's one_decisive_direction counts eligible rows only (#106 review R5), and the manifest records
+    that excluded authors' labels are out, so ``score`` without ``--pool`` does not warn (R4)."""
+    args, pp, dp, kdir = _split_round(tmp_path, monkeypatch)
+    pool = pd.read_csv(pp)
+    od = pool[(pool.schema == "sidewalk_a") & (pool.label_type == "CurbRamp") & (pool.h_agree == 1)
+              & (pool.h_dis == 0) & (pool.h_unsure == 0) & (pool.ai_vote == "Disagree")].index
+    assert len(od) == 12
+    pool.loc[od[:3], "author_excluded"] = "t"
+    pool.loc[od[3:5], "expert1"] = "Agree"
+    pool.to_csv(pp, index=False)
+    gr.main(args)
+    capsys.readouterr()
+    man = json.load(open(kdir / "manifest.json"))
+    assert man["one_decisive_direction"]["A"]["CurbRamp"] == {"agree": 7, "disagree": 0}
+    assert man["population"]["A"]["one_decisive"]["CurbRamp"] == 7
+    assert man["author_excluded_applied"] is True
+
+
+def test_build_replays_a_pool_without_author_excluded_on_purpose(tmp_path, monkeypatch, capsys):
+    """#106 review R7: round 2's pinned pool predates the column; --no-author-excluded builds from it, the manifest
+    says the exclusion was not applied, and ``score`` without ``--pool`` warns about it (R4)."""
+    args, pp, dp, kdir = _split_round(tmp_path, monkeypatch, author_excluded=False)
+    gr.main(args + ["--no-author-excluded"])
+    assert "WARNING: --no-author-excluded" in capsys.readouterr().out
+    man = json.load(open(kdir / "manifest.json"))
+    assert man["author_excluded_applied"] is False
+    key = pd.read_csv(kdir / "key.csv", dtype={"tags": str})
+    sp = tmp_path / "votes_A.csv"
+    _write_sheet(sp, key, "A", lambda r: "incorrect" if r.ai_vote == "Disagree" else "correct")
+    gr.main(["score", "--key", str(kdir / "key.csv"), "--rater", "A", "--sheet", str(sp), "--allow-unpinned"])
+    assert "WARNING: population weights from the manifest, which count excluded authors' labels" in \
+        capsys.readouterr().out
+
+
+def test_cli_check_design_applies_the_pools_own_author_excluded_column(tmp_path, capsys, monkeypatch):
+    """#106 review R5: the path every build-time pool takes. ``before`` ignores the column, ``after`` applies it."""
+    args, pp, dp, kdir = _split_round(tmp_path, monkeypatch)
+    pool = pd.read_csv(pp)
+    tie = pool[(pool.schema == "sidewalk_a") & (pool.label_type == "CurbRamp") & (pool.h_agree == 1)
+               & (pool.h_dis == 1)].index
+    pool.loc[tie[:4], "author_excluded"] = "t"
+    pool.to_csv(pp, index=False)
+    out = tmp_path / "check.json"
+    gr.main(["check-design", "--design", str(dp), "--pool", str(pp), "--out", str(out)])
+    assert "from the pool's own column" in capsys.readouterr().out
+    r = json.load(open(out))
+    assert r["author_excluded_sha256"] is None and r["after"] is not None
+    b, a = r["before"]["raters"]["A"], r["after"]["raters"]["A"]
+    assert b["cells"]["tie"]["CurbRamp"]["population"] == 12 and a["cells"]["tie"]["CurbRamp"]["population"] == 8
+    assert r["before"]["eligible_disagrees"]["sidewalk_a"] - r["after"]["eligible_disagrees"]["sidewalk_a"] == 4
+    gr.main(["check-design", "--design", str(dp), "--pool", str(pp), "--no-author-excluded", "--out", str(out)])
+    assert json.load(open(out))["after"] is None
+
+
 def _write_sheet(path, key, rater, verdict):
     items = gr.rater_items(key, rater)
     pd.DataFrame({"packet_id": items.packet_id, "label_type": items.label_type,
@@ -1075,6 +1148,14 @@ def test_score_on_a_split_round_weights_by_the_manifest_design_and_prints_slices
     gr.main(base + ["--pool", str(pp)])  # no --design: the manifest's (split) design, not round 2's
     out = capsys.readouterr().out
     assert "population tie: 60 -> 60" in out and "population unsure_only: 49 -> 49" in out
+    # the direction table carries each direction's population and share (12 single-Agree one_decisive per type)
+    assert "| CurbRamp | Agree |" in out and "| 12 | 100% |" in out.split("| CurbRamp | Agree |")[1].splitlines()[0]
+    assert "| all | Agree |" in out and "| 60 | 100% |" in out.split("| all | Agree |")[1].splitlines()[0]
+    # the population of the sampled-strata slice counts the three sampled strata only (#106 review R3): CurbRamp
+    # with no severity is 4 rows in each of tie / one_decisive / unsure_only, not the 4 lone / light / margin rows
+    sec = out.split("### every sampled Disagree stratum, type x severity")[1].split("###")[0]
+    row = [ln for ln in sec.splitlines() if ln.startswith("| CurbRamp | (none) |")][0]
+    assert row.rstrip().endswith("| 12 |"), row
     tie = [ln for ln in out.splitlines() if ln.startswith("| tie | all |")][0]
     assert "100.0% [" in tie.split("|")[6]  # the population-weighted column is filled
     assert "## Slices" in out and "| CurbRamp | 1 |" in out and "(none)" in out
@@ -1083,6 +1164,10 @@ def test_score_on_a_split_round_weights_by_the_manifest_design_and_prints_slices
     gr.main(base + ["--no-slices"])
     out = capsys.readouterr().out
     assert "## Slices" not in out and "single vote's direction" in out
+    # without --pool: the manifest's population already leaves excluded authors out, so no warning (R4), and the
+    # direction table takes the manifest's population
+    assert "WARNING: population weights from the manifest" not in out
+    assert "| 12 | 100% |" in out.split("| CurbRamp | Agree |")[1].splitlines()[0]
     rl.pin(str(kdir / "manifest.json"), "votes_A", str(sp), len(gr.rater_items(key, "A")))
     other = tmp_path / "round2_like.json"
     other.write_text(json.dumps(DESIGN))
@@ -1107,21 +1192,22 @@ def test_slice_rates_count_tags_twice_blank_small_cells_and_add_the_single_vote_
     base = {"stratum": "one_decisive", "severity": 1, "tags": "a;b", "crowd": "Agree", "h_agree": 1, "h_dis": 0,
             "verdict": "incorrect"}
     dis = {"crowd": "Disagree", "h_agree": 0, "h_dis": 1}
-    m = _rated([base] * 3 + [{**base, **dis}] * 2 + [{**base, "verdict": "correct"}] + [{**base, "verdict": "cant_tell"}]
+    m = _rated([base] * 3 + [{**base, **dis}] * 3 + [{**base, "verdict": "correct"}] + [{**base, "verdict": "cant_tell"}]
                + [{**base, "stratum": "tie", "crowd": np.nan, "h_dis": 1, "severity": 2, "tags": np.nan}]
                + [{**base, "stratum": "decoy_agree", "ai_vote": "Agree"}])
     train = pd.DataFrame({"label_type": "CurbRamp", "severity": [1] * 4, "tags": ["a"] * 4})
     t = gr.slice_rates(m, "tag", trains=[("round3_train", train)]).set_index("tag")
     for tag in ("a", "b"):  # a label with two tags counts once per tag
-        assert (t.loc[tag, "items"], t.loc[tag, "n"], t.loc[tag, "k"], t.loc[tag, "cant_tell"]) == (7, 6, 5, 1)
-        assert t.loc[tag, "rate"] == pytest.approx(5 / 6)
-        assert (t.loc[tag, "base_n"], t.loc[tag, "base_k"]) == (6, 3)  # the single vote matches the expert 3 times
+        assert (t.loc[tag, "items"], t.loc[tag, "n"], t.loc[tag, "k"], t.loc[tag, "cant_tell"]) == (8, 7, 6, 1)
+        assert t.loc[tag, "rate"] == pytest.approx(6 / 7)
+        # the single vote matches the expert 4 times of 7 (3 Disagree + 1 Agree on a correct label), mismatches 3
+        assert (t.loc[tag, "base_n"], t.loc[tag, "base_k"]) == (7, 4)
     assert t.loc["a", "round3_train"] == 4 and t.loc["b", "round3_train"] == 0
     assert t.loc["(none)", "n"] == 1 and np.isnan(t.loc["(none)", "rate"]) and t.loc["(none)", "base_n"] == 0
     s = gr.slice_rates(m, "severity", strata=["tie"])
     assert list(s.severity) == ["2"] and s.n.iloc[0] == 1 and np.isnan(s.rate.iloc[0])
     md = gr.slices_markdown(t.reset_index(), "tag", ("round3_train",))
-    assert "| CurbRamp | a | 7 | 83.3% [" in md and "round3_train" in md and "r0" not in md
+    assert "| CurbRamp | a | 8 | 85.7% [" in md and "round3_train" in md and "r0" not in md
 
 
 def test_direction_rates_split_one_decisive_by_the_single_vote():
@@ -1159,7 +1245,9 @@ def test_design_check_statuses_precedence_and_half_width():
     assert st["tie"]["half_width"] == pytest.approx(1.96 * np.sqrt(0.25 / 6))
     assert r["raters"]["A"]["one_decisive_direction"]["CurbRamp"] == {"agree": 30, "disagree": 0}
     own_a = r["raters"]["A"]["own_items"]
-    assert own_a == sum(c["available"] for t in cells.values() for c in t.values()) + 10  # two decoys per type
+    # one decoy per type: _city's decoy_unsure rows have no human vote, and a design without lone drops them
+    assert own_a == sum(c["available"] for t in cells.values() for c in t.values()) + 5
+    assert r["raters"]["A"]["decoys"]["CurbRamp"]["population"] == 1
     assert r["raters"]["A"]["rated_items"] == own_a + min(6, r["raters"]["B"]["own_items"])
     rc = gr.recount_population(p, design)
     assert r["eligible_disagrees"] == rc["eligible_disagrees"] and r["unsampled"] == rc["unsampled"]
@@ -1254,8 +1342,10 @@ def test_design_doc_quotes_the_committed_check():
             row = " | ".join(f"{x['cells'][g][t]['population']:,}" for t in gr.LABEL_TYPES)
             assert f"| {g} | {row} | {x['strata'][g]['population']:,} |" in doc, (city, g)
             s = x["strata"][g]
-            assert (f"| {g} | {s['expected_decided']} | ±{100 * s['half_width']:.1f}" in doc
-                    and f" | {round(s['kish_n'])} | " in doc), (city, g)
+            # half-width and Kish n bound to the stratum's own row (#106 review R9)
+            row = re.compile(rf"\| {g} \| {s['expected_decided']} \| ±{100 * s['half_width']:.1f}( points)? \| "
+                             rf"{round(s['kish_n'])} \| ")
+            assert row.search(doc), (city, g)
             for t, c in x["cells"][g].items():  # every cell that is not ok is named in the cells table
                 assert c["status"] == "ok" or f"**{c['status']}**" in doc, (city, g, t)
         assert f"{x['own_items']} and" in flat or f"and {x['own_items']} own-city" in flat, city
