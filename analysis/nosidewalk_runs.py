@@ -275,8 +275,11 @@ def gate_split(gate):
     trained = {}
     for k in range(n_folds):
         s = pd.read_csv(os.path.join(gate, f"fold{k}", "split.csv"), dtype=str, keep_default_na=False,
-                        usecols=["label_uid", "pano_id", "split"])
+                        usecols=["label_uid", "pano_id", "face_id", "split"])
         trained[k] = set(s.loc[s["split"].isin(["train", "val"]), "pano_id"])
+        own = set(s.loc[s["split"] == "test", "face_id"]) - {""}
+        if own & set(s.loc[s["split"].isin(["train", "val"]), "face_id"]):
+            raise ValueError(f"fold {k}: a face of its test rows is also in its train or val rows")
         if set(s.loc[s["split"] == "test", "label_uid"]) != set(folds.loc[folds["fold"] == k, "label_uid"]):
             raise ValueError(f"fold {k}: split.csv test rows are not folds.csv's fold {k}")
     return split, trained, n_folds
@@ -672,6 +675,27 @@ def pair_table(d, times=None, group="run_id"):
                                        "source_pair", "tags_a", "tags_b", "severity_a", "severity_b"])
 
 
+def time_match_counts(d, times):
+    """How each expert vote of the pull (``e<i>`` columns) matches the timed votes: ``matched`` (the latest timed vote
+    before the pull has the same value), ``revote`` (it has another value: the expert re-voted around the pull) and
+    ``no_time`` (no timed vote before the pull).
+
+    >>> d = pd.DataFrame({"city": "a", "label_id": ["1", "2", "3"], "e1": ["Agree", "Agree", ""]})
+    >>> t = {("a", "1", 1): (None, "Agree", "Validate"), ("a", "2", 1): (None, "Disagree", "Validate")}
+    >>> time_match_counts(d, t)
+    {'matched': 1, 'revote': 1, 'no_time': 0}
+    """
+    out = {"matched": 0, "revote": 0, "no_time": 0}
+    for c in sorted(c for c in d.columns if re.fullmatch(r"e\d+", c)):
+        e = int(c[1:])
+        for city, lid, v in zip(d["city"], d["label_id"].astype(str), d[c]):
+            if not v:
+                continue
+            t = (times or {}).get((city, lid, e))
+            out["no_time" if t is None else "matched" if t[1] == v else "revote"] += 1
+    return out
+
+
 def strata_table(pairs, col, min_n=slices.MIN_N):
     """``{stratum: {pairs, agreement}}`` of a pair table; agreement blank under ``min_n`` pairs."""
     out = {}
@@ -726,6 +750,7 @@ def agreement_report(d, counts, times, n_perm, n_boot, seed, named=NAMED_CITIES)
     out["macro"] = macro_block(d, n_perm, n_boot, seed)
     pairs = pair_table(d, times)
     out["pairs_total"] = int(len(pairs))
+    out["vote_times_match"] = time_match_counts(d, times) if times is not None else None
     out["strata"] = {}
     for scope, p in (("all", pairs), *((c, pairs[pairs["city"] == c]) for c in named)):
         if len(p):
@@ -1711,9 +1736,12 @@ def item1_markdown(a):
                      f"| {_f(m['homogeneous_share'])} | {_f(m['icc'])} | {_null(m['null_city'])} | "
                      f"{_null(m['null_labeler'])} | {_f(m['same_labeler_other_face'])} | "
                      f"{_f(m['same_face_other_labeler'])} | {_f(m['city_any'])} |")
+    tm = ns.get("vote_times_match") or {}
     lines += ["", "Within-run pairs by the time between the expert's two votes, and by the page they were cast on "
               f"(`pull_expert_vote_times.sh`, each expert's latest vote before the pull; cells under {slices.MIN_N} "
-              "pairs blank):", "",
+              f"pairs blank). Of the pull's expert votes on these labels {tm.get('matched', 0):,} match a timed vote, "
+              f"{tm.get('revote', 0)} were changed around the pull and {tm.get('no_time', 0)} have no timed vote; a "
+              "pair with either is \"time unknown\".", "",
               "| scope | different expert | " + " | ".join(f"same expert, {g}" for g in GAP_LABELS) +
               " | same expert, time unknown |", "|---|---|---|---|---|---|"]
     for scope, s in ns["strata"].items():
@@ -1760,6 +1788,15 @@ def item1_markdown(a):
                          f"{_f(m['pair_agreement'])}{_ci(m['pair_agreement_ci95'])} | {_null(m['null_city'])} | "
                          f"{_null(m['null_labeler'])} | {_f(m['same_labeler_other_face'])} | "
                          f"{_f(m['same_face_other_labeler'])} | {share} |")
+        lines += ["", "Type x severity and type x tag (within-run pairs where both labels carry the same severity or "
+                  f"the tag, pooled over cities; blank under {slices.MIN_N} pairs; top three tags by pairs):", "",
+                  "| type | severity 1 | severity 2 | severity 3 | tags |", "|---|---|---|---|---|"]
+        cell = lambda v: "0" if v is None else f"{v['pairs']:,}: {_f(v['agreement'])}"  # noqa: E731
+        for t, b in a["types"].items():
+            sev = b["slices"]["severity"]
+            tg = "; ".join(f"{k} {cell(v)}" for k, v in list(b["slices"]["tag"].items())[:3]) or "none"
+            sevs = " | ".join(cell(sev.get(str(i))) for i in (1, 2, 3)) if sev else "no severity | | "
+            lines.append(f"| {t} | {sevs} | {tg} |")
     return lines
 
 
