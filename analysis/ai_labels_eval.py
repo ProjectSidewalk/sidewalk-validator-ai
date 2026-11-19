@@ -552,6 +552,10 @@ def cmd_crops(args):
                 el = time.time() - t0
                 print(f"{i}/{len(todo)} {rec['label_uid']} {rec['status']}; {el / i:.2f} s/label, "
                       f"~{el / i * (len(todo) - i) / 60:.0f} min left", flush=True)
+    # a run shorter than MAX_CONSECUTIVE_ERRORS (--limit 20, a small resume) never trips the stop above
+    if status_counts and all(s.startswith("error:") for s in status_counts):
+        sys.exit(f"STOP: every label this run failed ({dict(status_counts)}); the traceback above says why. "
+                 f"No crops_run.json written; the manifest is resumable once the cause is fixed")
     run = {"labels": args.labels, "labels_sha256": sha256_file(args.labels), "pano_store": os.path.abspath(args.pano_store),
            "pano_store_marker": open(os.path.join(args.pano_store, dg.PANO_STORE_MARKER)).readline().strip(),
            "tilt_beta": args.tilt_beta, "depth_encoder": None if fixed is not None else "vitb",

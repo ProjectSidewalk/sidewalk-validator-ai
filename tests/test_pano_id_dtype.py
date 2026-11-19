@@ -19,8 +19,11 @@ must type it; so does a dtype it cannot read. ``read_table`` is checked like ``r
 Limits, on purpose: reads **without** ``usecols`` (or ``**kwargs``) are not checked, because the AST cannot tell which
 files have a ``pano_id`` column (most do not). For those, ``data_generation.pano_store_path`` raises ``TypeError`` on
 a non-str pano_id with a message that names the cause, and ``ai_labels_eval crops`` stops after
-``MAX_CONSECUTIVE_ERRORS`` failed labels in a row. Tests are not scanned. The files scanned are the ones git tracks
+``MAX_CONSECUTIVE_ERRORS`` failed labels in a row, or at the end when every label it tried failed. Tests are not scanned. The files scanned are the ones git tracks
 (every ``.py`` file when ``root`` is not the top of a git checkout), so a local venv or scratch copy is never parsed.
+It also trusts what it reads statically, so these evade it (none occurs in the repo): a ``usecols`` list mutated after
+its binding (``COLS.append("pano_id")``), a module rebinding ``PANO_ID_DTYPE``, an aliased or wrapped reader
+(``rc = pd.read_csv``, ``functools.partial``), and a ``converters=`` entry for ``pano_id``, which overrides the dtype.
 """
 import ast
 import pathlib
@@ -157,8 +160,11 @@ def _py_files(root):
     """Paths (relative to ``root``) of the ``.py`` files git tracks; every ``.py`` file when ``root`` is not the top
     of a git checkout (the self-tests below)."""
     root = pathlib.Path(root).resolve()
-    top = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"], capture_output=True, text=True)
-    if top.returncode == 0 and pathlib.Path(top.stdout.strip()).resolve() == root:
+    try:
+        top = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    except FileNotFoundError:  # no git executable: walk the tree instead
+        top = None
+    if top is not None and top.returncode == 0 and pathlib.Path(top.stdout.strip()).resolve() == root:
         ls = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--", "*.py"], capture_output=True, text=True,
                             check=True)
         return sorted(p for p in ls.stdout.split("\0") if p and (root / p).is_file())
@@ -255,3 +261,13 @@ def test_the_guard_reads_only_files_git_tracks(tmp_path):
     (tmp_path / "venv" / "broken.py").write_text("def (:\n")  # would fail ast.parse if it were read
     subprocess.run(["git", "-C", str(tmp_path), "add", "tracked.py"], check=True)
     assert untyped_pano_id_reads(tmp_path) == ["tracked.py:2"]
+
+
+def test_the_guard_walks_the_tree_without_git(tmp_path, monkeypatch):
+    # PR #115 final review N4: no git executable falls back to rglob instead of erroring
+    (tmp_path / "m.py").write_text('import pandas as pd\npd.read_csv("f", usecols=["pano_id"])\n')
+
+    def no_git(*a, **k):
+        raise FileNotFoundError("git")
+    monkeypatch.setattr(subprocess, "run", no_git)
+    assert untyped_pano_id_reads(tmp_path) == ["m.py:2"]
