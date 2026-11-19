@@ -80,9 +80,12 @@ were 6,701 / 371 / 1,539 (Seattle) and 3,002 / 145 / 706 (Chicago).
 label has at least one human vote, while 30% of Seattle's eligible decoys and 36% of Chicago's have none (79% of
 Seattle's Crosswalk decoys). Drawn from all of them, "nobody has validated this label" would mark an item as an AI
 Agree decoy through any cue of prior validation the masking misses. Round 2's `lone` stratum (no human vote either)
-balanced that; this design has none, so `gt_rounds.py` draws the decoys of any design with a zero `lone` share from
-labels with at least one human vote (`voted_decoys`). Every type keeps at least 820 eligible decoys (Seattle
-Crosswalk), so all 14-item decoy quotas still fill. The number of votes is not matched, so a weaker cue remains.
+balanced that; this design has none, so `gt_rounds.py` draws the decoys of any design whose `lone` quota is 0 in
+every type from labels with at least one human vote (`voted_decoys`). Every type keeps at
+least 820 eligible decoys (Seattle Crosswalk), so all 14-item decoy quotas still fill. AI Agree decoys are drawn
+before AI Unsure ones, and of those 820 only 633 are AI Agree; the smallest AI Agree pool is Seattle Obstacle's 32
+(Chicago Obstacle has none, so its decoys are AI Unsure). The number of votes is not matched, so a weaker cue
+remains.
 
 ### Cells
 
@@ -134,12 +137,16 @@ mostly wrong; it cannot place a rate within ten points. The quotas are equal per
 are dominated by one type (CurbRamp is 72% of its `one_decisive`), so the weighted estimate rests on few items
 (Kish n 16 of 45 expected decided). Two alternatives for Jon, neither taken in the draft:
 
-- **Quotas in proportion to the type populations.** The same expected decided items spread in proportion to each
-  type's share of the stratum give a Kish n equal to the item count: Seattle `one_decisive` about ±14.6 points
+- **Quotas in proportion to the type populations.** Not expressible in the current design schema: `quotas()`
+  gives each (stratum, type) cell `per_type × share`, the same in both cities, so a type's share of the items is
+  the same in every stratum and city. Proportional quotas need a quota per (stratum, type) cell and per city, a
+  schema change (follow-up). The same expected decided items spread in proportion to each type's share of the
+  stratum would give a Kish n equal to the item count: Seattle `one_decisive` about ±14.6 points
   instead of ±24.2, `tie` ±13.0 instead of ±15.5, `unsure_only` ±19.2 instead of ±24.9; Chicago ±14.6, ±12.7 and
   ±19.6 (1.96 x sqrt(0.25 / n) at the expected decided n above: an ideal that ignores the minimum cell and
-  rounding). `per_type` can already lean toward CurbRamp without a schema change, but it is shared by both cities
-  (Chicago's `one_decisive` is 27% Crosswalk), and the per-type rows (secondary 1) get thinner for the small types.
+  rounding). Without the schema change, `per_type` can only lean toward CurbRamp in every stratum and both cities
+  at once (Chicago's `one_decisive` is 27% Crosswalk), which gets part of the gain, and the per-type rows
+  (secondary 1) get thinner for the small types.
 - **Ties only, 30 per type** (share 1 for `tie`, 0 for the others): Seattle's tie rate ±11.5 points at 25% can't
   tell (97 expected decided, Kish n 73) and Chicago's ±10.4 (107, Kish n 88), from `check-design`'s computation on
   the same pool and flags with that design; no estimate for the other two strata.
@@ -162,7 +169,10 @@ design comes from the manifest).
 2. `one_decisive` split by the single human vote's direction (`h_agree == 1` vs `h_dis == 1`), per type and
    overall, with each direction's population share (`score` prints this table for any key with `one_decisive`
    items). With a single human Agree the AI's Disagree turns a 1-0 label into a 1-1; with a single human Disagree
-   it concurs.
+   it concurs. The per-type rows will mostly be blank: a type's 12 items (about 9 decided at 25% can't tell) split
+   by direction in proportion to the population, so only 3 of the 10 type x direction rows in each city expect 5
+   or more decided items (at 5% can't tell, 8 in Seattle and 7 in Chicago, most of them only just above 5). The
+   overall rows (about 45 decided per city) carry this analysis.
 3. The single-vote baseline on `one_decisive`: how often the single human vote matches the expert on the same
    decided items. `tie` and `unsure_only` have no crowd verdict to compare.
 4. Type x severity and type x tag slices with round-3 training counts (`score --round3-splits`), under the standing
@@ -259,8 +269,8 @@ here; the drift query below, on 2026-11-17, still counts the AI's Disagree votes
 ## Known costs of the allocation
 
 - **`per_type` is shared by every city** in the design schema. Seattle spends 36 Crosswalk items on 58 labels (0.7%
-  of its 8,608 unsampled AI Disagrees) while Chicago's Crosswalk is 27% of its `one_decisive`. Per-city quotas
-  need a schema change (follow-up).
+  of its 8,608 unsampled AI Disagrees) while Chicago's Crosswalk is 27% of its `one_decisive`. Per-city quotas,
+  and quotas per (stratum, type) cell, which proportional allocation needs, are a schema change (follow-up).
 - **`unsure_only` takes 22% of the Disagree budget for 4% of the population** (371 of 8,608 and 145 of 3,847).
   Defensible, since the AI's vote is the only decisive one there, as in `lone`, but it is the costliest stratum per
   label.
@@ -470,7 +480,8 @@ drop the labels the raters have voted on in prod since 2026-10-28.
 - **J2.** Seattle and Chicago, the same two raters as round 2, 50 shared items per city.
 - **J3.** 250 per city / 300 per rater; per type tie 16, one_decisive 12, unsure_only 8; 14 decoys per type.
   Precision as above (about ±14 to ±25 points per stratum). Alternatives: quotas in proportion to the type
-  populations (Seattle `one_decisive` about ±14.6 instead of ±24.2, fewer items for the small types), or ties only,
+  populations (Seattle `one_decisive` about ±14.6 instead of ±24.2, fewer items for the small types; needs per-cell,
+  per-city quotas, a schema change), or ties only,
   30 per type (±11.5 for Seattle ties, ±10.4 for Chicago's).
 - **J4.** No top-up of round 2's seven cells under n = 5 in this round.
 - **J5.** `one_decisive` stays one stratum; the split by the single vote's direction is the pre-registered secondary

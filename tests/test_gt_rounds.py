@@ -950,6 +950,8 @@ def test_load_design_accepts_split_shares_and_rejects_mixes():
     q = gr.quotas(d)
     assert [q[(c, "CurbRamp")] for c in ("tie", "one_decisive", "unsure_only", "margin", "lone", "decoy")] == \
         [5, 3, 2, 0, 0, 4]
+    with pytest.raises(ValueError, match="non-negative"):  # final review N2: sums to 1, one share negative
+        gr.load_design({**DESIGN, "shares": {"margin": 0.6, "lone": -0.1, "light_voted": 0.5}})
 
 
 def test_split_design_prepares_and_recounts_the_three_strata():
@@ -1074,6 +1076,12 @@ def test_a_design_without_lone_draws_only_voted_decoys():
     assert (old.cell == "decoy").sum() == 50 and (votes(old[old.cell == "decoy"]) == 0).sum() == 35
     lumped = gr.prepare(p, "sidewalk_a", THIN_DESIGN)  # lone share > 0: unchanged
     assert (lumped.cell == "decoy").sum() == 50
+    # final review N3: keyed on the lone quota, so a share that rounds to no lone item filters too
+    tiny = {**DESIGN, "shares": {"margin": 0.5, "lone": 0.01, "light_voted": 0.49}}
+    assert not any(n for (c, _), n in gr.quotas(tiny).items() if c == "lone")
+    assert gr.voted_decoys(tiny) and not gr.voted_decoys(DESIGN)
+    small = gr.prepare(p, "sidewalk_a", tiny)
+    assert (small.cell == "decoy").sum() == 15 and (votes(small[small.cell == "decoy"]) > 0).all()
 
 
 def test_build_writes_direction_from_eligible_rows_and_records_the_exclusion(tmp_path, monkeypatch, capsys):

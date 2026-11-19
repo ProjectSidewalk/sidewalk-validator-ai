@@ -459,18 +459,24 @@ def uses_thin(design):
 
 
 def voted_decoys(design):
-    """True when a design samples no ``lone`` item (its ``lone`` share is 0): every Disagree item it can draw then
-    has at least one human vote, so :func:`prepare` keeps only decoys that have one too. Otherwise "no human vote"
-    would mark an item as an AI Agree decoy (#106 review R2); round 2's ``lone`` stratum balanced that cue.
+    """True when a design samples no ``lone`` item (its ``lone`` quota, :func:`quotas`, is 0 in every type): every
+    Disagree item it can draw then has at least one human vote, so :func:`prepare` keeps only decoys that have one
+    too. Otherwise "no human vote" would mark an item as an AI Agree decoy (#106 review R2); round 2's ``lone``
+    stratum balanced that cue. Keyed on the quota, not the share, so a small share that rounds to no item counts
+    as none.
 
-    >>> voted_decoys({"shares": {"margin": 0.5, "lone": 0.35, "light_voted": 0.15}}), voted_decoys(None)
+    >>> pt = {"per_type": {"CurbRamp": 10}, "decoys_per_type": 4}
+    >>> voted_decoys({**pt, "shares": {"margin": 0.5, "lone": 0.35, "light_voted": 0.15}}), voted_decoys(None)
     (False, False)
-    >>> voted_decoys({"shares": {"margin": 0, "lone": 0, "light_voted": 0, "tie": 0.5, "one_decisive": 0.3,
-    ...                          "unsure_only": 0.2}})
+    >>> voted_decoys({**pt, "shares": {"margin": 0, "lone": 0, "light_voted": 0, "tie": 0.5, "one_decisive": 0.3,
+    ...                                "unsure_only": 0.2}})
+    True
+    >>> voted_decoys({**pt, "shares": {"margin": 0.5, "lone": 0.01, "light_voted": 0.49}})  # lone rounds to 0
     True
     """
-    shares = (design or {}).get("shares") or {}
-    return bool(shares) and not float(shares.get("lone", 0))
+    if not (design or {}).get("shares"):
+        return False
+    return not any(n for (cell, _), n in quotas(design).items() if cell == "lone")
 
 
 def disagree_strata(design):
@@ -482,8 +488,8 @@ def disagree_strata(design):
 def prepare(pool, schema, design=None):
     """The eligible rows of one city with ``stratum``, ``cell``, ``margin_class`` and ``sev_bucket``; rows in no
     stratum dropped. A design that samples the thin Disagrees (:func:`thin_mode`) keeps them as their own cell,
-    ``thin_voted`` or the three split ones. A design with no ``lone`` share keeps only decoys with at least one
-    human vote (:func:`voted_decoys`)."""
+    ``thin_voted`` or the three split ones. A design with no ``lone`` item (a ``lone`` quota of 0 in every type)
+    keeps only decoys with at least one human vote (:func:`voted_decoys`)."""
     d = eligible(pool[pool.schema == schema]).copy()
     d["stratum"] = assign_stratum(d, thin=thin_mode(design))
     d = d[d.stratum != ""].copy()
