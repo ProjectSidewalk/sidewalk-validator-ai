@@ -492,6 +492,9 @@ def cmd_crops(args):
     # a stage that stopped early must not become a run of no_pano rows: stop after MAX_CONSECUTIVE_MISSING_PANOS
     # panoramas in a row with a status in MISSING_STATUSES, ignoring panoramas known to be missing before this run
     last_counted, consecutive_missing = None, 0
+    # and after MAX_CONSECUTIVE_ERRORS labels in a row with an error:* status, as data_generation.py does: a bug that
+    # fails every label (issue #114's untyped pano_id) must end the run, not write a crops_run.json and exit 0
+    consecutive_errors = 0
     status_counts, t0 = Counter(), time.time()
     with open(manifest_path, "a", newline="") as f:
         import csv
@@ -534,6 +537,11 @@ def cmd_crops(args):
             w.writerow(rec)
             f.flush()
             status_counts[rec["status"]] += 1
+            consecutive_errors = consecutive_errors + 1 if rec["status"].startswith("error:") else 0
+            if consecutive_errors >= dg.MAX_CONSECUTIVE_ERRORS:
+                sys.exit(f"STOP: {consecutive_errors} labels in a row failed with error:* (last: {rec['status']}); "
+                         f"the traceback above says why. The manifest is resumable once the cause is fixed "
+                         f"(data_generation.MAX_CONSECUTIVE_ERRORS)")
             if last[0] != last_counted and last[0] not in known_missing and row.city not in missing_cities:
                 last_counted = last[0]
                 consecutive_missing = consecutive_missing + 1 if rec["status"] in dg.MISSING_STATUSES else 0
@@ -544,6 +552,10 @@ def cmd_crops(args):
                 el = time.time() - t0
                 print(f"{i}/{len(todo)} {rec['label_uid']} {rec['status']}; {el / i:.2f} s/label, "
                       f"~{el / i * (len(todo) - i) / 60:.0f} min left", flush=True)
+    # a run shorter than MAX_CONSECUTIVE_ERRORS (--limit 20, a small resume) never trips the stop above
+    if status_counts and all(s.startswith("error:") for s in status_counts):
+        sys.exit(f"STOP: every label this run failed ({dict(status_counts)}); the traceback above says why. "
+                 f"No crops_run.json written; the manifest is resumable once the cause is fixed")
     run = {"labels": args.labels, "labels_sha256": sha256_file(args.labels), "pano_store": os.path.abspath(args.pano_store),
            "pano_store_marker": open(os.path.join(args.pano_store, dg.PANO_STORE_MARKER)).readline().strip(),
            "tilt_beta": args.tilt_beta, "depth_encoder": None if fixed is not None else "vitb",
@@ -591,8 +603,14 @@ def read_labels(path):
     >>> import io
     >>> read_labels(io.StringIO("label_uid,label_id,expert_class,tier\\nx:1,1,,core\\nx:2,2,correct,")).expert_class.tolist()
     ['', 'correct']
+
+    ``pano_id`` is always a string: Mapillary ids are all digits, and pandas would otherwise read them as numbers
+    (issue #114).
+
+    >>> read_labels(io.StringIO("label_uid,label_id,pano_id\\nx:1,1,1792391791667719")).pano_id.tolist()
+    ['1792391791667719']
     """
-    df = pd.read_csv(path, dtype={"label_id": str}, low_memory=False)
+    df = pd.read_csv(path, dtype={"label_id": str, **dg.PANO_ID_DTYPE}, low_memory=False)
     for c in TEXT_COLS:
         if c in df:
             df[c] = df[c].astype(object).fillna("").astype(str)

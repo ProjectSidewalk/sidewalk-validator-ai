@@ -101,3 +101,17 @@ def test_sensitivity_is_reported_apart_from_the_primary():
     page = vs.render({"n_both": len(df), "n_vlm": len(df), "n_classifier": len(df), "vlm_unscored": 0},
                      vs.holdout_check(df, df.assign(split="test"))[0], res, None, 0, sens, seeds)
     assert "Verdict under the post-hoc rule" in page and "Sensitivity analyses (not the primary result)" in page
+
+
+def test_load_run_splits_keeps_all_digit_pano_ids_as_strings(tmp_path):
+    # Issue #114: Mapillary pano_ids are all digits; holdout_check merges pano_id with the crops' frame, where it is
+    # a string, so it must be one here too.
+    ids = {}
+    for k, t in enumerate(vs.LABEL_TYPES):
+        (tmp_path / t).mkdir()
+        ids[t] = str(1792391791667719 + k)
+        pd.DataFrame({"label_uid": [f"m:{k}"], "city": "m", "label_id": [k], "label_type": t, "pano_id": [ids[t]],
+                      "split": "train"}).to_csv(tmp_path / t / "split.csv", index=False)
+    run = vs.load_run_splits(str(tmp_path))
+    assert not pd.api.types.is_numeric_dtype(run.pano_id)
+    assert run.pano_id.tolist() == [ids[t] for t in vs.LABEL_TYPES]

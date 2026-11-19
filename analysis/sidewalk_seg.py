@@ -530,7 +530,7 @@ def select_labels(sample, label_types=LABEL_TYPES):
 
 
 def cmd_filelist(args):
-    labels = select_labels(pd.read_csv(args.sample))
+    labels = select_labels(pd.read_csv(args.sample, dtype={"pano_id": str}))
     os.makedirs(args.out_dir, exist_ok=True)
     labels.to_csv(os.path.join(args.out_dir, "labels.csv"), index=False)
     tails = sorted(set(labels.store_tail))
@@ -549,7 +549,8 @@ def join_pano_coords(labels, rawlabels_dir):
     parts = []
     for city in sorted(labels.city.unique()):
         raw = pd.read_csv(os.path.join(rawlabels_dir, f"{city}.csv"),
-                          usecols=["label_id", "pano_id", "pano_x", "pano_y", "pano_width", "pano_height"])
+                          usecols=["label_id", "pano_id", "pano_x", "pano_y", "pano_width", "pano_height"],
+                          dtype={"pano_id": str})
         raw = raw.rename(columns={"pano_id": "raw_pano_id"})
         raw["label_uid"] = city + ":" + raw.label_id.astype(str)
         parts.append(raw.drop(columns="label_id"))
@@ -564,7 +565,7 @@ def join_pano_coords(labels, rawlabels_dir):
 
 
 def cmd_coords(args):
-    out = join_pano_coords(pd.read_csv(args.labels), args.rawlabels_dir)
+    out = join_pano_coords(pd.read_csv(args.labels, dtype={"pano_id": str}), args.rawlabels_dir)
     out[["label_uid", "pano_x", "pano_y", "pano_width", "pano_height"]].to_csv(args.out, index=False)
     print(f"{len(out)} rows -> {args.out}")
 
@@ -580,7 +581,7 @@ def cmd_render_segment(args):
     from transformers import AutoImageProcessor, Mask2FormerForUniversalSegmentation
     import data_generation as dg
 
-    labels = join_pano_coords(pd.read_csv(args.labels), args.rawlabels_dir)
+    labels = join_pano_coords(pd.read_csv(args.labels, dtype={"pano_id": str}), args.rawlabels_dir)
     if args.limit:
         labels = labels.head(args.limit)
     device = "cuda" if torch.cuda.is_available() else None
@@ -707,7 +708,7 @@ def cmd_render_segment(args):
 
 def cmd_features(args):
     from PIL import Image
-    labels = pd.read_csv(args.labels)
+    labels = pd.read_csv(args.labels, dtype={"pano_id": str})
     with open(os.path.join(args.run_dir, "seg_run.json")) as f:
         run = json.load(f)
     views = pd.read_csv(os.path.join(args.run_dir, "views.csv"))
@@ -762,7 +763,7 @@ def cmd_cls(args):
     import torch
     from PIL import Image
     from transformers import AutoImageProcessor, AutoModelForImageClassification
-    labels = pd.read_csv(args.labels)
+    labels = pd.read_csv(args.labels, dtype={"pano_id": str})
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     uids, feats, p_inc = [], [], []
     for lt, (repo, rev) in PROD_MODELS.items():
@@ -928,7 +929,7 @@ def _md_table(df, cols=None):
 def cmd_report(args):
     from evaluate import slice_metrics
     cities = load_cities(args.cities_json)
-    feats = pd.read_csv(args.features)
+    feats = pd.read_csv(args.features, dtype={"pano_id": str})
     z = np.load(args.cls, allow_pickle=False)
     cls_df = pd.DataFrame({"label_uid": z["label_uid"], "p_incorrect": z["p_incorrect"]})
     cls_df["cls_row"] = np.arange(len(cls_df))
@@ -1226,7 +1227,7 @@ def cmd_sheets(args):
     ids = {g: class_ids(run["id2label"], names) for g, names in
            (("sidewalk", SIDEWALK_CLASSES), ("road", ROAD_CLASSES), ("curb", CURB_CLASSES))}
     from calibration.per_city import public_name
-    df = pd.read_csv(args.features)
+    df = pd.read_csv(args.features, dtype={"pano_id": str})
     df = df[(df.status == "ok") & df.city.map(lambda c: public_name(c, cities) is not None)]
     os.makedirs(args.out_dir, exist_ok=True)
     rng = np.random.default_rng(args.seed)

@@ -295,3 +295,29 @@ def test_pick_all_decoys_are_agree_verdicts_disjoint_from_the_ranked_rows():
     decoys, ranked = p[p.cell == "decoy"], p[p.cell == "ranked"]
     assert (decoys.verdict == "correct").all() and len(decoys) == 60
     assert not set(decoys.label_uid) & set(ranked.label_uid) and p.label_uid.is_unique
+
+
+def test_score_keeps_all_digit_pano_ids_as_strings_in_the_scored_key(tmp_path, monkeypatch):
+    # Issue #114: Mapillary pano_ids are all digits. The key carries pano_id into scored.csv; read as a number, one
+    # blank cell floats the column and every id comes back as '<digits>.0'.
+    run, rater, val = _all_ai_run(tmp_path)
+    labels = pd.read_csv(run / "labels.csv", dtype=str, keep_default_na=False)
+    labels.assign(pano_id=[str(1792391791667719 + i) for i in range(len(labels))]).to_csv(run / "labels.csv",
+                                                                                          index=False)
+    monkeypatch.setenv("RATER", rater)
+    monkeypatch.setenv("EXPERTS", "")
+    out = tmp_path / "ranked"
+    rl.main(["build", "--run", str(run), "--city", "x-yy", "--out", str(out), "--pool", "all", "--cap", "3",
+             "--n-decoys", "2"])
+    key_path = out / "private-key-do-not-share" / "key.csv"
+    key = pd.read_csv(key_path, dtype=str, keep_default_na=False)
+    expected = key.pano_id.tolist()
+    assert all(p.isdigit() for p in expected)
+    expected[0] = ""
+    key.assign(pano_id=expected).to_csv(key_path, index=False)
+    (out / "rawlabels_after").mkdir()
+    pd.DataFrame({"label_id": [str(i) for i in range(14)], "validations": val}).to_csv(
+        out / "rawlabels_after" / "x-yy.csv", index=False)
+    rl.main(["score", "--run", str(run), "--out", str(out)])
+    scored = pd.read_csv(out / "private-key-do-not-share" / "scored.csv", dtype=str, keep_default_na=False)
+    assert scored.pano_id.tolist() == expected

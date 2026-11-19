@@ -813,3 +813,15 @@ def test_the_gemini_leg_is_named_self_reported_and_noted_as_public_only():
         assert r["why"].startswith("public deployments only") and not r["complete"]
     rows = sb.coverage_rows({"gemini-3.8-flash": splits.head(2)}, splits, {"gemini-3.8-flash": {"*": "a note"}})
     assert [r["why"] for r in rows if r["label_type"] == "Obstacle"][0] == "a note"
+
+
+def test_load_splits_keeps_all_digit_pano_ids_as_strings(tmp_path):
+    # Issue #114: Mapillary pano_ids are all digits; pano_id is the bootstrap group, so it must stay a string.
+    ids = ["1792391791667719", "2001774006895864"]
+    (tmp_path / "splits").mkdir()
+    pd.DataFrame({"label_uid": ["m:1", "m:2"], "city": "m", "label_type": "CurbRamp",
+                  "label_class": ["correct", "incorrect"], "split": "test", "pano_id": ids}
+                 ).to_csv(tmp_path / "splits" / "CurbRamp.csv", index=False)
+    s = sb.load_splits(str(tmp_path))
+    assert not pd.api.types.is_numeric_dtype(s.pano_id)
+    assert s.pano_id.tolist() == ids

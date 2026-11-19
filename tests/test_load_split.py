@@ -33,3 +33,16 @@ def test_imagefolder_fallback(tmp_path, monkeypatch):
         df = evaluate.load_split("Toy")
     assert sorted(df.label_uid) == ["seattle:12", "st_louis:7"]
     assert set(df.split) == {"val", "test"}
+
+
+def test_split_csv_keeps_all_digit_pano_ids_as_strings(tmp_path, monkeypatch):
+    # Issue #114: Mapillary pano_ids are all digits; they group the slices bootstrap, so they must stay strings.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "Toy").mkdir()
+    ids = ["1792391791667719", "2001774006895864"]
+    pd.DataFrame([{"label_uid": f"m:{i}", "city": "m", "label_id": i, "pano_id": p, "label_type": "Toy",
+                   "label_class": "correct", "crop_path": f"crops/m_{i}.webp", "split": "test", "hard": 0}
+                  for i, p in enumerate(ids)]).to_csv(tmp_path / "Toy" / "split.csv", index=False)
+    df = evaluate.load_split("Toy")
+    assert not pd.api.types.is_numeric_dtype(df.pano_id)
+    assert df.pano_id.tolist() == ids

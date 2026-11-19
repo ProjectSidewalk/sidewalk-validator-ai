@@ -209,3 +209,33 @@ def test_height_only_dims_mismatch_is_caught():
     d = pd.DataFrame({"pano_path": ["/a", "/b"], "pano_native_w": [100, 100], "pano_native_h": [50, 50],
                       "pano_y": [10, 10], "pano_width": [100, 100], "pano_height": [50, 60]})
     assert jcc.job_crop_status(d).tolist() == ["ok", "dims_mismatch"]
+
+
+def test_restrict_keeps_all_digit_pano_ids_as_strings(tmp_path):
+    # Issue #114: Mapillary pano_ids are all digits; pano_id is the paired bootstrap's group, so it must stay a str.
+    ids = ["1792391791667719", "2001774006895864"]
+    split = pd.DataFrame({"label_uid": ["m:1", "m:2"], "label_class": ["correct", "incorrect"], "split": "test",
+                          "hard": 0, "pano_id": ids})
+    manifest = split.drop(columns=["split", "hard"]).assign(crop_path=["x/1.webp", "x/2.webp"], status="ok")
+    split.to_csv(tmp_path / "split.csv", index=False)
+    manifest.to_csv(tmp_path / "manifest.csv", index=False)
+    out, _ = jcc.main(["restrict", "--split", str(tmp_path / "split.csv"), "--manifest",
+                       str(tmp_path / "manifest.csv"), "--out", str(tmp_path / "job" / "split.csv")])
+    assert not pd.api.types.is_numeric_dtype(out.pano_id)
+    assert out.pano_id.tolist() == ids
+
+
+def test_compare_bootstraps_on_all_digit_pano_ids_as_strings(tmp_path, monkeypatch):
+    # Issue #114 (PR #115 review R2): compare's split read feeds the paired panorama bootstrap's group, so all-digit
+    # Mapillary pano_ids must reach rr.cluster_boot as the strings in the file.
+    split, job, depth = _synthetic()
+    split["pano_id"] = split.pano_id.map(lambda p: str(1792391791667719 + int(p[1:])))
+    split.to_csv(tmp_path / "split.csv", index=False)
+    job.to_csv(tmp_path / "job.csv", index=False)
+    depth.to_csv(tmp_path / "depth.csv", index=False)
+    seen, boot = [], jcc.rr.cluster_boot
+    monkeypatch.setattr(jcc.rr, "cluster_boot", lambda y, p, g, *a, **k: seen.append(g) or boot(y, p, g, *a, **k))
+    jcc.main(["compare", "--job-pred", str(tmp_path / "job.csv"), "--depth-pred", str(tmp_path / "depth.csv"),
+              "--split", str(tmp_path / "split.csv"), "--out-dir", str(tmp_path / "out"), "--n-boot", "5"])
+    assert seen and all(isinstance(v, str) for g in seen for v in g)
+    assert set(seen[0]) == set(split.pano_id)  # the pooled row: every panorama, ids unchanged

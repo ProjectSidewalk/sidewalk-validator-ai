@@ -19,7 +19,7 @@ TYPES = ["CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk"]
 rows = []
 for f in sorted(glob.glob(os.path.join(CACHE, "*.csv"))):
     city = os.path.basename(f)[:-4]
-    df = pd.read_csv(f, low_memory=False)
+    df = pd.read_csv(f, dtype={"pano_id": str}, low_memory=False)
     df["city"] = city
     rows.append(df)
 df = pd.concat(rows, ignore_index=True)

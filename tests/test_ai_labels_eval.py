@@ -408,3 +408,76 @@ def test_report_leaves_out_labels_with_no_human_reference(tmp_path):
     md = (tmp_path / "rep" / "tables.md").read_text()
     assert "Labels with no human reference left out of every table: 3." in md
     assert "| unseen, all three | 2 | 1 |" in md  # the two voted AI labels only, not 5
+
+
+# Issue #114: Mapillary pano_ids are all digits. Synthetic ids (the ones tests/test_generation_run.py uses).
+MLY_A, MLY_B = "1792391791667719", "2001774006895864"
+
+
+def test_read_labels_keeps_all_digit_pano_ids_as_strings(tmp_path):
+    (tmp_path / "labels.csv").write_text(f"label_uid,label_id,pano_id\nm:1,1,{MLY_A}\nm:2,2,{MLY_B}\n")
+    df = ae.read_labels(str(tmp_path / "labels.csv"))
+    assert not pd.api.types.is_numeric_dtype(df.pano_id)
+    assert df.pano_id.tolist() == [MLY_A, MLY_B]
+    assert ae.dg.pano_store_path("/store", "m", df.pano_id.iloc[0]) == f"/store/m/17/{MLY_A}.jpg"
+
+
+def test_read_labels_blank_pano_id_does_not_float_the_others(tmp_path):
+    (tmp_path / "labels.csv").write_text(f"label_uid,label_id,pano_id\nm:1,1,{MLY_A}\nm:2,2,\nm:3,3,{MLY_B}\n")
+    df = ae.read_labels(str(tmp_path / "labels.csv"))
+    assert df.pano_id.iloc[[0, 2]].tolist() == [MLY_A, MLY_B]  # not '1792391791667719.0'
+    assert df.pano_id.isna().iloc[1]
+
+
+def test_load_run_keeps_all_digit_pano_ids_as_strings(tmp_path):
+    run = _ablation_run(tmp_path)
+    labels = pd.read_csv(run / "labels.csv", dtype=str, keep_default_na=False)
+    ids = [str(int(MLY_A) + i) for i in range(len(labels))]
+    labels.assign(pano_id=ids).to_csv(run / "labels.csv", index=False)
+    df = ae.load_run(str(run), str(run / "predictions_with.csv"))
+    assert not pd.api.types.is_numeric_dtype(df.pano_id)
+    assert df.pano_id.tolist() == ids
+
+
+def test_crops_stops_when_every_label_fails(tmp_path, monkeypatch):
+    # Issue #114 (PR #115 review R1): a bug that fails every label must end the crops run, not write crops_run.json
+    # and exit 0. Simulate a future reader that drops the dtype: pano_store_path then raises TypeError on every row.
+    n = 6
+    labels = pd.DataFrame({"label_uid": [f"m:{i}" for i in range(n)], "city": "m", "label_id": range(n),
+                           "pano_id": [str(int(MLY_A) + i) for i in range(n)], "author": "ai",
+                           "pano_source": "Mapillary", "label_class": "correct", "pano_x": 10, "pano_y": 10,
+                           "pano_width": 100, "pano_height": 50, "camera_pitch": "", "camera_roll": ""})
+    labels.to_csv(tmp_path / "labels.csv", index=False)
+    store = tmp_path / "store"
+    (store / "m").mkdir(parents=True)
+    (store / ae.dg.PANO_STORE_MARKER).write_text("test store\n")
+    monkeypatch.setattr(ae, "read_labels", lambda p: pd.read_csv(p))  # untyped: pano_id comes back int64
+    monkeypatch.setattr(ae.dg, "MAX_CONSECUTIVE_ERRORS", 3)
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match=r"3 labels in a row failed with error:\* \(last: error:TypeError\)"):
+        ae.main(["crops", "--labels", str(tmp_path / "labels.csv"), "--pano-store", str(store), "--out", str(out),
+                 "--allow-cpu", "--fixed-crop-half-px", "512"])
+    assert not (out / "crops_run.json").exists()
+    assert pd.read_csv(out / "manifest.csv", dtype=str).status.tolist() == ["error:TypeError"] * 3
+
+
+def test_crops_fails_a_short_run_whose_every_label_fails(tmp_path, monkeypatch):
+    # PR #115 final review S2: under MAX_CONSECUTIVE_ERRORS labels (its default, 50) the stop above never fires, so a
+    # run where every label failed must still exit non-zero without writing crops_run.json
+    n = 6
+    assert n < ae.dg.MAX_CONSECUTIVE_ERRORS
+    labels = pd.DataFrame({"label_uid": [f"m:{i}" for i in range(n)], "city": "m", "label_id": range(n),
+                           "pano_id": [str(int(MLY_A) + i) for i in range(n)], "author": "ai",
+                           "pano_source": "Mapillary", "label_class": "correct", "pano_x": 10, "pano_y": 10,
+                           "pano_width": 100, "pano_height": 50, "camera_pitch": "", "camera_roll": ""})
+    labels.to_csv(tmp_path / "labels.csv", index=False)
+    store = tmp_path / "store"
+    (store / "m").mkdir(parents=True)
+    (store / ae.dg.PANO_STORE_MARKER).write_text("test store\n")
+    monkeypatch.setattr(ae, "read_labels", lambda p: pd.read_csv(p))  # untyped: pano_id comes back int64
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match=r"every label this run failed \(\{'error:TypeError': 6\}\)"):
+        ae.main(["crops", "--labels", str(tmp_path / "labels.csv"), "--pano-store", str(store), "--out", str(out),
+                 "--allow-cpu", "--fixed-crop-half-px", "512"])
+    assert not (out / "crops_run.json").exists()
+    assert pd.read_csv(out / "manifest.csv", dtype=str).status.tolist() == ["error:TypeError"] * n

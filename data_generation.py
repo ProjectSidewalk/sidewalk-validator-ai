@@ -211,7 +211,9 @@ DEPTH_DEVICE_HELP = "CUDA is required; --allow-cpu renders with numpy and runs d
 # ---------------------------------------------------------------------------------------------------------------------
 
 #: Mapillary pano_ids are all digits, so without this read_csv makes them int64: a mixed frame then cannot be sorted
-#: by pano_id and ``pano_id[:2]`` (the store path) fails. Every pano_id is a string.
+#: by pano_id and ``pano_id[:2]`` (the store path) fails. Every pano_id is a string. Every reader that uses ``pano_id``
+#: (a store path, a merge or group key, a column written back out) passes a dtype for it; a few readers of files with
+#: the column never use it and infer. ``tests/test_pano_id_dtype.py`` checks reads whose ``usecols`` names it.
 PANO_ID_DTYPE = {"pano_id": str}
 
 
@@ -900,9 +902,18 @@ def pano_store_path(store, city, pano_id):
     The layout sidewalk-ai-api reads (``SIDEWALK_SCRAPES_DIR``), keyed by the city_id, so one
     store serves both. Nothing in it is provider-specific.
 
+    ``pano_id`` must be a ``str``. A number means the CSV was read without :data:`PANO_ID_DTYPE` (all-digit Mapillary
+    ids, issue #114), so this raises rather than coerce: ``str()`` of a float id is a different, wrong path. A missing
+    value (NaN, None, ``pd.NA``) is a blank cell and raises saying so.
+
     >>> pano_store_path("/store", "seattle-wa", "abcDEF")
     '/store/seattle-wa/ab/abcDEF.jpg'
     """
+    if not isinstance(pano_id, str):
+        if pd.api.types.is_scalar(pano_id) and pd.isna(pano_id):  # what a correctly typed read gives a blank cell
+            raise TypeError(f"pano_id is blank ({pano_id!r}) for a label in {city}: the CSV has no pano_id there")
+        raise TypeError(f"pano_id must be a str, got {type(pano_id).__name__} ({pano_id!r}): read the CSV with "
+                        "dtype=PANO_ID_DTYPE")
     return os.path.join(store, city, pano_id[:2], f"{pano_id}.jpg")
 
 
