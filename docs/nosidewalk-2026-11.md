@@ -671,7 +671,8 @@ touched, not only the labels.
 **What this does and does not answer.** The clustering above is about the model's verdict only. Whether the
 labels of a run are right or wrong together (#102, item 1) needs several *rated* labels per face, and the round
 has one; the run questions of #102 are taken up on their own page,
-[`nosidewalk-runs-2026-11.md`](nosidewalk-runs-2026-11.md), from existing expert votes and these scores. The scores are the input for pooling the image score over a run or a face (#102,
+[`nosidewalk-runs-2026-11.md`](nosidewalk-runs-2026-11.md), from existing expert votes and these scores (outcome:
+no per-run gate on this evidence). The scores are the input for pooling the image score over a run or a face (#102,
 item 2) and for the neighbour features of item 3. Labels on other faces within a distance along the street are
 not scored. A "run" here is all of one labeler's labels on a face, contiguous or not.
 
@@ -740,7 +741,10 @@ per-deployment count of step (c) (100 decided pass-stratum labels) on its own.
    reading.
 - **Runs ([#102](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/102), 2026-11-17):** whether to
   validate a labeler's run on a face instead of each label is studied on
-  [`nosidewalk-runs-2026-11.md`](nosidewalk-runs-2026-11.md); it changes nothing in (c) below.
+  [`nosidewalk-runs-2026-11.md`](nosidewalk-runs-2026-11.md). **Outcome (2026-11-19): no per-run gate on this
+  evidence** (the pre-written rule is not met: 7 added labels outside the pass stratum against 10); the masked
+  follow-up round is [#118](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/118). It changes nothing
+  in (c) below.
 - (c) **Serving, decided 2026-11-14** ([#42](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/42#issuecomment-6877957778)):
   1. serve the **five step (b) fold models as an ensemble**, an AI Agree when at least 3 of 5 pass the gate (the
      rule the step (b) evidence is about; a retrained or sixth model is not covered by it, so the preserved fold

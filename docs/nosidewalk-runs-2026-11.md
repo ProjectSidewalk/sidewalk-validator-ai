@@ -5,6 +5,13 @@
 step (c) decision of 2026-11-14 on [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md) (serve the five fold models as a
 per-label ensemble, one masked round per deployment) stands whatever this page finds.
 
+**Outcome: do not pursue a per-run gate on this evidence.** On the masked step (b) round, score pooling over the run
+admits 7 labels outside the pass stratum against the 10 the pre-written rule asks for. Its ranking gain is
+borderline: weighted AUC +0.036, with a lower bound near 0 once the ratings are resampled by labeler (Limits).
+Image-free neighbour features do not add on the masked round. Within a run the experts' own verdicts agree 0.991,
+but in Seattle and Chicago that cannot be told apart from judging a run in one sitting. The clean test is the masked
+follow-up round in [#118](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/118).
+
 NoSidewalk labels are usually placed in sequence: one labeler walks a stretch without a sidewalk and drops a label
 every panorama or so. A **run** here is one labeler's NoSidewalk labels on one block face, `(city, street_edge_id,
 street_side, user_id)`, contiguous or not. The validator scores each label alone. #102 asks four things:
@@ -344,19 +351,26 @@ NoSidewalk on the 2026-11-05 pull, cities with >= 1,000 labels:
   step (b), score pooling over the run admits 7 labels outside the pass stratum (all agree-below, all correct)
   against the 10 the rule asks for. It admits no incorrect label and its raw precision is 0.992 against 0.986, so the
   other two conditions hold. The step (c) decision stands.
-- **Pooling may rank better, but it does not gate better.** The run pool raises step (b)'s weighted AUC from 0.929
-  to 0.965, a paired +0.036 [0.007, 0.068] on 31 incorrect ratings. Within city (0.949 to 0.986) the paired delta
-  is +0.038 [-0.005, 0.084], which includes 0, so the within-city gain is not established. At the served threshold
-  the run pool also drops 32 pass-stratum labels (1 of them incorrect), so it passes 119 labels against the single
-  rule's 144 and weighted coverage is flat (0.401 against 0.405). The refitted single-label map reproduces the
-  round's rule exactly (0 added, 0 dropped), so these changes come from pooling, not from the new map.
+- **Pooling's ranking gain is borderline, and it does not gate better.** The run pool raises step (b)'s weighted
+  AUC from 0.929 to 0.965, a paired +0.036 [0.007, 0.068] on 31 incorrect ratings. That interval resamples the
+  ratings as if they were independent, but they cluster by labeler; resampling labelers instead puts the lower
+  bound at about 0 ([0.001, 0.074], or [-0.003, 0.076] within city only; Limits). Within city (0.949 to 0.986) the
+  paired delta is +0.038 [-0.005, 0.084], which includes 0 even before that, so the within-city gain is not
+  established. At the served threshold the run pool also drops 32 pass-stratum labels (1 of them incorrect), so it
+  passes 119 labels against the single rule's 144 and weighted coverage is flat (0.401 against 0.405). The
+  refitted single-label map reproduces the round's rule exactly (0 added, 0 dropped), so these changes come from
+  pooling, not from the new map.
 - **Other groups admit more, but they are not the pre-registered arm, and the face pool's count is not stable.**
   Pooling over the whole face admits 30 outside the pass stratum, none incorrect, and raises weighted coverage to
   0.652. This is post hoc, on 31 incorrect ratings of which only 2 sit in the pass stratum. The number moves with
   reasonable choices: with the face map fitted on the 283 label-level split rows only (the full fit also uses 463
   face-copied classes, which a face-pooled score predicts by construction) it admits 16 (141 / 142 passing,
   coverage 0.509); without the neighbours the rater placed or voted on, 25 (155 / 156). So the face pool's effect is
-  somewhere between about half and five sixths of the headline 30. The run pool's sensitivity rows equal its main
+  somewhere between about half and five sixths of the headline 30. **Vote pooling over the run** admits 15 outside
+  the pass stratum, none incorrect (143 / 144 passing, weighted coverage 0.477). It is not the pre-registered arm
+  (score pooling over the run is), and its rows were seen before the step (a) scores existed (see "What was seen
+  before the rule of item 4 was written"), so it cannot meet the rule either; like the face pool, it is a candidate
+  for the follow-up round, not a result. The run pool's sensitivity rows equal its main
   row because the masks remove few run neighbours (3 rater-voted and 57 on trained panoramas or held-out faces, of
   1,193); the rater's own labels (480 placed, 112 voted) sit on the face, outside the run. Every pooled gate passes
   exactly 1 incorrect label, one of the 2 that the single rule passes, so step (b) cannot tell their precisions
@@ -397,6 +411,14 @@ NoSidewalk on the 2026-11-05 pull, cities with >= 1,000 labels:
   step (b) ratings (masked, one label per face) are the primary test of pooling.
 - **Step (b) is small.** 235 decided ratings, 31 incorrect, 2 of them in the pass stratum. Weighted rates are set by
   agree-below labels whose inclusion weights reach about 365.
+- **Step (b)'s ratings cluster by labeler, and item 2's intervals ignore it.** The 235 decided labels come from 113
+  labelers; in two of the four cities one labeler placed about half of them (24 of 49 and 24 of 54), and the 31
+  incorrect ratings come from 22 labelers, one of whom placed 9. The paired intervals in item 2 resample rows within
+  city x stratum as if each rating were independent. As a sensitivity (not the published method; labelers resampled
+  with replacement, 2,000 resamples, seed 0), the run pool's weighted AUC delta of +0.036 gets [0.001, 0.074] with
+  labelers resampled within city x stratum and [-0.003, 0.076] within city only, against the published [0.007,
+  0.068]; its within-city delta of +0.038 gets [-0.009, 0.088] and [-0.011, 0.097]. So the run pool's ranking gain is
+  borderline. Item 3's rule (a CI that includes 0) and item 4's rule (counts, not intervals) are not affected.
 - **Selection through the rated label.** Step (b)'s faces were drawn through one rated label each, 60 / 20 / 20 by
   stratum, and the labels beside it follow that label's stratum.
 - **Crop paths.** Step (a)'s pilot crops came from `data_generation.py`, step (b)'s and this page's re-scored ones
@@ -404,6 +426,9 @@ NoSidewalk on the 2026-11-05 pull, cities with >= 1,000 labels:
   text: no verdict or gate flips). The 13 split rows without a face sit on no step (a) face, so they are neither
   re-scored nor pooled.
 - **Distance is a straight line** between label points, a proxy for distance along the street.
+- **The contradicting-label pull has no as-of filter**; only its pin fixes which labels it holds. In the pinned
+  2026-11-17 pull no contradicting label on a step (b) face postdates the 2026-11-11 pulls, and one SurfaceProblem
+  label on one step (a) face (Seattle, placed 2026-11-12) postdates the 2026-11-05 pull.
 - Shared panoramas: a panorama can carry labels of two faces, so face-grouped resampling is not panorama-grouped.
 - **Step (b) and step (a) held-out faces.** 7 of the 250 rated step (b) labels sit on step (a) held-out faces (3 of
   them were held-out split rows). Nothing is fitted on held-out rows, so this is not a leak. `pilot_heldout` in
@@ -443,7 +468,8 @@ NoSidewalk on the 2026-11-05 pull, cities with >= 1,000 labels:
 
 - **A masked round that rates 2-3 labels per run**, in separate sittings. It is the only clean test of item 1 and
   the pre-registered test of a per-run gate. It needs a rater. A post hoc reading of item 2 suggests rating the face
-  pool there too (its step (b) gain ranges from 16 to 30 added labels across the sensitivities).
+  pool there too (its step (b) gain ranges from 16 to 30 added labels across the sensitivities), and run vote
+  pooling (15 added).
 - Scoring labels on neighbouring faces within a distance along the street, and true along-street distance from the
   street geometry.
 

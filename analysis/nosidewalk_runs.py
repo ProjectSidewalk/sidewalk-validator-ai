@@ -181,8 +181,8 @@ def run_ids(face_id, label_type, labeler_idx):
 
 def add_runs(df):
     """``labeler_idx`` (dense per city, in order of each labeler's first label) and ``run_id`` =
-    ``<face_id>:L<labeler_idx>`` (empty without a face). A run is one labeler's labels of one type on one face; the
-    ``user_id`` never leaves memory. Rows are kept in their order.
+    ``<face_id>:<label_type>:L<labeler_idx>`` (empty without a face). A run is one labeler's labels of one type on one
+    face; the ``user_id`` never leaves memory. Rows are kept in their order.
 
     >>> d = pd.DataFrame({"city": ["a", "a", "a", "b"], "user_id": ["u", "v", "u", "u"],
     ...                   "face_id": ["a:1:left", "a:1:left", "", "b:1:left"], "label_type": "NoSidewalk",

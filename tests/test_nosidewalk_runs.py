@@ -835,3 +835,172 @@ def test_features_stops_without_experts(monkeypatch):
         runs.main(["features", "--step-a", "x", "--scores", "x", "--gate", "x", "--key", "k", "--sheet", "s",
                    "--face-scores", "f", "--ns-pull", "n", "--round-b-pull", "r", "--contra-pull", "c",
                    "--cities-json", "j", "--out-json", "o.json"])
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# final review (S2): the lines that decide the two rule outcomes
+# ---------------------------------------------------------------------------------------------------------------------
+
+def item3_features(with_ci, without_ci, without_plain_ci):
+    """A minimal ``features.json`` for :func:`runs.features_markdown`: the step (b) within-city delta b - a of each
+    variant with the given intervals, and the plain (not within-city) delta of the pre-registered variant."""
+    def step_b(within_ci, plain_ci):
+        models = {m: {"auc_weighted": 0.9, "within_city_auc_weighted": 0.9} for m in runs.MODEL_COLUMNS}
+        return {"decided": 100, "models": models,
+                "delta_b_image_features_within_city_auc_weighted": {"delta": 0.02, "ci95": within_ci},
+                "delta_b_image_features_auc_weighted": {"delta": 0.02, "ci95": plain_ci}}
+    return {"face_check": {"step_a": {}, "step_b": {}},
+            "variants": {"with_expert_placed": {"step_a": {}, "step_b": step_b(with_ci, [0.01, 0.03])},
+                         "without_expert_placed": {"step_a": {}, "step_b": step_b(without_ci, without_plain_ci)}}}
+
+
+def test_item3_rule_reads_the_within_city_lower_bound_without_expert_placed():
+    """The item 3 rule reads only the pre-registered variant (without expert placed), only its within-city delta, and
+    only the lower bound. Here the other variant, the plain delta and the upper bound are all above 0, and the rule
+    must still say the features do not add."""
+    md = "\n".join(runs.features_markdown(item3_features([0.01, 0.05], [-0.01, 0.05], [0.01, 0.03])))
+    assert "**they do not add**" in md
+    md = "\n".join(runs.features_markdown(item3_features([-0.05, -0.01], [0.002, 0.05], [-0.03, -0.01])))
+    assert "**they add**" in md
+
+
+def test_pooling_recommends_from_the_run_score_block(tmp_path, monkeypatch):
+    """Item 4's rule is fed the run group's score-pooling block of the main step (b) call and the single group's
+    score block as the refitted comparison: not the face pool, not vote pooling, not a sensitivity."""
+    t, split, rated, fs = pooling_frames()
+    monkeypatch.setattr(runs, "load_step_a", lambda args: (t, split, {}, {}, 5))
+    monkeypatch.setattr(runs, "load_step_b", lambda args: (rated, fs, {}))
+    monkeypatch.setattr(runs, "crop_parity", lambda *a, **k: {})
+    calls, results = [], []
+    real_rec, real_pool = runs.recommendation, runs.step_b_pooling
+
+    def rec_spy(block, **kw):
+        calls.append((block, kw.get("refit_single")))
+        return real_rec(block, **kw)
+
+    def pool_spy(*a, **kw):
+        results.append(real_pool(*a, **kw))
+        return results[-1]
+
+    monkeypatch.setattr(runs, "recommendation", rec_spy)
+    monkeypatch.setattr(runs, "step_b_pooling", pool_spy)
+    with open(tmp_path / "priors.json", "w") as f:
+        json.dump({"NoSidewalk": {"correct": 80, "incorrect": 20, "source": "test"}}, f)
+    assert runs.main(["pooling", "--step-a", "x", "--scores", "x", "--gate", "x", "--key", "k", "--sheet", "s",
+                      "--face-scores", "f", "--priors", str(tmp_path / "priors.json"),
+                      "--out-json", str(tmp_path / "pooling.json"), "--n-boot", "0", "--allow-unpinned"]) == 0
+    assert len(calls) == 1
+    main = results[0]["groups"]
+    assert calls[0][0] is main["run"]["score"] and calls[0][1] is main["single"]["score"]
+
+
+def test_auc_delta_vs_single_subtracts_the_single_score():
+    """Both arms of the paired delta: ``col`` minus the single label's ``median_p_correct``, never a column minus
+    itself."""
+    n = 24
+    y = np.arange(n) % 4 == 0
+    dd = pd.DataFrame({"verdict": np.where(y, "incorrect", "correct"), "weight": 1.0 + np.arange(n) % 3,
+                       "city_id": "c", "stratum": "pass",
+                       "pooled": np.where(y, 0.2, 0.9),                                   # separates perfectly
+                       "median_p_correct": np.where(np.arange(n) % 3 == 0, 0.3, 0.8)})    # does not
+    out = runs.auc_delta_vs_single(dd, "pooled", n_boot=0, seed=0)
+    want = nr.weighted_auc(dd, "pooled") - nr.weighted_auc(dd, "median_p_correct")
+    assert want > 0.1
+    assert out["auc_weighted"]["delta"] == pytest.approx(want)
+    assert out["within_city_auc_weighted"]["delta"] == pytest.approx(want)   # one city
+
+
+def test_score_pooling_needs_three_of_five_models(monkeypatch):
+    """A label passes the score gate when at least 3 of the 5 fold models serve it at or above the gate: 1 of 5 or 2
+    of 5 is not enough."""
+    monkeypatch.setattr(runs, "serve_pooled", lambda r, pmap, g: pd.DataFrame(
+        {"verdict": "correct", "served": runs.sigmoid(r["pooled"])}, index=r.index))
+    hi, lo = 0.99, 0.5
+    rows = []
+    for i, n_hi in enumerate((1, 2, 3, 5)):
+        rows.append({"label_uid": f"c:{i}", "face_id": f"c:{i}:left", "labeler_idx": 0, "pano_id": f"p{i}",
+                     "stratum": "agree_below", "verdict": "correct" if i else "incorrect", "weight": 1.0,
+                     "city_id": "c", "median_p_correct": 0.9, "tags": "[]",
+                     **{f"p_correct_{k}": hi if k < n_hi else lo for k in range(5)}})
+    rated = pd.DataFrame(rows)
+    b = runs.step_b_pooling(rated, rated.copy(), {"single": None}, None, gate=0.92, n_boot=0, seed=0,
+                            groups=("single",))
+    blk = b["groups"]["single"]["score"]
+    assert blk["raw"]["n"] == 2 and blk["added_outside_pass"] == 2       # the 3-of-5 and 5-of-5 labels only
+
+
+def test_newly_admitted_incorrect_counts_only_incorrect_labels():
+    """Two labels newly admitted, both correct: 0 newly admitted incorrect (a count of correct ones would be 2)."""
+    decided = pd.DataFrame({"stratum": ["pass", "agree_below", "agree_below", "model_incorrect"],
+                            "verdict": ["correct", "correct", "correct", "incorrect"], "weight": 1.0,
+                            "city_id": "a"})
+    single = (decided["stratum"] == "pass").to_numpy()
+    b = runs.gate_block(decided, np.array([True, True, True, False]), single, n_boot=0, seed=0)
+    assert b["newly_admitted"] == 2 and b["newly_admitted_incorrect"] == 0
+
+
+def test_strict_vote_needs_the_label_itself_to_pass():
+    """Face 1's run passes the vote (2 of 4); with the rated label itself outside the pass stratum, strict fails."""
+    rated, fs = step_b_frames()
+    rated.loc[0, "stratum"] = "agree_below"     # the label, not its neighbours (fs keeps its share at 2 of 4)
+    assert runs.vote_pooled(rated, fs, "run").tolist() == [True, False]
+    assert runs.vote_pooled(rated, fs, "run", strict=True).tolist() == [False, False]
+
+
+def test_transfer_scores_are_p_correct():
+    """``transfer`` turns the second stage's p(incorrect) into p(correct) before ``weighted_auc`` (which reads
+    p(correct)); without the flip an informative image logit would rank backwards."""
+    train = synthetic_second_stage()
+    out = runs.transfer(train, train, 5, n_boot=0, seed=0)
+    assert out["models"]["a_image"]["auc_weighted"] > 0.8
+    assert out["models"]["b_image_features"]["auc_weighted"] > 0.8
+
+
+def test_face_weights_sum_to_one_per_face():
+    w = runs.face_weights(pd.DataFrame({"face_id": ["f", "g", "g", "g"]}))
+    assert w.tolist() == pytest.approx([1.0, 1 / 3, 1 / 3, 1 / 3])
+
+
+def test_exclude_experts_drops_expert_placed_contradicting_labels():
+    ns = pd.DataFrame({"label_uid": ["a:1"], "face_id": "a:1:left", "user_key": ["u"], "latitude": 0.0,
+                       "longitude": 0.0, "expert_placed": [0]})
+    contra = pd.DataFrame({"face_id": "a:1:left", "user_key": ["u", "e"], "expert_placed": [0, 1]})
+    assert runs.neighbour_features(ns, ns, contra)["n_contra_face"].tolist() == [2.0]
+    assert runs.neighbour_features(ns, ns, contra, exclude_experts=True)["n_contra_face"].tolist() == [1.0]
+
+
+def test_vote_times_keeps_the_latest_vote_before_the_pull(tmp_path):
+    """An expert who changed their vote before the pull: the later vote is the pull's (rows out of time order)."""
+    times = tmp_path / "times.csv"
+    pd.DataFrame({"schema": "sidewalk_a", "label_id": ["1", "1"], "label_type": "NoSidewalk", "expert_idx": 1,
+                  "validation_result": ["Agree", "Disagree"], "start_timestamp": "", "source": "Validate",
+                  "mission_id": 1, "label_author_is_expert": "f",
+                  "end_timestamp": ["2026-01-15 00:00:00+00", "2026-01-01 00:00:00+00"]}).to_csv(times, index=False)
+    t = runs.vote_times(str(times), {"sidewalk_a": "a"}, "2026-02-01")
+    assert t[("a", "1", 1)][1] == "Agree"
+
+
+def test_near50_counts_the_label_itself_even_when_masked():
+    """The rated label always counts in its own pool, also when a sensitivity mask leaves it out."""
+    d = pd.DataFrame({"face_id": ["f", "f"], "run_id": "r", "pano_id": ["p", "q"], "logit": [1.0, 3.0],
+                      "latitude": [47.0, 47.0], "longitude": [-122.0, -122.0]})
+    assert runs.pooled_scores(d, "near50", members=pd.Series([False, True])).tolist() == [2.0, 3.0]
+
+
+def test_run_bootstrap_resamples_within_city():
+    """One multi-label run per city: resampling runs within city always draws the same two runs, so every resample
+    equals the observed agreement (pooled resampling would not)."""
+    d = pd.DataFrame({"run_id": ["a1"] * 3 + ["b1"] * 2, "city": ["a"] * 3 + ["b"] * 2,
+                      "verdict": ["correct"] * 3 + ["correct", "incorrect"]})
+    assert np.allclose(runs.run_boot(d, 50, 0), 3 / 4)
+
+
+def test_macro_mean_needs_ten_multi_label_runs_per_city():
+    """A city with one run of 2+ is left out of the macro mean; a city with ten is in it."""
+    rows = []
+    for c, n_runs in (("a", runs.MIN_RUNS), ("b", 1)):
+        for r in range(n_runs):
+            for j in range(2):
+                rows.append({"city": c, "run_id": f"{c}:f{r}:L0", "face_id": f"{c}:f{r}", "labeler_idx": r % 3,
+                             "verdict": "correct" if (r + j) % 3 else "incorrect", "label_id": f"{r}{j}"})
+    assert runs.macro_block(pd.DataFrame(rows), n_perm=5, n_boot=5, seed=0)["cities"] == ["a"]
