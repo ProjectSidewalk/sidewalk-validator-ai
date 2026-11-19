@@ -1,0 +1,10 @@
+{
+  "_comment": "DRAFT for issue #106, NOT approved: cities, raters and every size are proposals for Jon to change. Its own round: only the three AI-Disagree groups no earlier round sampled (one decisive human vote, only Unsure votes, a tie), plus decoys; the round-2 cells get share 0. Sized on the round-2 pool of 2026-10-28 with the author_excluded flags of 2026-11-12; the counts size the design and are not the build's population. A real build needs a fresh pull_relabel_pool.sh pool (eligibility after the raters' own votes since) and the draft flag removed. Rater user_ids are passed on the command line, never stored here. See docs/ai-disagree-relabel-2026-10/unsampled_strata_design.md.",
+  "draft": true,
+  "raters": {"jon": "sidewalk_seattle", "mikey": "sidewalk_chicago"},
+  "per_type": {"CurbRamp": 36, "Crosswalk": 36, "NoCurbRamp": 36, "Obstacle": 36, "SurfaceProblem": 36},
+  "shares": {"margin": 0, "lone": 0, "light_voted": 0, "tie": 0.45, "one_decisive": 0.33, "unsure_only": 0.22},
+  "margin_correct_cap": 0.4,
+  "decoys_per_type": 14,
+  "shared": 50
+}

@@ -268,3 +268,6 @@ tie):
 
 - Seattle: 8,608 of 16,840 eligible (6,698 / 371 / 1,539), before 8,611 of 17,284 (6,701 / 371 / 1,539).
 - Chicago: 3,847 of 10,751 eligible (2,996 / 145 / 706), before 3,853 of 10,769 (3,002 / 145 / 706).
+
+A draft round for these three groups, sized on these counts: [`unsampled_strata_design.md`](unsampled_strata_design.md)
+([#106](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/106)).

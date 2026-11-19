@@ -363,7 +363,11 @@ with the design file [`analysis/gt_rounds/round2.json`](../analysis/gt_rounds/ro
   [`ai-disagree-relabel-2026-10/round2_recount.md`](ai-disagree-relabel-2026-10/round2_recount.md). The counts `build`
   printed, before the exclusion, were 8,611 of 17,284 (6,701 / 371 / 1,539) and 3,853 of 10,769 (3,002 / 145 /
   706); the recount removes 444 Seattle and 18 Chicago AI Disagrees, 441 of the Seattle ones from `lone`. A design
-  can now sample these Disagrees as a `thin_voted` stratum (name it in `shares`); round 2's design does not.
+  can now sample these Disagrees as a `thin_voted` stratum (name it in `shares`); round 2's design does not. A draft
+  round that samples them as three strata of their own (`one_decisive`, `unsure_only`, `tie`), with its sizing and
+  an analysis plan fixed before rating, is in
+  [`ai-disagree-relabel-2026-10/unsampled_strata_design.md`](ai-disagree-relabel-2026-10/unsampled_strata_design.md)
+  ([#106](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/106)).
 - **Quotas per type** (AI Disagrees per city): CurbRamp 42, Crosswalk 36, NoCurbRamp 34, Obstacle 30,
   SurfaceProblem 28, each filled over severity buckets (1–2 / 3–5 / none) in proportion to the eligible pool.
 - **Exclusions.** Labels either rater voted on or placed are out of every list, both cities.
