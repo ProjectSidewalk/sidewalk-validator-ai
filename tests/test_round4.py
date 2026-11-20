@@ -403,3 +403,86 @@ def test_adjudicator_crops_all_flag():
     a = adj.build_parser().parse_args(["crops", "--gold", "g.csv", "--rawlabels", "r", "--out-dir", "o", "--all"])
     assert a.all is True
     assert adj.build_parser().parse_args(["crops", "--gold", "g", "--rawlabels", "r", "--out-dir", "o"]).all is False
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Review round 1: B2 (collect records gold predictions) and the surviving mutants of S8
+# ---------------------------------------------------------------------------------------------------------------------
+
+def test_collect_records_missing_gold_predictions(tmp_path, capsys):
+    r, runs = collect_layout(tmp_path)
+    (r / "gold" / "r3crops").mkdir(parents=True)
+    (r / "gold" / "r3crops" / "Obstacle.csv").write_text("label_uid\n")
+    (r / "Obstacle" / "gold_predictions_r3crops_baseline.csv").write_text("label_uid,p_correct,p_incorrect\n")
+    assert collect(r, runs, tmp_path / "keep") == 4                      # every run present, gold scoring not
+    err = capsys.readouterr().err
+    assert "Obstacle/baseline-s43/r3crops" in err and "Obstacle/round3/r3crops" in err
+    man = json.loads((r / "round4_manifest.json").read_text())
+    by_tag = {x["tag"]: x for x in man["runs"]}
+    assert by_tag["baseline"]["gold_predictions_sha256"]["r3crops"] is not None
+    assert by_tag["baseline-s43"]["gold_predictions_sha256"] == {"r3crops": None}
+    assert man["missing"] == [] and "Obstacle/round3/r3crops" in man["missing_gold_predictions"]
+    for tag in ("baseline-s43", "round3"):
+        (r / "Obstacle" / f"gold_predictions_r3crops_{tag}.csv").write_text("label_uid\n")
+    assert collect(r, runs, tmp_path / "keep") == 0
+
+
+def test_score_job_time_covers_the_measured_rate():
+    with open(os.path.join(os.path.dirname(r4.__file__), "round4_score.slurm")) as f:
+        text = f.read()
+    hours = int(text.split("#SBATCH --time=", 1)[1].split(":", 1)[0])
+    assert hours * 60 >= 27 * 5.2         # 27 pilot checkpoints at the mean measured 5.2 min each (job 43405831)
+
+
+def test_matched_rb_spares_expert_rows_for_every_seed():
+    rows = [row(f"r:{i}", f"P{i}") for i in range(30)]
+    rows += [row(f"r:{100 + i}", f"Q{i}", "incorrect", agree=0, disagree=2) for i in range(10)]   # symmetric drops
+    rows += [row(f"r:{200 + i}", f"R{i}", "incorrect", agree=0, disagree=5) for i in range(10)]   # symmetric keeps
+    rows += [row("r:999", "E1", "incorrect", agree=1, disagree=0, source="expert")]
+    base = pd.DataFrame(rows)
+    for seed in range(42, 52):
+        mat = r4.matched_rb(base, r4.symmetric_rb(base, seed), seed)
+        assert mat.set_index("label_uid").loc["r:999", "split"] == "train", seed
+
+
+def test_rebalance_keeps_the_lowest_ranks():
+    d = pd.DataFrame({"label_uid": [f"a:{i}" for i in range(20)], "split": "train",
+                      "label_class": ["correct"] * 16 + ["incorrect"] * 4})
+    out = r4.rebalance(d, 1.5, 42)                                    # keep 6 of 16 correct rows
+    cor = d[d["label_class"] == "correct"]
+    ranks = r4._rank(42, cor["label_uid"]).sort_values(kind="mergesort")
+    kept = set(out.loc[(out["split"] == "train") & (out["label_class"] == "correct"), "label_uid"])
+    assert kept == set(cor.loc[ranks.index[:6], "label_uid"])
+
+
+def test_uniform_manifest_never_falls_back_to_the_round3_crop(tmp_path, monkeypatch):
+    # The round-3 crop of a:1 exists relative to the working directory, so any fallback to it would be found.
+    r3 = tmp_path / "data" / "Obstacle"
+    (r3 / "correct").mkdir(parents=True)
+    (r3 / "correct" / "a_1.webp").write_bytes(b"x")
+    monkeypatch.chdir(r3)
+    crops = tmp_path / "crops"
+    crops.mkdir()
+    pd.DataFrame({"label_uid": ["a:11"], "crop_path": ["missing.jpg"], "status": ["ok"]}).to_csv(
+        crops / "manifest.csv", index=False)
+    u, side = r4.gold_manifest(gold_uids(), "Obstacle", "uniform", split_root=str(tmp_path / "data"),
+                               crops_root=str(crops))
+    assert len(u) == 0 and side["n_no_crop"] == 4
+
+
+def test_score_gold_reruns_when_the_manifest_changes(tmp_path):
+    calls = []
+
+    def infer(man, ckpt, splits):
+        calls.append(len(man))
+        return pd.DataFrame({"label_uid": man["label_uid"], "split": "gold", "true": "", "p_correct": 0.3,
+                             "p_incorrect": 0.7})
+
+    man = tmp_path / "Obstacle.csv"
+    frame = pd.DataFrame({"label_uid": ["a:1"], "label_class": [""], "split": ["gold"], "crop_path": ["/x.webp"]})
+    frame.to_csv(man, index=False)
+    ck = make_ckpt(tmp_path / "best")
+    out = str(tmp_path / "pred.csv")
+    assert r4.score_gold(str(man), ck, "t", out, infer=infer) == "scored"
+    pd.concat([frame, frame.assign(label_uid="a:2")]).to_csv(man, index=False)    # same weights, new manifest
+    assert r4.score_gold(str(man), ck, "t", out, infer=infer) == "scored" and calls == [1, 2]

@@ -1,7 +1,11 @@
 #!/bin/bash
 # Issue #74: score the gold manifests ($R4/gold/$CROPS/<Type>.csv, from round4.py gold-manifest) with kept models, in
-# one GPU job (each manifest is under 200 crops, so the whole loop takes minutes). Outputs go next to evaluate.py's:
-# $R4/<Type>/gold_predictions_<CROPS>_<TAG>.csv and its _provenance.json (weights and manifest sha256).
+# one GPU job. Each checkpoint costs a model load plus inference: measured 2.6 to 10.9 min per checkpoint on klone
+# (job 43405831, 5 round-3 checkpoints in 26 min), so 27 pilot checkpoints need 1 to 5 hours and stage 2's uniform
+# scoring (32 checkpoints) more; --time is 4 h and a TIMEOUT is resumed by resubmitting the same line (finished
+# outputs are skipped by their sha256). collect records which gold prediction files exist per run. Outputs go next
+# to evaluate.py's: $R4/<Type>/gold_predictions_<CROPS>_<TAG>.csv and its _provenance.json (weights and manifest
+# sha256).
 #   MODE=round3  the round-3 checkpoint of each type ($DATA/<Type>/dinov2, resolved by round4.py round3-ckpt)
 #   MODE=runs    $RUNS/<Type>/<TAG>/best for every TAG in TAGS (a tag starting "cl-" only for the types in CL_TYPES:
 #                SurfaceProblem has no cl-drop arm)
@@ -20,7 +24,7 @@
 #SBATCH --mem=32G
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --time=1:00:00
+#SBATCH --time=4:00:00
 #SBATCH --output=logs/%x-%j.out
 set -uo pipefail
 MODE="${MODE:?set MODE (round3|runs|one, or a comma list)}"; R4="${R4:?set R4}"; DATA="${DATA:?set DATA}"

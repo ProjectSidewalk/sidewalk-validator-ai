@@ -931,11 +931,23 @@ def is_gold_derived(rel):
     return name.startswith("gold_") or "gold_uids" in name
 
 
+def gold_prediction_status(r4, label_type, tag):
+    """``{crops: sha256 or None}`` of ``gold_predictions_<crops>_<tag>.csv`` for every crop set whose gold manifest
+    for ``label_type`` exists (``$R4/gold/<crops>/<Type>.csv``): a gold scoring job that timed out leaves a None
+    here, which a run's metrics, predictions and weights alone would not show."""
+    out = {}
+    for man in sorted(glob.glob(os.path.join(r4, "gold", "*", f"{label_type}.csv"))):
+        crops = os.path.basename(os.path.dirname(man))
+        p = os.path.join(r4, label_type, f"gold_predictions_{crops}_{tag}.csv")
+        out[crops] = sha256_file(p) if os.path.exists(p) else None
+    return out
+
+
 def cmd_collect(args):
     types = split_list(args.types)
     expected = parse_expect(args.expect, types)
     now = datetime.now(timezone.utc)
-    runs_out, missing = [], []
+    runs_out, missing, missing_gold = [], [], []
     for t, variant, seed, tag in expected:
         tdir = os.path.join(args.r4, t)
         files = {"metrics": os.path.join(tdir, f"metrics_{tag}.json"),
@@ -951,11 +963,17 @@ def cmd_collect(args):
             rec["weights_purge_after"] = (mtime + timedelta(days=SCRUBBED_PURGE_DAYS)).strftime("%Y-%m-%d")
         if not rec["present"]:
             missing.append(f"{t}/{tag}")
+        rec["gold_predictions_sha256"] = gold_prediction_status(args.r4, t, tag)
+        missing_gold += [f"{t}/{tag}/{c}" for c, sha in rec["gold_predictions_sha256"].items() if sha is None]
         runs_out.append(rec)
+    # round 3's own checkpoint is scored on gold too (MODE=round3), though it is not an expected training run
+    round3_gold = {t: gold_prediction_status(args.r4, t, "round3") for t in types}
+    missing_gold += [f"{t}/round3/{c}" for t, d in round3_gold.items() for c, sha in d.items() if sha is None]
     copies = {t: untagged_copies(os.path.join(args.r4, t)) for t in types
               if any(e[0] == t and e[3] == "baseline" for e in expected)}
     manifest = {"written_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "r4": os.path.abspath(args.r4),
                 "runs_dir": os.path.abspath(args.runs), "expected": len(expected), "missing": missing,
+                "missing_gold_predictions": missing_gold, "round3_gold_predictions_sha256": round3_gold,
                 "runs": runs_out, "untagged_baseline_copies": copies, "jobs": read_jobs(args.jobs),
                 **git_state(REPO_DIR), **slurm_state()}
     man_path = write_json(manifest, os.path.join(args.r4, "round4_manifest.json"))
@@ -979,6 +997,10 @@ def cmd_collect(args):
         print(f"copied {len(plan)} files ({total / 1e6:.1f} MB) to {args.keep}")
     if missing:
         print(f"missing runs: {', '.join(missing)}", file=sys.stderr)
+        status = status or 4
+    if missing_gold:
+        print(f"missing gold predictions (resubmit the scoring line; it skips finished outputs): "
+              f"{', '.join(missing_gold)}", file=sys.stderr)
         status = status or 4
     print(f"wrote {man_path}: {len(expected) - len(missing)} of {len(expected)} expected runs present")
     return status
