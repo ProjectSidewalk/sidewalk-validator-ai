@@ -72,7 +72,7 @@ def make_root(tmp_path, label_type=T, rows=ROWS, max_steps=2, epochs=2, pano_sou
         ck = dinov2 / f"checkpoint-{step}"
         ck.mkdir(parents=True)
         (ck / "model.safetensors").write_bytes(f"weights-{step}".encode())
-        (ck / "config.json").write_text(json.dumps({"architectures": ["Dinov2ForImageClassification"],
+        (ck / "config.json").write_text(json.dumps({"architectures": ["Dinov2ForImageClassification"], "model_type": "dinov2",
                                                     "id2label": {"0": "correct", "1": "incorrect"}}))
         (ck / "preprocessor_config.json").write_text(json.dumps({"image_processor_type": "BitImageProcessor"}))
         for junk in ("optimizer.pt", "scheduler.pt", "rng_state.pth", "training_args.bin", "scaler.pt"):
@@ -2044,3 +2044,55 @@ def test_a_file_without_a_size_column_is_refused_even_with_no_rows():
     manifest = pd.DataFrame({"status": ["no_pano"], "depth_m": [None]})   # no ok row, and no size column
     with pytest.raises(pub.PublishError, match="manifest.csv has no crop_half_px column"):
         pub.check_depth_rows(pub._ok_rows(manifest), "manifest.csv")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Issue #119: only the round-3 recipe on DINOv2-L is published (backbone comparison runs are refused)
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _edit_json(path, **changes):
+    d = json.loads(path.read_text())
+    d.update(changes)
+    path.write_text(json.dumps(d))
+
+
+def test_check_backbone_passes_a_dinov2_model_with_or_without_the_record(tmp_path):
+    root, *_ = make_root(tmp_path)
+    pub.check_backbone(root, T)    # record without backbone fields, config with model_type dinov2
+    os.remove(os.path.join(root, T, "dinov2", "training_run.json"))
+    pub.check_backbone(root, T)
+    _edit_json(tmp_path / "out" / T / "dinov2" / "checkpoint-2" / "config.json", model_type="dinov2")
+    pub.check_backbone(root, T)
+
+
+@pytest.mark.parametrize("record, match", [
+    ({"backbone": {"key": "convnextv2-base"}}, "comparison run"),
+    ({"learning_rate": 3e-5}, "learning_rate"),
+])
+def test_check_backbone_refuses_a_comparison_run(tmp_path, record, match):
+    root, *_ = make_root(tmp_path)
+    _edit_json(tmp_path / "out" / T / "dinov2" / "training_run.json", **record)
+    with pytest.raises(pub.PublishError, match=match):
+        pub.check_backbone(root, T)
+    with pytest.raises(pub.PublishError, match=match):
+        pub.stage(root, T)
+    assert not os.path.exists(os.path.join(root, T, "publish"))
+
+
+def test_check_backbone_refuses_a_non_dinov2_checkpoint_without_a_record(tmp_path):
+    root, *_ = make_root(tmp_path)
+    os.remove(os.path.join(root, T, "dinov2", "training_run.json"))
+    _edit_json(tmp_path / "out" / T / "dinov2" / "checkpoint-2" / "config.json", model_type="convnextv2")
+    with pytest.raises(pub.PublishError, match="model_type 'convnextv2'"):
+        pub.check_backbone(root, T)
+    _edit_json(tmp_path / "out" / T / "dinov2" / "checkpoint-2" / "config.json", model_type=None)
+    with pytest.raises(pub.PublishError, match="not 'dinov2'"):
+        pub.check_backbone(root, T)
+
+
+def test_push_staged_refuses_a_backbone_run_retrained_after_staging(tmp_path):
+    root, *_ = make_root(tmp_path)
+    pub.stage(root, T)
+    _edit_json(tmp_path / "out" / T / "dinov2" / "training_run.json", backbone={"key": "dinov2-reg-large"})
+    with pytest.raises(pub.PublishError, match="comparison run"):
+        pub.verify_staged(root, T)

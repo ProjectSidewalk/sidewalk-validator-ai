@@ -253,3 +253,43 @@ def test_load_split_frames_carries_extra_columns(tmp_path):
     assert val.crop_half_px.tolist() == [300] and val.split.tolist() == ["val"]
     train, _ = ft.load_split_frames("Toy", str(tmp_path))
     assert list(train.columns) == ["image", "label"]
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Backbone comparison (--backbone, --learning-rate; issue #119)
+# ---------------------------------------------------------------------------------------------------------------------
+
+BACKBONE_DEFAULTS = {"backbone": "dinov2-large", "learning_rate": 1e-5}
+
+
+def test_default_run_key_is_unchanged_by_backbone_and_learning_rate(tmp_path, monkeypatch):
+    monkeypatch.delenv("SVA_BACKBONE_RANDOM_INIT", raising=False)
+    old = _key(tmp_path)
+    new = _key(tmp_path, **BACKBONE_DEFAULTS)
+    assert new == old
+    assert set(new) == {"label_type", "split_sha256", "seed", "epochs", "best_metric", "base_checkpoint"}
+    assert new["base_checkpoint"] == "facebook/dinov2-large"
+
+
+def test_a_non_default_backbone_or_rate_adds_exactly_its_keys(tmp_path, monkeypatch):
+    import backbones
+    monkeypatch.delenv("SVA_BACKBONE_RANDOM_INIT", raising=False)
+    base = _key(tmp_path, **BACKBONE_DEFAULTS)
+    bb = _key(tmp_path, **{**BACKBONE_DEFAULTS, "backbone": "convnextv2-base"})
+    assert set(bb) - set(base) == {"backbone", "backbone_revision"}
+    assert bb["backbone_revision"] == backbones.get("convnextv2-base").revision
+    assert bb["base_checkpoint"] == "facebook/convnextv2-base-22k-384"
+    lr = _key(tmp_path, **{**BACKBONE_DEFAULTS, "learning_rate": 3e-5})
+    assert set(lr) - set(base) == {"learning_rate"} and lr["learning_rate"] == 3e-5
+    monkeypatch.setenv("SVA_BACKBONE_RANDOM_INIT", "1")
+    rand = _key(tmp_path, **{**BACKBONE_DEFAULTS, "backbone": "dinov3-vitl16"})
+    assert rand["random_init"] is True   # a random-weight smoke run never resumes real-weight checkpoints
+
+
+def test_a_backbone_change_blocks_a_resume(tmp_path, monkeypatch):
+    monkeypatch.delenv("SVA_BACKBONE_RANDOM_INIT", raising=False)
+    out = tmp_path / "bb"
+    resume_checkpoint(str(out), _key(tmp_path, **{**BACKBONE_DEFAULTS, "backbone": "convnextv2-base"}))
+    _checkpoint(out, 217)
+    with pytest.raises(SystemExit, match="another run"):
+        resume_checkpoint(str(out), _key(tmp_path, **{**BACKBONE_DEFAULTS, "backbone": "rampnet-convnextv2-base"}))
