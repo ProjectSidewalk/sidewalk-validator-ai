@@ -13,10 +13,10 @@ context images re-rendered from the panoramas, and the round-3 panorama store on
 
 | stage | what | jobs | state |
 |---|---|---|---|
-| smoke | NoCurbRamp on the 217 round-3 rows whose panorama is in the one surviving staged store; 1 epoch; every arm and the baseline rerun | 43403247 (backfill), 43403248 to 43403253 (six trainings), 43403800 (a resubmit of a finished run) | all completed, 2026-11-19 17:20 to 17:48 PST: `check-run` ok for all six tags, every checkpoint deleted after its record was copied, the backfill's `--verify 50` passed (below), the resubmit exited with "already evaluated" in 28 s, and `report` on the smoke shadow ran to the end with every row `INCOMPLETE` (subset shadow) |
-| pilot | target types x (`baseline-rerun` seeds 42 to 46, `side_info` and `side_info_nohq` at seed 42); full round-3 recipe | 43404266, 43404267, 43404269 to 43404287 (21 jobs, ids in `context_jobs_pilot.txt`) | running (submitted 2026-11-19 17:50 PST); no number from it yet |
+| smoke | NoCurbRamp on the 217 round-3 rows whose panorama is in the one surviving staged store; 1 epoch; every arm and the baseline rerun | 43403247 (backfill), 43403248 to 43403253 (six trainings), 43403800 (a resubmit of a finished run) | all completed, 2026-11-19 17:20 to 17:48 PST: `check-run` ok for all six tags, every checkpoint deleted after its record was copied, the backfill's `--verify 50` passed (below), the resubmit exited with "already evaluated" in 28 s. `report` on the smoke shadow was run before the three image-arm jobs had finished, so its image-arm rows read "not run"; rerun locally on all six runs it exits 0 with every row `INCOMPLETE` (subset shadow). The klone clone was fast-forwarded once while a smoke job ran (harmless here; the checklist says not to) |
+| pilot | target types x (`baseline-rerun` seeds 42 to 46, `side_info` and `side_info_nohq` at seed 42); full round-3 recipe; **pilot code: 9dace0c** | 43404266, 43404267, 43404269 to 43404287 (21 jobs, ids and commands in `context_jobs_pilot.txt` in the scratch clone; copy it and `context_jobs_smoke.txt` to `$KEEP` when the pilot ends, scratch is purged) | running (submitted 2026-11-19 17:50 PST; all 21 running at 2:50 h on 2026-11-19, effective time limit 9:05 h); no number from it yet |
 | A | confirmatory arms x target types x seeds 42 to 46 (`A5=1`, recommended; 42 to 44 without it), `view_heatmap-r448` at seed 42, 3 backfills | 36 (24) | needs the restage and Jon's go |
-| B | only for an arm with a `WIN` in stage A: that arm and `baseline-rerun` on CurbRamp and Crosswalk | | needs a `WIN` |
+| B | only for an arm with a `WIN` in stage A: that arm (the rule's confirmatory seeds) and `baseline-rerun` (seeds 42 to 46) on CurbRamp and Crosswalk | 9 per guard type with a backfill | needs a `WIN` |
 
 What exists:
 
@@ -121,6 +121,10 @@ Written before any arm was trained on the round-3 data. `analysis/context_arms.p
 and writes `decision.md` / `decision.json`; nothing below is changed after a result is seen without an entry under
 [Deviations](#deviations).
 
+Edits to the proposal before any arm was trained (review fix round 1, 2026-11-20; the constants are unchanged):
+stage B trains the baseline at all five rule seeds; only the rule's seed lists are read; a record must also match its
+tag's arm, view resolution and the recipe's epochs; a verdict needs at least 200 kept bootstrap resamples.
+
 **Data and recipe.** Round-3 dataset, split and recipe, unchanged (DINOv2-L, 25 epochs, lr 1e-5, effective batch 32,
 hard targets, best checkpoint by validation macro-F1).
 
@@ -140,8 +144,13 @@ a type, that is stated at the top of the report, and the decision still uses the
   `view_heatmap-r448` at seed 42 (3 trainings), 3 backfills. If Jon takes the five-seed recommendation of the
   power table below (`A5=1`, seeds 42 to 46, 30 trainings), `seeds_confirmatory` becomes `[42, 43, 44, 45, 46]` here
   and in `DECISION_RULE` before stage A is launched.
-- Stage B (only for an arm with a `WIN` in stage A): that arm and `baseline-rerun` x guard types x seeds 42, 43, 44,
-  plus 2 backfills.
+- Stage B (only for an arm with a `WIN` in stage A): that arm at the rule's confirmatory seeds and `baseline-rerun`
+  at seeds 42 to 46 (the rule's baseline seeds on every type; with three, a guard-type `REGRESSION` could never be
+  read) x guard types, plus 2 backfills.
+- Only the rule's seeds are read: `seeds_baseline` for the baseline, `seeds_confirmatory` for a confirmatory arm. A
+  seed trained beyond those lists is listed in `decision.md` as "on disk, not used" and enters nothing, so a partly
+  finished or extended stage cannot move a verdict. The launcher hands each stage preset's seed lists to `preflight`,
+  which refuses a list the rule does not read (so `A5=1` cannot run until the rule says five).
 - No other run is added after looking at results without an entry under Deviations.
 
 **Primary endpoint.** `D` = mean over the arm's seeds minus mean over the baseline's seeds of the **within-city AUC
@@ -162,7 +171,10 @@ seeds is unbalanced on purpose (the baseline is shared by every arm); the Welch 
    **-0.02**.
 
 `REGRESSION` when the upper bound of the interval for `D` is below 0, or the upper bound of the `test` interval is
-below -0.01. `INCOMPLETE` when a required run, record or gate block is missing, or the data is a subset shadow.
+below -0.01. `INCOMPLETE` when a required run, record or gate block is missing; when a run's record does not match
+its tag (seed, split hash, context arm, view resolution, or epochs other than the recipe's 25); when the joint
+bootstrap kept fewer than 200 resamples on test or on held-out (without the bootstrap term the interval would be too
+narrow; `report` refuses `--decision-boot` below 200); or when the data is a subset shadow.
 Otherwise `NO GAIN`, worded in every output as "no gain detected at this power", next to the power table.
 
 **The gate is reported, not a criterion.** Agree and uncapped Disagree coverage, precision and gated n at 0.92 under
@@ -206,6 +218,10 @@ From `analysis/context_arms.py power` (simulation of criteria 1 to 3 and the hel
 criteria 4 and 5 are not simulated, so the `WIN` rates are upper bounds). Inputs: the within-city held-out seed sd
 of October's trio and the bootstrap sd of a difference between two of its seeds (1,000 joint panorama resamples).
 The pilot's five baseline seeds replace October's sds when they finish; the report recomputes the table then.
+The bootstrap sd of D comes from one seed pair at one bootstrap seed: at another bootstrap seed the review measured
+0.0107 / 0.0137 against 0.0099 / 0.0151 (Obstacle / SurfaceProblem), which moves Obstacle's power at +0.03 with three
+seeds from 0.41 to about 0.36. The conclusion below does not change; `power` now also prints the sd over every seed
+pair.
 
 | type | seed sd | bootstrap sd of D | arm seeds | false WIN at 0 | REGRESSION at 0 | power +0.02 | +0.03 | +0.05 | effect at 80% power | recommended arm seeds |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -256,10 +272,12 @@ is in a staged store (the smoke shadow) and marks the shadow a subset, which the
 
 **Each run's record.** Every training job copies `training_run.json`, `run_key.json`, the best checkpoint's
 `trainer_state.json` and `config.json` and a `job.txt` (job id, node, GPU, start and end times) to
-`<shadow>/<Type>/runs/<tag>/` before deleting the checkpoint (`KEEP_CKPT=0`, the default; `best` keeps the best one),
-and copies the record, metrics and predictions to `$KEEP`. `check-run` verifies a finished run (record present,
-seed, split hash, predictions covering exactly the shadow's val/test/test_heldout rows, one per `label_uid`), and
-the report marks a decision `INCOMPLETE` when a record is missing or does not match. October's seed-42 model
+`<shadow>/<Type>/runs/<tag>/`, then writes the finished marker `.evaluated` there, before deleting the checkpoint
+(`KEEP_CKPT=0`, the default; `best` keeps the best one), and copies the record, metrics and predictions to `$KEEP`.
+`check-run` verifies a finished run (record present, seed, split hash, the context arm and view resolution the tag
+stands for, `--epochs` when given, predictions covering exactly the shadow's val/test/test_heldout rows, one per
+`label_uid`), and the report marks a decision `INCOMPLETE` when a record is missing or does not match (the same
+checks, epochs fixed at 25). October's seed-42 model
 predates run records; its `training_run.json` and `run_key.json`, and those of its seed-43/44 replicates, were pinned
 on 2026-11-19 under `$KEEP/baseline-records/<Type>/` with a `SHA256SUMS` file (57 files, 1.7 MB).
 
@@ -291,19 +309,25 @@ $ENV/bin/python analysis/context_arms.py check-run --data $WORK/smoke/data --lab
 # 3. pilot (21 jobs, no panoramas needed)
 STAGE=pilot DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP analysis/context_submit.sh NoCurbRamp Obstacle SurfaceProblem
 
-# 4. stage A: first the restage (Jon's decision; below), then
+# 4. stage A: first the restage (Jon's decision; below), then a dry run (never refused by the session cap)
 STAGE=A DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP PANO_STORE=<staged store> DRY_RUN=1 \
-    analysis/context_submit.sh NoCurbRamp Obstacle SurfaceProblem      # read it, then again without DRY_RUN
+    analysis/context_submit.sh NoCurbRamp Obstacle SurfaceProblem      # read it; then, once Jon has approved:
+STAGE=A DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP PANO_STORE=<staged store> ALLOW_OVER_SESSION_CAP=1 \
+    analysis/context_submit.sh NoCurbRamp Obstacle SurfaceProblem      # the smoke and pilot logs hold 29 jobs
 
 # 5. the decision (no GPU; anywhere with the shadow)
 $ENV/bin/python analysis/context_arms.py report --data-dir $WORK/data --label-types NoCurbRamp,Obstacle,SurfaceProblem \
     --out docs/context-arms-2026-11
 ```
 
+`A5=1` (five confirmatory seeds) is refused by the preflight until `seeds_confirmatory` is `[42, 43, 44, 45, 46]` in
+`DECISION_RULE` and in the json block above (Jon's call, before stage A).
+
 Every invocation of the launcher appends its job ids and each job's full command to `context_jobs_<stage>.txt` in
-the clone, refuses more than 40 jobs per invocation (`MAX_JOBS`) and more than 40 summed over every
-`context_jobs_*.txt` (`SESSION_MAX_JOBS`; `ALLOW_OVER_SESSION_CAP=1` overrides deliberately), stops at the first
-`sbatch` that fails without retrying, and runs `preflight` before any `sbatch`. Single jobs:
+the clone, refuses more than 40 jobs per invocation (`MAX_JOBS`) and, except under `DRY_RUN=1`, more than 40 summed
+over every `context_jobs_*.txt` (`SESSION_MAX_JOBS`; `ALLOW_OVER_SESSION_CAP=1` overrides deliberately), refuses a
+label type or tag listed twice and (where `squeue` exists) a type and tag already queued or running, stops at the
+first `sbatch` that fails without retrying, and runs `preflight` before any `sbatch`. Single jobs:
 
 ```
 STEP=train LT=NoCurbRamp ARM=side_info_nohq SEED=43 TAG=side_info_nohq-s43 DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP \
@@ -311,13 +335,22 @@ STEP=train LT=NoCurbRamp ARM=side_info_nohq SEED=43 TAG=side_info_nohq-s43 DATA=
 STEP=backfill LT=NoCurbRamp DATA=$WORK/data PANO_STORE=<store> sbatch analysis/context_arms.slurm
 ```
 
-`STEP=train` refuses an empty `TAG` and the tags `baseline` and `baseline-s<seed>` (October's files), and a run whose
-`<shadow>/<Type>/runs/<tag>/.evaluated` exists exits at once ("already evaluated"), so a resubmitted job never
-overwrites a finished one.
+`STEP=train` refuses an empty `TAG` and the tags `baseline` and `baseline-s<seed>` (October's files); a run whose
+`<shadow>/<Type>/runs/<tag>/.evaluated` exists exits at once ("already evaluated", after redoing the `$KEEP` copy),
+so a resubmitted job never overwrites a finished one; and the job holds an exclusive lock on
+`$RUNS/<Type>/<tag>/.train.lock`, so a second job with the same type and tag (a stage resubmitted after an `sbatch`
+timeout) exits instead of training into the same directory.
+
+**Time limit.** The jobs request 16 h, but the `ckpt-gpu` QOS caps them: `scontrol show job` reported
+`TimeLimit=09:05:00` on every pilot job. The pilot's runs (about 4 h) fit. `view_heatmap-r448` at about 3x the step
+time may not: a `TIMEOUT` is not requeued, so watch the first r448 run and resubmit the same command if it times out
+(it resumes from its last checkpoint).
 
 **The panorama restage (stage A).** The image arms' backfill re-renders each row's view from its panorama, and the
-round-3 store on klone is gone. `preflight --backfill` writes the missing list as `<shadow>/<Type>/stage_files.txt`
-(the format `analysis/ai_labels_stage.slurm` reads) with a size estimate:
+round-3 store on klone is gone. `analysis/context_arms.py stage-list` writes each type's missing list as
+`<shadow>/<Type>/stage_files.txt` (the format `analysis/ai_labels_stage.slurm` reads) and one deduplicated list for
+all types in `--out` (created), with a size estimate; a store that does not exist yet lacks everything, so it sizes
+the restage before any launcher run. `preflight --backfill` writes the per-type lists too, marked store or not:
 
 | type | unique panoramas | at 11.4 MB each |
 |---|---:|---:|
@@ -327,9 +360,13 @@ round-3 store on klone is gone. `preflight --backfill` writes the missing list a
 | three target types, deduplicated | 39,240 | about 450 GB |
 
 ```
-cat $WORK/data/{NoCurbRamp,Obstacle,SurfaceProblem}/stage_files.txt | sort -u > $WORK/stage/stage_files.txt
+$ENV/bin/python analysis/context_arms.py stage-list --data $WORK/data --types NoCurbRamp,Obstacle,SurfaceProblem \
+    --pano-store /gscratch/scrubbed/$USER/pano-stage/context-arms --out $WORK/stage
 RUN=$WORK/stage DEST=/gscratch/scrubbed/$USER/pano-stage/context-arms sbatch analysis/ai_labels_stage.slurm
 ```
+
+`DEST` is a new store (or this one, to resume it), never an existing marked store: the stage job removes
+`.pano-store` at its start and writes it back only after the pull, so a stopped pull would leave that store unmarked.
 
 The stage job pulls sequential 1,000-file batches over one connection each and stops on the first connection error
 without retrying (the makelab hosts ban a source that reconnects too fast); a resubmit resumes. The backfill then
@@ -343,7 +380,7 @@ has been purged, rebuilding it takes seconds, but the context images need the pa
 | smoke | 6 (1 epoch, 217 rows) | 1 | under 1 |
 | pilot | 21 | 0 | about 21 x 2.5 = 50 |
 | A | 21 (33 with `A5=1`) | 3 | about 70 (110), `two_scale` and `view_heatmap-r448` at about 2x and 3x the step time |
-| B | 6 per guard type | 1 per guard type | about 20 |
+| B | 8 per guard type (10 with `A5=1`) | 1 per guard type | about 27 (33) |
 
 Estimates from October's tight-crop runs (0:10 to 2:41 h per run on `ckpt-all`, NoCurbRamp 2:41) times the arm's
 backbone passes and tokens. All on klone's free `ckpt-all` partition. Measured smoke throughput (1 epoch on 217
