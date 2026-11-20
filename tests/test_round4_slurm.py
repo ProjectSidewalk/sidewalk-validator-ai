@@ -69,6 +69,7 @@ def test_launcher_text():
     assert 'KEEP="${KEEP:-/gscratch/makelab/$USER/round4-disagree-2026-11-keep}"' in text
     assert "HF_HUB_DISABLE_XET=1 HF_HOME=$HF_HOME huggingface-cli download facebook/dinov2-large" in text
     assert '/tmp /gscratch/makelab' in text
+    assert "env -u CONDA_PREFIX" in text and "( preflight ) || exit 2" in text   # Lmod refuses an inherited conda
     for line in text.splitlines():
         if "--job-name=" in line:
             assert '--job-name=round4-disagree-' in line or '--job-name="round4-disagree-' in line, line
@@ -77,8 +78,8 @@ def test_launcher_text():
 STUB = """#!/bin/bash
 n=$(( $(cat "$STUB_DIR/count" 2>/dev/null || echo 1000) + 1 )); echo $n > "$STUB_DIR/count"
 { printf 'ARGV'; for a in "$@"; do printf '\\t%s' "$a"; done; printf '\\n'
-  printf 'ENV\\tLT=%s\\tVARIANT=%s\\tTAG=%s\\tSEED=%s\\tSTEP=%s\\tMODE=%s\\tKEEP_BEST=%s\\tKEEP_CKPT=%s\\tDATA=%s\\n' \
-    "${LT:-}" "${VARIANT:-}" "${TAG:-}" "${SEED:-}" "${STEP:-}" "${MODE:-}" "${KEEP_BEST:-}" "${KEEP_CKPT:-}" "${DATA:-}"
+  printf 'ENV\\tCONDA_PREFIX=%s\\tLT=%s\\tVARIANT=%s\\tTAG=%s\\tSEED=%s\\tSTEP=%s\\tMODE=%s\\tKEEP_BEST=%s\\tKEEP_CKPT=%s\\tDATA=%s\\n' \
+    "${CONDA_PREFIX:-}" "${LT:-}" "${VARIANT:-}" "${TAG:-}" "${SEED:-}" "${STEP:-}" "${MODE:-}" "${KEEP_BEST:-}" "${KEEP_CKPT:-}" "${DATA:-}"
 } >> "$STUB_DIR/calls"
 echo $n
 """
@@ -96,7 +97,7 @@ def stub(tmp_path):
     def run(stage, **env):
         e = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "STUB_DIR": str(tmp_path), "STAGE": stage,
              "PREFLIGHT": "0", "WORK": str(tmp_path / "work"), "ROUND4_FORBIDDEN_PREFIXES": "/nonexistent-prefix",
-             "USER": "tester", **env}
+             "USER": "tester", "CONDA_PREFIX": "/inherited/env", **env}
         return subprocess.run(["bash", os.path.join(AN, "round4_submit.sh")], cwd=cwd, env=e, capture_output=True,
                               text=True)
 
@@ -144,6 +145,7 @@ def test_pilot_submits_29_gpu_and_2_cpu_jobs(stub):
         assert dep[0] == f"afterok:{prep_id}"
         assert dep[1:] == ([] if i < 16 else [f"afterany:{ids[i - 16]}"])    # only the throttle besides prep
         assert t["env"]["KEEP_BEST"] == "1" and t["env"]["KEEP_CKPT"] == "0"
+        assert t["env"]["CONDA_PREFIX"] == ""                                   # not inherited by the job
     assert [t["env"]["SEED"] for t in trains[:9]] == ["42"] * 9                 # seed 42 first
     assert {t["env"]["TAG"] for t in trains} == {"baseline", "baseline-s43", "baseline-s44", "cl-drop",
                                                  "cl-drop-s43", "cl-drop-s44"}

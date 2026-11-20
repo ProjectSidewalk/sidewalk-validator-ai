@@ -54,8 +54,10 @@ submit() {
   file="${*: -1}"
   sha=$({ sha256sum "$file" 2>/dev/null || shasum -a 256 "$file"; } | cut -d' ' -f1)
   cp -n "$file" "$SUBMITTED/$(basename "$file").$sha" 2>/dev/null || true
+  # The job files load conda themselves; Lmod refuses `module load conda` while CONDA_PREFIX is inherited from an
+  # activated shell (sbatch exports the submitting environment), so the conda variables are dropped here.
   # shellcheck disable=SC2086
-  id=$(env $envs sbatch --parsable --kill-on-invalid-dep=yes "$@") || die "sbatch failed: $envs sbatch $*"
+  id=$(env -u CONDA_PREFIX -u CONDA_SHLVL -u CONDA_DEFAULT_ENV -u CONDA_PROMPT_MODIFIER $envs sbatch --parsable --kill-on-invalid-dep=yes "$@") || die "sbatch failed: $envs sbatch $*"
   id="${id%%;*}"
   printf '%s\t%s\t%s\tsha256=%s\t%s sbatch --parsable --kill-on-invalid-dep=yes %s\n' \
     "$id" "$kind" "$(date -u +%FT%TZ)" "$sha" "$envs" "$*" >> "$JOBS"
@@ -111,7 +113,7 @@ gpu_env() { echo "ENV=$ENV HF_HOME=$HF_HOME"; }
 case "$STAGE" in
   smoke)
     need_gpu 2
-    preflight
+    ( preflight ) || exit 2      # a subshell: its conda activation must not reach sbatch
     prep=$(submit cpu "STEP=prep R4=$SMOKE/data TYPES=Crosswalk CL_TYPES=Crosswalk $(cpu_env)" \
            --job-name=round4-disagree-smoke-prep analysis/round4_cpu.slurm)
     train=$(submit gpu "LT=Crosswalk VARIANT=cl-drop TAG=smoke EPOCHS=1 KEEP_CKPT=0 KEEP_BEST=1 DATA=$SMOKE/data RUNS=$SMOKE/runs $(gpu_env)" \
@@ -123,7 +125,7 @@ case "$STAGE" in
     ;;
   smoke-rerun)
     need_gpu 1
-    preflight
+    ( preflight ) || exit 2      # a subshell: its conda activation must not reach sbatch
     rerun=$(submit gpu "LT=Crosswalk VARIANT=cl-drop TAG=smoke EPOCHS=1 KEEP_CKPT=0 KEEP_BEST=1 DATA=$SMOKE/data RUNS=$SMOKE/runs $(gpu_env)" \
             --job-name=round4-disagree-smoke-train --time=01:00:00 analysis/confident_learning.slurm)
     echo "smoke rerun=$rerun (expect 'already evaluated' within two minutes)"
@@ -131,7 +133,7 @@ case "$STAGE" in
   pilot)
     n_cl=$(echo "${CL_TYPES//,/ }" | wc -w); n_t=$(echo "${TYPES//,/ }" | wc -w); n_s=$(echo "$SEEDS" | wc -w)
     need_gpu $(( (n_t + n_cl) * n_s + 2 ))
-    preflight
+    ( preflight ) || exit 2      # a subshell: its conda activation must not reach sbatch
     prep=$(submit cpu "STEP=prep R4=$R4 TYPES=$TYPES CL_TYPES=$CL_TYPES $(cpu_env)" \
            --job-name=round4-disagree-prep analysis/round4_cpu.slurm)
     trains=()
@@ -163,7 +165,7 @@ case "$STAGE" in
     ADJ="${ADJ:-$WORK/adj}"; SIF="${SIF:-$SCRUB/containers/vllm-openai_v0.32.0-x86_64.sif}"
     n_rb=$(echo "${RB_TYPES//,/ }" | wc -w); n_s=$(echo "$SEEDS" | wc -w)
     need_gpu $(( 2 * n_rb * n_s + 2 + 4 ))
-    preflight
+    ( preflight ) || exit 2      # a subshell: its conda activation must not reach sbatch
     if [ "${PREFLIGHT:-1}" != 0 ]; then
       echo "== stage-2 inputs"
       [ -f "$ADJ/gold.csv" ] || die "no $ADJ/gold.csv (J14: Jon copies it, chmod 700 on $ADJ)"
