@@ -189,6 +189,22 @@ reads saved `<city_id>.csv` exports and the `cities.json` listing instead of the
 once and saved there). Runs with `--limit` or `--cities` write `deployment_priors.partial.json`, never the real
 `deployment_priors.json`.
 
+### Experiments on an existing dataset: a shadow data directory
+
+`evaluate.py`, `context_model.py predict` and the context backfill write their outputs next to the split they read
+(`<data>/<Type>/predictions_<tag>.csv`, `metrics_<tag>.json`, `context/`). For an experiment on the round-3 dataset,
+point them at a **shadow** on scratch instead of the round-3 directory: `python analysis/context_arms.py shadow
+--src <round-3 dir> --dest <scratch>/data --types ...` symlinks the crops, copies `split.csv` (byte-identical, so the
+split hash in `run_key.json` matches the baseline's), `manifest.csv`, `generation_run.json` and the baseline's
+outputs, and records their sha256 in `shadow_run.json`. Nothing is written into the round-3 directory, and
+`/gscratch/makelab`'s file count does not move. `analysis/context_submit.sh` refuses a `DATA` without
+`shadow_run.json` ([`context-arms-2026-11.md`](context-arms-2026-11.md)).
+
+**Never import torch or transformers on a login node.** On 2026-11-19 importing torch from the project env on a
+klone login node did not finish in 7 minutes (two sessions). Login-node helpers (`shadow`, `preflight`) import
+pandas only and read package versions with `importlib.metadata`; anything that needs torch goes through `sbatch`
+(a 1-CPU `ckpt` job is fine for a small step). If even pandas stalls, run the helper in such a job.
+
 ## Held-out-city benchmark
 
 The test split is drawn from the same cities the model trains on, so it says nothing about a city the model has
