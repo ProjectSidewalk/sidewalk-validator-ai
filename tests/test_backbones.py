@@ -324,10 +324,10 @@ def test_grad_norm_at_2x4_equals_8x1(key, tmp_path):
 
 @pytest.mark.parametrize("key", list(TINY))
 def test_soft_target_trainer_step_on_every_family(key, tmp_path):
+    model, size = tiny(key)   # skips without torch / transformers
     from transformers import Trainer
 
     import fine_tune_classifier as ftc
-    model, size = tiny(key)
     t = _trainer(model, _Rows(8, size, soft=True), tmp_path, 2, 4, ftc.soft_target_trainer(Trainer))
     assert t.model_accepts_loss_kwargs is False
     t.train()
@@ -335,9 +335,9 @@ def test_soft_target_trainer_step_on_every_family(key, tmp_path):
 
 
 def test_dinov3_wrapper_pools_cls_and_patches_and_round_trips_through_auto(tmp_path):
+    model, size = tiny("dinov3-vitl16")   # skips without torch / DINOv3
     import torch
     from transformers import AutoModelForImageClassification
-    model, size = tiny("dinov3-vitl16")
     assert model.base_model is model.dinov3_vit and type(model).__name__ == "SidewalkDinov3ForImageClassification"
     x = torch.randn(3, 3, size, size, generator=torch.Generator().manual_seed(2))
     model.eval()
@@ -367,8 +367,8 @@ def test_dinov3_wrapper_pools_cls_and_patches_and_round_trips_through_auto(tmp_p
 
 def test_dinov3_backbone_weights_load_into_the_wrapper(tmp_path):
     """A bare DINOv3ViTModel checkpoint (the hub layout) loads into the wrapper through base_model_prefix."""
+    tiny("dinov3-vitl16")   # skips without torch / DINOv3
     import torch
-    tiny("dinov3-vitl16")   # skips without DINOv3
     from transformers import DINOv3ViTConfig, DINOv3ViTModel
     arch = {k: v for k, v in TINY["dinov3-vitl16"][0].items()}
     base = DINOv3ViTModel(DINOv3ViTConfig(**arch))
@@ -380,9 +380,9 @@ def test_dinov3_backbone_weights_load_into_the_wrapper(tmp_path):
 
 
 def test_dinov3_positional_augmentation_switch():
+    off, _ = tiny("dinov3-vitl16", pos_embed_aug="off")   # skips without torch / DINOv3
     import torch
     x = torch.randn(1, 3, 32, 32, generator=torch.Generator().manual_seed(3))
-    off, _ = tiny("dinov3-vitl16", pos_embed_aug="off")
     off.train()
     with torch.no_grad():
         assert torch.equal(off(pixel_values=x).logits, off(pixel_values=x).logits)
