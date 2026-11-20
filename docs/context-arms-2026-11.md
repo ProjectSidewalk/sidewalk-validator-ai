@@ -121,9 +121,10 @@ Written before any arm was trained on the round-3 data. `analysis/context_arms.p
 and writes `decision.md` / `decision.json`; nothing below is changed after a result is seen without an entry under
 [Deviations](#deviations).
 
-Edits to the proposal before any arm was trained (review fix round 1, 2026-11-20; the constants are unchanged):
-stage B trains the baseline at all five rule seeds; only the rule's seed lists are read; a record must also match its
-tag's arm, view resolution and the recipe's epochs; a verdict needs at least 200 kept bootstrap resamples.
+Edits to the proposal before any arm was trained (review fix round 1 and its follow-ups, 2026-11-19 PST; the
+constants are unchanged): stage B trains the baseline at all five rule seeds; only the rule's seed lists are read; a
+record must also match its tag's arm, view resolution, the recipe's epochs and the knobs the job file pins (best
+metric, target, per-device batch); a verdict needs at least 200 kept bootstrap resamples.
 
 **Data and recipe.** Round-3 dataset, split and recipe, unchanged (DINOv2-L, 25 epochs, lr 1e-5, effective batch 32,
 hard targets, best checkpoint by validation macro-F1).
@@ -172,7 +173,8 @@ seeds is unbalanced on purpose (the baseline is shared by every arm); the Welch 
 
 `REGRESSION` when the upper bound of the interval for `D` is below 0, or the upper bound of the `test` interval is
 below -0.01. `INCOMPLETE` when a required run, record or gate block is missing; when a run's record does not match
-its tag (seed, split hash, context arm, view resolution, or epochs other than the recipe's 25); when the joint
+its tag (seed, split hash, context arm, view resolution, epochs other than the recipe's 25, or a best metric,
+target or per-device batch other than the job file's `macro_f1`, hard and 8); when the joint
 bootstrap kept fewer than 200 resamples on test or on held-out (without the bootstrap term the interval would be too
 narrow; `report` refuses `--decision-boot` below 200); or when the data is a subset shadow.
 Otherwise `NO GAIN`, worded in every output as "no gain detected at this power", next to the power table.
@@ -271,11 +273,13 @@ is in a staged store (the smoke shadow) and marks the shadow a subset, which the
 `analysis/context_submit.sh` refuses a `DATA` without `shadow_run.json`.
 
 **Each run's record.** Every training job copies `training_run.json`, `run_key.json`, the best checkpoint's
-`trainer_state.json` and `config.json` and a `job.txt` (job id, node, GPU, start and end times) to
+`trainer_state.json` and `config.json` and a `job.txt` (job id, node, GPU, start and end times, best checkpoint,
+`KEEP_CKPT`) to
 `<shadow>/<Type>/runs/<tag>/`, then writes the finished marker `.evaluated` there, before deleting the checkpoint
 (`KEEP_CKPT=0`, the default; `best` keeps the best one), and copies the record, metrics and predictions to `$KEEP`.
 `check-run` verifies a finished run (record present, seed, split hash, the context arm and view resolution the tag
-stands for, `--epochs` when given, predictions covering exactly the shadow's val/test/test_heldout rows, one per
+stands for, `--epochs` when given, the best metric, target and per-device batch the job file pins, so a hand-submitted
+`BATCH=4` run never counts as a seed, predictions covering exactly the shadow's val/test/test_heldout rows, one per
 `label_uid`), and the report marks a decision `INCOMPLETE` when a record is missing or does not match (the same
 checks, epochs fixed at 25). October's seed-42 model
 predates run records; its `training_run.json` and `run_key.json`, and those of its seed-43/44 replicates, were pinned
@@ -336,10 +340,12 @@ STEP=backfill LT=NoCurbRamp DATA=$WORK/data PANO_STORE=<store> sbatch analysis/c
 ```
 
 `STEP=train` refuses an empty `TAG` and the tags `baseline` and `baseline-s<seed>` (October's files); a run whose
-`<shadow>/<Type>/runs/<tag>/.evaluated` exists exits at once ("already evaluated", after redoing the `$KEEP` copy),
-so a resubmitted job never overwrites a finished one; and the job holds an exclusive lock on
-`$RUNS/<Type>/<tag>/.train.lock`, so a second job with the same type and tag (a stage resubmitted after an `sbatch`
-timeout) exits instead of training into the same directory.
+`<shadow>/<Type>/runs/<tag>/.evaluated` exists exits at once ("already evaluated", after redoing the `$KEEP` copy
+and finishing any checkpoint delete a preemption cut short, with the `KEEP_CKPT` and best checkpoint that run recorded
+in its `job.txt`), so a resubmitted job never overwrites a finished one. The job holds two exclusive locks for the
+whole step: `<shadow>/<Type>/.train-<tag>.lock`, beside the outputs, and `$RUNS/<Type>/<tag>/.train.lock`, on the
+checkpoints. A second job with the same type and tag (a stage resubmitted after an `sbatch` timeout, or the same run
+under another `RUNS`) exits instead of writing the same predictions and record or training into the same directory.
 
 **Time limit.** The jobs request 16 h, but the `ckpt-gpu` QOS caps them: `scontrol show job` reported
 `TimeLimit=09:05:00` on every pilot job. The pilot's runs (about 4 h) fit. `view_heatmap-r448` at about 3x the step
