@@ -69,17 +69,18 @@ def test_launcher_text():
     assert 'KEEP="${KEEP:-/gscratch/makelab/$USER/round4-disagree-2026-11-keep}"' in text
     assert "HF_HUB_DISABLE_XET=1 HF_HOME=$HF_HOME huggingface-cli download facebook/dinov2-large" in text
     assert '/tmp /gscratch/makelab' in text
-    assert "env -u CONDA_PREFIX" in text and "( preflight ) || exit 2" in text   # Lmod refuses an inherited conda
+    assert "-u CONDA_PREFIX" in text and "( preflight ) || exit 2" in text       # Lmod refuses an inherited conda
     for line in text.splitlines():
         if "--job-name=" in line:
             assert '--job-name=round4-disagree-' in line or '--job-name="round4-disagree-' in line, line
 
 
+STUB_VARS = ["CONDA_PREFIX", "LT", "VARIANT", "TAG", "SEED", "STEP", "MODE", "KEEP_BEST", "KEEP_CKPT", "DATA", "TAGS",
+             "TYPES", "CL_TYPES", "CROPS", "EXPECT", "GOLD_EXPECT", "DEST", "R4", "RUNS"]
 STUB = """#!/bin/bash
 n=$(( $(cat "$STUB_DIR/count" 2>/dev/null || echo 1000) + 1 )); echo $n > "$STUB_DIR/count"
 { printf 'ARGV'; for a in "$@"; do printf '\\t%s' "$a"; done; printf '\\n'
-  printf 'ENV\\tCONDA_PREFIX=%s\\tLT=%s\\tVARIANT=%s\\tTAG=%s\\tSEED=%s\\tSTEP=%s\\tMODE=%s\\tKEEP_BEST=%s\\tKEEP_CKPT=%s\\tDATA=%s\\n' \
-    "${CONDA_PREFIX:-}" "${LT:-}" "${VARIANT:-}" "${TAG:-}" "${SEED:-}" "${STEP:-}" "${MODE:-}" "${KEEP_BEST:-}" "${KEEP_CKPT:-}" "${DATA:-}"
+  printf 'ENV'; for v in """ + " ".join(STUB_VARS) + """; do printf '\\t%s=%s' "$v" "${!v:-}"; done; printf '\\n'
 } >> "$STUB_DIR/calls"
 echo $n
 """
@@ -92,6 +93,9 @@ def stub(tmp_path):
     cwd.mkdir()
     (bin_dir / "sbatch").write_text(STUB)
     (bin_dir / "sbatch").chmod(0o755)
+    # stage 2 cuts the crop list on the login node (`timeout 600 python analysis/adjudicator.py crops`): a no-op here
+    (bin_dir / "timeout").write_text("#!/bin/bash\necho \"timeout stub: $*\"\n")
+    (bin_dir / "timeout").chmod(0o755)
     os.symlink(AN, cwd / "analysis")
 
     def run(stage, **env):
@@ -113,7 +117,7 @@ def stub(tmp_path):
             out.append({"argv": argv, "env": env, "file": argv[-1]})
         return out
 
-    return run, calls, tmp_path
+    return run, calls, tmp_path, bin_dir
 
 
 def opt(call, name):
@@ -125,7 +129,7 @@ def opt(call, name):
 
 @needs_bash
 def test_pilot_submits_29_gpu_and_2_cpu_jobs(stub):
-    run, calls, tmp = stub
+    run, calls, tmp, _ = stub
     r = run("pilot")
     assert r.returncode == 0, r.stderr
     assert "preflight skipped" in r.stdout
@@ -161,7 +165,7 @@ def test_pilot_submits_29_gpu_and_2_cpu_jobs(stub):
 
 @needs_bash
 def test_smoke_submits_one_cpu_and_two_gpu_jobs(stub):
-    run, calls, _ = stub
+    run, calls, _, _ = stub
     r = run("smoke")
     assert r.returncode == 0, r.stderr
     c = calls()
@@ -175,13 +179,131 @@ def test_smoke_submits_one_cpu_and_two_gpu_jobs(stub):
 
 @needs_bash
 def test_stage2_refuses_without_confirmation(stub):
-    run, calls, _ = stub
+    run, calls, _, _ = stub
     r = run("stage2")
     assert r.returncode != 0 and "CONFIRM_STAGE2=1" in r.stderr and not calls()
 
 
 @needs_bash
 def test_launcher_refuses_work_under_tmp_by_default(stub):
-    run, calls, _ = stub
+    run, calls, _, _ = stub
     r = run("pilot", WORK="/tmp/round4-test-work", ROUND4_FORBIDDEN_PREFIXES="")   # empty: the default list
     assert r.returncode != 0 and "under /tmp" in r.stderr and not calls()
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Review round 1 (S2, S5, S9): what each submitted job is given, stage 2, a replayed log line, the CPU job file
+# ---------------------------------------------------------------------------------------------------------------------
+
+PILOT_TAGS = "baseline,baseline-s43,baseline-s44,cl-drop,cl-drop-s43,cl-drop-s44"
+CL4 = "Crosswalk,CurbRamp,NoCurbRamp,Obstacle"
+
+
+@needs_bash
+def test_pilot_wires_data_tags_expect_and_dependencies(stub):
+    run, calls, tmp, _ = stub
+    assert run("pilot").returncode == 0
+    c = calls()
+    r4 = str(tmp / "work" / "data")
+    trains = [x for x in c if x["file"].endswith("confident_learning.slurm")]
+    assert {t["env"]["DATA"] for t in trains} == {r4}                 # the gold-free mirror, never round 3's DATA
+    ids = [str(1002 + i) for i in range(27)]
+    r3, sr = [x for x in c if x["file"].endswith("round4_score.slurm")]
+    col = [x for x in c if x["file"].endswith("round4_cpu.slurm")][1]
+    assert r3["env"]["MODE"] == "round3" and opt(r3, "dependency") == "afterok:1001"
+    assert sr["env"]["MODE"] == "runs" and sr["env"]["TAGS"] == PILOT_TAGS and sr["env"]["CROPS"] == "r3crops"
+    assert opt(sr, "dependency") == "afterany:" + ":".join(ids)
+    assert col["env"]["STEP"] == "collect" and opt(col, "dependency") == "afterany:" + ":".join(ids + ["1029", "1030"])
+    assert col["env"]["EXPECT"] == f"baseline:42,43,44+cl-drop:42,43,44:{CL4}"
+
+
+@needs_bash
+def test_a_logged_line_replays_without_the_inherited_conda(stub):
+    run, calls, tmp, bin_dir = stub
+    assert run("smoke").returncode == 0
+    first = calls()[1]                                                 # the smoke training
+    line = (tmp / "work" / "round4_jobs.txt").read_text().splitlines()[1]
+    cmd = line.split("\t", 4)[4]
+    assert cmd.startswith("env -u CONDA_PREFIX")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "STUB_DIR": str(tmp),
+           "CONDA_PREFIX": "/inherited/env"}
+    r = subprocess.run(["bash", "-c", cmd], env=env, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    replay = calls()[-1]
+    assert replay["env"]["CONDA_PREFIX"] == "" and replay["argv"] == first["argv"] and replay["env"] == first["env"]
+
+
+@needs_bash
+def test_stage2_submits_scoring_of_every_arm_and_a_collect(stub):
+    run, calls, tmp, _ = stub
+    r = run("stage2", CONFIRM_STAGE2="1", MAX_GPU_JOBS="100")
+    assert r.returncode == 0, r.stderr
+    c = calls()
+    gpu_files = ("confident_learning.slurm", "round4_score.slurm", "adjudicator.slurm")
+    gpu = [x for x in c if x["file"].endswith(gpu_files)]
+    assert len(gpu) == 19
+    jobs = (tmp / "work" / "round4_jobs.txt").read_text().splitlines()
+    assert sum(1 for ln in jobs if ln.split("\t")[1] == "gpu") == 19
+    by_name = {opt(x, "job-name"): x for x in c}
+    pull = by_name["round4-disagree-pano-pull"]
+    assert "--requeue" in pull["argv"] and pull["env"]["DEST"] == "/gscratch/scrubbed/tester/pano-stage/round4-disagree"
+    su = by_name["round4-disagree-score-uniform"]
+    assert su["env"]["CROPS"] == "uniform" and su["env"]["TAGS"] == PILOT_TAGS and su["env"]["MODE"] == "round3,runs"
+    rb = [x for x in c if x["file"].endswith("confident_learning.slurm")]
+    assert len(rb) == 12 and {x["env"]["DATA"] for x in rb} == {str(tmp / "work" / "data")}
+    assert len({opt(x, "job-name") for x in rb}) == 12
+    srb = by_name["round4-disagree-score-rb"]
+    assert srb["env"]["CROPS"] == "uniform" and srb["env"]["TYPES"] == "CurbRamp,Crosswalk"
+    assert set(srb["env"]["TAGS"].split(",")) == {"symmetric-rb", "matched-rb", "symmetric-rb-s43", "matched-rb-s43",
+                                                  "symmetric-rb-s44", "matched-rb-s44"}
+    dep = opt(srb, "dependency")
+    man_id = c.index(by_name["round4-disagree-gold-manifest"]) + 1001
+    assert dep.startswith(f"afterok:{man_id},afterany:") and len(dep.split("afterany:")[1].split(":")) == 12
+    col = by_name["round4-disagree-collect-stage2"]
+    assert "symmetric-rb:42,43,44:CurbRamp,Crosswalk" in col["env"]["EXPECT"]
+    assert col["env"]["EXPECT"].startswith(f"baseline:42,43,44+cl-drop:42,43,44:{CL4}")
+    assert "uniform:" in col["env"]["GOLD_EXPECT"] and "matched-rb" in col["env"]["GOLD_EXPECT"]
+    assert opt(col, "dependency").count(":") == 2 + 12
+    # the default cap of 40 cannot take stage 2 after the pilot's 34 GPU jobs (Jon's call to raise it)
+    log = tmp / "work" / "round4_jobs.txt"
+    log.write_text("\n".join(f"{i}\tgpu\tt\tsha256=x\tcmd" for i in range(34)) + "\n")
+    r2 = run("stage2", CONFIRM_STAGE2="1")
+    assert r2.returncode != 0 and "needs 19 GPU jobs; 34 already" in r2.stderr
+
+
+@needs_bash
+def test_cpu_job_file_runs_collect(tmp_path):
+    """round4_cpu.slurm STEP=collect end to end, with `module` / `conda` stubbed and a tiny run layout. The work
+    directory sits under the repository, not under /tmp, which the job file refuses (as on klone)."""
+    import tempfile
+    import sys
+    work = tempfile.mkdtemp(prefix=".pytest-round4-cpu-", dir=ROOT)
+    try:
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        for name, body in (("module", "exit 0"), ("conda", "exit 0"),
+                           ("python", f'[ "$1" = -c ] && exit 0\nexec "{sys.executable}" "$@"')):
+            (bin_dir / name).write_text(f"#!/bin/bash\n{body}\n")
+            (bin_dir / name).chmod(0o755)
+        r4d, runs = os.path.join(work, "r4"), os.path.join(work, "runs")
+        os.makedirs(os.path.join(r4d, "Obstacle"))
+        with open(os.path.join(r4d, "Obstacle", "metrics_baseline.json"), "w") as f:
+            f.write("{}")
+        with open(os.path.join(r4d, "Obstacle", "predictions_baseline.csv"), "w") as f:
+            f.write("label_uid\nx\n")
+        best = os.path.join(runs, "Obstacle", "baseline", "best")
+        os.makedirs(best)
+        with open(os.path.join(best, "model.safetensors"), "wb") as f:
+            f.write(b"w")
+        env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "STEP": "collect", "DATA": work,
+               "R4": r4d, "GOLD_UIDS": os.path.join(work, "none.csv"), "RUNS": runs,
+               "KEEP": os.path.join(work, "keep"), "EXPECT": "baseline:42", "TYPES": "Obstacle"}
+        r = subprocess.run(["bash", os.path.join(AN, "round4_cpu.slurm")], cwd=ROOT, env=env, capture_output=True,
+                           text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "done collect" in r.stdout
+        assert os.path.exists(os.path.join(r4d, "round4_manifest.json"))
+        assert os.path.exists(os.path.join(work, "keep", "runs", "Obstacle", "baseline")) is False   # no run files
+        assert os.path.exists(os.path.join(r4d, "Obstacle", "metrics.json"))                       # untagged copy
+    finally:
+        shutil.rmtree(work, ignore_errors=True)

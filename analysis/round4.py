@@ -931,13 +931,32 @@ def is_gold_derived(rel):
     return name.startswith("gold_") or "gold_uids" in name
 
 
-def gold_prediction_status(r4, label_type, tag):
+def parse_gold_expect(specs):
+    """``["r3crops:baseline,cl-drop", "uniform:baseline,matched-rb"]`` -> ``{crops: {variant, ...}}``; None (every
+    crop set expected for every run) when ``specs`` is empty.
+
+    >>> sorted(parse_gold_expect(["r3crops:baseline,cl-drop"])["r3crops"]), parse_gold_expect(None)
+    (['baseline', 'cl-drop'], None)
+    """
+    if not specs:
+        return None
+    out = {}
+    for spec in specs:
+        crops, _, variants = spec.partition(":")
+        out[crops] = set(split_list(variants))
+    return out
+
+
+def gold_prediction_status(r4, label_type, tag, variant=None, gold_expect=None):
     """``{crops: sha256 or None}`` of ``gold_predictions_<crops>_<tag>.csv`` for every crop set whose gold manifest
-    for ``label_type`` exists (``$R4/gold/<crops>/<Type>.csv``): a gold scoring job that timed out leaves a None
-    here, which a run's metrics, predictions and weights alone would not show."""
+    for ``label_type`` exists (``$R4/gold/<crops>/<Type>.csv``) and that ``gold_expect`` expects for ``variant``
+    (all, when ``gold_expect`` is None): a gold scoring job that timed out leaves a None here, which a run's
+    metrics, predictions and weights alone would not show."""
     out = {}
     for man in sorted(glob.glob(os.path.join(r4, "gold", "*", f"{label_type}.csv"))):
         crops = os.path.basename(os.path.dirname(man))
+        if gold_expect is not None and variant not in gold_expect.get(crops, set()):
+            continue
         p = os.path.join(r4, label_type, f"gold_predictions_{crops}_{tag}.csv")
         out[crops] = sha256_file(p) if os.path.exists(p) else None
     return out
@@ -948,6 +967,7 @@ def cmd_collect(args):
     expected = parse_expect(args.expect, types)
     now = datetime.now(timezone.utc)
     runs_out, missing, missing_gold = [], [], []
+    gold_expect = parse_gold_expect(args.gold_expect)
     for t, variant, seed, tag in expected:
         tdir = os.path.join(args.r4, t)
         files = {"metrics": os.path.join(tdir, f"metrics_{tag}.json"),
@@ -963,11 +983,11 @@ def cmd_collect(args):
             rec["weights_purge_after"] = (mtime + timedelta(days=SCRUBBED_PURGE_DAYS)).strftime("%Y-%m-%d")
         if not rec["present"]:
             missing.append(f"{t}/{tag}")
-        rec["gold_predictions_sha256"] = gold_prediction_status(args.r4, t, tag)
+        rec["gold_predictions_sha256"] = gold_prediction_status(args.r4, t, tag, variant, gold_expect)
         missing_gold += [f"{t}/{tag}/{c}" for c, sha in rec["gold_predictions_sha256"].items() if sha is None]
         runs_out.append(rec)
     # round 3's own checkpoint is scored on gold too (MODE=round3), though it is not an expected training run
-    round3_gold = {t: gold_prediction_status(args.r4, t, "round3") for t in types}
+    round3_gold = {t: gold_prediction_status(args.r4, t, "round3", "round3", gold_expect) for t in types}
     missing_gold += [f"{t}/round3/{c}" for t, d in round3_gold.items() for c, sha in d.items() if sha is None]
     copies = {t: untagged_copies(os.path.join(args.r4, t)) for t in types
               if any(e[0] == t and e[3] == "baseline" for e in expected)}
@@ -1090,6 +1110,9 @@ def build_parser():
     k.add_argument("--expect", nargs="+", required=True, help="variant:seeds[:types], e.g. baseline:42,43,44")
     k.add_argument("--jobs", default=None, help="round4_jobs.txt")
     k.add_argument("--gold-uids", default=None)
+    k.add_argument("--gold-expect", nargs="*", default=None, metavar="CROPS:VARIANTS",
+                   help="which runs each gold crop set must have scored (e.g. r3crops:baseline,cl-drop,round3 "
+                        "uniform:baseline,cl-drop,round3,symmetric-rb,matched-rb); default: every crop set, every run")
     k.add_argument("--extra", nargs="*", default=None, help="more small files to keep (e.g. submitted job files)")
     k.add_argument("--max-bytes", type=int, default=KEEP_MAX_BYTES)
     k.add_argument("--max-files", type=int, default=KEEP_MAX_FILES)

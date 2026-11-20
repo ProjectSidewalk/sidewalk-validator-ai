@@ -486,3 +486,17 @@ def test_score_gold_reruns_when_the_manifest_changes(tmp_path):
     assert r4.score_gold(str(man), ck, "t", out, infer=infer) == "scored"
     pd.concat([frame, frame.assign(label_uid="a:2")]).to_csv(man, index=False)    # same weights, new manifest
     assert r4.score_gold(str(man), ck, "t", out, infer=infer) == "scored" and calls == [1, 2]
+
+
+def test_collect_gold_expect_limits_the_crop_sets_per_variant(tmp_path):
+    r, runs = collect_layout(tmp_path, ("baseline",))
+    for crops in ("r3crops", "uniform"):
+        (r / "gold" / crops).mkdir(parents=True)
+        (r / "gold" / crops / "Obstacle.csv").write_text("label_uid\n")
+    for tag in ("baseline", "round3"):
+        (r / "Obstacle" / f"gold_predictions_r3crops_{tag}.csv").write_text("label_uid\n")
+    assert collect(r, runs, tmp_path / "keep", expect=("baseline:42",)) == 4     # uniform missing, all expected
+    assert collect(r, runs, tmp_path / "keep", "--gold-expect", "r3crops:baseline,round3",
+                   expect=("baseline:42",)) == 0
+    man = json.loads((r / "round4_manifest.json").read_text())
+    assert man["runs"][0]["gold_predictions_sha256"].keys() == {"r3crops"}

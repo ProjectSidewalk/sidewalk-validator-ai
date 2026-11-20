@@ -11,10 +11,13 @@
 #                                                 # scoring, the rebalanced rule test, the VLM adjudicator
 #
 # Every job id is appended to $WORK/round4_jobs.txt with its kind (gpu or cpu), the time, the job file's sha256 and
-# the full command line (the job's variables travel in the environment, as in analysis/cl_submit.sh, and are logged
-# in front of the sbatch call). MAX_GPU_JOBS (default 40) caps this stream's GPU submissions across all stages: the
-# launcher counts the gpu lines already logged and refuses a batch that would pass the cap. PREFLIGHT=0 skips the
-# login-node checks (for the stub test only) and says so.
+# the full command line, shell-quoted and including the `env -u CONDA_...` wrapper, so pasting the logged command
+# from the clone reproduces the submission exactly (the job's variables travel in the environment, as in
+# analysis/cl_submit.sh). MAX_GPU_JOBS (default 40) caps this stream's GPU submissions across all stages: the
+# launcher counts the gpu lines already logged and refuses a batch that would pass the cap. The pilot used 34
+# (smoke 4, rerun 1, pilot 29), so stage 2 (19 GPU jobs) and any pilot rerun need a raised cap (Jon's call). The
+# launcher itself is copied to $WORK/submitted/ beside the job files. PREFLIGHT=0 skips the login-node checks (for
+# the stub test only) and says so.
 set -euo pipefail
 STAGE="${STAGE:?set STAGE (smoke|smoke-rerun|pilot|stage2)}"
 SCRUB="${SCRUB:-/gscratch/scrubbed/$USER}"
@@ -31,6 +34,8 @@ CL_TYPES="${CL_TYPES:-Crosswalk,CurbRamp,NoCurbRamp,Obstacle}"
 SEEDS="${SEEDS:-42 43 44}"
 MAX_GPU_JOBS="${MAX_GPU_JOBS:-40}"; MAX_PARALLEL="${MAX_PARALLEL:-16}"
 PILOT_TAGS="baseline,baseline-s43,baseline-s44,cl-drop,cl-drop-s43,cl-drop-s44"
+SEED_LIST="${SEEDS// /,}"
+EXPECT_PILOT="baseline:$SEED_LIST+cl-drop:$SEED_LIST:$CL_TYPES"
 die() { echo "round4_submit: $*" >&2; exit 2; }
 # WORK (and so R4, RUNS, SMOKE) never under /tmp (node-local on klone) or the makelab fileset (no room). The list is
 # overridable only so the stub test can run where its temporary directory lives; the default is what klone uses.
@@ -38,8 +43,10 @@ FORBIDDEN_PREFIXES="${ROUND4_FORBIDDEN_PREFIXES:-/tmp /gscratch/makelab}"
 for f in $FORBIDDEN_PREFIXES; do
   case "$WORK/" in "$f"/*) die "refusing WORK=$WORK: under $f (/tmp is node-local, makelab has no room)" ;; esac
 done
-[ -d logs ] || mkdir -p logs
-mkdir -p "$WORK" "$SUBMITTED"
+[ -d logs ] || mkdir -p logs || die "cannot make logs/"
+mkdir -p "$WORK" "$SUBMITTED" || die "cannot make $WORK"
+self_sha=$({ sha256sum "$0" 2>/dev/null || shasum -a 256 "$0"; } | cut -d' ' -f1)
+cp -n "$0" "$SUBMITTED/$(basename "$0").$self_sha" 2>/dev/null || true
 
 gpu_used() { [ -f "$JOBS" ] && awk -F'\t' '$2 == "gpu"' "$JOBS" | wc -l | tr -d ' ' || echo 0; }
 need_gpu() {  # need_gpu <n>: refuse a batch that would pass MAX_GPU_JOBS
@@ -49,25 +56,29 @@ need_gpu() {  # need_gpu <n>: refuse a batch that would pass MAX_GPU_JOBS
   fi
 }
 # submit <gpu|cpu> "<VAR=value ...>" <sbatch args ...> <job file>; prints the job id.
+# The job files load conda themselves; Lmod refuses `module load conda` while CONDA_PREFIX is inherited from an
+# activated shell (sbatch exports the submitting environment), so the conda variables are dropped from the call, and
+# the logged command carries the same wrapper (a replayed line must not reproduce smoke round 1's failure).
+UNSET_CONDA=(-u CONDA_PREFIX -u CONDA_SHLVL -u CONDA_DEFAULT_ENV -u CONDA_PROMPT_MODIFIER)
 submit() {
-  local kind=$1 envs=$2 id file sha; shift 2
+  local kind=$1 envs=$2 id file sha cmd; shift 2
   file="${*: -1}"
   sha=$({ sha256sum "$file" 2>/dev/null || shasum -a 256 "$file"; } | cut -d' ' -f1)
   cp -n "$file" "$SUBMITTED/$(basename "$file").$sha" 2>/dev/null || true
-  # The job files load conda themselves; Lmod refuses `module load conda` while CONDA_PREFIX is inherited from an
-  # activated shell (sbatch exports the submitting environment), so the conda variables are dropped here.
-  # shellcheck disable=SC2086
-  id=$(env -u CONDA_PREFIX -u CONDA_SHLVL -u CONDA_DEFAULT_ENV -u CONDA_PROMPT_MODIFIER $envs sbatch --parsable --kill-on-invalid-dep=yes "$@") || die "sbatch failed: $envs sbatch $*"
+  local -a e; read -r -a e <<< "$envs"
+  local -a call=(env "${UNSET_CONDA[@]}" "${e[@]}" sbatch --parsable --kill-on-invalid-dep=yes "$@")
+  cmd=$(printf '%q ' "${call[@]}"); cmd="${cmd% }"
+  id=$("${call[@]}") || die "sbatch failed: $cmd"
   id="${id%%;*}"
-  printf '%s\t%s\t%s\tsha256=%s\t%s sbatch --parsable --kill-on-invalid-dep=yes %s\n' \
-    "$id" "$kind" "$(date -u +%FT%TZ)" "$sha" "$envs" "$*" >> "$JOBS"
+  printf '%s\t%s\t%s\tsha256=%s\t%s\n' "$id" "$kind" "$(date -u +%FT%TZ)" "$sha" "$cmd" >> "$JOBS"
   echo "$id"
 }
 
 preflight() {
   if [ "${PREFLIGHT:-1}" = 0 ]; then echo "preflight skipped (PREFLIGHT=0)"; return 0; fi
   module load conda >/dev/null 2>&1 || true
-  eval "$(conda shell.bash hook)"; conda activate "$ENV"
+  eval "$(conda shell.bash hook)" || die "conda shell hook failed"
+  conda activate "$ENV" || die "cannot activate $ENV"
   echo "== git: clean checkout at a pushed commit"
   [ -z "$(timeout 60 git status --porcelain --untracked-files=no)" ] || die "uncommitted changes in $PWD"
   timeout 120 git fetch -q origin || die "git fetch failed"
@@ -88,7 +99,7 @@ preflight() {
   echo "== a real 8 MiB write (a touch passes on a full quota)"
   local d
   for d in "$WORK" "$KEEP"; do
-    mkdir -p "$d"
+    mkdir -p "$d" || die "cannot make $d"
     timeout 120 dd if=/dev/zero of="$d/.round4-ddtest" bs=1M count=8 status=none || die "cannot write 8 MiB to $d"
     rm -f "$d/.round4-ddtest"
   done
@@ -155,7 +166,7 @@ case "$STAGE" in
          --job-name=round4-disagree-score-round3 --dependency="afterok:$prep" analysis/round4_score.slurm)
     sr=$(submit gpu "MODE=runs CROPS=r3crops TYPES=$TYPES CL_TYPES=$CL_TYPES TAGS=$PILOT_TAGS R4=$R4 RUNS=$RUNS DATA=$DATA $(gpu_env)" \
          --job-name=round4-disagree-score-runs --dependency="afterany:$all" analysis/round4_score.slurm)
-    col=$(submit cpu "STEP=collect R4=$R4 RUNS=$RUNS KEEP=$KEEP TYPES=$TYPES JOBS=$JOBS SUBMITTED=$SUBMITTED EXPECT=baseline:42,43,44+cl-drop:42,43,44:$CL_TYPES $(cpu_env)" \
+    col=$(submit cpu "STEP=collect R4=$R4 RUNS=$RUNS KEEP=$KEEP TYPES=$TYPES JOBS=$JOBS SUBMITTED=$SUBMITTED EXPECT=$EXPECT_PILOT $(cpu_env)" \
           --job-name=round4-disagree-collect --dependency="afterany:$all:$r3:$sr" analysis/round4_cpu.slurm)
     echo "pilot prep=$prep trainings=${trains[*]} score-round3=$r3 score-runs=$sr collect=$col"
     ;;
@@ -164,7 +175,9 @@ case "$STAGE" in
     RB_TYPES="${RB_TYPES:-CurbRamp,Crosswalk}"
     ADJ="${ADJ:-$WORK/adj}"; SIF="${SIF:-$SCRUB/containers/vllm-openai_v0.32.0-x86_64.sif}"
     n_rb=$(echo "${RB_TYPES//,/ }" | wc -w); n_s=$(echo "$SEEDS" | wc -w)
-    need_gpu $(( 2 * n_rb * n_s + 2 + 4 ))
+    # 12 rebalanced trainings (2 rules x 2 types x 3 seeds), uniform crops, uniform scoring of the pilot runs,
+    # uniform scoring of the rebalanced runs, the adjudicator smoke and its three models.
+    need_gpu $(( 2 * n_rb * n_s + 3 + 4 ))
     ( preflight ) || exit 2      # a subshell: its conda activation must not reach sbatch
     if [ "${PREFLIGHT:-1}" != 0 ]; then
       echo "== stage-2 inputs"
@@ -188,22 +201,34 @@ case "$STAGE" in
         --out-dir "$ADJ/crops" || die "adjudicator.py crops failed"
     # The panoramas go to scrubbed (about 10 MB each), not to the makelab fileset, which has no room.
     STORE="$SCRUB/pano-stage/round4-disagree"
-    pull=$(submit cpu "RUN=$ADJ/crops DEST=$STORE" --job-name=round4-disagree-pano-pull analysis/adjudicator_stage.slurm)
+    # --requeue: a preempted pull restarts and rsync skips what is staged; five jobs hang off it with afterok.
+    pull=$(submit cpu "RUN=$ADJ/crops DEST=$STORE" --job-name=round4-disagree-pano-pull --requeue \
+           analysis/adjudicator_stage.slurm)
     crops=$(submit gpu "STAGE=crops CODE=$PWD OUT=$ADJ DATA=$DATA PANO_STORE=$STORE" --job-name=round4-disagree-crops --gpus=1 \
             --constraint="a40|l40|l40s|a100|h200" --mem=64G --cpus-per-task=8 --time=8:00:00 \
             --dependency="afterok:$pull" analysis/adjudicator.slurm)
     man=$(submit cpu "STEP=gold-manifest CROPS=uniform CROPS_ROOT=$ADJ/crops R4=$R4 TYPES=$TYPES $(cpu_env)" \
           --job-name=round4-disagree-gold-manifest --dependency="afterok:$crops" analysis/round4_cpu.slurm)
     su=$(submit gpu "MODE=round3,runs CROPS=uniform TYPES=$TYPES CL_TYPES=$CL_TYPES TAGS=$PILOT_TAGS R4=$R4 RUNS=$RUNS DATA=$DATA $(gpu_env)" \
-         --job-name=round4-disagree-score-uniform --dependency="afterok:$man" analysis/round4_score.slurm)
+         --job-name=round4-disagree-score-uniform --time=6:00:00 --dependency="afterok:$man" analysis/round4_score.slurm)
     var=$(submit cpu "STEP=variants WHICH=symmetric-rb,matched-rb SEEDS=${SEEDS// /,} CL_TYPES=$RB_TYPES R4=$R4 $(cpu_env)" \
           --job-name=round4-disagree-rb-variants analysis/round4_cpu.slurm)
-    rb=()
-    for seed in $SEEDS; do for v in symmetric-rb matched-rb; do for T in ${RB_TYPES//,/ }; do
+    rb=(); rb_tags=()
+    for seed in $SEEDS; do for v in symmetric-rb matched-rb; do
       name="$v"; [ "$seed" = 42 ] || name="$v-s$seed"
-      rb+=("$(submit gpu "LT=$T VARIANT=$name TAG=$name SEED=$seed KEEP_CKPT=0 KEEP_BEST=1 DATA=$R4 RUNS=$RUNS $(gpu_env)" \
-              --job-name="round4-disagree-$T-$name" --dependency="afterok:$var" analysis/confident_learning.slurm)")
-    done; done; done
+      rb_tags+=("$name")
+      for T in ${RB_TYPES//,/ }; do
+        rb+=("$(submit gpu "LT=$T VARIANT=$name TAG=$name SEED=$seed KEEP_CKPT=0 KEEP_BEST=1 DATA=$R4 RUNS=$RUNS $(gpu_env)" \
+                --job-name="round4-disagree-$T-$name" --dependency="afterok:$var" analysis/confident_learning.slurm)")
+      done
+    done; done
+    rb_all=$(IFS=:; echo "${rb[*]}"); RB_TAGS=$(IFS=,; echo "${rb_tags[*]}")
+    # The rebalanced runs on uniform gold crops (P5's gold co-primary): only RB_TYPES, after the manifests and
+    # every rb training (afterany: a failed training is reported missing by score and collect, not by a cancel).
+    srb=$(submit gpu "MODE=runs CROPS=uniform TYPES=$RB_TYPES CL_TYPES=$CL_TYPES TAGS=$RB_TAGS R4=$R4 RUNS=$RUNS DATA=$DATA $(gpu_env)" \
+          --job-name=round4-disagree-score-rb --dependency="afterok:$man,afterany:$rb_all" analysis/round4_score.slurm)
+    col2=$(submit cpu "STEP=collect R4=$R4 RUNS=$RUNS KEEP=$KEEP TYPES=$TYPES JOBS=$JOBS SUBMITTED=$SUBMITTED EXPECT=$EXPECT_PILOT+symmetric-rb:$SEED_LIST:$RB_TYPES+matched-rb:$SEED_LIST:$RB_TYPES GOLD_EXPECT=r3crops:baseline,cl-drop,round3+uniform:baseline,cl-drop,round3,symmetric-rb,matched-rb $(cpu_env)" \
+           --job-name=round4-disagree-collect-stage2 --dependency="afterany:$su:$srb:$rb_all" analysis/round4_cpu.slurm)
     smoke=$(submit gpu "STAGE=score MODEL=gemma4-31b LIMIT=8 CODE=$PWD OUT=$ADJ DATA=$DATA" \
             --job-name=round4-disagree-adj-smoke --gpus=l40s:2 --mem=200G --cpus-per-task=16 --time=1:00:00 \
             --dependency="afterok:$crops" analysis/adjudicator.slurm)
@@ -216,7 +241,7 @@ case "$STAGE" in
       adj+=("$(submit gpu "STAGE=score MODEL=$M CODE=$PWD OUT=$ADJ DATA=$DATA" --job-name="round4-disagree-adj-$M" \
                "${RES[@]}" --dependency="afterok:$smoke" analysis/adjudicator.slurm)")
     done
-    echo "stage2 pull=$pull crops=$crops manifest=$man score=$su variants=$var rb=${rb[*]} adj-smoke=$smoke adj=${adj[*]}"
+    echo "stage2 pull=$pull crops=$crops manifest=$man score=$su variants=$var rb=${rb[*]} score-rb=$srb collect=$col2 adj-smoke=$smoke adj=${adj[*]}"
     ;;
   *) die "unknown STAGE $STAGE (smoke|smoke-rerun|pilot|stage2)" ;;
 esac

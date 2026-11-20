@@ -56,9 +56,11 @@ case "$STEP" in
   collect)
     RUNS="${RUNS:?set RUNS}"; KEEP="${KEEP:?set KEEP}"; EXPECT="${EXPECT:?set EXPECT}"
     # EXPECT: round4.py collect --expect items joined by '+', e.g. baseline:42,43,44+cl-drop:42,43,44:CurbRamp,Crosswalk
+    # GOLD_EXPECT (optional): --gold-expect items joined by '+', e.g. r3crops:baseline,cl-drop,round3+uniform:...
     read -r -a EXP <<< "${EXPECT//+/ }"
+    GE=(); if [ -n "${GOLD_EXPECT:-}" ]; then read -r -a GE <<< "${GOLD_EXPECT//+/ }"; GE=(--gold-expect "${GE[@]}"); fi
     $R collect --r4 "$R4" --runs "$RUNS" --keep "$KEEP" --types "${TYPES//:/,}" --expect "${EXP[@]}" \
-        --jobs "${JOBS:-}" --gold-uids "$GOLD_UIDS" --extra ${SUBMITTED:+$SUBMITTED/*}
+        --jobs "${JOBS:-}" --gold-uids "$GOLD_UIDS" ${GE[@]+"${GE[@]}"} --extra ${SUBMITTED:+$SUBMITTED/*}
     ;;
   *) echo "unknown STEP $STEP" >&2; exit 2 ;;
 esac
