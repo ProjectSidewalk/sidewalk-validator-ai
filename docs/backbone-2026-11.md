@@ -193,7 +193,8 @@ and to judge it. Plus six learning-rate rows (below). The DINOv3 arms join with 
 **Pilot deviations.** The pilot (job 43406096, commit b8944e8) ran before the fix round, so (a) its 8 RampNet rows
 start every seed from one shared head (review B1; fixed in `build_classifier`, rerun is decision J16), and (b) a
 preemption between deleting `checkpoint-*` and the `slimmed` marker would fail a finished element (review S6; fixed,
-and any element it hit is rerun with `resubmit`).
+and a pilot element it hit is finished by `resubmit` from the fixed commit, which treats a complete `best/` with no
+best checkpoint left as copied).
 
 **Endpoints.** Primary: paired Δ held-out AUC against the same-seed in-env baseline on the same rows, read
 together with the paired **within-city** Δ held-out AUC. Guards: Δ test AUC, Δ within-city test AUC, the gate
@@ -402,6 +403,8 @@ Listed with the default this branch uses; none blocks the pilot. Numbered as in 
 - **J12. DINOv3 positional augmentation.** Default: as released. Alternative: off.
 - **J13. More families.** Not built. SigLIP 2 needs its own normalisation and mean pooling, so it breaks the
   fixed-preprocessing design and would be a second PR.
-- **J16. The pilot's RampNet rows (shared head).** Default: rerun the 8 rows after the pilot finishes, with
-  `resubmit` from the fixed commit under new tags or after moving the old records aside; that needs about 8 more GPU
-  jobs than the 55 cap leaves. Alternative: keep them and report the deviation beside every RampNet number.
+- **J16. The pilot's RampNet rows (shared head).** Default: rerun the 8 rows after the pilot finishes, from the
+  fixed commit, under the same tags (the report parses only the planned tags). First move all three places a run
+  lives aside, or `run_one` finds `evaluated`/`slimmed` and copies the old outputs back: `$RUNS/<LT>/<TAG>/`,
+  `$KEEP/<LT>/runs/<TAG>/`, and the tagged files `$DATA/<LT>/{metrics,predictions,per_city,slices,report}_<TAG>.*`.
+  Then `resubmit` a task file of those 8 rows. That needs about 8 more GPU jobs than the 55 cap leaves. Alternative: keep them and report the deviation beside every RampNet number.

@@ -109,6 +109,13 @@ run_one() {
   for f in training_run.json run_key.json gpu.txt; do
     if [ -f "$RUN/$f" ]; then cp "$RUN/$f" "$K/" || return 1; fi
   done
+  # A run slimmed by a commit before best_copied existed (the pilot's b8944e8) and preempted mid-delete has a full
+  # best/ but no marker and no best checkpoint left: treat its best/ as copied.
+  if [ ! -f "$RUN/slimmed" ] && [ ! -f "$RUN/best_copied" ] && [ ! -d "$BEST" ] \
+      && [ -s "$RUN/best/model.safetensors" ] && [ -s "$RUN/best/config.json" ] \
+      && [ -s "$RUN/best/preprocessor_config.json" ] && [ -s "$RUN/best/trainer_state.json" ]; then
+    touch "$RUN/best_copied"
+  fi
   if [ ! -f "$RUN/slimmed" ] && [ -f "$RUN/best_copied" ]; then
     # Preempted after best/ was copied and checked but before the marker below: finish the slimming only. (Before
     # this, a requeue here found best_checkpoint.txt naming a deleted directory and failed the finished run.)

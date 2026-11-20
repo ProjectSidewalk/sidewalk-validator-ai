@@ -146,7 +146,7 @@ def test_a_failed_copy_leaves_every_checkpoint(job):
     # The first rm only runs once best_copied exists (the requeue path); the main one follows the checked copies.
     assert body.index('[ -f "$RUN/best_copied" ]') < body.index('rm -rf "$RUN"/checkpoint-*')
     assert body.index('cp "$DATA/$LT/$f" "$K/"') < body.rindex('rm -rf "$RUN"/checkpoint-*')
-    assert body.index('cp "$BEST/$f" "$RUN/best/$f"') < body.index('touch "$RUN/best_copied"') \
+    assert body.index('cp "$BEST/$f" "$RUN/best/$f"') < body.rindex('touch "$RUN/best_copied"') \
         < body.rindex('rm -rf "$RUN"/checkpoint-*')
 
 
@@ -301,6 +301,19 @@ def test_a_requeue_after_best_was_copied_finishes_the_run(job):
     assert r.returncode == 0, r.stderr
     assert (keep / "done").exists() and (run / "slimmed").exists() and not list(run.glob("checkpoint-*"))
     assert len(os.listdir(run / "best")) == 4
+
+
+def test_a_pilot_run_without_the_marker_finishes_from_a_full_best(job):
+    """Final review R2: a run slimmed by the pilot's commit (no best_copied marker) and preempted after its best
+    checkpoint was deleted finishes from best/."""
+    call, tmp = job
+    assert call("CurbRamp", "dinov2-large", "42", "bb-dinov2-large", "1e-5").returncode == 0
+    run, keep = tmp / "runs" / "CurbRamp" / "bb-dinov2-large", tmp / "keep" / "CurbRamp" / "runs" / "bb-dinov2-large"
+    for m in (run / "slimmed", run / "best_copied", keep / "done"):
+        os.remove(m)
+    r = call("CurbRamp", "dinov2-large", "42", "bb-dinov2-large", "1e-5")
+    assert r.returncode == 0, r.stderr
+    assert (keep / "done").exists() and (run / "slimmed").exists()
 
 
 def test_the_job_checks_its_environment_and_appends_its_log():
