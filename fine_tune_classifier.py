@@ -575,7 +575,7 @@ def main(argv=None):
     parser.add_argument('--init-from', default=None,
                         help='a checkpoint-N directory to start from instead of facebook/dinov2-large (local '
                              'fine-tuning, analysis/region_transfer.py)')
-    parser.add_argument('--context-arm', choices=['none', 'two_scale', 'view_heatmap', 'side_info'], default='none',
+    parser.add_argument('--context-arm', choices=['none', 'two_scale', 'view_heatmap', 'side_info', 'side_info_nohq'], default='none',
                         help='train a "more context" arm of issue #14 (context_model.py) instead of the plain model')
     parser.add_argument('--context-view-res', type=int, choices=[224, 448], default=224,
                         help='input size of the view_heatmap arm (224: the baseline token count; 448: 4x tokens)')

@@ -11,6 +11,8 @@ arm                input                                                        
 ``side_info``      the tight crop plus a normalised vector of non-image features from          ``2 x hidden + n``
                    split.csv (severity, tag count, imagery age, log depth, high-quality user,
                    clipped, and missing-value flags)
+``side_info_nohq`` ``side_info`` without ``high_quality_user`` (the ablation: that flag is       ``2 x hidden + n - 1``
+                   partly derived from the votes that set the target)
 =================  ==========================================================================  =====================
 
 Every arm pools like ``Dinov2ForImageClassification`` (``[CLS, mean of the patch tokens]``) and trains with the same
@@ -49,8 +51,13 @@ import sys
 import numpy as np
 import pandas as pd
 
-ARMS = ("two_scale", "view_heatmap", "side_info")
+ARMS = ("two_scale", "view_heatmap", "side_info", "side_info_nohq")
+CONTEXT_ARMS = ("two_scale", "view_heatmap")   # read <label_type>/context/ (context_crops.py backfill first)
+SIDE_ARMS = ("side_info", "side_info_nohq")    # read only split.csv
 MODEL_TYPE = "context_dinov2"
+#: The backbone family the arms are written for (``from_base`` refuses any other; see the doc's "Rerunning an arm on
+#: another backbone" for what a port has to change).
+BACKBONE_MODEL_TYPE = "dinov2"
 SIDE_FEATURES = ["severity", "n_tags", "age_years", "log_depth_m", "high_quality_user", "clipped"]
 SIDE_MISSING = ["severity_missing", "age_missing", "depth_missing"]
 SIDE_COLUMNS = SIDE_FEATURES + SIDE_MISSING
@@ -60,7 +67,60 @@ FRAME_COLUMNS = {
     "view_heatmap": ("label_uid", "split", "crop_half_px"),
     "side_info": ("label_uid", "split", "severity", "tags", "image_capture_date", "depth_m", "high_quality_user",
                   "clipped"),
+    "side_info_nohq": ("label_uid", "split", "severity", "tags", "image_capture_date", "depth_m", "clipped"),
 }
+
+
+def is_side_arm(arm):
+    """True for the arms that add a side-feature vector to the tight crop (``side_info``, ``side_info_nohq``).
+
+    >>> [is_side_arm(a) for a in ("side_info", "side_info_nohq", "two_scale", "none")]
+    [True, True, False, False]
+    """
+    return arm in SIDE_ARMS
+
+
+def needs_context(arm):
+    """True for the arms that read the backfilled context images (so their jobs wait for ``context_crops.py
+    backfill``).
+
+    >>> [needs_context(a) for a in ("two_scale", "view_heatmap", "side_info_nohq", "none")]
+    [True, True, False, False]
+    """
+    return arm in CONTEXT_ARMS
+
+
+def side_columns(arm):
+    """The side-feature columns an arm feeds its head, in ``SIDE_COLUMNS`` order: all nine for ``side_info``, all but
+    ``high_quality_user`` for ``side_info_nohq``.
+
+    >>> len(side_columns("side_info")), "high_quality_user" in side_columns("side_info_nohq")
+    (9, False)
+    """
+    if arm == "side_info":
+        return list(SIDE_COLUMNS)
+    if arm == "side_info_nohq":
+        return [c for c in SIDE_COLUMNS if c != "high_quality_user"]
+    raise ValueError(f"{arm!r} is not a side arm ({SIDE_ARMS})")
+
+
+def check_backbone(model_type, base):
+    """Refuse a backbone the arms are not written for: ``SystemExit`` unless ``model_type`` is ``dinov2``.
+
+    The arms reuse DINOv2's pooling (``[CLS, mean(patches)]``), its patch projection (the 4th heatmap channel) and
+    its processor; another family needs the port described in docs/context-arms-2026-11.md, "Rerunning an arm on
+    another backbone", not a silent load.
+
+    >>> check_backbone("dinov2", "facebook/dinov2-large")
+    >>> check_backbone("vit", "/ckpt")
+    Traceback (most recent call last):
+    ...
+    SystemExit: context_model: base /ckpt is a 'vit' model; the context arms are written for 'dinov2' only (see docs/context-arms-2026-11.md, "Rerunning an arm on another backbone")
+    """
+    if model_type != BACKBONE_MODEL_TYPE:
+        raise SystemExit(f"context_model: base {base} is a {model_type!r} model; the context arms are written for "
+                         f"{BACKBONE_MODEL_TYPE!r} only (see docs/context-arms-2026-11.md, \"Rerunning an arm on "
+                         "another backbone\")")
 VIEW_SIZE = 2048            # data_generation.VIEW_SIZE (not imported: that module pulls in the generation stack)
 HEATMAP_SIGMA_FLOOR = 4.0   # px at the model input
 TRAIN_SCALE = (0.7, 1.0)    # fine_tune_classifier.py's RandomResizedCrop scale
@@ -90,8 +150,9 @@ def _flag(v):
     return 1.0 if str(v).strip().lower() in ("true", "1", "1.0") else 0.0
 
 
-def side_feature_frame(df, reference_date=None):
-    """The raw side features of each row of ``df`` (split.csv columns), as ``SIDE_COLUMNS``.
+def side_feature_frame(df, reference_date=None, columns=None):
+    """The raw side features of each row of ``df`` (split.csv columns), as ``columns`` (default ``SIDE_COLUMNS``;
+    ``side_columns(arm)`` for one arm; ``high_quality_user`` is read from ``df`` only when it is asked for).
 
     ``severity`` as a float; ``n_tags`` the number of tags (``analysis.slices.parse_tags``: JSON list or ``;``-joined);
     ``age_years`` = (``reference_date`` - ``image_capture_date``) in years (``reference_date`` defaults to
@@ -116,35 +177,40 @@ def side_feature_frame(df, reference_date=None):
     out["age_years"] = ((ref - cap).dt.days / 365.25).round(6)
     depth = pd.to_numeric(df["depth_m"], errors="coerce").astype(float)
     out["log_depth_m"] = np.log(depth.where(depth > 0))
-    out["high_quality_user"] = [_flag(v) for v in df["high_quality_user"]]
+    columns = list(SIDE_COLUMNS if columns is None else columns)
+    if "high_quality_user" in columns:
+        out["high_quality_user"] = [_flag(v) for v in df["high_quality_user"]]
     out["clipped"] = [_flag(v) for v in df["clipped"]]
     out["severity_missing"] = out["severity"].isna().astype(float)
     out["age_missing"] = out["age_years"].isna().astype(float)
     out["depth_missing"] = out["log_depth_m"].isna().astype(float)
-    return out[SIDE_COLUMNS]
+    return out[columns]
 
 
-def fit_normaliser(feats):
+def fit_normaliser(feats, columns=None):
     """Per-column ``median`` (NaN fill), ``mean`` and ``std`` (floored at 1e-6) of the training rows' side features,
-    as JSON-ready lists in ``SIDE_COLUMNS`` order. A column with no value at all gets median 0.
+    as JSON-ready lists in ``columns`` order (default ``SIDE_COLUMNS``). A column with no value at all gets median 0.
 
     >>> s = fit_normaliser(pd.DataFrame({c: [1.0, 3.0] for c in SIDE_COLUMNS}))
     >>> s["median"][0], s["mean"][0], s["std"][0]
     (2.0, 2.0, 1.0)
     """
-    x = feats[SIDE_COLUMNS].to_numpy(dtype=float)
+    columns = list(SIDE_COLUMNS if columns is None else columns)
+    x = feats[columns].to_numpy(dtype=float)
     med = np.array([np.nanmedian(c) if np.isfinite(c).any() else 0.0 for c in x.T])
     filled = np.where(np.isnan(x), med, x)
-    return {"columns": list(SIDE_COLUMNS), "median": [float(v) for v in med],
+    return {"columns": columns, "median": [float(v) for v in med],
             "mean": [float(v) for v in filled.mean(axis=0)],
             "std": [float(max(v, 1e-6)) for v in filled.std(axis=0)]}
 
 
 def normalise(feats, stats):
-    """``float32`` array: NaN -> the training median, then ``(x - mean) / std``."""
-    if list(stats["columns"]) != list(SIDE_COLUMNS):
+    """``float32`` array of ``stats["columns"]``: NaN -> the training median, then ``(x - mean) / std``. The columns
+    must be ``SIDE_COLUMNS`` in order, or that order with some dropped (``side_columns``); anything else raises."""
+    cols = list(stats["columns"])
+    if cols != [c for c in SIDE_COLUMNS if c in cols] or not set(cols) <= set(SIDE_COLUMNS):
         raise ValueError(f"side-feature columns differ: {stats['columns']} vs {SIDE_COLUMNS}")
-    x = feats[SIDE_COLUMNS].to_numpy(dtype=float)
+    x = feats[cols].to_numpy(dtype=float)
     x = np.where(np.isnan(x), np.asarray(stats["median"]), x)
     return ((x - np.asarray(stats["mean"])) / np.asarray(stats["std"])).astype(np.float32)
 
@@ -275,7 +341,7 @@ def wrap_collate(collate_fn, inputs):
     example's ``label_uid`` and ``split`` (train rows augmented, the rest not) and, for the view, ``crop_half_px``.
     ``two_scale`` adds ``pixel_values_wide`` and, for train rows, replaces ``pixel_values`` with the tight crop
     re-augmented under the same flip (:meth:`ContextInputs.pair`); ``view_heatmap`` replaces ``pixel_values`` with
-    the 4-channel view; ``side_info`` adds ``side_features``."""
+    the 4-channel view; the side arms add ``side_features``."""
     def collate(examples):
         import torch
         batch = collate_fn(examples)
@@ -291,7 +357,7 @@ def wrap_collate(collate_fn, inputs):
         elif inputs.arm == "view_heatmap":
             batch["pixel_values"] = torch.stack([inputs.view(u, e["crop_half_px"], t)
                                                  for u, e, t in zip(uids, examples, train)])
-        elif inputs.arm == "side_info":
+        elif is_side_arm(inputs.arm):
             batch["side_features"] = torch.stack([inputs.side_vector(u) for u in uids])
         return batch
     return collate
@@ -314,7 +380,7 @@ def build_classes():
 
         def __init__(self, context_arm="two_scale", view_px=448, train_res=224, wide_factor=4,
                      heatmap_sigma_floor=HEATMAP_SIGMA_FLOOR, side_features=None, side_stats=None,
-                     age_reference_date=None, index_sha256=None, **kwargs):
+                     age_reference_date=None, index_sha256=None, base_checkpoint=None, **kwargs):
             super().__init__(**kwargs)
             if context_arm not in ARMS:
                 raise ValueError(f"context_arm must be one of {ARMS}")
@@ -325,6 +391,7 @@ def build_classes():
             self.side_stats = side_stats
             self.age_reference_date = age_reference_date
             self.index_sha256 = index_sha256
+            self.base_checkpoint = base_checkpoint
 
     class ContextDinov2ForImageClassification(Dinov2PreTrainedModel):
         config_class = ContextDinov2Config
@@ -335,8 +402,8 @@ def build_classes():
             self.num_labels = config.num_labels
             self.dinov2 = Dinov2Model(config)
             h = config.hidden_size
-            n_in = {"two_scale": 4 * h, "view_heatmap": 2 * h,
-                    "side_info": 2 * h + len(config.side_features)}[config.context_arm]
+            n_in = {"two_scale": 4 * h, "view_heatmap": 2 * h}.get(config.context_arm,
+                                                                  2 * h + len(config.side_features))
             self.classifier = nn.Linear(n_in, config.num_labels)
             self.post_init()
 
@@ -351,9 +418,9 @@ def build_classes():
                 if pixel_values_wide is None:
                     raise ValueError("the two_scale arm needs pixel_values_wide")
                 feats.append(self.pool(pixel_values_wide))
-            elif arm == "side_info":
+            elif is_side_arm(arm):
                 if side_features is None:
-                    raise ValueError("the side_info arm needs side_features")
+                    raise ValueError(f"the {arm} arm needs side_features")
                 feats.append(side_features.to(feats[0].dtype))
             logits = self.classifier(torch.cat(feats, dim=1))
             loss = None
@@ -365,11 +432,19 @@ def build_classes():
         def from_base(cls, base, context_arm, id2label=None, label2id=None, **fields):
             """A new model whose backbone is ``base``'s (``facebook/dinov2-large`` or a checkpoint directory) and
             whose head is fresh. For ``view_heatmap`` the patch projection gets a 4th input channel: channels 0-2
-            are the pretrained filters, channel 3 is zero, so the output equals the base model's at step 0."""
+            are the pretrained filters, channel 3 is zero, so the output equals the base model's at step 0.
+
+            ``base`` must be a DINOv2 model (``check_backbone``): its ``model_type`` is read with
+            ``PretrainedConfig.get_config_dict``, which resolves a hub id from the cache under ``HF_HUB_OFFLINE=1``
+            and does not fail on a model type this transformers release lacks. ``base`` is recorded in the config
+            (``base_checkpoint``)."""
+            from transformers import PretrainedConfig
+            check_backbone(PretrainedConfig.get_config_dict(base)[0].get("model_type"), base)
+            fields = {**fields, "base_checkpoint": str(base)}
             base_cfg = Dinov2Config.from_pretrained(base).to_dict()
             for k in ("model_type", "architectures", "transformers_version", "id2label", "label2id", "num_labels",
                       "num_channels", "context_arm", "view_px", "train_res", "wide_factor", "heatmap_sigma_floor",
-                      "side_features", "side_stats", "age_reference_date", "index_sha256"):
+                      "side_features", "side_stats", "age_reference_date", "index_sha256", "base_checkpoint"):
                 base_cfg.pop(k, None)
             channels = 4 if context_arm == "view_heatmap" else 3
             cfg = ContextDinov2Config(context_arm=context_arm, id2label=id2label, label2id=label2id,
@@ -387,8 +462,8 @@ def build_classes():
 
 
 def side_table(df, reference_date, stats):
-    """``{label_uid: normalised side vector}`` for the rows of ``df``."""
-    vecs = normalise(side_feature_frame(df, reference_date), stats)
+    """``{label_uid: normalised side vector}`` for the rows of ``df``, over the normaliser's own columns."""
+    vecs = normalise(side_feature_frame(df, reference_date, stats["columns"]), stats)
     return dict(zip(df["label_uid"].astype(str), vecs))
 
 
@@ -398,8 +473,8 @@ def build_for_training(args, base, train_df, val_df, id2label, label2id, collate
     Needs split.csv frames carrying ``FRAME_COLUMNS[arm]`` (``load_split_frames(..., extra_columns=...)``). For
     ``two_scale``/``view_heatmap`` every train and val row must be in ``<data-dir>/<label_type>/context/index.csv``
     (``context_crops.load_index`` raises otherwise, before any weight is loaded) and the index's sha256 goes into the
-    config; for ``side_info`` the normaliser is fitted on the train rows and saved in the config with the age
-    reference date, so inference applies the same transform.
+    config; for the side arms the normaliser of ``side_columns(arm)`` is fitted on the train rows and saved in the
+    config with the age reference date, so inference applies the same transform.
     """
     import context_crops
     arm = args.context_arm
@@ -409,7 +484,7 @@ def build_for_training(args, base, train_df, val_df, id2label, label2id, collate
     res = int(getattr(args, "context_view_res", 224))
     fields = {"train_res": res, "wide_factor": context_crops.WIDE_FACTOR, "view_px": context_crops.VIEW_PX}
     paths, side, tight = None, None, None
-    if arm in ("two_scale", "view_heatmap"):
+    if needs_context(arm):
         base_dir = os.path.join(args.data_dir, args.label_type)
         both = pd.concat([train_df, val_df], ignore_index=True)
         index = context_crops.load_index(base_dir, require_uids=both["label_uid"],
@@ -422,10 +497,11 @@ def build_for_training(args, base, train_df, val_df, id2label, label2id, collate
                 raise SystemExit("--context-arm two_scale needs the train frame's image paths")
             tight = dict(zip(train_df["label_uid"].astype(str), train_df["image"]))
     else:
+        cols = side_columns(arm)
         ref = age_reference(train_df)
-        stats = fit_normaliser(side_feature_frame(train_df, ref))
+        stats = fit_normaliser(side_feature_frame(train_df, ref, cols), cols)
         side = {**side_table(train_df, ref, stats), **side_table(val_df, ref, stats)}
-        fields.update(side_features=list(SIDE_COLUMNS), side_stats=stats, age_reference_date=ref)
+        fields.update(side_features=cols, side_stats=stats, age_reference_date=ref)
     print(f"context arm {arm}: {len(train_df)} train / {len(val_df)} val rows"
           + (f", view at {res} px" if arm == "view_heatmap" else ""))
     _, model_cls = build_classes()
@@ -455,7 +531,7 @@ def run_inference(manifest, checkpoint_dir, data_dir, label_type, splits=("val",
         raise ValueError(f"unexpected id2label {cfg.id2label}")
     rows = manifest[manifest.split.isin(splits)]
     paths, side = None, None
-    if cfg.context_arm in ("two_scale", "view_heatmap"):
+    if needs_context(cfg.context_arm):
         base_dir = os.path.join(data_dir, label_type)
         index = context_crops.load_index(base_dir, require_uids=rows.label_uid,
                                          crop_half_px=dict(zip(rows.label_uid.astype(str), rows.crop_half_px)))

@@ -72,7 +72,8 @@ def test_report_writes_every_file_and_pairs_the_baseline(data):
         assert (out / f).exists(), f
     j = json.load(open(out / "arms.json"))
     rows = {r["variant"]: r for r in j["Toy"]["arms"]}
-    assert set(rows) == {"baseline", "two_scale", "view_heatmap"} and "missing" in rows["view_heatmap"]
+    assert set(rows) == {"baseline", "baseline-rerun", "two_scale", "view_heatmap"}
+    assert "missing" in rows["view_heatmap"] and "missing" in rows["baseline-rerun"]
     t = rows["two_scale"]
     assert t["test_auc"] == 0.93 and t["macro_f1_test"] == pytest.approx(0.7)
     assert t["incorrect_recall_p95_heldout"] == 0.2 and t["correct_recall_p92_heldout"] == 0.4
