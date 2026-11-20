@@ -933,7 +933,10 @@ def recipe(label_type, mtype, gtype):
         crit.append({"id": "C2", "result": "fail" if b < a - C2_MAX_AUC_LOSS else "pass", "baseline": a,
                      "cl-drop": b, "delta": b - a, "seeds": sorted(per), "per_seed": per})
     # C3: Agree non-regression (coverage absolute; precision relative to the baseline, A6). The per-seed values are
-    # recorded and printed beside the means (descriptive; the rule reads only the means).
+    # recorded and printed beside the means (descriptive; the rule reads only the means). The rule is an "or", so
+    # each clause is judged on its own: a split fails when either clause is estimable and bad, passes when both are
+    # estimable and fine, and is unestimable otherwise. (Before 2026-11-19 an undefined precision skipped the
+    # coverage clause too, so an arm that gated no Agree on any shared seed escaped C3; a bug fix, not a rule change.)
     c3 = {"id": "C3", "result": "pass", "splits": {}}
     for s in EVAL_SPLITS:
         cb, cc, cov_per = paired_seed_means(runs, ("gates", s, "Agree", "coverage_weighted"))
@@ -944,14 +947,16 @@ def recipe(label_type, mtype, gtype):
                "baseline_precision_under_gate": None if prec[0] is None else prec[0] < GATE,
                "cl-drop_precision_under_gate": None if prec[1] is None else prec[1] < GATE,
                "per_seed_coverage": cov_per, "per_seed_precision": prec_per}
-        if None in cov or None in prec:
-            row["result"] = "unestimable"
-            c3["result"] = "unestimable" if c3["result"] == "pass" else c3["result"]
-        else:
-            bad = (cov[0] - cov[1] > C3_MAX_COVERAGE_LOSS) or (prec[0] - prec[1] > C3_MAX_PRECISION_LOSS)
-            row["result"] = "fail" if bad else "pass"
-            if bad:
-                c3["result"] = "fail"
+        row["coverage_result"] = ("unestimable" if None in cov else
+                                  "fail" if cov[0] - cov[1] > C3_MAX_COVERAGE_LOSS else "pass")
+        row["precision_result"] = ("unestimable" if None in prec else
+                                   "fail" if prec[0] - prec[1] > C3_MAX_PRECISION_LOSS else "pass")
+        clauses = (row["coverage_result"], row["precision_result"])
+        row["result"] = "fail" if "fail" in clauses else "unestimable" if "unestimable" in clauses else "pass"
+        if row["result"] == "fail":
+            c3["result"] = "fail"
+        elif row["result"] == "unestimable" and c3["result"] == "pass":
+            c3["result"] = "unestimable"
         c3["splits"][s] = row
     crit.append(c3)
     # C4: no replication on held-out.
@@ -1024,7 +1029,7 @@ def decide_type(label_type, mtype, gtype, ship_seed=SHIP_SEED):
                                  "test_heldout); Tier B limited to trained deployments")
     else:
         a2 = "pass" if (not _nan(h["precision_weighted"]) and h["precision_weighted"] >= GATE) else "fail"
-        d2 = f"{h['n_pass']} gated, weighted precision {h['precision_weighted']}"
+        d2 = f"{h['n_pass']} gated, weighted precision {h['precision_weighted']:.3f}"
     crit.append({"id": "A2", "result": a2, "detail": d2})
     gship = _get(gtype, "runs", run_tag(rec_variant, ship_seed), "gated_disagree") if gtype else None
     a3, d3 = a3_result(gship)
@@ -1172,12 +1177,14 @@ def _crit_text(c):
     if i == "C3" and c.get("splits"):
         parts = []
         for s, row in c["splits"].items():
+            clauses = (f" (coverage {row['coverage_result']}, precision {row['precision_result']})"
+                       if "coverage_result" in row else "")
             if row.get("result") == "unestimable":
-                parts.append(f"{s} unestimable")
+                parts.append(f"{s} unestimable{clauses}")
                 continue
             per = "; ".join(f"s{k} {_f(v['baseline'])}/{_f(v['cl-drop'])}"
                             for k, v in sorted((row.get("per_seed_coverage") or {}).items(), key=lambda kv: int(kv[0])))
-            parts.append(f"{s} {row['result']}: Agree coverage {_f(row['coverage_cl-drop'])} vs "
+            parts.append(f"{s} {row['result']}{clauses}: Agree coverage {_f(row['coverage_cl-drop'])} vs "
                          f"{_f(row['coverage_baseline'])} (per seed baseline/cl-drop: {per}), weighted precision "
                          f"{_f(row['precision_cl-drop'])} vs {_f(row['precision_baseline'])}")
         return f"{i} {res} ({'; '.join(parts)})"

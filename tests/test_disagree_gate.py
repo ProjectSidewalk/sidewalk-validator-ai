@@ -549,6 +549,50 @@ def test_c2_threshold_and_c3_precision_clause_and_c4_upper_bound():
     assert one(m, gold_ok())["recipe"] == "cl-drop"               # C4 needs the whole interval below 0
 
 
+def test_c3_coverage_clause_fails_when_cl_drop_gates_no_agree():
+    # The final review's case: cl-drop gates no Agree on every seed (coverage 0, precision undefined) while the
+    # baseline gates 80%. C3 is an "or", so the coverage loss rejects on its own instead of making C3 unestimable.
+    m = maps_ok()
+    for v, g in (("baseline", gs(500, 0.95, 0.8)), ("cl-drop", gs(0, float("nan"), 0.0))):
+        for s in (42, 43, 44):
+            m["Obstacle"]["runs"][dgt.run_tag(v, s)]["gates"]["test"]["Agree"] = dict(g)
+    r = one(m, gold_ok())
+    c3 = next(c for c in r["criteria"] if c["id"] == "C3")
+    row = c3["splits"]["test"]
+    assert row["coverage_result"] == "fail" and row["precision_result"] == "unestimable" and row["result"] == "fail"
+    assert c3["result"] == "fail" and r["recipe"] == "baseline"
+    assert "test fail (coverage fail, precision unestimable)" in dgt.bar_markdown([r])
+    # recipe() alone, as the reviewer reproduced it
+    rec, crit = dgt.recipe("Obstacle", m["Obstacle"], gold_ok()["Obstacle"])
+    assert rec == "baseline" and next(c for c in crit if c["id"] == "C3")["result"] == "fail"
+
+
+def test_c3_undefined_precision_with_kept_coverage_stays_unestimable():
+    # Precision undefined in both arms while coverage holds: no clause fails, one cannot be judged.
+    m = maps_ok()
+    for v in ("baseline", "cl-drop"):
+        for s in (42, 43, 44):
+            m["Obstacle"]["runs"][dgt.run_tag(v, s)]["gates"]["test"]["Agree"] = gs(0, float("nan"), 0.0)
+    r = one(m, gold_ok())
+    c3 = next(c for c in r["criteria"] if c["id"] == "C3")
+    row = c3["splits"]["test"]
+    assert (row["coverage_result"], row["precision_result"], row["result"]) == ("pass", "unestimable", "unestimable")
+    assert c3["result"] == "unestimable" and r["recipe"] == "cl-drop"     # unestimable does not reject
+    # a precision loss on the other split still fails C3 even though this split is unestimable
+    for s in (42, 43, 44):
+        m["Obstacle"]["runs"][dgt.run_tag("cl-drop", s)]["gates"]["test_heldout"]["Agree"] = gs(400, 0.90, 0.6)
+    r = one(m, gold_ok())
+    assert next(c for c in r["criteria"] if c["id"] == "C3")["result"] == "fail" and r["recipe"] == "baseline"
+
+
+def test_a2_detail_is_rounded():
+    m = maps_ok()
+    m["Obstacle"]["runs"]["cl-drop"]["gates"]["test_heldout"]["Disagree"] = gs(15, 0.8814216278062682)
+    r = one(m, gold_ok())
+    a2 = next(c for c in r["criteria"] if c["id"] == "A2")
+    assert a2["detail"] == "15 gated, weighted precision 0.881" and "0.8814216" not in dgt.bar_markdown([r])
+
+
 def test_c2_c3_compare_the_same_seeds():
     m = maps_ok()
     m["Obstacle"]["runs"]["cl-drop-s44"] = {"variant": "cl-drop", "seed": 44, "missing": True}
