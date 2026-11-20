@@ -64,7 +64,19 @@ def test_run_record_is_copied_before_any_checkpoint_is_deleted():
     assert train.index("evaluate.py") < record < train.index('rm -rf "$RUN"/checkpoint-*')
     assert record < train.index('rm -f "$BEST/optimizer.pt"')
     assert '"$BEST/trainer_state.json" "$REC/trainer_state.json"' in train and '"$REC/config.json"' in train
-    assert train.index("touch \"$RUN/.evaluated\"") > train.index('cp -r "$REC" "$KEEP/$LT/runs/"')
+    # the finished marker sits beside the record (not under RUNS) and goes in before any delete, so a preemption
+    # between the delete and the KEEP copy, or a purged RUNS, never retrains a finished run
+    marker = train.index('touch "$REC/.evaluated"')
+    assert record < marker < train.index('rm -rf "$RUN"/checkpoint-*') and 'touch "$RUN/.evaluated"' not in train
+    assert "node=" in train and "hostname -s" in train
+    short = train.split("already evaluated")[1].split("exit 0")[0]
+    assert "keep_copy" in short   # the KEEP copy is redone (idempotently) when a finished run is resubmitted
+
+
+def test_train_holds_an_exclusive_lock_on_its_run_directory():
+    train = read("context_arms.slurm").split("  train)")[1]
+    assert 'exec 8>"$RUN/.train.lock"' in train and "flock -n 8" in train
+    assert train.index("flock -n 8") < train.index("already evaluated") < train.index("fine_tune_classifier.py")
 
 
 def test_backfill_holds_an_exclusive_lock_and_verifies():
@@ -182,7 +194,8 @@ def test_stage_b_needs_a_winner_and_backfill_attach(tmp_path):
     assert r.returncode != 0 and "WINNER" in r.stderr
     r, lines = launcher(tmp_path, "CurbRamp", STAGE="B", WINNER="view_heatmap", BACKFILL_JOB="123")
     assert r.returncode == 0, r.stderr
-    assert len(lines) == 6 and not any(field(ln, "STEP") == "backfill" for ln in lines)
+    # the rule's five baseline seeds on the guard types too, or a guard-type REGRESSION could never be read
+    assert len(lines) == 8 and not any(field(ln, "STEP") == "backfill" for ln in lines)
     vh = [ln for ln in lines if field(ln, "ARM") == "view_heatmap"]
     assert len(vh) == 3 and all("--dependency=afterok:123" in ln for ln in vh)
     r, _ = launcher(tmp_path, "CurbRamp", "Crosswalk", STAGE="B", WINNER="view_heatmap", BACKFILL_JOB="123")
@@ -208,9 +221,19 @@ def test_runs_spec_tags_round_trip_through_seed_run_re(tmp_path):
 def test_job_caps_per_invocation_and_per_session(tmp_path):
     r, lines = launcher(tmp_path, "NoCurbRamp", "Obstacle", STAGE="pilot", MAX_JOBS="10")
     assert r.returncode == 2 and "MAX_JOBS" in r.stderr and not lines
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "sbatch").write_text("#!/bin/bash\necho 1\n")
+    (fake / "sbatch").chmod(0o755)
+    r, lines = launcher(tmp_path, "NoCurbRamp", "Obstacle", "SurfaceProblem", STAGE="pilot", DRY_RUN="0",
+                        jobs={"context_jobs_smoke.txt": 7, "context_jobs_rerun.txt": 13},
+                        PATH=f"{fake}:{os.environ['PATH']}")
+    assert r.returncode == 2 and "session cap" in r.stderr and "20 logged + 21 now" in r.stderr
+    assert not (tmp_path / "jobs" / "context_jobs_pilot.txt").exists()
+    # a dry run is never refused by the session cap (it submits nothing); it says what the real one needs
     r, lines = launcher(tmp_path, "NoCurbRamp", "Obstacle", "SurfaceProblem", STAGE="pilot",
                         jobs={"context_jobs_smoke.txt": 7, "context_jobs_rerun.txt": 13})
-    assert r.returncode == 2 and "session cap" in r.stderr and "20 logged + 21 now" in r.stderr and not lines
+    assert r.returncode == 0 and len(lines) == 21 and "ALLOW_OVER_SESSION_CAP=1" in r.stdout
     r, lines = launcher(tmp_path, "NoCurbRamp", "Obstacle", "SurfaceProblem", STAGE="pilot",
                         jobs={"context_jobs_smoke.txt": 7, "context_jobs_rerun.txt": 13}, ALLOW_OVER_SESSION_CAP="1")
     assert r.returncode == 0 and len(lines) == 21
@@ -262,3 +285,66 @@ def test_real_submission_logs_one_line_per_job_and_stops_at_the_first_failure(tm
     assert [ln.split("\t")[0] for ln in log] == ["1001", "1002"]   # the failed third job is not logged, none retried
     assert counter.read_text().strip() == "3"
     assert log[0].split("\t")[1:4] == ["pilot", "NoCurbRamp", "baseline-rerun"] and "sbatch" in log[0]
+
+
+@needs_bash
+def test_launcher_refuses_repeated_tags_and_types(tmp_path):
+    r, lines = launcher(tmp_path, STAGE="A", RUNS_SPEC="side_info:42,42 side_info:42", SKIP_BACKFILL="1")
+    assert r.returncode == 2 and "listed twice: side_info" in r.stderr and not lines
+    r, lines = launcher(tmp_path, "NoCurbRamp", "NoCurbRamp", STAGE="pilot")
+    assert r.returncode == 2 and "passed twice: NoCurbRamp" in r.stderr and not lines
+
+
+@needs_bash
+def test_launcher_refuses_a_type_and_tag_already_in_squeue(tmp_path):
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "squeue").write_text("#!/bin/bash\necho context-arms-launch-pilot-Obstacle-side_info_nohq\n")
+    (fake / "squeue").chmod(0o755)
+    path = f"{fake}:{os.environ['PATH']}"
+    # the same type and tag under another stage name still shares the run directory
+    r, lines = launcher(tmp_path, "Obstacle", STAGE="A", RUNS_SPEC="side_info_nohq:42", SKIP_BACKFILL="1", PATH=path)
+    assert r.returncode == 2 and "already queued or running" in r.stderr and not lines
+    r, lines = launcher(tmp_path, "NoCurbRamp", STAGE="A", RUNS_SPEC="side_info_nohq:42", SKIP_BACKFILL="1", PATH=path)
+    assert r.returncode == 0 and len(lines) == 1
+
+
+def preset_seeds(lines):
+    """{variant: sorted seeds} of one type's training lines."""
+    out = {}
+    for ln in lines:
+        if field(ln, "STEP") != "train":
+            continue
+        tag = field(ln, "TAG")
+        variant = cl.SEED_RUN_RE.match(f"metrics_{tag}.json")["variant"] if "-s" in tag else tag
+        out.setdefault(variant, []).append(int(field(ln, "SEED")))
+    return {v: sorted(s) for v, s in out.items()}
+
+
+@needs_bash
+def test_every_stage_preset_trains_exactly_the_rules_seeds(tmp_path):
+    """Each stage's preset satisfies the decision's completeness check (S2): the baseline at seeds_baseline wherever
+    it is trained, each confirmatory arm at seeds_confirmatory; and the launcher hands both lists to the preflight."""
+    from analysis import context_arms as ca
+    rule = ca.DECISION_RULE
+    _, pilot = launcher(tmp_path, STAGE="pilot")
+    assert preset_seeds(pilot)["baseline-rerun"] == rule["seeds_baseline"]
+    _, a = launcher(tmp_path, STAGE="A", PANO_STORE="/abs/store")
+    sa = preset_seeds(a)
+    assert sa["two_scale"] == sa["view_heatmap"] == rule["seeds_confirmatory"]
+    for winner in ca.CONFIRMATORY:
+        _, b = launcher(tmp_path, "CurbRamp", STAGE="B", WINNER=winner, PANO_STORE="/abs/store")
+        sb = preset_seeds(b)
+        assert sb["baseline-rerun"] == rule["seeds_baseline"] and sb[winner] == rule["seeds_confirmatory"]
+    record = tmp_path / "preflight_args"
+    ok = f'#!/bin/bash\necho "$@" > {record}\nexit 0\n'
+    launcher(tmp_path, "CurbRamp", STAGE="B", WINNER="two_scale", PANO_STORE="/abs/store", preflight="1",
+             env_python=ok)
+    args = record.read_text()
+    assert "--confirmatory-seeds 42,43,44" in args and "--baseline-seeds 42,43,44,45,46" in args
+    # A5=1 trains seeds the current rule does not read: the launcher passes them and the preflight refuses
+    launcher(tmp_path, STAGE="A", A5="1", PANO_STORE="/abs/store", preflight="1", env_python=ok)
+    assert "--confirmatory-seeds 42,43,44,45,46,42,43,44,45,46" in record.read_text()
+    # a RUNS_SPEC rerun of single jobs is not compared
+    launcher(tmp_path, STAGE="A", RUNS_SPEC="two_scale:43", SKIP_BACKFILL="1", preflight="1", env_python=ok)
+    assert "--confirmatory-seeds" not in record.read_text()

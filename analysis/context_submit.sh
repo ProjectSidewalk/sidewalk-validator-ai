@@ -15,12 +15,21 @@
 #   pilot  baseline-rerun:42,43,44,45,46 side_info:42 side_info_nohq:42: 7 jobs per type, no backfill, no panoramas
 #   A      two_scale:42,43,44 view_heatmap:42,43,44 view_heatmap@448:42 plus one backfill: 8 jobs per type (A5=1: the
 #          two confirmatory arms at seeds 42 to 46, 12 jobs per type)
-#   B      baseline-rerun:42,43,44 $WINNER:42,43,44 plus one backfill when $WINNER reads the context images
+#   B      baseline-rerun:42,43,44,45,46 $WINNER:42,43,44 (A5=1: 42 to 46) plus one backfill when $WINNER reads the
+#          context images: the rule reads the same five baseline seeds on every type, guard types included
+#
+# The presets' seed lists must equal DECISION_RULE's (analysis/context_arms.py): the launcher passes them to the
+# preflight, which refuses a mismatch, so A5=1 needs seeds_confirmatory changed in the rule and the doc's json block
+# first. A repeated label type or a repeated tag is refused, and (where squeue exists) so is a job whose type and tag
+# is already queued or running under any stage: two trainers must never share a run directory (the job also holds a
+# lock on it).
 #
 # Per type: at most one backfill; the image arms (two_scale, view_heatmap) wait for it (afterok), the baseline rerun and
 # the side arms start at once and never die with a failed backfill. Before any sbatch the stage's preflight runs on this
 # node (analysis/context_arms.py preflight, with $ENV's python: no torch) and the job count is checked against
-# MAX_JOBS and against the session cap SESSION_MAX_JOBS, which counts every job line already in context_jobs_*.txt.
+# MAX_JOBS and against the session cap SESSION_MAX_JOBS, which counts every job line already in context_jobs_*.txt
+# (not under DRY_RUN=1, which only prints; the pilot and smoke logs alone hold 29 lines, so stage A needs
+# ALLOW_OVER_SESSION_CAP=1 once Jon has approved it).
 # Job ids, with each job's full command, are appended to $JOBS_DIR/context_jobs_<stage>.txt. The script stops at the
 # first sbatch that fails and never retries (a socket timeout may still have queued the job: check squeue).
 #
@@ -77,7 +86,8 @@ preset() {
     smoke) echo "baseline-rerun:42 two_scale:42 view_heatmap:42 view_heatmap@448:42 side_info:42 side_info_nohq:42" ;;
     pilot) echo "baseline-rerun:42,43,44,45,46 side_info:42 side_info_nohq:42" ;;
     A) [ "$A5" = 1 ] && s="42,43,44,45,46"; echo "two_scale:$s view_heatmap:$s view_heatmap@448:42" ;;
-    B) [ -n "$WINNER" ] || die "stage B needs WINNER=<arm>"; echo "baseline-rerun:42,43,44 $WINNER:42,43,44" ;;
+    B) [ -n "$WINNER" ] || die "stage B needs WINNER=<arm>"; [ "$A5" = 1 ] && s="42,43,44,45,46"
+       echo "baseline-rerun:42,43,44,45,46 $WINNER:$s" ;;
     *) die "unknown STAGE=$1 (smoke|pilot|A|B)" ;;
   esac
 }
@@ -99,6 +109,22 @@ for item in $SPEC; do
   done
 done
 [ ${#RUN_LINES[@]} -gt 0 ] || die "empty run list"
+DUP_TAGS=$(for l in "${RUN_LINES[@]}"; do echo "$l" | cut -d' ' -f5; done | sort | uniq -d | paste -sd' ' -)
+[ -z "$DUP_TAGS" ] || die "tag(s) listed twice: $DUP_TAGS (two jobs would train into one run directory)"
+DUP_TYPES=$(printf '%s\n' "$@" | sort | uniq -d | paste -sd' ' -)
+[ -z "$DUP_TYPES" ] || die "label type(s) passed twice: $DUP_TYPES"
+# The seed lists of a preset, for the preflight's comparison with DECISION_RULE (a RUNS_SPEC rerun is not compared).
+C_SEEDS=""; B_SEEDS=""
+if [ -z "$RUNS_SPEC" ] && [ "$STAGE" != smoke ]; then
+  for l in "${RUN_LINES[@]}"; do
+    read -r variant arm res seed tag <<< "$l"
+    if [ "$res" = 224 ] && { [ "$variant" = two_scale ] || [ "$variant" = view_heatmap ]; }; then
+      C_SEEDS="${C_SEEDS:+$C_SEEDS,}$seed"
+    elif [ "$variant" = baseline-rerun ]; then
+      B_SEEDS="${B_SEEDS:+$B_SEEDS,}$seed"
+    fi
+  done
+fi
 
 ARMS_IN_STAGE=$(for l in "${RUN_LINES[@]}"; do echo "$l" | cut -d' ' -f2; done | sort -u | paste -sd, -)
 NEED_CTX=0
@@ -117,9 +143,27 @@ echo "stage $STAGE: ${#RUN_LINES[@]} training(s)$([ "$SUBMIT_BF" = 1 ] && echo '
      "= $TOTAL job(s); $ALREADY already logged in $JOBS_DIR/context_jobs_*.txt"
 for l in "${RUN_LINES[@]}"; do echo "  $l"; done
 [ "$TOTAL" -le "$MAX_JOBS" ] || die "$TOTAL jobs is above MAX_JOBS=$MAX_JOBS"
-if [ $(( ALREADY + TOTAL )) -gt "$SESSION_MAX_JOBS" ] && [ "$ALLOW_OVER_SESSION_CAP" != 1 ]; then
+if [ "$DRY_RUN" != 1 ] && [ $(( ALREADY + TOTAL )) -gt "$SESSION_MAX_JOBS" ] && [ "$ALLOW_OVER_SESSION_CAP" != 1 ]; then
   die "$ALREADY logged + $TOTAL now = $(( ALREADY + TOTAL )) jobs, above the session cap SESSION_MAX_JOBS=$SESSION_MAX_JOBS" \
       "(ALLOW_OVER_SESSION_CAP=1 overrides; ask first)"
+fi
+
+if [ "$DRY_RUN" = 1 ] && [ $(( ALREADY + TOTAL )) -gt "$SESSION_MAX_JOBS" ] && [ "$ALLOW_OVER_SESSION_CAP" != 1 ]; then
+  echo "note: $ALREADY logged + $TOTAL now is above SESSION_MAX_JOBS=$SESSION_MAX_JOBS; the real submission needs" \
+       "ALLOW_OVER_SESSION_CAP=1 (ask first)"
+fi
+
+# A job of the same type and tag already queued or running (any stage) would share its run directory.
+if command -v squeue >/dev/null 2>&1; then
+  QUEUED=$(squeue -h -u "$U" -o %j 2>/dev/null || true)
+  for LT in "$@"; do
+    for l in "${RUN_LINES[@]}"; do
+      tag=$(echo "$l" | cut -d' ' -f5)
+      if printf '%s\n' "$QUEUED" | grep -qxE "context-arms-launch-[^-]+-$LT-$tag"; then
+        die "a job for $LT $tag is already queued or running (squeue); not submitting a second"
+      fi
+    done
+  done
 fi
 
 RAWLABELS="${RAWLABELS:-}"
@@ -134,6 +178,8 @@ if [ "$PREFLIGHT" = 1 ]; then
   [ "$SUBMIT_BF" = 1 ] && pf+=(--backfill --pano-store "$PANO_STORE")
   [ "$NEED_CTX" = 1 ] && [ "$SKIP_BACKFILL" = 1 ] && pf+=(--skip-backfill)
   [ "$STAGE" != smoke ] && pf+=(--pair-october)
+  [ -n "$C_SEEDS" ] && pf+=(--confirmatory-seeds "$C_SEEDS")
+  [ -n "$B_SEEDS" ] && pf+=(--baseline-seeds "$B_SEEDS")
   echo "preflight: $ENV/bin/python analysis/context_arms.py preflight ${pf[*]}"
   "$ENV/bin/python" analysis/context_arms.py preflight "${pf[@]}" || die "preflight failed; nothing submitted"
 fi

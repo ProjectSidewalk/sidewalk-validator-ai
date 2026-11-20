@@ -15,8 +15,16 @@
 #                  checkpoint's trainer_state.json and config.json, job.txt) is copied to <DATA>/<LT>/runs/$TAG/.
 #                  Restartable: ckpt may preempt and requeue, and fine_tune_classifier.py resumes from its last complete
 #                  checkpoint (run_key.json guards the split, the arm, the view resolution and the batch size). A job
-#                  that finished (marker $RUNS/$LT/$TAG/.evaluated) exits at once when requeued or resubmitted.
+#                  that finished (marker <DATA>/<LT>/runs/$TAG/.evaluated, written right after the record copy and
+#                  before any delete; $RUNS/$LT/$TAG/.evaluated from code before 2026-11-20 is honoured too) exits at
+#                  once when requeued or resubmitted, after redoing the idempotent KEEP copy. Holds an exclusive flock
+#                  on $RUNS/$LT/$TAG/.train.lock for the whole step: a second job with the same LT and TAG (a
+#                  resubmitted stage after an sbatch timeout) exits at once instead of training into the same run
+#                  directory.
 #                  A TIMEOUT is NOT requeued by Slurm: resubmit the same command and it resumes from the last checkpoint.
+#                  The --time below is a request: the ckpt-gpu QOS caps it (scontrol showed TimeLimit=09:05:00 on the
+#                  pilot's jobs, 2026-11-19), so a run longer than about 9 h (view_heatmap-r448 at about 3x the step
+#                  time) times out and must be resubmitted to resume; check the first such run.
 #
 #   STEP=train LT=NoCurbRamp ARM=none TAG=baseline-rerun DATA=$WORK/data RUNS=$WORK/runs sbatch analysis/context_arms.slurm
 #   STEP=train LT=NoCurbRamp ARM=side_info_nohq SEED=43 TAG=side_info_nohq-s43 DATA=$WORK/data RUNS=$WORK/runs \
@@ -100,9 +108,28 @@ case "$STEP" in
     RUN="$RUNS/$LT/$TAG"
     REC="$DATA/$LT/runs/$TAG"
     mkdir -p "$RUN"
-    # A finished job (evaluated, record copied, checkpoints cleaned) must not retrain on a requeue or resubmit.
-    if [ -f "$RUN/.evaluated" ] && [ -f "$DATA/$LT/report_$TAG.txt" ] && [ -f "$REC/run_key.json" ]; then
-      echo "$(date) $LT $TAG already evaluated ($DATA/$LT/report_$TAG.txt, record $REC); nothing to do"; exit 0
+    # One trainer per run directory: two would pass the run_key.json resume guard together, prune each other's
+    # checkpoints under save_total_limit and write the same predictions and record.
+    exec 8>"$RUN/.train.lock"
+    flock -n 8 || { echo "another job holds $RUN/.train.lock ($LT $TAG); not starting a second trainer" >&2; exit 1; }
+    keep_copy() {  # the small artifacts to $KEEP/$LT/ (idempotent: a rerun overwrites the same files)
+      [ -n "${KEEP:-}" ] || return 0
+      if mkdir -p "$KEEP/$LT/runs" && cp -r "$REC" "$KEEP/$LT/runs/"; then
+        for f in "metrics_$TAG.json" "predictions_$TAG.csv" "per_city_$TAG.md" "report_$TAG.txt" "slices_$TAG.md"; do
+          if [ -f "$DATA/$LT/$f" ]; then cp "$DATA/$LT/$f" "$KEEP/$LT/"; fi
+        done
+        echo "copied the small artifacts to $KEEP/$LT/"
+      else
+        echo "WARNING: copy to $KEEP/$LT failed; the outputs are only in $DATA/$LT (scratch, purged after 21 days)" >&2
+      fi
+    }
+    # A finished job (evaluated, record copied) must not retrain on a requeue or resubmit. The marker sits beside the
+    # record in the shadow, so a purged or different RUNS does not hide it.
+    if { [ -f "$REC/.evaluated" ] || [ -f "$RUN/.evaluated" ]; } && [ -f "$DATA/$LT/report_$TAG.txt" ] \
+        && [ -f "$REC/run_key.json" ]; then
+      echo "$(date) $LT $TAG already evaluated ($DATA/$LT/report_$TAG.txt, record $REC); nothing to train"
+      keep_copy
+      exit 0
     fi
     if [ "$ARM" = none ]; then CTX=(); else CTX=(--context-arm "$ARM" --context-view-res "$RES"); fi
     echo "$(date) train $LT arm $ARM (tag $TAG, seed $SEED, res $RES, batch $BATCH, epochs $EPOCHS) -> $RUN"
@@ -127,8 +154,10 @@ case "$STEP" in
     cp "$RUN/training_run.json" "$RUN/run_key.json" "$REC/" && cp "$BEST/trainer_state.json" "$REC/trainer_state.json" \
         && cp "$BEST/config.json" "$REC/config.json" \
         || { echo "run record copy to $REC failed; checkpoints kept" >&2; exit 1; }
-    printf 'slurm_job_id=%s\ngpu=%s\nstarted=%s\nfinished=%s\nbest=%s\n' "${SLURM_JOB_ID:-}" "$GPU" "$START" \
-        "$(date -Is)" "$(basename "$BEST")" > "$REC/job.txt"
+    printf 'slurm_job_id=%s\nnode=%s\ngpu=%s\nstarted=%s\nfinished=%s\nbest=%s\n' "${SLURM_JOB_ID:-}" \
+        "$(hostname -s)" "$GPU" "$START" "$(date -Is)" "$(basename "$BEST")" > "$REC/job.txt"
+    # Finished: from here a preemption or a resubmit must not retrain, so the marker goes in before any delete.
+    touch "$REC/.evaluated"
     case "$KEEP_CKPT" in
       0) rm -rf "$RUN"/checkpoint-*; echo "removed $RUN/checkpoint-*" ;;
       best)
@@ -137,17 +166,7 @@ case "$STEP" in
         echo "kept the weights of $BEST only" ;;
       1) echo "KEEP_CKPT=1: every checkpoint kept" ;;
     esac
-    if [ -n "${KEEP:-}" ]; then
-      if mkdir -p "$KEEP/$LT/runs" && cp -r "$REC" "$KEEP/$LT/runs/"; then
-        for f in "metrics_$TAG.json" "predictions_$TAG.csv" "per_city_$TAG.md" "report_$TAG.txt" "slices_$TAG.md"; do
-          if [ -f "$DATA/$LT/$f" ]; then cp "$DATA/$LT/$f" "$KEEP/$LT/"; fi
-        done
-        echo "copied the small artifacts to $KEEP/$LT/"
-      else
-        echo "WARNING: copy to $KEEP/$LT failed; the outputs are only in $DATA/$LT (scratch, purged after 21 days)" >&2
-      fi
-    fi
-    touch "$RUN/.evaluated"
+    keep_copy
     ;;
   *) echo "unknown STEP=$STEP (backfill|train)" >&2; exit 2 ;;
 esac
