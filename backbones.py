@@ -382,8 +382,11 @@ def _snapshot_sha(path):
 def backbone_settings(key, model=None, backbone_dir=None):
     """The ``backbone`` block of ``training_run.json`` for a run on ``key`` with the built ``model``: registry facts,
     the revision the load resolved to, the parameter count of the built model, the preprocessing and its hash, the
-    hash of the weights file actually loaded (None, with a warning, if it cannot be located; never a guess), the
-    DINOv3 positional-augmentation values, and for a converted row the content of its ``conversion.json``.
+    hash of the row's weights file as the load resolved it (None, with a warning, if it cannot be located; never a
+    guess), the DINOv3 positional-augmentation values, and for a converted row the content of its ``conversion.json``.
+    For a run started from ``--init-from`` (default key only; the study refuses ``--backbone`` with it) the hash is
+    still the hub file's, not the checkpoint the run actually loaded; ``training_run.json``'s ``init_from_sha256``
+    records that one.
 
     >>> s = backbone_settings("convnextv2-base")
     >>> s["key"], s["tokens_per_image"], s["pos_embed"], s["random_init"]

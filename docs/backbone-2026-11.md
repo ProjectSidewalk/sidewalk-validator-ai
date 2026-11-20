@@ -7,8 +7,8 @@ baseline retrained in the same environment, and decides with a rule written befo
 
 ## Status
 
-**Pilot submitted (job `43406096`, 30 runs); no result read yet.** The GPU smoke test passed (job
-`43404752`). What exists:
+**Pilot submitted (job `43406096`, 30 runs) and the DINOv3 runs submitted (job `43409815`, 18 runs); no result read
+yet.** The GPU smoke test passed (job `43404752`). What exists:
 
 - [`backbones.py`](../backbones.py): the registry (pinned revisions), the fixed preprocessing, a DINOv3 classifier
   class, RampNet's ConvNeXt V2-B converted into the native `ConvNextV2ForImageClassification`, the weight prefetch.
@@ -95,7 +95,7 @@ same for every arm and the baseline.
 
 **Environment (J1).** An overlay venv on scrubbed over the round-3 conda env: the round-3 packages (Python 3.10,
 torch 2.7.1, pandas 2.3.1) are imported from the base env, and `requirements-backbone.txt` adds transformers 4.56.2,
-tokenizers 0.22 and timm 1.0.31, with every other package held at its installed version by a constraints file.
+tokenizers 0.22.2 and timm 1.0.31, with every other package held at its installed version by a constraints file.
 `analysis/backbone_env.sh` fails unless torch and pandas import from the base env and transformers from the venv.
 `pip_freeze.txt` is in `$OUT` (its sha256 under [Runs](#runs)). Built 2026-11-19 on klone: torch 2.7.1+cu126 and
 pandas 2.3.1 from the base env, transformers 4.56.2, tokenizers 0.22.2 and timm 1.0.31 from the venv
@@ -132,8 +132,8 @@ On klone, login node (git, small files, sbatch; the heavy work is in the jobs):
 
 ```bash
 git clone --branch backbone-comparison https://github.com/ProjectSidewalk/sidewalk-validator-ai.git \
-    /gscratch/scrubbed/$USER/sva-backbone-comparison
-cd /gscratch/scrubbed/$USER/sva-backbone-comparison
+    /gscratch/scrubbed/$USER/sva-backbone-comparison   # once the branch is merged and deleted: clone master and
+cd /gscratch/scrubbed/$USER/sva-backbone-comparison     # `git checkout` the commit named under Runs
 analysis/backbone_env.sh                      # overlay venv; prints the three versions and where they import from
 analysis/backbone_prefetch.sh                 # the four non-gated rows; with HF_TOKEN set, the DINOv3 rows too
 #   with a token: HF_TOKEN="$(cat ~/.cache/huggingface/token)" \
@@ -152,8 +152,29 @@ elements counted, read from `$OUT/backbone_jobs.txt`; Jon's cap was 40 and he ra
 DINOv3 runs). It submits with `EPOCHS=25` set explicitly and without the caller's conda state, and the job refuses
 to train unless torch 2.7.1, transformers 4.56.2 and pandas 2.3.1 import. It appends the job id, element count,
 stage, commit and the task file's sha256 to that ledger and copies the ledger, the task file,
-`backbone_manifest.json`, `pip_freeze.txt`, `constraints.txt` and `cities.json` to `$KEEP`. `seeds`, `rest`, `resubmit` and `onnx` exist for later stages and are not part of the
-pilot.
+`backbone_manifest.json`, `pip_freeze.txt`, `constraints.txt` and `cities.json` to `$KEEP`.
+
+No row is submitted while it is queued or running. The launcher reads `squeue` (this user's jobs named
+`backbone-comparison-*`, array elements expanded), maps each element back to its task-file row through the ledger's
+job id and task file columns (the `$KEEP` copy when scrubbed has purged the original), and skips those rows as it
+skips done ones. It writes nothing into run directories, so the running arrays, whose scripts predate this check,
+finish as they would have. It refuses to submit when `squeue` cannot be read, or when `squeue` lists a job of this
+stream that the ledger does not know. A lock file was the alternative; clearing it would have meant changing
+`run_one`, which the running arrays use, and a lock left by a failed element cannot be told from a live one without
+`squeue` anyway.
+
+Later stages:
+
+- `resubmit <task file>`: rows to run again (failed elements). Each row goes through the same checks as a planned
+  row (done, queued or running, available), and a tag that is not the planned one for its arm, seed and rate is
+  refused, because the report reads planned tags only.
+- `seeds` and `rest` are **refused** ("needs the follow-up PR"). The report reads the pilot types at three seeds
+  only: it has no confirmation block, `THRESHOLDS` covers the pilot types only, and the other three types' round-3
+  files are not pinned, so those runs would spend cap jobs and could not be reported. `report --label-types` with
+  another type is refused for the same reason.
+- `onnx` (`LT=<LT> TAG=<tag>`) is refused before it spends a cap job when the tag is a `dinov2-reg-large` run (no
+  opset-17 export, below), when `onnx` and `onnxruntime` do not import with `$PY` (the study env does not install
+  them; add them to the venv first), or when the run's `best/` weights are gone.
 
 Each array element runs `run_one LT ARM SEED TAG LR` in `analysis/backbone.slurm` (`ckpt-all`, `--requeue`, any of
 A40, L40, L40S, A100, H200): train (resumes after preemption), evaluate on the view (`--tag <TAG> --per-city`), copy
@@ -176,13 +197,21 @@ python analysis/backbone_comparison.py report --split-dir <a local copy of retra
 
 `--split-dir` needs `<LT>/split.csv` and round 3's `predictions*.csv` (for `env.md` and the round-3 slice column);
 the split hash is checked. `--public-cities` defaults to the live `/v3/api/cities` listing; private held-out
-deployments are lettered and never named. Each run must pass a consistency check (split hash, and seed, backbone
-and learning rate equal to its tag; real weights; loss divided by the accumulation steps) or it is listed as
-INCOMPLETE and left out.
+deployments are lettered and never named. Each run must pass a consistency check (split hash; seed, backbone and
+learning rate equal to its tag; 25 epochs; for a hub row, the revision it resolved equal to the pin; torch 2.7.1,
+transformers 4.56.2 and pandas 2.3.1 in its recorded `versions`; real weights; loss divided by the accumulation
+steps; one finite prediction per evaluation row) or it is listed as INCOMPLETE and left out. `provenance.json`
+hashes every file the report read, keyed by its path under `--split-dir` or `--runs-dir` (each run's `run_key.json`
+and `training_run.json` included, counted or not).
+
+The report reads the `tasks_*.tsv` files in `--runs-dir` (the `$KEEP` copies) to know which rows were submitted.
+`--drop-arms <arm,…>` marks a submitted arm that failed and will not be rerun, so it stops holding the
+recommendation (below).
 
 ## The pre-registered decision rule
 
-Written before any run (plan v2, signed off 2026-11-19); `analysis/backbone_comparison.py decide` applies it.
+Written before any run (plan v2, signed off 2026-11-19); `analysis/backbone_comparison.py report` applies it
+(`decide()`).
 
 **Pilot:** CurbRamp and SurfaceProblem × seeds 42, 43, 44 × four arms: `dinov2-large` (in-env baseline),
 `dinov2-reg-large`, `convnextv2-base` (control), `rampnet-convnextv2-base`. That is 24 runs. Every arm gets all
@@ -218,6 +247,7 @@ SurfaceProblem**.
      baseline's.
 - *Between-deployment only*: condition 1's pooled bar is met but the within-city mean Δ is ≤ 0. Reported under
   that name; cannot win.
+- *Fails the gate*: conditions 1 and 2 hold and condition 3 does not. Reported under that name; cannot win.
 - *Other arms* (`convnextv2-base`, `dinov3-vitl16-256`, `dinov3-vitb16`) are explanatory. One is promoted to a
   winner only if it meets the rule with thresholds doubled (+0.020 / +0.032) and no eligible arm wins.
 - *Non-inferior small* (any arm with under half the baseline's parameters): condition 2 and condition 3 hold over
@@ -228,6 +258,12 @@ SurfaceProblem**.
   stands if no type has a Δ held-out interval entirely below zero and no type has a within-city Δ held-out interval
   entirely below zero.
 - *No winner*: round 4 keeps `facebook/dinov2-large`; the doc records the null with its intervals.
+- *Incomplete arms* (report mechanics, added in review before any result was read): an arm short of three paired
+  seeds on a pilot type is "submitted, incomplete" when a missing row is in a task file (queued, running, or failed
+  and not resubmitted), else "not yet run". The recommendation is held while a submitted eligible arm is incomplete
+  (it could still win, or change the tie-break), and, when no eligible arm wins, while a submitted explanatory arm is
+  incomplete (it could still be promoted). An eligible arm never submitted does not hold it; the recommendation then
+  reads "keep `dinov2-large` among the arms run" or names the winner, and lists the arms not run either way.
 - *RampNet reading*: its Δ against `convnextv2-base` as well as against the baseline. Its `test` numbers are marked
   "indirectly exposed" (threat 8); conclusions about it rest on held-out only.
 - *Learning-rate rows* (explanatory, cannot win): `dinov2-large`, `convnextv2-base` and
@@ -242,10 +278,14 @@ SurfaceProblem**.
 - Slices never decide. A slice with ≥ `MIN_N` rows whose Δ interval is entirely below zero for a winner is listed
   under "where it got worse".
 
-Computed before any run (`null_winner_rate`, 20,000 seeded draws, independent per-seed Δ with the sds above and the
-gate condition assumed met): with three eligible arms, **0.021 expected null winners** (P(at least one) 0.021); at
-the doubled thresholds, 0.00005. With DINOv3 not runnable, the pilot compares two eligible arms, so its null rate is
-lower still.
+Computed before any run (`null_winner_rate`, 20,000 seeded draws, per-seed Δ with the sds above and the gate
+condition assumed met): with three eligible arms, **0.021 expected null winners** (P(at least one) 0.021) when the
+three Δs are independent; at the doubled thresholds, about 0.0001. Pooled and within-city Δ held-out are read from the
+same held-out rows, so they are positively correlated, and independence understates the rate. With per-seed
+correlation ρ between them the expected count is 0.021 (ρ = 0), 0.043 (ρ = 0.5) and 0.056 (ρ = 1, the bound);
+P(at least one) is 0.021, 0.043 and 0.055. The true ρ is not known, so the null winner rate is **0.021 to 0.056**.
+`null.md` gives the range at both thresholds. All three eligible arms are now in the comparison (`dinov3-vitl16`
+through the `dinov3` stage).
 
 Mechanics of the report (fixed with the rule): within-city AUC is the per-deployment AUC weighted by n_incorrect ×
 n_correct over deployments with at least 10 labels of both classes (round 3's definition); its paired Δ has a 95%
@@ -297,7 +337,13 @@ MAX_PARALLEL=8 analysis/backbone_submit.sh pilot    # sbatch analysis/backbone.s
 ```
 
 GPU jobs used by this stream: 31 of 40 at the pilot (smoke 1, pilot 30); the cap is now 55, and the `dinov3` stage
-takes 18 more (49 of 55), leaving 6 for resubmitting failed elements (`backbone_submit.sh resubmit`). Records land in `$KEEP/<LT>/runs/<TAG>/`; the ledger is `$KEEP/backbone_jobs.txt`.
+takes 18 more (49 of 55), leaving 6 for resubmitting failed elements (`backbone_submit.sh resubmit`).
+
+**DINOv3: submitted 2026-11-19.** Job `43409815`, one array of 18 elements (3 arms × 2 pilot types × 3 seeds),
+job name `backbone-comparison-dinov3`, from a second clone at `d9327db`. Both clones share `$OUT`, `$KEEP`, the data
+view and the ledger, so `report` reads the two sets from one `--runs-dir`. `fine_tune_classifier.py` and
+`evaluate.py` are the same at both commits; the only training-path change between them is the head draw for
+converted rows, which no DINOv2 or DINOv3 arm takes. Records land in `$KEEP/<LT>/runs/<TAG>/`; the ledger is `$KEEP/backbone_jobs.txt`.
 
 ## Results
 
@@ -331,7 +377,10 @@ Nothing below is built; it is what a winner would cost.
 - `explain.py`, the model cards and `publish_to_hf.py` assume DINOv2 and would need the new patch grid and class
   names before a publish. Until then `explain.py` refuses a non-DINOv2 checkpoint and `publish_to_hf.py` refuses a
   run whose `training_run.json` names another backbone or learning rate, or whose best checkpoint is not `dinov2`.
-- ONNX: the tiny-model tests export ConvNeXt V2 and the DINOv3 wrapper at opset 17 with agreement under 1e-4.
+- ONNX: the tiny-model tests export ConvNeXt V2 and the DINOv3 wrapper at opset 17 with agreement under 1e-4. Where
+  that was run: on a laptop (macOS arm64, Python 3.12, torch 2.7.1, transformers 4.56.2, onnx 1.23.2, onnxruntime
+  1.32.0; rerun 2026-11-19 in fix round 2), not in CI (no torch there) and not on klone (the study env has no
+  `onnx`; the smoke job's 3 skips are these tests).
   `Dinov2WithRegisters` does not export at opset 17 (its position-embedding interpolation uses antialiased bicubic
   upsampling, which the exporter lacks); a winner from that family would need a newer opset or a fixed-size
   interpolation before an ONNX path.
@@ -358,7 +407,8 @@ Nothing below is built; it is what a winner would cost.
    indirectly exposed; none of the held-out deployments is among the 12.
 9. **RampNet conversion.** The bijection, the shape check and the timm parity check make a wrong map fail loudly.
 10. **Environment.** The study env is the round-3 env plus transformers 4.56.2, tokenizers and timm; the baseline is
-    retrained inside it.
+    retrained inside it. The torch-gated tests (`tests/test_backbones.py`, `tests/test_backbone_cli.py`) run in the
+    smoke job and by hand, not in CI, whose env has no torch.
 11. **Storage and purge.** Weights and views live on scrubbed and are deleted 21 days after their last write; the
     small records in `$KEEP` are enough to rebuild every table but not to re-score or export a model.
 12. **ONNX export of DINOv3** (RoPE from the input shape) is untested beyond the tiny-model test.
@@ -408,3 +458,8 @@ Listed with the default this branch uses; none blocks the pilot. Numbered as in 
   lives aside, or `run_one` finds `evaluated`/`slimmed` and copies the old outputs back: `$RUNS/<LT>/<TAG>/`,
   `$KEEP/<LT>/runs/<TAG>/`, and the tagged files `$DATA/<LT>/{metrics,predictions,per_city,slices,report}_<TAG>.*`.
   Then `resubmit` a task file of those 8 rows. That needs about 8 more GPU jobs than the 55 cap leaves. Alternative: keep them and report the deviation beside every RampNet number.
+- **J17. Gate-coverage guard against seed noise** (PR #121 review S1). Condition 3 allows a coverage drop of 2 points
+  in the three-seed mean, while round 3's baseline seeds alone vary by about 0.06 (CurbRamp) and 0.10
+  (SurfaceProblem) in Agree coverage under `majority2`, so an arm no different from the baseline fails the guard
+  often. Default: the rule as signed off. Alternatives: scale the tolerance to the measured seed sd, as the AUC
+  thresholds are, or keep it and report its pass rate under no difference. Undecided; no result has been read.

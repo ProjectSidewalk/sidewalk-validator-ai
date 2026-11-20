@@ -58,7 +58,9 @@ def test_env_overlay_keeps_the_base_env():
     assert '"transformers": ("4.56.2", transformers, venv)' in text
     assert re.search(r'\$BASE_ENV/bin/pip"? install', text) is None   # never installs into the base env
     req = open(os.path.join(REPO, "requirements-backbone.txt")).read()
-    assert "transformers==4.56.2" in req and "timm==" in req
+    assert "transformers==4.56.2" in req and "timm==" in req and "tokenizers==0.22.2" in req
+    # a venv that scrubbed's purge has partly deleted must fail the idempotence check (review nit 12)
+    assert '"tokenizers": ("0.22.2", tokenizers, venv)' in text and '"timm": ("1.0.31", timm, venv)' in text
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -150,6 +152,14 @@ def test_a_failed_copy_leaves_every_checkpoint(job):
         < body.rindex('rm -rf "$RUN"/checkpoint-*')
 
 
+def test_the_task_row_learning_rate_reaches_the_training_command(job):
+    call, tmp = job
+    assert call("CurbRamp", "convnextv2-base", "42", "bb-convnextv2-base-lr3e5", "3e-5").returncode == 0
+    c = calls(tmp)
+    assert "--backbone convnextv2-base --seed 42 --epochs 25 --learning-rate 3e-5 --num-workers 7" in c[0]
+    assert "--output-dir " + str(tmp / "runs" / "CurbRamp" / "bb-convnextv2-base-lr3e5") in c[0]
+
+
 def test_random_init_only_for_smoke_rand_tags(job):
     call, tmp = job
     assert call("CurbRamp", "dinov3-vitl16", "42", "smoke-rand-dinov3-vitl16", "1e-5").returncode == 0
@@ -176,6 +186,7 @@ STUBS = {
     "df": '#!/bin/bash\necho "Filesystem 1024-blocks Used Available Capacity Mounted"\n'
           'echo "scrubbed 9999999999 1 ${DF_AVAIL_KB:-9999999999} 1% /x"\n',
     "curl": '#!/bin/bash\nwhile [ $# -gt 0 ]; do [ "$1" = -o ] && echo \'{"cities": []}\' > "$2"; shift; done\n',
+    "squeue": '#!/bin/bash\n[ -z "${SQ_FAIL:-}" ] || exit 1\n[ -z "${SQ_OUT:-}" ] || cat "$SQ_OUT"\n',
 }
 
 FOUR = ["dinov2-large", "dinov2-reg-large", "convnextv2-base", "rampnet-convnextv2-base"]
@@ -351,3 +362,106 @@ def test_dinov3_stage_refuses_other_arms_and_skips_done_runs(launcher):
     assert r.returncode == 0, r.stderr
     got = rows(sorted(out.glob("tasks_dinov3_*.tsv"))[-1])
     assert [g[3] for g in got] == ["bb-dinov3-vitl16"] and got[0][0] == "SurfaceProblem"
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# fix round 2: in-flight rows, resubmit, refused stages
+# ---------------------------------------------------------------------------------------------------------------------
+
+def pilot_task_file(launcher, name="tasks_pilot_old.tsv"):
+    """A copy of what the pilot stage writes, registered in the ledger as job 777."""
+    assert launcher["run"]("pilot").returncode == 0
+    first = sorted(launcher["out"].glob("tasks_pilot_*.tsv"))[0]
+    old = launcher["out"] / name
+    old.write_text(first.read_text())
+    first.unlink()
+    (launcher["out"] / "backbone_jobs.txt").write_text(f"t\t777\t1\tpilot\tc\t{old}\ts\n")
+    launcher["log"].unlink()
+    return rows(old)
+
+
+def test_queued_or_running_rows_are_never_submitted_twice(launcher, tmp_path):
+    """PR #121 final review R4: squeue's elements of this stream map back to task rows through the ledger; those rows
+    are skipped (here 2 running, 5 and 6 pending in an unexpanded range), other users' jobs are ignored."""
+    old = pilot_task_file(launcher)
+    q = tmp_path / "squeue.txt"
+    q.write_text("777_2 backbone-comparison-pilot\n777_[5-6%8] backbone-comparison-pilot\n555_1 someone-else\n")
+    r = launcher["run"]("pilot", SQ_OUT=str(q))
+    assert r.returncode == 0, r.stderr
+    got = rows(sorted(launcher["out"].glob("tasks_pilot_2*.tsv"))[-1])
+    skipped = {(old[i][0], old[i][3]) for i in (1, 4, 5)}
+    assert len(got) == 27 and not skipped & {(g[0], g[3]) for g in got}
+    assert r.stdout.count("queued or running (squeue)") == 3
+    assert not list(launcher["out"].glob(".squeue*"))   # the squeue snapshot and its mapping are removed on exit
+
+
+def test_the_keep_copy_maps_a_purged_task_file(launcher, tmp_path):
+    old = pilot_task_file(launcher)
+    keep = launcher["keep"]
+    keep.mkdir(exist_ok=True)
+    (keep / "tasks_pilot_old.tsv").write_text((launcher["out"] / "tasks_pilot_old.tsv").read_text())
+    (launcher["out"] / "tasks_pilot_old.tsv").unlink()
+    q = tmp_path / "squeue.txt"
+    q.write_text("777_1 backbone-comparison-pilot\n")
+    r = launcher["run"]("pilot", SQ_OUT=str(q))
+    assert r.returncode == 0, r.stderr
+    assert f"skipping {old[0][0]} {old[0][3]}: queued or running" in r.stdout
+
+
+def test_an_unreadable_squeue_or_an_unknown_job_refuses(launcher, tmp_path):
+    r = launcher["run"]("pilot", SQ_FAIL="1")
+    assert r.returncode != 0 and "squeue" in r.stderr and not launcher["log"].exists()
+    q = tmp_path / "squeue.txt"
+    q.write_text("888_1 backbone-comparison-pilot\n")
+    r = launcher["run"]("pilot", SQ_OUT=str(q))
+    assert r.returncode != 0 and "not in the ledger" in r.stderr and not launcher["log"].exists()
+
+
+def test_resubmit_skips_done_and_in_flight_rows_and_refuses_unplanned_tags(launcher, tmp_path):
+    old = pilot_task_file(launcher)
+    keep = launcher["keep"]
+    (keep / old[0][0] / "runs" / old[0][3]).mkdir(parents=True)
+    (keep / old[0][0] / "runs" / old[0][3] / "done").write_text("")
+    q = tmp_path / "squeue.txt"
+    q.write_text("777_2 backbone-comparison-pilot\n")
+    src = tmp_path / "again.tsv"
+    src.write_text("# failed elements\n" + "\n".join("\t".join(x) for x in old[:3]) + "\n")
+    r = launcher["run"]("resubmit", str(src), SQ_OUT=str(q))
+    assert r.returncode == 0, r.stderr
+    got = rows(sorted(launcher["out"].glob("tasks_resubmit_*.tsv"))[-1])
+    assert got == [old[2]] and "--array=1-1%8" in launcher["log"].read_text()
+    assert "done already" in r.stdout and "queued or running" in r.stdout
+    src.write_text("\n".join("\t".join(x) for x in old[:2]) + "\n")
+    r = launcher["run"]("resubmit", str(src), SQ_OUT=str(q))
+    assert r.returncode != 0 and "no runnable rows" in r.stderr
+    src.write_text("CurbRamp\trampnet-convnextv2-base\t42\tbb-rampnet-convnextv2-base-r2\t1e-5\n")
+    r = launcher["run"]("resubmit", str(src))
+    assert r.returncode != 0 and "not the planned tag" in r.stderr
+
+
+@pytest.mark.parametrize("stage", ["seeds", "rest"])
+def test_seeds_and_rest_are_refused_until_the_report_reads_them(launcher, stage):
+    r = launcher["run"](stage, ARMS="dinov2-reg-large", TYPES="Obstacle", SEEDS="43")
+    assert r.returncode != 0 and "needs the follow-up PR" in r.stderr and not launcher["log"].exists()
+
+
+def test_onnx_is_refused_before_spending_a_cap_job(launcher, tmp_path):
+    run, out = launcher["run"], launcher["out"]
+    r = run("onnx", LT="CurbRamp", TAG="bb-dinov2-reg-large")
+    assert r.returncode != 0 and "opset 17" in r.stderr
+    nope, yes = tmp_path / "py_no_onnx", tmp_path / "py_onnx"
+    nope.write_text("#!/bin/bash\nexit 1\n")
+    yes.write_text("#!/bin/bash\nexit 0\n")
+    for p in (nope, yes):
+        p.chmod(0o755)
+    r = run("onnx", LT="CurbRamp", TAG="bb-convnextv2-base", PY=str(nope))
+    assert r.returncode != 0 and "onnx and onnxruntime do not import" in r.stderr
+    r = run("onnx", LT="CurbRamp", TAG="bb-convnextv2-base", PY=str(yes))
+    assert r.returncode != 0 and "best/model.safetensors" in r.stderr
+    assert not launcher["log"].exists()
+    best = out / "runs" / "CurbRamp" / "bb-convnextv2-base" / "best"
+    best.mkdir(parents=True)
+    (best / "model.safetensors").write_text("w")
+    r = run("onnx", LT="CurbRamp", TAG="bb-convnextv2-base", PY=str(yes))
+    assert r.returncode == 0, r.stderr
+    assert "STEP=onnx" in launcher["log"].read_text()

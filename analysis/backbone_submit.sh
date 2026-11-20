@@ -8,24 +8,28 @@
 #   analysis/backbone_submit.sh smoke          # ONE job: convert RampNet, 5 one-epoch runs, guards, torch tests, report
 #   MAX_PARALLEL=8 analysis/backbone_submit.sh pilot   # one array, 30 elements (24 main + 6 learning-rate rows)
 #   analysis/backbone_submit.sh dinov3         # the 18 DINOv3 runs (3 arms x 2 pilot types x 3 seeds), after prefetch
-#   ARMS=<key> TYPES="NoCurbRamp Obstacle Crosswalk" analysis/backbone_submit.sh rest   # later; Jon's call
-#   ARMS=<key> TYPES=<LT> SEEDS="43 44" analysis/backbone_submit.sh seeds               # later; Jon's call
-#   LT=<LT> TAG=<tag> analysis/backbone_submit.sh onnx                                   # later; Jon's call
+#   analysis/backbone_submit.sh rest | seeds   # REFUSED: the report cannot read them yet (needs the follow-up PR)
+#   LT=<LT> TAG=<tag> analysis/backbone_submit.sh onnx   # later; Jon's call; needs onnx + onnxruntime in $PY
 #   analysis/backbone_submit.sh resubmit <task file>   # rows to run again (failed elements); counts against the cap
 #
 # Before any submit: a real 8 MiB write to $OUT; scrubbed has MAX_PARALLEL x 12 GB + 1.3 GB per element free;
 # /gscratch/makelab has 5 GB and 1,000 files free for $KEEP; every arm is available in $OUT/backbone_manifest.json
 # (an unavailable one is skipped with a message) and the converted RampNet weights are verified; the stream's
 # elements so far (from $OUT/backbone_jobs.txt) plus the new ones stay within JOB_CAP; no smoke- tag outside the
-# smoke job. Each submit appends date, job id, element count, stage, commit, task file and its sha256 to
-# $OUT/backbone_jobs.txt and copies the ledger and the task file to $KEEP.
+# smoke job; no row whose run is done ($KEEP/<LT>/runs/<TAG>/done) or in flight. "In flight" is read from squeue, not
+# from a lock file: every element of this stream that squeue lists (pending, running or requeued; job name
+# $SLUG-*) is mapped back to its task-file row through the ledger's job id -> task file column, so a second element
+# never trains in the same run directory, and nothing is written into run directories (the running arrays' own
+# done/slimmed logic is untouched). The launcher refuses to submit when squeue cannot be read, or when squeue lists a
+# job of this stream that the ledger does not know. Each submit appends date, job id, element count, stage, commit,
+# task file and its sha256 to $OUT/backbone_jobs.txt and copies the ledger and the task file to $KEEP.
 #
 # Variables (defaults in brackets):
 #   OUT       [/gscratch/scrubbed/$USER/backbone-comparison-2026-11] runs, views, converted weights, task files
 #   KEEP      [/gscratch/makelab/$USER/backbone-comparison-2026-11-keep] small run records only
 #   R         [/gscratch/makelab/$USER/sidewalk-validator-ai/retrain-2026-10] round-3 data, read only
 #   VENV, BASE_ENV as in analysis/backbone_env.sh; PY [$VENV/bin/python]
-#   MAX_PARALLEL [8] array throttle; ARMS, TYPES, SEEDS override a stage's rows; SBATCH [sbatch]
+#   MAX_PARALLEL [8] array throttle; ARMS, TYPES, SEEDS override a stage's rows; SBATCH [sbatch]; SQUEUE [squeue]
 #   CITIES_URL [the Project Sidewalk /v3/api/cities listing] saved by `view` for the offline report
 set -euo pipefail
 SLUG=backbone-comparison
@@ -36,6 +40,7 @@ VENV="${VENV:-/gscratch/scrubbed/$USER/envs/sva-bb}"
 PY="${PY:-$VENV/bin/python}"
 MAX_PARALLEL="${MAX_PARALLEL:-8}"
 SBATCH="${SBATCH:-sbatch}"
+SQUEUE="${SQUEUE:-squeue}"
 CITIES_URL="${CITIES_URL:-https://sidewalk-columbus.cs.washington.edu/v3/api/cities}"
 # Jon's cap for this stream: at most 40 GPU jobs in all, array elements counted (2026-11-19), raised to 55 the same
 # night for the 18 DINOv3 runs plus resubmits. Raise it only on his word.
@@ -115,6 +120,54 @@ ledger() {   # ledger JOBID N STAGE TASKFILE
   echo "job $1: $2 element(s), stage $3, task file $4 ($sha)"
 }
 
+# in_flight: a file of "LT<TAB>TAG" lines, one per element of this stream that squeue lists (pending, running,
+# requeued), mapped through the ledger (job id -> task file, the $KEEP copy when scrubbed has purged it). Computed once.
+INFLIGHT=""
+in_flight() {
+  [ -z "$INFLIGHT" ] || { echo "$INFLIGHT"; return 0; }
+  mkdir -p "$OUT"
+  local q="$OUT/.squeue.$$"
+  "$SQUEUE" -h -r -u "${USER:-$(id -un)}" -o '%i %j' > "$q" \
+    || { rm -f "$q"; die "could not read $SQUEUE; not submitting (a queued or running element could be doubled)"; }
+  "$PY" - "$LEDGER" "$KEEP" "$SLUG" "$q" > "$q.tags" <<'PY' \
+    || { rm -f "$q" "$q.tags"; die "could not map squeue to task rows (above); not submitting"; }
+import os, sys
+ledger, keep, slug, qfile = sys.argv[1:5]
+jobs = {}
+if os.path.isfile(ledger):
+    for ln in open(ledger):
+        c = ln.rstrip("\n").split("\t")
+        if len(c) >= 6:
+            jobs[c[1]] = c[5]
+def indices(spec):   # "7" or "[3-5,9%8]" (a pending range squeue did not expand)
+    out = []
+    for part in spec.strip("[]").split("%")[0].split(","):
+        a, _, b = part.partition("-")
+        out += list(range(int(a), int(b or a) + 1))
+    return out
+for ln in open(qfile):
+    parts = ln.split()
+    if len(parts) < 2 or not parts[1].startswith(slug + "-"):
+        continue
+    jid, _, idx = parts[0].partition("_")
+    if jid not in jobs:
+        sys.exit(f"squeue lists {parts[0]} ({parts[1]}), which is not in the ledger {ledger}")
+    if jobs[jid] == "-":   # the onnx stage has no task file and trains nothing
+        continue
+    f = jobs[jid] if os.path.isfile(jobs[jid]) else os.path.join(keep, os.path.basename(jobs[jid]))
+    if not os.path.isfile(f):
+        sys.exit(f"job {jid}: its task file {jobs[jid]} is gone, and there is no copy in {keep}")
+    rows = [r.split("\t") for r in open(f).read().splitlines() if r and not r.startswith("#")]
+    for i in indices(idx or "1"):
+        if 1 <= i <= len(rows):
+            print(f"{rows[i - 1][0]}\t{rows[i - 1][3]}")
+PY
+  rm -f "$q"
+  INFLIGHT="$q.tags"
+  trap 'rm -f "$INFLIGHT"' EXIT
+  echo "$INFLIGHT"
+}
+
 add_row() {   # add_row FILE LT ARM SEED LR PREFIX -- skips an unavailable arm once, with a message
   local f="$1" lt="$2" arm="$3" seed="$4" lr="$5" prefix="${6:-bb-}" t
   if ! available "$arm"; then
@@ -125,6 +178,10 @@ add_row() {   # add_row FILE LT ARM SEED LR PREFIX -- skips an unavailable arm o
   t=$(tag "$prefix" "$arm" "$seed" "$lr")
   if [ "$prefix" != smoke- ] && [ -f "$KEEP/$lt/runs/$t/done" ]; then
     echo "skipping $lt $t: done already"; return 0
+  fi
+  [ "$prefix" = smoke- ] || [ -n "$INFLIGHT" ] || in_flight > /dev/null
+  if [ "$prefix" != smoke- ] && grep -qxF "$lt"$'\t'"$t" "$INFLIGHT"; then
+    echo "skipping $lt $t: queued or running (squeue)"; return 0
   fi
   printf '%s\t%s\t%s\t%s\t%s\n' "$lt" "$arm" "$seed" "$t" "$lr" >> "$f"
 }
@@ -177,6 +234,7 @@ case "$cmd" in
     ledger "$id" 1 smoke "$f"
     ;;
   pilot)
+    in_flight > /dev/null
     f=$(taskfile pilot)
     for seed in ${SEEDS:-42 43 44}; do
       for lt in ${TYPES:-$PILOT_TYPES}; do
@@ -191,6 +249,7 @@ case "$cmd" in
   dinov3)
     # The DINOv3 arms (gated on HF; analysis/backbone_prefetch.sh with a token first), three seeds on the pilot types,
     # compared with the pilot's dinov2-large runs. 18 elements by default.
+    in_flight > /dev/null
     f=$(taskfile dinov3)
     for seed in ${SEEDS:-42 43 44}; do
       for lt in ${TYPES:-$PILOT_TYPES}; do
@@ -202,32 +261,37 @@ case "$cmd" in
     done
     submit_array dinov3 "$f"
     ;;
-  seeds)
-    f=$(taskfile seeds)
-    for seed in ${SEEDS:?set SEEDS}; do
-      for lt in ${TYPES:?set TYPES}; do
-        for arm in dinov2-large ${ARMS:?set ARMS}; do add_row "$f" "$lt" "$arm" "$seed" 1e-5; done
-      done
-    done
-    submit_array seeds "$f"
-    ;;
-  rest)
-    f=$(taskfile rest)
-    for lt in ${TYPES:-NoCurbRamp Obstacle Crosswalk}; do
-      for arm in dinov2-large ${ARMS:?set ARMS (the arm to confirm)}; do add_row "$f" "$lt" "$arm" 42 1e-5; done
-    done
-    submit_array rest "$f"
+  seeds|rest)
+    # Both would spend GPU jobs the report cannot read yet: it takes the pilot types only, has no confirmation block,
+    # and the other three types' round-3 files are not pinned (PR #121 review S8).
+    die "the $cmd stage needs the follow-up PR (report support for other types and extra seeds); not submitting"
     ;;
   resubmit)
     # A hand-made task file of rows to run again (e.g. failed pilot elements, copied from the pilot's task file).
+    # Each row goes through add_row, so a done, queued or running row is skipped and an unavailable arm refused; a tag
+    # that is not the planned one for its arm, seed and rate is refused (the report would never read it).
     src="${2:?usage: $0 resubmit <task file>}"
     [ -f "$src" ] || die "no $src"
+    in_flight > /dev/null
     f=$(taskfile resubmit)
-    grep -v '^#' "$src" > "$f" || true
+    while IFS=$'\t' read -r lt arm seed t lr _; do
+      [ -n "$lt" ] || continue
+      case "$t" in smoke-*) die "a smoke- tag in stage resubmit; smoke tags belong to the smoke job only" ;; esac
+      [ "$(tag bb- "$arm" "$seed" "$lr")" = "$t" ] \
+        || die "row $lt $t: not the planned tag for $arm seed $seed lr $lr (the report reads planned tags only)"
+      add_row "$f" "$lt" "$arm" "$seed" "$lr"
+    done < <(grep -v '^#' "$src" || true)
     submit_array resubmit "$f"
     ;;
   onnx)
     : "${LT:?set LT}" "${TAG:?set TAG}"
+    # Refused up front rather than after spending a cap job (PR #121 review S9).
+    case "$TAG" in *dinov2-reg-large*)
+      die "$TAG: Dinov2WithRegisters does not export at opset 17 (docs/backbone-2026-11.md); not submitting" ;; esac
+    "$PY" -c "import onnx, onnxruntime" 2>/dev/null \
+      || die "onnx and onnxruntime do not import with $PY (the study env does not install them); add them to \$VENV first"
+    [ -s "$OUT/runs/$LT/$TAG/best/model.safetensors" ] \
+      || die "no $OUT/runs/$LT/$TAG/best/model.safetensors (not finished, or purged from scrubbed); not submitting"
     cap_check 1
     write_test
     mkdir -p logs

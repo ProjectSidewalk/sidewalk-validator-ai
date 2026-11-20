@@ -11,13 +11,15 @@ class-balanced subsample of CurbRamp for the GPU smoke test, and ``backbone_inpu
 ``report`` (laptop, after ``scp -r`` of the klone ``$KEEP``) reads every run under ``<runs-dir>/<LT>/runs/<TAG>/`` whose
 tag starts with ``--tag-prefix`` (``bb-<key>`` at seed 42, ``bb-<key>-s<seed>``, ``bb-<key>-lr3e5``; ``smoke-<key>`` /
 ``smoke-rand-<key>`` in the smoke job). Each run must pass the run-consistency check (split hash equal to the pinned
-one, seed / backbone / learning rate equal to its tag, real weights, loss divided by the accumulation steps), or it is
-listed as INCOMPLETE and left out. Every arm is compared with the in-env baseline (``<prefix>dinov2-large``) of the
+one, seed / backbone / learning rate / epochs equal to its tag and the recipe, the hub revision it resolved equal to the
+pin, the study env's package versions, real weights, loss divided by the accumulation steps), or it is listed as
+INCOMPLETE and left out. Every arm is compared with the in-env baseline (``<prefix>dinov2-large``) of the
 same seed on the same rows: paired AUC differences on test and held-out with panorama-bootstrap intervals
 (``confident_learning.overall_deltas``), the paired within-city difference with a panorama bootstrap stratified by
 deployment (``within_city_delta``), the 0.92 gate under the ``majority2`` prior (and ``margin`` as a reference, never
 in the same table; ``prior_rules.gate_rows``), each held-out deployment, and every type x severity and type x tag
-slice with its training count (``slices.paired_delta_table``). ``decide`` applies the rule mechanically.
+slice with its training count (``slices.paired_delta_table``). ``decide`` applies the rule mechanically, and holds the
+recommendation while a submitted arm (one listed in a ``tasks_*.tsv`` under ``--runs-dir``) is incomplete.
 
 Outputs (``--out``): ``arms.md/json``, ``seeds.md``, ``gate.md``, ``slices.md``, ``cost.md``, ``env.md``, ``lr.md``,
 ``rampnet.md``, ``decision.md/json``, ``null.md``, ``provenance.json``. Only aggregate numbers and held-out deployment
@@ -75,6 +77,9 @@ VIEW_FILES = ("split.csv", "manifest.csv", "generation_run.json", "metrics.json"
 CROP_DIRS = ("correct", "incorrect")
 ROUND3_REF = {42: "", 43: "_baseline-s43", 44: "_baseline-s44"}   # round-3 baseline file suffix per seed
 KEEP_FILES = ("metrics_{tag}.json", "predictions_{tag}.csv", "training_run.json", "run_key.json")
+# The study env (analysis/backbone_env.sh, the job's setup_env); a run whose recorded ``versions`` differ is not counted.
+STUDY_VERSIONS = {"torch": "2.7.1", "transformers": "4.56.2", "pandas": "2.3.1"}
+NULL_RHOS = (0.0, 0.5, 1.0)
 
 
 def sha256_of(path, chunk=1 << 20):
@@ -378,6 +383,29 @@ def _read_json(path):
         return json.load(f)
 
 
+def provenance_keys(files, roots):
+    """``{key: sha256}`` for ``files`` (absolute path -> sha256): a file under one of ``roots`` (name -> directory;
+    the deepest one wins) is keyed ``<name>/<path relative to it>``, any other file by its basename. Raises on a key
+    collision, so no hash is silently dropped.
+
+    >>> provenance_keys({"/s/CurbRamp/split.csv": "a", "/s/SurfaceProblem/split.csv": "b", "/x/shares.json": "c"},
+    ...                 {"split-dir": "/s"})
+    {'split-dir/CurbRamp/split.csv': 'a', 'split-dir/SurfaceProblem/split.csv': 'b', 'shares.json': 'c'}
+    """
+    absroots = sorted(((n, os.path.abspath(d)) for n, d in roots.items()), key=lambda nd: -len(nd[1]))
+    out = {}
+    for p, h in sorted(files.items()):
+        key = os.path.basename(p)
+        for name, root in absroots:
+            if p.startswith(root + os.sep):
+                key = f"{name}/{os.path.relpath(p, root)}"
+                break
+        if key in out:
+            raise ValueError(f"provenance key {key} is read from two files")
+        out[key] = h
+    return out
+
+
 class Tracker:
     """Records the sha256 of every file the report reads (``provenance.json``)."""
 
@@ -392,8 +420,12 @@ class Tracker:
 def consistency(run_dir, tag, parsed, split_sha, epochs=None):
     """Reasons a run cannot be used (empty when it can): files missing, ``run_key.json``'s split hash differs from
     the pinned one, the recorded seed / backbone / learning rate differ from the tag, the recorded epochs differ from
-    ``epochs`` (when given; a shell with ``EPOCHS=1`` exported once submitted one-epoch runs under main tags), random
-    weights, or a loss not divided by the accumulation steps."""
+    ``epochs`` (when given; a shell with ``EPOCHS=1`` exported once submitted one-epoch runs under main tags), a hub
+    row's recorded ``resolved_revision`` differs from its pinned ``revision`` (the baseline loads through
+    ``refs/main``; a missing value is not flagged, since a load whose file could not be located records None), a
+    recorded package version in ``versions`` differs from ``STUDY_VERSIONS`` (local build suffixes such as ``+cu126``
+    ignored; records without ``versions`` are not flagged), random weights, or a loss not divided by the accumulation
+    steps."""
     missing = [n.format(tag=tag) for n in KEEP_FILES if not os.path.isfile(os.path.join(run_dir, n.format(tag=tag)))]
     if missing:
         return [f"missing {', '.join(missing)}"]
@@ -411,6 +443,14 @@ def consistency(run_dir, tag, parsed, split_sha, epochs=None):
         why.append(f"learning_rate {lr} != tag's {parsed['lr']}")
     if epochs is not None and run.get("epochs") != epochs:
         why.append(f"epochs {run.get('epochs')} != {epochs}")
+    resolved, pinned = backbone.get("resolved_revision"), backbone.get("revision")
+    if resolved and pinned and resolved != pinned:
+        why.append(f"resolved_revision {str(resolved)[:12]} != the pinned {str(pinned)[:12]}")
+    versions = run.get("versions") or {}
+    for mod, want in STUDY_VERSIONS.items():
+        got = versions.get(mod)
+        if got is not None and str(got).split("+")[0] != want:
+            why.append(f"{mod} {got} != the study env's {want}")
     if backbone.get("random_init") is not False:
         why.append("random_init (smoke test weights)")
     if run.get("model_accepts_loss_kwargs") is not False:
@@ -454,6 +494,9 @@ def load_runs(runs_dir, label_type, prefix, split, split_sha, tracker, epochs=No
             continue
         d = os.path.join(base, tag)
         why = consistency(d, tag, parsed, split_sha, epochs)
+        for name in ("run_key.json", "training_run.json"):   # read by consistency for every run, counted or not
+            if os.path.isfile(os.path.join(d, name)):
+                tracker.track(os.path.join(d, name))
         rec = {"tag": tag, "parsed": parsed, "dir": d, "why": why}
         if not why:
             pred = pd.read_csv(tracker.track(os.path.join(d, f"predictions_{tag}.csv")),
@@ -464,7 +507,7 @@ def load_runs(runs_dir, label_type, prefix, split, split_sha, tracker, epochs=No
                 why.append("non-finite scores")
             else:
                 rec["pred"] = join_split(pred, split)
-                rec["run"] = _read_json(tracker.track(os.path.join(d, "training_run.json")))
+                rec["run"] = _read_json(os.path.join(d, "training_run.json"))
                 ts = os.path.join(d, "trainer_state.json")
                 rec["state"] = _read_json(tracker.track(ts)) if os.path.isfile(ts) else {}
                 gpu = os.path.join(d, "gpu.txt")
@@ -532,8 +575,6 @@ def compare_type(label_type, runs, ref, shares_types, prefix, public, n_boot, se
             row["baseline_tag"] = base["tag"] if base else None
             if base:
                 row.update(paired(rec["pred"], base["pred"], rec["tag"], n_boot, seed))
-                if s in ref:   # the round-3 file is joined but the deltas use the in-env baseline
-                    pass
                 if not math.isclose(lr, DEFAULT_LR):
                     own = by.get((key, s, DEFAULT_LR))
                     if own:
@@ -556,7 +597,7 @@ def compare_type(label_type, runs, ref, shares_types, prefix, public, n_boot, se
         backbone = rec["run"].get("backbone") or {}
         row.update(params=backbone.get("params"), tokens_per_image=backbone.get("tokens_per_image"),
                    model_class=backbone.get("model_class"), family=backbone.get("family"),
-                   gpu=", ".join(rec["gpu"]), seconds_per_step=seconds_per_step(rec),
+                   gpu="; ".join(rec["gpu"]), seconds_per_step=seconds_per_step(rec),
                    peak_gpu_memory_gb=(rec["run"].get("peak_gpu_memory_bytes") or 0) / 2**30 or None)
         for rule in (DECISION_RULE, REFERENCE_RULE):
             g = gate_stats(rec["pred"], shares_types, label_type, rule)
@@ -656,17 +697,64 @@ def _gate_ok(r):
     return p >= GATE_PRECISION and p >= bp - GATE_PRECISION_DROP and c >= bc - GATE_COVERAGE_DROP
 
 
-def arm_status(arm, per_type, submitted=False, types=PILOT_TYPES):
-    """The rule of docs/backbone-2026-11.md for one arm. ``per_type`` is ``summarise``'s entry for the arm.
+INCOMPLETE_STATUS = "submitted, incomplete"
+
+
+def submitted_rows(runs_dir, prefix, types=PILOT_TYPES):
+    """``{(label type, arm, seed)}`` of every lr 1e-5 row with a ``prefix`` tag in the ``tasks_*.tsv`` files directly
+    under ``runs_dir`` (the launcher copies each stage's task file to ``$KEEP``): what was submitted, finished or not.
+
+    >>> import tempfile
+    >>> d = tempfile.mkdtemp()
+    >>> _ = open(os.path.join(d, "tasks_dinov3_x.tsv"), "w").write(
+    ...     "CurbRamp\\tdinov3-vitl16\\t43\\tbb-dinov3-vitl16-s43\\t1e-5\\nCurbRamp\\tdinov2-large\\t42\\tbb-dinov2-large-lr3e5\\t3e-5\\n")
+    >>> submitted_rows(d, "bb-")
+    {('CurbRamp', 'dinov3-vitl16', 43)}
+    """
+    out = set()
+    if not os.path.isdir(runs_dir):
+        return out
+    for name in sorted(os.listdir(runs_dir)):
+        if not (name.startswith("tasks_") and name.endswith(".tsv")):
+            continue
+        with open(os.path.join(runs_dir, name)) as f:
+            for line in f:
+                c = line.rstrip("\n").split("\t")
+                if line.startswith("#") or len(c) < 5:
+                    continue
+                p = parse_tag(c[3], prefix)
+                if p and not p["random"] and c[0] in types and math.isclose(p["lr"], DEFAULT_LR):
+                    out.add((c[0], p["key"], p["seed"]))
+    return out
+
+
+def _missing(per_type, types):
+    """``(type, seed)`` pairs of ``SEEDS`` the arm has no paired result for (``summarise``'s ``seeds``)."""
+    out = []
+    for t in types:
+        r = per_type.get(t) or {}
+        have = set(r["seeds"]) if "seeds" in r else set(SEEDS[:r.get("n_seeds", 0)])
+        out += [(t, s) for s in SEEDS if s not in have]
+    return out
+
+
+def arm_status(arm, per_type, submitted=(), types=PILOT_TYPES):
+    """The rule of docs/backbone-2026-11.md for one arm. ``per_type`` is ``summarise``'s entry for the arm;
+    ``submitted`` the ``(type, arm, seed)`` rows of the task files (``submitted_rows``).
     Returns ``(status, detail)``; statuses: ``winner``, ``meets the doubled rule`` (an arm outside ``ELIGIBLE``),
-    ``between-deployment only``, ``worse``, ``non-inferior small``, ``null``, ``running``, ``not yet run``."""
-    have = [(per_type.get(t) or {}).get("n_seeds", 0) for t in types]
-    if any(h < N_SEEDS for h in have):
-        return ("running" if submitted else "not yet run"), {"seeds": dict(zip(types, have))}
+    ``fails the gate`` (conditions 1 and 2 met, condition 3 not), ``between-deployment only``, ``worse``,
+    ``non-inferior small``, ``null``, and, short of the three seeds on a pilot type, ``submitted, incomplete`` (a
+    missing row was submitted: it is queued, running, or failed and not resubmitted) or ``not yet run``."""
+    missing = _missing(per_type, types)
+    if missing:
+        have = {t: (per_type.get(t) or {}).get("n_seeds", 0) for t in types}
+        sub = [m for m in missing if (m[0], arm, m[1]) in submitted]
+        return (INCOMPLETE_STATUS if sub else "not yet run"), {"seeds": have,
+                                                               "missing": [f"{t} seed {s}" for t, s in missing]}
     eligible = arm in bb.ELIGIBLE
     thr = {t: THRESHOLDS[t] * (1 if eligible else 2) for t in types}
     pooled = [t for t in types if per_type[t]["d_heldout_mean"] is not None
-              and per_type[t]["d_heldout_mean"] >= thr[t] and per_type[t]["n_pos_heldout"] == N_SEEDS]
+              and per_type[t]["d_heldout_mean"] >= thr[t] and per_type[t]["n_pos_heldout"] == per_type[t]["n_seeds"]]
     c1 = [t for t in pooled if (per_type[t]["wc_d_heldout_mean"] or 0) > 0]
     c2 = all(per_type[t][k] is not None and per_type[t][k] >= NON_INFERIOR for t in types
              for k in ("d_heldout_mean", "wc_d_heldout_mean", "d_test_mean"))
@@ -677,6 +765,8 @@ def arm_status(arm, per_type, submitted=False, types=PILOT_TYPES):
               "condition_3": c3, "non_inferior_small": small and c2 and c3, "eligible": eligible}
     if c1 and c2 and c3:
         return ("winner" if eligible else "meets the doubled rule"), detail
+    if c1 and c2:
+        return "fails the gate", detail
     if pooled and not c1:
         return "between-deployment only", detail
     if not c2:
@@ -686,19 +776,38 @@ def arm_status(arm, per_type, submitted=False, types=PILOT_TYPES):
     return "null", detail
 
 
-def decide(summary, submitted=False, types=PILOT_TYPES):
+def decide(summary, submitted=(), types=PILOT_TYPES, dropped=()):
     """Every arm's status and the recommendation: the eligible winner with the larger sum of mean Δ held-out AUC
     (within 0.005: one ``AutoModelForImageClassification`` loads with no custom code, then fewer parameters); an
-    explanatory arm only if it meets the doubled rule and no eligible arm wins; else keep ``dinov2-large``."""
+    explanatory arm only if it meets the doubled rule and no eligible arm wins; else keep ``dinov2-large``.
+
+    The recommendation is **held** while a submitted eligible arm is incomplete (it could still win, or change the
+    tie-break), and, when no eligible arm wins, while a submitted explanatory arm is incomplete (it could still be
+    promoted). An eligible arm that was never submitted does not hold it: it is listed in ``not_run`` and named in the
+    recommendation. ``dropped`` arms (``report --drop-arms``: submitted, failed, and not to be rerun) count as not
+    run, with status ``dropped``.
+
+    >>> decide({}, set())["recommendation"]
+    'not yet run'
+    >>> decide({}, {("CurbRamp", "dinov3-vitl16", 42)})["recommendation"]
+    'held: dinov3-vitl16 submitted but incomplete (queued, running, or failed and not resubmitted); not run: dinov2-reg-large, rampnet-convnextv2-base'
+    """
+    dropped = set(dropped)
+    submitted = {r for r in submitted if r[1] not in dropped}
     arms = {}
     for arm, per_type in summary.items():
         if arm == BASELINE_KEY:
             continue
         status, detail = arm_status(arm, per_type, submitted, types)
         arms[arm] = {"status": status, **detail}
+    listed = {a for _, a, _ in submitted} | set(bb.ELIGIBLE) | (dropped & set(bb.REGISTRY))
     for arm in bb.REGISTRY:
-        if arm != BASELINE_KEY and arm not in arms and arm in bb.ELIGIBLE:
-            arms[arm] = {"status": "running" if submitted and not bb.get(arm).gated else "not yet run"}
+        if arm != BASELINE_KEY and arm not in arms and arm in listed:
+            status, detail = arm_status(arm, {}, submitted, types)
+            arms[arm] = {"status": status, **detail}
+    for arm in dropped & set(arms):
+        if arms[arm]["status"] in ("not yet run", INCOMPLETE_STATUS):
+            arms[arm]["status"] = "dropped"
 
     def score(a):
         return sum(summary[a][t]["d_heldout_mean"] for t in types)
@@ -711,22 +820,49 @@ def decide(summary, submitted=False, types=PILOT_TYPES):
         return sorted(close, key=lambda a: (bb.get(a).family == "dinov3_vit", bb.get(a).params_m, -score(a)))[0]
     winners = [a for a, r in arms.items() if r["status"] == "winner"]
     promoted = [a for a, r in arms.items() if r["status"] == "meets the doubled rule"]
-    choice = pick(winners) or pick(promoted)
-    pending = any(r["status"] in ("running", "not yet run") for a, r in arms.items() if a in summary or a in bb.ELIGIBLE)
-    if choice:
+    incomplete = [a for a, r in arms.items() if r["status"] == INCOMPLETE_STATUS]
+    held_eligible = [a for a in incomplete if a in bb.ELIGIBLE]
+    held_other = [a for a in incomplete if a not in bb.ELIGIBLE]
+    not_run = [a for a, r in arms.items() if r["status"] in ("not yet run", "dropped") and a in bb.ELIGIBLE]
+    choice = None
+    if held_eligible:
+        rec = (f"held: {', '.join(held_eligible)} submitted but incomplete (queued, running, or failed and not "
+               "resubmitted)")
+        if winners:
+            rec += f"; meets the rule so far: {pick(winners)}"
+    elif winners:
+        choice = pick(winners)
         rec = f"{choice} (pending confirmation on the other three types)"
-    elif pending:
-        rec = "running" if submitted else "not yet run"
+    elif held_other:
+        rec = (f"held: no eligible arm met the rule, and {', '.join(held_other)} submitted but incomplete could still "
+               "be promoted")
+    elif promoted:
+        choice = pick(promoted)
+        rec = f"{choice} (pending confirmation on the other three types)"
+    elif all(r["status"] in ("not yet run", "dropped") for r in arms.values()):
+        rec = "not yet run"
     else:
-        rec = f"keep {BASELINE_KEY} (no arm met the rule)"
-    return {"arms": arms, "winners": winners, "promoted": promoted, "recommendation": rec}
+        rec = f"keep {BASELINE_KEY} among the arms run (no arm met the rule)"
+    if not_run and rec != "not yet run":
+        rec += f"; not run: {', '.join(not_run)}"
+    return {"arms": arms, "winners": winners, "promoted": promoted, "incomplete": incomplete, "not_run": not_run,
+            "choice": choice, "recommendation": rec}
 
 
 def null_winner_rate(delta_sd=None, thresholds=None, n_arms=len(bb.ELIGIBLE), n_seeds=N_SEEDS, n_sims=20000, seed=0,
-                     types=PILOT_TYPES):
+                     types=PILOT_TYPES, rho=0.0):
     """Monte Carlo of the rule under no true difference: each eligible arm's per-seed Δ held-out, Δ within-city
-    held-out and Δ test are independent N(0, ``delta_sd[type]``) draws (the gate condition assumed met).
-    ``{"expected_winners", "p_any_winner"}`` among ``n_arms`` arms."""
+    held-out and Δ test are N(0, ``delta_sd[type]``) draws (the gate condition assumed met). Δ test is independent.
+    Each seed's Δ within-city held-out is ``rho`` × its Δ held-out + sqrt(1 − rho²) × an independent draw: both are
+    read from the same held-out rows, so they are positively correlated; ``rho`` = 0 is the pre-registered
+    calculation and ``rho`` = 1 the bound. ``{"expected_winners", "p_any_winner", ...}`` among ``n_arms`` arms.
+
+    >>> r = [null_winner_rate(n_sims=4000, seed=1, rho=x)["expected_winners"] for x in (0.0, 1.0)]
+    >>> r[0] < r[1]
+    True
+    """
+    if not 0.0 <= rho <= 1.0:
+        raise ValueError(f"rho {rho} is not in [0, 1]")
     delta_sd = delta_sd or DELTA_SD
     thresholds = thresholds or THRESHOLDS
     rng = np.random.default_rng(seed)
@@ -736,13 +872,14 @@ def null_winner_rate(delta_sd=None, thresholds=None, n_arms=len(bb.ELIGIBLE), n_
         c2 = np.ones(n_sims, bool)
         for t in types:
             d = rng.normal(0, delta_sd[t], (n_sims, n_seeds))
-            wc = rng.normal(0, delta_sd[t], (n_sims, n_seeds)).mean(1)
+            z = rng.normal(0, delta_sd[t], (n_sims, n_seeds))
+            wc = (rho * d + math.sqrt(1.0 - rho * rho) * z).mean(1)
             te = rng.normal(0, delta_sd[t], (n_sims, n_seeds)).mean(1)
             c1 |= (d.mean(1) >= thresholds[t]) & (d > 0).all(1) & (wc > 0)
             c2 &= (d.mean(1) >= NON_INFERIOR) & (wc >= NON_INFERIOR) & (te >= NON_INFERIOR)
         wins += c1 & c2
     return {"expected_winners": float(wins.mean()), "p_any_winner": float((wins > 0).mean()), "n_arms": n_arms,
-            "n_sims": n_sims, "seed": seed, "delta_sd": delta_sd, "thresholds": thresholds}
+            "n_sims": n_sims, "seed": seed, "rho": rho, "delta_sd": delta_sd, "thresholds": thresholds}
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -770,7 +907,7 @@ def arms_markdown(rows, heldout, incomplete, round3):
     parts = ["# Backbone comparison: every run against the same-seed in-env baseline", "",
              "Δ = arm − in-env `dinov2-large` of the same seed on the same rows, with 95% panorama-bootstrap intervals "
              "(within-city: panoramas resampled within each deployment). Within-city AUC: per-deployment AUCs weighted "
-             "by n_incorrect × n_correct over deployments with ≥ 10 labels of both classes.", ""]
+             "by n_incorrect × n_correct over deployments with ≥ 10 labels and both classes present.", ""]
     for t in sorted({r["type"] for r in rows} | {r["type"] for r in round3}):
         parts += [f"## {t}", ""]
         body = [[f"round-3 baseline (4.55.0)", r["seed"], _f(r.get("test_auc")), _f(r.get("wc_test_auc")),
@@ -849,16 +986,21 @@ def cost_markdown(rows):
     body = []
     for (arm, t), rs in sorted(seen.items()):
         b = bb.get(arm)
+        timed = [r for r in rs if r.get("seconds_per_step") is not None]
         body.append([f"`{arm}`", t, _f(rs[0].get("params") and rs[0]["params"] / 1e6, "{:.1f}"), b.tokens_per_image,
                      rs[0].get("model_class") or bb.MODEL_CLASS[b.family], "no" if b.family == "dinov3_vit" else "yes",
-                     ", ".join(sorted({g for r in rs for g in (r.get("gpu") or "").split(", ") if g})),
-                     _f(_mean([r.get("seconds_per_step") for r in rs]), "{:.2f}"),
+                     "; ".join(sorted({g for r in rs for g in (r.get("gpu") or "").split("; ") if g})),
+                     _f(_mean([r.get("seconds_per_step") for r in timed]), "{:.2f}"), f"{len(timed)} of {len(rs)}",
                      _f(max([r.get("peak_gpu_memory_gb") or 0 for r in rs]) or None, "{:.1f}")])
     return ("# Cost\n\nParameters counted from the built model; seconds per optimizer step are the last attempt's wall "
-            "time (loading and evaluation included) over the steps it ran, mean over runs; GPU models from each run's "
-            "`gpu.txt` (appended on every attempt). ONNX rows join when that later stage has run.\n\n"
+            "time (loading and per-epoch evaluation included) over the steps it ran, mean over the timed runs. A run "
+            "requeued after training finished but before it was evaluated reruns as a no-op that trains no steps: it "
+            "has no timing (counted in \"timed\"), and its peak GPU memory is that no-op's, so the peak column can "
+            "understate such a run. GPU models from each run's `gpu.txt` (appended on every attempt). ONNX rows join "
+            "when that later stage has run.\n\n"
             + _table(["arm", "type", "params (M)", "tokens / image", "model class",
-                      "AutoModelForImageClassification, no custom code", "GPUs", "s / step", "peak GPU GB"], body))
+                      "AutoModelForImageClassification, no custom code", "GPUs", "s / step", "timed",
+                      "peak GPU GB"], body))
 
 
 def env_markdown(env):
@@ -892,7 +1034,10 @@ def lr_markdown(rows):
                      "recipe-limited" if limited else ""])
     return ("# Learning rate (explanatory; cannot win)\n\nEach 3e-5 run against the same arm at 1e-5 (seed 42) and "
             "against the baseline at 3e-5. An arm whose 3e-5 run beats its 1e-5 run by at least the type's threshold "
-            f"({', '.join(f'{t} +{v:.3f}' for t, v in THRESHOLDS.items())}) is called recipe-limited.\n\n"
+            f"({', '.join(f'{t} +{v:.3f}' for t, v in THRESHOLDS.items())}) is called recipe-limited. That bar was set "
+            "for a three-seed mean; here it is applied to one paired run, whose seed-to-seed sd alone is about "
+            f"{', '.join(f'{t} {v:.3f}' for t, v in DELTA_SD.items())}, so \"recipe-limited\" flags a three-seed "
+            "follow-up, not a result.\n\n"
             + _table(["type", "arm", "seed", "lr", "held-out AUC", "Δ held-out vs own 1e-5",
                       "Δ held-out vs baseline at the same lr", "reading"], body))
 
@@ -921,22 +1066,36 @@ def decision_markdown(decision, n_compared):
     body = [[f"`{a}`", r["status"], ", ".join(r.get("condition_1_types") or []), r.get("condition_2", ""),
              r.get("condition_3", ""), "yes" if r.get("eligible") else ("" if "eligible" not in r else "no")]
             for a, r in decision["arms"].items()]
-    return (f"# Decision\n\nRecommendation: **{decision['recommendation']}**\n\nArms compared: {n_compared}; the family "
-            "is not corrected for multiplicity (null.md gives the expected number of null winners under this rule).\n\n"
+    extra = ""
+    if decision.get("incomplete"):
+        extra += ("Submitted but incomplete (queued, running, or failed and not resubmitted): "
+                  + ", ".join(f"`{a}` ({'; '.join(decision['arms'][a].get('missing') or [])})"
+                              for a in decision["incomplete"]) + ".\n\n")
+    if decision.get("not_run"):
+        extra += ("Eligible arms not run (never submitted, or dropped with `--drop-arms`): "
+                  + ", ".join(f"`{a}`" for a in decision["not_run"]) + ". The recommendation is among the arms run.\n\n")
+    return (f"# Decision\n\nRecommendation: **{decision['recommendation']}**\n\n{extra}Arms compared: {n_compared}; "
+            "the family is not corrected for multiplicity (null.md gives the expected number of null winners under this "
+            "rule).\n\n"
             + _table(["arm", "status", "condition 1 met on", "condition 2", "condition 3", "eligible"], body))
 
 
-def null_markdown(res, res_doubled):
+def null_markdown(results):
+    """``results``: ``null_winner_rate`` outputs (single and doubled thresholds, each at every ``NULL_RHOS``)."""
+    res = results[0]
+    body = [[", ".join(f"{t} +{v:.3f}" for t, v in r["thresholds"].items())
+             + (" (doubled)" if r["thresholds"] != THRESHOLDS else ""), f"{r['rho']:g}", r["n_arms"],
+             f"{r['expected_winners']:.4f}", f"{r['p_any_winner']:.4f}"] for r in results]
+    single = [r["expected_winners"] for r in results if r["thresholds"] == THRESHOLDS]
     return ("# Expected winners under no true difference\n\n"
             f"Seeded Monte Carlo ({res['n_sims']:,} draws, seed {res['seed']}): each eligible arm's per-seed paired Δ "
-            f"held-out, Δ within-city held-out and Δ test are independent N(0, sd) with sd "
-            f"{', '.join(f'{t} {s}' for t, s in res['delta_sd'].items())}; the gate condition is assumed met.\n\n"
-            + _table(["thresholds", "arms", "expected winners", "P(at least one)"],
-                     [[", ".join(f"{t} +{v:.3f}" for t, v in res["thresholds"].items()), res["n_arms"],
-                       f"{res['expected_winners']:.4f}", f"{res['p_any_winner']:.4f}"],
-                      [", ".join(f"{t} +{v:.3f}" for t, v in res_doubled["thresholds"].items()) + " (doubled)",
-                       res_doubled["n_arms"], f"{res_doubled['expected_winners']:.4f}",
-                       f"{res_doubled['p_any_winner']:.4f}"]]))
+            f"held-out, Δ within-city held-out and Δ test are N(0, sd) with sd "
+            f"{', '.join(f'{t} {s}' for t, s in res['delta_sd'].items())}; the gate condition is assumed met. Δ test "
+            "is independent. Δ within-city held-out is read from the same held-out rows as Δ held-out, so the two are "
+            "positively correlated; ρ is that per-seed correlation, from 0 (the pre-registered, independent "
+            "calculation) to 1 (the bound). Their true correlation is not known, so the null winner rate is the range "
+            f"{min(single):.3f} to {max(single):.3f} at the pre-registered thresholds.\n\n"
+            + _table(["thresholds", "ρ", "arms", "expected winners", "P(at least one)"], body))
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -971,9 +1130,17 @@ def cmd_report(args):
     with open(tracker.track(args.exposure)) as f:
         exposure = json.load(f)
     types = [t for t in args.label_types.split(",") if t]
+    others = [t for t in types if t not in PILOT_TYPES]
+    if others:
+        raise SystemExit(f"--label-types {','.join(others)}: the report reads the pilot types only; the other three "
+                         "types (the rule's confirmation stage) need the follow-up PR")
     slice_seeds = {int(s) for s in args.slice_seeds.split(",") if s}
     jobs = os.path.join(args.runs_dir, "backbone_jobs.txt")
-    submitted = os.path.isfile(jobs)
+    submitted = submitted_rows(args.runs_dir, args.tag_prefix, tuple(types))
+    dropped = [a for a in args.drop_arms.split(",") if a]
+    unknown = [a for a in dropped if a not in bb.REGISTRY]
+    if unknown:
+        raise SystemExit(f"--drop-arms: not registry keys: {unknown}")
     rows, gates, heldout, slice_rows, env, incomplete, round3 = [], [], [], [], [], [], []
     for t in types:
         split = load_split(args.split_dir, t, inputs, tracker)
@@ -989,9 +1156,10 @@ def cmd_report(args):
         slice_rows += sr
         env += env_rows(t, runs, ref, args.n_boot, args.seed)
     summary = summarise(rows, gates)
-    decision = decide(summary, submitted, tuple(types))
-    null = null_winner_rate(seed=0)
-    null2 = null_winner_rate(thresholds={t: 2 * v for t, v in THRESHOLDS.items()}, seed=0)
+    decision = decide(summary, submitted, tuple(types), dropped)
+    nulls = [null_winner_rate(thresholds=thr, seed=0, rho=rho) for thr in (THRESHOLDS, {t: 2 * v for t, v in
+                                                                                        THRESHOLDS.items()})
+             for rho in NULL_RHOS]
     os.makedirs(args.out, exist_ok=True)
     outputs = {
         "arms.md": arms_markdown(rows, heldout, incomplete, round3),
@@ -999,15 +1167,15 @@ def cmd_report(args):
         "cost.md": cost_markdown(rows), "env.md": env_markdown(env), "lr.md": lr_markdown(rows),
         "rampnet.md": rampnet_markdown(rows, exposure),
         "decision.md": decision_markdown(decision, len({r["arm"] for r in rows} - {BASELINE_KEY})),
-        "null.md": null_markdown(null, null2),
+        "null.md": null_markdown(nulls),
     }
     for name, text in outputs.items():
         with open(os.path.join(args.out, name), "w") as f:
             f.write(text)
     json_out = {"arms.json": {"rows": rows, "heldout": heldout, "summary": summary, "round3": round3,
                               "incomplete": incomplete},
-                "decision.json": {"decision": decision, "null": null, "null_doubled": null2,
-                                  "thresholds": THRESHOLDS, "delta_sd": DELTA_SD}}
+                "decision.json": {"decision": decision, "null": nulls, "thresholds": THRESHOLDS, "delta_sd": DELTA_SD,
+                                  "submitted_rows": sorted(submitted), "dropped_arms": sorted(dropped)}}
     for name, obj in json_out.items():
         with open(os.path.join(args.out, name), "w") as f:
             json.dump(_clean(obj), f, indent=2, default=str)
@@ -1017,9 +1185,7 @@ def cmd_report(args):
         if os.path.isdir(args.runs_dir) else []
     for p in extra:
         tracker.track(p)
-    prov = {"files_read": {os.path.relpath(p, os.path.commonpath([os.path.abspath(args.runs_dir), p]))
-                           if p.startswith(os.path.abspath(args.runs_dir)) else os.path.basename(p): h
-                           for p, h in sorted(tracker.files.items())},
+    prov = {"files_read": provenance_keys(tracker.files, {"runs-dir": args.runs_dir, "split-dir": args.split_dir}),
             "outputs": {n: sha256_of(os.path.join(args.out, n)) for n in sorted(list(outputs) + list(json_out))},
             "report_git": git_state(), "n_boot": args.n_boot, "bootstrap_seed": args.seed, "tag_prefix": args.tag_prefix,
             "public_cities_source": public_source, "label_types": types, "slice_seeds": sorted(slice_seeds)}
@@ -1057,6 +1223,8 @@ def build_parser():
     r.add_argument("--slice-seeds", default="42")
     r.add_argument("--n-boot", type=int, default=1000)
     r.add_argument("--epochs", type=int, default=25, help="every counted run must have trained this many epochs")
+    r.add_argument("--drop-arms", default="", help="comma-separated arms submitted but not to be finished (e.g. failed "
+                   "and not rerun): counted as not run, so they no longer hold the recommendation")
     r.add_argument("--seed", type=int, default=0)
     r.add_argument("--manifest", default=None, help="backbone_manifest.json (hashed into provenance)")
     r.add_argument("--pip-freeze", default=None, help="pip_freeze.txt (hashed into provenance)")

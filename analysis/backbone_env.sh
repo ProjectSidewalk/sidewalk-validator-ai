@@ -9,8 +9,9 @@
 # constraints file built from `pip list --format=freeze` of the new venv, which lists the base env's packages too
 # (transformers, tokenizers and timm left out).
 # timm goes in with --no-deps when the base env has no torchvision, so nothing pulls a second torch in.
-# The check at the end requires torch 2.7.1 and pandas 2.3.1 imported from $BASE_ENV and transformers 4.56.2 from
-# $VENV; it exits 1 otherwise. Idempotent: an env that already passes the check is left alone.
+# The check at the end requires torch 2.7.1 and pandas 2.3.1 imported from $BASE_ENV and transformers 4.56.2,
+# tokenizers 0.22.2 and timm 1.0.31 from $VENV; it exits 1 otherwise. Idempotent: an env that already passes the check
+# is left alone (all five are imported, so a venv that scrubbed's purge has partly deleted fails it and is rebuilt).
 #
 # Variables (defaults in brackets):
 #   OUT       [/gscratch/scrubbed/$USER/backbone-comparison-2026-11] constraints.txt, pip_freeze.txt
@@ -30,8 +31,9 @@ check() {
   "$VENV/bin/python" - "$BASE_ENV" "$VENV" <<'PY'
 import os, sys
 base, venv = (os.path.realpath(p) for p in sys.argv[1:3])
-import pandas, torch, transformers
-want = {"torch": ("2.7.1", torch, base), "pandas": ("2.3.1", pandas, base), "transformers": ("4.56.2", transformers, venv)}
+import pandas, timm, tokenizers, torch, transformers
+want = {"torch": ("2.7.1", torch, base), "pandas": ("2.3.1", pandas, base), "transformers": ("4.56.2", transformers, venv),
+        "tokenizers": ("0.22.2", tokenizers, venv), "timm": ("1.0.31", timm, venv)}
 bad = []
 for name, (version, mod, root) in want.items():
     got = mod.__version__.split("+")[0]
