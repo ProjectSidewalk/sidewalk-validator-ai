@@ -303,6 +303,8 @@ inputs, a failed real 8 MiB write to scrubbed or to the keep directory, under 5 
 line) and a pandas other than 2.x. Outputs: the mirror and evaluation files in
 `/gscratch/scrubbed/$USER/round4-disagree-2026-11/data`, runs and the kept `best/` weights in `.../runs` (scrubbed
 purges after 21 days), small artifacts in `/gscratch/makelab/$USER/round4-disagree-2026-11-keep`. Every job id is
-in `round4_jobs.txt`; `MAX_GPU_JOBS` (40) caps this stream across stages. Resume by resubmitting: trainings resume
-from their last complete checkpoint, and a finished run exits "already evaluated". Details:
-[`round4-2026-11.md`](round4-2026-11.md).
+in `round4_jobs.txt` with its full, shell-quoted command (pasting a line resubmits that one job); `MAX_GPU_JOBS`
+(40) caps this stream across stages, and stage 2 or a pilot rerun needs it raised. Resume by resubmitting:
+trainings resume from their last complete checkpoint, a finished run exits "already evaluated", and a gold-scoring
+job that hit its 4-hour limit skips the outputs it already wrote (`collect` lists any gold predictions still
+missing). Details: [`round4-2026-11.md`](round4-2026-11.md).
