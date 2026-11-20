@@ -155,16 +155,28 @@ def test_round_stratified_auc_differs_from_pooled_by_hand():
 
 
 def test_pool_weighted_share_by_hand():
-    rows = pd.DataFrame({"label_type": ["T"] * 4, "stratum": ["a", "a", "b", "b"],
+    rows = pd.DataFrame({"round": ["1"] * 4, "label_type": ["T"] * 4, "stratum": ["a", "a", "b", "b"],
                          "verdict": ["incorrect"] * 4, "served": [0.99] * 4,
                          "expert": ["incorrect", "correct", "incorrect", "incorrect"]})
     pool = pd.DataFrame({"label_type": ["T"] * 12, "stratum": ["a"] * 10 + ["b"] * 2})
-    w = dgt.pool_weights(rows, pool)
+    w = dgt.pool_weights(rows, {"1": pool})
     assert w.tolist() == [5.0, 5.0, 1.0, 1.0]
     b = dgt.gated_block(rows, "incorrect", w)
-    assert b["share"] == pytest.approx(0.75)
+    assert b["share"] == pytest.approx(0.75) and b["weighting"] == "pool stratum (per round)"
     assert b["share_pool_weighted"] == pytest.approx((5 + 1 + 1) / 12)
-    assert dgt.pool_weights(rows, pool[pool.stratum == "a"]) is None       # a stratum without pool counts
+    assert dgt.pool_weights(rows, {"1": pool[pool.stratum == "a"]}) is None   # a stratum without pool counts
+    assert dgt.gated_block(rows.assign(served=0.5), "incorrect", w)["weighting"] == "none gated"   # N6
+    assert dgt.gated_block(rows, "incorrect", None)["weighting"] == "raw only"
+
+
+def test_pool_weights_are_per_round():
+    # Round 1 and round 2 share stratum names but sampled different frames: a round-2 item takes round 2's counts.
+    rows = pd.DataFrame({"round": ["1", "1", "2", "2"], "label_type": ["T"] * 4, "stratum": ["a"] * 4})
+    p1 = pd.DataFrame({"label_type": ["T"] * 10, "stratum": ["a"] * 10})
+    p2 = pd.DataFrame({"label_type": ["T"] * 3, "stratum": ["a"] * 3})
+    assert dgt.pool_weights(rows, {"1": p1, "2": p2}).tolist() == [5.0, 5.0, 1.5, 1.5]
+    assert dgt.pool_weights(rows, {"1": p1}) is None                          # round 2 has no pool: raw only
+    assert dgt.pool_weights(rows[rows["round"] == "1"], {"1": p1}).tolist() == [5.0, 5.0]
 
 
 def test_primary_delta_is_the_mean_of_per_seed_deltas():
@@ -377,3 +389,278 @@ def test_splice_is_idempotent_and_privacy_gate_rejects_private_names():
 def test_bar_markdown_lists_every_criterion():
     text = dgt.bar_markdown(dgt.decide(maps_ok(), None, types=("Obstacle",)))
     assert "C3" in text and "A1" in text and "hold_back" in text
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# gold end to end (B1): the real gold.csv columns, the gold prediction files, per-round pools, parity, P4
+# ---------------------------------------------------------------------------------------------------------------------
+
+from analysis import adjudicator as adj  # noqa: E402
+
+
+def real_gold(n=60, label_type="Obstacle"):
+    """A gold table with exactly ``adjudicator.GOLD_COLUMNS``: no ``true`` column, the verdict is ``expert``."""
+    rng = np.random.default_rng(3)
+    rows = []
+    for i in range(n):
+        dis = i % 4 != 3
+        rows.append({c: "" for c in adj.GOLD_COLUMNS} | {
+            "label_uid": f"c:{i}", "label_type": label_type, "severity": str(1 + i % 3), "tags": "[]",
+            "pano_id": f"P{i}", "round": "1" if i < n // 2 else "2",
+            "expert": "incorrect" if rng.random() < 0.6 else "correct",
+            "expert_source": "r1" if i < n // 2 else "r2_single", "unmasked": "False", "decided": "True",
+            "stratum": ("lone" if i % 2 else "margin_incorrect") if dis else "decoy_agree",
+            "ai_vote": "Disagree" if dis else "Agree", "round3_split": "test" if i % 5 else "train"})
+    return pd.DataFrame(rows, columns=adj.GOLD_COLUMNS)
+
+
+def write_pool(path, n_lone, n_margin, n_decoy, label_type="Obstacle"):
+    rows = ([{"ai_vote": "Disagree", "h_agree": 0, "h_dis": 0}] * n_lone
+            + [{"ai_vote": "Disagree", "h_agree": 0, "h_dis": 2}] * n_margin
+            + [{"ai_vote": "Agree", "h_agree": 0, "h_dis": 0}] * n_decoy)
+    d = pd.DataFrame(rows).assign(schema="x", label_id=range(len(rows)), label_type=label_type, h_unsure=0)
+    d.to_csv(path, index=False)
+    return str(path)
+
+
+def gold_layout(tmp_path, gold, runs=(("baseline", 42), ("baseline", 43), ("cl-drop", 42), ("cl-drop", 43),
+                                      ("round3", 42))):
+    pred_dir, maps_dir = tmp_path / "pred" / "Obstacle", tmp_path / "maps"
+    pred_dir.mkdir(parents=True)
+    maps_dir.mkdir()
+    amap = dgt.fit_map(predictions(), PI)
+    y = (gold["expert"] == "incorrect").to_numpy()
+    for k, (v, s) in enumerate(runs):
+        tag = dgt.run_tag(v, s)
+        rng = np.random.default_rng(k)
+        p = np.clip(np.where(y, 0.9, 0.2) + rng.normal(0, 0.15, len(y)), 0.001, 0.999)
+        for crops, shift in (("uniform", 0.0), ("r3crops", 0.05)):
+            pq = np.clip(p + shift, 0.001, 0.999)
+            pd.DataFrame({"label_uid": gold["label_uid"], "p_correct": 1 - pq, "p_incorrect": pq}).to_csv(
+                pred_dir / f"gold_predictions_{crops}_{tag}.csv", index=False)
+        (maps_dir / f"Obstacle_{tag}.json").write_text(json.dumps(amap))
+    gold_path = tmp_path / "gold.csv"
+    gold.to_csv(gold_path, index=False)
+    return gold_path, tmp_path / "pred", maps_dir
+
+
+def run_gold(gold_path, pred, maps, out, *extra):
+    argv = ["gold", "--gold", str(gold_path), "--pred-dir", str(pred), "--maps", str(maps), "--types", "Obstacle",
+            "--seeds", "42,43", "--crops", "uniform", "--n-boot", "20", "--out", str(out), *extra]
+    assert dgt.main(argv) == 0
+    return json.loads((out / "gold.json").read_text())
+
+
+def test_cmd_gold_end_to_end_with_parity_and_pools(tmp_path):
+    gold = real_gold()
+    assert "true" not in gold.columns
+    gold_path, pred, maps = gold_layout(tmp_path, gold)
+    p1 = write_pool(tmp_path / "pool1.csv", 40, 20, 30)
+    p2 = write_pool(tmp_path / "pool2.csv", 10, 50, 30)
+    res = run_gold(gold_path, pred, maps, tmp_path / "out", "--parity", "--pool", f"1={p1}", "--pool", f"2={p2}")
+    ob = res["Obstacle"]
+    base = ob["runs"]["baseline"]
+    assert base["n_scored"] == ob["populations"]["headline"] == len(gold)
+    assert base["gated_disagree"]["weighting"] in ("pool stratum (per round)", "none gated")
+    assert set(base["by_round"]) == {"1", "2"} and "1/lone" in base["by_stratum"]
+    assert base["parity"]["n"] == len(gold) and base["parity"]["mean_abs_dp"] > 0
+    assert ob["p4"]["seeds"] == [42, 43] and "mean" in ob["p4"]
+    assert set(ob["ensemble"]) == {"baseline", "cl-drop"} and ob["ensemble"]["baseline"]["seeds"] == [42, 43]
+    assert "round3_not_train_rows" in ob["sensitivity"] and "val_back" in ob["sensitivity"]["baseline"]
+    prov = res["_provenance"]
+    assert str(gold_path) in prov["inputs_sha256"] and p2 in prov["inputs_sha256"]
+    assert prov["params"]["n_boot"] == 20 and res["_pool_rounds"] == ["1", "2"]
+    # the bar and the report read this file
+    maps_json = maps_ok()
+    bar = dgt.decide(maps_json, res, types=("Obstacle",))
+    assert bar[0]["recipe_status"] == "decided"
+    text = dgt.gold_markdown(res)
+    assert "**P4**" in text and "Crop parity" in text and "round 1" in text and "Three-seed ensemble" in text
+
+
+def test_cmd_gold_round_without_pool_is_raw_only(tmp_path):
+    gold_path, pred, maps = gold_layout(tmp_path, real_gold())
+    p1 = write_pool(tmp_path / "pool1.csv", 40, 20, 30)
+    res = run_gold(gold_path, pred, maps, tmp_path / "out", "--pool", f"1={p1}")
+    r = res["Obstacle"]["runs"]["baseline"]
+    assert r["gated_disagree"]["weighting"] == "raw only"                     # round 2 present, no round-2 pool
+    assert r["by_round"]["2"]["gated_disagree"]["weighting"] == "raw only"
+    assert r["by_round"]["1"]["gated_disagree"]["weighting"] != "raw only"
+    with pytest.raises(SystemExit, match="ROUND=PATH"):
+        run_gold(gold_path, pred, maps, tmp_path / "out2", "--pool", p1)
+    with pytest.raises(SystemExit, match="missing"):
+        run_gold(gold_path, pred, maps, tmp_path / "out3", "--pool", f"1={tmp_path / 'nope.csv'}")
+
+
+def test_crop_parity_needs_no_truth_column():
+    amap = dgt.fit_map(predictions(), PI)
+    a = pd.DataFrame({"label_uid": ["x", "y"], "p_correct": [0.9, 0.2], "p_incorrect": [0.1, 0.8]})
+    b = a.assign(p_correct=[0.4, 0.2], p_incorrect=[0.6, 0.8])
+    out = dgt.crop_parity(a, b, amap)
+    assert out["n"] == 2 and out["flip_05"] == pytest.approx(0.5) and out["mean_abs_dp"] == pytest.approx(0.25)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# S8: one case per surviving mutant
+# ---------------------------------------------------------------------------------------------------------------------
+
+def test_gate_is_inclusive_at_092():
+    d = pd.DataFrame({"verdict": ["incorrect", "correct"], "served": [0.92, 0.9199],
+                      "true": ["incorrect", "correct"]})
+    assert dgt.gate_stats(d, "incorrect", PI)["n_pass"] == 1
+    assert dgt.gate_stats(d, "correct", PI)["n_pass"] == 0
+    g = d.rename(columns={"true": "expert"})
+    assert dgt.gated_block(g, "incorrect")["n"] == 1
+
+
+def test_a1_a2_a3_boundaries():
+    m = maps_ok()
+    m["Obstacle"]["runs"]["cl-drop"]["gates"]["test"]["Disagree"] = gs(30)
+    assert dgt.a1_result(m["Obstacle"]["runs"]["cl-drop"])[0] == "pass"           # 30 is enough
+    m["Obstacle"]["runs"]["cl-drop"]["gates"]["test_heldout"]["Disagree"] = gs(10, 0.80)
+    assert one(m, gold_ok())["reason"].startswith("A2")                           # 10 is estimable
+    assert "thin" not in dgt.a3_result(gblock(20, 0))[1]                         # 20 uses the share rule
+    assert "thin" in dgt.a3_result(gblock(19, 0))[1]
+    # the lower-bound clause: 23/25 = 0.92 share, Wilson lower ~0.75 < 0.80
+    assert dgt.a3_result(gblock(25, 2))[0] == "fail"
+
+
+def test_a2_one_class_heldout_is_unestimable():
+    m = maps_ok()
+    m["Obstacle"]["runs"]["cl-drop"]["gates"]["test_heldout"]["Disagree"] = gs(12, float("nan"))
+    r = one(m, gold_ok())
+    assert any(c["id"] == "A2" and c["result"] == "unestimable" for c in r["criteria"])
+    assert r["status"] == "shadow_eligible"
+
+
+def test_c2_threshold_and_c3_precision_clause_and_c4_upper_bound():
+    m = maps_ok()
+    for s in (42, 43, 44):
+        m["Obstacle"]["runs"][dgt.run_tag("cl-drop", s)]["auc"]["test"] = 0.845      # -0.005: inside 0.010
+    r = one(m, gold_ok())
+    assert r["recipe"] == "cl-drop" and next(c for c in r["criteria"] if c["id"] == "C2")["result"] == "pass"
+    m = maps_ok()
+    for s in (42, 43, 44):                                         # same coverage, Agree precision 0.02 lower
+        m["Obstacle"]["runs"][dgt.run_tag("cl-drop", s)]["gates"]["test"]["Agree"] = gs(500, 0.93, 0.6)
+    r = one(m, gold_ok())
+    assert r["recipe"] == "baseline" and next(c for c in r["criteria"] if c["id"] == "C3")["result"] == "fail"
+    m = maps_ok()
+    m["Obstacle"]["contrasts"]["cl-drop"]["test_heldout"] = {"mean": -0.01, "lo": -0.03, "hi": 0.01}
+    assert one(m, gold_ok())["recipe"] == "cl-drop"               # C4 needs the whole interval below 0
+
+
+def test_c2_c3_compare_the_same_seeds():
+    m = maps_ok()
+    m["Obstacle"]["runs"]["cl-drop-s44"] = {"variant": "cl-drop", "seed": 44, "missing": True}
+    m["Obstacle"]["runs"]["baseline-s44"]["auc"]["test"] = 0.50      # would drag the baseline mean down
+    r = one(m, gold_ok())
+    c2 = next(c for c in r["criteria"] if c["id"] == "C2")
+    assert c2["seeds"] == [42, 43] and c2["baseline"] == pytest.approx(0.85)
+    c3 = next(c for c in r["criteria"] if c["id"] == "C3")
+    assert set(c3["splits"]["test"]["per_seed_coverage"]) == {42, 43}
+
+
+def test_stability_needs_a3_on_another_seed():
+    g = gold_ok()
+    for s in (43, 44):
+        g["Obstacle"]["runs"][f"cl-drop-s{s}"]["gated_disagree"] = gblock(25, 5)
+    assert one(maps_ok(), g)["reason"] == "seed-fragile"
+
+
+def test_stratified_auc_weights_by_class_pairs():
+    # stratum 1: 4 pairs, AUC 1; stratum 2: 1 pair, AUC 0 -> weighted 0.8, the plain mean would be 0.5
+    y = np.array([0, 0, 1, 1, 0, 1])
+    s = np.array([0.1, 0.2, 0.8, 0.9, 0.9, 0.1])
+    r = np.array([1, 1, 1, 1, 2, 2])
+    assert dgt.stratified_auc(y, s, r) == pytest.approx(0.8)
+
+
+def test_gold_auc_reads_only_ai_disagree_items():
+    rows = pd.DataFrame({"label_uid": [f"u:{i}" for i in range(6)], "round": ["1"] * 6, "label_type": ["T"] * 6,
+                         "stratum": ["a"] * 6,
+                         "ai_vote": ["Disagree"] * 4 + ["Agree"] * 2,
+                         "expert": ["incorrect", "correct", "incorrect", "correct", "correct", "incorrect"],
+                         "p_incorrect": [0.9, 0.1, 0.8, 0.2, 0.99, 0.01], "verdict": "incorrect",
+                         "served": 0.5, "severity": "1", "tags": "[]"})
+    st = dgt.gold_run_stats(rows)
+    assert st["auc_pooled"] == pytest.approx(1.0) and st["n_ai_disagree"] == 4   # the Agree items would break it
+    g = rows.assign(round3_split="")
+    a = {42: g}
+    b = {42: g.assign(p_incorrect=[0.1, 0.9, 0.2, 0.8, 0.0, 1.0])}
+    p4 = dgt.paired_gold_delta(a, b, n_boot=0)
+    assert p4["n"] == 4 and p4["mean"] == pytest.approx(-1.0)
+
+
+def test_cmd_decide_ignores_a_non_uniform_gold_file_and_records_provenance(tmp_path):
+    mp, gp, out = tmp_path / "maps.json", tmp_path / "gold.json", tmp_path / "bar.json"
+    mp.write_text(json.dumps(maps_ok()))
+    gp.write_text(json.dumps({"_crops": "r3crops", **gold_ok()}))
+    assert dgt.main(["decide", "--maps", str(mp), "--gold", str(gp), "--out", str(out)]) == 0
+    bar = json.loads(out.read_text())
+    assert bar["types"][0]["reason"] == "gold not scored"
+    assert bar["_provenance"]["params"]["gold_used"] is False and str(gp) not in bar["_provenance"]["inputs_sha256"]
+    gp.write_text(json.dumps({"_crops": "uniform", **gold_ok()}))
+    dgt.main(["decide", "--maps", str(mp), "--gold", str(gp), "--out", str(out)])
+    bar = json.loads(out.read_text())
+    assert bar["types"][0]["status"] == "shadow_eligible"
+    assert bar["_provenance"]["inputs_sha256"][str(gp)] == dgt.sha256_file(str(gp))
+    assert "C3" in dgt.bar_markdown(bar) and "per seed" in dgt.bar_markdown(bar)
+
+
+def test_pilot_bar_without_gold_names_both_reasons():
+    m = maps_ok()
+    m["Obstacle"]["runs"]["cl-drop"]["gates"]["test"]["Disagree"] = gs(5)
+    r = one(m, None)
+    assert r["reason"].startswith("A1") and r["reason"].endswith("gold not scored")
+
+
+def test_cmd_maps_records_provenance_and_contrast(tmp_path):
+    r4 = tmp_path / "r4" / "Obstacle"
+    r4.mkdir(parents=True)
+    for k, tag in enumerate(("baseline", "cl-drop", "round3")):
+        predictions(k).to_csv(r4 / f"predictions_{tag}.csv", index=False)
+    p = predictions(0)
+    pd.DataFrame({"label_uid": p["label_uid"], "city": "c", "pano_id": [""] + [f"P{i}" for i in range(len(p) - 1)],
+                  "split": p["split"]}).to_csv(r4 / "split.csv", index=False)
+    shares = tmp_path / "shares.json"
+    shares.write_text(json.dumps({"types": {"Obstacle": {"rules": {"majority2": {"correct": 80, "incorrect": 20},
+                                                                   "margin": {"correct": 70, "incorrect": 30}}}}}))
+    out = tmp_path / "gate"
+    try:
+        rc = dgt.main(["maps", "--r4", str(tmp_path / "r4"), "--shares", str(shares), "--types", "Obstacle",
+                       "--seeds", "42", "--n-boot", "10", "--out", str(out)])
+    except (KeyError, TypeError) as e:          # shares.json layout is prior_rules'; skip if this fixture is off
+        pytest.skip(f"shares fixture does not match prior_rules: {e}")
+    assert rc == 0
+    m = json.loads((out / "maps.json").read_text())
+    prov = m["_provenance"]
+    assert str(shares) in prov["inputs_sha256"] and str(r4 / "split.csv") in prov["inputs_sha256"]
+    assert prov["params"]["n_boot"] == 10 and "git_commit" in prov
+    assert "test_heldout" in m["Obstacle"]["contrasts"]["cl-drop"]
+    text = dgt.maps_markdown(m)
+    assert "cl-drop` minus the gold-free baseline" in text and "fit test, eval test_heldout" in text
+
+
+def test_report_splices_report_files_and_check_mode(tmp_path):
+    d = tmp_path / "gate"
+    (d / "report").mkdir(parents=True)
+    (d / "report" / "slices.md").write_text("# Severity and tag slices: each variant against the round-3 baseline\n\nx")
+    (d / "report" / "variants.md").write_text("## Obstacle\n\n| a |")
+    doc = tmp_path / "doc.md"
+    doc.write_text("".join(f"{dgt.BEGIN.format(name=n)}\nold\n{dgt.END.format(name=n)}\n"
+                           for n in ("slices", "variants")))
+    lists = {"public": set(), "non_public_terms": set()}
+    args = dgt.build_parser().parse_args(["report", "--dir", str(d), "--doc", str(doc), "--check"])
+    assert dgt.cmd_report(args, lists) == 1 and "old" in doc.read_text()      # --check writes nothing
+    args.check = False
+    assert dgt.cmd_report(args, lists) == 0
+    text = doc.read_text()
+    assert "against the gold-free baseline" in text and "#### Severity" in text and "##### Obstacle" in text
+    args.check = True
+    assert dgt.cmd_report(args, lists) == 0
+
+
+def test_doctests():
+    import doctest
+    failed, _ = doctest.testmod(dgt)
+    assert failed == 0

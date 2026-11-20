@@ -18,12 +18,17 @@ Subcommands:
   ``cl-drop`` against the gold-free baseline (mean of per-seed deltas, one panorama resample shared by all seeds).
 - ``gold`` (Mac only; the only place expert verdicts are read): joins the gold predictions to ``gold.csv`` and
   computes the gold rows of the bar (gated Disagrees, false alarms on hard-correct items, round-stratified AUC, the
-  primary paired contrast P4, strata, rounds, slices, sensitivity rows, crop parity).
+  primary paired contrast P4, strata, rounds, slices, sensitivity rows, crop parity, the three-seed ensemble). The
+  pool-weighted share uses one pool file per gold round (``--pool 1=... --pool 2=...``).
 - ``mde``: the minimum detectable AUC difference per type for P4 from verdict counts only (Hanley and McNeil 1982,
   doi:10.1148/radiology.143.1.7063747; paired correlation an assumption, stated).
 - ``decide``: applies the rules mechanically; one record per type with each criterion's number and pass / fail /
   unestimable and a status in ``{hold_back, shadow_eligible}``.
-- ``report``: splices the generated blocks into the doc after a privacy check against the live ``/v3/api/cities``.
+- ``report``: splices the generated blocks into the doc after a privacy check against the live ``/v3/api/cities``
+  (``--check``: exit 1 when the doc is stale, write nothing).
+
+``maps.json``, ``gold.json`` and ``bar.json`` carry a ``_provenance`` block: the commit, the sha256 of every input
+file and the parameters (bootstrap replicates and seed, training seeds) that change the numbers.
 
 Every output is aggregate. Per-item files are refused inside a git checkout (``adjudicator.refuse_in_checkout``).
 
@@ -33,11 +38,15 @@ Usage::
     python analysis/disagree_gate.py maps --r4 $R4 --shares docs/deployment-prior-2026-11/shares.json \\
         --runs baseline,cl-drop,round3 --out ~/Data/sidewalk-validator-ai-round4-2026-11/gate
     python analysis/disagree_gate.py gold --gold ~/Data/.../gold.csv --pred-dir $PRED --maps $GATE/maps \\
-        --pool ~/Data/.../relabel_pool.csv --crops uniform --out $GATE
+        --crops r3crops --out $GATE/r3crops
+    python analysis/disagree_gate.py gold --gold ~/Data/.../gold.csv --pred-dir $PRED --maps $GATE/maps \\
+        --pool 1=$HOME/Data/.../relabel_pool.csv --pool 2=$HOME/Data/.../round2/pool.csv \\
+        --crops uniform --parity --out $GATE
     python analysis/disagree_gate.py decide --maps $GATE/maps.json --gold $GATE/gold.json --out $GATE/bar.json
     python analysis/disagree_gate.py report --dir $GATE --doc docs/round4-2026-11.md
 """
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -174,8 +183,18 @@ def gate_stats(df, verdict, pi, gate=GATE):
 
 
 def served_with_map(df, api_map):
-    """``verdict``, ``confidence`` and ``served`` from ``api_map`` for rows with ``p_correct`` / ``p_incorrect``."""
-    d = cal.verdicts(df)
+    """``verdict``, ``confidence`` and ``served`` from ``api_map`` for rows with ``p_correct`` / ``p_incorrect``.
+
+    Needs no truth column: the gold rows carry the expert's verdict as ``expert`` and the crop-parity rows carry none
+    (``calibrate.verdicts`` would read ``true`` and fail on both).
+
+    >>> amap = {v: {"0.5": 0.5, "1.0": 0.95} for v in VERDICTS}
+    >>> served_with_map(pd.DataFrame({"p_correct": [0.2], "p_incorrect": [0.8]}), amap)["verdict"].tolist()
+    ['incorrect']
+    """
+    d = df.copy()
+    d["verdict"], d["confidence"] = im.predict_verdicts(d["p_correct"].to_numpy(dtype=float),
+                                                        d["p_incorrect"].to_numpy(dtype=float))
     served = np.zeros(len(d))
     for v in VERDICTS:
         m = (d["verdict"] == v).to_numpy()
@@ -283,11 +302,43 @@ def paired_seed_delta(preds_a, preds_b, groups, split, n_boot=N_BOOT, seed=0):
     return out
 
 
-def load_run_predictions(r4, label_type, tag):
+def load_run_predictions(r4, label_type, tag, inputs=None):
+    """One run's ``predictions_<tag>.csv`` or None; ``inputs`` (a dict) collects the path's sha256."""
     p = os.path.join(r4, label_type, f"predictions_{tag}.csv")
     if not os.path.exists(p):
         return None
+    if inputs is not None:
+        inputs[p] = sha256_file(p)
     return pd.read_csv(p, dtype={"label_uid": str, "split": str, "true": str})
+
+
+def sha256_file(path, chunk=1 << 22):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for b in iter(lambda: f.read(chunk), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
+def provenance(inputs, **params):
+    """The ``_provenance`` block of ``maps.json``, ``gold.json`` and ``bar.json``: when, the commit of this checkout
+    (``fine_tune_classifier.git_state``), the sha256 of every input file read, and the parameters (bootstrap
+    replicates and seed, seeds, prior rule) that change the numbers."""
+    from datetime import datetime, timezone
+    from fine_tune_classifier import git_state
+    return {"written_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), **git_state(REPO_DIR),
+            "inputs_sha256": dict(sorted(inputs.items())), "params": params}
+
+
+def scene_group_keys(sp):
+    """Bootstrap cluster per row of a ``split.csv``: ``city|pano_id``, or ``uid:<label_uid>`` for a row without a
+    panorama, so rows with an empty ``pano_id`` are not lumped into one cluster (``round4.scene_groups`` does the
+    same).
+
+    >>> scene_group_keys(pd.DataFrame({"label_uid": ["a:1", "a:2"], "city": ["a", "a"], "pano_id": ["p", ""]}))
+    ['a|p', 'uid:a:2']
+    """
+    return [f"{c}|{p}" if p else f"uid:{u}" for u, c, p in zip(sp["label_uid"], sp["city"], sp["pano_id"])]
 
 
 def cmd_maps(args):
@@ -295,6 +346,9 @@ def cmd_maps(args):
     runs = [r for r in args.runs.split(",") if r]
     seeds = [int(s) for s in args.seeds.split(",")]
     out = {"_prior_rule": args.prior_rule, "_reference_rule": REFERENCE_RULE, "_gate": GATE, "_seeds": seeds}
+    inputs = {args.shares: sha256_file(args.shares)}
+    if args.priors:
+        inputs[args.priors] = sha256_file(args.priors)
     os.makedirs(os.path.join(args.out, "maps"), exist_ok=True)
     for t in types:
         pi = load_shares_prior(args.shares, t, args.prior_rule)
@@ -308,7 +362,7 @@ def cmd_maps(args):
                 continue
             for s in ([SHIP_SEED] if variant == "round3" else seeds):
                 tag = run_tag(variant, s)
-                pred = load_run_predictions(args.r4, t, tag)
+                pred = load_run_predictions(args.r4, t, tag, inputs)
                 if pred is None:
                     rec["runs"][tag] = {"variant": variant, "seed": s, "missing": True}
                     continue
@@ -319,12 +373,15 @@ def cmd_maps(args):
                     json.dump(amap, f, indent=1)
         split_path = os.path.join(args.r4, t, "split.csv")
         if "baseline" in preds and "cl-drop" in preds and os.path.exists(split_path):
+            inputs[split_path] = sha256_file(split_path)
             sp = pd.read_csv(split_path, dtype=str, keep_default_na=False)
-            groups = dict(zip(sp["label_uid"], sp["city"] + "|" + sp["pano_id"]))
+            groups = dict(zip(sp["label_uid"], scene_group_keys(sp)))
             rec["contrasts"] = {"cl-drop": {s: paired_seed_delta(preds["baseline"], preds["cl-drop"], groups, s,
                                                                  args.n_boot, args.seed) for s in EVAL_SPLITS}}
         out[t] = rec
         print(f"{t}: {sum(1 for r in rec['runs'].values() if not r.get('missing'))} runs with predictions")
+    out["_provenance"] = provenance(inputs, n_boot=args.n_boot, boot_seed=args.seed, seeds=seeds,
+                                    prior_rule=args.prior_rule, runs=runs, types=types)
     path = os.path.join(args.out, "maps.json")
     with open(path, "w") as f:
         json.dump(cal.without_nan(out), f, indent=2, default=float)
@@ -373,28 +430,49 @@ def stratified_auc(y, s, strata):
     return num / den if den else float("nan")
 
 
-def pool_weights(gold_rows, pool):
-    """Weight per gold item = pool stratum count / gold stratum count, per (label type, stratum) (``pool`` already
-    carries ``label_type`` and ``stratum``). None when the pool is missing or a stratum has no pool count."""
-    if pool is None:
+def pool_weights(gold_rows, pools):
+    """Weight per gold item = pool count / gold count of its **(round, label type, stratum)** cell: each round's
+    items were sampled from that round's own pool, and the two rounds share stratum names, so a round-2 item must
+    never take round-1 pool counts. ``pools`` is ``{round: pool frame}`` (each carrying ``label_type`` and
+    ``stratum``, from ``load_pool``). None (the share is then "raw only") when ``pools`` is empty, when a round
+    present in ``gold_rows`` has no pool, or when a cell has no pool count.
+
+    >>> rows = pd.DataFrame({"round": ["1", "1", "2"], "label_type": ["T"] * 3, "stratum": ["a", "a", "a"]})
+    >>> pools = {"1": pd.DataFrame({"label_type": ["T"] * 4, "stratum": ["a"] * 4}),
+    ...          "2": pd.DataFrame({"label_type": ["T"] * 3, "stratum": ["a"] * 3})}
+    >>> pool_weights(rows, pools).tolist(), pool_weights(rows, {"1": pools["1"]})
+    ([2.0, 2.0, 3.0], None)
+    """
+    if not pools or not len(gold_rows):
         return None
-    pc = pool.groupby(["label_type", "stratum"]).size()
-    gc = gold_rows.groupby(["label_type", "stratum"]).size()
-    keys = list(zip(gold_rows["label_type"], gold_rows["stratum"]))
-    if any(k not in pc.index for k in keys):
-        return None
-    return np.array([pc[k] / gc[k] for k in keys], dtype=float)
+    rounds = gold_rows["round"].astype(str).to_numpy()
+    w = np.full(len(gold_rows), np.nan)
+    for r in np.unique(rounds):
+        if r not in pools:
+            return None
+        m = rounds == r
+        sub = gold_rows[m]
+        pc = pools[r].groupby(["label_type", "stratum"]).size()
+        gc = sub.groupby(["label_type", "stratum"]).size()
+        keys = list(zip(sub["label_type"], sub["stratum"]))
+        if any(k not in pc.index for k in keys):
+            return None
+        w[m] = [pc[k] / gc[k] for k in keys]
+    return w
 
 
 def gated_block(rows, verdict, weights=None):
     """Gated items of ``verdict`` among ``rows`` (``verdict``, ``served``, ``expert``): n, expert-confirmed share
-    with Wilson interval, overturned count, and the pool-weighted share when ``weights`` is given."""
+    with Wilson interval, overturned count, and the pool-weighted share when ``weights`` is given. ``weighting``
+    says which: ``raw only`` (no weights), ``none gated`` (weights, but nothing to weight) or ``pool stratum (per
+    round)``."""
     m = (rows["verdict"] == verdict).to_numpy() & (rows["served"].to_numpy() >= GATE)
     ok = (rows["expert"].to_numpy() == verdict)
     n, k = int(m.sum()), int((m & ok).sum())
     lo, hi = wilson(k, n)
+    weighting = "raw only" if weights is None else ("none gated" if n == 0 else "pool stratum (per round)")
     out = {"n": n, "confirmed": k, "overturned": n - k, "share": k / n if n else float("nan"), "lo": lo, "hi": hi,
-           "share_pool_weighted": float("nan"), "weighting": "raw only" if weights is None else "pool stratum"}
+           "share_pool_weighted": float("nan"), "weighting": weighting}
     if weights is not None and n:
         out["share_pool_weighted"] = float(np.average(ok[m], weights=weights[m]))
     return out
@@ -407,8 +485,11 @@ def gold_rows_for_run(gold, pred, amap):
     return served_with_map(m, amap) if len(m) else m.assign(verdict=[], served=[], confidence=[], correct=[])
 
 
-def gold_run_stats(rows, weights=None):
-    """Per run: gated Disagrees and Agrees (A3 and the check row), hard-correct false alarms, AUCs, by round."""
+def gold_run_stats(rows, pools=None):
+    """Per run: gated Disagrees and Agrees (A3 and the check row), hard-correct false alarms, AUCs, by round and by
+    stratum. ``pools`` (``{round: pool}``) gives the pool-weighted shares, per round's own frame."""
+    rows = rows.assign(round=rows["round"].astype(str))
+    weights = pool_weights(rows, pools)
     ai_dis = rows["ai_vote"] == "Disagree"
     hard_correct = rows[ai_dis & (rows["expert"] == "correct")]
     y = (rows.loc[ai_dis, "expert"] == "incorrect").astype(int).to_numpy()
@@ -426,15 +507,37 @@ def gold_run_stats(rows, weights=None):
     for r in sorted(set(rows["round"])):
         rr = rows[rows["round"] == r]
         m = rr["ai_vote"] == "Disagree"
-        out["by_round"][str(r)] = {"gated_disagree": gated_block(rr, "incorrect"),
+        out["by_round"][str(r)] = {"n": int(len(rr)),
+                                   "gated_disagree": gated_block(rr, "incorrect", pool_weights(rr, pools)),
                                    "auc": auc((rr.loc[m, "expert"] == "incorrect").astype(int).to_numpy(),
                                               rr.loc[m, "p_incorrect"].to_numpy(dtype=float))}
     rates = [v["gated_disagree"]["overturned"] / v["gated_disagree"]["n"] for v in out["by_round"].values()
              if v["gated_disagree"]["n"]]
     # A3 per round: a round whose gated Disagrees are overturned at twice the other's rate is flagged.
     out["round_flag"] = bool(len(rates) == 2 and max(rates) > 0 and max(rates) >= ROUND_FLAG_RATIO * min(rates))
+    # Strata are named alike in both rounds but sampled from different frames: one row per (round, stratum).
+    out["by_stratum"] = {f"{r}/{st}": {"n": int(len(g)), "gated_disagree": gated_block(g, "incorrect")}
+                         for (r, st), g in rows.groupby(["round", "stratum"])} if len(rows) else {}
     out["slices"] = gold_slices(rows)
     return out
+
+
+def ensemble_stats(rows_by_seed):
+    """The three-seed ensemble row of one variant on gold: ``p_incorrect`` averaged over the seeds on the AI-Disagree
+    items every seed scored, then the round-stratified and pooled AUC (no map: each seed has its own)."""
+    seeds = sorted(rows_by_seed)
+    if len(seeds) < 2:
+        return None
+    ref = rows_by_seed[seeds[0]]
+    ref = ref[ref["ai_vote"] == "Disagree"][["label_uid", "expert", "round"]]
+    for s in seeds[1:]:
+        ref = ref[ref["label_uid"].isin(rows_by_seed[s]["label_uid"])]
+    p = np.mean([ref[["label_uid"]].merge(rows_by_seed[s][["label_uid", "p_incorrect"]], on="label_uid",
+                                          validate="one_to_one")["p_incorrect"].to_numpy(dtype=float)
+                 for s in seeds], axis=0)
+    y = (ref["expert"] == "incorrect").astype(int).to_numpy()
+    return {"seeds": seeds, "n": int(len(ref)), "auc_round_stratified": stratified_auc(y, p, ref["round"].to_numpy()),
+            "auc_pooled": auc(y, p)}
 
 
 def gold_slices(rows):
@@ -530,17 +633,42 @@ def load_pool(path):
     return p[p["stratum"] != ""]
 
 
+def parse_pools(specs, inputs=None):
+    """``--pool ROUND=PATH`` (repeatable) -> ``{round: pool}``: one pool file per gold round, because each round
+    sampled its own frame (round 1: ``relabel_pool.csv``; round 2: ``round2/pool.csv``). A round without a pool
+    leaves the pool-weighted share "raw only". A missing or unreadable file stops the command instead of silently
+    turning into "raw only".
+
+    >>> parse_pools(None)
+    {}
+    """
+    out = {}
+    for spec in specs or []:
+        r, sep, path = spec.partition("=")
+        if not sep or not r or not path:
+            raise SystemExit(f"--pool takes ROUND=PATH (one per gold round), got {spec!r}")
+        p = load_pool(path)
+        if p is None:
+            raise SystemExit(f"--pool {spec}: missing file or no stratum could be assigned")
+        if inputs is not None:
+            inputs[path] = sha256_file(path)
+        out[r] = p
+    return out
+
+
 def cmd_gold(args):
     from analysis import adjudicator as adj
     adj.refuse_in_checkout(args.out, "the gold results (they are built from expert verdicts)")
     gold = pd.read_csv(args.gold, dtype=str, keep_default_na=False)
     if not gold["label_uid"].is_unique:
         raise SystemExit("gold.csv: label_uid is not unique")
-    pool = load_pool(args.pool)
+    inputs = {args.gold: sha256_file(args.gold)}
+    pools = parse_pools(args.pool, inputs)
     types = [t for t in args.types.split(",") if t]
     seeds = [int(s) for s in args.seeds.split(",")]
     runs = [r for r in args.runs.split(",") if r]
-    res = {"_crops": args.crops, "_caption": R3CROPS_CAPTION if args.crops == "r3crops" else None}
+    res = {"_crops": args.crops, "_caption": R3CROPS_CAPTION if args.crops == "r3crops" else None,
+           "_pool_rounds": sorted(pools)}
     for t in types:
         g = gold[gold["label_type"] == t]
         _, head = gold_population(g)
@@ -558,26 +686,30 @@ def cmd_gold(args):
                 if not (os.path.exists(pp) and os.path.exists(mp)):
                     tr["runs"][tag] = {"missing": True}
                     continue
+                inputs[pp], inputs[mp] = sha256_file(pp), sha256_file(mp)
                 pred = pd.read_csv(pp, dtype={"label_uid": str})
                 with open(mp) as f:
                     amap = json.load(f)
                 rows = gold_rows_for_run(populations["headline"], pred, amap)
                 joined.setdefault(variant, {})[s] = rows
-                w = pool_weights(rows, pool)
-                tr["runs"][tag] = {"variant": variant, "seed": s, **gold_run_stats(rows, w)}
+                tr["runs"][tag] = {"variant": variant, "seed": s, **gold_run_stats(rows, pools)}
                 if variant == "round3":  # approximation of "scenes it did not train on": not a round-3 train row
                     nr = rows[rows["round3_split"] != "train"]
-                    tr["sensitivity"]["round3_not_train_rows"] = gold_run_stats(nr)
+                    tr["sensitivity"]["round3_not_train_rows"] = gold_run_stats(nr, pools)
                 if s == SHIP_SEED:
-                    tr["sensitivity"][tag] = {k: gold_run_stats(gold_rows_for_run(populations[k], pred, amap))
+                    tr["sensitivity"][tag] = {k: gold_run_stats(gold_rows_for_run(populations[k], pred, amap), pools)
                                               for k in ("val_back", "consensus_back")}
                 if args.parity and args.crops == "uniform":
                     rp = os.path.join(args.pred_dir, t, f"gold_predictions_r3crops_{tag}.csv")
                     if os.path.exists(rp):
+                        inputs[rp] = sha256_file(rp)
                         tr["runs"][tag]["parity"] = crop_parity(pd.read_csv(rp, dtype={"label_uid": str}), pred, amap)
+        tr["ensemble"] = {v: e for v, by_seed in joined.items() if (e := ensemble_stats(by_seed))}
         if "baseline" in joined and "cl-drop" in joined and args.crops == "uniform":
             tr["p4"] = paired_gold_delta(joined["baseline"], joined["cl-drop"], args.n_boot, args.seed)
         res[t] = tr
+    res["_provenance"] = provenance(inputs, n_boot=args.n_boot, boot_seed=args.seed, seeds=seeds, runs=runs,
+                                    types=types, crops=args.crops, parity=bool(args.parity))
     os.makedirs(args.out, exist_ok=True)
     path = os.path.join(args.out, "gold.json")
     with open(path, "w") as f:
@@ -752,10 +884,32 @@ def _nan(v):
     return v is None or (isinstance(v, float) and math.isnan(v))
 
 
-def _seed_mean(runs, variant, path):
-    vals = [_get(r, *path) for r in runs.values() if r.get("variant") == variant and not r.get("missing")]
-    vals = [v for v in vals if not _nan(v)]
-    return float(np.mean(vals)) if vals else None
+def _per_seed(runs, variant, path):
+    """``{seed: value}`` of one variant's runs at ``path`` (missing runs and NaN values left out)."""
+    out = {}
+    for r in runs.values():
+        if r.get("variant") == variant and not r.get("missing"):
+            v = _get(r, *path)
+            if not _nan(v):
+                out[int(r["seed"])] = float(v)
+    return out
+
+
+def paired_seed_means(runs, path, a="baseline", b="cl-drop"):
+    """``(mean a, mean b, per_seed)`` over the seeds **both** arms have a value for at ``path``, so a missing run
+    of one arm never compares a two-seed mean with a three-seed one; ``(None, None, {})`` when no seed is shared.
+
+    >>> runs = {"x": {"variant": "baseline", "seed": 42, "v": 1.0}, "y": {"variant": "baseline", "seed": 43, "v": 3.0},
+    ...         "z": {"variant": "cl-drop", "seed": 42, "v": 2.0}}
+    >>> paired_seed_means(runs, ("v",))
+    (1.0, 2.0, {42: {'baseline': 1.0, 'cl-drop': 2.0}})
+    """
+    pa, pb = _per_seed(runs, a, path), _per_seed(runs, b, path)
+    seeds = sorted(set(pa) & set(pb))
+    if not seeds:
+        return None, None, {}
+    return (float(np.mean([pa[s] for s in seeds])), float(np.mean([pb[s] for s in seeds])),
+            {s: {a: pa[s], b: pb[s]} for s in seeds})
 
 
 def recipe(label_type, mtype, gtype):
@@ -772,21 +926,24 @@ def recipe(label_type, mtype, gtype):
         crit.append({"id": "C1", "result": "fail" if p4["hi"] < 0 else "pass",
                      "value": p4["mean"], "lo": p4["lo"], "hi": p4["hi"]})
     # C2: in-distribution cost.
-    a, b = _seed_mean(runs, "baseline", ("auc", "test")), _seed_mean(runs, "cl-drop", ("auc", "test"))
+    a, b, per = paired_seed_means(runs, ("auc", "test"))
     if a is None or b is None:
         crit.append({"id": "C2", "result": "unestimable", "detail": "missing test AUC"})
     else:
         crit.append({"id": "C2", "result": "fail" if b < a - C2_MAX_AUC_LOSS else "pass", "baseline": a,
-                     "cl-drop": b, "delta": b - a})
-    # C3: Agree non-regression (coverage absolute; precision relative to the baseline, A6).
+                     "cl-drop": b, "delta": b - a, "seeds": sorted(per), "per_seed": per})
+    # C3: Agree non-regression (coverage absolute; precision relative to the baseline, A6). The per-seed values are
+    # recorded and printed beside the means (descriptive; the rule reads only the means).
     c3 = {"id": "C3", "result": "pass", "splits": {}}
     for s in EVAL_SPLITS:
-        cov = [_seed_mean(runs, v, ("gates", s, "Agree", "coverage_weighted")) for v in ("baseline", "cl-drop")]
-        prec = [_seed_mean(runs, v, ("gates", s, "Agree", "precision_weighted")) for v in ("baseline", "cl-drop")]
+        cb, cc, cov_per = paired_seed_means(runs, ("gates", s, "Agree", "coverage_weighted"))
+        pb, pc, prec_per = paired_seed_means(runs, ("gates", s, "Agree", "precision_weighted"))
+        cov, prec = [cb, cc], [pb, pc]
         row = {"coverage_baseline": cov[0], "coverage_cl-drop": cov[1], "precision_baseline": prec[0],
                "precision_cl-drop": prec[1],
                "baseline_precision_under_gate": None if prec[0] is None else prec[0] < GATE,
-               "cl-drop_precision_under_gate": None if prec[1] is None else prec[1] < GATE}
+               "cl-drop_precision_under_gate": None if prec[1] is None else prec[1] < GATE,
+               "per_seed_coverage": cov_per, "per_seed_precision": prec_per}
         if None in cov or None in prec:
             row["result"] = "unestimable"
             c3["result"] = "unestimable" if c3["result"] == "pass" else c3["result"]
@@ -847,6 +1004,8 @@ def decide_type(label_type, mtype, gtype, ship_seed=SHIP_SEED):
 
     def finish(status, reason):
         assert status in STATUSES
+        if not gtype and status == "hold_back" and "gold not scored" not in reason:
+            reason += "; gold not scored"           # both reasons, so a pilot-only bar never reads as final
         out.update(status=status, reason=reason, criteria=crit)
         return out
 
@@ -860,6 +1019,9 @@ def decide_type(label_type, mtype, gtype, ship_seed=SHIP_SEED):
     h = _get(ship, "gates", "test_heldout", "Disagree")
     if h is None or h["n_pass"] < A2_MIN_N:
         a2, d2 = "unestimable", "unseen deployments unestimable (Tier B limited to trained deployments)"
+    elif _nan(h.get("precision_weighted")):
+        a2, d2 = "unestimable", (f"{h['n_pass']} gated but the weighted precision is undefined (one class on "
+                                 "test_heldout); Tier B limited to trained deployments")
     else:
         a2 = "pass" if (not _nan(h["precision_weighted"]) and h["precision_weighted"] >= GATE) else "fail"
         d2 = f"{h['n_pass']} gated, weighted precision {h['precision_weighted']}"
@@ -899,6 +1061,7 @@ def decide(maps, gold=None, ship_seed=SHIP_SEED, types=LABEL_TYPES):
 def cmd_decide(args):
     with open(args.maps) as f:
         maps = json.load(f)
+    inputs = {args.maps: sha256_file(args.maps)}
     gold = None
     if args.gold and os.path.exists(args.gold):
         with open(args.gold) as f:
@@ -906,9 +1069,15 @@ def cmd_decide(args):
         if gold.get("_crops") != "uniform":
             print("gold.json was not built from uniform crops: not used by the bar (A3, C1)", file=sys.stderr)
             gold = None
+        else:
+            inputs[args.gold] = sha256_file(args.gold)
     res = decide(maps, gold, args.ship_seed)
+    out = {"_provenance": provenance(inputs, ship_seed=args.ship_seed, gold_used=gold is not None,
+                                     maps_commit=_get(maps, "_provenance", "git_commit"),
+                                     gold_commit=_get(gold, "_provenance", "git_commit") if gold else None),
+           "types": res}
     with open(args.out, "w") as f:
-        json.dump(cal.without_nan(res), f, indent=2, default=float)
+        json.dump(cal.without_nan(out), f, indent=2, default=float)
         f.write("\n")
     for r in res:
         print(f"{r['label_type']}: recipe {r['recipe']} ({r['recipe_status']}); {r['status']} ({r['reason']})")
@@ -939,7 +1108,10 @@ def _f(v, fmt="{:.3f}"):
 
 
 def maps_markdown(maps):
-    lines = ["| Type | run | split | verdict | gated n | weighted coverage | raw precision [95%] | weighted "
+    """The maps block: gate statistics per run (the main table), the `margin` reference and the fit-split
+    sensitivity for the seed-42 runs, per-seed AUCs, and the paired `cl-drop` contrast on test and held-out."""
+    lines = ["**Gate statistics** (`majority2` prior, each run's own uncapped map fit on val).", "",
+             "| Type | run | split | verdict | gated n | weighted coverage | raw precision [95%] | weighted "
              "precision (lower) | raw needed | map max |", "|---|---|---|---|---:|---:|---:|---:|---:|---:|"]
     for t in LABEL_TYPES:
         for tag, r in (maps.get(t) or {}).get("runs", {}).items():
@@ -955,16 +1127,84 @@ def maps_markdown(maps):
                                  f"{_f(g['precision'])} [{_f(g['precision_lo'])}, {_f(g['precision_hi'])}] | "
                                  f"{_f(g['precision_weighted'])} ({_f(g['precision_weighted_lo'])}) | "
                                  f"{_f(g['raw_precision_needed'])} | {_f(_get(r, 'map_max', v))} |")
+    lines += ["", "**Reference and sensitivity rows** (seed-42 runs): the same map fit under the `margin` prior "
+              "(reference), and a `majority2` map fit on test, judged on test_heldout (fit-split sensitivity).", "",
+              "| Type | run | row | verdict | gated n | weighted coverage | weighted precision (lower) |",
+              "|---|---|---|---|---:|---:|---:|"]
+    for t in LABEL_TYPES:
+        for tag, r in (maps.get(t) or {}).get("runs", {}).items():
+            if r.get("missing") or r.get("seed") != SHIP_SEED:
+                continue
+            rows = [(f"margin, {s}", _get(r, "reference_margin", s)) for s in EVAL_SPLITS]
+            rows.append(("fit test, eval test_heldout", r.get("fit_on_test_eval_heldout")))
+            for name, block in rows:
+                for v in ("Disagree", "Agree"):
+                    g = _get(block, v) if block else None
+                    if g:
+                        lines.append(f"| {t} | {tag} | {name} | {v} | {g['n_pass']} | {_f(g['coverage_weighted'])} "
+                                     f"| {_f(g['precision_weighted'])} ({_f(g['precision_weighted_lo'])}) |")
+    lines += ["", "**AUC per run** (incorrect score, crowd reference).", "",
+              "| Type | run | test | test_heldout |", "|---|---|---:|---:|"]
+    for t in LABEL_TYPES:
+        for tag, r in (maps.get(t) or {}).get("runs", {}).items():
+            if not r.get("missing"):
+                lines.append(f"| {t} | {tag} | {_f(_get(r, 'auc', 'test'))} | {_f(_get(r, 'auc', 'test_heldout'))} |")
+    lines += ["", "**`cl-drop` minus the gold-free baseline** (AUC, mean of per-seed paired deltas, one panorama "
+              "resample shared by every seed; the held-out row is the replication check C4).", "",
+              "| Type | split | mean [95%] | per seed | n |", "|---|---|---:|---|---:|"]
+    for t in LABEL_TYPES:
+        for s in EVAL_SPLITS:
+            c = _get(maps.get(t) or {}, "contrasts", "cl-drop", s)
+            if c:
+                per = ", ".join(f"{k}: {v:+.3f}" for k, v in sorted(c["per_seed"].items(), key=lambda kv: int(kv[0])))
+                lines.append(f"| {t} | {s} | {_f(c['mean'], '{:+.3f}')} [{_f(c['lo'], '{:+.3f}')}, "
+                             f"{_f(c['hi'], '{:+.3f}')}] | {per} | {c['n']:,} |")
     return "\n".join(lines)
+
+
+def _crit_text(c):
+    """One criterion of ``bar.json`` with its numbers (the bar table must show why, not only pass / fail)."""
+    i, res = c["id"], c["result"]
+    if i in ("C1", "C4") and "value" in c:
+        return f"{i} {res} ({_f(c['value'], '{:+.3f}')} [{_f(c['lo'], '{:+.3f}')}, {_f(c['hi'], '{:+.3f}')}])"
+    if i == "C2" and "delta" in c:
+        return f"{i} {res} (test AUC {_f(c['cl-drop'])} vs {_f(c['baseline'])}, {_f(c['delta'], '{:+.3f}')})"
+    if i == "C3" and c.get("splits"):
+        parts = []
+        for s, row in c["splits"].items():
+            if row.get("result") == "unestimable":
+                parts.append(f"{s} unestimable")
+                continue
+            per = "; ".join(f"s{k} {_f(v['baseline'])}/{_f(v['cl-drop'])}"
+                            for k, v in sorted((row.get("per_seed_coverage") or {}).items(), key=lambda kv: int(kv[0])))
+            parts.append(f"{s} {row['result']}: Agree coverage {_f(row['coverage_cl-drop'])} vs "
+                         f"{_f(row['coverage_baseline'])} (per seed baseline/cl-drop: {per}), weighted precision "
+                         f"{_f(row['precision_cl-drop'])} vs {_f(row['precision_baseline'])}")
+        return f"{i} {res} ({'; '.join(parts)})"
+    if c.get("detail"):
+        return f"{i} {res} ({c['detail']})"
+    return f"{i} {res}"
 
 
 def bar_markdown(bar):
+    """``bar`` is ``bar.json`` (``{"_provenance", "types"}``) or the bare list of type records."""
+    types = bar["types"] if isinstance(bar, dict) else bar
     lines = ["| Type | recipe | recipe status | status | reason | criteria |", "|---|---|---|---|---|---|"]
-    for r in bar:
-        crit = "; ".join(f"{c['id']} {c['result']}" for c in r["criteria"])
+    for r in types:
+        crit = "<br>".join(_crit_text(c) for c in r["criteria"])
         lines.append(f"| {r['label_type']} | {r['recipe']} | {r['recipe_status']} | {r['status']} | {r['reason']} | "
                      f"{crit} |")
+    commit = _get(bar, "_provenance", "git_commit") if isinstance(bar, dict) else None
+    if commit:
+        lines += ["", f"`bar.json` written at commit `{commit[:7]}`; input sha256 in its `_provenance`."]
     return "\n".join(lines)
+
+
+def _gated_cells(g):
+    """``(confirmed/n, share [95%], pool-weighted)`` with thin cells masked."""
+    thin = g["n"] < PRIVACY_MIN_CELL
+    return (mask_thin(g["n"], g["confirmed"]), "—" if thin else f"{_f(g['share'])} [{_f(g['lo'])}, {_f(g['hi'])}]",
+            "—" if thin else _f(g.get("share_pool_weighted")))
 
 
 def gold_markdown(gold):
@@ -977,12 +1217,63 @@ def gold_markdown(gold):
         for tag, r in (gold.get(t) or {}).get("runs", {}).items():
             if r.get("missing"):
                 continue
-            g = r["gated_disagree"]
-            share = "—" if g["n"] < PRIVACY_MIN_CELL else f"{_f(g['share'])} [{_f(g['lo'])}, {_f(g['hi'])}]"
-            lines.append(f"| {t} | {tag} | {mask_thin(g['n'], g['confirmed'])} | {share} | "
-                         f"{_f(g['share_pool_weighted']) if g['n'] >= PRIVACY_MIN_CELL else '—'} | "
+            n_cell, share, pw = _gated_cells(r["gated_disagree"])
+            lines.append(f"| {t} | {tag} | {n_cell} | {share} | {pw} | "
                          f"{_f(r['false_alarm_gated'])} / {_f(r['false_alarm_any'])} | "
                          f"{_f(r['auc_round_stratified'])} | {_f(r['auc_pooled'])} |")
+    # P4 (uniform crops only) and the three-seed ensemble rows.
+    p4_rows = [(t, (gold.get(t) or {}).get("p4")) for t in LABEL_TYPES if (gold.get(t) or {}).get("p4")]
+    if p4_rows:
+        lines += ["", "**P4**: `cl-drop` minus the gold-free baseline, round-stratified AUC on the AI-Disagree items, "
+                  "mean of per-seed paired deltas.", "", "| Type | mean [95%] | per seed | n |", "|---|---:|---|---:|"]
+        for t, p in p4_rows:
+            per = ", ".join(f"{k}: {v:+.3f}" for k, v in sorted(p["per_seed"].items(), key=lambda kv: int(kv[0])))
+            lines.append(f"| {t} | {_f(p['mean'], '{:+.3f}')} [{_f(p['lo'], '{:+.3f}')}, {_f(p['hi'], '{:+.3f}')}] | "
+                         f"{per} | {p['n']} |")
+    ens = [(t, v, e) for t in LABEL_TYPES for v, e in ((gold.get(t) or {}).get("ensemble") or {}).items()]
+    if ens:
+        lines += ["", "**Three-seed ensemble** (mean `p_incorrect` over the seeds; AI-Disagree items).", "",
+                  "| Type | variant | n | round-stratified AUC | pooled AUC |", "|---|---|---:|---:|---:|"]
+        for t, v, e in ens:
+            lines.append(f"| {t} | {v} | {e['n']} | {_f(e['auc_round_stratified'])} | {_f(e['auc_pooled'])} |")
+    # Per round and per stratum, seed-42 runs only (the rest are in gold.json).
+    lines += ["", "**By round and by stratum** (seed-42 runs; gated Disagrees; a cell under "
+              f"{PRIVACY_MIN_CELL} shows its size only).", "",
+              "| Type | run | group | items | gated Disagree confirmed | share [95%] | pool-weighted | AUC |",
+              "|---|---|---|---:|---:|---:|---:|---:|"]
+    for t in LABEL_TYPES:
+        for tag, r in (gold.get(t) or {}).get("runs", {}).items():
+            if r.get("missing") or r.get("seed") != SHIP_SEED:
+                continue
+            for name, b in (r.get("by_round") or {}).items():
+                n_cell, share, pw = _gated_cells(b["gated_disagree"])
+                lines.append(f"| {t} | {tag} | round {name} | {mask_thin(b.get('n', 0))} | {n_cell} | {share} | {pw} "
+                             f"| {_f(b.get('auc'))} |")
+            for name, b in (r.get("by_stratum") or {}).items():
+                n_cell, share, _ = _gated_cells(b["gated_disagree"])
+                lines.append(f"| {t} | {tag} | {name} | {mask_thin(b['n'])} | {n_cell} | {share} | — | |")
+            if r.get("round_flag"):
+                lines.append(f"| {t} | {tag} | round flag | | one round overturned at twice the other's rate | | | |")
+    par = [(t, tag, r["parity"]) for t in LABEL_TYPES for tag, r in ((gold.get(t) or {}).get("runs") or {}).items()
+           if not r.get("missing") and r.get("parity")]
+    if par:
+        lines += ["", "**Crop parity** (items scored with both crops): mean |Δ p_incorrect|, verdict flips at 0.5 "
+                  "and at the gate.", "", "| Type | run | n | mean abs Δp | flips at 0.5 | flips at the gate |",
+                  "|---|---|---:|---:|---:|---:|"]
+        for t, tag, p in par:
+            lines.append(f"| {t} | {tag} | {p['n']} | {_f(p.get('mean_abs_dp'))} | {_f(p.get('flip_05'))} | "
+                         f"{_f(p.get('flip_gate'))} |")
+    sens = [(t, k, v) for t in LABEL_TYPES for k, v in ((gold.get(t) or {}).get("sensitivity") or {}).items()]
+    if sens:
+        lines += ["", "**Sensitivity rows** (gated Disagrees): val items back, consensus verdicts back, `round3` on "
+                  "items that were not its train rows.", "",
+                  "| Type | row | gated Disagree confirmed | share [95%] | round-stratified AUC |",
+                  "|---|---|---:|---:|---:|"]
+        for t, k, v in sens:
+            blocks = [(k, v)] if "gated_disagree" in v else [(f"{k}, {kk}", vv) for kk, vv in v.items()]
+            for name, b in blocks:
+                n_cell, share, _ = _gated_cells(b["gated_disagree"])
+                lines.append(f"| {t} | {name} | {n_cell} | {share} | {_f(b.get('auc_round_stratified'))} |")
     return "\n".join(lines)
 
 
@@ -992,9 +1283,26 @@ def mde_block(path):
     return mde_markdown(d["rows"], d["auc_assumed"], d["r"])
 
 
+# Markdown files written by other tools that the report splices verbatim (headings demoted under the doc's own).
+REPORT_FILES = {"variants": ("report", "variants.md"), "slices": ("report", "slices.md"),
+                "seeds": ("report", "seeds.md"), "slice_train": ("prep", "slice_train", "slice_train.md")}
+# confident_learning.py titles its slice file for round 3, where the baseline column was round 3's own model; on
+# $R4 that column is the gold-free retrain.
+SLICES_TITLE_FIX = ("against the round-3 baseline", "against the gold-free baseline (`$R4`; not round 3's model)")
+
+
+def demote_headings(text, levels=3):
+    """Push every Markdown heading down ``levels`` (``# x`` -> ``#### x``) so a spliced file nests under the doc.
+
+    >>> demote_headings("# A\\ntext\\n## B", 2)
+    '### A\\ntext\\n#### B'
+    """
+    return re.sub(r"^(#{1,6}) ", lambda m: "#" * min(6, len(m.group(1)) + levels) + " ", text, flags=re.M)
+
+
 def build_blocks(d):
     blocks = {}
-    p = lambda n: os.path.join(d, n)  # noqa: E731
+    p = lambda *n: os.path.join(d, *n)  # noqa: E731
     if os.path.exists(p("mde.json")):
         blocks["mde"] = mde_block(p("mde.json"))
     if os.path.exists(p("needed.json")):
@@ -1005,13 +1313,22 @@ def build_blocks(d):
     if os.path.exists(p("maps.json")):
         with open(p("maps.json")) as f:
             blocks["maps"] = maps_markdown(json.load(f))
-    if os.path.exists(p("gold.json")):
-        with open(p("gold.json")) as f:
-            g = json.load(f)
-        blocks["gold_r3crops" if g.get("_crops") == "r3crops" else "gold"] = gold_markdown(g)
+    # `gold --crops r3crops --out $GATE/r3crops` and `gold --crops uniform --out $GATE`: each file says its crops.
+    for path in (p("r3crops", "gold.json"), p("gold.json")):
+        if os.path.exists(path):
+            with open(path) as f:
+                g = json.load(f)
+            blocks["gold_r3crops" if g.get("_crops") == "r3crops" else "gold"] = gold_markdown(g)
     if os.path.exists(p("bar.json")):
         with open(p("bar.json")) as f:
             blocks["bar"] = bar_markdown(json.load(f))
+    for name, parts in REPORT_FILES.items():
+        if os.path.exists(p(*parts)):
+            with open(p(*parts)) as f:
+                text = f.read().strip()
+            if name == "slices":
+                text = text.replace(*SLICES_TITLE_FIX)
+            blocks[name] = demote_headings(text)
     return blocks
 
 
@@ -1022,17 +1339,26 @@ def privacy_gate(text, lists=None):
     ts.privacy_gate(text, lists, {c: "" for c in lists.get("public", set())})
 
 
-def cmd_report(args):
+def cmd_report(args, lists=None):
+    """Splice every block ``build_blocks`` finds; ``--check`` writes nothing and exits 1 when the doc's blocks differ
+    from what ``--dir`` would produce (the inputs live outside the repo, so this runs where they are, not in CI)."""
     blocks = build_blocks(args.dir)
     if not blocks:
         raise SystemExit(f"nothing to splice from {args.dir}")
-    from analysis import target_scoreboard as ts
-    lists = ts.city_lists()
+    if lists is None:
+        from analysis import target_scoreboard as ts
+        lists = ts.city_lists()
     for name, body in blocks.items():
         privacy_gate(body, lists)
     with open(args.doc) as f:
         text = f.read()
     new = splice(text, blocks)
+    if args.check:
+        if new != text:
+            print(f"{args.doc}: generated blocks are stale against {args.dir}", file=sys.stderr)
+            return 1
+        print(f"{args.doc}: generated blocks match {args.dir}")
+        return 0
     with open(args.doc, "w") as f:
         f.write(new)
     print(f"spliced {sorted(blocks)} into {args.doc}")
@@ -1047,54 +1373,57 @@ def build_parser():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     types = ",".join(LABEL_TYPES)
-    m = sub.add_parser("maps")
+    m = sub.add_parser("maps", help="per-run uncapped maps and gate statistics on test and test_heldout (CPU)")
     m.add_argument("--r4", required=True)
     m.add_argument("--shares", default=os.path.join(REPO_DIR, "docs", "deployment-prior-2026-11", "shares.json"))
     m.add_argument("--priors", default=None, help="a deployment_priors.json with a rules block: priors must agree")
     m.add_argument("--types", default=types)
     m.add_argument("--runs", default="baseline,cl-drop,round3")
-    m.add_argument("--seeds", default=",".join(map(str, SEEDS)))
+    m.add_argument("--seeds", default=",".join(map(str, SEEDS)), help="training seeds of the runs to read")
     m.add_argument("--prior-rule", default=PRIOR_RULE)
     m.add_argument("--n-boot", type=int, default=N_BOOT)
-    m.add_argument("--seed", type=int, default=0)
+    m.add_argument("--seed", type=int, default=0, help="bootstrap RNG seed (not a training seed)")
     m.add_argument("--out", required=True)
     m.set_defaults(func=cmd_maps)
-    g = sub.add_parser("gold")
+    g = sub.add_parser("gold", help="the gold rows of the bar (Mac only: reads expert verdicts)")
     g.add_argument("--gold", required=True)
     g.add_argument("--pred-dir", required=True, help="<dir>/<Type>/gold_predictions_<crops>_<tag>.csv")
     g.add_argument("--maps", required=True, help="the maps/ directory written by maps")
-    g.add_argument("--pool", default=None, help="relabel_pool.csv, for the pool-weighted share")
+    g.add_argument("--pool", action="append", default=None, metavar="ROUND=PATH",
+                   help="one pool per gold round, for the pool-weighted share (e.g. 1=relabel_pool.csv "
+                        "2=round2/pool.csv; repeat the flag); a round without one is reported raw only")
     g.add_argument("--types", default=types)
     g.add_argument("--runs", default="baseline,cl-drop,round3")
     g.add_argument("--seeds", default=",".join(map(str, SEEDS)))
     g.add_argument("--crops", choices=["uniform", "r3crops"], required=True)
     g.add_argument("--parity", action="store_true")
     g.add_argument("--n-boot", type=int, default=N_BOOT)
-    g.add_argument("--seed", type=int, default=0)
+    g.add_argument("--seed", type=int, default=0, help="bootstrap RNG seed (not a training seed)")
     g.add_argument("--out", required=True)
     g.set_defaults(func=cmd_gold)
-    e = sub.add_parser("mde")
+    e = sub.add_parser("mde", help="P4's minimum detectable AUC difference from verdict counts")
     e.add_argument("--gold", required=True)
     e.add_argument("--types", default=",".join(CL_DROP_TYPES))
     e.add_argument("--auc", type=float, default=0.75)
     e.add_argument("--r", type=float, default=0.8)
     e.add_argument("--out", required=True)
     e.set_defaults(func=cmd_mde)
-    n = sub.add_parser("needed")
+    n = sub.add_parser("needed", help="raw precision a gated Disagree set needs, from class counts")
     n.add_argument("--data", required=True, help="round 3's data dir (<Type>/split.csv)")
     n.add_argument("--shares", default=os.path.join(REPO_DIR, "docs", "deployment-prior-2026-11", "shares.json"))
     n.add_argument("--types", default=types)
     n.add_argument("--out", required=True)
     n.set_defaults(func=cmd_needed)
-    d = sub.add_parser("decide")
+    d = sub.add_parser("decide", help="apply the pre-registered bar mechanically (bar.json)")
     d.add_argument("--maps", required=True)
     d.add_argument("--gold", default=None)
     d.add_argument("--ship-seed", type=int, default=SHIP_SEED)
     d.add_argument("--out", required=True)
     d.set_defaults(func=cmd_decide)
-    r = sub.add_parser("report")
+    r = sub.add_parser("report", help="splice the generated blocks into the doc after the privacy check")
     r.add_argument("--dir", required=True)
     r.add_argument("--doc", default=os.path.join(REPO_DIR, "docs", "round4-2026-11.md"))
+    r.add_argument("--check", action="store_true", help="exit 1 if the doc's blocks are stale; write nothing")
     r.set_defaults(func=cmd_report)
     return ap
 
