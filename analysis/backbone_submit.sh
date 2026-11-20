@@ -18,7 +18,7 @@
 # elements so far (from $OUT/backbone_jobs.txt) plus the new ones stay within JOB_CAP; no smoke- tag outside the
 # smoke job; no row whose run is done ($KEEP/<LT>/runs/<TAG>/done) or in flight. "In flight" is read from squeue, not
 # from a lock file: every element of this stream that squeue lists (pending, running or requeued; job name
-# $SLUG-*) is mapped back to its task-file row through the ledger's job id -> task file column, so a second element
+# $SLUG-<stage>, one of the launcher's stages; a helper job that only shares the prefix is ignored) is mapped back to its task-file row through the ledger's job id -> task file column, so a second element
 # never trains in the same run directory, and nothing is written into run directories (the running arrays' own
 # done/slimmed logic is untouched). The launcher refuses to submit when squeue cannot be read, or when squeue lists a
 # job of this stream that the ledger does not know. Each submit appends date, job id, element count, stage, commit,
@@ -139,15 +139,19 @@ if os.path.isfile(ledger):
         c = ln.rstrip("\n").split("\t")
         if len(c) >= 6:
             jobs[c[1]] = c[5]
-def indices(spec):   # "7" or "[3-5,9%8]" (a pending range squeue did not expand)
+# Only the launcher's own job names count; a helper job that merely shares the prefix (a CPU test or check job)
+# is not an element of this stream and must neither block nor pass a submit.
+STAGES = {"smoke", "pilot", "dinov3", "seeds", "rest", "resubmit", "onnx"}
+def indices(spec):   # "7" or "[3-5,9%8]" / "[14-30:2%8]" (a pending range squeue did not expand)
     out = []
     for part in spec.strip("[]").split("%")[0].split(","):
-        a, _, b = part.partition("-")
-        out += list(range(int(a), int(b or a) + 1))
+        rng, _, step = part.partition(":")
+        a, _, b = rng.partition("-")
+        out += list(range(int(a), int(b or a) + 1, int(step or 1)))
     return out
 for ln in open(qfile):
     parts = ln.split()
-    if len(parts) < 2 or not parts[1].startswith(slug + "-"):
+    if len(parts) < 2 or parts[1] not in {f"{slug}-{st}" for st in STAGES}:
         continue
     jid, _, idx = parts[0].partition("_")
     if jid not in jobs:

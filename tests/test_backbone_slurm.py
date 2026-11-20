@@ -417,6 +417,20 @@ def test_an_unreadable_squeue_or_an_unknown_job_refuses(launcher, tmp_path):
     assert r.returncode != 0 and "not in the ledger" in r.stderr and not launcher["log"].exists()
 
 
+def test_helper_jobs_sharing_the_prefix_are_ignored_and_stepped_ranges_expand(launcher, tmp_path):
+    """PR #121 round-2 review N1/N2: a CPU helper named backbone-comparison-<something> is not a stream element, and a
+    stepped pending range (squeue without -r) maps to its rows instead of a traceback."""
+    old = pilot_task_file(launcher)
+    q = tmp_path / "squeue.txt"
+    q.write_text("999 backbone-comparison-loadcheck\n998 backbone-comparison-torchtests\n"
+                 "777_[2-6:2%8] backbone-comparison-pilot\n")
+    r = launcher["run"]("pilot", SQ_OUT=str(q))
+    assert r.returncode == 0, r.stderr
+    got = rows(sorted(launcher["out"].glob("tasks_pilot_2*.tsv"))[-1])
+    skipped = {(old[i][0], old[i][3]) for i in (1, 3, 5)}
+    assert len(got) == 27 and not skipped & {(g[0], g[3]) for g in got}
+
+
 def test_resubmit_skips_done_and_in_flight_rows_and_refuses_unplanned_tags(launcher, tmp_path):
     old = pilot_task_file(launcher)
     keep = launcher["keep"]
