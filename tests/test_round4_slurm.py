@@ -249,10 +249,14 @@ def test_stage2_submits_scoring_of_every_arm_and_a_collect(stub):
     assert "--requeue" in pull["argv"] and pull["env"]["DEST"] == "/gscratch/scrubbed/tester/pano-stage/round4-disagree"
     su = by_name["round4-disagree-score-uniform"]
     assert su["env"]["CROPS"] == "uniform" and su["env"]["TAGS"] == PILOT_TAGS and su["env"]["MODE"] == "round3,runs"
+    # 32 checkpoints at up to 10.9 min each is 349 min, so the uniform scoring needs 6 h; the 12 rb checkpoints
+    # fit the job file's 4 h default
+    assert opt(su, "time") == "6:00:00"
     rb = [x for x in c if x["file"].endswith("confident_learning.slurm")]
     assert len(rb) == 12 and {x["env"]["DATA"] for x in rb} == {str(tmp / "work" / "data")}
     assert len({opt(x, "job-name") for x in rb}) == 12
     srb = by_name["round4-disagree-score-rb"]
+    assert opt(srb, "time") is None
     assert srb["env"]["CROPS"] == "uniform" and srb["env"]["TYPES"] == "CurbRamp,Crosswalk"
     assert set(srb["env"]["TAGS"].split(",")) == {"symmetric-rb", "matched-rb", "symmetric-rb-s43", "matched-rb-s43",
                                                   "symmetric-rb-s44", "matched-rb-s44"}
