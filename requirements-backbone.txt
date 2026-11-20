@@ -1,0 +1,8 @@
+# Issue #119 backbone comparison: the packages the study env adds to the round-3 env (environment.yml), installed by
+# analysis/backbone_env.sh into an overlay venv with every base package held at its installed version
+# (pip list --format=freeze of the base env, minus the two lines below, as a constraints file).
+# transformers 4.56 is the first release with DINOv3ViTModel; it needs tokenizers >= 0.22.
+transformers==4.56.2
+tokenizers>=0.22,<=0.23.0
+# Only for convert-rampnet --verify-with-timm (the RampNet conversion's parity check) and its tests.
+timm==1.0.31
