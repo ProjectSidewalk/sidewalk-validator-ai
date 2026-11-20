@@ -286,3 +286,23 @@ about 1 GPU-h). The ViT-L checkpoint is `depth_anything_v2_metric_vkitti_vitl.pt
 job refuses to start until `VITL_REV` (a 40-hex commit) and `VITL_SHA256` (verified against the file) are set: read
 the commit on a login node and pin both here and in the job file. Recipe and expected outputs:
 [`depth-ablation-2026-11.md`](depth-ablation-2026-11.md), "Reproduce".
+
+## Round-4 recipe launch (issue #74)
+
+From the stream's own clone of the branch (never the shared clone), with `$WORK/gold_uids.csv` copied from the Mac:
+
+```bash
+cd /gscratch/scrubbed/$USER/sva-round4-disagree
+STAGE=smoke analysis/round4_submit.sh           # 1 CPU + 2 GPU jobs; then round4.py verify-smoke and STAGE=smoke-rerun
+STAGE=pilot analysis/round4_submit.sh           # 1 CPU prep, 27 trainings, 2 scoring jobs, 1 CPU collect
+```
+
+The launcher's preflight (login node, each step under `timeout`) refuses a dirty or unpushed checkout, missing
+inputs, a failed real 8 MiB write to scrubbed or to the keep directory, under 5 GB or 2,000 files free on
+`/gscratch/makelab`, `facebook/dinov2-large` missing from `HF_HOME` (it prints the `HF_HUB_DISABLE_XET=1` download
+line) and a pandas other than 2.x. Outputs: the mirror and evaluation files in
+`/gscratch/scrubbed/$USER/round4-disagree-2026-11/data`, runs and the kept `best/` weights in `.../runs` (scrubbed
+purges after 21 days), small artifacts in `/gscratch/makelab/$USER/round4-disagree-2026-11-keep`. Every job id is
+in `round4_jobs.txt`; `MAX_GPU_JOBS` (40) caps this stream across stages. Resume by resubmitting: trainings resume
+from their last complete checkpoint, and a finished run exits "already evaluated". Details:
+[`round4-2026-11.md`](round4-2026-11.md).

@@ -384,6 +384,10 @@ retrain under either rule would write to the file.
 
 ## Recommendation
 
+Recommendations 1 and 2 are carried out in [`round4-2026-11.md`](round4-2026-11.md) (#74): `cl-drop` with three seeds
+against a gold-free baseline, calibrated maps under `majority2` for both, and (stage 2) the rebalanced rule test
+`symmetric-rb` against its size-matched control.
+
 1. **Take `cl-drop` into the next retrain, not into production from here.** The gain is where the Disagree
    gate fails, on deployments the model has not seen, and it costs about half a hundredth in distribution.
    Across three seeds the gain holds in direction for CurbRamp, Crosswalk and NoCurbRamp (3 of 3 seeds each) and
