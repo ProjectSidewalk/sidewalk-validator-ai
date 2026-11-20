@@ -64,7 +64,8 @@ def write_run(root, df, tag, seed, strength, record=True, record_seed=None, nois
         rec.mkdir(parents=True, exist_ok=True)
         split_sha = ca.sha256_file(str(base / "split.csv"))
         settings = {k: v for k, v in (ca.expected_settings(ca.variant_of_tag(tag)) or {}).items() if v is not None}
-        run_key = {"seed": record_seed or seed, "split_sha256": split_sha, "epochs": ca.RECIPE_EPOCHS, **settings,
+        run_key = {"seed": record_seed or seed, "split_sha256": split_sha, "epochs": ca.RECIPE_EPOCHS,
+                   "best_metric": "macro_f1", **settings,
                    **(key or {})}
         (rec / "run_key.json").write_text(json.dumps(run_key))
         (rec / "training_run.json").write_text(json.dumps({"seed": record_seed or seed}))
@@ -245,6 +246,9 @@ def test_regression(pilot):
     ("wrong_arm", "record context_arm view_heatmap, two_scale needs two_scale"),
     ("one_epoch", "record epochs 1, the recipe's is 25"),
     ("baseline_with_arm", "record context_arm side_info, baseline-rerun needs None"),
+    ("batch_4", "record batch_size 4, the recipe's is 8"),
+    ("soft_target", "record target soft, the recipe's is hard"),
+    ("best_metric", "record best_metric auc, the recipe's is macro_f1"),
 ])
 def test_incomplete(pilot, break_it, reason):
     root, df = pilot
@@ -275,6 +279,12 @@ def test_incomplete(pilot, break_it, reason):
         write_run(root, df, "two_scale-s43", 43, 0.9, noise_seed=243, key={"epochs": 1})
     elif break_it == "baseline_with_arm":
         write_run(root, df, "baseline-rerun-s45", 45, 0.30, key={"context_arm": "side_info", "context_view_res": 224})
+    elif break_it == "batch_4":   # a hand submission with BATCH=4 under a rule tag
+        write_run(root, df, "two_scale-s43", 43, 0.9, noise_seed=243, key={"batch_size": 4})
+    elif break_it == "soft_target":
+        write_run(root, df, "baseline-rerun-s45", 45, 0.30, key={"target": "soft"})
+    elif break_it == "best_metric":
+        write_run(root, df, "two_scale-s43", 43, 0.9, noise_seed=243, key={"best_metric": "auc"})
     r = row(decide(root, df, shares=shares, subset=subset), "two_scale")
     assert r["verdict"] == "INCOMPLETE" and reason in r["reason"], r["reason"]
 

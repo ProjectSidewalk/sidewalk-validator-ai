@@ -221,6 +221,12 @@ MAX_REDRAWS = 20
 MIN_DECISION_BOOT = 200
 #: The round-3 recipe's epochs; a run record with another value (a smoke run, a hand-set EPOCHS) never counts as a seed.
 RECIPE_EPOCHS = 25
+#: The training knobs ``analysis/context_arms.slurm`` pins for every run (``--best-metric macro_f1 --target hard
+#: --batch-size 8``), as ``run_key.json`` records them. ``fine_tune_classifier`` writes no ``target`` for the hard
+#: target and no ``batch_size`` for its default batch (``DEFAULT_BATCH_SIZE``), so an absent key reads as the value in
+#: ``RECIPE_ABSENT``. A hand submission with another value (``BATCH=4``) never counts as a seed.
+RECIPE_SETTINGS = {"best_metric": "macro_f1", "target": "hard", "batch_size": 8}
+RECIPE_ABSENT = {"target": "hard", "batch_size": 8}
 VERDICTS = ("WIN", "NO GAIN", "REGRESSION", "INCOMPLETE")
 NO_GAIN_WORDING = "no gain detected at this power"
 
@@ -585,12 +591,28 @@ def expected_settings(variant):
     return {"context_arm": arm, "context_view_res": res}
 
 
+def recipe_problems(rec):
+    """The pinned training knobs (``RECIPE_SETTINGS``) that the run record ``rec`` records with another value, one
+    message each; an absent ``target`` or ``batch_size`` reads as the default the trainer leaves out.
+
+    >>> recipe_problems({"best_metric": "macro_f1"}), recipe_problems({"best_metric": "macro_f1", "batch_size": 4})
+    ([], ["record batch_size 4, the recipe's is 8"])
+    """
+    out = []
+    for k, want in RECIPE_SETTINGS.items():
+        got = rec.get(k)
+        if (RECIPE_ABSENT.get(k) if got is None else got) != want:
+            out.append(f"record {k} {got}, the recipe's is {want}")
+    return out
+
+
 def record_problem(rec, variant, seed, split_sha, epochs=RECIPE_EPOCHS):
     """Why the run record ``rec`` (``run_record``) does not belong to ``variant`` at ``seed`` on this split, or None:
-    the record's status, seed, split hash, context arm, view resolution and (when ``epochs`` is not None) epochs.
+    the record's status, seed, split hash, context arm, view resolution, (when ``epochs`` is not None) epochs, and the
+    knobs the job file pins (``recipe_problems``: best metric, target, per-device batch).
 
     >>> rec = {"status": "ok", "seed": 43, "split_sha256": "h", "context_arm": "view_heatmap", "context_view_res": 448,
-    ...        "epochs": 25}
+    ...        "epochs": 25, "best_metric": "macro_f1"}
     >>> record_problem(rec, "view_heatmap", 43, "h")
     'record context_view_res 448, view_heatmap needs 224'
     """
@@ -605,7 +627,8 @@ def record_problem(rec, variant, seed, split_sha, epochs=RECIPE_EPOCHS):
             return f"record {k} {rec.get(k)}, {variant} needs {v}"
     if epochs is not None and rec.get("epochs") != epochs:
         return f"record epochs {rec.get('epochs')}, the recipe's is {epochs}"
-    return None
+    recipe = recipe_problems(rec)
+    return recipe[0] if recipe else None
 
 
 def _mean_sd(vals):
@@ -1548,8 +1571,8 @@ def stage_list(data, types, pano_store, out_dir, out=print):
 
 def run_record(data_dir, label_type, tag):
     """What a run's durable record says: ``{"status": "ok" | "missing" | "incomplete", "seed", "split_sha256",
-    "context_arm", "context_view_res", "epochs", "files_sha256", "path"}`` (the settings from ``run_key.json``; a
-    tight-crop run records no arm or resolution). Read from ``<data>/<type>/runs/<tag>/`` (this chain's layout) or, failing that,
+    "context_arm", "context_view_res", "epochs", "best_metric", "target", "batch_size", "files_sha256", "path"}`` (the
+    settings from ``run_key.json``; a tight-crop run records no arm or resolution, a default run no target or batch). Read from ``<data>/<type>/runs/<tag>/`` (this chain's layout) or, failing that,
     ``training_run_<tag>.json`` beside the metrics (the backbone stream's layout)."""
     d = os.path.join(data_dir, label_type, "runs", tag)
     flat = os.path.join(data_dir, label_type, f"training_run_{tag}.json")
@@ -1570,15 +1593,16 @@ def run_record(data_dir, label_type, tag):
 
 
 def _record_keys(key):
-    return {k: key.get(k) for k in ("seed", "split_sha256", "context_arm", "context_view_res", "epochs")}
+    return {k: key.get(k) for k in ("seed", "split_sha256", "context_arm", "context_view_res", "epochs",
+                                    *RECIPE_SETTINGS)}
 
 
 def check_run(data_dir, label_type, tag, seed=None, epochs=None):
     """The checks a finished training job must pass (the smoke stage's criterion): ``predictions_<tag>.csv`` holds
     exactly the split's ``EVAL_SPLITS`` rows, one per ``label_uid``, each in its own split; ``metrics_<tag>.json``
     and ``report_<tag>.txt`` exist; the run record is complete, with this ``seed`` (when given), the hash of this
-    ``split.csv``, the context arm and view resolution the tag stands for (``expected_settings``) and ``epochs``
-    (when given). Returns the list of problems (empty: pass)."""
+    ``split.csv``, the context arm and view resolution the tag stands for (``expected_settings``), ``epochs``
+    (when given) and the knobs the job file pins (``recipe_problems``). Returns the list of problems (empty: pass)."""
     d = os.path.join(data_dir, label_type)
     problems = []
     split = pd.read_csv(os.path.join(d, "split.csv"), dtype=str, keep_default_na=False)
@@ -1614,6 +1638,7 @@ def check_run(data_dir, label_type, tag, seed=None, epochs=None):
                 problems.append(f"{label_type}/{tag}: run record {k} {rec.get(k)}, {variant} needs {v}")
         if epochs is not None and rec.get("epochs") != epochs:
             problems.append(f"{label_type}/{tag}: run record epochs {rec.get('epochs')}, expected {epochs}")
+        problems.extend(f"{label_type}/{tag}: run {p}" for p in recipe_problems(rec))
     return problems
 
 

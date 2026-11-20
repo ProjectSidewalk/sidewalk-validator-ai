@@ -287,7 +287,8 @@ def finish_run(data, tag, seed, rows=None, drop=0, key=None):
     rec = os.path.join(d, "runs", tag)
     os.makedirs(rec, exist_ok=True)
     settings = {k: v for k, v in (ca.expected_settings(ca.variant_of_tag(tag)) or {}).items() if v is not None}
-    json.dump({"seed": seed, "split_sha256": sha(os.path.join(d, "split.csv")), "epochs": 25, **settings, **(key or {})},
+    json.dump({"seed": seed, "split_sha256": sha(os.path.join(d, "split.csv")), "epochs": 25, "best_metric": "macro_f1",
+               **settings, **(key or {})},
               open(os.path.join(rec, "run_key.json"), "w"))
     json.dump({"seed": seed}, open(os.path.join(rec, "training_run.json"), "w"))
 
@@ -322,6 +323,34 @@ def test_check_run_verifies_split_hash_arm_resolution_and_epochs(ready):
     assert any("epochs 1, expected 25" in p for p in ca.check_run(data, "Toy", "two_scale", epochs=25))
     finish_run(data, "side_info", 42, key={"split_sha256": "0" * 64})
     assert any("split hash differs" in p for p in ca.check_run(data, "Toy", "side_info"))
+
+
+def test_check_run_and_record_problem_check_the_pinned_knobs(ready):
+    """A run trained with a knob the job file pins set otherwise (a hand submission with BATCH=4) is not a seed of
+    the rule; the defaults the trainer leaves out of run_key.json (hard target, batch 8) read as the pinned values."""
+    data = ready["data"]
+    finish_run(data, "side_info", 42, key={"batch_size": 8, "target": "hard"})   # written out explicitly: still fine
+    assert ca.check_run(data, "Toy", "side_info", seed=42, epochs=25) == []
+    finish_run(data, "two_scale", 42, key={"batch_size": 4})
+    assert "Toy/two_scale: run record batch_size 4, the recipe's is 8" in ca.check_run(data, "Toy", "two_scale")
+    rec = ca.run_record(data, "Toy", "two_scale")
+    assert rec["batch_size"] == 4
+    split_sha = sha(os.path.join(data, "Toy", "split.csv"))
+    assert ca.record_problem(rec, "two_scale", 42, split_sha) == "record batch_size 4, the recipe's is 8"
+    finish_run(data, "baseline-rerun-s43", 43, key={"best_metric": None})
+    assert any("best_metric None, the recipe's is macro_f1" in p
+               for p in ca.check_run(data, "Toy", "baseline-rerun-s43", seed=43))
+
+
+def test_recipe_settings_match_the_job_file_and_the_trainer():
+    """RECIPE_SETTINGS is what context_arms.slurm passes, and the absent-key defaults are the trainer's."""
+    slurm = open(os.path.join(os.path.dirname(__file__), "..", "analysis", "context_arms.slurm")).read()
+    rs = ca.RECIPE_SETTINGS
+    assert f"--target {rs['target']} --best-metric {rs['best_metric']}" in slurm
+    assert f'BATCH="${{BATCH:-{rs["batch_size"]}}}"' in slurm
+    src = open(os.path.join(os.path.dirname(__file__), "..", "fine_tune_classifier.py")).read()
+    assert f"DEFAULT_BATCH_SIZE = {ca.RECIPE_ABSENT['batch_size']}" in src
+    assert f'target = getattr(args, "target", "{ca.RECIPE_ABSENT["target"]}")' in src
 
 
 def test_run_record_reads_the_flat_layout_too(ready):
