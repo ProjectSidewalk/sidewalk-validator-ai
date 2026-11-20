@@ -215,6 +215,12 @@ OCTOBER_SEED_SD = {"NoCurbRamp": 0.024, "Obstacle": 0.009, "SurfaceProblem": 0.0
 SHARES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "deployment-prior-2026-11",
                       "shares.json")
 MAX_REDRAWS = 20
+#: The fewest kept joint resamples (each of test and held-out) a verdict may rest on: below it the bootstrap term of
+#: se is missing or noise, and leaving it out narrows the interval toward a false WIN. ``report`` refuses a
+#: ``--decision-boot`` below it.
+MIN_DECISION_BOOT = 200
+#: The round-3 recipe's epochs; a run record with another value (a smoke run, a hand-set EPOCHS) never counts as a seed.
+RECIPE_EPOCHS = 25
 VERDICTS = ("WIN", "NO GAIN", "REGRESSION", "INCOMPLETE")
 NO_GAIN_WORDING = "no gain detected at this power"
 
@@ -542,6 +548,66 @@ def _variant_runs(data_dir, label_type, variants, base_seed=42):
     return {v: dict(sorted(r.items())) for v, r in out.items()}
 
 
+def rule_seeds(variant, kind, rule=DECISION_RULE):
+    """The seeds the rule reads for ``variant`` (``kind``: "baseline", "confirmatory", "exploratory", "october"):
+    exactly ``seeds_baseline`` / ``seeds_confirmatory``, or None (every seed on disk: exploratory arms and October's
+    trio are descriptive)."""
+    return {"baseline": rule["seeds_baseline"], "confirmatory": rule["seeds_confirmatory"]}.get(kind)
+
+
+def select_seeds(on_disk, seeds):
+    """``(used, not_used)`` of ``{seed: run}``: the runs at ``seeds`` (all of them when ``seeds`` is None) and the
+    seeds on disk the rule does not read. A seed trained beyond the rule's list never enters D, its interval or a
+    criterion, so a partly finished or extended stage cannot move a verdict (no optional stopping).
+
+    >>> select_seeds({42: "a", 43: "a-s43", 45: "a-s45"}, [42, 43, 44])
+    ({42: 'a', 43: 'a-s43'}, [45])
+    """
+    if seeds is None:
+        return dict(on_disk), []
+    return {s: n for s, n in on_disk.items() if s in seeds}, sorted(s for s in on_disk if s not in seeds)
+
+
+def expected_settings(variant):
+    """What a run of ``variant`` must have recorded in its ``run_key.json``: ``context_arm`` (None for
+    ``baseline-rerun``: ``fine_tune_classifier.context_settings`` writes no arm for the tight-crop model) and
+    ``context_view_res`` (448 for ``<arm>-r448``, else 224; None without an arm). None for a name that is not this
+    chain's.
+
+    >>> expected_settings("view_heatmap-r448"), expected_settings("baseline-rerun")
+    ({'context_arm': 'view_heatmap', 'context_view_res': 448}, {'context_arm': None, 'context_view_res': None})
+    """
+    if variant == "baseline-rerun":
+        return {"context_arm": None, "context_view_res": None}
+    arm, res = (variant[:-len("-r448")], 448) if variant.endswith("-r448") else (variant, 224)
+    if arm not in CONFIRMATORY + ("side_info", "side_info_nohq"):
+        return None
+    return {"context_arm": arm, "context_view_res": res}
+
+
+def record_problem(rec, variant, seed, split_sha, epochs=RECIPE_EPOCHS):
+    """Why the run record ``rec`` (``run_record``) does not belong to ``variant`` at ``seed`` on this split, or None:
+    the record's status, seed, split hash, context arm, view resolution and (when ``epochs`` is not None) epochs.
+
+    >>> rec = {"status": "ok", "seed": 43, "split_sha256": "h", "context_arm": "view_heatmap", "context_view_res": 448,
+    ...        "epochs": 25}
+    >>> record_problem(rec, "view_heatmap", 43, "h")
+    'record context_view_res 448, view_heatmap needs 224'
+    """
+    if rec["status"] != "ok":
+        return f"run record {rec['status']}"
+    if rec["seed"] != seed:
+        return f"record seed {rec['seed']} for tag seed {seed}"
+    if rec["split_sha256"] != split_sha:
+        return "record split hash differs from this split.csv"
+    for k, v in (expected_settings(variant) or {}).items():
+        if rec.get(k) != v:
+            return f"record {k} {rec.get(k)}, {variant} needs {v}"
+    if epochs is not None and rec.get("epochs") != epochs:
+        return f"record epochs {rec.get('epochs')}, the recipe's is {epochs}"
+    return None
+
+
 def _mean_sd(vals):
     v = [x for x in vals if x is not None and np.isfinite(x)]
     if not v:
@@ -591,14 +657,35 @@ def slice_seed_rows(preds, split_df, runs, base_variant, train, min_n=None):
     return out
 
 
+def heldout_display_names(preds, public):
+    """``retrain_report.heldout_names`` over every deployment in any run's ``test_heldout`` rows (qualifying for the
+    within-city AUC or not), as ``confident_learning.heldout_rows`` letters them for ``arms.md``, so a private
+    deployment carries the same letter in every table."""
+    from analysis import retrain_report as rr
+    cities = sorted(set().union(*[set(p.loc[p["split"] == "test_heldout", "city"]) for p in preds.values()])
+                    ) if preds else []
+    us = {c for c in cities if len(c.split("-")[-1]) == 2 and c.split("-")[-1].isalpha()}
+    return rr.heldout_names(cities, public, us)
+
+
 def decide_type(data_dir, label_type, split_df, arms, public, shares, prior_entry, subset, base_variant, n_boot,
-                boot_seed, within_min_n=10, rule=DECISION_RULE, base_seed=42):
+                boot_seed, within_min_n=10, rule=DECISION_RULE, base_seed=42, min_boot=MIN_DECISION_BOOT):
     """Everything the decision needs for one type: the runs, their records, the joint bootstrap on test and held-out,
     one row per arm (confirmatory: a verdict; exploratory: never WIN), the drift row against October's trio, the gate
-    block per run, the operating characteristics, and the seed slices. A plain dict, JSON-ready."""
-    from analysis import retrain_report as rr
+    block per run, the operating characteristics, and the seed slices. A plain dict, JSON-ready.
+
+    Only the rule's seeds are read (``select_seeds``): the baseline at ``seeds_baseline``, a confirmatory arm at
+    ``seeds_confirmatory``; any other seed on disk is listed under ``not_used`` and enters nothing. A verdict also
+    needs at least ``min_boot`` kept joint resamples on each of test and held-out (the bootstrap term of se)."""
     variants = [base_variant, OCTOBER, *arms]
-    runs = _variant_runs(data_dir, label_type, variants, base_seed)
+    kinds = {v: ("baseline" if v == base_variant else "october" if v == OCTOBER
+                 else "confirmatory" if v in CONFIRMATORY else "exploratory") for v in variants}
+    on_disk = _variant_runs(data_dir, label_type, variants, base_seed)
+    runs, not_used = {}, {}
+    for v, r in on_disk.items():
+        runs[v], unused = select_seeds(r, rule_seeds(v, kinds[v], rule))
+        if unused:
+            not_used[v] = unused
     preds = {}
     for r in runs.values():
         for name in r.values():
@@ -611,21 +698,14 @@ def decide_type(data_dir, label_type, split_df, arms, public, shares, prior_entr
     for v, r in runs.items():
         for s, name in r.items():
             rec = run_record(data_dir, label_type, name)
-            problem = None
-            if v != OCTOBER:   # this chain's runs must carry a matching record; October's are shown, never required
-                if rec["status"] != "ok":
-                    problem = f"run record {rec['status']}"
-                elif rec["seed"] != s:
-                    problem = f"record seed {rec['seed']} for tag seed {s}"
-                elif rec["split_sha256"] != split_sha:
-                    problem = "record split hash differs from this split.csv"
+            # this chain's runs must carry a matching record; October's are shown, never required
+            problem = None if v == OCTOBER else record_problem(rec, v, s, split_sha)
             records[name] = {**rec, "variant": v, "seed": s, "problem": problem}
     names = [n for r in runs.values() for n in r.values()]
     boot = {split: within_city_boot(preds, split, names, within_min_n, n_boot, boot_seed) if names else None
             for split in ("test_heldout", "test")}
-    held_names = rr.heldout_names(boot["test_heldout"]["deployments"] if boot["test_heldout"] else [], public,
-                                  {c for c in (boot["test_heldout"] or {}).get("deployments", [])
-                                   if len(c.split("-")[-1]) == 2 and c.split("-")[-1].isalpha()})
+    kept = {split: (len(b["boot"]) if b else 0) for split, b in boot.items()}
+    held_names = heldout_display_names(preds, public)
     gates = {}
     for name in names:
         try:
@@ -634,12 +714,17 @@ def decide_type(data_dir, label_type, split_df, arms, public, shares, prior_entr
             gates[name] = {"error": f"{type(e).__name__}: {e}"}
 
     def interval(split, arm_names, base_names):
+        """``seed_mean_delta`` with the bootstrap variance of D; without one (``boot_var_of_delta`` None) the record
+        keeps D but no bounds, never an interval silently narrowed to the seed terms."""
         b = boot[split]
         if not b or any(b["point"].get(n) is None for n in arm_names + base_names):
             return None
         vb = boot_var_of_delta(b["boot"], b["names"], arm_names, base_names)
-        return seed_mean_delta([b["point"][n] for n in arm_names], [b["point"][n] for n in base_names],
-                               vb or 0.0, rule["level"])
+        r = seed_mean_delta([b["point"][n] for n in arm_names], [b["point"][n] for n in base_names],
+                            vb or 0.0, rule["level"])
+        if vb is None:
+            r.update(se=None, t=None, lo=None, hi=None, var_boot=None)
+        return r
 
     base_runs = runs.get(base_variant, {})
     base_names = list(base_runs.values())
@@ -647,8 +732,8 @@ def decide_type(data_dir, label_type, split_df, arms, public, shares, prior_entr
     for arm in arms:
         a_runs = runs.get(arm, {})
         a_names = list(a_runs.values())
-        row = {"arm": arm, "kind": "confirmatory" if arm in CONFIRMATORY else "exploratory",
-               "seeds": sorted(a_runs), "baseline_seeds": sorted(base_runs)}
+        row = {"arm": arm, "kind": kinds[arm], "seeds": sorted(a_runs), "baseline_seeds": sorted(base_runs),
+               "seeds_not_used": not_used.get(arm, []), "baseline_seeds_not_used": not_used.get(base_variant, [])}
         if a_names and base_names:
             row["heldout"] = interval("test_heldout", a_names, base_names)
             row["test"] = interval("test", a_names, base_names)
@@ -675,9 +760,12 @@ def decide_type(data_dir, label_type, split_df, arms, public, shares, prior_entr
             no_gate = [n for n in a_names + base_names if "error" in gates.get(n, {"error": 1})]
             if no_gate:
                 reasons.append(f"gate block missing for {no_gate}")
+            short = [f"{s} {kept[s]}" for s in ("test_heldout", "test") if kept[s] < min_boot]
+            if short:
+                reasons.append(f"joint bootstrap kept fewer than {min_boot} resamples ({', '.join(short)})")
             if not row.get("heldout") or row["heldout"].get("lo") is None or not row.get("test") \
                     or row["test"].get("lo") is None:
-                reasons.append("no interval (too few seeds or no qualifying deployment)")
+                reasons.append("no interval (too few seeds, no bootstrap variance or no qualifying deployment)")
         if row["kind"] == "exploratory":
             row["verdict"] = "exploratory"
             row["reason"] = "; ".join(reasons) or "exploratory arms never produce a WIN"
@@ -696,9 +784,7 @@ def decide_type(data_dir, label_type, split_df, arms, public, shares, prior_entr
         om, osd = _mean_sd([b["point"].get(n) for n in oct_runs])
         drift[key] = {"rerun_mean": rm, "rerun_sd": rsd, "october_mean": om, "october_sd": osd,
                       "difference": (rm - om) if rm is not None and om is not None else None}
-    h = drift["heldout"]
-    drift["flag"] = bool(h["difference"] is not None and h["october_sd"]
-                         and abs(h["difference"]) > 2 * h["october_sd"])
+    drift["flag"] = drift_flag(drift["heldout"])
     sd_seed = drift["heldout"]["rerun_sd"] if len(base_names) >= 3 else OCTOBER_SEED_SD.get(label_type)
     sd_source = f"{base_variant}, {len(base_names)} seeds" if len(base_names) >= 3 else "October, 3 seeds"
     pair = (base_names + oct_runs)[:2]
@@ -710,10 +796,20 @@ def decide_type(data_dir, label_type, split_df, arms, public, shares, prior_entr
               "arm_seeds_3": operating_characteristics(sd_seed, vb ** 0.5, 3, rule=rule),
               "arm_seeds_5": operating_characteristics(sd_seed, vb ** 0.5, 5, rule=rule)}
     train = split_df[split_df["split"] == "train"]
-    return {"runs": {v: {str(s): n for s, n in r.items()} for v, r in runs.items()},
+    return {"runs": {v: {str(s): n for s, n in r.items()} for v, r in runs.items()}, "not_used": not_used,
             "records": records, "rows": rows, "drift": drift, "gates": gates, "oc": oc,
             "boot": {k: boot_summary(v, held_names if k == "test_heldout" else None) for k, v in boot.items()},
             "slices": slice_seed_rows(preds, split_df, runs, base_variant, train)}
+
+
+def drift_flag(heldout):
+    """The rule's drift flag: the rerun's held-out seed mean differs from October's by more than two October seed sds.
+
+    >>> drift_flag({"difference": 0.05, "october_sd": 0.02}), drift_flag({"difference": 0.03, "october_sd": 0.02})
+    (True, False)
+    """
+    return bool(heldout["difference"] is not None and heldout["october_sd"]
+                and abs(heldout["difference"]) > 2 * heldout["october_sd"])
 
 
 def _f3(v, signed=False):
@@ -737,8 +833,15 @@ def decision_markdown(decisions, rule=DECISION_RULE):
              f"`{rule['baseline_variant']}` seed-mean of the within-city AUC; interval D ± t·se with "
              "se² = s_arm²/n_arm + s_base²/n_base + var_boot (joint panorama bootstrap within deployment) and the "
              f"Welch t at {rule['level']:.0%}. `NO GAIN` means {NO_GAIN_WORDING}; read it next to the power table. "
-             "Exploratory arms never produce a `WIN`; a single seed's interval omits that arm's seed variance.", "",
-             "```json", json.dumps(rule, sort_keys=True), "```", ""]
+             "Exploratory arms never produce a `WIN`; a single seed's interval omits that arm's seed variance. Only the "
+             "rule's seeds are read (`seeds_baseline`, `seeds_confirmatory`); any other seed on disk is listed as not "
+             "used and enters nothing.", ""]
+    flagged = [lt for lt, d in decisions.items() if d["drift"]["flag"]]
+    if flagged:
+        lines += [f"**Drift flag: {', '.join(flagged)}.** The `{rule['baseline_variant']}` held-out seed mean differs "
+                  "from October's round-3 seed mean by more than two October seed sds (drift row in each section); "
+                  "the decision still uses the rerun.", ""]
+    lines += ["```json", json.dumps(rule, sort_keys=True), "```", ""]
     for lt, d in decisions.items():
         lines += [f"## {lt}", "", "| arm | kind | seeds | verdict | D held-out within-city [CI] | D test within-city [CI] "
                   "| arm seeds above baseline mean | held-out deployments (D) | reason |",
@@ -750,6 +853,10 @@ def decision_markdown(decisions, rule=DECISION_RULE):
                          f"{_iv(r.get('heldout'))} | {_iv(r.get('test'))} | "
                          f"{h.get('n_above', '—') if h else '—'} of {h.get('n_arm', '—') if h else '—'} | "
                          f"{dep or '—'} | {r.get('reason', '')} |")
+        unused = {v: s for v, s in (d.get("not_used") or {}).items() if v != OCTOBER}
+        if unused:
+            lines += ["", f"{lt}: seeds on disk, not used by the rule: "
+                      + "; ".join(f"{v} {s}" for v, s in sorted(unused.items())) + "."]
         for r in d["rows"]:
             if r.get("criteria"):
                 lines += ["", f"{lt} / {r['arm']}: " + "; ".join(
@@ -857,9 +964,13 @@ def power_table(data_dir, label_type, variant=OCTOBER, n_boot=1000, seed=0, with
     b = within_city_boot(preds, "test_heldout", names, within_min_n, n_boot, seed)
     sd_seed = _mean_sd([b["point"][n] for n in names])[1]
     sd_boot = boot_var_of_delta(b["boot"], names, names[1:2], names[2:3] or names[:1]) ** 0.5
+    # one pair at one bootstrap seed drives the table; the other pairs show how much that choice moves it
+    all_pairs = {f"{x} - {y}": boot_var_of_delta(b["boot"], names, [x], [y]) ** 0.5
+                 for i, x in enumerate(names) for y in names[i + 1:]}
     n_base = len(rule["seeds_baseline"])
     return {"variant": variant, "seeds": sorted(runs), "within_city_heldout": {n: b["point"][n] for n in names},
             "sd_seed": sd_seed, "sd_boot": sd_boot, "sd_boot_pair": [names[1], (names[2:3] or names[:1])[0]],
+            "sd_boot_all_pairs": all_pairs,
             "n_boot": n_boot, "kept": int(len(b["boot"])),
             "arm_seeds_3": operating_characteristics(sd_seed, sd_boot, 3, n_base, rule, n_sim, seed),
             "arm_seeds_5": operating_characteristics(sd_seed, sd_boot, 5, n_base, rule, n_sim, seed)}
@@ -882,6 +993,11 @@ def power_markdown(tables):
             lines.append(f"| {lt} | {t['sd_seed']:.3f} | {t['sd_boot']:.3f} | {o['n_arm']} | {o['false_win']:.3f} | "
                          f"{o['null_regression']:.3f} | {o['power']['0.02']:.2f} | {o['power']['0.03']:.2f} | "
                          f"{o['power']['0.05']:.2f} | {mde} | {rec if k == 'arm_seeds_3' else ''} |")
+    spread = [f"{lt} {min(t['sd_boot_all_pairs'].values()):.4f} to {max(t['sd_boot_all_pairs'].values()):.4f} "
+              f"over {len(t['sd_boot_all_pairs'])} pairs" for lt, t in tables.items() if t.get("sd_boot_all_pairs")]
+    if spread:
+        lines += ["", "The bootstrap sd of D is from one seed pair at one bootstrap seed; over every pair of seeds it "
+                  "ranges " + "; ".join(spread) + "."]
     return "\n".join(lines) + "\n"
 
 
@@ -902,6 +1018,9 @@ def cmd_power(args):
 
 def report(args):
     from analysis import retrain_report as rr
+    if args.decision_boot < MIN_DECISION_BOOT:
+        raise SystemExit(f"--decision-boot {args.decision_boot}: a verdict needs at least {MIN_DECISION_BOOT} joint "
+                         "resamples (the bootstrap term of the interval)")
     label_types = [t.strip() for t in args.label_types.split(",") if t.strip()]
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
     public, public_source = rr.public_cities(args.public_cities)
@@ -1241,7 +1360,8 @@ def write_probe(directory, nbytes=WRITE_TEST_BYTES):
 
 
 def preflight(data, runs, types, arms, stage="", keep=None, pano_store=None, backfill=False, skip_backfill=False,
-              pair_october=False, hf_home=None, versions=None, transformers_pin=None, write_test=True, out=print):
+              pair_october=False, hf_home=None, versions=None, transformers_pin=None, write_test=True, out=print,
+              confirmatory_seeds=None, baseline_seeds=None, rule=DECISION_RULE):
     """Everything a stage needs before it may take a GPU, checked on the login node in seconds; returns the list of
     problems (empty: go). Never imports torch or transformers.
 
@@ -1251,10 +1371,14 @@ def preflight(data, runs, types, arms, stage="", keep=None, pano_store=None, bac
       column would raise ``KeyError`` after the job holds its GPU); the share of rows missing severity, imagery date
       and depth is printed (a side arm without depth is silently weaker);
     - ``pair_october``: October's ``metrics.json`` / ``predictions.csv`` (with val rows) and the seed-43/44 files;
-    - ``backfill``: the pano store's marker and every ok manifest row's panorama (if any is missing, writes
-      ``<data>/<type>/stage_files.txt`` in ``adjudicator.stage_files`` format with the count and a size estimate,
-      and prints the restage command), what the backfill will write, and a ``<city>.csv`` in the shadow's rawLabels
-      snapshot for every manifest city; ``skip_backfill``: ``context/index.csv`` covers every ok manifest row;
+    - ``backfill``: the pano store's marker and every ok manifest row's panorama (``write_stage_files``: whenever a
+      store path is given, marked or not, and a missing store counts every panorama as missing, it writes
+      ``<data>/<type>/stage_files.txt`` with the count and a size estimate and names the restage commands), what the
+      backfill will write, and a ``<city>.csv`` in the shadow's rawLabels snapshot for every manifest city;
+      ``skip_backfill``: ``context/index.csv`` covers every ok manifest row;
+    - ``confirmatory_seeds`` / ``baseline_seeds`` (a stage preset's seed lists): equal to ``rule``'s
+      ``seeds_confirmatory`` / ``seeds_baseline``, so a stage never trains a seed list the decision does not read
+      (``A5=1`` needs the rule and the doc's json block changed first);
     - ``versions`` (default ``installed_versions()``): pandas 2.x, transformers at ``environment.yml``'s pin;
     - the backbone in the HF cache (``hf_home``; a path check, not a load);
     - a real 8 MiB write to ``runs`` and ``data``;
@@ -1263,6 +1387,11 @@ def preflight(data, runs, types, arms, stage="", keep=None, pano_store=None, bac
     import glob
     import context_model as cm
     problems = []
+    for got, key in ((confirmatory_seeds, "seeds_confirmatory"), (baseline_seeds, "seeds_baseline")):
+        if got is not None and sorted(set(got)) != sorted(rule[key]):
+            problems.append(f"stage {stage} trains seeds {sorted(set(got))} where DECISION_RULE[{key!r}] reads "
+                            f"{rule[key]}: change the rule (and the doc's json block) before the stage, or the "
+                            "stage, never after")
     rec = read_shadow(data)
     if rec is None:
         problems.append(f"{data} has no {SHADOW_FILE}: make a shadow (analysis/context_arms.py shadow)")
@@ -1315,20 +1444,20 @@ def preflight(data, runs, types, arms, stage="", keep=None, pano_store=None, bac
             n_files = 2 * len(ok)
             out(f"{lt}: the backfill writes {n_files:,} files, about {len(ok) * CONTEXT_KB_PER_LABEL / 1e6:.1f} GB, "
                 f"under {os.path.join(d, 'context')}")
-            if not pano_store or not os.path.isfile(os.path.join(pano_store, ".pano-store")):
+            marked = bool(pano_store) and os.path.isfile(os.path.join(pano_store, ".pano-store"))
+            if not marked:
                 problems.append(f"{lt}: pano store {pano_store} has no .pano-store marker")
-            else:
-                import data_generation as dg
-                pairs = sorted(set(zip(ok["city"], ok["pano_id"])))
-                gone = [(c, p) for c, p in pairs if not os.path.exists(dg.pano_store_path(pano_store, c, p))]
+            if pano_store:
+                listing, gone, total = write_stage_files(d, ok, pano_store)
                 if gone:
-                    listing = os.path.join(d, "stage_files.txt")
-                    with open(listing, "w") as f:
-                        f.writelines(f"{c}/{p[:2]}/{p}.jpg\n" for c, p in gone)
                     problems.append(
-                        f"{lt}: {len(gone):,} of {len(pairs):,} panoramas are not in {pano_store} (about "
-                        f"{len(gone) * PANO_MB / 1e3:.0f} GB at {PANO_MB} MB each); list in {listing}; restage with "
-                        f"RUN={d} DEST={pano_store} sbatch analysis/ai_labels_stage.slurm (makelab2; Jon's call)")
+                        f"{lt}: {len(gone):,} of {total:,} panoramas are not in {pano_store} (about "
+                        f"{len(gone) * PANO_MB / 1e3:.0f} GB at {PANO_MB} MB each); list in {listing}. Restage (Jon's "
+                        "call; makelab2): one deduplicated list for every type, `analysis/context_arms.py stage-list "
+                        f"--data {data} --types <types> --pano-store {pano_store} --out <dir>`, then `RUN=<dir> "
+                        + (f"DEST=<a new store, not {pano_store}: the stage job removes .pano-store at its start>"
+                           if marked else f"DEST={pano_store}")
+                        + " sbatch analysis/ai_labels_stage.slurm` (docs/context-arms-2026-11.md)")
             raw = (rec or {}).get("rawlabels")
             if not raw or not os.path.isdir(raw):
                 problems.append(f"{lt}: the shadow's rawLabels snapshot {raw} is not a directory")
@@ -1374,9 +1503,53 @@ def preflight(data, runs, types, arms, stage="", keep=None, pano_store=None, bac
     return problems
 
 
+def write_stage_files(type_dir, ok, pano_store):
+    """Write ``<type_dir>/stage_files.txt`` (``adjudicator.stage_files`` format, ``<city>/<pano_id[:2]>/<pano_id>.jpg``)
+    listing the panoramas of the manifest rows ``ok`` that are not in ``pano_store``; a store that does not exist yet
+    lacks all of them. Returns ``(path, missing (city, pano_id) pairs, unique panoramas)``."""
+    import data_generation as dg
+    pairs = sorted(set(zip(ok["city"], ok["pano_id"])))
+    gone = [(c, p) for c, p in pairs if not os.path.exists(dg.pano_store_path(pano_store, c, p))]
+    listing = os.path.join(type_dir, "stage_files.txt")
+    with open(listing, "w") as f:
+        f.writelines(f"{c}/{p[:2]}/{p}.jpg\n" for c, p in gone)
+    return listing, gone, len(pairs)
+
+
+def stage_list(data, types, pano_store, out_dir, out=print):
+    """The restage list of a stage: per type, ``write_stage_files`` into ``<data>/<type>/``; then one deduplicated
+    ``<out_dir>/stage_files.txt`` (``out_dir`` created) for a single ``analysis/ai_labels_stage.slurm`` job with
+    ``RUN=<out_dir>``, so the makelab hosts see one sequential pull, not one per type. No GPU, no network; sizes the
+    restage before any launcher run. Returns ``{type: missing}`` and the combined count under ``"_all"``.
+
+    Example::
+
+        python analysis/context_arms.py stage-list --data $WORK/data --types NoCurbRamp,Obstacle,SurfaceProblem \
+            --pano-store /gscratch/scrubbed/$USER/pano-stage/context-arms --out $WORK/stage
+    """
+    counts, everything = {}, set()
+    for lt in types:
+        d = os.path.join(data, lt)
+        manifest = pd.read_csv(os.path.join(d, "manifest.csv"), dtype=str, keep_default_na=False)
+        ok = manifest[manifest["status"] == "ok"] if "status" in manifest.columns else manifest
+        listing, gone, total = write_stage_files(d, ok, pano_store)
+        counts[lt] = len(gone)
+        everything.update(gone)
+        out(f"{lt}: {len(gone):,} of {total:,} panoramas not in {pano_store}; {listing}")
+    os.makedirs(out_dir, exist_ok=True)
+    combined = os.path.join(out_dir, "stage_files.txt")
+    with open(combined, "w") as f:
+        f.writelines(f"{c}/{p[:2]}/{p}.jpg\n" for c, p in sorted(everything))
+    counts["_all"] = len(everything)
+    out(f"all types, deduplicated: {len(everything):,} panoramas, about {len(everything) * PANO_MB / 1e3:.0f} GB at "
+        f"{PANO_MB} MB each; {combined}")
+    return counts
+
+
 def run_record(data_dir, label_type, tag):
     """What a run's durable record says: ``{"status": "ok" | "missing" | "incomplete", "seed", "split_sha256",
-    "files_sha256", "path"}``. Read from ``<data>/<type>/runs/<tag>/`` (this chain's layout) or, failing that,
+    "context_arm", "context_view_res", "epochs", "files_sha256", "path"}`` (the settings from ``run_key.json``; a
+    tight-crop run records no arm or resolution). Read from ``<data>/<type>/runs/<tag>/`` (this chain's layout) or, failing that,
     ``training_run_<tag>.json`` beside the metrics (the backbone stream's layout)."""
     d = os.path.join(data_dir, label_type, "runs", tag)
     flat = os.path.join(data_dir, label_type, f"training_run_{tag}.json")
@@ -1387,21 +1560,25 @@ def run_record(data_dir, label_type, tag):
             with open(os.path.join(d, "run_key.json")) as f:
                 key = json.load(f)
         status = "ok" if {"training_run.json", "run_key.json"} <= set(files) else "incomplete"
-        return {"status": status, "path": os.path.relpath(d, data_dir), "seed": key.get("seed"),
-                "split_sha256": key.get("split_sha256"), "files_sha256": files}
+        return {"status": status, "path": os.path.relpath(d, data_dir), **_record_keys(key), "files_sha256": files}
     if os.path.isfile(flat):
         with open(flat) as f:
             run = json.load(f)
-        return {"status": "ok", "path": os.path.relpath(flat, data_dir), "seed": run.get("seed"),
-                "split_sha256": run.get("split_sha256"), "files_sha256": {os.path.basename(flat): sha256_file(flat)}}
-    return {"status": "missing", "path": None, "seed": None, "split_sha256": None, "files_sha256": {}}
+        return {"status": "ok", "path": os.path.relpath(flat, data_dir), **_record_keys(run),
+                "files_sha256": {os.path.basename(flat): sha256_file(flat)}}
+    return {"status": "missing", "path": None, **_record_keys({}), "files_sha256": {}}
 
 
-def check_run(data_dir, label_type, tag, seed=None):
+def _record_keys(key):
+    return {k: key.get(k) for k in ("seed", "split_sha256", "context_arm", "context_view_res", "epochs")}
+
+
+def check_run(data_dir, label_type, tag, seed=None, epochs=None):
     """The checks a finished training job must pass (the smoke stage's criterion): ``predictions_<tag>.csv`` holds
     exactly the split's ``EVAL_SPLITS`` rows, one per ``label_uid``, each in its own split; ``metrics_<tag>.json``
-    and ``report_<tag>.txt`` exist; the run record is complete, with this ``seed`` (when given) and the hash of this
-    ``split.csv``. Returns the list of problems (empty: pass)."""
+    and ``report_<tag>.txt`` exist; the run record is complete, with this ``seed`` (when given), the hash of this
+    ``split.csv``, the context arm and view resolution the tag stands for (``expected_settings``) and ``epochs``
+    (when given). Returns the list of problems (empty: pass)."""
     d = os.path.join(data_dir, label_type)
     problems = []
     split = pd.read_csv(os.path.join(d, "split.csv"), dtype=str, keep_default_na=False)
@@ -1431,6 +1608,12 @@ def check_run(data_dir, label_type, tag, seed=None):
             problems.append(f"{label_type}/{tag}: run record seed {rec['seed']}, expected {seed}")
         if rec["split_sha256"] != sha256_file(os.path.join(d, "split.csv")):
             problems.append(f"{label_type}/{tag}: run record split hash differs from this split.csv")
+        variant = variant_of_tag(tag)
+        for k, v in (expected_settings(variant) or {}).items():
+            if rec.get(k) != v:
+                problems.append(f"{label_type}/{tag}: run record {k} {rec.get(k)}, {variant} needs {v}")
+        if epochs is not None and rec.get("epochs") != epochs:
+            problems.append(f"{label_type}/{tag}: run record epochs {rec.get('epochs')}, expected {epochs}")
     return problems
 
 
@@ -1440,16 +1623,23 @@ def cmd_shadow(args):
 
 
 def cmd_preflight(args):
+    seeds = {k: ([int(x) for x in _list(v)] if v else None)
+             for k, v in (("c", args.confirmatory_seeds), ("b", args.baseline_seeds))}
     problems = preflight(args.data, args.runs, _list(args.types), _list(args.arms), args.stage, args.keep,
                          args.pano_store, args.backfill, args.skip_backfill, args.pair_october, args.hf_home,
-                         write_test=not args.no_write_test)
+                         write_test=not args.no_write_test, confirmatory_seeds=seeds["c"], baseline_seeds=seeds["b"])
     return 1 if problems else 0
+
+
+def cmd_stage_list(args):
+    stage_list(args.data, _list(args.types), args.pano_store, args.out)
+    return 0
 
 
 def cmd_check_run(args):
     problems = []
     for tag in _list(args.tags):
-        p = check_run(args.data, args.label_type, tag, seed_of_tag(tag) if args.seed_from_tag else None)
+        p = check_run(args.data, args.label_type, tag, seed_of_tag(tag) if args.seed_from_tag else None, args.epochs)
         print(f"{args.label_type}/{tag}: " + ("ok" if not p else "; ".join(p)))
         problems += p
     return 1 if problems else 0
@@ -1457,6 +1647,16 @@ def cmd_check_run(args):
 
 def _list(text):
     return [t.strip() for t in str(text).replace(" ", ",").split(",") if t.strip()]
+
+
+def variant_of_tag(tag):
+    """The variant a tag stands for, without its ``-s<seed>``.
+
+    >>> variant_of_tag("view_heatmap-r448-s43"), variant_of_tag("baseline-rerun")
+    ('view_heatmap-r448', 'baseline-rerun')
+    """
+    m = cl.SEED_RUN_RE.match(f"metrics_{tag}.json")
+    return m["variant"] if m else tag
 
 
 def seed_of_tag(tag, base_seed=42):
@@ -1482,17 +1682,28 @@ def build_parser():
     f = sub.add_parser("preflight", help="check a stage before it takes a GPU (login node; see preflight())")
     f.add_argument("--data", required=True, help="the shadow data directory the jobs use")
     f.add_argument("--runs", required=True, help="the checkpoint root the jobs write")
-    f.add_argument("--types", required=True)
+    f.add_argument("--types", required=True, help="comma list of label types")
     f.add_argument("--arms", required=True, help="comma list of the stage's arms (none = the baseline rerun)")
-    f.add_argument("--stage", default="")
-    f.add_argument("--keep", default=None)
-    f.add_argument("--pano-store", default=None)
+    f.add_argument("--stage", default="", help="the stage name, printed only (smoke, pilot, A, B)")
+    f.add_argument("--keep", default=None, help="the durable KEEP directory: its free space is printed")
+    f.add_argument("--pano-store", default=None,
+                   help="with --backfill: the store the backfill reads; missing panoramas go to stage_files.txt")
+    f.add_argument("--confirmatory-seeds", default=None,
+                   help="the seeds the stage trains a confirmatory arm at; must equal DECISION_RULE's")
+    f.add_argument("--baseline-seeds", default=None,
+                   help="the seeds the stage trains baseline-rerun at; must equal DECISION_RULE's")
     f.add_argument("--backfill", action="store_true", help="the stage submits a backfill")
     f.add_argument("--skip-backfill", action="store_true", help="image arms run on an existing context index")
     f.add_argument("--pair-october", action="store_true", help="require October's baseline files (drift row)")
-    f.add_argument("--hf-home", default=os.environ.get("HF_HOME"))
+    f.add_argument("--hf-home", default=os.environ.get("HF_HOME"), help="the HF cache the jobs read (default $HF_HOME)")
     f.add_argument("--no-write-test", action="store_true", help="skip the 8 MiB write probes (tests only)")
     f.set_defaults(func=cmd_preflight)
+    g = sub.add_parser("stage-list", help="the deduplicated restage list of a stage's types (see stage_list())")
+    g.add_argument("--data", required=True, help="the shadow data directory")
+    g.add_argument("--types", required=True, help="comma list of label types")
+    g.add_argument("--pano-store", required=True, help="the store to check; one not staged yet lacks every panorama")
+    g.add_argument("--out", required=True, help="directory for the combined stage_files.txt (RUN= of the stage job)")
+    g.set_defaults(func=cmd_stage_list)
     w = sub.add_parser("power", help="the rule's operating characteristics from a variant's seed spread")
     w.add_argument("--data-dir", required=True)
     w.add_argument("--label-types", default=",".join(TARGET_TYPES))
@@ -1508,10 +1719,13 @@ def build_parser():
     c.add_argument("--label-type", required=True)
     c.add_argument("--tags", required=True, help="comma list of evaluate.py tags")
     c.add_argument("--seed-from-tag", action="store_true", help="also check the record's seed (-s<seed>, else 42)")
+    c.add_argument("--epochs", type=int, default=None,
+                   help=f"also check the record's epochs (the recipe's {RECIPE_EPOCHS}; the smoke stage runs 1)")
     c.set_defaults(func=cmd_check_run)
     r = sub.add_parser("report", help="decision.md/json, gate.md, slices_seeds.md, arms.md/json, seeds.md, "
                                       "slices.md, clipping.md, provenance.json")
-    r.add_argument("--data-dir", required=True, help="data_generation.py's --out (round 3: retrain-2026-10)")
+    r.add_argument("--data-dir", required=True,
+                   help="the shadow data directory the jobs wrote ($WORK/data; analysis/context_arms.py shadow)")
     r.add_argument("--label-types", default=",".join(TYPES))
     r.add_argument("--arms", default=",".join(ARMS),
                    help="evaluate.py tags to compare with the baseline (e.g. add view_heatmap-r448)")
@@ -1527,7 +1741,7 @@ def build_parser():
                    help="the run the decision compares against (October's trio is always the drift row)")
     r.add_argument("--shares", default=SHARES, help="prior_rules.py shares.json (the majority2 deployment prior)")
     r.add_argument("--decision-boot", type=int, default=1000,
-                   help="joint panorama resamples for the decision's intervals")
+                   help=f"joint panorama resamples for the decision's intervals (at least {MIN_DECISION_BOOT})")
     r.add_argument("--out", required=True)
     r.set_defaults(func=report)
     return p

@@ -214,6 +214,43 @@ def test_preflight_backfill_stage_writes_stage_files_and_checks_rawlabels(ready,
     assert any("has no <city>.csv for 1 manifest cities" in p for p in problems)
 
 
+def test_preflight_writes_the_stage_list_for_a_store_not_staged_yet(ready, tmp_path):
+    """O1: the restage hand-off. A store that does not exist yet (the new one) lacks every panorama: the list is
+    written, not skipped; the printed command never points DEST at a marked store (the stage job removes its
+    marker); stage-list makes one deduplicated list in a directory it creates."""
+    df = ready["df"]
+    new_store = tmp_path / "new-store"
+    problems, _ = pf(ready, arms=["two_scale"], backfill=True, pano_store=str(new_store))
+    listing = os.path.join(ready["data"], "Toy", "stage_files.txt")
+    n_panos = len(set(zip(df.city, df.pano_id)))
+    assert len(open(listing).read().splitlines()) == n_panos
+    assert any("no .pano-store marker" in p for p in problems)
+    text = "\n".join(problems)
+    assert f"DEST={new_store} sbatch" in text and "stage-list" in text
+    panos = sorted(df.pano_id.unique())
+    marked = make_store(tmp_path, df, set(panos[1:]))
+    problems, _ = pf(ready, arms=["two_scale"], backfill=True, pano_store=str(marked))
+    text = "\n".join(problems)
+    assert f"DEST={marked} " not in text and f"not {marked}" in text
+    out = tmp_path / "work" / "stage"            # does not exist yet
+    counts = ca.stage_list(ready["data"], ["Toy"], str(new_store), str(out), out=lambda s: None)
+    assert counts["Toy"] == counts["_all"] == n_panos
+    lines = (out / "stage_files.txt").read_text().splitlines()
+    assert len(lines) == len(set(lines)) == n_panos and all(ln.endswith(".jpg") for ln in lines)
+    assert ca.main(["stage-list", "--data", ready["data"], "--types", "Toy", "--pano-store", str(marked),
+                    "--out", str(out)]) == 0
+    assert len((out / "stage_files.txt").read_text().splitlines()) == 1
+
+
+def test_preflight_refuses_a_stage_seed_list_the_rule_does_not_read(ready):
+    rule = ca.DECISION_RULE
+    assert pf(ready, confirmatory_seeds=rule["seeds_confirmatory"] * 2, baseline_seeds=rule["seeds_baseline"])[0] == []
+    problems, _ = pf(ready, confirmatory_seeds=[42, 43, 44, 45, 46] * 2)
+    assert rule["seeds_confirmatory"] == [42, 43, 44, 45, 46] or any("seeds_confirmatory" in p for p in problems)
+    problems, _ = pf(ready, baseline_seeds=[42, 43, 44])
+    assert any("seeds_baseline" in p and "[42, 43, 44]" in p for p in problems)
+
+
 def test_preflight_skip_backfill_needs_a_covering_index(ready):
     problems, _ = pf(ready, arms=["view_heatmap"], skip_backfill=True)
     assert any("lacks" in p and "ok manifest rows" in p for p in problems)
@@ -238,7 +275,7 @@ def test_environment_pin_reads_environment_yml():
 
 # ---------------------------------------------------------------------------------------------------- check-run
 
-def finish_run(data, tag, seed, rows=None, drop=0):
+def finish_run(data, tag, seed, rows=None, drop=0, key=None):
     d = os.path.join(data, "Toy")
     split = pd.read_csv(os.path.join(d, "split.csv"), dtype=str, keep_default_na=False)
     ev = split[split.split.isin(ca.EVAL_SPLITS)] if rows is None else rows
@@ -249,7 +286,9 @@ def finish_run(data, tag, seed, rows=None, drop=0):
         open(os.path.join(d, n), "w").write("{}")
     rec = os.path.join(d, "runs", tag)
     os.makedirs(rec, exist_ok=True)
-    json.dump({"seed": seed, "split_sha256": sha(os.path.join(d, "split.csv"))}, open(os.path.join(rec, "run_key.json"), "w"))
+    settings = {k: v for k, v in (ca.expected_settings(ca.variant_of_tag(tag)) or {}).items() if v is not None}
+    json.dump({"seed": seed, "split_sha256": sha(os.path.join(d, "split.csv")), "epochs": 25, **settings, **(key or {})},
+              open(os.path.join(rec, "run_key.json"), "w"))
     json.dump({"seed": seed}, open(os.path.join(rec, "training_run.json"), "w"))
 
 
@@ -266,6 +305,23 @@ def test_check_run_is_the_smoke_criterion(ready):
     finish_run(data, "with-train", 42, rows=split)   # train rows scored too: extra rows
     assert any("extra" in x for x in ca.check_run(data, "Toy", "with-train"))
     assert ca.check_run(data, "Toy", "never-ran") == ["Toy/never-ran: no predictions_never-ran.csv"]
+
+
+def test_check_run_verifies_split_hash_arm_resolution_and_epochs(ready):
+    data = ready["data"]
+    finish_run(data, "view_heatmap-r448", 42)
+    assert ca.check_run(data, "Toy", "view_heatmap-r448", seed=42, epochs=25) == []
+    # the documented single-job form with RES=448 but TAG=view_heatmap: the 224 arm's tag on a 448 run
+    finish_run(data, "view_heatmap", 42, key={"context_view_res": 448})
+    assert any("context_view_res 448, view_heatmap needs 224" in p for p in ca.check_run(data, "Toy", "view_heatmap"))
+    finish_run(data, "baseline-rerun-s43", 43, key={"context_arm": "side_info", "context_view_res": 224})
+    assert any("context_arm side_info, baseline-rerun needs None" in p
+               for p in ca.check_run(data, "Toy", "baseline-rerun-s43", seed=43))
+    finish_run(data, "two_scale", 42, key={"epochs": 1})
+    assert ca.check_run(data, "Toy", "two_scale") == []          # the smoke stage: epochs not checked
+    assert any("epochs 1, expected 25" in p for p in ca.check_run(data, "Toy", "two_scale", epochs=25))
+    finish_run(data, "side_info", 42, key={"split_sha256": "0" * 64})
+    assert any("split hash differs" in p for p in ca.check_run(data, "Toy", "side_info"))
 
 
 def test_run_record_reads_the_flat_layout_too(ready):

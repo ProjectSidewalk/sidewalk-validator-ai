@@ -47,8 +47,9 @@ METRICS = {"test": {"auc": 0.9, "per_class": {"correct": {"f1-score": 0.8}, "inc
            "test_heldout": {"auc": 0.8}}
 
 
-def write_run(root, df, tag, seed, strength, record=True, record_seed=None, noise_seed=None):
-    """predictions_<tag>.csv / metrics_<tag>.json and, for this chain's runs, runs/<tag>/ with a matching key."""
+def write_run(root, df, tag, seed, strength, record=True, record_seed=None, noise_seed=None, key=None):
+    """predictions_<tag>.csv / metrics_<tag>.json and, for this chain's runs, runs/<tag>/ with a matching key (the
+    seed, split hash, epochs and the arm and view resolution the tag stands for; ``key`` overrides fields)."""
     base = root / "Toy"
     ev = df[df.split != "train"]
     rng = np.random.default_rng(1000 + (seed if noise_seed is None else noise_seed))
@@ -62,7 +63,10 @@ def write_run(root, df, tag, seed, strength, record=True, record_seed=None, nois
         rec = base / "runs" / tag
         rec.mkdir(parents=True, exist_ok=True)
         split_sha = ca.sha256_file(str(base / "split.csv"))
-        (rec / "run_key.json").write_text(json.dumps({"seed": record_seed or seed, "split_sha256": split_sha}))
+        settings = {k: v for k, v in (ca.expected_settings(ca.variant_of_tag(tag)) or {}).items() if v is not None}
+        run_key = {"seed": record_seed or seed, "split_sha256": split_sha, "epochs": ca.RECIPE_EPOCHS, **settings,
+                   **(key or {})}
+        (rec / "run_key.json").write_text(json.dumps(run_key))
         (rec / "training_run.json").write_text(json.dumps({"seed": record_seed or seed}))
 
 
@@ -82,12 +86,12 @@ def pilot_state(root, df, base_strength=0.30):
 
 
 def decide(root, df, arms=("two_scale", "view_heatmap", "side_info", "side_info_nohq"), subset=False, shares=None,
-           n_boot=60):
+           n_boot=60, min_boot=50):
     shares = json.load(open(shares or root / "shares.json"))
     priors = json.load(open(root / "deployment_priors.json"))
     split = pd.read_csv(root / "Toy" / "split.csv", dtype=str, keep_default_na=False)
     return ca.decide_type(str(root), "Toy", split, list(arms), set(PUBLIC), shares, priors["Toy"], subset,
-                          "baseline-rerun", n_boot, 0)
+                          "baseline-rerun", n_boot, 0, min_boot=min_boot)
 
 
 def row(d, arm):
@@ -181,6 +185,11 @@ def test_seed_mean_delta_includes_seed_variance():
     wide = ca.seed_mean_delta([0.86, 0.90, 0.94], [0.84, 0.86, 0.88, 0.90, 0.92], var_boot=1e-5)
     assert narrow["delta"] == pytest.approx(wide["delta"]) == pytest.approx(0.02)
     assert (wide["hi"] - wide["lo"]) > 5 * (narrow["hi"] - narrow["lo"] if narrow["lo"] is not None else 0)
+    # se^2 = s_arm^2/n_arm + s_base^2/n_base + var_boot, exactly (the bootstrap term is in it)
+    a, b, vboot = [0.86, 0.90, 0.94], [0.84, 0.86, 0.88, 0.90, 0.92], 4e-4
+    r = ca.seed_mean_delta(a, b, var_boot=vboot)
+    assert r["se"] ** 2 == pytest.approx(np.var(a, ddof=1) / 3 + np.var(b, ddof=1) / 5 + vboot)
+    assert r["se"] > ca.seed_mean_delta(a, b, var_boot=0.0)["se"]
     single = ca.seed_mean_delta([0.95], [0.88, 0.89, 0.90], 1e-5)
     assert single["single_arm_seed"] and single["nu"] == pytest.approx(2.0)
     assert ca.seed_mean_delta([], [0.9])["delta"] is None
@@ -231,6 +240,11 @@ def test_regression(pilot):
     ("no_record", "run record missing"),
     ("no_gate", "gate block missing"),
     ("subset", "subset shadow"),
+    ("split_hash", "record split hash differs"),
+    ("res448_as_224", "record context_view_res 448, two_scale needs 224"),
+    ("wrong_arm", "record context_arm view_heatmap, two_scale needs two_scale"),
+    ("one_epoch", "record epochs 1, the recipe's is 25"),
+    ("baseline_with_arm", "record context_arm side_info, baseline-rerun needs None"),
 ])
 def test_incomplete(pilot, break_it, reason):
     root, df = pilot
@@ -251,6 +265,16 @@ def test_incomplete(pilot, break_it, reason):
         shares.write_text(json.dumps({"types": {}}))
     elif break_it == "subset":
         subset = True
+    elif break_it == "split_hash":
+        write_run(root, df, "two_scale-s43", 43, 0.9, noise_seed=243, key={"split_sha256": "0" * 64})
+    elif break_it == "res448_as_224":
+        write_run(root, df, "two_scale-s43", 43, 0.9, noise_seed=243, key={"context_view_res": 448})
+    elif break_it == "wrong_arm":
+        write_run(root, df, "two_scale-s43", 43, 0.9, noise_seed=243, key={"context_arm": "view_heatmap"})
+    elif break_it == "one_epoch":
+        write_run(root, df, "two_scale-s43", 43, 0.9, noise_seed=243, key={"epochs": 1})
+    elif break_it == "baseline_with_arm":
+        write_run(root, df, "baseline-rerun-s45", 45, 0.30, key={"context_arm": "side_info", "context_view_res": 224})
     r = row(decide(root, df, shares=shares, subset=subset), "two_scale")
     assert r["verdict"] == "INCOMPLETE" and reason in r["reason"], r["reason"]
 
@@ -272,7 +296,7 @@ def test_a_regression_on_one_type_vetoes_only_that_type(tmp_path):
 def run_report(root, *types):
     out = root / "doc"
     assert ca.main(["report", "--data-dir", str(root), "--label-types", ",".join(types or ("Toy",)),
-                    "--public-cities", str(root / "public.txt"), "--n-boot", "20", "--decision-boot", "40",
+                    "--public-cities", str(root / "public.txt"), "--n-boot", "20", "--decision-boot", "200",
                     "--slice-min-n", "5", "--shares", str(root / "shares.json"), "--out", str(out)]) == 0
     return out
 
@@ -337,3 +361,172 @@ def test_power_table_from_octobers_trio(pilot):
     md = ca.power_markdown({"Toy": t})
     assert md.count("| Toy |") == 2 and "recommended arm seeds" in md
     assert "error" in ca.power_table(str(root), "Toy", "two_scale", n_boot=10)
+
+
+# ---------------------------------------------------------------------------------------------------- fix round 1
+
+def test_only_the_rules_seeds_enter_the_verdict(pilot):
+    """S1: seeds trained beyond the rule's lists (a partly finished A5=1 stage, a stray baseline seed) are listed as
+    not used and change nothing: D, its interval, criterion 3 and the per-deployment differences stay put."""
+    root, df = pilot
+    add_arm(root, df, "two_scale", 0.35)
+    keys = ("delta", "lo", "hi", "n_arm", "n_base", "n_above")
+
+    def snapshot():
+        r = row(decide(root, df), "two_scale")
+        return r, {k: r["heldout"][k] for k in keys}, {k: r["test"][k] for k in keys}, r["deployments"]
+
+    r0, h0, t0, dep0 = snapshot()
+    assert r0["seeds"] == ca.DECISION_RULE["seeds_confirmatory"] and r0["seeds_not_used"] == []
+    add_arm(root, df, "two_scale", 0.9, seeds=(45, 46))            # strong extra arm seeds
+    r1, h1, t1, dep1 = snapshot()
+    assert (h1, t1, dep1) == (h0, t0, dep0) and r1["verdict"] == r0["verdict"]
+    assert r1["seeds"] == [42, 43, 44] and r1["seeds_not_used"] == [45, 46]
+    write_run(root, df, "baseline-rerun-s47", 47, -0.2)             # a weak extra baseline seed
+    r2, h2, t2, dep2 = snapshot()
+    assert (h2, t2, dep2) == (h0, t0, dep0) and r2["baseline_seeds_not_used"] == [47]
+    assert r2["baseline_seeds"] == ca.DECISION_RULE["seeds_baseline"]
+    out = run_report(root)
+    d = json.load(open(out / "decision.json"))
+    assert d["rule"]["seeds_confirmatory"] == [42, 43, 44]
+    assert {r["arm"]: r for r in d["types"]["Toy"]["rows"]}["two_scale"]["seeds"] == [42, 43, 44]
+    md = (out / "decision.md").read_text()
+    assert "seeds on disk, not used by the rule" in md and "two_scale [45, 46]" in md and "baseline-rerun [47]" in md
+    assert d["types"]["Toy"]["drift"]["rerun_seeds"] == [42, 43, 44, 45, 46]
+
+
+def test_no_verdict_without_the_bootstrap_term(pilot):
+    """S3: an empty or thin joint bootstrap is INCOMPLETE, never an interval narrowed to the seed terms."""
+    root, df = pilot
+    add_arm(root, df, "two_scale", 0.9)
+    r = row(decide(root, df, n_boot=1, min_boot=1), "two_scale")         # boot_var_of_delta -> None
+    assert r["verdict"] == "INCOMPLETE" and r["heldout"]["lo"] is None and r["heldout"]["delta"] is not None
+    assert "no bootstrap variance" in r["reason"]
+    r = row(decide(root, df, n_boot=60, min_boot=200), "two_scale")
+    assert r["verdict"] == "INCOMPLETE" and "kept fewer than 200 resamples" in r["reason"]
+    with pytest.raises(SystemExit, match="at least 200"):
+        ca.main(["report", "--data-dir", str(root), "--label-types", "Toy", "--decision-boot", "40",
+                 "--public-cities", str(root / "public.txt"), "--out", str(root / "doc")])
+
+
+BASE_P = {"delta": 0.04, "lo": 0.01, "hi": 0.07, "n_arm": 3, "n_above": 3}
+BASE_T = {"delta": 0.0, "lo": -0.01, "hi": 0.01}
+BASE_DEP = [0.03, 0.05, -0.01]
+
+
+@pytest.mark.parametrize("name, primary, test, deps, verdict, failing", [
+    ("all pass", {}, {}, None, "WIN", set()),
+    ("D at the threshold", {"delta": 0.02}, {}, None, "WIN", set()),
+    ("D just under", {"delta": 0.0199}, {}, None, "NO GAIN", {1}),
+    ("lower bound at 0", {"lo": 0.0}, {}, None, "NO GAIN", {2}),
+    ("one arm seed below the baseline mean", {"n_above": 2}, {}, None, "NO GAIN", {3}),
+    ("positive in 1 of 3 deployments", {}, {}, [0.03, -0.01, -0.02], "NO GAIN", {4}),
+    ("positive in exactly 2 of 3 (zero is not positive)", {}, {}, [0.01, 0.02, 0.0], "WIN", set()),
+    ("two qualify: both must be positive", {}, {}, [0.03, -0.01], "NO GAIN", {4}),
+    ("two qualify, both positive", {}, {}, [0.03, 0.01], "WIN", set()),
+    ("no qualifying deployment", {}, {}, [], "NO GAIN", {4}),
+    ("test lower bound at -0.02", {}, {"lo": -0.02}, None, "NO GAIN", {5}),
+    ("test lower bound just above -0.02", {}, {"lo": -0.0199}, None, "WIN", set()),
+    ("held-out upper bound below 0", {"delta": -0.05, "lo": -0.08, "hi": -0.0001, "n_above": 0}, {}, None,
+     "REGRESSION", None),
+    ("held-out upper bound at 0", {"delta": -0.03, "lo": -0.06, "hi": 0.0, "n_above": 0}, {}, None, "NO GAIN", None),
+    ("WIN criteria hold and the test side regresses", {}, {"lo": -0.015, "hi": -0.0101}, None, "REGRESSION", None),
+    ("test upper bound at -0.01 is not a regression", {}, {"lo": -0.015, "hi": -0.01}, None, "WIN", set()),
+])
+def test_apply_rule_each_criterion_alone(name, primary, test, deps, verdict, failing):
+    """S6: one case per criterion that fails only it, the thresholds themselves, and the test-side REGRESSION
+    winning over a WIN."""
+    v, crit = ca.apply_rule({**BASE_P, **primary}, {**BASE_T, **test}, BASE_DEP if deps is None else deps)
+    assert v == verdict, (name, crit)
+    if failing is not None:
+        assert {i + 1 for i, c in enumerate(crit[:5]) if not c["pass"]} == failing, (name, crit)
+
+
+def test_criterion_3_follows_the_rule_flag():
+    off = {**ca.DECISION_RULE, "all_seeds_above_baseline_mean": False}
+    assert ca.apply_rule({**BASE_P, "n_above": 1}, BASE_T, BASE_DEP, off)[0] == "WIN"
+    assert ca.apply_rule({**BASE_P, "n_above": 1}, BASE_T, BASE_DEP)[0] == "NO GAIN"
+
+
+def test_bootstrap_resamples_whole_panoramas():
+    """Labels on one panorama move together: with five identical labels per panorama the bootstrap sd is about
+    sqrt(5) times that of the same labels on panoramas of their own. Resampling labels would make them equal."""
+    rng = np.random.default_rng(4)
+    rows = []
+    for city in ("x", "y"):
+        for p in range(60):
+            cls = "incorrect" if rng.random() < 0.4 else "correct"
+            score = (cls == "incorrect") + rng.normal(0, 0.9)
+            rows += [(city, f"{city}{p}", cls, score)] * 5
+    d = pd.DataFrame(rows, columns=["city", "pano_id", "true", "p_incorrect"])
+    d["label_uid"] = [f"{c}:{i}" for i, c in enumerate(d.city)]
+    d["split"] = "test_heldout"
+    flat = d.assign(pano_id=[f"own{i}" for i in range(len(d))])
+    sd = {k: float(ca.within_city_boot({"m": f}, "test_heldout", ["m"], 10, 400, 0)["boot"][:, 0].std())
+          for k, f in (("clustered", d), ("flat", flat))}
+    assert sd["clustered"] > 1.6 * sd["flat"], sd
+
+
+def test_gate_block_applies_each_prior_rule(pilot):
+    from analysis import prior_rules as pr
+    root, df = pilot
+    d = decide(root, df, arms=("side_info",))
+    shares = json.load(open(root / "shares.json"))
+    g = d["gates"]["baseline-rerun"]
+    for rule in ("majority2", "margin"):
+        assert g[rule]["prior"] == pr.rule_prior(shares["types"], "Toy", rule)
+    assert g["majority2"]["prior"] != g["margin"]["prior"]
+
+
+@pytest.mark.parametrize("n_arm", [1, 2, 3])
+def test_simulate_rule_matches_seed_mean_delta_draw_by_draw(n_arm):
+    """The simulation's interval (Welch t quantile and degrees of freedom, seed and bootstrap terms) is
+    seed_mean_delta's, draw for draw; n_arm = 2 is where the Welch df differs most from the pooled one."""
+    from scipy.stats import t as student_t  # noqa: F401  (seed_mean_delta's dependency)
+    eff, sd_seed, sd_boot, n_base, n_sim, seed = 0.03, 0.01, 0.006, 5, 300, 7
+    rule = ca.DECISION_RULE
+    got = ca.simulate_rule(eff, sd_seed, sd_boot, n_arm, n_base, rule, n_sim, seed)
+    rng = np.random.default_rng(seed)
+    b = rng.normal(0.0, sd_seed, (n_sim, n_base))
+    a = rng.normal(eff, sd_seed, (n_sim, n_arm)) + rng.normal(0.0, sd_boot, (n_sim, 1))
+    win = reg = 0
+    for i in range(n_sim):
+        r = ca.seed_mean_delta(list(a[i]), list(b[i]), sd_boot ** 2, rule["level"])
+        is_reg = r["hi"] < 0
+        reg += is_reg
+        win += (r["delta"] >= rule["min_delta"] and r["lo"] > 0 and r["n_above"] == r["n_arm"]) and not is_reg
+    assert got == {"win": win / n_sim, "regression": reg / n_sim}
+    assert 0 < win < n_sim
+
+
+def test_drift_flag_is_raised_and_printed_at_the_top(tmp_path):
+    df = make_dataset(tmp_path)
+    for s in (42, 43, 44):     # October's trio far stronger than the rerun
+        write_run(tmp_path, df, "baseline" if s == 42 else f"baseline-s{s}", s, 0.9, record=False, noise_seed=s + 50)
+    for s in (42, 43, 44, 45, 46):
+        write_run(tmp_path, df, tag_of("baseline-rerun", s), s, 0.30)
+    d = decide(tmp_path, df, arms=("two_scale",))
+    assert d["drift"]["flag"] and abs(d["drift"]["heldout"]["difference"]) > 2 * d["drift"]["heldout"]["october_sd"]
+    md = ca.decision_markdown({"Toy": d})
+    assert "**Drift flag: Toy.**" in md and md.index("Drift flag: Toy") < md.index("## Toy")
+    assert ca.drift_flag({"difference": 0.04, "october_sd": 0.02}) is False   # exactly two sds: not flagged
+    assert ca.drift_flag({"difference": -0.0401, "october_sd": 0.02}) is True
+    assert ca.drift_flag({"difference": None, "october_sd": 0.02}) is False
+
+
+def test_pilot_state_raises_no_drift_flag(pilot):
+    root, df = pilot
+    d = decide(root, df, arms=("side_info",))
+    assert d["drift"]["flag"] is False and "Drift flag" not in ca.decision_markdown({"Toy": d})
+
+
+def test_private_letters_match_between_decision_and_arms_tables(pilot):
+    """N6: the decision letters every held-out deployment, qualifying or not, as arms.md does."""
+    root, df = pilot
+    add_arm(root, df, "two_scale", 0.9)
+    out = run_report(root)
+    arms = json.load(open(out / "arms.json"))["Toy"]["heldout"]
+    letters_arms = sorted(h["deployment"] for h in arms)
+    d = json.load(open(out / "decision.json"))
+    letters_dec = sorted({k for r in d["types"]["Toy"]["rows"] for k in (r.get("deployments") or {})})
+    assert letters_dec == letters_arms
