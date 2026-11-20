@@ -119,9 +119,10 @@ if [ -z "$RUNS_SPEC" ] && [ "$STAGE" != smoke ]; then
   for l in "${RUN_LINES[@]}"; do
     read -r variant arm res seed tag <<< "$l"
     if [ "$res" = 224 ] && { [ "$variant" = two_scale ] || [ "$variant" = view_heatmap ]; }; then
-      C_SEEDS="${C_SEEDS:+$C_SEEDS,}$seed"
+      # each arm repeats the list; keep each seed once so the printed preflight command reads as the rule's list
+      [[ ",$C_SEEDS," == *",$seed,"* ]] || C_SEEDS="${C_SEEDS:+$C_SEEDS,}$seed"
     elif [ "$variant" = baseline-rerun ]; then
-      B_SEEDS="${B_SEEDS:+$B_SEEDS,}$seed"
+      [[ ",$B_SEEDS," == *",$seed,"* ]] || B_SEEDS="${B_SEEDS:+$B_SEEDS,}$seed"
     fi
   done
 fi

@@ -61,13 +61,15 @@ def test_train_step_pins_the_recipe_and_scores_each_kind_of_run():
 def test_run_record_is_copied_before_any_checkpoint_is_deleted():
     train = read("context_arms.slurm").split("  train)")[1]
     record = train.index('cp "$RUN/training_run.json" "$RUN/run_key.json" "$REC/"')
-    assert train.index("evaluate.py") < record < train.index('rm -rf "$RUN"/checkpoint-*')
-    assert record < train.index('rm -f "$BEST/optimizer.pt"')
+    delete = train.index('prune_checkpoints "$KEEP_CKPT" "$(basename "$BEST")"')
+    assert train.index("evaluate.py") < record < delete
     assert '"$BEST/trainer_state.json" "$REC/trainer_state.json"' in train and '"$REC/config.json"' in train
+    # every delete is in prune_checkpoints, which runs only after the record (and in the short-circuit)
+    assert train.count('rm -rf "$RUN"/checkpoint-*') == 1 and train.count('prune_checkpoints "$') == 2
     # the finished marker sits beside the record (not under RUNS) and goes in before any delete, so a preemption
     # between the delete and the KEEP copy, or a purged RUNS, never retrains a finished run
     marker = train.index('touch "$REC/.evaluated"')
-    assert record < marker < train.index('rm -rf "$RUN"/checkpoint-*') and 'touch "$RUN/.evaluated"' not in train
+    assert record < train.index("keep_ckpt=%s") < marker < delete and 'touch "$RUN/.evaluated"' not in train
     assert "node=" in train and "hostname -s" in train
     short = train.split("already evaluated")[1].split("exit 0")[0]
     assert "keep_copy" in short   # the KEEP copy is redone (idempotently) when a finished run is resubmitted
@@ -76,7 +78,9 @@ def test_run_record_is_copied_before_any_checkpoint_is_deleted():
 def test_train_holds_an_exclusive_lock_on_its_run_directory():
     train = read("context_arms.slurm").split("  train)")[1]
     assert 'exec 8>"$RUN/.train.lock"' in train and "flock -n 8" in train
-    assert train.index("flock -n 8") < train.index("already evaluated") < train.index("fine_tune_classifier.py")
+    assert 'exec 7>"$DATA/$LT/.train-$TAG.lock"' in train and "flock -n 7" in train
+    assert train.index("flock -n 7") < train.index("flock -n 8") < train.index("already evaluated") \
+        < train.index("fine_tune_classifier.py")
 
 
 def test_backfill_holds_an_exclusive_lock_and_verifies():
@@ -105,6 +109,136 @@ def test_train_refuses_unknown_arm_and_keep_ckpt(tmp_path):
     assert run_slurm(tmp_path, ARM="side_info_hq", TAG="x").returncode == 2
     r = run_slurm(tmp_path, TAG="baseline-rerun", KEEP_CKPT="some")
     assert r.returncode == 2 and "KEEP_CKPT" in r.stderr
+
+
+# ------------------------------------------------------------------------------------------- the job, stubbed
+# The train step run for real with stub commands on PATH: python (the trainer, the best-checkpoint lookup and
+# evaluate.py write what the real ones would), module, conda, nvidia-smi, and flock (fcntl.flock on the inherited
+# descriptor, which is what flock(1) does, so a lock the test holds is seen by the job).
+
+STUB_PY = r"""
+import json, os, sys
+args = sys.argv[1:]
+open(os.environ["STUB_LOG"], "a").write(" ".join(args) + "\n")
+def opt(name):
+    return args[args.index(name) + 1]
+if args[:1] == ["-c"]:
+    print(os.path.join(args[2], "checkpoint-20"))
+elif "fine_tune_classifier.py" in args:
+    out = opt("--output-dir")
+    for c in ("checkpoint-10", "checkpoint-20"):
+        os.makedirs(os.path.join(out, c), exist_ok=True)
+        for n in ("trainer_state.json", "config.json", "model.safetensors", "optimizer.pt"):
+            open(os.path.join(out, c, n), "w").write("{}")
+    for n in ("training_run.json", "run_key.json"):
+        json.dump({"seed": int(opt("--seed"))}, open(os.path.join(out, n), "w"))
+elif "evaluate.py" in args:
+    d = os.path.join(opt("--data-dir"), opt("--label_type"))
+    open(os.path.join(d, "report_" + opt("--tag") + ".txt"), "w").write("report\n")
+"""
+
+STUB_FLOCK = r"""
+import fcntl, sys
+try:
+    fcntl.flock(int(sys.argv[-1]), fcntl.LOCK_EX | fcntl.LOCK_NB)
+except OSError:
+    sys.exit(1)
+"""
+
+
+def stub_bin(tmp_path):
+    import sys
+    b = tmp_path / "stubbin"
+    b.mkdir(exist_ok=True)
+    for name, body in (("python", STUB_PY), ("flock", STUB_FLOCK)):
+        (b / name).write_text(f"#!{sys.executable}\n{body}")
+    for name in ("module", "conda"):
+        (b / name).write_text("#!/bin/bash\nexit 0\n")
+    (b / "nvidia-smi").write_text("#!/bin/bash\necho 'Stub GPU, 48 GiB'\n")
+    for f in b.iterdir():
+        f.chmod(f.stat().st_mode | stat.S_IEXEC)
+    return b
+
+
+def run_job(tmp_path, runs="runs", **env):
+    """The train step of context_arms.slurm with stub commands; DATA is tmp_path/data (Toy/ exists)."""
+    data = tmp_path / "data"
+    (data / "Toy").mkdir(parents=True, exist_ok=True)
+    e = {"PATH": f"{stub_bin(tmp_path)}:{os.environ['PATH']}", "HOME": str(tmp_path), "STEP": "train", "LT": "Toy",
+         "DATA": str(data), "RUNS": str(tmp_path / runs), "ARM": "none", "TAG": "baseline-rerun",
+         "STUB_LOG": str(tmp_path / "stub.log"), "USER": "tester", **env}
+    return subprocess.run(["bash", os.path.join(ROOT, "context_arms.slurm")], env=e, capture_output=True, text=True,
+                          cwd=str(tmp_path))
+
+
+def trained(tmp_path):
+    log = tmp_path / "stub.log"
+    return log.exists() and "fine_tune_classifier.py" in log.read_text()
+
+
+@needs_bash
+def test_job_runs_end_to_end_and_records_its_checkpoint_policy(tmp_path):
+    r = run_job(tmp_path, KEEP_CKPT="best", KEEP=str(tmp_path / "keep"))
+    assert r.returncode == 0, r.stderr
+    rec = tmp_path / "data" / "Toy" / "runs" / "baseline-rerun"
+    job = (rec / "job.txt").read_text()
+    assert "best=checkpoint-20\n" in job and "keep_ckpt=best\n" in job and (rec / ".evaluated").exists()
+    run = tmp_path / "runs" / "Toy" / "baseline-rerun"
+    assert sorted(p.name for p in run.glob("checkpoint-*")) == ["checkpoint-20"]
+    assert (run / "checkpoint-20" / "model.safetensors").exists() and not (run / "checkpoint-20" / "optimizer.pt").exists()
+    assert (tmp_path / "keep" / "Toy" / "runs" / "baseline-rerun" / "job.txt").exists()
+    assert not list(rec.glob("*.lock")) and not (tmp_path / "keep" / "Toy" / "runs" / "baseline-rerun" / ".train.lock").exists()
+
+
+@needs_bash
+@pytest.mark.parametrize("policy, left", [("0", []), ("best", ["checkpoint-20"]), ("1", ["checkpoint-10", "checkpoint-20"])])
+def test_requeue_after_the_marker_finishes_the_delete_with_the_recorded_policy(tmp_path, policy, left):
+    """A job preempted between `touch .evaluated` and the delete requeues into the short-circuit, which finishes the
+    delete with the KEEP_CKPT and best checkpoint the finished job recorded, not the resubmission's (default 0)."""
+    assert run_job(tmp_path, KEEP_CKPT="1").returncode == 0      # finish, keeping every checkpoint
+    rec = tmp_path / "data" / "Toy" / "runs" / "baseline-rerun"
+    job = rec / "job.txt"
+    job.write_text(job.read_text().replace("keep_ckpt=1", f"keep_ckpt={policy}"))   # as if preempted before the delete
+    (tmp_path / "stub.log").unlink()
+    r = run_job(tmp_path)                                         # the requeue: KEEP_CKPT unset (0)
+    assert r.returncode == 0 and "already evaluated" in r.stdout, r.stderr
+    assert not trained(tmp_path)
+    run = tmp_path / "runs" / "Toy" / "baseline-rerun"
+    assert sorted(p.name for p in run.glob("checkpoint-*")) == left
+    again = run_job(tmp_path)                                     # idempotent
+    assert again.returncode == 0 and sorted(p.name for p in run.glob("checkpoint-*")) == left
+
+
+@needs_bash
+def test_short_circuit_leaves_checkpoints_of_a_record_without_a_policy(tmp_path):
+    """The pilot's code (9dace0c) wrote no keep_ckpt= and deleted before its marker: nothing to finish."""
+    assert run_job(tmp_path, KEEP_CKPT="1").returncode == 0
+    job = tmp_path / "data" / "Toy" / "runs" / "baseline-rerun" / "job.txt"
+    job.write_text("".join(ln + "\n" for ln in job.read_text().splitlines() if not ln.startswith("keep_ckpt=")))
+    assert run_job(tmp_path).returncode == 0
+    assert len(list((tmp_path / "runs" / "Toy" / "baseline-rerun").glob("checkpoint-*"))) == 2
+
+
+@needs_bash
+def test_the_output_lock_stops_a_second_job_under_another_runs(tmp_path):
+    """Two jobs with the same type and tag but different RUNS write the same predictions and record: the lock beside
+    the outputs stops the second; the run-directory lock still stops one under the same RUNS and another DATA."""
+    import fcntl
+    data = tmp_path / "data" / "Toy"
+    data.mkdir(parents=True)
+    with open(data / ".train-baseline-rerun.lock", "w") as held:    # a first job, still training
+        fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        r = run_job(tmp_path, runs="other-runs")
+        assert r.returncode == 1 and ".train-baseline-rerun.lock" in r.stderr and not trained(tmp_path)
+        assert run_job(tmp_path, TAG="side_info", ARM="side_info").returncode == 0   # another tag is not blocked
+    (tmp_path / "stub.log").unlink()
+    run = tmp_path / "runs" / "Toy" / "baseline-rerun"
+    run.mkdir(parents=True)
+    with open(run / ".train.lock", "w") as held:
+        fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        r = run_job(tmp_path)
+        assert r.returncode == 1 and "/.train.lock" in r.stderr and not trained(tmp_path)
+    assert run_job(tmp_path).returncode == 0 and trained(tmp_path)   # both free again
 
 
 # ---------------------------------------------------------------------------------------------------- launcher
@@ -343,8 +477,9 @@ def test_every_stage_preset_trains_exactly_the_rules_seeds(tmp_path):
     args = record.read_text()
     assert "--confirmatory-seeds 42,43,44" in args and "--baseline-seeds 42,43,44,45,46" in args
     # A5=1 trains seeds the current rule does not read: the launcher passes them and the preflight refuses
-    launcher(tmp_path, STAGE="A", A5="1", PANO_STORE="/abs/store", preflight="1", env_python=ok)
-    assert "--confirmatory-seeds 42,43,44,45,46,42,43,44,45,46" in record.read_text()
+    r, _ = launcher(tmp_path, STAGE="A", A5="1", PANO_STORE="/abs/store", preflight="1", env_python=ok)
+    for text in (record.read_text(), r.stdout):   # each seed once, though both arms list them
+        assert re.search(r"--confirmatory-seeds 42,43,44,45,46(\s|$)", text), text
     # a RUNS_SPEC rerun of single jobs is not compared
     launcher(tmp_path, STAGE="A", RUNS_SPEC="two_scale:43", SKIP_BACKFILL="1", preflight="1", env_python=ok)
     assert "--confirmatory-seeds" not in record.read_text()

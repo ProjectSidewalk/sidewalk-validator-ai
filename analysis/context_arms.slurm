@@ -16,11 +16,14 @@
 #                  Restartable: ckpt may preempt and requeue, and fine_tune_classifier.py resumes from its last complete
 #                  checkpoint (run_key.json guards the split, the arm, the view resolution and the batch size). A job
 #                  that finished (marker <DATA>/<LT>/runs/$TAG/.evaluated, written right after the record copy and
-#                  before any delete; $RUNS/$LT/$TAG/.evaluated from code before 2026-11-20 is honoured too) exits at
-#                  once when requeued or resubmitted, after redoing the idempotent KEEP copy. Holds an exclusive flock
-#                  on $RUNS/$LT/$TAG/.train.lock for the whole step: a second job with the same LT and TAG (a
-#                  resubmitted stage after an sbatch timeout) exits at once instead of training into the same run
-#                  directory.
+#                  before any delete; $RUNS/$LT/$TAG/.evaluated from the pilot's code, 9dace0c, is honoured too) exits
+#                  at once when requeued or resubmitted, after finishing the checkpoint delete with the KEEP_CKPT and
+#                  best checkpoint that job recorded in job.txt (a preemption between the marker and the delete) and
+#                  redoing the KEEP copy; both are idempotent. Holds two exclusive flocks for the whole step,
+#                  <DATA>/<LT>/.train-$TAG.lock (the outputs) and $RUNS/$LT/$TAG/.train.lock (the checkpoints): a
+#                  second job with the same LT and TAG (a resubmitted stage after an sbatch timeout, or the same run
+#                  under another RUNS or another DATA) exits at once instead of writing the same outputs or training
+#                  into the same run directory.
 #                  A TIMEOUT is NOT requeued by Slurm: resubmit the same command and it resumes from the last checkpoint.
 #                  The --time below is a request: the ckpt-gpu QOS caps it (scontrol showed TimeLimit=09:05:00 on the
 #                  pilot's jobs, 2026-11-19), so a run longer than about 9 h (view_heatmap-r448 at about 3x the step
@@ -108,10 +111,28 @@ case "$STEP" in
     RUN="$RUNS/$LT/$TAG"
     REC="$DATA/$LT/runs/$TAG"
     mkdir -p "$RUN"
-    # One trainer per run directory: two would pass the run_key.json resume guard together, prune each other's
-    # checkpoints under save_total_limit and write the same predictions and record.
+    # One trainer per output and per run directory. The outputs (predictions_$TAG.csv, the record) are keyed on DATA,
+    # LT and TAG, the checkpoints on RUNS, LT and TAG, so a job takes both locks: two jobs with the same type and tag
+    # but different RUNS would otherwise both train and write the same outputs, and two with the same RUNS would pass
+    # the run_key.json resume guard together and prune each other's checkpoints. The output lock is a file beside the
+    # outputs (not inside runs/$TAG/, so a run still training has no record directory).
+    exec 7>"$DATA/$LT/.train-$TAG.lock"
+    flock -n 7 || { echo "another job holds $DATA/$LT/.train-$TAG.lock ($LT $TAG writes there); not starting a" \
+                         "second trainer" >&2; exit 1; }
     exec 8>"$RUN/.train.lock"
     flock -n 8 || { echo "another job holds $RUN/.train.lock ($LT $TAG); not starting a second trainer" >&2; exit 1; }
+    prune_checkpoints() {  # prune_checkpoints <KEEP_CKPT policy> <best checkpoint's basename>; idempotent
+      case "$1" in
+        0) rm -rf "$RUN"/checkpoint-*; echo "removed $RUN/checkpoint-*" ;;
+        best)
+          [ -n "$2" ] || { echo "WARNING: best checkpoint unknown; every checkpoint in $RUN kept" >&2; return 0; }
+          for d in "$RUN"/checkpoint-*; do [ ! -e "$d" ] || [ "$(basename "$d")" = "$2" ] || rm -rf "$d"; done
+          rm -f "$RUN/$2/optimizer.pt" "$RUN/$2/scheduler.pt" "$RUN/$2/rng_state.pth" "$RUN/$2/training_args.bin"
+          echo "kept the weights of $RUN/$2 only" ;;
+        1) echo "KEEP_CKPT=1: every checkpoint kept" ;;
+        *) echo "WARNING: unknown KEEP_CKPT '$1'; every checkpoint in $RUN kept" >&2 ;;
+      esac
+    }
     keep_copy() {  # the small artifacts to $KEEP/$LT/ (idempotent: a rerun overwrites the same files)
       [ -n "${KEEP:-}" ] || return 0
       if mkdir -p "$KEEP/$LT/runs" && cp -r "$REC" "$KEEP/$LT/runs/"; then
@@ -128,6 +149,14 @@ case "$STEP" in
     if { [ -f "$REC/.evaluated" ] || [ -f "$RUN/.evaluated" ]; } && [ -f "$DATA/$LT/report_$TAG.txt" ] \
         && [ -f "$REC/run_key.json" ]; then
       echo "$(date) $LT $TAG already evaluated ($DATA/$LT/report_$TAG.txt, record $REC); nothing to train"
+      # A job preempted between the marker and the delete requeues here: finish the delete with the policy and best
+      # checkpoint the finished job recorded in job.txt, never this submission's KEEP_CKPT (a resubmit with the
+      # default 0 must not remove weights a KEEP_CKPT=best run kept). A job.txt without keep_ckpt= is the pilot's
+      # code, which deleted before writing its marker: nothing to finish.
+      DONE_KEEP=$(sed -n 's/^keep_ckpt=//p' "$REC/job.txt" 2>/dev/null | head -n 1)
+      if [ -n "$DONE_KEEP" ]; then
+        prune_checkpoints "$DONE_KEEP" "$(sed -n 's/^best=//p' "$REC/job.txt" | head -n 1)"
+      fi
       keep_copy
       exit 0
     fi
@@ -154,18 +183,12 @@ case "$STEP" in
     cp "$RUN/training_run.json" "$RUN/run_key.json" "$REC/" && cp "$BEST/trainer_state.json" "$REC/trainer_state.json" \
         && cp "$BEST/config.json" "$REC/config.json" \
         || { echo "run record copy to $REC failed; checkpoints kept" >&2; exit 1; }
-    printf 'slurm_job_id=%s\nnode=%s\ngpu=%s\nstarted=%s\nfinished=%s\nbest=%s\n' "${SLURM_JOB_ID:-}" \
-        "$(hostname -s)" "$GPU" "$START" "$(date -Is)" "$(basename "$BEST")" > "$REC/job.txt"
-    # Finished: from here a preemption or a resubmit must not retrain, so the marker goes in before any delete.
+    printf 'slurm_job_id=%s\nnode=%s\ngpu=%s\nstarted=%s\nfinished=%s\nbest=%s\nkeep_ckpt=%s\n' "${SLURM_JOB_ID:-}" \
+        "$(hostname -s)" "$GPU" "$START" "$(date -Is)" "$(basename "$BEST")" "$KEEP_CKPT" > "$REC/job.txt"
+    # Finished: from here a preemption or a resubmit must not retrain, so the marker goes in before any delete (a job
+    # preempted in between finishes the delete in the short-circuit above, from job.txt).
     touch "$REC/.evaluated"
-    case "$KEEP_CKPT" in
-      0) rm -rf "$RUN"/checkpoint-*; echo "removed $RUN/checkpoint-*" ;;
-      best)
-        for d in "$RUN"/checkpoint-*; do [ "$(basename "$d")" = "$(basename "$BEST")" ] || rm -rf "$d"; done
-        rm -f "$BEST/optimizer.pt" "$BEST/scheduler.pt" "$BEST/rng_state.pth" "$BEST/training_args.bin"
-        echo "kept the weights of $BEST only" ;;
-      1) echo "KEEP_CKPT=1: every checkpoint kept" ;;
-    esac
+    prune_checkpoints "$KEEP_CKPT" "$(basename "$BEST")"
     keep_copy
     ;;
   *) echo "unknown STEP=$STEP (backfill|train)" >&2; exit 2 ;;
