@@ -143,8 +143,11 @@ def test_a_failed_copy_leaves_every_checkpoint(job):
     assert len(list(run.glob("checkpoint-*"))) == 2 and not (tmp / "keep" / "CurbRamp" / "runs" / "bb-dinov2-large" / "done").exists()
     text = read("backbone.slurm")
     body = text[text.index("run_one() {"):text.index("task_line() {")]
-    assert body.index('cp "$DATA/$LT/$f" "$K/"') < body.index('rm -rf "$RUN"/checkpoint-*')
-    assert body.index('cp "$BEST/$f" "$RUN/best/$f"') < body.index('rm -rf "$RUN"/checkpoint-*')
+    # The first rm only runs once best_copied exists (the requeue path); the main one follows the checked copies.
+    assert body.index('[ -f "$RUN/best_copied" ]') < body.index('rm -rf "$RUN"/checkpoint-*')
+    assert body.index('cp "$DATA/$LT/$f" "$K/"') < body.rindex('rm -rf "$RUN"/checkpoint-*')
+    assert body.index('cp "$BEST/$f" "$RUN/best/$f"') < body.index('touch "$RUN/best_copied"') \
+        < body.rindex('rm -rf "$RUN"/checkpoint-*')
 
 
 def test_random_init_only_for_smoke_rand_tags(job):
@@ -248,12 +251,12 @@ def test_an_unverified_conversion_skips_rampnet(launcher):
     assert r.returncode == 0 and "skipping rampnet-convnextv2-base" in r.stdout
 
 
-def test_the_job_cap_refuses_the_41st_element(launcher):
+def test_the_job_cap_refuses_the_56th_element(launcher):
     out = launcher["out"]
-    (out / "backbone_jobs.txt").write_text("t\t1\t11\tsmoke\tc\tf\ts\n")
+    (out / "backbone_jobs.txt").write_text("t\t1\t26\tsmoke\tc\tf\ts\n")
     r = launcher["run"]("pilot")
     assert r.returncode != 0 and "cap" in r.stderr and not launcher["log"].exists()
-    (out / "backbone_jobs.txt").write_text("t\t1\t10\tsmoke\tc\tf\ts\n")
+    (out / "backbone_jobs.txt").write_text("t\t1\t25\tsmoke\tc\tf\ts\n")
     assert launcher["run"]("pilot").returncode == 0
 
 
@@ -283,3 +286,55 @@ def test_smoke_is_one_two_hour_job_over_five_rows(launcher):
     assert sb.count("\n") == 1 and "--time=02:00:00" in sb and "--job-name=backbone-comparison-smoke" in sb
     assert "STEP=smoke" in sb and "EPOCHS=1" in sb and str(launcher["out"] / "smoke" / "keep") in sb
     assert (launcher["out"] / "smoke" / ".start").exists()
+
+
+def test_a_requeue_after_best_was_copied_finishes_the_run(job):
+    """PR #121 review S6: preempted between deleting checkpoint-* and touching slimmed, the requeued element must
+    finish from best/ instead of failing on the deleted best checkpoint."""
+    call, tmp = job
+    assert call("CurbRamp", "dinov2-large", "42", "bb-dinov2-large", "1e-5").returncode == 0
+    run, keep = tmp / "runs" / "CurbRamp" / "bb-dinov2-large", tmp / "keep" / "CurbRamp" / "runs" / "bb-dinov2-large"
+    os.remove(run / "slimmed")
+    os.remove(keep / "done")
+    (run / "checkpoint-10").mkdir()          # a half-finished rm -rf
+    r = call("CurbRamp", "dinov2-large", "42", "bb-dinov2-large", "1e-5")
+    assert r.returncode == 0, r.stderr
+    assert (keep / "done").exists() and (run / "slimmed").exists() and not list(run.glob("checkpoint-*"))
+    assert len(os.listdir(run / "best")) == 4
+
+
+def test_the_job_checks_its_environment_and_appends_its_log():
+    text = read("backbone.slurm")
+    assert "#SBATCH --open-mode=append" in text
+    body = text[text.index("setup_env() {"):text.index("run_one() {")]
+    assert '"transformers": "4.56.2"' in body and "exit 3" in body
+
+
+def test_dinov3_stage_submits_eighteen_rows_with_explicit_epochs_and_no_conda_state(launcher):
+    out = launcher["out"]
+    rows_ = {k: {"available": True} for k in FOUR + ["dinov3-vitl16", "dinov3-vitl16-256", "dinov3-vitb16"]}
+    (out / "backbone_manifest.json").write_text(json.dumps({"backbones": rows_}))
+    (out / "pip_freeze.txt").write_text("x==1\n")
+    r = launcher["run"]("dinov3", CONDA_PREFIX="/somewhere", EPOCHS="1")
+    assert r.returncode == 0, r.stderr
+    f = sorted(out.glob("tasks_dinov3_*.tsv"))[-1]
+    got = rows(f)
+    assert len(got) == 18 and {g[1] for g in got} == {"dinov3-vitl16", "dinov3-vitl16-256", "dinov3-vitb16"}
+    assert {g[3] for g in got} >= {"bb-dinov3-vitl16", "bb-dinov3-vitb16-s43", "bb-dinov3-vitl16-256-s44"}
+    log = launcher["log"].read_text()
+    assert "--array=1-18%8" in log and "EPOCHS=25" in log
+    assert (launcher["keep"] / "pip_freeze.txt").exists() and (launcher["keep"] / "backbone_manifest.json").exists()
+
+
+def test_dinov3_stage_refuses_other_arms_and_skips_done_runs(launcher):
+    out, keep = launcher["out"], launcher["keep"]
+    rows_ = {k: {"available": True} for k in FOUR + ["dinov3-vitl16", "dinov3-vitl16-256", "dinov3-vitb16"]}
+    (out / "backbone_manifest.json").write_text(json.dumps({"backbones": rows_}))
+    r = launcher["run"]("dinov3", ARMS="dinov2-large")
+    assert r.returncode != 0 and "DINOv3 arms only" in r.stderr
+    (keep / "CurbRamp" / "runs" / "bb-dinov3-vitl16").mkdir(parents=True)
+    (keep / "CurbRamp" / "runs" / "bb-dinov3-vitl16" / "done").write_text("")
+    r = launcher["run"]("dinov3", ARMS="dinov3-vitl16", SEEDS="42")
+    assert r.returncode == 0, r.stderr
+    got = rows(sorted(out.glob("tasks_dinov3_*.tsv"))[-1])
+    assert [g[3] for g in got] == ["bb-dinov3-vitl16"] and got[0][0] == "SurfaceProblem"

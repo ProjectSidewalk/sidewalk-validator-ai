@@ -178,7 +178,7 @@ def write_run(keep, lt, tag, split_sha, seed, key, lr, pred, random_init=False, 
     (d / f"metrics_{tag}.json").write_text("{}")
     (d / "run_key.json").write_text(json.dumps({"label_type": lt, "split_sha256": split_sha, "seed": seed}))
     (d / "training_run.json").write_text(json.dumps({
-        "seed": seed, "learning_rate": lr, "model_accepts_loss_kwargs": accepts,
+        "seed": seed, "epochs": 25, "learning_rate": lr, "model_accepts_loss_kwargs": accepts,
         "started_at": "2026-11-20T00:00:00Z", "finished_at": "2026-11-20T01:00:00Z", "resumed_from": None,
         "peak_gpu_memory_bytes": 20 * 2**30,
         "backbone": {"key": key, "random_init": random_init, "params": int(bc.bb.get(key).params_m * 1e6),
@@ -236,6 +236,10 @@ def test_consistency_flags_hash_seed_and_random_init(synthetic):
                                                    bc.parse_tag("bb-convnextv2-base-s43", "bb-"), s)[0]
     assert any("random_init" in w for w in bc.consistency(d / "bb-convnextv2-base-s44", "bb-convnextv2-base-s44",
                                                           bc.parse_tag("bb-convnextv2-base-s44", "bb-"), s))
+    assert bc.consistency(d / "bb-dinov2-reg-large-s43", "bb-dinov2-reg-large-s43",
+                          bc.parse_tag("bb-dinov2-reg-large-s43", "bb-"), s, epochs=25) == []
+    assert bc.consistency(d / "bb-dinov2-reg-large-s43", "bb-dinov2-reg-large-s43",
+                          bc.parse_tag("bb-dinov2-reg-large-s43", "bb-"), s, epochs=1) == ["epochs 25 != 1"]
     os.remove(d / "bb-dinov2-reg-large" / "run_key.json")
     assert bc.consistency(d / "bb-dinov2-reg-large", "bb-dinov2-reg-large", bc.parse_tag("bb-dinov2-reg-large", "bb-"),
                           s) == ["missing run_key.json"]

@@ -389,10 +389,11 @@ class Tracker:
         return path
 
 
-def consistency(run_dir, tag, parsed, split_sha):
+def consistency(run_dir, tag, parsed, split_sha, epochs=None):
     """Reasons a run cannot be used (empty when it can): files missing, ``run_key.json``'s split hash differs from
-    the pinned one, the recorded seed / backbone / learning rate differ from the tag, random weights, or a loss not
-    divided by the accumulation steps."""
+    the pinned one, the recorded seed / backbone / learning rate differ from the tag, the recorded epochs differ from
+    ``epochs`` (when given; a shell with ``EPOCHS=1`` exported once submitted one-epoch runs under main tags), random
+    weights, or a loss not divided by the accumulation steps."""
     missing = [n.format(tag=tag) for n in KEEP_FILES if not os.path.isfile(os.path.join(run_dir, n.format(tag=tag)))]
     if missing:
         return [f"missing {', '.join(missing)}"]
@@ -408,6 +409,8 @@ def consistency(run_dir, tag, parsed, split_sha):
     lr = run.get("learning_rate")
     if lr is None or not math.isclose(lr, parsed["lr"]):
         why.append(f"learning_rate {lr} != tag's {parsed['lr']}")
+    if epochs is not None and run.get("epochs") != epochs:
+        why.append(f"epochs {run.get('epochs')} != {epochs}")
     if backbone.get("random_init") is not False:
         why.append("random_init (smoke test weights)")
     if run.get("model_accepts_loss_kwargs") is not False:
@@ -438,7 +441,7 @@ def join_split(pred, split):
     return m
 
 
-def load_runs(runs_dir, label_type, prefix, split, split_sha, tracker):
+def load_runs(runs_dir, label_type, prefix, split, split_sha, tracker, epochs=None):
     """Every run of ``label_type`` under ``<runs_dir>/<LT>/runs/`` whose tag starts with ``prefix``: a dict per tag
     with ``parsed``, ``status`` (``complete`` / ``INCOMPLETE``), ``why``, and for complete runs the joined
     predictions and run records."""
@@ -450,7 +453,7 @@ def load_runs(runs_dir, label_type, prefix, split, split_sha, tracker):
         if parsed is None:
             continue
         d = os.path.join(base, tag)
-        why = consistency(d, tag, parsed, split_sha)
+        why = consistency(d, tag, parsed, split_sha, epochs)
         rec = {"tag": tag, "parsed": parsed, "dir": d, "why": why}
         if not why:
             pred = pd.read_csv(tracker.track(os.path.join(d, f"predictions_{tag}.csv")),
@@ -974,7 +977,7 @@ def cmd_report(args):
     rows, gates, heldout, slice_rows, env, incomplete, round3 = [], [], [], [], [], [], []
     for t in types:
         split = load_split(args.split_dir, t, inputs, tracker)
-        runs = load_runs(args.runs_dir, t, args.tag_prefix, split, inputs["split_sha256"][t], tracker)
+        runs = load_runs(args.runs_dir, t, args.tag_prefix, split, inputs["split_sha256"][t], tracker, args.epochs)
         incomplete += [[t, f"`{tag}`", "; ".join(r["why"])] for tag, r in runs.items() if r["status"] != "complete"]
         ref = round3_reference(args.split_dir, t, split, tracker)
         round3 += [{"type": t, "seed": s, **run_metrics(p)} for s, p in sorted(ref.items())]
@@ -1053,6 +1056,7 @@ def build_parser():
     r.add_argument("--tag-prefix", default="bb-")
     r.add_argument("--slice-seeds", default="42")
     r.add_argument("--n-boot", type=int, default=1000)
+    r.add_argument("--epochs", type=int, default=25, help="every counted run must have trained this many epochs")
     r.add_argument("--seed", type=int, default=0)
     r.add_argument("--manifest", default=None, help="backbone_manifest.json (hashed into provenance)")
     r.add_argument("--pip-freeze", default=None, help="pip_freeze.txt (hashed into provenance)")

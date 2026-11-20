@@ -46,9 +46,11 @@ worth knowing too: round 4 then keeps the current backbone with a recorded reaso
 
 (`python backbones.py list` prints this table; the full 40-character revisions are in `backbones.py`.)
 Parameters are counted from the built classifier. The DINOv3 rows' weights are gated on HF; a token with access is
-required, and klone has none, so **no DINOv3 arm is in the pilot**. Their code path is exercised at full ViT-L size
-with random weights in the smoke job (`SVA_BACKBONE_RANDOM_INIT=1`), which a run's consistency check then refuses to
-count as a result. `rampnet-crop-convnextv2-base` is a registry row only (decision J4 below).
+required to download them. None was on klone when the pilot was submitted, so **no DINOv3 arm is in the pilot**;
+their code path was exercised at full ViT-L size with random weights in the smoke job (`SVA_BACKBONE_RANDOM_INIT=1`),
+which a run's consistency check then refuses to count as a result. On 2026-11-19 the weights of `dinov3-vitl16`
+(also used by `dinov3-vitl16-256`) and `dinov3-vitb16` were prefetched with a token into the HF cache, and the
+`dinov3` stage (below) runs the 18 DINOv3 runs. Jobs read the cache offline, so they need no token. `rampnet-crop-convnextv2-base` is a registry row only (decision J4 below).
 
 - **DINOv3** has no classification class in transformers 4.56, so `backbones.py` defines
   `SidewalkDinov3ForImageClassification` (`model_type` `sidewalk_dinov3_classifier`): `DINOv3ViTModel` under the
@@ -58,8 +60,11 @@ count as a result. `rampnet-crop-convnextv2-base` is a registry row only (decisi
 - **RampNet** stores a timm ConvNeXt V2-B as `model.feature_extractor` (stem and four stages, 376 tensors) plus a
   4-tensor keypoint head. `backbones.convert_state_dict` maps the 376 one to one onto
   `ConvNextV2ForImageClassification`'s embeddings and encoder (GRN tensors reshaped from `(4C,)` to `(1, 1, 1, 4C)`),
-  fails on any unmatched name or shape, and drops the head. The final layernorm and the classifier come from the
-  `convnextv2-base` template, so RampNet and its control differ only in stem and stage weights. `convert-rampnet
+  fails on any unmatched name or shape, and drops the head. The final layernorm comes from the `convnextv2-base`
+  template. The converted directory also holds a two-class classifier (the template's), but it is a placeholder:
+  `build_classifier` draws a new head for a converted row under the run's seed, as every other arm's head is drawn,
+  so RampNet and its control differ only in stem and stage weights. (Until PR #121's fix round the saved head was
+  loaded as is, so the pilot's RampNet runs share one head across seeds; see "Pilot deviations" below.) `convert-rampnet
   --verify-with-timm` checks the converted features against timm's on a seeded batch (max abs difference recorded
   in `conversion.json`).
 
@@ -131,17 +136,23 @@ git clone --branch backbone-comparison https://github.com/ProjectSidewalk/sidewa
 cd /gscratch/scrubbed/$USER/sva-backbone-comparison
 analysis/backbone_env.sh                      # overlay venv; prints the three versions and where they import from
 analysis/backbone_prefetch.sh                 # the four non-gated rows; with HF_TOKEN set, the DINOv3 rows too
+#   with a token: HF_TOKEN="$(cat ~/.cache/huggingface/token)" \
+#                 GATED_KEYS="dinov3-vitl16,dinov3-vitl16-256,dinov3-vitb16" analysis/backbone_prefetch.sh
 analysis/backbone_submit.sh view              # $OUT/data for CurbRamp and SurfaceProblem
 analysis/backbone_submit.sh view smoke        # $OUT/smoke/data, seeded subsample (320/160/160/160, balanced)
 analysis/backbone_submit.sh smoke             # one job, 2 h: convert RampNet, 5 one-epoch runs, guards, tests, report
 MAX_PARALLEL=8 analysis/backbone_submit.sh pilot   # one array, 30 elements, at most 8 at a time
+analysis/backbone_submit.sh dinov3            # 18 elements: 3 DINOv3 arms x 2 pilot types x 3 seeds
 ```
 
 Every submit first writes 8 MiB to `$OUT` (a `touch` proves nothing on scrubbed), checks free space on scrubbed and
 `/gscratch/makelab`, skips an arm the manifest lists as unavailable, refuses a `smoke-` tag outside the smoke job,
-and refuses to go past 40 GPU jobs for the stream (array elements counted, read from `$OUT/backbone_jobs.txt`). It
-appends the job id, element count, stage, commit and the task file's sha256 to that ledger and copies the ledger and
-the task file to `$KEEP`. `seeds`, `rest`, `resubmit` and `onnx` exist for later stages and are not part of the
+skips a row whose `$KEEP/<LT>/runs/<TAG>/done` exists, and refuses to go past 55 GPU jobs for the stream (array
+elements counted, read from `$OUT/backbone_jobs.txt`; Jon's cap was 40 and he raised it to 55 on 2026-11-19 for the
+DINOv3 runs). It submits with `EPOCHS=25` set explicitly and without the caller's conda state, and the job refuses
+to train unless torch 2.7.1, transformers 4.56.2 and pandas 2.3.1 import. It appends the job id, element count,
+stage, commit and the task file's sha256 to that ledger and copies the ledger, the task file,
+`backbone_manifest.json`, `pip_freeze.txt`, `constraints.txt` and `cities.json` to `$KEEP`. `seeds`, `rest`, `resubmit` and `onnx` exist for later stages and are not part of the
 pilot.
 
 Each array element runs `run_one LT ARM SEED TAG LR` in `analysis/backbone.slurm` (`ckpt-all`, `--requeue`, any of
@@ -176,8 +187,13 @@ Written before any run (plan v2, signed off 2026-11-19); `analysis/backbone_comp
 **Pilot:** CurbRamp and SurfaceProblem × seeds 42, 43, 44 × four arms: `dinov2-large` (in-env baseline),
 `dinov2-reg-large`, `convnextv2-base` (control), `rampnet-convnextv2-base`. That is 24 runs. Every arm gets all
 three seeds whatever its seed-42 number is: there is no screening stage, so no draw is used both to select an arm
-and to judge it. Plus six learning-rate rows (below). The DINOv3 arms join with the same three seeds once a token
-exists (+18 runs for `dinov3-vitl16`, `-256` and `vitb16`).
+and to judge it. Plus six learning-rate rows (below). The DINOv3 arms join with the same three seeds through the
+`dinov3` stage (+18 runs for `dinov3-vitl16`, `-256` and `vitb16`), compared with the pilot's `dinov2-large` runs.
+
+**Pilot deviations.** The pilot (job 43406096, commit b8944e8) ran before the fix round, so (a) its 8 RampNet rows
+start every seed from one shared head (review B1; fixed in `build_classifier`, rerun is decision J16), and (b) a
+preemption between deleting `checkpoint-*` and the `slimmed` marker would fail a finished element (review S6; fixed,
+and any element it hit is rerun with `resubmit`).
 
 **Endpoints.** Primary: paired Δ held-out AUC against the same-seed in-env baseline on the same rows, read
 together with the paired **within-city** Δ held-out AUC. Guards: Δ test AUC, Δ within-city test AUC, the gate
@@ -279,8 +295,8 @@ clone:
 MAX_PARALLEL=8 analysis/backbone_submit.sh pilot    # sbatch analysis/backbone.slurm with STEP=train
 ```
 
-GPU jobs used by this stream: 31 of 40 (smoke 1, pilot 30); the other 9 are for resubmitting failed elements
-(`backbone_submit.sh resubmit`). Records land in `$KEEP/<LT>/runs/<TAG>/`; the ledger is `$KEEP/backbone_jobs.txt`.
+GPU jobs used by this stream: 31 of 40 at the pilot (smoke 1, pilot 30); the cap is now 55, and the `dinov3` stage
+takes 18 more (49 of 55), leaving 6 for resubmitting failed elements (`backbone_submit.sh resubmit`). Records land in `$KEEP/<LT>/runs/<TAG>/`; the ledger is `$KEEP/backbone_jobs.txt`.
 
 ## Results
 
@@ -371,8 +387,8 @@ hunk and should merge first; this branch then rebases.
 Listed with the default this branch uses; none blocks the pilot. Numbered as in the PR.
 
 - **J1. Environment.** Default: the overlay venv above, baseline retrained inside it. Alternative: bump the one env.
-- **J2. HF access for DINOv3.** A token with access on klone; then `prefetch` and the DINOv3 arms (18 runs, which
-  needs the 40-job cap raised).
+- **J2. HF access for DINOv3.** Done 2026-11-19: Jon prefetched the weights with his token and raised the cap to 55;
+  the `dinov3` stage was submitted the same night.
 - **J3. Preprocessing.** Default: the baseline's 256/224 slow processor for every arm.
 - **J4. RampNet weights.** Default: stage two only. The crop-model row trained directly on labels of deployments in
   round 3's `test` split, so only its held-out numbers would be readable.
@@ -386,3 +402,6 @@ Listed with the default this branch uses; none blocks the pilot. Numbered as in 
 - **J12. DINOv3 positional augmentation.** Default: as released. Alternative: off.
 - **J13. More families.** Not built. SigLIP 2 needs its own normalisation and mean pooling, so it breaks the
   fixed-preprocessing design and would be a second PR.
+- **J16. The pilot's RampNet rows (shared head).** Default: rerun the 8 rows after the pilot finishes, with
+  `resubmit` from the fixed commit under new tags or after moving the old records aside; that needs about 8 more GPU
+  jobs than the 55 cap leaves. Alternative: keep them and report the deviation beside every RampNet number.

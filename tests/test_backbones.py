@@ -472,3 +472,27 @@ def test_onnx_export_of_each_family(key, tmp_path):
     sess = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
     got = sess.run(None, {sess.get_inputs()[0].name: x.numpy()})[0]
     assert abs(got - ref).max() < 1e-4
+
+
+def test_a_converted_row_draws_a_new_head_per_seed(tmp_path):
+    """PR #121 review B1: convert-rampnet saves its template with a two-class head; build_classifier must not reuse
+    it, or every seed of the RampNet arm starts from one head."""
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    from transformers import set_seed
+    key = "rampnet-convnextv2-base"
+    arch, _ = TINY["convnextv2-base"]
+    torch.manual_seed(123)
+    template = bb.build_classifier("convnextv2-base", ID2LABEL, LABEL2ID, random_init=True, arch=arch)
+    out = tmp_path / key
+    template.save_pretrained(out)
+    (out / bb.CONVERSION_FILE).write_text("{}")
+    saved = template.classifier.weight.detach().clone()
+
+    def head(seed):
+        set_seed(seed)
+        return bb.build_classifier(key, ID2LABEL, LABEL2ID, backbone_dir=str(tmp_path)).classifier.weight.detach()
+    h42, h43, h42b = head(42), head(43), head(42)
+    assert not torch.equal(h42, h43)
+    assert torch.equal(h42, h42b)
+    assert not torch.equal(h42, saved)

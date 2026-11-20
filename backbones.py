@@ -341,6 +341,10 @@ def build_classifier(key, id2label, label2id, backbone_dir=None, pos_embed_aug="
         if b.family != "dinov3_vit":
             kwargs["ignore_mismatched_sizes"] = True   # the hub head (ImageNet classes, or none) is replaced
         model = model_cls.from_pretrained(src, **kwargs, **head, **pos)
+        if b.converted:
+            # convert-rampnet saves its template with a two-class head, which from_pretrained would load unchanged,
+            # so every seed would share it. Draw a new head here, under the caller's seed, as every other arm does.
+            model._init_weights(model.classifier)
     model.accepts_loss_kwargs = False
     model._sva_random_init = bool(random_init)
     return model
@@ -573,7 +577,8 @@ def convert_rampnet(out, key="rampnet-convnextv2-base", verify_with_timm=False, 
            "weights_sha256": file_sha256(weights), "template": tb.source, "template_revision": tb.revision,
            "tensor_counts": counts,
            "note": "stem and stages from RampNet; the final convnextv2.layernorm keeps the template's ImageNet values "
-                   "(as the convnextv2-base control has them); the classifier is new",
+                   "(as the convnextv2-base control has them); the saved classifier is a placeholder: build_classifier "
+                   "draws a new one under each run's seed",
            "versions": {m: getattr(__import__(m), "__version__", None) for m in ("torch", "transformers")},
            **git_state(), "verified_against_timm": False, "timm_max_abs_diff": None}
     if verify_with_timm:
@@ -744,7 +749,7 @@ def main(argv=None):
 
 __all__ = ["Backbone", "DEFAULT", "REGISTRY", "ELIGIBLE", "get", "preprocess_spec", "build_image_processor",
            "resolve_source", "build_classifier", "register_auto", "backbone_settings", "rampnet_key_map",
-           "plan_conversion", "convert_rampnet", "prefetch", "parse_hyakstorage", "dataclasses"]
+           "plan_conversion", "convert_rampnet", "prefetch", "parse_hyakstorage"]
 
 if __name__ == "__main__":
     sys.exit(main())

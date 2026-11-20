@@ -44,6 +44,7 @@
 #SBATCH --ntasks=1
 #SBATCH --time=16:00:00
 #SBATCH --output=logs/%x-%A_%a.out
+#SBATCH --open-mode=append
 set -uo pipefail
 PY="${PY:-python}"
 
@@ -56,7 +57,16 @@ setup_env() {
   # shellcheck disable=SC1091
   source "$VENV/bin/activate"
   export HF_HOME="${HF_HOME:-/gscratch/makelab/$USER/hf_cache}" HF_HUB_OFFLINE=1 SVA_BACKBONE_DIR="$OUT/backbones"
-  "$PY" -c "import torch, transformers, pandas; print('torch', torch.__version__, 'transformers', transformers.__version__, 'pandas', pandas.__version__)"
+  # Refuse to train in the wrong environment (e.g. a conda env inherited from the submitting shell): the study's
+  # versions are pinned in requirements-backbone.txt and the round-3 base env.
+  "$PY" - <<'PYCHECK' || { echo "the study environment did not resolve (see above); not training" >&2; exit 3; }
+import sys, torch, transformers, pandas
+v = {"torch": torch.__version__.split("+")[0], "transformers": transformers.__version__, "pandas": pandas.__version__}
+print(" ".join(f"{k} {x}" for k, x in v.items()), "python", sys.executable)
+want = {"torch": "2.7.1", "transformers": "4.56.2", "pandas": "2.3.1"}
+bad = {k: v[k] for k in want if v[k] != want[k]}
+sys.exit(f"unexpected versions {bad}, want {want}" if bad else 0)
+PYCHECK
   echo "commit $(git rev-parse HEAD 2>/dev/null)"
 }
 
@@ -99,6 +109,12 @@ run_one() {
   for f in training_run.json run_key.json gpu.txt; do
     if [ -f "$RUN/$f" ]; then cp "$RUN/$f" "$K/" || return 1; fi
   done
+  if [ ! -f "$RUN/slimmed" ] && [ -f "$RUN/best_copied" ]; then
+    # Preempted after best/ was copied and checked but before the marker below: finish the slimming only. (Before
+    # this, a requeue here found best_checkpoint.txt naming a deleted directory and failed the finished run.)
+    rm -rf "$RUN"/checkpoint-*
+    touch "$RUN/slimmed"
+  fi
   if [ ! -f "$RUN/slimmed" ]; then
     mkdir -p "$RUN/best"
     for f in model.safetensors config.json preprocessor_config.json trainer_state.json; do
@@ -107,6 +123,7 @@ run_one() {
       [ "$(wc -c < "$BEST/$f")" = "$(wc -c < "$RUN/best/$f")" ] || { echo "copy of $f differs in size" >&2; return 1; }
     done
     cp "$RUN/best/trainer_state.json" "$K/trainer_state.json" || return 1
+    touch "$RUN/best_copied"
     rm -rf "$RUN"/checkpoint-*
     touch "$RUN/slimmed"
     echo "kept $RUN/best/; removed $RUN/checkpoint-*"
@@ -171,7 +188,7 @@ main() {
           && echo "SMOKE PASS pytest" || { echo "SMOKE FAIL pytest"; fails=$((fails + 1)); }
       "$PY" -u analysis/backbone_comparison.py report --split-dir "$DATA" --runs-dir "$KEEP" \
           --inputs "$OUT/smoke/backbone_inputs_smoke.json" --shares docs/deployment-prior-2026-11/shares.json \
-          --public-cities "$OUT/cities.json" --label-types CurbRamp --tag-prefix smoke- --n-boot 100 \
+          --public-cities "$OUT/cities.json" --label-types CurbRamp --tag-prefix smoke- --n-boot 100 --epochs "$EPOCHS" \
           --manifest "$OUT/backbone_manifest.json" --pip-freeze "$OUT/pip_freeze.txt" --out "$OUT/smoke/report" \
           && echo "SMOKE PASS report" || { echo "SMOKE FAIL report"; fails=$((fails + 1)); }
       echo "written under the round-3 directory since the smoke job was submitted (expected: nothing of ours):"

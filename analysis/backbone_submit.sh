@@ -7,6 +7,7 @@
 #   analysis/backbone_submit.sh view smoke     # $OUT/smoke/data: a seeded class-balanced CurbRamp subsample
 #   analysis/backbone_submit.sh smoke          # ONE job: convert RampNet, 5 one-epoch runs, guards, torch tests, report
 #   MAX_PARALLEL=8 analysis/backbone_submit.sh pilot   # one array, 30 elements (24 main + 6 learning-rate rows)
+#   analysis/backbone_submit.sh dinov3         # the 18 DINOv3 runs (3 arms x 2 pilot types x 3 seeds), after prefetch
 #   ARMS=<key> TYPES="NoCurbRamp Obstacle Crosswalk" analysis/backbone_submit.sh rest   # later; Jon's call
 #   ARMS=<key> TYPES=<LT> SEEDS="43 44" analysis/backbone_submit.sh seeds               # later; Jon's call
 #   LT=<LT> TAG=<tag> analysis/backbone_submit.sh onnx                                   # later; Jon's call
@@ -36,8 +37,11 @@ PY="${PY:-$VENV/bin/python}"
 MAX_PARALLEL="${MAX_PARALLEL:-8}"
 SBATCH="${SBATCH:-sbatch}"
 CITIES_URL="${CITIES_URL:-https://sidewalk-columbus.cs.washington.edu/v3/api/cities}"
-# Jon's cap for this stream (2026-11-19): at most 40 GPU jobs in all, array elements counted. Raise it only on his word.
-JOB_CAP=40
+# Jon's cap for this stream: at most 40 GPU jobs in all, array elements counted (2026-11-19), raised to 55 the same
+# night for the 18 DINOv3 runs plus resubmits. Raise it only on his word.
+JOB_CAP=55
+EPOCHS_MAIN=25
+DINOV3_ARMS="dinov3-vitl16 dinov3-vitl16-256 dinov3-vitb16"
 LEDGER="$OUT/backbone_jobs.txt"
 PILOT_TYPES="CurbRamp SurfaceProblem"
 PILOT_ARMS="dinov2-large dinov2-reg-large convnextv2-base rampnet-convnextv2-base"
@@ -103,17 +107,26 @@ ledger() {   # ledger JOBID N STAGE TASKFILE
   mkdir -p "$KEEP"
   cp "$LEDGER" "$KEEP/"
   [ "$4" = - ] || cp "$4" "$KEEP/"
+  # Provenance the report needs, kept past scrubbed's purge (about 30 KB).
+  local p
+  for p in backbone_manifest.json pip_freeze.txt constraints.txt cities.json; do
+    [ -f "$OUT/$p" ] && cp "$OUT/$p" "$KEEP/"
+  done
   echo "job $1: $2 element(s), stage $3, task file $4 ($sha)"
 }
 
 add_row() {   # add_row FILE LT ARM SEED LR PREFIX -- skips an unavailable arm once, with a message
-  local f="$1" lt="$2" arm="$3" seed="$4" lr="$5" prefix="${6:-bb-}"
+  local f="$1" lt="$2" arm="$3" seed="$4" lr="$5" prefix="${6:-bb-}" t
   if ! available "$arm"; then
     grep -qx "$arm" "$f.skipped" 2>/dev/null || { echo "skipping $arm: not available (manifest or conversion)"; echo "$arm" >> "$f.skipped"; }
     return 0
   fi
   [ -f "$OUT/data/$lt/split.csv" ] || [ "$prefix" = smoke- ] || die "no view for $lt ($OUT/data/$lt); run 'view' with TYPES"
-  printf '%s\t%s\t%s\t%s\t%s\n' "$lt" "$arm" "$seed" "$(tag "$prefix" "$arm" "$seed" "$lr")" "$lr" >> "$f"
+  t=$(tag "$prefix" "$arm" "$seed" "$lr")
+  if [ "$prefix" != smoke- ] && [ -f "$KEEP/$lt/runs/$t/done" ]; then
+    echo "skipping $lt $t: done already"; return 0
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\n' "$lt" "$arm" "$seed" "$t" "$lr" >> "$f"
 }
 
 submit_array() {   # submit_array STAGE TASKFILE
@@ -125,7 +138,8 @@ submit_array() {   # submit_array STAGE TASKFILE
   write_test
   space_check "$n"
   mkdir -p logs "$KEEP"
-  id=$(STEP=train OUT="$OUT" TASKS="$f" DATA="$OUT/data" RUNS="$OUT/runs" KEEP="$KEEP" \
+  id=$(env -u CONDA_PREFIX -u CONDA_SHLVL -u CONDA_DEFAULT_ENV -u CONDA_PROMPT_MODIFIER -u CONDA_EXE \
+       STEP=train OUT="$OUT" TASKS="$f" DATA="$OUT/data" RUNS="$OUT/runs" KEEP="$KEEP" EPOCHS="$EPOCHS_MAIN" \
        "$SBATCH" --parsable --job-name="$SLUG-$stage" --array="1-$n%$MAX_PARALLEL" analysis/backbone.slurm)
   ledger "$id" "$n" "$stage" "$f"
 }
@@ -174,6 +188,20 @@ case "$cmd" in
     done
     submit_array pilot "$f"
     ;;
+  dinov3)
+    # The DINOv3 arms (gated on HF; analysis/backbone_prefetch.sh with a token first), three seeds on the pilot types,
+    # compared with the pilot's dinov2-large runs. 18 elements by default.
+    f=$(taskfile dinov3)
+    for seed in ${SEEDS:-42 43 44}; do
+      for lt in ${TYPES:-$PILOT_TYPES}; do
+        for arm in ${ARMS:-$DINOV3_ARMS}; do
+          case "$arm" in dinov3-*) ;; *) die "the dinov3 stage takes DINOv3 arms only (got $arm)" ;; esac
+          add_row "$f" "$lt" "$arm" "$seed" 1e-5
+        done
+      done
+    done
+    submit_array dinov3 "$f"
+    ;;
   seeds)
     f=$(taskfile seeds)
     for seed in ${SEEDS:?set SEEDS}; do
@@ -207,5 +235,5 @@ case "$cmd" in
          --time=02:00:00 --array=1 analysis/backbone.slurm)
     ledger "$id" 1 onnx -
     ;;
-  *) die "usage: $0 view [smoke] | smoke | pilot | seeds | rest | resubmit <task file> | onnx" ;;
+  *) die "usage: $0 view [smoke] | smoke | pilot | dinov3 | seeds | rest | resubmit <task file> | onnx" ;;
 esac
