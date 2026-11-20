@@ -7,7 +7,8 @@ baseline retrained in the same environment, and decides with a rule written befo
 
 ## Status
 
-**Pilot submitted; no result read yet.** What exists:
+**Pilot submitted (job `43406096`, 30 runs); no result read yet.** The GPU smoke test passed (job
+`43404752`). What exists:
 
 - [`backbones.py`](../backbones.py): the registry (pinned revisions), the fixed preprocessing, a DINOv3 classifier
   class, RampNet's ConvNeXt V2-B converted into the native `ConvNextV2ForImageClassification`, the weight prefetch.
@@ -91,7 +92,9 @@ same for every arm and the baseline.
 torch 2.7.1, pandas 2.3.1) are imported from the base env, and `requirements-backbone.txt` adds transformers 4.56.2,
 tokenizers 0.22 and timm 1.0.31, with every other package held at its installed version by a constraints file.
 `analysis/backbone_env.sh` fails unless torch and pandas import from the base env and transformers from the venv.
-`pip_freeze.txt` is in `$OUT` (its sha256 under [Runs](#runs)). The baseline (`bb-dinov2-large`) is retrained in this
+`pip_freeze.txt` is in `$OUT` (its sha256 under [Runs](#runs)). Built 2026-11-19 on klone: torch 2.7.1+cu126 and
+pandas 2.3.1 from the base env, transformers 4.56.2, tokenizers 0.22.2 and timm 1.0.31 from the venv
+(huggingface-hub 0.34.4, safetensors 0.6.2, accelerate 1.10.0 unchanged). The baseline (`bb-dinov2-large`) is retrained in this
 env, so every comparison is in-env; `env.md` compares it with round 3's own baseline (4.55.0) at each seed.
 
 **Pinned inputs.** [`analysis/backbone_inputs.json`](../analysis/backbone_inputs.json) holds the sha256 of every
@@ -108,7 +111,7 @@ OUT=/gscratch/scrubbed/$USER/backbone-comparison-2026-11         # views, runs, 
 KEEP=/gscratch/makelab/$USER/backbone-comparison-2026-11-keep    # small run records only (under 1 GB)
 R=/gscratch/makelab/$USER/sidewalk-validator-ai/retrain-2026-10  # round 3, read only
 VENV=/gscratch/scrubbed/$USER/envs/sva-bb
-HF_HOME=/gscratch/makelab/$USER/hf_cache                          # the four non-gated rows, about 2 GB
+HF_HOME=/gscratch/makelab/$USER/hf_cache                          # the four non-gated rows (3.2 GB, 1.9 GB of it new)
 ```
 
 Nothing is written under `$R`. `view` builds `$OUT/data/<LT>/` with real copies of the small files (checked against
@@ -236,9 +239,48 @@ never in the same table; calibration is not part of the job.
 
 ## Runs
 
-**GPU smoke test.** Not yet run.
+All from the clone at `b8944e84cc73` (branch `backbone-comparison`), in the env above (`pip_freeze.txt` sha256
+`66aee6ea9199bde678e54d198dd000740d47d4fc0c401c5f4a5b9dea3c8337db`). Weights manifest
+`$OUT/backbone_manifest.json` (sha256 `9574dd02196a…`): the four non-gated rows available, `dinov2-large`'s cached
+`refs/main` equal to the pin; the DINOv3 rows skipped (no token). Storage read on 2026-11-19 before any job:
+`/gscratch/makelab` 969 of 1,024 GB and 974,033 of 1,000,000 files; home 5 of 10 GB; an 8 MiB write to scrubbed
+succeeded. The three rows not already cached added about 1.9 GB to the HF cache.
 
-**Pilot.** Not yet submitted.
+**GPU smoke test: passed on the first attempt.** Job `43404752` (`--time=02:00:00`, one job), A40 node, 41 min 56 s,
+exit 0. Task file `$OUT/smoke/tasks_smoke.tsv` (sha256 `9d3fe6e62488…`); smoke subsample split sha256
+`c5baa3ef3567…` (seed 0, 320/160/160/160 rows, balanced by class).
+
+| path | outcome |
+|---|---|
+| RampNet conversion | 376 tensors mapped one to one, 4 head tensors dropped, 2 layernorm tensors from the template, new classifier; `verified_against_timm` true, max abs difference 3.8e-5 |
+| `smoke-dinov2-large` | 1 epoch (10 steps), 480 predictions, all finite; `model_accepts_loss_kwargs` false; `resolved_revision` equal to the pin; `best/` holds the four files, no `checkpoint-*` left; `done` written; peak GPU memory 8.0 GB |
+| `smoke-dinov2-reg-large` | same checks pass; 304.38M parameters; peak 8.1 GB |
+| `smoke-convnextv2-base` | same checks pass; 87.69M parameters; peak 4.1 GB |
+| `smoke-rampnet-convnextv2-base` | same checks pass on the converted weights; peak 4.1 GB |
+| `smoke-rand-dinov3-vitl16` | random weights at full size: 303.13M parameters (registry 303.1M); RoPE augmentation as released (rescale 2.0); same checks pass; peak 7.3 GB |
+| rerun of every line | each returned at the `done` guard |
+| torch tests on the GPU node | `tests/test_backbones.py`, `tests/test_backbone_cli.py`: 40 passed, 3 skipped |
+| `report --tag-prefix smoke-` | all 13 files written; the four real-weight runs complete; only `smoke-rand-dinov3-vitl16` INCOMPLETE (random init) |
+| round-3 directory | nothing written under it since submission |
+
+The smoke runs' wall time per step (28.8 s for DINOv2-L down to 2 s for RampNet's ConvNeXt) is dominated by model
+loading and the first, cold read of the crops, so it does not restate the pilot's cost. The plan's estimate stands:
+from round 3's timing (25 epochs on CurbRamp in 2.5 to 3 h on an L40S), about 3.5 to 4 h per ViT-L CurbRamp run and
+5.5 to 6 h per SurfaceProblem run, less for ConvNeXt V2-B; roughly 140 GPU-hours on free `ckpt`. `cost.md` will
+give the measured rate.
+
+**Pilot: submitted 2026-11-19 (02:45 UTC on 11-20), not yet read.** Job `43406096`, one array `--array=1-30%8`,
+job name `backbone-comparison-pilot`, `ckpt-all` with `--requeue`. Task file
+`$OUT/tasks_pilot_20261120T024531Z.tsv` (sha256 `0d80a1fd70d5370b3117326196be67386c4ccd6ec8b887f8dfd478d4c36ec6e0`;
+a copy is in `$KEEP`): the 24 main rows (seed 42 first, then 43, then 44) and the six 3e-5 rows. Command, from the
+clone:
+
+```bash
+MAX_PARALLEL=8 analysis/backbone_submit.sh pilot    # sbatch analysis/backbone.slurm with STEP=train
+```
+
+GPU jobs used by this stream: 31 of 40 (smoke 1, pilot 30); the other 9 are for resubmitting failed elements
+(`backbone_submit.sh resubmit`). Records land in `$KEEP/<LT>/runs/<TAG>/`; the ledger is `$KEEP/backbone_jobs.txt`.
 
 ## Results
 
