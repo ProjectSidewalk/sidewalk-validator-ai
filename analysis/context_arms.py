@@ -196,6 +196,710 @@ def clipping_markdown(rows):
     return "\n".join(lines) + "\n"
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# The pre-registered decision (docs/context-arms-2026-11.md, "Pre-registered design and decision rule")
+# ---------------------------------------------------------------------------------------------------------------------
+
+#: The rule's constants, written verbatim into decision.json; the doc's fenced json block must equal it (tested).
+DECISION_RULE = {
+    "min_delta": 0.02, "level": 0.95, "min_positive_deployments": 2, "all_seeds_above_baseline_mean": True,
+    "test_no_harm_lower": -0.02, "regression_test_upper": -0.01, "prior_rule": "majority2", "gate": "report_only",
+    "baseline_variant": "baseline-rerun", "seeds_confirmatory": [42, 43, 44], "seeds_baseline": [42, 43, 44, 45, 46],
+}
+CONFIRMATORY = ("two_scale", "view_heatmap")
+EXPLORATORY = ("view_heatmap-r448", "side_info", "side_info_nohq")
+OCTOBER = "baseline"                 # October's round-3 model and its seed-43/44 replicates (the drift row)
+TARGET_TYPES = ("NoCurbRamp", "Obstacle", "SurfaceProblem")
+#: October's within-city held-out AUC sample sd over seeds 42/43/44 (docs/confident-learning-2026-10/seeds.md).
+OCTOBER_SEED_SD = {"NoCurbRamp": 0.024, "Obstacle": 0.009, "SurfaceProblem": 0.021}
+SHARES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "deployment-prior-2026-11",
+                      "shares.json")
+MAX_REDRAWS = 20
+VERDICTS = ("WIN", "NO GAIN", "REGRESSION", "INCOMPLETE")
+NO_GAIN_WORDING = "no gain detected at this power"
+
+
+def _rank_auc(y, scores):
+    """AUC of every column of ``scores`` (``n x k``) against the 0/1 vector ``y`` (ties get half credit, as
+    ``sklearn.metrics.roc_auc_score``); NaN when ``y`` has one class.
+
+    >>> _rank_auc(np.array([0, 0, 1, 1]), np.array([[0.1, 0.4], [0.2, 0.3], [0.8, 0.2], [0.9, 0.1]])).round(3).tolist()
+    [1.0, 0.0]
+    """
+    from scipy.stats import rankdata
+    y = np.asarray(y).astype(bool)
+    scores = np.asarray(scores, float).reshape(len(y), -1)
+    n_pos, n_neg = int(y.sum()), int((~y).sum())
+    if n_pos == 0 or n_neg == 0:
+        return np.full(scores.shape[1], np.nan)
+    r = rankdata(scores, axis=0)
+    return (r[y].sum(axis=0) - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
+
+
+def aligned_scores(preds, split, names):
+    """One frame of the ``split`` rows shared by every run in ``names`` (``preds``: run -> joined predictions with
+    ``label_uid``, ``city``, ``pano_id``, ``true``, ``p_incorrect``): ``label_uid``, ``city``, ``pano_id``, ``y``
+    and one score column per run, merged on ``label_uid`` one to one. Raises when the runs do not score the same rows
+    (a paired comparison on different rows is not paired)."""
+    base = None
+    for n in names:
+        p = preds[n]
+        p = p[p["split"] == split][["label_uid", "city", "pano_id", "true", "p_incorrect"]]
+        if base is None:
+            base = p.rename(columns={"p_incorrect": n})
+            continue
+        m = base.merge(p[["label_uid", "p_incorrect"]].rename(columns={"p_incorrect": n}), on="label_uid",
+                       how="outer", validate="one_to_one", indicator=True)
+        if (m["_merge"] != "both").any():
+            raise ValueError(f"run {n} scores {int((m['_merge'] != 'both').sum())} rows of {split} the others do "
+                             "not (or the reverse); the comparison needs the same rows")
+        base = m.drop(columns="_merge")
+    if base is None:
+        return None
+    base["y"] = (base["true"] == "incorrect").astype(int)
+    return base.reset_index(drop=True)
+
+
+def within_city_boot(preds, split, names, min_n=10, n_boot=1000, seed=0, max_redraws=MAX_REDRAWS):
+    """Within-city AUC of every run in ``names`` on ``split``, its joint panorama bootstrap, and the per-deployment
+    AUCs: one loop over resample ``b``, in which every deployment's panoramas are resampled with replacement
+    (stratified by deployment). A deployment whose resample lost a class is redrawn alone, up to ``max_redraws``
+    times; if it still has one class, resample ``b`` is dropped for everyone. The same resample ``b`` is applied to
+    every run, so differences between runs are paired.
+
+    Deployments: those with at least ``min_n`` labels and both classes in the full split (``retrain_report.within_city_auc``'s
+    rule); weights n_incorrect x n_correct of each resample. Returns ``{"names", "deployments", "point" (per run),
+    "per_deployment" ({deployment: {run: auc}}), "boot" (n_kept x n_runs), "redraws" ({deployment: n}),
+    "dropped"}``; ``boot`` is empty when ``n_boot`` is 0.
+    """
+    df = aligned_scores(preds, split, names)
+    out = {"names": list(names), "deployments": [], "point": {n: None for n in names}, "per_deployment": {},
+           "boot": np.empty((0, len(names))), "redraws": {}, "dropped": 0, "n_boot": int(n_boot)}
+    if df is None or df.empty:
+        return out
+    groups = []
+    for city, g in df.groupby("city", sort=True):
+        if len(g) >= min_n and 0 < g["y"].sum() < len(g):
+            panos = g["pano_id"].astype(str).to_numpy()
+            uniq, inv = np.unique(panos, return_inverse=True)
+            groups.append((city, g.index.to_numpy(), [np.flatnonzero(inv == k) for k in range(len(uniq))]))
+    if not groups:
+        return out
+    y = df["y"].to_numpy()
+    s = df[list(names)].to_numpy(float)
+
+    def wc(rows_by_city):
+        aucs, ws = [], []
+        for rows in rows_by_city:
+            yy = y[rows]
+            aucs.append(_rank_auc(yy, s[rows]))
+            ws.append(float(yy.sum()) * float(len(yy) - yy.sum()))
+        return np.average(np.vstack(aucs), axis=0, weights=ws), aucs
+
+    point, per = wc([rows for _, rows, _ in groups])
+    out["deployments"] = [c for c, _, _ in groups]
+    out["point"] = {n: float(v) for n, v in zip(names, point)}
+    out["per_deployment"] = {c: {n: float(v) for n, v in zip(names, a)} for (c, _, _), a in zip(groups, per)}
+    out["redraws"] = {c: 0 for c, _, _ in groups}
+    rng = np.random.default_rng(seed)
+    rows_b = []
+    for _ in range(int(n_boot)):
+        picked, ok = [], True
+        for city, rows, members in groups:
+            for attempt in range(max_redraws + 1):
+                idx = rows[np.concatenate([members[k] for k in rng.integers(0, len(members), len(members))])]
+                if 0 < y[idx].sum() < len(idx):
+                    break
+                out["redraws"][city] += 1
+            else:
+                ok = False
+            picked.append(idx)
+        if not ok:
+            out["dropped"] += 1
+            continue
+        rows_b.append(wc(picked)[0])
+    if rows_b:
+        out["boot"] = np.vstack(rows_b)
+    return out
+
+
+def welch_df(v_a, n_a, v_b, n_b):
+    """Welch-Satterthwaite degrees of freedom of ``v_a / n_a + v_b / n_b`` (a group of one seed contributes no
+    variance and no degrees of freedom); None when neither group has two seeds.
+
+    >>> round(welch_df(0.024 ** 2, 3, 0.024 ** 2, 5), 2)
+    4.34
+    """
+    terms = [(v / n, n - 1) for v, n in ((v_a, n_a), (v_b, n_b)) if n > 1 and v is not None]
+    if not terms:
+        return None
+    num = sum(t for t, _ in terms) ** 2
+    den = sum(t ** 2 / d for t, d in terms)
+    return float(num / den) if den > 0 else float(sum(d for _, d in terms))
+
+
+def seed_mean_delta(arm_vals, base_vals, var_boot=0.0, level=0.95):
+    """``D`` = mean(arm seeds) - mean(baseline seeds) with the interval ``D +/- t(level, nu) * se``,
+    ``se^2 = s_arm^2 / n_arm + s_base^2 / n_base + var_boot`` (sample variances across seeds; ``var_boot`` the
+    bootstrap variance of ``D`` on the evaluation rows), ``nu`` the Welch-Satterthwaite degrees of freedom of the two
+    seed terms. A single arm seed has no seed variance to add (``single_arm_seed``: the interval then understates the
+    spread; exploratory rows only). ``n_above``: arm seeds above the baseline's seed mean.
+
+    >>> r = seed_mean_delta([0.92, 0.93, 0.94], [0.88, 0.89, 0.90, 0.89, 0.89], var_boot=0.00005)
+    >>> round(r["delta"], 3), r["n_above"], r["lo"] > 0, round(r["nu"], 1)
+    (0.04, 3, True, 3.2)
+    """
+    from scipy.stats import t as student_t
+    a = [float(v) for v in arm_vals if v is not None and np.isfinite(v)]
+    b = [float(v) for v in base_vals if v is not None and np.isfinite(v)]
+    out = {"n_arm": len(a), "n_base": len(b), "arm_values": a, "base_values": b, "delta": None, "se": None,
+           "nu": None, "t": None, "lo": None, "hi": None, "n_above": None, "var_boot": var_boot,
+           "single_arm_seed": len(a) == 1}
+    if not a or not b:
+        return out
+    va = float(np.var(a, ddof=1)) if len(a) > 1 else 0.0
+    vb = float(np.var(b, ddof=1)) if len(b) > 1 else 0.0
+    base_mean = float(np.mean(b))
+    out.update(delta=float(np.mean(a) - base_mean), s_arm=va ** 0.5, s_base=vb ** 0.5, base_mean=base_mean,
+               n_above=int(sum(v > base_mean for v in a)))
+    nu = welch_df(va, len(a), vb, len(b))
+    if nu is None:
+        return out
+    se = (va / len(a) + vb / len(b) + (var_boot or 0.0)) ** 0.5
+    t = float(student_t.ppf(0.5 + level / 2, nu))
+    out.update(se=se, nu=nu, t=t, lo=out["delta"] - t * se, hi=out["delta"] + t * se)
+    return out
+
+
+def boot_var_of_delta(boot, names, arm_runs, base_runs):
+    """Variance over the bootstrap resamples of mean(arm runs) - mean(baseline runs) (columns of ``boot``)."""
+    if boot is None or len(boot) < 2:
+        return None
+    ia = [names.index(n) for n in arm_runs]
+    ib = [names.index(n) for n in base_runs]
+    d = boot[:, ia].mean(axis=1) - boot[:, ib].mean(axis=1)
+    return float(np.var(d, ddof=1))
+
+
+def apply_rule(primary, test, deployment_diffs, rule=DECISION_RULE):
+    """The verdict of one type x confirmatory arm from its two intervals (``seed_mean_delta`` records for the held-out
+    and the test within-city AUC) and its per-deployment seed-mean differences. Returns ``(verdict, criteria)``;
+    ``criteria`` lists every criterion with its value and pass/fail. Missing inputs are the caller's INCOMPLETE.
+
+    >>> win = {"delta": 0.04, "lo": 0.01, "hi": 0.07, "n_arm": 3, "n_above": 3}
+    >>> apply_rule(win, {"delta": 0.0, "lo": -0.01, "hi": 0.01}, [0.03, 0.05, -0.01])[0]
+    'WIN'
+    >>> apply_rule({**win, "lo": -0.01}, {"delta": 0.0, "lo": -0.01, "hi": 0.01}, [0.03, 0.05, -0.01])[0]
+    'NO GAIN'
+    >>> apply_rule({**win, "delta": -0.05, "lo": -0.08, "hi": -0.02}, {"delta": 0, "lo": -0.01, "hi": 0.01}, [])[0]
+    'REGRESSION'
+    """
+    q = len(deployment_diffs)
+    need = rule["min_positive_deployments"] if q >= 3 else q
+    positive = sum(d > 0 for d in deployment_diffs)
+    crit = [
+        {"criterion": "1. D >= min_delta", "value": primary["delta"], "pass": primary["delta"] >= rule["min_delta"]},
+        {"criterion": "2. interval lower bound > 0", "value": primary["lo"], "pass": primary["lo"] > 0},
+        {"criterion": "3. every arm seed above the baseline seed mean", "value": f"{primary['n_above']} of "
+         f"{primary['n_arm']}", "pass": (not rule["all_seeds_above_baseline_mean"])
+         or primary["n_above"] == primary["n_arm"]},
+        {"criterion": f"4. positive in >= {need} of {q} held-out deployments", "value": positive,
+         "pass": q > 0 and positive >= need},
+        {"criterion": f"5. test lower bound > {rule['test_no_harm_lower']}", "value": test["lo"],
+         "pass": test["lo"] > rule["test_no_harm_lower"]},
+    ]
+    regression = [{"criterion": "REGRESSION: held-out upper bound < 0", "value": primary["hi"],
+                   "pass": primary["hi"] < 0},
+                  {"criterion": f"REGRESSION: test upper bound < {rule['regression_test_upper']}", "value": test["hi"],
+                   "pass": test["hi"] < rule["regression_test_upper"]}]
+    if any(c["pass"] for c in regression):
+        return "REGRESSION", crit + regression
+    if all(c["pass"] for c in crit):
+        return "WIN", crit + regression
+    return "NO GAIN", crit + regression
+
+
+def simulate_rule(effect, sd_seed, sd_boot, n_arm, n_base, rule=DECISION_RULE, n_sim=4000, seed=0):
+    """Share of simulated experiments the rule calls ``WIN`` and ``REGRESSION`` at a true held-out effect ``effect``.
+
+    Each draw: baseline seed values ``N(0, sd_seed)``, arm seed values ``N(effect, sd_seed)`` shifted together by one
+    draw of the evaluation-sample noise of the difference ``N(0, sd_boot)``; then criteria 1 to 3 and the held-out
+    REGRESSION test exactly as ``apply_rule`` (``seed_mean_delta``'s interval with ``var_boot = sd_boot^2`` and its
+    Welch t quantile). Criteria 4 (deployments) and 5 (test no-harm) are not simulated, so the WIN rate is an upper
+    bound on the full rule's.
+    """
+    from scipy.stats import t as student_t
+    rng = np.random.default_rng(seed)
+    b = rng.normal(0.0, sd_seed, (n_sim, n_base))
+    a = rng.normal(effect, sd_seed, (n_sim, n_arm)) + rng.normal(0.0, sd_boot, (n_sim, 1))
+    base_mean = b.mean(axis=1)
+    d = a.mean(axis=1) - base_mean
+    va = a.var(axis=1, ddof=1) if n_arm > 1 else np.zeros(n_sim)
+    vb = b.var(axis=1, ddof=1)
+    ta, tb = va / n_arm, vb / n_base
+    if n_arm > 1:
+        nu = (ta + tb) ** 2 / (ta ** 2 / (n_arm - 1) + tb ** 2 / (n_base - 1))
+    else:
+        nu = np.full(n_sim, n_base - 1.0)
+    t = student_t.ppf(0.5 + rule["level"] / 2, nu)
+    se = np.sqrt(ta + tb + sd_boot ** 2)
+    lo, hi = d - t * se, d + t * se
+    win = (d >= rule["min_delta"]) & (lo > 0)
+    if rule["all_seeds_above_baseline_mean"]:
+        win &= (a > base_mean[:, None]).all(axis=1)
+    reg = hi < 0
+    return {"win": float((win & ~reg).mean()), "regression": float(reg.mean())}
+
+
+def operating_characteristics(sd_seed, sd_boot, n_arm=3, n_base=5, rule=DECISION_RULE, n_sim=4000, seed=0,
+                              effects=(0.0, 0.02, 0.03, 0.05), grid=None):
+    """The rule's false-WIN rate at a true effect of 0, its power at ``effects``, its REGRESSION rate at 0, and the
+    smallest effect (on ``grid``) detected at 80% power, from ``simulate_rule``.
+
+    >>> oc = operating_characteristics(0.01, 0.005, n_sim=2000)
+    >>> oc["false_win"] < 0.05 and oc["power"]["0.05"] > 0.8
+    True
+    """
+    grid = np.round(np.arange(0.0, 0.1501, 0.005), 3) if grid is None else grid
+    out = {"sd_seed": sd_seed, "sd_boot": sd_boot, "n_arm": n_arm, "n_base": n_base, "n_sim": n_sim,
+           "power": {f"{e:.2f}": simulate_rule(e, sd_seed, sd_boot, n_arm, n_base, rule, n_sim, seed)["win"]
+                     for e in effects}}
+    null = simulate_rule(0.0, sd_seed, sd_boot, n_arm, n_base, rule, n_sim, seed)
+    out["false_win"], out["null_regression"] = null["win"], null["regression"]
+    out["mde80"] = next((float(e) for e in grid
+                         if simulate_rule(float(e), sd_seed, sd_boot, n_arm, n_base, rule, n_sim, seed)["win"] >= 0.8),
+                        None)
+    return out
+
+
+def gate_block(pred, split_df, prior_entry, shares, label_type, rules=("majority2", "margin")):
+    """The report-only gate statistics of one run (``prior_rules.gate_rows`` under each prior rule in ``rules``):
+    per eval split and verdict the gated n, coverage, precision and its Wilson lower bound at
+    ``retrain_report.WILSON_Z`` (1.96, the round-3 report's), the confidence where the val-fitted uncapped map first
+    clears the gate (``retrain_report.clears_at``), the share of test verdicts at exactly 1.0
+    (``retrain_report.saturation_row``) and, on ``test_heldout``, the Agree precision at the gate under the
+    deployments' own class mix (``retrain_report.correct_weight``)."""
+    from analysis import prior_rules as pr
+    from analysis import retrain_report as rr
+    from calibration import calibrate as cal
+    from calibration import _isotonic_map as im
+    from calibration.per_city import wilson_interval
+    out = {}
+    df = cal.verdicts(pred)
+    k_correct = None
+    if prior_entry is not None and {"author", "class_source"} <= set(split_df.columns):
+        try:
+            k_correct = rr.correct_weight(split_df, prior_entry)
+        except (AssertionError, ValueError, KeyError):
+            k_correct = None
+    for rule in rules:
+        pi = pr.rule_prior(shares["types"], label_type, rule)
+        rows = pr.gate_rows(pred, pi)
+        amap = cal.calibrate(pred, pi, "val", "test")[0]   # no hold-back: the uncapped, val-fitted map
+        for split, block in rows.items():
+            for v, g in block.items():
+                if isinstance(g, dict) and g.get("gate_n") is not None and g.get("gate_precision") is not None \
+                        and np.isfinite(g["gate_precision"]):
+                    g["wilson_lo"] = float(wilson_interval(g["gate_precision"], g["gate_n"], rr.WILSON_Z)[0])
+        sat = rr.saturation_row(df, label_type, amap)
+        entry = {"prior": pi, "splits": rows, "clears_at": {v: rr.clears_at(amap[v]) for v in cal.CLASSES},
+                 "share_agree_at_1": sat["share_agree_at_1"], "share_disagree_at_1": sat["share_disagree_at_1"]}
+        held = df[df["split"] == "test_heldout"]
+        if k_correct is not None and len(held):
+            served = rr.served_for(held, amap)
+            m = (held["verdict"] == "correct").to_numpy() & (served >= im.GATE)
+            w = rr.own_weights(held["true"], k_correct)[m]
+            entry["heldout_agree_own_mix_precision"] = (float(np.average(held["correct"].to_numpy()[m], weights=w))
+                                                        if m.any() else None)
+            entry["heldout_agree_own_mix_n"] = int(m.sum())
+        out[rule] = entry
+    return out
+
+
+def boot_summary(b, names=None):
+    """The bootstrap's bookkeeping for the report: deployments used, resamples kept and dropped, and the redraws per
+    deployment (held-out: named through ``names``, private ones lettered) or pooled (test: many deployments)."""
+    if not b:
+        return None
+    redraws = b["redraws"]
+    return {"deployments": len(b["deployments"]), "n_boot": b["n_boot"], "kept": int(len(b["boot"])),
+            "dropped": b["dropped"],
+            "redraws": ({names.get(c, c): n for c, n in redraws.items()} if names is not None
+                        else int(sum(redraws.values())))}
+
+
+def _variant_runs(data_dir, label_type, variants, base_seed=42):
+    """``{variant: {seed: run name}}`` for ``variants``: every ``<variant>-s<seed>`` replicate plus the base-seed run
+    (``metrics_<variant>.json``, or ``metrics.json`` for October's ``baseline``) when its metrics file exists."""
+    reps = cl.seed_runs(data_dir, label_type, base_seed)
+    out = {v: {} for v in variants}
+    for (v, s), name in reps.items():
+        if v in out:
+            out[v][s] = name
+    for v in variants:
+        if base_seed not in out[v] and os.path.exists(cl.metrics_path(data_dir, label_type, v)):
+            out[v][base_seed] = v
+    return {v: dict(sorted(r.items())) for v, r in out.items()}
+
+
+def _mean_sd(vals):
+    v = [x for x in vals if x is not None and np.isfinite(x)]
+    if not v:
+        return None, None
+    return float(np.mean(v)), (float(np.std(v, ddof=1)) if len(v) > 1 else None)
+
+
+def slice_seed_rows(preds, split_df, runs, base_variant, train, min_n=None):
+    """Type x severity and type x tag slices across seeds (descriptive): per slice and split, rows, incorrect rows,
+    training rows (thin flagged), the AUC of October's round-3 trio and of the baseline rerun (seed means), and per
+    variant the seed-mean AUC difference against the baseline rerun's seed mean, its min and max over seeds and how
+    many seeds are above that mean."""
+    min_n = sl.MIN_N if min_n is None else min_n
+    counts = {by: sl.with_slice(train, by).groupby("slice").size().to_dict() for by in sl.BY}
+    out = []
+    for split in ("test", "test_heldout"):
+        names = [n for r in runs.values() for n in r.values() if n in preds]
+        if not names:
+            continue
+        df = aligned_scores(preds, split, names)
+        if df is None or df.empty:
+            continue
+        df = df.merge(split_df[["label_uid", "severity", "tags"]], on="label_uid", how="left", validate="one_to_one")
+        for by in sl.BY:
+            d = sl.with_slice(df, by)
+            for name in sl.slice_names(df, by, min_n):
+                g = d[d["slice"] == name]
+                if len(g) < min_n or not 0 < g["y"].sum() < len(g):
+                    continue
+                auc = dict(zip(names, _rank_auc(g["y"].to_numpy(), g[names].to_numpy(float))))
+                base = [auc[n] for n in runs.get(base_variant, {}).values() if n in auc]
+                base_mean = float(np.mean(base)) if base else None
+                n_train = int(counts[by].get(name, 0))
+                row = {"split": split, "by": by, "slice": name, "n": int(len(g)), "n_incorrect": int(g["y"].sum()),
+                       "train_n": n_train, "needs_data": n_train < sl.THIN_TRAIN,
+                       "october_auc": _mean_sd([auc[n] for n in runs.get(OCTOBER, {}).values() if n in auc])[0],
+                       "baseline_rerun_auc": base_mean, "variants": {}}
+                for v, r in runs.items():
+                    if v in (base_variant, OCTOBER) or base_mean is None:
+                        continue
+                    vals = [auc[n] - base_mean for n in r.values() if n in auc]
+                    if vals:
+                        row["variants"][v] = {"delta_mean": float(np.mean(vals)), "delta_min": float(min(vals)),
+                                              "delta_max": float(max(vals)), "n_seeds": len(vals),
+                                              "k_above": int(sum(x > 0 for x in vals))}
+                out.append(row)
+    return out
+
+
+def decide_type(data_dir, label_type, split_df, arms, public, shares, prior_entry, subset, base_variant, n_boot,
+                boot_seed, within_min_n=10, rule=DECISION_RULE, base_seed=42):
+    """Everything the decision needs for one type: the runs, their records, the joint bootstrap on test and held-out,
+    one row per arm (confirmatory: a verdict; exploratory: never WIN), the drift row against October's trio, the gate
+    block per run, the operating characteristics, and the seed slices. A plain dict, JSON-ready."""
+    from analysis import retrain_report as rr
+    variants = [base_variant, OCTOBER, *arms]
+    runs = _variant_runs(data_dir, label_type, variants, base_seed)
+    preds = {}
+    for r in runs.values():
+        for name in r.values():
+            p = cl.load_predictions(data_dir, label_type, name, split_df)
+            if p is not None:
+                preds[name] = p
+    runs = {v: {s: n for s, n in r.items() if n in preds} for v, r in runs.items()}
+    split_sha = sha256_file(os.path.join(data_dir, label_type, "split.csv"))
+    records = {}
+    for v, r in runs.items():
+        for s, name in r.items():
+            rec = run_record(data_dir, label_type, name)
+            problem = None
+            if v != OCTOBER:   # this chain's runs must carry a matching record; October's are shown, never required
+                if rec["status"] != "ok":
+                    problem = f"run record {rec['status']}"
+                elif rec["seed"] != s:
+                    problem = f"record seed {rec['seed']} for tag seed {s}"
+                elif rec["split_sha256"] != split_sha:
+                    problem = "record split hash differs from this split.csv"
+            records[name] = {**rec, "variant": v, "seed": s, "problem": problem}
+    names = [n for r in runs.values() for n in r.values()]
+    boot = {split: within_city_boot(preds, split, names, within_min_n, n_boot, boot_seed) if names else None
+            for split in ("test_heldout", "test")}
+    held_names = rr.heldout_names(boot["test_heldout"]["deployments"] if boot["test_heldout"] else [], public,
+                                  {c for c in (boot["test_heldout"] or {}).get("deployments", [])
+                                   if len(c.split("-")[-1]) == 2 and c.split("-")[-1].isalpha()})
+    gates = {}
+    for name in names:
+        try:
+            gates[name] = gate_block(preds[name], split_df, prior_entry, shares, label_type)
+        except Exception as e:  # recorded; a missing gate block makes the verdict INCOMPLETE
+            gates[name] = {"error": f"{type(e).__name__}: {e}"}
+
+    def interval(split, arm_names, base_names):
+        b = boot[split]
+        if not b or any(b["point"].get(n) is None for n in arm_names + base_names):
+            return None
+        vb = boot_var_of_delta(b["boot"], b["names"], arm_names, base_names)
+        return seed_mean_delta([b["point"][n] for n in arm_names], [b["point"][n] for n in base_names],
+                               vb or 0.0, rule["level"])
+
+    base_runs = runs.get(base_variant, {})
+    base_names = list(base_runs.values())
+    rows = []
+    for arm in arms:
+        a_runs = runs.get(arm, {})
+        a_names = list(a_runs.values())
+        row = {"arm": arm, "kind": "confirmatory" if arm in CONFIRMATORY else "exploratory",
+               "seeds": sorted(a_runs), "baseline_seeds": sorted(base_runs)}
+        if a_names and base_names:
+            row["heldout"] = interval("test_heldout", a_names, base_names)
+            row["test"] = interval("test", a_names, base_names)
+            per = (boot["test_heldout"] or {}).get("per_deployment", {})
+            row["deployments"] = {held_names.get(c, c): float(np.mean([per[c][n] for n in a_names])
+                                                               - np.mean([per[c][n] for n in base_names]))
+                                  for c in per}
+        reasons = []
+        if subset:
+            reasons.append("subset shadow")
+        if not a_names:
+            reasons.append("not run")
+        else:
+            if row["kind"] == "confirmatory":
+                miss = sorted(set(rule["seeds_confirmatory"]) - set(a_runs))
+                if miss:
+                    reasons.append(f"missing arm seed(s) {miss}")
+            miss_b = sorted(set(rule["seeds_baseline"]) - set(base_runs))
+            if miss_b:
+                reasons.append(f"missing {base_variant} seed(s) {miss_b}")
+            bad = [f"{n}: {records[n]['problem']}" for n in a_names + base_names if records[n]["problem"]]
+            if bad:
+                reasons.append("; ".join(bad))
+            no_gate = [n for n in a_names + base_names if "error" in gates.get(n, {"error": 1})]
+            if no_gate:
+                reasons.append(f"gate block missing for {no_gate}")
+            if not row.get("heldout") or row["heldout"].get("lo") is None or not row.get("test") \
+                    or row["test"].get("lo") is None:
+                reasons.append("no interval (too few seeds or no qualifying deployment)")
+        if row["kind"] == "exploratory":
+            row["verdict"] = "exploratory"
+            row["reason"] = "; ".join(reasons) or "exploratory arms never produce a WIN"
+        elif reasons:
+            row["verdict"], row["reason"] = "INCOMPLETE", "; ".join(reasons)
+        else:
+            row["verdict"], row["criteria"] = apply_rule(row["heldout"], row["test"], list(row["deployments"].values()),
+                                                         rule)
+            row["reason"] = NO_GAIN_WORDING if row["verdict"] == "NO GAIN" else ""
+        rows.append(row)
+    oct_runs = list(runs.get(OCTOBER, {}).values())
+    drift = {"october_seeds": sorted(runs.get(OCTOBER, {})), "rerun_seeds": sorted(base_runs)}
+    for split, key in (("test_heldout", "heldout"), ("test", "test")):
+        b = boot[split] or {"point": {}}
+        rm, rsd = _mean_sd([b["point"].get(n) for n in base_names])
+        om, osd = _mean_sd([b["point"].get(n) for n in oct_runs])
+        drift[key] = {"rerun_mean": rm, "rerun_sd": rsd, "october_mean": om, "october_sd": osd,
+                      "difference": (rm - om) if rm is not None and om is not None else None}
+    h = drift["heldout"]
+    drift["flag"] = bool(h["difference"] is not None and h["october_sd"]
+                         and abs(h["difference"]) > 2 * h["october_sd"])
+    sd_seed = drift["heldout"]["rerun_sd"] if len(base_names) >= 3 else OCTOBER_SEED_SD.get(label_type)
+    sd_source = f"{base_variant}, {len(base_names)} seeds" if len(base_names) >= 3 else "October, 3 seeds"
+    pair = (base_names + oct_runs)[:2]
+    vb = boot_var_of_delta((boot["test_heldout"] or {}).get("boot"), (boot["test_heldout"] or {}).get("names", []),
+                           pair[:1], pair[1:]) if len(pair) == 2 else None
+    oc = None
+    if sd_seed is not None and vb is not None:
+        oc = {"sd_seed_source": sd_source, "sd_boot_source": f"paired bootstrap of {pair[0]} - {pair[1]}",
+              "arm_seeds_3": operating_characteristics(sd_seed, vb ** 0.5, 3, rule=rule),
+              "arm_seeds_5": operating_characteristics(sd_seed, vb ** 0.5, 5, rule=rule)}
+    train = split_df[split_df["split"] == "train"]
+    return {"runs": {v: {str(s): n for s, n in r.items()} for v, r in runs.items()},
+            "records": records, "rows": rows, "drift": drift, "gates": gates, "oc": oc,
+            "boot": {k: boot_summary(v, held_names if k == "test_heldout" else None) for k, v in boot.items()},
+            "slices": slice_seed_rows(preds, split_df, runs, base_variant, train)}
+
+
+def _f3(v, signed=False):
+    if v is None or (isinstance(v, float) and not np.isfinite(v)):
+        return "—"
+    return f"{v:+.3f}" if signed else f"{v:.3f}"
+
+
+def _iv(r):
+    if not r or r.get("delta") is None:
+        return "—"
+    if r.get("lo") is None:
+        return f"{r['delta']:+.3f}"
+    return f"{r['delta']:+.3f} [{r['lo']:+.3f}, {r['hi']:+.3f}]"
+
+
+def decision_markdown(decisions, rule=DECISION_RULE):
+    lines = ["# Context arms: pre-registered decision", "",
+             "Applied mechanically from `DECISION_RULE` (below and in `decision.json`; "
+             "docs/context-arms-2026-11.md has the rule in words). D = seed-mean minus the "
+             f"`{rule['baseline_variant']}` seed-mean of the within-city AUC; interval D ± t·se with "
+             "se² = s_arm²/n_arm + s_base²/n_base + var_boot (joint panorama bootstrap within deployment) and the "
+             f"Welch t at {rule['level']:.0%}. `NO GAIN` means {NO_GAIN_WORDING}; read it next to the power table. "
+             "Exploratory arms never produce a `WIN`; a single seed's interval omits that arm's seed variance.", "",
+             "```json", json.dumps(rule, sort_keys=True), "```", ""]
+    for lt, d in decisions.items():
+        lines += [f"## {lt}", "", "| arm | kind | seeds | verdict | D held-out within-city [CI] | D test within-city [CI] "
+                  "| arm seeds above baseline mean | held-out deployments (D) | reason |",
+                  "|---|---|---|---|---:|---:|---:|---|---|"]
+        for r in d["rows"]:
+            dep = ", ".join(f"{k} {v:+.3f}" for k, v in sorted((r.get("deployments") or {}).items()))
+            h = r.get("heldout") or {}
+            lines.append(f"| {r['arm']} | {r['kind']} | {', '.join(map(str, r['seeds'])) or '—'} | {r['verdict']} | "
+                         f"{_iv(r.get('heldout'))} | {_iv(r.get('test'))} | "
+                         f"{h.get('n_above', '—') if h else '—'} of {h.get('n_arm', '—') if h else '—'} | "
+                         f"{dep or '—'} | {r.get('reason', '')} |")
+        for r in d["rows"]:
+            if r.get("criteria"):
+                lines += ["", f"{lt} / {r['arm']}: " + "; ".join(
+                    f"{c['criterion']}: {c['value'] if not isinstance(c['value'], float) else round(c['value'], 4)} "
+                    f"({'pass' if c['pass'] else 'fail'})" for c in r["criteria"])]
+        dr = d["drift"]
+        lines += ["", f"Drift row (`{rule['baseline_variant']}` seeds {dr['rerun_seeds']} vs October's round-3 seeds "
+                  f"{dr['october_seeds']}):", "", "| endpoint | rerun mean ± sd | October mean ± sd | rerun − October |",
+                  "|---|---:|---:|---:|"]
+        for key, label in (("heldout", "within-city held-out"), ("test", "within-city test")):
+            x = dr[key]
+            lines.append(f"| {label} | {_f3(x['rerun_mean'])} ± {_f3(x['rerun_sd'])} | {_f3(x['october_mean'])} ± "
+                         f"{_f3(x['october_sd'])} | {_f3(x['difference'], True)} |")
+        if dr["flag"]:
+            lines += ["", f"**{lt}: the rerun's held-out seed mean differs from October's by more than two October "
+                      "seed sds; the decision still uses the rerun.**"]
+        oc = d.get("oc")
+        if oc:
+            lines += ["", f"Operating characteristics (seed sd from {oc['sd_seed_source']}, "
+                      f"{oc['arm_seeds_3']['sd_seed']:.3f}; bootstrap sd of D from {oc['sd_boot_source']}, "
+                      f"{oc['arm_seeds_3']['sd_boot']:.3f}; criteria 1-3 simulated, so WIN rates are upper bounds):",
+                      "", "| arm seeds | false WIN at 0 | REGRESSION at 0 | power +0.02 | +0.03 | +0.05 | "
+                      "80% power at |", "|---:|---:|---:|---:|---:|---:|---:|"]
+            for k in ("arm_seeds_3", "arm_seeds_5"):
+                o = oc[k]
+                lines.append(f"| {o['n_arm']} | {o['false_win']:.3f} | {o['null_regression']:.3f} | "
+                             f"{o['power']['0.02']:.2f} | {o['power']['0.03']:.2f} | {o['power']['0.05']:.2f} | "
+                             f"{'+%.3f' % o['mde80'] if o['mde80'] is not None else 'above +0.15'} |")
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def gate_markdown(decisions):
+    lines = ["# Gate block (report-only)", "",
+             "Per run: the val-fitted, uncapped map under the **majority2** deployment prior (the margin prior "
+             "beside it), applied at the 0.92 gate. gated n, coverage and precision per verdict; Wilson lower bound "
+             "at z = 1.96 (`retrain_report.WILSON_Z`, as the round-3 report); the confidence where each map first "
+             "clears the gate; the share of test verdicts at exactly 1.0 (a new head's float saturation moves "
+             "coverage without any change in discrimination); on held-out, the Agree precision at the gate under "
+             "the deployments' own class mix. It never changes a verdict.", ""]
+    for lt, d in decisions.items():
+        lines += [f"## {lt}", "", "| run | prior | split | verdict | gated n | coverage | precision | Wilson lo | "
+                  "clears at | at 1.0 | held-out own-mix Agree precision |", "|---|---|---|---|---:|---:|---:|---:|---|---:|---:|"]
+        for name, g in d["gates"].items():
+            if "error" in g:
+                lines.append(f"| {name} | — | — | — | gate block missing: {g['error']} | | | | | | |")
+                continue
+            for rule, e in g.items():
+                for split, block in e["splits"].items():
+                    for v in ("correct", "incorrect"):
+                        x = block.get(v) or {}
+                        lines.append(f"| {name} | {rule} | {split} | {'Agree' if v == 'correct' else 'Disagree'} | "
+                                     f"{x.get('gate_n', '—')} | {_f3(x.get('gate_coverage'))} | "
+                                     f"{_f3(x.get('gate_precision'))} | {_f3(x.get('wilson_lo'))} | "
+                                     f"{e['clears_at'][v]} | "
+                                     f"{_f3(e['share_agree_at_1'] if v == 'correct' else e['share_disagree_at_1'])} | "
+                                     f"{_f3(e.get('heldout_agree_own_mix_precision')) if v == 'correct' and split == 'test_heldout' else ''} |")
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def slice_seeds_markdown(decisions):
+    lines = ["# Severity and tag slices across seeds (descriptive)", "",
+             "AUC of the incorrect score per slice; the baseline rerun's and October's round-3 seed means, and per "
+             "variant the seed-mean difference against the rerun's seed mean with its range over seeds and how many "
+             f"seeds are above it. ⚠ thin = fewer than {sl.THIN_TRAIN} training rows. Not corrected for the number "
+             "of slices; no verdict reads this table.", ""]
+    for lt, d in decisions.items():
+        variants = sorted({v for r in d["slices"] for v in r["variants"]})
+        for split in ("test", "test_heldout"):
+            for by in sl.BY:
+                rs = [r for r in d["slices"] if r["split"] == split and r["by"] == by]
+                if not rs:
+                    continue
+                lines += [f"## {lt} / {split} / by {by}", "",
+                          f"| {by} | n | incorrect | training rows | round-3 (Oct) AUC | baseline rerun AUC | "
+                          + " | ".join(f"{v} Δ mean [min, max] (k/n above)" for v in variants) + " |",
+                          "|---|---:|---:|---:|---:|---:|" + "---:|" * len(variants)]
+                for r in rs:
+                    cells = []
+                    for v in variants:
+                        x = r["variants"].get(v)
+                        cells.append("—" if not x else f"{x['delta_mean']:+.3f} [{x['delta_min']:+.3f}, "
+                                     f"{x['delta_max']:+.3f}] ({x['k_above']}/{x['n_seeds']})")
+                    lines.append(f"| {r['slice']} | {r['n']:,} | {r['n_incorrect']:,} | {r['train_n']:,}"
+                                 f"{' ⚠ thin' if r['needs_data'] else ''} | {_f3(r['october_auc'])} | "
+                                 f"{_f3(r['baseline_rerun_auc'])} | " + " | ".join(cells) + " |")
+                lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def power_table(data_dir, label_type, variant=OCTOBER, n_boot=1000, seed=0, within_min_n=10, n_sim=4000,
+                rule=DECISION_RULE):
+    """The operating characteristics of the rule for one type from the seeds of ``variant`` (October's ``baseline``
+    trio before the pilot, ``baseline-rerun`` after it): the within-city held-out AUC's sample sd over seeds, the
+    bootstrap sd of a difference between two of its seeds (the joint panorama bootstrap), and
+    ``operating_characteristics`` at 3 and 5 arm seeds against the five baseline seeds of the rule."""
+    split_df = cl.read_split(os.path.join(data_dir, label_type, "split.csv"))
+    runs = _variant_runs(data_dir, label_type, [variant])[variant]
+    preds = {n: cl.load_predictions(data_dir, label_type, n, split_df) for n in runs.values()}
+    preds = {n: p for n, p in preds.items() if p is not None}
+    names = [n for n in runs.values() if n in preds]
+    if len(names) < 2:
+        return {"variant": variant, "seeds": sorted(runs), "error": "fewer than two seeds with predictions"}
+    b = within_city_boot(preds, "test_heldout", names, within_min_n, n_boot, seed)
+    sd_seed = _mean_sd([b["point"][n] for n in names])[1]
+    sd_boot = boot_var_of_delta(b["boot"], names, names[1:2], names[2:3] or names[:1]) ** 0.5
+    n_base = len(rule["seeds_baseline"])
+    return {"variant": variant, "seeds": sorted(runs), "within_city_heldout": {n: b["point"][n] for n in names},
+            "sd_seed": sd_seed, "sd_boot": sd_boot, "sd_boot_pair": [names[1], (names[2:3] or names[:1])[0]],
+            "n_boot": n_boot, "kept": int(len(b["boot"])),
+            "arm_seeds_3": operating_characteristics(sd_seed, sd_boot, 3, n_base, rule, n_sim, seed),
+            "arm_seeds_5": operating_characteristics(sd_seed, sd_boot, 5, n_base, rule, n_sim, seed)}
+
+
+def power_markdown(tables):
+    """The doc's operating-characteristics table; the recommendation follows A7 of the sign-off: five arm seeds for
+    a type whose power at +0.03 with three is below 0.5."""
+    lines = ["| type | seed sd | bootstrap sd of D | arm seeds | false WIN at 0 | REGRESSION at 0 | power +0.02 | "
+             "+0.03 | +0.05 | effect at 80% power | recommended arm seeds |",
+             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    for lt, t in tables.items():
+        if "error" in t:
+            lines.append(f"| {lt} | {t['error']} | | | | | | | | | |")
+            continue
+        rec = 5 if t["arm_seeds_3"]["power"]["0.03"] < 0.5 else 3
+        for k in ("arm_seeds_3", "arm_seeds_5"):
+            o = t[k]
+            mde = f"+{o['mde80']:.3f}" if o["mde80"] is not None else "above +0.15"
+            lines.append(f"| {lt} | {t['sd_seed']:.3f} | {t['sd_boot']:.3f} | {o['n_arm']} | {o['false_win']:.3f} | "
+                         f"{o['null_regression']:.3f} | {o['power']['0.02']:.2f} | {o['power']['0.03']:.2f} | "
+                         f"{o['power']['0.05']:.2f} | {mde} | {rec if k == 'arm_seeds_3' else ''} |")
+    return "\n".join(lines) + "\n"
+
+
+def cmd_power(args):
+    tables = {lt: power_table(args.data_dir, lt, args.variant, args.n_boot, args.seed, args.within_min_n, args.n_sim)
+              for lt in _list(args.label_types)}
+    text = power_markdown(tables)
+    print(text)
+    if args.out:
+        os.makedirs(args.out, exist_ok=True)
+        with open(os.path.join(args.out, f"power_{args.variant}.json"), "w") as f:
+            json.dump({"rule": DECISION_RULE, "data_dir": args.data_dir, "tables": tables}, f, indent=2, default=float)
+            f.write("\n")
+        with open(os.path.join(args.out, f"power_{args.variant}.md"), "w") as f:
+            f.write(text)
+    return 0
+
+
 def report(args):
     from analysis import retrain_report as rr
     label_types = [t.strip() for t in args.label_types.split(",") if t.strip()]
@@ -205,6 +909,16 @@ def report(args):
     everything = {"_public_cities_source": public_source, "_arms": arms}
     prov = {}
     tables, slice_tables, seed_tables, clip = [], [], [], {}
+    decisions, run_provenance = {}, {}
+    shadow_rec = read_shadow(args.data_dir)
+    subset = bool(shadow_rec and shadow_rec.get("subset"))
+    with open(args.shares) as f:
+        shares = json.load(f)
+    priors_path = os.path.join(args.data_dir, "deployment_priors.json")
+    priors = {}
+    if os.path.exists(priors_path):
+        with open(priors_path) as f:
+            priors = json.load(f)
 
     def note(path):
         if os.path.exists(path):
@@ -218,14 +932,14 @@ def report(args):
             continue
         note(split_path)
         split_df = cl.read_split(split_path)
-        names = ("baseline", *arms)
+        names = tuple(dict.fromkeys(("baseline", args.baseline_variant, *arms)))
         preds = {n: cl.load_predictions(args.data_dir, lt, n, split_df) for n in names}
         preds = {k: v for k, v in preds.items() if v is not None}
         for n in names:
             note(cl.metrics_path(args.data_dir, lt, n))
             note(os.path.join(args.data_dir, lt, "predictions.csv" if n == "baseline" else f"predictions_{n}.csv"))
         rows = [arm_row(args.data_dir, lt, n, preds, args.within_min_n) for n in names]
-        deltas = cl.overall_deltas(preds, arms, args.n_boot, args.seed)
+        deltas = cl.overall_deltas(preds, [n for n in names if n != "baseline"], args.n_boot, args.seed)
         for r in rows:
             for split, key in (("test", "test"), ("test_heldout", "heldout")):
                 d = deltas.get((r["variant"], split))
@@ -233,11 +947,12 @@ def report(args):
                     r[f"{key}_delta"], r[f"{key}_delta_lo"], r[f"{key}_delta_hi"] = d["delta"], d["delta_lo"], d["delta_hi"]
         heldout = cl.heldout_rows(preds, public, args.within_min_n) if preds else []
         train = split_df[split_df["split"] == "train"]
-        slices = slice_deltas(preds, arms, train, args.slice_min_n, args.n_boot, args.seed)
+        slices = slice_deltas(preds, [n for n in names if n != "baseline"], train, args.slice_min_n, args.n_boot,
+                              args.seed)
         everything[lt] = {"arms": rows, "heldout": heldout, "slices": slices}
         tables.append(arms_markdown(lt, rows, heldout, args.within_min_n))
         if slices:
-            slice_tables.append(slices_markdown(lt, slices, [a for a in arms if a in preds]))
+            slice_tables.append(slices_markdown(lt, slices, [a for a in names if a in preds and a != "baseline"]))
         runs = {k: v for k, v in cl.seed_runs(args.data_dir, lt, args.base_seed).items() if k[0] in names}
         if runs:
             for name in runs.values():
@@ -254,11 +969,29 @@ def report(args):
         else:
             clip[lt] = None
         everything[lt]["clipping"] = clip[lt]
+        decisions[lt] = decide_type(args.data_dir, lt, split_df, arms, public, shares, priors.get(lt), subset,
+                                    args.baseline_variant, args.decision_boot, args.seed, args.within_min_n)
+        everything[lt]["decision"] = decisions[lt]
+        for name, rec in decisions[lt]["records"].items():
+            run_provenance[f"{lt}/{name}"] = {k: rec[k] for k in ("variant", "seed", "status", "path",
+                                                                  "split_sha256", "files_sha256", "problem")}
+    with open(os.path.join(args.out, "decision.md"), "w") as f:
+        f.write(decision_markdown(decisions))
+    with open(os.path.join(args.out, "decision.json"), "w") as f:
+        json.dump({"rule": DECISION_RULE, "subset_shadow": subset,
+                   "types": {lt: {"rows": d["rows"], "drift": d["drift"], "oc": d["oc"], "boot": d["boot"]}
+                             for lt, d in decisions.items()}}, f, indent=2, default=float)
+        f.write("\n")
+    with open(os.path.join(args.out, "gate.md"), "w") as f:
+        f.write(gate_markdown(decisions))
+    with open(os.path.join(args.out, "slices_seeds.md"), "w") as f:
+        f.write(slice_seeds_markdown(decisions))
     with open(os.path.join(args.out, "arms.md"), "w") as f:
         f.write("# Context arms against the round-3 model\n\n"
-                "Each arm is trained with the round-3 recipe on the round-3 split and scored on the same rows; Δ = arm "
-                "− baseline AUC with a 95% interval from resampling whole panoramas of the evaluation split, the same "
-                "resample for both models. Within-city AUC: per-deployment AUCs weighted by n_incorrect x n_correct "
+                "Each arm is trained with the round-3 recipe on the round-3 split and scored on the same rows; Δ = run "
+                "− October's seed-42 round-3 model (`baseline`), descriptive only (the decision is in `decision.md`, "
+                "against the baseline rerun's seed mean), with a 95% interval from resampling whole panoramas of the "
+                "evaluation split, the same resample for both models. Within-city AUC: per-deployment AUCs weighted by n_incorrect x n_correct "
                 f"(deployments with at least {args.within_min_n} labels and both classes; count in brackets). Private "
                 "deployments are lettered.\n\n" + "\n".join(tables))
     with open(os.path.join(args.out, "arms.json"), "w") as f:
@@ -280,7 +1013,15 @@ def report(args):
     with open(os.path.join(args.out, "clipping.md"), "w") as f:
         f.write(clipping_markdown(clip))
     with open(os.path.join(args.out, "provenance.json"), "w") as f:
-        json.dump({"files_sha256": dict(sorted(prov.items())), "public_cities_source": public_source}, f, indent=2)
+        json.dump({"files_sha256": dict(sorted(prov.items())), "public_cities_source": public_source,
+                   "arguments": {k: v for k, v in vars(args).items() if k != "func"},
+                   "bootstrap": {"seed": args.seed, "n_boot": args.n_boot, "decision_boot": args.decision_boot},
+                   "decision_rule": DECISION_RULE, **_git_state(),
+                   "shares_sha256": sha256_file(args.shares),
+                   "shadow_run_sha256": (sha256_file(os.path.join(args.data_dir, SHADOW_FILE))
+                                         if shadow_rec is not None else None),
+                   "deployment_priors_sha256": sha256_file(priors_path) if os.path.exists(priors_path) else None,
+                   "runs": dict(sorted(run_provenance.items()))}, f, indent=2, sort_keys=True, default=str)
         f.write("\n")
     print("\n".join(tables))
     return 0
@@ -752,13 +1493,24 @@ def build_parser():
     f.add_argument("--hf-home", default=os.environ.get("HF_HOME"))
     f.add_argument("--no-write-test", action="store_true", help="skip the 8 MiB write probes (tests only)")
     f.set_defaults(func=cmd_preflight)
+    w = sub.add_parser("power", help="the rule's operating characteristics from a variant's seed spread")
+    w.add_argument("--data-dir", required=True)
+    w.add_argument("--label-types", default=",".join(TARGET_TYPES))
+    w.add_argument("--variant", default=OCTOBER, help="baseline (October's trio) or baseline-rerun (the pilot's)")
+    w.add_argument("--n-boot", type=int, default=1000)
+    w.add_argument("--n-sim", type=int, default=4000)
+    w.add_argument("--seed", type=int, default=0)
+    w.add_argument("--within-min-n", type=int, default=10)
+    w.add_argument("--out", default=None)
+    w.set_defaults(func=cmd_power)
     c = sub.add_parser("check-run", help="did a finished training job write everything (smoke criterion)")
     c.add_argument("--data", required=True)
     c.add_argument("--label-type", required=True)
     c.add_argument("--tags", required=True, help="comma list of evaluate.py tags")
     c.add_argument("--seed-from-tag", action="store_true", help="also check the record's seed (-s<seed>, else 42)")
     c.set_defaults(func=cmd_check_run)
-    r = sub.add_parser("report", help="arms.md, arms.json, seeds.md, slices.md, clipping.md, provenance.json")
+    r = sub.add_parser("report", help="decision.md/json, gate.md, slices_seeds.md, arms.md/json, seeds.md, "
+                                      "slices.md, clipping.md, provenance.json")
     r.add_argument("--data-dir", required=True, help="data_generation.py's --out (round 3: retrain-2026-10)")
     r.add_argument("--label-types", default=",".join(TYPES))
     r.add_argument("--arms", default=",".join(ARMS),
@@ -771,6 +1523,11 @@ def build_parser():
     r.add_argument("--n-boot", type=int, default=None, help="panorama resamples (slices.py default)")
     r.add_argument("--seed", type=int, default=0)
     r.add_argument("--base-seed", type=int, default=42)
+    r.add_argument("--baseline-variant", default=DECISION_RULE["baseline_variant"],
+                   help="the run the decision compares against (October's trio is always the drift row)")
+    r.add_argument("--shares", default=SHARES, help="prior_rules.py shares.json (the majority2 deployment prior)")
+    r.add_argument("--decision-boot", type=int, default=1000,
+                   help="joint panorama resamples for the decision's intervals")
     r.add_argument("--out", required=True)
     r.set_defaults(func=report)
     return p
