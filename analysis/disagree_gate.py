@@ -320,8 +320,9 @@ def paired_agree_gate_delta(scored_a, scored_b, groups, split, pi, n_boot=N_BOOT
 
     ``scored_a`` / ``scored_b`` are ``{seed: rows}`` carrying ``label_uid``, ``split``, ``true``, ``verdict`` and
     ``served``: each run's predictions served through its own map fit on val (``served_with_map``). The maps are
-    fixed per run and never refit here, and the statistic is ``gate_stats``, so a seed's point delta is the
-    difference of the two runs' ``gates`` records. Each replicate (1) draws the shared seeds with replacement, a
+    fixed per run and never refit here, and the statistic is ``gate_stats``, so when ``n_dropped_rows`` is 0 a seed's
+    point delta is the difference of the two runs' ``gates`` records (with labels left out, it is the same statistic
+    on the shared labels only, and can differ). Each replicate (1) draws the shared seeds with replacement, a
     drawn seed bringing both arms' runs of that seed, and (2) draws one resample of whole panoramas (``groups``, via
     ``slices.boot_indices``) shared by every drawn seed and both arms; the replicate's value is the mean over the
     drawn seeds of the per-seed delta. A replicate whose value is undefined (a NaN precision when an arm gates no
@@ -458,18 +459,74 @@ def collapse_text(collapse):
                      for sd in collapse.get("seeds", []))
 
 
-def baseline_side_undefined(iv):
-    """True when the precision clause's only undefined seeds are ones where the BASELINE gates no Agree while
-    ``cl-drop``'s precision is defined (``recipe`` then reads the clause as a pass: there is no baseline Agree
-    precision for ``cl-drop`` to regress from). False for an arm-side or mixed cause, or no undefined seed.
+def _undefined_seeds(c):
+    """``{seed (str): side}`` of an ``agree_gate`` split's undefined point precision deltas."""
+    und = (((c or {}).get("precision") or {}).get("undefined")) or {}
+    return {str(k): v for k, v in und.items()}
 
-    >>> baseline_side_undefined({"undefined": {"44": "baseline"}}), baseline_side_undefined({"undefined": {}})
-    (True, False)
-    >>> baseline_side_undefined({"undefined": {"43": "baseline", "44": "both"}})
+
+def baseline_side_undefined(c):
+    """True when the BASELINE gates no Agree on EVERY shared seed of the ``agree_gate`` split ``c`` while ``cl-drop``'s
+    precision is defined on every shared seed (``recipe`` then reads the precision clause as a pass: there is no
+    baseline Agree precision for ``cl-drop`` to regress from, so only the coverage clause judges). False when the
+    baseline gates no Agree on only some seeds (the remaining seeds could hide a real precision loss), for an
+    arm-side or mixed cause, and when no seed is undefined.
+
+    >>> baseline_side_undefined({"seeds": [42, 43, 44], "precision": {"undefined": {"42": "baseline",
+    ...                          "43": "baseline", "44": "baseline"}}})
+    True
+    >>> baseline_side_undefined({"seeds": [42, 43, 44], "precision": {"undefined": {"44": "baseline"}}})
+    False
+    >>> baseline_side_undefined({"seeds": [42, 43], "precision": {"undefined": {"42": "baseline", "43": "both"}}})
     False
     """
-    und = (iv or {}).get("undefined") or {}
-    return bool(und) and all(v == "baseline" for v in und.values())
+    und, seeds = _undefined_seeds(c), {str(s) for s in (c or {}).get("seeds") or []}
+    return bool(seeds) and set(und) == seeds and all(v == "baseline" for v in und.values())
+
+
+def undefined_precision_text(c):
+    """The cause of an ``agree_gate`` split's undefined point precision deltas, per seed (``None`` when none is).
+
+    >>> undefined_precision_text({"seeds": [42, 43, 44], "precision": {"undefined": {"44": "baseline"}}})
+    'precision undefined on seed 44 (baseline gates no Agree) of shared seeds 42, 43, 44'
+    """
+    und = _undefined_seeds(c)
+    if not und:
+        return None
+    side = {"baseline": "baseline gates no Agree", "cl-drop": "cl-drop gates no Agree",
+            "both": "neither arm gates Agree"}
+    per = ", ".join(f"{s} ({side.get(v, v)})" for s, v in sorted(und.items(), key=lambda kv: int(kv[0])))
+    seeds = ", ".join(str(s) for s in sorted((c or {}).get("seeds") or [], key=int))
+    return f"precision undefined on seed {per} of shared seeds {seeds}"
+
+
+def defined_seed_precision_mean(c):
+    """``(mean, seeds)``: the mean precision delta (``cl-drop`` minus baseline) over the shared seeds where both arms'
+    precision is defined, when some but not all seeds are undefined; ``(None, [])`` otherwise. Descriptive only: it
+    backs the mark "defined-seed means differ by more than the margin" and never decides C3.
+
+    >>> defined_seed_precision_mean({"seeds": [42, 43, 44], "precision": {"undefined": {"44": "baseline"},
+    ...                              "per_seed": {"42": -0.13, "43": -0.13, "44": None}}})
+    (-0.13, [42, 43])
+    """
+    und, seeds = _undefined_seeds(c), sorted((c or {}).get("seeds") or [], key=int)
+    per = {str(k): v for k, v in ((((c or {}).get("precision") or {}).get("per_seed")) or {}).items()}
+    ok = [s for s in seeds if str(s) not in und and not _nan(per.get(str(s)))]
+    if not und or not ok:
+        return None, []
+    return float(np.mean([per[str(s)] for s in ok])), ok
+
+
+def defined_seed_mark(c, limit=None):
+    """The descriptive mark "defined-seed means differ by more than the margin" (``None`` when it does not apply):
+    some seeds' precision is undefined and, over the seeds where both arms are defined, ``cl-drop`` minus baseline
+    is below ``-C3_MAX_PRECISION_LOSS``. It never decides C3."""
+    limit = C3_MAX_PRECISION_LOSS if limit is None else limit
+    mean, ok = defined_seed_precision_mean(c)
+    if mean is None or not mean < -limit:
+        return None
+    return (f"precision: defined-seed means differ by more than the margin ({mean:+.3f} over seed "
+            f"{', '.join(map(str, ok))})")
 
 
 def load_run_predictions(r4, label_type, tag, inputs=None):
@@ -1119,10 +1176,12 @@ def recipe(label_type, mtype, gtype):
     # clause is estimable and its interval is wholly beyond the threshold, passes when both are estimable and not,
     # and is unestimable otherwise (a clause is unestimable when its interval is missing: no maps record, or too
     # few bootstrap replicates defined; C3_MIN_VALID_SHARE). (The per-clause judgment is the 2026-11-19 bug fix.)
-    # One exception, part of the same 2026-11-20 amendment: a precision clause left without an interval only because
-    # the BASELINE gates no Agree on some seed, cl-drop's precision defined on every shared seed, reads as a pass
-    # with a note (``baseline_side_undefined``); arm-side and mixed causes stay unestimable. Two descriptive marks
-    # never decide: the collapse flag (``agree_collapse``) and "point estimate beyond the margin, interval spans it".
+    # One exception, part of the same 2026-11-20 amendment: a precision clause left without an interval because the
+    # BASELINE gates no Agree on EVERY shared seed, cl-drop's precision defined on every shared seed, reads as a pass
+    # with a note (``baseline_side_undefined``), so only the coverage clause judges. The baseline gating no Agree on
+    # only some seeds, and arm-side or mixed causes, stay unestimable with the cause recorded. Descriptive marks
+    # never decide: the collapse flag (``agree_collapse``), "point estimate beyond the margin, interval spans it",
+    # "defined-seed means differ by more than the margin" (``defined_seed_mark``) and fewer than three shared seeds.
     c3 = {"id": "C3", "result": "pass", "splits": {}}
     for s in EVAL_SPLITS:
         cb, cc, cov_per = paired_seed_means(runs, ("gates", s, "Agree", "coverage_weighted"))
@@ -1144,12 +1203,17 @@ def recipe(label_type, mtype, gtype):
             row[f"{clause}_point_beyond_interval_spans"] = (row[f"{clause}_result"] == "pass" and not _nan(mean)
                                                            and mean < -limit)
         row["precision_note"] = None
-        if row["precision_result"] == "unestimable" and ag and baseline_side_undefined(_get(ag, "precision")):
-            seeds_ = sorted(_get(ag, "precision", "undefined"), key=int)
+        if row["precision_result"] == "unestimable" and ag and baseline_side_undefined(ag):
+            seeds_ = sorted(_undefined_seeds(ag), key=int)
             row["precision_result"] = "pass"
-            row["precision_note"] = (f"read as pass: the baseline gates no Agree on seed {', '.join(map(str, seeds_))}"
-                                     " (its precision is undefined) and cl-drop's precision is defined on every "
-                                     "shared seed, so there is no baseline Agree precision to regress from")
+            row["precision_note"] = (f"read as pass: the baseline gates no Agree on every shared seed "
+                                     f"({', '.join(seeds_)}; its precision is undefined) and cl-drop's precision is "
+                                     "defined on every shared seed, so there is no baseline Agree precision to "
+                                     "regress from; only the coverage clause judges")
+        elif row["precision_result"] == "unestimable" and ag and undefined_precision_text(ag):
+            row["precision_note"] = f"unestimable: {undefined_precision_text(ag).removeprefix('precision ')}"
+        row["precision_defined_seed_mark"] = defined_seed_mark(ag) if ag else None     # descriptive; never decides
+        row["n_seeds"] = len(ag.get("seeds") or []) if ag else None
         row["collapse"] = _get(ag, "collapse") if ag else None          # descriptive; never decides C3
         row["n_dropped_rows"] = _get(ag, "n_dropped_rows") if ag else None
         clauses = (row["coverage_result"], row["precision_result"])
@@ -1372,11 +1436,14 @@ def maps_markdown(maps):
               f"-{C3_MAX_COVERAGE_LOSS:g} (coverage) or -{C3_MAX_PRECISION_LOSS:g} (precision)). With three seeds this "
               "screen fails a clause roughly when every shared seed is past the margin; it is not a calibrated 95% "
               "interval. The flags column names any collapsing seed (one arm gates no Agree while the other gates "
-              f"some, or a coverage delta below -{C3_COLLAPSE_FACTOR * C3_MAX_COVERAGE_LOSS:.2f}) and any clause whose "
-              "point estimate is beyond its margin while the interval spans it.", "",
+              f"some, or a coverage delta below -{C3_COLLAPSE_FACTOR * C3_MAX_COVERAGE_LOSS:.2f}), any clause whose "
+              "point estimate is beyond its margin while the interval spans it, the cause of an undefined precision "
+              "with \"defined-seed means differ by more than the margin\" when the seeds where both arms are defined "
+              f"lose more than {C3_MAX_PRECISION_LOSS:g}, and fewer than three shared seeds (the shared seeds "
+              "column).", "",
               "| Type | split | coverage mean [95%] | per seed | precision mean [95%] | per seed | replicates "
-              "undefined (coverage, precision) | flags (descriptive, do not decide) | n |",
-              "|---|---|---:|---|---:|---|---:|---|---:|"]
+              "undefined (coverage, precision) | flags (descriptive, do not decide) | shared seeds | n |",
+              "|---|---|---:|---|---:|---|---:|---|---:|---:|"]
     for t in LABEL_TYPES:
         for s in EVAL_SPLITS:
             c = _get(maps.get(t) or {}, "agree_gate", "cl-drop", s)
@@ -1389,13 +1456,16 @@ def maps_markdown(maps):
                                 for sd, v in sorted(b["per_seed"].items(), key=lambda kv: int(kv[0])))
                 cells += [f"{_f(b['mean'], '{:+.3f}')} [{_f(b['lo'], '{:+.3f}')}, {_f(b['hi'], '{:+.3f}')}]", per]
             dropped = f"{c['coverage']['n_dropped']}, {c['precision']['n_dropped']} of {c['n_replicates']}"
-            lines.append(f"| {t} | {s} | {' | '.join(cells)} | {dropped} | {c3_flags(c)} | {c['n']:,} |")
+            lines.append(f"| {t} | {s} | {' | '.join(cells)} | {dropped} | {c3_flags(c)} | "
+                         f"{len(c.get('seeds') or [])} | {c['n']:,} |")
     return "\n".join(lines)
 
 
 def c3_flags(c):
     """The descriptive marks beside one ``agree_gate`` split of ``maps.json``: the collapse flag, a clause whose point
-    estimate is beyond its margin while its interval spans it, and a baseline-side undefined precision.
+    estimate is beyond its margin while its interval spans it, the cause of an undefined precision (read as a pass
+    only when the baseline gates no Agree on every shared seed), "defined-seed means differ by more than the margin"
+    (``defined_seed_mark``) and fewer than three shared seeds (``few_seeds_text``). None of them decides C3.
 
     >>> c3_flags({"coverage": {"mean": -0.05, "lo": -0.2, "hi": 0.01}, "precision": {"mean": 0.0, "lo": -0.01,
     ...           "hi": 0.01}, "collapse": {"flagged": False}})
@@ -1408,9 +1478,31 @@ def c3_flags(c):
         b = c.get(clause) or {}
         if not (_nan(b.get("mean")) or _nan(b.get("hi"))) and b["mean"] < -limit <= b["hi"]:
             marks.append(f"{clause}: point estimate beyond the margin, interval spans it")
-    if baseline_side_undefined(c.get("precision")):
-        marks.append("precision undefined on the baseline side only (read as pass)")
+    if baseline_side_undefined(c):
+        marks.append("precision undefined because the baseline gates no Agree on every shared seed (read as pass)")
+    elif undefined_precision_text(c):
+        marks.append(undefined_precision_text(c))
+    if defined_seed_mark(c):
+        marks.append(defined_seed_mark(c))
+    few = few_seeds_text(len(c["seeds"]) if c.get("seeds") is not None else None)
+    if few:
+        marks.append(few)
     return f"**{'; '.join(marks)}**" if marks else "none"
+
+
+def few_seeds_text(n):
+    """The descriptive warning beside C3 when fewer than three training seeds are shared (``None`` otherwise); it
+    never decides C3. With two seeds the screen's false-fail rate at the margin is about (1/2)^2 = 25%; with one,
+    the interval resamples panoramas only.
+
+    >>> few_seeds_text(3) is None, few_seeds_text(1)
+    (True, 'only 1 shared seed: the interval resamples panoramas only')
+    """
+    if n is None or n >= 3:
+        return None
+    if n == 1:
+        return "only 1 shared seed: the interval resamples panoramas only"
+    return f"only {n} shared seeds: the screen's false-fail rate at the margin is about {0.5 ** n:.0%}"
 
 
 def _iv(row, clause):
@@ -1442,10 +1534,15 @@ def _crit_text(c):
             for clause in ("coverage", "precision"):
                 if row.get(f"{clause}_point_beyond_interval_spans"):
                     marks.append(f"{clause}: point estimate beyond the margin, interval spans it")
+            if row.get("precision_defined_seed_mark"):
+                marks.append(row["precision_defined_seed_mark"])
+            if few_seeds_text(row.get("n_seeds")):
+                marks.append(few_seeds_text(row["n_seeds"]))
             flag = f"**{'; '.join(marks)} (descriptive, does not decide)**; " if marks else ""
             if row.get("precision_note"):
                 flag += f"precision {row['precision_note']}; "
-            parts.append(f"{s} {row['result']}{clauses}: {flag}Agree coverage cl-drop minus baseline "
+            nseeds = f"{row['n_seeds']} shared seeds; " if row.get("n_seeds") is not None else ""
+            parts.append(f"{s} {row['result']}{clauses}: {flag}{nseeds}Agree coverage cl-drop minus baseline "
                          f"{_iv(row, 'coverage')}, means {_f(row['coverage_cl-drop'])} vs "
                          f"{_f(row['coverage_baseline'])} (per seed baseline/cl-drop: {per}); weighted precision "
                          f"{_iv(row, 'precision')}, means {_f(row['precision_cl-drop'])} vs "

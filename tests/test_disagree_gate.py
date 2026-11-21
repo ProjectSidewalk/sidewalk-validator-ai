@@ -740,7 +740,8 @@ def test_c3_interval_touching_the_margin_passes():
 
 
 # A panorama-level effect (first review, S2): whole panoramas are ungated together, by both arms (set A) or by cl-drop
-# only (set B, shared by every seed), with a little seed-specific row noise in cl-drop. Rows within a panorama are
+# only (set B, shared by every seed), with a little seed-specific row noise in each arm (different rows and rates per
+# arm and seed, so pairing cl-drop seed s with baseline seed s+1 changes the interval). Rows within a panorama are
 # correlated, the seeds share most of their delta, and the arms share A.
 S2_NP, S2_R = 150, 6
 S2_UIDS = [f"s:{i:05d}" for i in range(S2_NP * S2_R)]        # zero-padded: sorted order is the fixture's order
@@ -754,8 +755,10 @@ SEEDS3 = (42, 43, 44)
 
 
 def s2_arm(seed, cl_drop):
-    noise = np.random.default_rng(seed).random(len(S2_UIDS)) < 0.02 * (seed - 41)
-    gated = ~S2_A[S2_PANO] & ~((S2_B[S2_PANO] | noise) & cl_drop)
+    r = np.random.default_rng(seed)
+    noise = r.random(len(S2_UIDS)) < 0.02 * (seed - 41)                 # cl-drop only
+    base_noise = r.random(len(S2_UIDS)) < 0.01 * (seed - 41)            # baseline only (final review, N-1)
+    gated = ~S2_A[S2_PANO] & (~(S2_B[S2_PANO] | noise) if cl_drop else ~base_noise)
     return pd.DataFrame({"label_uid": S2_UIDS, "split": "test", "true": S2_TRUE, "verdict": "correct",
                          "served": np.where(gated, 0.95, 0.5)})
 
@@ -846,25 +849,108 @@ def test_c3_precision_clause_on_a_known_difference():
     assert (row["precision_result"], row["coverage_result"], row["result"]) == ("fail", "pass", "fail")
 
 
-def test_c3_baseline_side_undefined_precision_reads_as_pass():
-    # The baseline gates no Agree on seed 44; cl-drop gates on every seed: no baseline precision to regress from.
-    base = {sd: agree_scored(c, sd) for sd, c in ((42, 0.8), (43, 0.8), (44, 0.0))}
-    cl = {sd: agree_scored(0.8, sd) for sd in (42, 43, 44)}
-    ag = dgt.paired_agree_gate_delta(base, cl, PANO, "test", PI, n_boot=100, seed=0)
-    assert ag["precision"]["undefined"] == {44: "baseline"} and _isnan(ag["precision"]["hi"])
-    assert ag["collapse"]["seeds"] == [44] and "baseline gates no Agree" in ag["collapse"]["detail"][44]["reasons"]
+def precision_pair(base_gates):
+    """``(baseline, cl-drop)`` scored runs on 1,000 labels (800 correct, 200 incorrect; the mix equals PI, so every
+    prior weight is 1). On a seed where ``base_gates[seed]`` is true the baseline gates 400 correct labels (precision
+    1.000), otherwise none; cl-drop gates the same 400 plus 60 incorrect ones on every seed (precision 0.870)."""
+    n = 1000
+    uids = [f"q:{i:05d}" for i in range(n)]
+    true = np.array(["correct"] * 800 + ["incorrect"] * 200)
+    mk = lambda served: pd.DataFrame({"label_uid": uids, "split": "test", "true": true, "verdict": "correct",
+                                      "served": served})
+    base, cl = {}, {}
+    for sd in SEEDS3:
+        r = np.random.default_rng(sd)
+        ok, bad = r.choice(800, 400, replace=False), 800 + r.choice(200, 60, replace=False)
+        sb, sc = np.full(n, 0.5), np.full(n, 0.5)
+        if base_gates[sd]:
+            sb[ok] = 0.95
+        sc[ok], sc[bad] = 0.95, 0.95
+        base[sd], cl[sd] = mk(sb), mk(sc)
+    return base, cl, {u: f"q|P{i // 4}" for i, u in enumerate(uids)}
+
+
+def c3_test_row(ag):
     r = one(with_agree_gate(ag), gold_ok())
-    row = next(c for c in r["criteria"] if c["id"] == "C3")["splits"]["test"]
-    assert row["precision_result"] == "pass" and "baseline gates no Agree on seed 44" in row["precision_note"]
-    assert row["result"] == "pass" and r["recipe"] == "cl-drop"
-    assert "precision read as pass: the baseline gates no Agree on seed 44" in dgt.bar_markdown([r])
-    # arm-side (cl-drop gates none on 44) and mixed causes stay unestimable
-    for b44, c44, b43 in ((0.8, 0.0, 0.8), (0.8, 0.0, 0.0)):
+    return r, next(c for c in r["criteria"] if c["id"] == "C3")["splits"]["test"]
+
+
+def test_c3_baseline_gating_no_agree_on_every_seed_reads_as_pass():
+    # The baseline gates no Agree on any shared seed; cl-drop gates on every seed: there is no baseline precision to
+    # regress from, so the precision clause reads as a pass and only the coverage clause judges.
+    base, cl, groups = precision_pair({42: False, 43: False, 44: False})
+    ag = dgt.paired_agree_gate_delta(base, cl, groups, "test", PI, n_boot=100, seed=0)
+    assert ag["precision"]["undefined"] == {42: "baseline", 43: "baseline", 44: "baseline"}
+    assert _isnan(ag["precision"]["hi"]) and dgt.baseline_side_undefined(as_json(ag))
+    r, row = c3_test_row(ag)
+    assert row["precision_result"] == "pass" and "every shared seed (42, 43, 44" in row["precision_note"]
+    assert row["coverage_result"] == "pass" and row["result"] == "pass" and r["recipe"] == "cl-drop"
+    assert row["precision_defined_seed_mark"] is None                     # no seed has both arms defined
+    assert "precision read as pass: the baseline gates no Agree on every shared seed" in dgt.bar_markdown([r])
+
+
+def test_c3_baseline_gating_no_agree_on_some_seeds_stays_unestimable_with_the_mark():
+    # The final review's case (S-1): the baseline gates no Agree on seed 44 only, while on seeds 42 and 43 it scores
+    # 1.000 against cl-drop's 0.870. That loss must not be read as a pass.
+    base, cl, groups = precision_pair({42: True, 43: True, 44: False})
+    ag = dgt.paired_agree_gate_delta(base, cl, groups, "test", PI, n_boot=100, seed=0)
+    prec = ag["precision"]
+    assert prec["undefined"] == {44: "baseline"} and _isnan(prec["hi"])
+    assert prec["per_seed"][42] == pytest.approx(400 / 460 - 1) and prec["per_seed"][43] == pytest.approx(400 / 460 - 1)
+    assert not dgt.baseline_side_undefined(as_json(ag))
+    r, row = c3_test_row(ag)
+    assert row["precision_result"] == "unestimable" and row["result"] == "unestimable"
+    assert row["precision_note"] == ("unestimable: undefined on seed 44 (baseline gates no Agree) of shared seeds "
+                                     "42, 43, 44")
+    assert row["precision_defined_seed_mark"] == ("precision: defined-seed means differ by more than the margin "
+                                                  "(-0.130 over seed 42, 43)")
+    text = dgt.bar_markdown([r])
+    assert "defined-seed means differ by more than the margin" in text and "does not decide" in text
+    assert "read as pass" not in text
+    md = dgt.maps_markdown({"Obstacle": {"agree_gate": {"cl-drop": {"test": as_json(ag)}}}})
+    assert "defined-seed means differ by more than the margin" in md
+    assert "precision undefined on seed 44 (baseline gates no Agree)" in md
+    # the mark never decides: the same record with no loss on the defined seeds gives the same recipe and C3
+    quiet = as_json(ag)
+    quiet["precision"]["per_seed"].update({"42": 0.0, "43": 0.0})
+    rec_a, crit_a = dgt.recipe("Obstacle", with_agree_gate(as_json(ag))["Obstacle"], gold_ok()["Obstacle"])
+    rec_b, crit_b = dgt.recipe("Obstacle", with_agree_gate(quiet)["Obstacle"], gold_ok()["Obstacle"])
+    ra, rb = (next(c for c in crit if c["id"] == "C3")["splits"]["test"] for crit in (crit_a, crit_b))
+    assert ra["precision_defined_seed_mark"] and rb["precision_defined_seed_mark"] is None
+    assert rec_a == rec_b and [c["result"] for c in crit_a] == [c["result"] for c in crit_b]
+    assert (ra["result"], ra["precision_result"]) == (rb["result"], rb["precision_result"])
+    # a loss within the margin on the defined seeds prints no mark
+    small = as_json(ag)
+    small["precision"]["per_seed"].update({"42": -0.01, "43": -0.005})
+    assert dgt.defined_seed_mark(small) is None
+
+
+def test_c3_arm_side_and_mixed_undefined_precision_stay_unestimable_with_the_cause():
+    for b44, c44, b43, cause in ((0.8, 0.0, 0.8, "44 (cl-drop gates no Agree)"),
+                                 (0.8, 0.0, 0.0, "43 (baseline gates no Agree), 44 (cl-drop gates no Agree)")):
         base = {sd: agree_scored(c, sd) for sd, c in ((42, 0.8), (43, b43), (44, b44))}
         cl = {sd: agree_scored(c, sd) for sd, c in ((42, 0.8), (43, 0.8), (44, c44))}
         ag = dgt.paired_agree_gate_delta(base, cl, PANO, "test", PI, n_boot=50, seed=0)
-        row = next(c for c in one(with_agree_gate(ag), gold_ok())["criteria"] if c["id"] == "C3")["splits"]["test"]
-        assert row["precision_result"] == "unestimable" and row["precision_note"] is None
+        _, row = c3_test_row(ag)
+        assert row["precision_result"] == "unestimable" and f"undefined on seed {cause}" in row["precision_note"]
+
+
+def test_c3_prints_the_number_of_shared_seeds_and_warns_under_three():
+    base = {sd: agree_scored(0.8, sd) for sd in (42, 43, 44)}
+    three = dgt.paired_agree_gate_delta(base, base, PANO, "test", PI, n_boot=20, seed=0)
+    two = dgt.paired_agree_gate_delta({s: base[s] for s in (42, 43)}, base, PANO, "test", PI, n_boot=20, seed=0)
+    one_ = dgt.paired_agree_gate_delta({42: base[42]}, base, PANO, "test", PI, n_boot=20, seed=0)
+    r3, row3 = c3_test_row(three)
+    r2, row2 = c3_test_row(two)
+    r1, row1 = c3_test_row(one_)
+    assert (row3["n_seeds"], row2["n_seeds"], row1["n_seeds"]) == (3, 2, 1)
+    assert "3 shared seeds" in dgt.bar_markdown([r3]) and "only" not in dgt.bar_markdown([r3])
+    assert "only 2 shared seeds: the screen's false-fail rate at the margin is about 25%" in dgt.bar_markdown([r2])
+    assert "only 1 shared seed: the interval resamples panoramas only" in dgt.bar_markdown([r1])
+    assert r3["recipe"] == r2["recipe"] == r1["recipe"] == "cl-drop"            # a warning, never a floor
+    md = dgt.maps_markdown({"Obstacle": {"agree_gate": {"cl-drop": {"test": as_json(two), "test_heldout": three}}}})
+    assert "| shared seeds | n |" in md and "only 2 shared seeds" in md
+    assert "| none | 3 | 1,200 |" in md and "| 2 | 1,200 |" in md
 
 
 def test_c3_collapse_flag_and_point_beyond_margin_mark_are_printed_and_do_not_decide():
