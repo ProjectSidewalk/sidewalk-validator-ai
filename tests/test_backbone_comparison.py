@@ -322,6 +322,22 @@ def test_panoramas_not_rows_are_resampled():
     assert width["clustered"] > 2.5 * width["rows"]
 
 
+def test_the_prior_weights_are_recomputed_on_every_resample():
+    """PR #121 final review N1: the arm passes exactly the correct rows and the baseline exactly the incorrect ones,
+    every row Agree. Under weights ``pi(y) / resample share(y)`` their coverages are ``pi(correct)`` and
+    ``pi(incorrect)`` in every resample, so the interval collapses to the point; weights frozen at the full-sample
+    share would move with each resample's class mix and widen it."""
+    y, g, _ = gate_data(n=1200)
+    ones = np.ones(len(y), bool)
+    arm = {s: (ones, ~y, ~y) for s in bc.SEEDS}
+    base = {s: (ones, y, ~y) for s in bc.SEEDS}
+    r = bc.gate_delta_ci(y, g, PI, arm, base, n_boot=300, seed=4)
+    want = PI["correct"] - PI["incorrect"]
+    assert r["d_cov"] == pytest.approx(want, abs=1e-12)
+    assert r["d_cov_lo"] == pytest.approx(want, abs=1e-12) and r["d_cov_hi"] == pytest.approx(want, abs=1e-12)
+    assert r["d_prec_lo"] == pytest.approx(1.0, abs=1e-12) and r["d_prec_hi"] == pytest.approx(1.0, abs=1e-12)
+
+
 def test_a_baseline_with_no_gated_agree_on_every_seed_reads_the_precision_clause_as_pass():
     """PR #121 fix round S1, as amended from #120's final review: only when the baseline gates no Agree on EVERY
     shared seed (its precision undefined throughout) and the arm's is defined on every seed does the relative-precision
@@ -410,7 +426,7 @@ def test_partial_precision_means_and_a_short_seed_count_are_marked():
              {"seed": 44, "cov": 0.5, "base_cov": 0.5, "prec": 0.95, "base_prec": None}]
     r = {**per_type(prec_ci=(None, None)), "agree_ci_per_seed": seeds, "agree_ci_seeds": [42, 43, 44]}
     assert "precision over the seeds where both models' is defined (42, 43): arm 0.935, baseline 0.960, Δ -0.025, " \
-           "beyond the margin 0.01" in bc.gate_flags(r)
+           "beyond the margin -0.01" in bc.gate_flags(r)
     assert bc.gate_detail(r)[1]["precision_drop"] == "unestimable"
     close = [dict(p, prec=p["base_prec"] or 0.95) for p in seeds]
     assert not any(f.startswith("precision over") for f in bc.gate_flags({**r, "agree_ci_per_seed": close}))
@@ -418,6 +434,20 @@ def test_partial_precision_means_and_a_short_seed_count_are_marked():
     assert bc.gate_flags(two)[0] == "2 shared seeds (under 3)"
     assert "| 2 (under 3) |" in bc.condition3_markdown(summary("dinov2-reg-large", two, per_type()))
     assert "| 3 |" in bc.condition3_markdown(summary("dinov2-reg-large", r, per_type()))
+
+
+def test_the_partial_seed_precision_mark_fires_on_a_loss_only():
+    """PR #121 final review N3: like #120's ``defined_seed_mark``, the mark fires only when the arm is below the
+    baseline by more than 0.01 over the seeds where both are defined; an arm better there by as much is not marked."""
+    def flags(arm_prec):
+        seeds = [{"seed": 42, "cov": 0.5, "base_cov": 0.5, "prec": arm_prec, "base_prec": 0.95},
+                 {"seed": 43, "cov": 0.5, "base_cov": 0.5, "prec": arm_prec, "base_prec": 0.95},
+                 {"seed": 44, "cov": 0.5, "base_cov": 0.5, "prec": 0.95, "base_prec": None}]
+        return [f for f in bc.gate_flags({"agree_ci_per_seed": seeds}) if f.startswith("precision over")]
+    assert flags(0.93) == ["precision over the seeds where both models' is defined (42, 43): arm 0.930, baseline "
+                           "0.950, Δ -0.020, beyond the margin -0.01"]
+    assert flags(0.97) == []          # better by 0.02: no mark
+    assert flags(0.945) == []         # a loss within the margin: no mark
 
 
 def test_flags_never_decide_and_reach_both_reports():
@@ -873,6 +903,80 @@ def test_gate_intervals_refuse_runs_whose_true_classes_differ(synthetic):
     pred.loc[i, "true"] = "incorrect" if pred.loc[i, "true"] == "correct" else "correct"
     with pytest.raises(ValueError, match="true classes differ"):
         bc.gate_intervals("CurbRamp", runs, _shares(), 40, 0)
+
+
+def test_gate_intervals_refuse_runs_whose_rows_differ(synthetic):
+    """PR #121 final review N2: every run must carry the reference run's ``label_uid`` rows, a row dropped or a
+    ``label_uid`` renamed alike."""
+    tag = bc.make_tag("bb-", "dinov2-reg-large", 43)
+    runs = gate_runs(synthetic)
+    pred = runs[tag]["pred"]
+    runs[tag]["pred"] = pred.drop(index=pred.index[pred["split"] == "test"][0])
+    with pytest.raises(ValueError, match="rows differ from the baseline's"):
+        bc.gate_intervals("CurbRamp", runs, _shares(), 40, 0)
+    runs = gate_runs(synthetic)
+    pred = runs[tag]["pred"]
+    pred.loc[pred.index[pred["split"] == "test"][0], "label_uid"] = "elsewhere:999999"
+    with pytest.raises(ValueError, match="rows differ from the baseline's"):
+        bc.gate_intervals("CurbRamp", runs, _shares(), 40, 0)
+
+
+def test_adding_an_arm_never_moves_another_arms_interval(synthetic):
+    """PR #121 final review N2: each arm's generator is seeded from its own name, so a new arm (sorted before the
+    existing one) leaves the existing arm's interval exactly as it was."""
+    runs = gate_runs(synthetic)
+    want = bc.gate_intervals("CurbRamp", runs, _shares(), 40, 0)
+    assert want["dinov2-reg-large"]["d_cov_lo"] < want["dinov2-reg-large"]["d_cov_hi"]   # not degenerate
+    rng = np.random.default_rng(11)
+    for seed in bc.SEEDS:
+        src = runs[bc.make_tag("bb-", "dinov2-reg-large", seed)]["pred"].copy()
+        src["p_incorrect"] = np.clip(src["p_incorrect"] + rng.normal(0, 0.2, len(src)), 0.001, 0.999)
+        src["p_correct"] = 1 - src["p_incorrect"]
+        tag = bc.make_tag("bb-", "convnextv2-base", seed)
+        runs[tag] = {"tag": tag, "status": "complete", "parsed": {"key": "convnextv2-base", "seed": seed, "lr": 1e-5},
+                     "pred": src}
+    got = bc.gate_intervals("CurbRamp", runs, _shares(), 40, 0)
+    assert set(got) == {"convnextv2-base", "dinov2-reg-large"}
+    _same_intervals({"dinov2-reg-large": got["dinov2-reg-large"]}, want)
+
+
+def _curbramp_pi():
+    from analysis import prior_rules as pr
+    return pr.rule_prior(_shares(), "CurbRamp", bc.DECISION_RULE)
+
+
+def test_agree_rows_give_a_row_without_a_panorama_its_own_cluster(synthetic):
+    """PR #121 final review N6: a missing or empty ``pano_id`` becomes ``uid:<label_uid>`` (as #120 does), never the
+    string "nan", so such rows are separate bootstrap clusters."""
+    pred = next(iter(gate_runs(synthetic).values()))["pred"]
+    test_idx = pred.index[pred["split"] == "test"]
+    pred.loc[test_idx[:2], "pano_id"] = np.nan
+    pred.loc[test_idx[2], "pano_id"] = ""
+    rows = bc._agree_rows(pred, _curbramp_pi())
+    lost = set(pred.loc[test_idx[:3], "label_uid"].astype(str))
+    got = rows.loc[rows["label_uid"].isin(lost)].set_index("label_uid")["pano_id"].to_dict()
+    assert got == {u: f"uid:{u}" for u in lost}
+    assert not rows["pano_id"].isin(["nan", "", "<NA>", "None"]).any()
+    kept = pred.loc[test_idx[3:]].set_index("label_uid")["pano_id"].astype(str)
+    assert rows.set_index("label_uid").loc[kept.index, "pano_id"].tolist() == kept.tolist()
+
+
+def test_agree_rows_silence_only_the_one_class_warning(synthetic, monkeypatch):
+    """PR #121 final review N5: the one-class message is silenced; any other warning surfaces."""
+    import warnings
+    from analysis import prior_rules as pr
+    real = pr.served_and_weights
+
+    def noisy(pred, pi):
+        warnings.warn("evaluation on 'test_heldout' skipped: no examples of class ['incorrect'] to reweight")
+        warnings.warn("something else entirely")
+        return real(pred, pi)
+    monkeypatch.setattr(pr, "served_and_weights", noisy)
+    pred = next(iter(gate_runs(synthetic).values()))["pred"]
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always")
+        bc._agree_rows(pred, _curbramp_pi())
+    assert [str(w.message) for w in seen] == ["something else entirely"]
 
 
 def test_slices_and_lr_and_env_tables(synthetic):

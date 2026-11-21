@@ -259,25 +259,24 @@ SurfaceProblem**.
      reads as pass, with a note; the 0.92 floor still protects served precision. A baseline undefined on some seeds
      only stays unestimable, because a real precision loss on the other seeds would otherwise read as a pass; so does
      an arm-side or mixed cause. Where a seed's precision is undefined, the means over the seeds where both models'
-     precision is defined are printed as a mark when they differ by more than 0.01. The cause of every unestimable
-     clause, and of that pass, is named in `decision.json` (`condition_3_by_type`), `gate.md` and `decision.md`, and
-     the number of shared seeds is printed beside condition 3, marked when under three. Per-seed precision and coverage of both models, the point estimates and the dropped counts are
-     reported beside the intervals (`gate.md`).
+     precision is defined are printed as a mark when the arm's is below the baseline's by more than 0.01 (a loss
+     only; an arm better on those seeds is not marked). The cause of every unestimable clause, and of that pass, is
+     named in `decision.json` (`condition_3_by_type`), `gate.md` and `decision.md`, and the number of shared seeds is
+     printed beside condition 3, marked when under three. Per-seed precision and coverage of both models, the point
+     estimates and the dropped counts are reported beside the intervals (`gate.md`).
 
-     *What the screen is with three seeds.* Seed resampling with k = 3 is coarse: about 30% of replicates ((2/3)³)
-     never draw a given seed, so the interval's upper end sits near the best seed's difference. The nominal 95%
-     screen therefore behaves roughly as "fails only when all shared seeds are past the margin". Its one-sided
-     false-fail level at a true drop exactly at the margin is near 12.5% ((1/2)³), not 2.5%: the "95%" is nominal.
-     That is the same evidential form as condition 1's "Δ > 0 in 3 of 3 seeds". Resampling the
-     runs and the evaluation data within them follows practice for studies with few training runs: Agarwal et al.
-     2021 (stratified bootstrap confidence intervals over runs, "Deep Reinforcement Learning at the Edge of the
-     Statistical Precipice", NeurIPS) and Bouthillier et al. 2021 (accounting for seed and data-sampling variance
-     together, "Accounting for Variance in Machine Learning Benchmarks", MLSys). Operating characteristics are in the
+     *What the screen is with three seeds.* Seed resampling with k = 3 is coarse: 1/27 of replicates ((1/3)³, 3.7%,
+     more than the 2.5% above the upper percentile) draw only the best seed, so the interval's upper end sits near
+     the best seed's difference. The nominal 95% screen therefore behaves roughly as "fails only when all shared
+     seeds are past the margin". Its one-sided false-fail level at a true drop exactly at the margin is near 12.5%
+     ((1/2)³), not 2.5%: the "95%" is nominal. That is the same evidential form as condition 1's "Δ > 0 in 3 of 3
+     seeds". The hierarchical bootstrap over seeds and panoramas is in the spirit of hierarchical-bootstrap practice
+     for studies with few training runs (Agarwal et al. 2021, arXiv:2108.13264; Bouthillier et al. 2021,
+     arXiv:2103.03098); neither paper prescribes this exact two-level scheme. Operating characteristics are in the
      table below the null-winner paragraph. Descriptive flags in `gate.md` and `decision.md`, which never decide:
-     fewer than three shared seeds; any seed where one model gates no Agree while the other gates some; any seed whose
-     Δ coverage is below −3 × 0.02; the partial-seed precision mark above; and, on a winner, a margin clause whose
-     point estimate is beyond the margin while its interval spans it.
-     Amended before any result was read (J17).
+     fewer than three shared seeds; any seed where one model gates no Agree while the other gates some; any seed
+     whose Δ coverage is below −3 × 0.02; the partial-seed precision mark above; and, on a winner, a margin clause
+     whose point estimate is beyond the margin while its interval spans it. Amended before any result was read (J17).
 - *Between-deployment only*: condition 1's pooled bar is met but the within-city mean Δ is ≤ 0. Reported under
   that name; cannot win.
 - *Fails the gate*: conditions 1 and 2 hold and condition 3 fails on a pilot type. Reported under that name; cannot
@@ -533,4 +532,5 @@ Listed with the default this branch uses; none blocks the pilot. Numbered as in 
   arm's precision is defined on every one (a baseline undefined on some seeds only stays unestimable, since a real
   loss on the other seeds would read as a pass; amended from PR #120's final review); the cause of every unestimable
   clause is named; the 0.92 floor reads the mean over every shared seed; the shared-seed count is printed beside
-  condition 3.
+  condition 3; the partial-seed precision mark fires on a loss only (arm below baseline by more than 0.01), as
+  PR #120's mark does.

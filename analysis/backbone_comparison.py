@@ -491,14 +491,20 @@ def _agree_rows(pred, pi, split="test"):
     """One run's ``split`` rows under its own val-fitted uncapped map (``prior_rules.served_and_weights``, the map
     ``gate_stats`` reads), sorted by ``label_uid``: ``label_uid``, ``pano_id``, ``incorrect`` and the Agree arrays
     ``agree``, ``passed``, ``right``. Only ``val`` (the map's fit) and ``split`` are passed on, so another eval split
-    with one class (whose prior weights are undefined) cannot stop it."""
+    with one class (whose prior weights are undefined) cannot stop it. Only the one-class message ("no examples of
+    class") is silenced; any other warning surfaces. A row without a ``pano_id`` becomes its own bootstrap cluster,
+    ``uid:<label_uid>`` (the round-4 Disagree gate's convention), so such rows are not lumped into one panorama
+    called "nan"."""
     from analysis import prior_rules as pr
     cols = ["label_uid", "split", "true", "p_correct", "p_incorrect", "pano_id"]
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+        warnings.filterwarnings("ignore", message=r".*no examples of class")
         s = pr.served_and_weights(pred.loc[pred["split"].isin(["val", split]), cols], pi)
     s = s[s["split"] == split].sort_values("label_uid", kind="mergesort").reset_index(drop=True)
-    return pd.DataFrame({"label_uid": s["label_uid"].astype(str), "pano_id": s["pano_id"].astype(str),
+    uid = s["label_uid"].astype(str)
+    pano = s["pano_id"].astype("string").str.strip()
+    pano = pano.where(pano.notna() & (pano != ""), "uid:" + uid).astype(str)
+    return pd.DataFrame({"label_uid": uid, "pano_id": pano,
                          "incorrect": (s["true"].astype(str) == "incorrect").to_numpy(),
                          "agree": (s["verdict"] == "correct").to_numpy(),
                          "passed": (s["served"] >= pr.GATE).to_numpy(), "right": s["correct"].astype(bool).to_numpy()})
@@ -981,7 +987,8 @@ def gate_flags(r):
     """Condition 3's flags (descriptive; they never decide): fewer than three shared seeds; every shared seed where one
     model gates no Agree while the other gates some; every seed whose Δ Agree coverage is below −3 × 0.02; and, when
     some seed's precision is undefined (so the paired mean is), the means over the seeds where both models' precision
-    is defined, when they differ by more than the 0.01 margin.
+    is defined, when the arm's is below the baseline's by more than the 0.01 margin (a loss only, as the round-4
+    Disagree gate's ``defined_seed_mark``; an arm better there is not marked).
 
     >>> gate_flags({"agree_ci_per_seed": [{"seed": 44, "cov": 0.40, "base_cov": 0.5, "prec": None, "base_prec": 0.95}]})
     ['1 shared seed (under 3)', 'seed 44: the arm gates no Agree, the baseline gates some', 'seed 44: Δ coverage -0.100, below -0.06']
@@ -994,9 +1001,9 @@ def gate_flags(r):
     both = [p for p in per if p.get("prec") is not None and p.get("base_prec") is not None]
     if both and len(both) < n:
         a, b = float(np.mean([p["prec"] for p in both])), float(np.mean([p["base_prec"] for p in both]))
-        if abs(a - b) > GATE_PRECISION_DROP:
+        if a - b < -GATE_PRECISION_DROP:
             out.append(f"precision over the seeds where both models' is defined ({', '.join(str(p['seed']) for p in both)}): "
-                       f"arm {a:.3f}, baseline {b:.3f}, Δ {a - b:+.3f}, beyond the margin {GATE_PRECISION_DROP:g}")
+                       f"arm {a:.3f}, baseline {b:.3f}, Δ {a - b:+.3f}, beyond the margin {-GATE_PRECISION_DROP:g}")
     for p in per:
         if (p.get("prec") is None) != (p.get("base_prec") is None):
             out.append(f"seed {p['seed']}: the " + ("arm gates no Agree, the baseline gates some" if p.get("prec") is None
@@ -1514,8 +1521,8 @@ def decision_markdown(decision, n_compared):
              "Causes of unestimable clauses, and of a relative-precision clause read as pass because the baseline "
              "gates no Agree on every shared seed; flags for fewer than three shared seeds, a seed where one model "
              f"gates no Agree and the other some, a seed whose Δ coverage is below {-3 * GATE_COVERAGE_DROP:g}, "
-             "precision means over the seeds where both are defined that differ by more than the margin, and, for a "
-             "winner, a point estimate beyond a margin whose interval spans it (gate.md).\n\n" + "\n".join(lines) + "\n") if lines else ""
+             "an arm precision mean below the baseline's by more than the margin over the seeds where both are "
+             "defined, and, for a winner, a point estimate beyond a margin whose interval spans it (gate.md).\n\n" + "\n".join(lines) + "\n") if lines else ""
     return (f"# Decision\n\nRecommendation: **{decision['recommendation']}**\n\n{extra}Arms compared: {n_compared}; "
             "the family is not corrected for multiplicity (null.md gives the expected number of null winners under this "
             "rule).\n\n"
