@@ -16,8 +16,9 @@ Subcommands:
   the same under the ``margin`` prior as a reference row, the map's maximum Disagree value, a fit on ``test``
   evaluated on ``test_heldout`` (fit-split sensitivity), test / held-out AUC, and the paired held-out contrast of
   ``cl-drop`` against the gold-free baseline (mean of per-seed deltas, one panorama resample shared by all seeds),
-  and C3's paired Agree-gate contrast (``agree_gate``: weighted Agree coverage and precision at the gate, a paired
-  hierarchical bootstrap over training seeds and panoramas with each run's map held fixed).
+  and C3's paired Agree-gate contrast (``agree_gate``: weighted Agree coverage and precision at the gate, a
+  t-interval with the training seeds as replicates plus panorama-bootstrap variance, each run's map held fixed, and
+  the descriptive collapse flag).
 - ``gold`` (Mac only; the only place expert verdicts are read): joins the gold predictions to ``gold.csv`` and
   computes the gold rows of the bar (gated Disagrees, false alarms on hard-correct items, round-stratified AUC, the
   primary paired contrast P4, strata, rounds, slices, sensitivity rows, crop parity, the three-seed ensemble). The
@@ -54,6 +55,7 @@ import math
 import os
 import re
 import sys
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -85,10 +87,12 @@ A3_SHARE, A3_LOWER = 0.92, 0.80
 C2_MAX_AUC_LOSS = 0.010  # cl-drop's mean test AUC may not fall further below the baseline's
 C3_MAX_COVERAGE_LOSS = 0.03   # Agree coverage at the gate, absolute
 C3_MAX_PRECISION_LOSS = 0.01  # prior-weighted Agree precision, relative to the gold-free baseline (A6)
-# C3 (amended 2026-11-20, J15) judges each clause on a paired hierarchical bootstrap interval of cl-drop minus the
-# baseline (``paired_agree_gate_delta``); a clause is unestimable when fewer than this share of the requested
-# replicates give a number (the rest dropped as undefined, e.g. an arm gating no Agree in that resample).
+# C3 (amended 2026-11-20, J15) judges each clause on a t-interval of cl-drop minus the baseline with the training
+# seeds as replicates plus the test set's variance from a panorama bootstrap (``paired_agree_gate_delta``); a clause
+# is unestimable when fewer than this share of the requested panorama replicates give a number (the rest dropped as
+# undefined, e.g. an arm gating no Agree in that resample).
 C3_MIN_VALID_SHARE = 0.5
+C3_COLLAPSE_FACTOR = 3   # collapse flag (descriptive): a seed whose coverage delta is below -3 x 0.03
 PRIVACY_MIN_CELL = 5     # a gold cell under 5 items shows its size only
 ROUND_FLAG_RATIO = 2.0   # A3 per round: flag a round overturned at twice the other's rate
 STATUSES = ("hold_back", "shadow_eligible")
@@ -311,78 +315,158 @@ def paired_seed_delta(preds_a, preds_b, groups, split, n_boot=N_BOOT, seed=0):
 C3_FIELDS = {"coverage": "coverage_weighted", "precision": "precision_weighted"}   # C3 clause -> gate_stats field
 
 
+def t_quantile(df, q=0.975):
+    """Student's t quantile (``scipy.stats.t``; scipy comes with scikit-learn and is pinned in environment.yml).
+
+    >>> round(t_quantile(2), 3), round(t_quantile(1), 3)
+    (4.303, 12.706)
+    """
+    from scipy.stats import t
+    return float(t.ppf(q, df))
+
+
+def seed_t_interval(deltas, v_pano):
+    """C3's interval from the per-seed deltas ``deltas`` (one per shared training seed) and ``v_pano``, the variance
+    of their mean over panorama resamples: ``mean +/- t(0.975, k-1) * sqrt(s2 / k + v_pano)``, the seeds the unit of
+    replication (k - 1 degrees of freedom) and the test set's sampling variance, shared by every seed, added once.
+
+    ``lo`` / ``hi`` are NaN (the clause is unestimable) when a delta is undefined, ``k < 2`` or ``v_pano`` is NaN.
+
+    >>> iv = seed_t_interval([-0.110, -0.101, -0.040], 0.0)
+    >>> round(iv["mean"], 4), round(iv["s2"], 6), round(iv["hi"], 4)
+    (-0.0837, 0.00145, 0.0109)
+    >>> seed_t_interval([-0.1, float("nan"), -0.1], 1e-6)["hi"]
+    nan
+    """
+    d = np.asarray(deltas, dtype=float)
+    k = int(len(d))
+    out = {"k": k, "mean": float(np.mean(d)) if k else float("nan"), "t": float("nan"), "s2": float("nan"),
+           "v_pano": float(v_pano), "lo": float("nan"), "hi": float("nan")}
+    if k < 2 or np.isnan(d).any():
+        return out
+    out["t"], out["s2"] = t_quantile(k - 1), float(np.var(d, ddof=1))
+    if np.isnan(v_pano):
+        return out
+    half = out["t"] * math.sqrt(out["s2"] / k + float(v_pano))
+    out["lo"], out["hi"] = out["mean"] - half, out["mean"] + half
+    return out
+
+
 def paired_agree_gate_delta(scored_a, scored_b, groups, split, pi, n_boot=N_BOOT, seed=0):
     """C3's interval: ``b - a`` in the Agree verdict's prior-weighted coverage and precision at the gate on ``split``,
-    the mean over the shared training seeds, with a 95% percentile interval from a paired hierarchical bootstrap.
+    the mean over the shared training seeds of the paired per-seed delta, with a 95% t-interval that treats the
+    seeds as replicates (``seed_t_interval``).
 
     ``scored_a`` / ``scored_b`` are ``{seed: rows}`` carrying ``label_uid``, ``split``, ``true``, ``verdict`` and
     ``served``: each run's predictions served through its own map fit on val (``served_with_map``). The maps are
-    fixed per run and never refit here, and the statistic is ``gate_stats``, so a seed's point delta is the
-    difference of the two runs' ``gates`` records. Each replicate (1) draws the shared seeds with replacement, a
-    drawn seed bringing both arms' runs of that seed, and (2) draws one resample of whole panoramas (``groups``, via
-    ``slices.boot_indices``) shared by every drawn seed and both arms; the replicate's value is the mean over the
-    drawn seeds of the per-seed delta. A replicate whose value is undefined (a NaN precision when an arm gates no
-    Agree in that resample) is dropped and counted in ``n_dropped``; a clause's ``lo`` / ``hi`` are NaN (C3 reads
-    the clause as unestimable) when fewer than ``C3_MIN_VALID_SHARE`` of the ``n_boot`` requested replicates remain.
+    fixed per run and never refit here, and the statistic is ``gate_stats``, so a seed's delta is the difference of
+    the two runs' ``gates`` records. Per clause: ``d_s`` per shared seed, ``k`` seeds, the mean, ``s2`` (sample
+    variance, ddof 1) and ``v_pano``, the variance of the mean delta over ``n_boot`` resamples of whole panoramas
+    (``groups``, via ``slices.boot_indices``, bootstrap seed ``seed``, as ``paired_seed_delta``), each resample
+    shared by every seed and both arms. The interval is ``mean +/- t(0.975, k-1) sqrt(s2/k + v_pano)``.
 
-    Example: with baseline Agree coverage 0.80 on seeds 42, 43, 44 and ``cl-drop`` at 0.80, 0.80, 0.50, the mean
-    delta is -0.10, but a replicate that draws seed 44 zero times (probability 8/27) gives about 0, so the interval
-    reaches above -0.03 and the coverage clause passes (``tests/test_disagree_gate.py``).
+    A panorama replicate whose mean is undefined (an arm gates no Agree in that resample, so its precision is
+    undefined) is dropped from ``v_pano`` and counted in ``n_dropped``. A clause is unestimable (``lo`` / ``hi``
+    NaN) when any shared seed's delta is undefined, ``k < 2``, or fewer than ``C3_MIN_VALID_SHARE`` of the
+    ``n_boot`` requested replicates are valid (``n_boot`` 0 included).
+
+    Rows are aligned on ``label_uid`` and sorted by it, so the row order of the inputs does not change the result.
+    Labels missing from some seed or arm are left out and counted in ``n_dropped_rows`` (with a warning); ``true``
+    must agree across seeds and arms (ValueError otherwise). ``collapse`` is the descriptive collapse flag of
+    ``agree_collapse`` (it does not decide C3).
+
+    Example: per-seed coverage deltas -0.110, -0.101 and -0.040 have mean -0.084 but, with three seeds, t = 4.30
+    and the upper end is about +0.011 even with ``v_pano`` 0, so the coverage clause passes
+    (``tests/test_disagree_gate.py``).
     """
     seeds = sorted(set(scored_a) & set(scored_b))
     if not seeds:
         return None
-    frames = {}
+    frames, uids = {}, set()
     for s in seeds:
         a = scored_a[s][scored_a[s]["split"] == split][["label_uid", "true", "verdict", "served"]]
-        b = scored_b[s][scored_b[s]["split"] == split][["label_uid", "verdict", "served"]]
+        b = scored_b[s][scored_b[s]["split"] == split][["label_uid", "true", "verdict", "served"]]
+        uids |= set(a["label_uid"]) | set(b["label_uid"])
         frames[s] = a.merge(b, on="label_uid", suffixes=("_a", "_b"), validate="one_to_one")
-    common = set.intersection(*(set(f["label_uid"]) for f in frames.values()))
+    common = set.intersection(*(set(f["label_uid"]) for f in frames.values())) if frames else set()
+    n_dropped_rows = len(uids) - len(common)
+    if n_dropped_rows:
+        warnings.warn(f"C3 {split}: {n_dropped_rows} of {len(uids)} labels are missing from some seed or arm and "
+                      "are left out of the paired contrast")
     base = frames[seeds[0]]
-    base = base[base["label_uid"].isin(common)][["label_uid", "true"]].reset_index(drop=True)
+    base = (base[base["label_uid"].isin(common)][["label_uid", "true_a"]].rename(columns={"true_a": "true"})
+            .sort_values("label_uid", kind="mergesort").reset_index(drop=True))
+    true = base["true"].astype(str).to_numpy()
     arrays = {}
     for s in seeds:
-        f = base[["label_uid"]].merge(frames[s].drop(columns="true"), on="label_uid", how="left",
-                                      validate="one_to_one")
+        f = base[["label_uid"]].merge(frames[s], on="label_uid", how="left", validate="one_to_one")
+        for arm in "ab":
+            if not np.array_equal(f[f"true_{arm}"].astype(str).to_numpy(), true):
+                raise ValueError(f"C3 {split}: the true class differs between seeds or arms (seed {s}, arm {arm})")
         arrays[s] = {arm: (f[f"verdict_{arm}"].to_numpy(), f[f"served_{arm}"].to_numpy(dtype=float)) for arm in "ab"}
-    true = base["true"].astype(str).to_numpy()
     y = (true == "incorrect").astype(int)
     g = base["label_uid"].map(groups).fillna(base["label_uid"]).to_numpy()
 
-    def deltas(s, idx=None):
+    def arm_stats(s, idx=None):
         st = {}
         for arm in "ab":
             v, sv = arrays[s][arm]
+            t = true
             if idx is not None:
                 v, sv, t = v[idx], sv[idx], true[idx]
-            else:
-                t = true
             st[arm] = gate_stats(pd.DataFrame({"verdict": v, "served": sv, "true": t}), "correct", pi)
+        return st
+
+    def deltas(st):
         return {k: float(st["b"][f]) - float(st["a"][f]) for k, f in C3_FIELDS.items()}
 
-    per = {s: deltas(s) for s in seeds}
-    out = {"split": split, "seeds": seeds, "n": int(len(base)), "n_boot": int(n_boot), "n_replicates": 0}
-    for k in C3_FIELDS:
-        out[k] = {"per_seed": {s: per[s][k] for s in seeds}, "mean": float(np.mean([per[s][k] for s in seeds])),
-                  "lo": float("nan"), "hi": float("nan"), "n_valid": 0, "n_dropped": 0}
-    if not n_boot or not len(base):
-        return out
-    rng = np.random.default_rng(seed)
-    idxs = sl.boot_indices(y, g, n_boot, rng)
-    draws = rng.integers(0, len(seeds), size=(len(idxs), len(seeds)))
-    boots = {k: np.full(len(idxs), np.nan) for k in C3_FIELDS}
-    for i, (idx, draw) in enumerate(zip(idxs, draws)):
-        uniq, counts = np.unique(draw, return_counts=True)
-        dd = [deltas(seeds[j], idx) for j in uniq]
-        for k in C3_FIELDS:
-            boots[k][i] = np.average([d[k] for d in dd], weights=counts)     # NaN if any drawn seed is NaN
-    out["n_replicates"] = int(len(idxs))
+    point = {s: arm_stats(s) for s in seeds}
+    per = {s: deltas(point[s]) for s in seeds}
+    out = {"split": split, "seeds": seeds, "n": int(len(base)), "n_dropped_rows": int(n_dropped_rows),
+           "n_boot": int(n_boot), "n_replicates": 0, "interval": "t, seeds as replicates, plus panorama variance",
+           "collapse": agree_collapse({s: (point[s]["a"], point[s]["b"]) for s in seeds})}
+    boots = {k: np.array([], dtype=float) for k in C3_FIELDS}
+    if n_boot and len(base):
+        idxs = sl.boot_indices(y, g, n_boot, np.random.default_rng(seed))
+        out["n_replicates"] = int(len(idxs))
+        boots = {k: np.full(len(idxs), np.nan) for k in C3_FIELDS}
+        for i, idx in enumerate(idxs):
+            dd = [deltas(arm_stats(s, idx)) for s in seeds]
+            for k in C3_FIELDS:
+                boots[k][i] = np.mean([d[k] for d in dd])          # NaN if any seed is NaN in this resample
     for k in C3_FIELDS:
         valid = boots[k][~np.isnan(boots[k])]
-        out[k]["n_valid"], out[k]["n_dropped"] = int(len(valid)), int(len(idxs) - len(valid))
-        if len(valid) and len(valid) >= C3_MIN_VALID_SHARE * n_boot:
-            out[k]["lo"], out[k]["hi"] = float(np.percentile(valid, 2.5)), float(np.percentile(valid, 97.5))
+        enough = bool(n_boot) and len(valid) >= max(2, C3_MIN_VALID_SHARE * n_boot)
+        v_pano = float(np.var(valid, ddof=1)) if enough else float("nan")
+        iv = seed_t_interval([per[s][k] for s in seeds], v_pano)
+        out[k] = {"per_seed": {s: per[s][k] for s in seeds}, **iv, "n_valid": int(len(valid)),
+                  "n_dropped": int(len(boots[k]) - len(valid))}
     return out
+
+
+def agree_collapse(arms):
+    """The collapse flag beside C3 (descriptive; it never decides C3): the seeds where one arm gates no Agree while
+    the other gates some, or where the weighted Agree coverage delta (``b - a``) is below
+    ``-C3_COLLAPSE_FACTOR * C3_MAX_COVERAGE_LOSS``. ``arms`` is ``{seed: (gate_stats a, gate_stats b)}``. A t-interval
+    over three seeds cannot fail on one bad seed, so this names it.
+
+    >>> g = lambda n, c: {"n_pass": n, "coverage_weighted": c}
+    >>> agree_collapse({42: (g(80, 0.8), g(0, 0.0)), 43: (g(80, 0.8), g(78, 0.78))})["seeds"]
+    [42]
+    """
+    flagged = {}
+    limit = -C3_COLLAPSE_FACTOR * C3_MAX_COVERAGE_LOSS
+    for s, (a, b) in arms.items():
+        why = []
+        if (a["n_pass"] == 0) != (b["n_pass"] == 0):
+            why.append(f"{'cl-drop' if b['n_pass'] == 0 else 'baseline'} gates no Agree")
+        d = float(b["coverage_weighted"]) - float(a["coverage_weighted"])
+        if not math.isnan(d) and d < limit:
+            why.append(f"coverage delta {d:+.3f} below {limit:+.2f}")
+        if why:
+            flagged[s] = {"reasons": why, "n_pass_baseline": int(a["n_pass"]), "n_pass_cl-drop": int(b["n_pass"]),
+                          "coverage_delta": d}
+    return {"flagged": bool(flagged), "seeds": sorted(flagged), "detail": flagged}
 
 
 def load_run_predictions(r4, label_type, tag, inputs=None):
@@ -452,7 +536,7 @@ def cmd_maps(args):
                 preds.setdefault(variant, {})[s] = pred
                 r, amap = map_record(pred, pi, pi_ref)
                 if variant in ("baseline", "cl-drop"):
-                    scored.setdefault(variant, {})[s] = served_with_map(pred, amap)   # C3's bootstrap input
+                    scored.setdefault(variant, {})[s] = served_with_map(pred, amap)   # C3's input
                 rec["runs"][tag] = {"variant": variant, "seed": s, **r}
                 with open(os.path.join(args.out, "maps", f"{t}_{tag}.json"), "w") as f:
                     json.dump(amap, f, indent=1)
@@ -463,10 +547,13 @@ def cmd_maps(args):
             groups = dict(zip(sp["label_uid"], scene_group_keys(sp)))
             rec["contrasts"] = {"cl-drop": {s: paired_seed_delta(preds["baseline"], preds["cl-drop"], groups, s,
                                                                  args.n_boot, args.seed) for s in EVAL_SPLITS}}
-            # C3 (amended 2026-11-20): paired hierarchical bootstrap over seeds and panoramas, maps fixed per run.
+            # C3 (amended 2026-11-20): t-interval over seeds plus panorama variance, maps fixed per run.
             rec["agree_gate"] = {"cl-drop": {s: paired_agree_gate_delta(scored["baseline"], scored["cl-drop"],
                                                                         groups, s, pi, args.n_boot, args.seed)
                                              for s in EVAL_SPLITS}}
+            for s, ag in rec["agree_gate"]["cl-drop"].items():
+                if ag and ag["collapse"]["flagged"]:
+                    print(f"{t} {s}: C3 COLLAPSE FLAG (descriptive, does not decide C3): {collapse_text(ag['collapse'])}")
         out[t] = rec
         print(f"{t}: {sum(1 for r in rec['runs'].values() if not r.get('missing'))} runs with predictions")
     out["_provenance"] = provenance(inputs, n_boot=args.n_boot, boot_seed=args.seed, seeds=seeds,
@@ -1023,12 +1110,13 @@ def recipe(label_type, mtype, gtype):
                      "cl-drop": b, "delta": b - a, "seeds": sorted(per), "per_seed": per})
     # C3: Agree non-regression (coverage absolute; precision relative to the baseline, A6), a harm screen in the
     # form of C1 and C4 since the 2026-11-20 amendment (J15): a clause fails only when the 95% interval of cl-drop
-    # minus the baseline (paired hierarchical bootstrap over training seeds and panoramas, ``agree_gate`` in
-    # maps.json) lies wholly below minus its threshold. The seed means and per-seed values are recorded and printed
-    # as descriptive columns. The rule is an "or", so each clause is judged on its own: a split fails when either
-    # clause is estimable and its interval is wholly beyond the threshold, passes when both are estimable and not,
-    # and is unestimable otherwise (a clause is unestimable when its interval is missing: no maps record, or too
-    # few bootstrap replicates defined; C3_MIN_VALID_SHARE). (The per-clause judgment is the 2026-11-19 bug fix.)
+    # minus the baseline (a t-interval with the training seeds as replicates plus panorama-bootstrap variance,
+    # ``agree_gate`` in maps.json) lies wholly below minus its threshold. The seed means, per-seed values and the
+    # collapse flag are recorded and printed as descriptive columns; they do not decide. The rule is an "or", so
+    # each clause is judged on its own: a split fails when either clause is estimable and its interval is wholly
+    # beyond the threshold, passes when both are estimable and not, and is unestimable otherwise (a clause is
+    # unestimable when its interval is missing: no maps record, an undefined seed, fewer than two seeds, or too few
+    # panorama replicates defined; C3_MIN_VALID_SHARE). (The per-clause judgment is the 2026-11-19 bug fix.)
     c3 = {"id": "C3", "result": "pass", "splits": {}}
     for s in EVAL_SPLITS:
         cb, cc, cov_per = paired_seed_means(runs, ("gates", s, "Agree", "coverage_weighted"))
@@ -1044,8 +1132,12 @@ def recipe(label_type, mtype, gtype):
             row[f"{clause}_delta"] = None if iv is None else iv.get("mean")
             row[f"{clause}_lo"], row[f"{clause}_hi"] = lo, hi
             row[f"{clause}_dropped"] = None if iv is None else iv.get("n_dropped")
+            for f in ("k", "t", "s2", "v_pano"):
+                row[f"{clause}_{f}"] = None if iv is None else iv.get(f)
             row[f"{clause}_result"] = ("unestimable" if _nan(lo) or _nan(hi) else
                                        "fail" if hi < -limit else "pass")
+        row["collapse"] = _get(ag, "collapse") if ag else None          # descriptive; never decides C3
+        row["n_dropped_rows"] = _get(ag, "n_dropped_rows") if ag else None
         clauses = (row["coverage_result"], row["precision_result"])
         row["result"] = "fail" if "fail" in clauses else "unestimable" if "unestimable" in clauses else "pass"
         if row["result"] == "fail":
@@ -1260,12 +1352,17 @@ def maps_markdown(maps):
                 lines.append(f"| {t} | {s} | {_f(c['mean'], '{:+.3f}')} [{_f(c['lo'], '{:+.3f}')}, "
                              f"{_f(c['hi'], '{:+.3f}')}] | {per} | {c['n']:,} |")
     lines += ["", "**C3: Agree at the gate, `cl-drop` minus the gold-free baseline** (prior-weighted coverage and "
-              "precision, each run's own map fit on val; mean of per-seed paired deltas with a 95% interval from a "
-              "paired hierarchical bootstrap that resamples the training seeds and then whole panoramas, one panorama "
-              "resample shared by every drawn seed and both arms; a clause fails when its interval lies wholly below "
-              f"-{C3_MAX_COVERAGE_LOSS:g} (coverage) or -{C3_MAX_PRECISION_LOSS:g} (precision)).", "",
-              "| Type | split | coverage mean [95%] | per seed | precision mean [95%] | per seed | replicates "
-              "undefined (coverage, precision) | n |", "|---|---|---:|---|---:|---|---:|---:|"]
+              "precision, each run's own map fit on val; mean of per-seed paired deltas with a 95% t-interval, "
+              "mean ± t(0.975, k-1) × sqrt(s²/k + v_pano): the training seeds are the replicates (k-1 degrees of "
+              "freedom) and v_pano is the variance of the mean delta over panorama resamples, one resample shared by "
+              "every seed and both arms; a clause fails when its interval lies wholly below "
+              f"-{C3_MAX_COVERAGE_LOSS:g} (coverage) or -{C3_MAX_PRECISION_LOSS:g} (precision)). With three seeds "
+              "t = 4.30, so one bad seed cannot fail C3 on its own; the collapse flag (descriptive, it does not "
+              "decide) names any seed where one arm gates no Agree while the other gates some, or whose coverage "
+              f"delta is below -{C3_COLLAPSE_FACTOR * C3_MAX_COVERAGE_LOSS:.2f}.", "",
+              "| Type | split | coverage mean [95%] | per seed | precision mean [95%] | per seed | k, t | panorama "
+              "replicates undefined (coverage, precision) | collapse flag | n |",
+              "|---|---|---:|---|---:|---|---:|---:|---|---:|"]
     for t in LABEL_TYPES:
         for s in EVAL_SPLITS:
             c = _get(maps.get(t) or {}, "agree_gate", "cl-drop", s)
@@ -1278,17 +1375,35 @@ def maps_markdown(maps):
                                 for sd, v in sorted(b["per_seed"].items(), key=lambda kv: int(kv[0])))
                 cells += [f"{_f(b['mean'], '{:+.3f}')} [{_f(b['lo'], '{:+.3f}')}, {_f(b['hi'], '{:+.3f}')}]", per]
             dropped = f"{c['coverage']['n_dropped']}, {c['precision']['n_dropped']} of {c['n_replicates']}"
-            lines.append(f"| {t} | {s} | {' | '.join(cells)} | {dropped} | {c['n']:,} |")
+            kt = f"{c['coverage'].get('k', '—')}, {_f(c['coverage'].get('t'), '{:.2f}')}"
+            flag = f"**{collapse_text(c['collapse'])}**" if _get(c, "collapse", "flagged") else "none"
+            lines.append(f"| {t} | {s} | {' | '.join(cells)} | {kt} | {dropped} | {flag} | {c['n']:,} |")
     return "\n".join(lines)
 
 
+def collapse_text(collapse):
+    """One line naming the seeds of a C3 collapse flag (``agree_collapse``) and why.
+
+    >>> collapse_text({"flagged": True, "seeds": [44], "detail": {44: {"reasons": ["cl-drop gates no Agree"]}}})
+    'seed 44: cl-drop gates no Agree'
+    """
+    if not collapse or not collapse.get("flagged"):
+        return "none"
+    det = collapse.get("detail") or {}
+    return "; ".join(f"seed {sd}: {', '.join((det.get(sd) or det.get(str(sd)) or {}).get('reasons', []))}"
+                     for sd in collapse.get("seeds", []))
+
+
 def _iv(row, clause):
-    """``-0.100 [-0.310, +0.012]`` for one C3 clause of a ``bar.json`` split row, with the bootstrap replicates
+    """``-0.100 [-0.310, +0.012]`` for one C3 clause of a ``bar.json`` split row, with the panorama replicates
     dropped as undefined when there were any."""
     text = (f"{_f(row.get(f'{clause}_delta'), '{:+.3f}')} [{_f(row.get(f'{clause}_lo'), '{:+.3f}')}, "
             f"{_f(row.get(f'{clause}_hi'), '{:+.3f}')}]")
+    k, t = row.get(f"{clause}_k"), row.get(f"{clause}_t")
+    if k is not None and not _nan(t):
+        text += f" (t-interval, k {k}, t {t:.2f})"
     dropped = row.get(f"{clause}_dropped")
-    return text + (f" ({dropped} replicates undefined)" if dropped else "")
+    return text + (f" ({dropped} panorama replicates undefined)" if dropped else "")
 
 
 def _crit_text(c):
@@ -1305,7 +1420,9 @@ def _crit_text(c):
                        if "coverage_result" in row else "")
             per = "; ".join(f"s{k} {_f(v['baseline'])}/{_f(v['cl-drop'])}"
                             for k, v in sorted((row.get("per_seed_coverage") or {}).items(), key=lambda kv: int(kv[0])))
-            parts.append(f"{s} {row['result']}{clauses}: Agree coverage cl-drop minus baseline "
+            flag = (f"**COLLAPSE FLAG (descriptive, does not decide): {collapse_text(row['collapse'])}**; "
+                    if _get(row, "collapse", "flagged") else "")
+            parts.append(f"{s} {row['result']}{clauses}: {flag}Agree coverage cl-drop minus baseline "
                          f"{_iv(row, 'coverage')}, means {_f(row['coverage_cl-drop'])} vs "
                          f"{_f(row['coverage_baseline'])} (per seed baseline/cl-drop: {per}); weighted precision "
                          f"{_iv(row, 'precision')}, means {_f(row['precision_cl-drop'])} vs "

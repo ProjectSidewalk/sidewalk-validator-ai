@@ -568,12 +568,13 @@ def test_c2_threshold_and_c3_precision_clause_and_c4_upper_bound():
 def test_c3_coverage_clause_fails_when_cl_drop_gates_no_agree():
     # The final review's case: cl-drop gates no Agree on every seed (coverage 0, precision undefined) while the
     # baseline gates 80%. C3 is an "or", so the coverage loss rejects on its own instead of making C3 unestimable.
-    # Since the 2026-11-20 amendment the clauses read the bootstrap: every precision replicate is undefined.
+    # Since the 2026-11-20 amendment the clauses read the t-interval: every seed's precision delta is undefined.
     base = {sd: agree_scored(0.8, sd) for sd in (42, 43, 44)}
     cl = {sd: agree_scored(0.0, sd) for sd in (42, 43, 44)}
     ag = dgt.paired_agree_gate_delta(base, cl, PANO, "test", PI, n_boot=100, seed=0)
     assert ag["precision"]["n_dropped"] == ag["n_replicates"] == 100 and _isnan(ag["precision"]["hi"])
     assert ag["coverage"]["hi"] < -0.03
+    assert ag["collapse"]["flagged"] and ag["collapse"]["seeds"] == [42, 43, 44]
     m = maps_ok()
     for v, g in (("baseline", gs(500, 0.95, 0.8)), ("cl-drop", gs(0, float("nan"), 0.0))):
         for s in (42, 43, 44):
@@ -585,7 +586,7 @@ def test_c3_coverage_clause_fails_when_cl_drop_gates_no_agree():
     assert row["coverage_result"] == "fail" and row["precision_result"] == "unestimable" and row["result"] == "fail"
     assert c3["result"] == "fail" and r["recipe"] == "baseline"
     assert "test fail (coverage fail, precision unestimable)" in dgt.bar_markdown([r])
-    assert "100 replicates undefined" in dgt.bar_markdown([r])
+    assert "100 panorama replicates undefined" in dgt.bar_markdown([r])
     # recipe() alone, as the reviewer reproduced it
     rec, crit = dgt.recipe("Obstacle", m["Obstacle"], gold_ok()["Obstacle"])
     assert rec == "baseline" and next(c for c in crit if c["id"] == "C3")["result"] == "fail"
@@ -615,13 +616,15 @@ def test_c3_undefined_precision_with_kept_coverage_stays_unestimable():
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# C3's paired hierarchical bootstrap (amended 2026-11-20, J15)
+# C3's interval (amended 2026-11-20, J15): a t-interval with the training seeds as replicates plus the test set's
+# variance from a panorama bootstrap shared by every seed and both arms
 # ---------------------------------------------------------------------------------------------------------------------
 
 N_PANO, PER_PANO = 300, 4
-UIDS = [f"c:{i}" for i in range(N_PANO * PER_PANO)]
+UIDS = [f"c:{i:05d}" for i in range(N_PANO * PER_PANO)]        # zero-padded: sorted order is the fixture's order
 PANO = {u: f"c|P{i // PER_PANO}" for i, u in enumerate(UIDS)}
 TRUE = np.where(np.random.default_rng(0).random(len(UIDS)) < 0.3, "incorrect", "correct")
+SEEDS3 = (42, 43, 44)
 
 
 def agree_scored(cover, seed):
@@ -647,73 +650,249 @@ def with_agree_gate(ag, split="test"):
     return m
 
 
+def agree_gate_from_deltas(cov, v_pano=1e-5, prec=(0.0, 0.0, 0.0)):
+    """A maps.json ``agree_gate`` split built from given per-seed deltas through ``seed_t_interval``."""
+    out = {"seeds": list(SEEDS3), "n": 1000, "n_boot": 2000, "n_replicates": 2000, "n_dropped_rows": 0,
+           "collapse": {"flagged": False, "seeds": [], "detail": {}}}
+    for k, d in (("coverage", cov), ("precision", prec)):
+        out[k] = {"per_seed": dict(zip(SEEDS3, d)), **dgt.seed_t_interval(d, v_pano), "n_valid": 2000,
+                  "n_dropped": 0}
+    return out
+
+
+def test_c3_t_interval_hand_computed_cases():
+    t2 = 4.302652729749462                                          # t(0.975, 2)
+    # (1) -0.110, -0.101, -0.040: mean -0.0837, s2 0.00145, hi = mean + t sqrt(s2/3) = +0.0109 > -0.03: pass
+    iv = dgt.seed_t_interval([-0.110, -0.101, -0.040], 0.0)
+    assert iv["k"] == 3 and iv["t"] == pytest.approx(t2)
+    assert iv["mean"] == pytest.approx(-0.0836667, abs=1e-6) and iv["s2"] == pytest.approx(0.00145033, abs=1e-7)
+    assert iv["hi"] == pytest.approx(0.010938, abs=1e-5) and iv["hi"] > -0.03
+    # (2) -0.10, -0.10, -0.09 with v_pano 1e-5: s2 3.33e-5, half = t sqrt(1.11e-5 + 1e-5) = 0.0198, hi -0.0769: fail
+    iv = dgt.seed_t_interval([-0.10, -0.10, -0.09], 1e-5)
+    assert iv["hi"] == pytest.approx(-0.0966667 + t2 * math.sqrt(3.33333e-5 / 3 + 1e-5), abs=1e-6)
+    assert iv["hi"] < -0.03
+    # (3) one seed collapsing: -0.8, 0, 0: mean -0.267, s2 0.2133, hi = -0.267 + 4.30 x 0.267 = +0.88: pass
+    iv = dgt.seed_t_interval([-0.8, 0.0, 0.0], 1e-5)
+    assert iv["hi"] == pytest.approx(-0.8 / 3 + t2 * math.sqrt(0.213333 / 3 + 1e-5), abs=1e-5) and iv["hi"] > 0.8
+    # the same three through decide()
+    results = []
+    for cov in ((-0.110, -0.101, -0.040), (-0.10, -0.10, -0.09), (-0.8, 0.0, 0.0)):
+        row = next(c for c in one(with_agree_gate(agree_gate_from_deltas(cov)), gold_ok())["criteria"]
+                   if c["id"] == "C3")["splits"]["test"]
+        results.append(row["coverage_result"])
+    assert results == ["pass", "fail", "pass"]
+
+
+def test_c3_t_interval_unestimable_cases():
+    assert _isnan(dgt.seed_t_interval([-0.1, float("nan"), -0.1], 1e-5)["hi"])      # an undefined seed
+    assert _isnan(dgt.seed_t_interval([-0.1], 1e-5)["hi"])                            # k < 2
+    assert _isnan(dgt.seed_t_interval([-0.1, -0.1, -0.1], float("nan"))["hi"])        # no panorama variance
+    iv = dgt.seed_t_interval([-0.1, -0.1], 0.0)
+    assert iv["t"] == pytest.approx(12.706, abs=1e-3) and iv["lo"] == iv["hi"] == pytest.approx(-0.1)
+
+
+def test_c3_one_seed_collapsing_passes_and_raises_the_collapse_flag():
+    base = {sd: agree_scored(0.8, sd) for sd in SEEDS3}
+    cl = {sd: agree_scored(c, sd) for sd, c in ((42, 0.0), (43, 0.8), (44, 0.8))}
+    ag = dgt.paired_agree_gate_delta(base, cl, PANO, "test", PI, n_boot=200, seed=0)
+    cov = ag["coverage"]
+    assert cov["per_seed"][42] < -0.75 and cov["per_seed"][43] == cov["per_seed"][44] == 0.0
+    assert cov["hi"] > -0.03 and cov["n_dropped"] == 0
+    assert _isnan(ag["precision"]["per_seed"][42]) and _isnan(ag["precision"]["hi"])   # an undefined seed
+    assert ag["collapse"]["flagged"] and ag["collapse"]["seeds"] == [42]
+    reasons = ag["collapse"]["detail"][42]["reasons"]
+    assert "cl-drop gates no Agree" in reasons and any(r.startswith("coverage delta") for r in reasons)
+    r = one(with_agree_gate(ag), gold_ok())
+    c3 = next(c for c in r["criteria"] if c["id"] == "C3")
+    row = c3["splits"]["test"]
+    assert row["coverage_result"] == "pass" and c3["result"] != "fail" and r["recipe"] == "cl-drop"
+    assert row["collapse"]["flagged"] and row["collapse"]["seeds"] == [42]          # survives the JSON round trip
+    text = dgt.bar_markdown([r])
+    assert "COLLAPSE FLAG (descriptive, does not decide): seed 42: cl-drop gates no Agree" in text
+    maps_md = dgt.maps_markdown({"Obstacle": {"agree_gate": {"cl-drop": {
+        "test": as_json(ag), "test_heldout": as_json(agree_gate_from_deltas((0.0, 0.0, 0.0)))}}}})
+    assert "**seed 42: cl-drop gates no Agree" in maps_md and "| none |" in maps_md
+
+
 def test_c3_noisy_seeds_mean_drop_over_003_but_interval_spans_it_passes():
-    # mean coverage drop 0.10 (> 0.03, the pre-amendment rule would fail), all of it on one seed of three
-    base = {sd: agree_scored(0.8, sd) for sd in (42, 43, 44)}
+    # mean coverage drop 0.10 (> 0.03, the registered rule would fail), all of it on one seed of three
+    base = {sd: agree_scored(0.8, sd) for sd in SEEDS3}
     cl = {sd: agree_scored(c, sd) for sd, c in ((42, 0.8), (43, 0.8), (44, 0.5))}
-    ag = dgt.paired_agree_gate_delta(base, cl, PANO, "test", PI, n_boot=300, seed=0)
+    ag = dgt.paired_agree_gate_delta(base, cl, PANO, "test", PI, n_boot=200, seed=0)
     cov = ag["coverage"]
     assert cov["mean"] < -0.03 and cov["per_seed"][42] == 0.0 and cov["per_seed"][44] < -0.25
     assert cov["lo"] < -0.03 < cov["hi"]
     row = next(c for c in one(with_agree_gate(ag), gold_ok())["criteria"] if c["id"] == "C3")["splits"]["test"]
     assert row["coverage_result"] == "pass" and row["coverage_hi"] == pytest.approx(cov["hi"])
+    assert row["coverage_k"] == 3 and row["coverage_t"] == pytest.approx(4.302653, abs=1e-6)
+    assert row["collapse"]["seeds"] == [44]                         # -0.3 is below -0.09: named, not decided
 
 
 def test_c3_consistent_drop_on_every_seed_fails():
-    base = {sd: agree_scored(0.8, sd) for sd in (42, 43, 44)}
-    cl = {sd: agree_scored(0.7, sd) for sd in (42, 43, 44)}
-    ag = dgt.paired_agree_gate_delta(base, cl, PANO, "test", PI, n_boot=300, seed=0)
-    assert all(v < -0.05 for v in ag["coverage"]["per_seed"].values())
+    base = {sd: agree_scored(0.8, sd) for sd in SEEDS3}
+    cl = {sd: agree_scored(0.7, sd) for sd in SEEDS3}
+    ag = dgt.paired_agree_gate_delta(base, cl, PANO, "test", PI, n_boot=200, seed=0)
+    assert all(-0.13 < v < -0.07 for v in ag["coverage"]["per_seed"].values())
     assert ag["coverage"]["lo"] <= ag["coverage"]["mean"] <= ag["coverage"]["hi"] < -0.03
     r = one(with_agree_gate(ag), gold_ok())
     row = next(c for c in r["criteria"] if c["id"] == "C3")["splits"]["test"]
     assert row["coverage_result"] == "fail" and r["recipe"] == "baseline"
+    # each seed's delta is about -0.10, past -0.09, so the flag names them too; no arm collapses to zero
+    assert all(not any("gates no Agree" in w for w in d["reasons"]) for d in ag["collapse"]["detail"].values())
 
 
-def test_c3_precision_nan_replicates_are_dropped_and_counted():
-    # cl-drop gates no Agree on seed 44 only: every replicate that draws seed 44 (1 - 8/27 of them) has an undefined
-    # precision and is dropped; under half remain, so the precision clause is unestimable while coverage is judged.
-    base = {sd: agree_scored(0.8, sd) for sd in (42, 43, 44)}
-    cl = {sd: agree_scored(c, sd) for sd, c in ((42, 0.8), (43, 0.8), (44, 0.0))}
-    ag = dgt.paired_agree_gate_delta(base, cl, PANO, "test", PI, n_boot=300, seed=0)
-    prec = ag["precision"]
-    assert _isnan(prec["per_seed"][44]) and _isnan(prec["mean"])
-    assert prec["n_valid"] + prec["n_dropped"] == ag["n_replicates"] == 300
-    assert 0.6 < prec["n_dropped"] / 300 < 0.8 and _isnan(prec["lo"]) and _isnan(prec["hi"])
-    assert ag["coverage"]["n_dropped"] == 0 and not _isnan(ag["coverage"]["hi"])
-    row = next(c for c in one(with_agree_gate(ag), gold_ok())["criteria"] if c["id"] == "C3")["splits"]["test"]
-    assert row["precision_result"] == "unestimable" and row["precision_dropped"] == prec["n_dropped"]
-    # no undefined seed: nothing dropped, the interval exists
-    ok = dgt.paired_agree_gate_delta(base, base, PANO, "test", PI, n_boot=100, seed=0)
-    assert ok["precision"]["n_dropped"] == 0 and ok["precision"]["lo"] == ok["precision"]["hi"] == 0.0
+# A panorama-level effect (review S2): whole panoramas are ungated together, by both arms (set A) or by cl-drop only
+# (set B, shared by every seed), with a little seed-specific row noise in cl-drop. Rows within a panorama are
+# therefore correlated, the seeds share most of their delta, and the arms share A.
+S2_NP, S2_R = 150, 6
+S2_UIDS = [f"s:{i:05d}" for i in range(S2_NP * S2_R)]
+S2_GROUPS = {u: f"s|P{i // S2_R}" for i, u in enumerate(S2_UIDS)}
+_s2 = np.random.default_rng(5)
+S2_TRUE = np.where(_s2.random(len(S2_UIDS)) < 0.3, "incorrect", "correct")
+S2_A = _s2.random(S2_NP) < 0.4
+S2_B = (_s2.random(S2_NP) < 0.35) & ~S2_A
+S2_PANO = np.arange(len(S2_UIDS)) // S2_R
 
 
-def test_recipe_reads_the_c3_interval_fields():
-    ag = {"seeds": [42, 43, 44], "n": 50, "n_boot": 10, "n_replicates": 10,
-          "coverage": {"per_seed": {42: -0.2}, "mean": -0.2, "lo": -0.4, "hi": -0.031, "n_valid": 10, "n_dropped": 0},
-          "precision": {"per_seed": {42: 0.0}, "mean": 0.0, "lo": -0.012, "hi": 0.01, "n_valid": 7, "n_dropped": 3}}
-    rec, crit = dgt.recipe("Obstacle", with_agree_gate(ag)["Obstacle"], gold_ok()["Obstacle"])
-    row = next(c for c in crit if c["id"] == "C3")["splits"]["test"]
-    assert (row["coverage_delta"], row["coverage_lo"], row["coverage_hi"]) == (-0.2, -0.4, -0.031)
-    assert (row["precision_lo"], row["precision_hi"], row["precision_dropped"]) == (-0.012, 0.01, 3)
-    assert row["coverage_result"] == "fail" and row["precision_result"] == "pass" and rec == "baseline"
-    assert row["coverage_baseline"] == pytest.approx(0.6)          # the seed means stay as descriptive columns
-    text = dgt.bar_markdown([one(with_agree_gate(ag), gold_ok())])
-    assert "-0.200 [-0.400, -0.031]" in text and "3 replicates undefined" in text
+def s2_arm(seed, cl_drop):
+    noise = np.random.default_rng(seed).random(len(S2_UIDS)) < 0.02 * (seed - 41)
+    gated = ~S2_A[S2_PANO] & ~((S2_B[S2_PANO] | noise) & cl_drop)
+    return pd.DataFrame({"label_uid": S2_UIDS, "split": "test", "true": S2_TRUE, "verdict": "correct",
+                         "served": np.where(gated, 0.95, 0.5)})
 
 
-def test_c3_bootstrap_is_deterministic_given_the_seed():
-    base = {sd: agree_scored(0.8, sd) for sd in (42, 43, 44)}
+def s2_v_pano(base, cl, groups, mode, n_boot, seed=0):
+    """The variance of the mean coverage delta over resamples, computed here without the module: ``shared`` is the
+    registered design (one panorama resample per replicate for every seed and both arms); the others are the
+    mistakes the test must catch."""
+    from analysis import slices as sl
+    y = (S2_TRUE == "incorrect").astype(int)
+    rng = np.random.default_rng(seed)
+
+    def draw():
+        return sl.boot_indices(y, groups, 1, rng)[0]
+
+    def cov(df, idx):
+        return dgt.gate_stats(df.iloc[idx], "correct", PI)["coverage_weighted"]
+
+    vals = []
+    for _ in range(n_boot):
+        if mode == "shared":
+            idx = draw()
+            vals.append(np.mean([cov(cl[s], idx) - cov(base[s], idx) for s in SEEDS3]))
+        elif mode == "per_seed":
+            vals.append(np.mean([cov(cl[s], i) - cov(base[s], i) for s, i in ((s, draw()) for s in SEEDS3)]))
+        else:                                                                # per_arm
+            ia, ib = draw(), draw()
+            vals.append(np.mean([cov(cl[s], ib) - cov(base[s], ia) for s in SEEDS3]))
+    return float(np.var(vals, ddof=1))
+
+
+def test_c3_v_pano_resamples_panoramas_shared_by_every_seed_and_arm():
+    base = {s: s2_arm(s, False) for s in SEEDS3}
+    cl = {s: s2_arm(s, True) for s in SEEDS3}
+    n_boot = 300
+    ag = dgt.paired_agree_gate_delta(base, cl, S2_GROUPS, "test", PI, n_boot=n_boot, seed=0)
+    v = ag["coverage"]["v_pano"]
+    pano_g = np.array([S2_GROUPS[u] for u in S2_UIDS])
+    assert v == pytest.approx(s2_v_pano(base, cl, pano_g, "shared", n_boot))
+    # each mistaken design gives a v_pano at least 2.5 times off, so the equality above would fail under it
+    for groups, mode in ((np.array(S2_UIDS), "shared"), (pano_g, "per_seed"), (pano_g, "per_arm")):
+        other = s2_v_pano(base, cl, groups, mode, n_boot)
+        assert max(v / other, other / v) > 2.5, (mode, v, other)
+    # (b) the interval is the formula, computed here from the per-seed deltas and v_pano
+    d = np.array([dgt.gate_stats(cl[s], "correct", PI)["coverage_weighted"]
+                  - dgt.gate_stats(base[s], "correct", PI)["coverage_weighted"] for s in SEEDS3])
+    from scipy.stats import t
+    half = t.ppf(0.975, 2) * math.sqrt(np.var(d, ddof=1) / 3 + v)
+    cov = ag["coverage"]
+    assert [cov["per_seed"][s] for s in SEEDS3] == pytest.approx(list(d))
+    assert (cov["lo"], cov["hi"]) == pytest.approx((d.mean() - half, d.mean() + half))
+    assert cov["s2"] == pytest.approx(np.var(d, ddof=1)) and cov["k"] == 3
+
+
+def test_c3_row_order_does_not_change_the_result():
+    base = {s: s2_arm(s, False) for s in SEEDS3}
+    cl = {s: s2_arm(s, True) for s in SEEDS3}
+    a = dgt.paired_agree_gate_delta(base, cl, S2_GROUPS, "test", PI, n_boot=60, seed=3)
+    shuffled = dict(base)
+    shuffled[42] = base[42].sample(frac=1.0, random_state=1)        # the first seed's rows, which set the order
+    cl2 = dict(cl)
+    cl2[44] = cl[44].sample(frac=1.0, random_state=2)
+    b = dgt.paired_agree_gate_delta(shuffled, cl2, S2_GROUPS, "test", PI, n_boot=60, seed=3)
+    assert as_json(a) == as_json(b)
+
+
+def test_c3_is_deterministic_given_the_seed():
+    base = {sd: agree_scored(0.8, sd) for sd in SEEDS3}
     cl = {sd: agree_scored(c, sd) for sd, c in ((42, 0.75), (43, 0.8), (44, 0.6))}
     a = dgt.paired_agree_gate_delta(base, cl, PANO, "test", PI, n_boot=100, seed=7)
     b = dgt.paired_agree_gate_delta(base, cl, PANO, "test", PI, n_boot=100, seed=7)
     c = dgt.paired_agree_gate_delta(base, cl, PANO, "test", PI, n_boot=100, seed=8)
     assert as_json(a) == as_json(b)
-    assert (a["coverage"]["lo"], a["coverage"]["hi"]) != (c["coverage"]["lo"], c["coverage"]["hi"])
+    assert a["coverage"]["v_pano"] != c["coverage"]["v_pano"]
+    assert a["coverage"]["per_seed"] == c["coverage"]["per_seed"]   # the seed only moves the panorama resamples
+
+
+def test_c3_unestimable_on_an_undefined_seed_one_seed_or_no_replicates():
+    base = {sd: agree_scored(0.8, sd) for sd in SEEDS3}
+    cl = {sd: agree_scored(c, sd) for sd, c in ((42, 0.8), (43, 0.8), (44, 0.0))}
+    ag = dgt.paired_agree_gate_delta(base, cl, PANO, "test", PI, n_boot=100, seed=0)
+    prec = ag["precision"]
+    assert _isnan(prec["per_seed"][44]) and _isnan(prec["mean"]) and _isnan(prec["hi"])
+    assert prec["n_valid"] + prec["n_dropped"] == ag["n_replicates"] == 100 and prec["n_dropped"] == 100
+    assert ag["coverage"]["n_dropped"] == 0 and not _isnan(ag["coverage"]["hi"])
+    row = next(c for c in one(with_agree_gate(ag), gold_ok())["criteria"] if c["id"] == "C3")["splits"]["test"]
+    assert row["precision_result"] == "unestimable" and row["precision_dropped"] == 100
+    one_seed = dgt.paired_agree_gate_delta({42: base[42]}, {42: cl[42]}, PANO, "test", PI, n_boot=50, seed=0)
+    assert one_seed["coverage"]["k"] == 1 and _isnan(one_seed["coverage"]["hi"])
+    no_boot = dgt.paired_agree_gate_delta(base, base, PANO, "test", PI, n_boot=0)
+    assert no_boot["n_replicates"] == 0 and _isnan(no_boot["coverage"]["hi"]) and no_boot["coverage"]["mean"] == 0.0
+    ok = dgt.paired_agree_gate_delta(base, base, PANO, "test", PI, n_boot=50, seed=0)
+    assert ok["precision"]["n_dropped"] == 0 and ok["precision"]["lo"] == ok["precision"]["hi"] == 0.0
+
+
+def test_c3_counts_rows_missing_from_a_seed_and_checks_the_true_class():
+    base = {sd: agree_scored(0.8, sd) for sd in SEEDS3}
+    cl = {sd: agree_scored(0.8, sd) for sd in SEEDS3}
+    cl[43] = cl[43].iloc[5:]                                        # five labels missing from one arm of one seed
+    with pytest.warns(UserWarning, match="5 of 1200 labels are missing"):
+        ag = dgt.paired_agree_gate_delta(base, cl, PANO, "test", PI, n_boot=20, seed=0)
+    assert ag["n_dropped_rows"] == 5 and ag["n"] == len(UIDS) - 5
+    row = next(c for c in one(with_agree_gate(ag), gold_ok())["criteria"] if c["id"] == "C3")["splits"]["test"]
+    assert row["n_dropped_rows"] == 5
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert dgt.paired_agree_gate_delta(base, base, PANO, "test", PI, n_boot=5, seed=0)["n_dropped_rows"] == 0
+    bad = dict(cl)
+    bad[43] = agree_scored(0.8, 43)
+    bad[43].loc[0, "true"] = "incorrect" if bad[43].loc[0, "true"] == "correct" else "correct"
+    with pytest.raises(ValueError, match="true class differs"):
+        dgt.paired_agree_gate_delta(base, bad, PANO, "test", PI, n_boot=5, seed=0)
+
+
+def test_recipe_reads_the_c3_interval_fields():
+    ag = {"seeds": [42, 43, 44], "n": 50, "n_boot": 10, "n_replicates": 10, "n_dropped_rows": 0,
+          "collapse": {"flagged": False, "seeds": [], "detail": {}},
+          "coverage": {"per_seed": {42: -0.2}, "mean": -0.2, "lo": -0.4, "hi": -0.031, "n_valid": 10, "n_dropped": 0,
+                       "k": 3, "t": 4.302652729749462, "s2": 0.001, "v_pano": 0.0004},
+          "precision": {"per_seed": {42: 0.0}, "mean": 0.0, "lo": -0.012, "hi": 0.01, "n_valid": 7, "n_dropped": 3,
+                        "k": 3, "t": 4.302652729749462, "s2": 0.0, "v_pano": 0.00001}}
+    rec, crit = dgt.recipe("Obstacle", with_agree_gate(ag)["Obstacle"], gold_ok()["Obstacle"])
+    row = next(c for c in crit if c["id"] == "C3")["splits"]["test"]
+    assert (row["coverage_delta"], row["coverage_lo"], row["coverage_hi"]) == (-0.2, -0.4, -0.031)
+    assert (row["precision_lo"], row["precision_hi"], row["precision_dropped"]) == (-0.012, 0.01, 3)
+    assert (row["coverage_k"], row["coverage_s2"], row["coverage_v_pano"]) == (3, 0.001, 0.0004)
+    assert row["coverage_t"] == pytest.approx(4.302653, abs=1e-6) and row["collapse"]["flagged"] is False
+    assert row["coverage_result"] == "fail" and row["precision_result"] == "pass" and rec == "baseline"
+    assert row["coverage_baseline"] == pytest.approx(0.6)          # the seed means stay as descriptive columns
+    text = dgt.bar_markdown([one(with_agree_gate(ag), gold_ok())])
+    assert "-0.200 [-0.400, -0.031] (t-interval, k 3, t 4.30)" in text and "3 panorama replicates undefined" in text
+    assert "COLLAPSE FLAG" not in text
 
 
 def test_c3_point_delta_is_the_difference_of_the_gates_records():
-    # The bootstrap's per-seed point value uses the same served verdicts and gate_stats as map_record's gates.
+    # The per-seed point value uses the same served verdicts and gate_stats as map_record's gates.
     pi_ref = {"correct": 0.7, "incorrect": 0.3}
     pa = predictions(0)
     pb = pa.assign(p_incorrect=np.clip(pa["p_incorrect"] - 0.04, 0.001, 0.999))
@@ -806,8 +985,9 @@ def test_pilot_bar_without_gold_names_both_reasons():
 def test_cmd_maps_records_provenance_and_contrast(tmp_path):
     r4 = tmp_path / "r4" / "Obstacle"
     r4.mkdir(parents=True)
-    for k, tag in enumerate(("baseline", "cl-drop", "round3")):
-        predictions(k).to_csv(r4 / f"predictions_{tag}.csv", index=False)
+    for tag, shift in (("baseline", 0.0), ("cl-drop", 0.02), ("round3", -0.02), ("baseline-s43", 0.01),
+                       ("cl-drop-s43", 0.03)):     # one test set (the same true class), runs differing in score
+        predictions(0, shift=shift).to_csv(r4 / f"predictions_{tag}.csv", index=False)
     p = predictions(0)
     pd.DataFrame({"label_uid": p["label_uid"], "city": "c", "pano_id": [""] + [f"P{i}" for i in range(len(p) - 1)],
                   "split": p["split"]}).to_csv(r4 / "split.csv", index=False)
@@ -817,7 +997,7 @@ def test_cmd_maps_records_provenance_and_contrast(tmp_path):
     out = tmp_path / "gate"
     try:
         rc = dgt.main(["maps", "--r4", str(tmp_path / "r4"), "--shares", str(shares), "--types", "Obstacle",
-                       "--seeds", "42", "--n-boot", "10", "--out", str(out)])
+                       "--seeds", "42,43", "--n-boot", "10", "--out", str(out)])
     except (KeyError, TypeError) as e:          # shares.json layout is prior_rules'; skip if this fixture is off
         pytest.skip(f"shares fixture does not match prior_rules: {e}")
     assert rc == 0
@@ -827,7 +1007,8 @@ def test_cmd_maps_records_provenance_and_contrast(tmp_path):
     assert prov["params"]["n_boot"] == 10 and "git_commit" in prov
     assert "test_heldout" in m["Obstacle"]["contrasts"]["cl-drop"]
     ag = m["Obstacle"]["agree_gate"]["cl-drop"]["test_heldout"]
-    assert ag["n_replicates"] == 10 and set(ag) >= {"coverage", "precision"}
+    assert ag["n_replicates"] == 10 and set(ag) >= {"coverage", "precision", "collapse", "n_dropped_rows"}
+    assert ag["coverage"]["k"] == 2 and ag["coverage"]["t"] == pytest.approx(12.706, abs=1e-3)
     assert ag["coverage"]["lo"] <= ag["coverage"]["hi"]
     text = dgt.maps_markdown(m)
     assert "cl-drop` minus the gold-free baseline" in text and "fit test, eval test_heldout" in text
