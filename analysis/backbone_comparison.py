@@ -17,7 +17,8 @@ INCOMPLETE and left out. Every arm is compared with the in-env baseline (``<pref
 same seed on the same rows: paired AUC differences on test and held-out with panorama-bootstrap intervals
 (``confident_learning.overall_deltas``), the paired within-city difference with a panorama bootstrap stratified by
 deployment (``within_city_delta``), the 0.92 gate under the ``majority2`` prior (and ``margin`` as a reference, never
-in the same table; ``prior_rules.gate_rows``), each held-out deployment, and every type x severity and type x tag
+in the same table; ``prior_rules.gate_rows``) with condition 3's paired Agree coverage and precision differences and
+their seed-and-panorama bootstrap intervals (``gate_intervals``), each held-out deployment, and every type x severity and type x tag
 slice with its training count (``slices.paired_delta_table``). ``decide`` applies the rule mechanically, and holds the
 recommendation while a submitted arm (one listed in a ``tasks_*.tsv`` under ``--runs-dir``) is incomplete.
 
@@ -43,6 +44,7 @@ import os
 import re
 import shutil
 import sys
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -62,6 +64,8 @@ BASE_SEED_SD = {"CurbRamp": 0.006, "SurfaceProblem": 0.010}
 DELTA_SD = {t: round(math.sqrt(2) * s, 4) for t, s in BASE_SEED_SD.items()}
 THRESHOLDS = {"CurbRamp": 0.010, "SurfaceProblem": 0.016}
 NON_INFERIOR = -0.005
+# Condition 3 (as amended by J17): seed-mean Agree precision >= GATE_PRECISION, and a harm screen on the paired
+# seed-mean differences that fails only when its 95% seed-and-panorama bootstrap interval lies wholly below -DROP.
 GATE_PRECISION = 0.92
 GATE_PRECISION_DROP = 0.01
 GATE_COVERAGE_DROP = 0.02
@@ -374,6 +378,163 @@ def gate_stats(pred, shares_types, label_type, rule):
     return pr.gate_rows(pred[cols], pr.rule_prior(shares_types, label_type, rule), splits=("test", "test_heldout"))
 
 
+def _gate_sums(cw, cols):
+    """Coverage and precision at the gate of every run in ``cols`` (``(agree, agree & passed, agree & passed &
+    right)`` per run, stacked as columns) under row weights ``cw``: two arrays, NaN where undefined."""
+    s = cw @ cols
+    den, passed, right = s[0::3], s[1::3], s[2::3]
+    cov = np.full(len(den), np.nan)
+    prec = np.full(len(den), np.nan)
+    cov[den > 0] = passed[den > 0] / den[den > 0]
+    prec[passed > 0] = right[passed > 0] / passed[passed > 0]
+    return cov, prec
+
+
+def gate_delta_ci(y_incorrect, groups, pi, arm, base, n_boot=1000, seed=0, max_tries=20):
+    """Seed-mean paired difference (arm − baseline) of the Agree verdict's coverage and precision at the 0.92 gate,
+    with 95% intervals from a paired hierarchical bootstrap (docs/backbone-2026-11.md, condition 3, J17).
+
+    Each replicate resamples the shared training seeds with replacement (a drawn seed brings both arms' runs), then
+    whole panoramas (``groups``) with replacement, one panorama resample shared by every drawn seed and both arms; the
+    statistic is the mean over the drawn seeds of (arm − baseline). Each run keeps its own val-fitted map: only the
+    evaluation rows are resampled, and the prior weights ``pi(y) / sample share(y)`` are recomputed on each resample,
+    as ``calibrate.evaluate_map`` computes them on the whole split. A resample with one class is redrawn up to
+    ``max_tries`` times (as ``slices.boot_indices`` does); a replicate that never gets both classes, or whose statistic
+    is NaN (a drawn seed's run gates no Agree, so its precision is undefined), is dropped and counted. With fewer than
+    half of ``n_boot`` left, the interval is unestimable (``None``).
+
+    Args:
+        y_incorrect: per evaluation row, True when the true class is ``incorrect``.
+        groups: per row, the panorama id (the bootstrap's unit).
+        pi: the target prior, ``{"correct": .., "incorrect": ..}``.
+        arm, base: ``{seed: (agree, passed, right)}``, three boolean arrays per run in the same row order: the row's
+            verdict is Agree, its served accuracy reaches the gate, and the verdict is right.
+        n_boot, seed: bootstrap replicates and the generator's seed.
+
+    Returns:
+        ``{"seeds", "n_boot", "per_seed", "d_cov", "d_cov_lo", "d_cov_hi", "cov_dropped", "d_prec", "d_prec_lo",
+        "d_prec_hi", "prec_dropped"}``; ``per_seed`` holds each shared seed's ``cov``, ``base_cov``, ``prec`` and
+        ``base_prec``. ``d_prec`` is ``None`` when any seed's precision is undefined.
+
+    >>> y = np.array([0, 1, 0, 1, 0, 0], bool)
+    >>> g = np.array(["a", "a", "b", "b", "c", "c"])
+    >>> run = (np.array([1, 0, 1, 0, 1, 1], bool), np.array([1, 0, 1, 0, 1, 0], bool), np.ones(6, bool))
+    >>> r = gate_delta_ci(y, g, {"correct": 0.5, "incorrect": 0.5}, {42: run}, {42: run}, n_boot=20)
+    >>> (r["d_cov"], r["d_cov_lo"], r["d_cov_hi"], r["cov_dropped"])
+    (0.0, 0.0, 0.0, 0)
+    """
+    y = np.asarray(y_incorrect, bool)
+    seeds = sorted(set(arm) & set(base))
+    out = {"seeds": seeds, "n_boot": int(n_boot), "per_seed": [], "d_cov": None, "d_cov_lo": None, "d_cov_hi": None,
+           "cov_dropped": 0, "d_prec": None, "d_prec_lo": None, "d_prec_hi": None, "prec_dropped": 0}
+    if not seeds:
+        return out
+    n = len(y)
+    cols = []
+    for s in seeds:
+        for run in (arm[s], base[s]):
+            a, p, c = (np.asarray(v, bool) for v in run)
+            if not len(a) == len(p) == len(c) == n:
+                raise ValueError(f"seed {s}: a run's arrays do not have the {n} evaluation rows")
+            cols += [a, a & p, a & p & c]
+    cols = np.column_stack(cols).astype(float)
+    pi_inc, pi_cor = float(pi["incorrect"]), float(pi["correct"])
+
+    def stats(mult):
+        share = (mult * y).sum() / mult.sum()
+        if not 0 < share < 1:
+            return None
+        cw = mult * np.where(y, pi_inc / share, pi_cor / (1 - share))
+        cov, prec = _gate_sums(cw, cols)
+        return cov[0::2] - cov[1::2], prec[0::2] - prec[1::2], cov, prec
+
+    point = stats(np.ones(n))
+    if point is None:
+        return out
+    d_cov, d_prec, cov, prec = point
+    out["per_seed"] = [{"seed": s, "cov": _num(cov[2 * i]), "base_cov": _num(cov[2 * i + 1]),
+                        "prec": _num(prec[2 * i]), "base_prec": _num(prec[2 * i + 1])} for i, s in enumerate(seeds)]
+    out["d_cov"] = None if np.isnan(d_cov).any() else float(d_cov.mean())
+    out["d_prec"] = None if np.isnan(d_prec).any() else float(d_prec.mean())
+    if not n_boot:
+        return out
+    rng = np.random.default_rng(seed)
+    _, inv = np.unique(np.asarray(groups).astype(str), return_inverse=True)
+    k, n_groups = len(seeds), int(inv.max()) + 1
+    vals_cov, vals_prec = [], []
+    for _ in range(n_boot):
+        drawn = rng.integers(0, k, k)
+        res = None
+        for _ in range(max_tries):
+            mult = np.bincount(rng.integers(0, n_groups, n_groups), minlength=n_groups)[inv].astype(float)
+            res = stats(mult)
+            if res is not None:
+                break
+        if res is None:
+            continue
+        rc, rp = res[0][drawn], res[1][drawn]
+        if not np.isnan(rc).any():
+            vals_cov.append(rc.mean())
+        if not np.isnan(rp).any():
+            vals_prec.append(rp.mean())
+    for key, vals in (("cov", vals_cov), ("prec", vals_prec)):
+        out[f"{key}_dropped"] = int(n_boot - len(vals))
+        if len(vals) >= n_boot / 2:
+            out[f"d_{key}_lo"], out[f"d_{key}_hi"] = (float(v) for v in np.percentile(vals, [2.5, 97.5]))
+    return out
+
+
+def _agree_rows(pred, pi, split="test"):
+    """One run's ``split`` rows under its own val-fitted uncapped map (``prior_rules.served_and_weights``, the map
+    ``gate_stats`` reads), sorted by ``label_uid``: ``label_uid``, ``pano_id``, ``incorrect`` and the Agree arrays
+    ``agree``, ``passed``, ``right``."""
+    from analysis import prior_rules as pr
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        s = pr.served_and_weights(pred[["label_uid", "split", "true", "p_correct", "p_incorrect", "pano_id"]], pi)
+    s = s[s["split"] == split].sort_values("label_uid", kind="mergesort").reset_index(drop=True)
+    return pd.DataFrame({"label_uid": s["label_uid"].astype(str), "pano_id": s["pano_id"].astype(str),
+                         "incorrect": (s["true"].astype(str) == "incorrect").to_numpy(),
+                         "agree": (s["verdict"] == "correct").to_numpy(),
+                         "passed": (s["served"] >= pr.GATE).to_numpy(), "right": s["correct"].astype(bool).to_numpy()})
+
+
+def gate_intervals(label_type, runs, shares_types, n_boot, seed, split="test", rule=DECISION_RULE):
+    """Condition 3's paired intervals (``gate_delta_ci``) for every arm of ``label_type`` against the in-env baseline
+    over their shared seeds at lr 1e-5, on ``split`` under ``rule``'s prior: ``{arm: gate_delta_ci result}``. Each
+    arm's generator is seeded ``slices.slice_seed(seed, "gate:<arm>:<split>")``, the module's per-comparison seed
+    convention, so adding an arm never moves another arm's interval."""
+    from analysis import prior_rules as pr
+    from analysis import slices as sl
+    pi = pr.rule_prior(shares_types, label_type, rule)
+    by = {(r["parsed"]["key"], r["parsed"]["seed"]): r for r in runs.values()
+          if r["status"] == "complete" and math.isclose(r["parsed"]["lr"], DEFAULT_LR)}
+    cache = {}
+
+    def arrays(key, s):
+        if (key, s) not in cache:
+            cache[(key, s)] = _agree_rows(by[(key, s)]["pred"], pi, split)
+        return cache[(key, s)]
+
+    base_seeds = sorted(s for k, s in by if k == BASELINE_KEY)
+    out = {}
+    for arm in sorted({k for k, _ in by} - {BASELINE_KEY}):
+        seeds = [s for s in base_seeds if (arm, s) in by]
+        if not seeds:
+            continue
+        ref = arrays(BASELINE_KEY, seeds[0])
+        runs_a, runs_b = {}, {}
+        for s in seeds:
+            for key, dst in ((arm, runs_a), (BASELINE_KEY, runs_b)):
+                d = arrays(key, s)
+                if not d["label_uid"].equals(ref["label_uid"]):
+                    raise ValueError(f"{label_type} {key} seed {s}: {split} rows differ from the baseline's")
+                dst[s] = (d["agree"].to_numpy(), d["passed"].to_numpy(), d["right"].to_numpy())
+        out[arm] = gate_delta_ci(ref["incorrect"].to_numpy(), ref["pano_id"].to_numpy(), pi, runs_a, runs_b, n_boot,
+                                 sl.slice_seed(seed, f"gate:{arm}:{split}"))
+    return out
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # runs
 # ---------------------------------------------------------------------------------------------------------------------
@@ -657,9 +818,15 @@ def _sd(vals):
     return float(np.std(vals, ddof=1)) if len(vals) > 1 else None
 
 
-def summarise(rows, gates):
-    """Per arm and type over the seeds at lr 1e-5: the inputs of ``decide``."""
+GATE_CI_KEYS = ("d_cov", "d_cov_lo", "d_cov_hi", "cov_dropped", "d_prec", "d_prec_lo", "d_prec_hi", "prec_dropped")
+
+
+def summarise(rows, gates, gate_cis=None):
+    """Per arm and type over the seeds at lr 1e-5: the inputs of ``decide``. ``gate_cis`` is ``{type: {arm:
+    gate_delta_ci result}}`` (``gate_intervals``); its paired differences and intervals join as ``agree_<key>``
+    (``agree_d_cov_lo``, ...), next to the per-seed Agree precision and coverage of both models."""
     out = {}
+    gate_cis = gate_cis or {}
     main = [r for r in rows if math.isclose(r["lr"], DEFAULT_LR)]
     agree = {(g["type"], g["arm"], g["seed"]): g for g in gates
              if g["rule"] == DECISION_RULE and g["split"] == "test" and g["verdict"] == "correct" and math.isclose(g["lr"], DEFAULT_LR)}
@@ -684,17 +851,53 @@ def summarise(rows, gates):
                 "agree_cov_mean": _mean([g.get("gate_coverage") for g in gs]),
                 "base_agree_prec_mean": _mean([g.get("gate_precision") for g in gb]),
                 "base_agree_cov_mean": _mean([g.get("gate_coverage") for g in gb]),
+                "agree_prec_seeds": [_num(g.get("gate_precision")) for g in gs],
+                "agree_cov_seeds": [_num(g.get("gate_coverage")) for g in gs],
+                "base_agree_prec_seeds": [_num(g.get("gate_precision")) for g in gb],
+                "base_agree_cov_seeds": [_num(g.get("gate_coverage")) for g in gb],
                 "params": next((r.get("params") for r in rs if r.get("params")), None),
                 "base_params": next((r.get("params") for r in bs if r.get("params")), None),
             }
+            ci = (gate_cis.get(t) or {}).get(arm)
+            if arm != BASELINE_KEY:
+                out[arm][t].update({f"agree_{k}": (ci or {}).get(k) for k in GATE_CI_KEYS})
+                out[arm][t]["agree_ci_seeds"] = (ci or {}).get("seeds")
+                out[arm][t]["agree_ci_n_boot"] = (ci or {}).get("n_boot")
     return out
 
 
+def gate_condition(r):
+    """Condition 3 on one type (docs/backbone-2026-11.md, as amended by J17): ``(result, clauses)`` with ``result``
+    ``pass``, ``fail`` or ``unestimable``. Three clauses, each ``pass`` / ``fail`` / ``unestimable``:
+
+    - ``precision_floor``: the arm's seed-mean Agree precision at the gate is ≥ 0.92 (unestimable when no seed's run
+      gates any Agree);
+    - ``coverage``: fails only when the 95% interval of the paired seed-mean Δ Agree coverage lies wholly below −0.02
+      (its upper end is under −0.02);
+    - ``precision_drop``: fails only when the interval of the paired seed-mean Δ Agree precision lies wholly below
+      −0.01.
+
+    The interval clauses are unestimable when ``gate_delta_ci`` left no interval. The type fails when any clause
+    fails, passes when all three pass, and is unestimable otherwise; only ``pass`` meets condition 3.
+
+    >>> gate_condition({"agree_prec_mean": 0.95, "agree_d_cov_hi": -0.01, "agree_d_prec_hi": 0.0})[0]
+    'pass'
+    >>> gate_condition({"agree_prec_mean": 0.95, "agree_d_cov_hi": -0.021, "agree_d_prec_hi": 0.0})
+    ('fail', {'precision_floor': 'pass', 'coverage': 'fail', 'precision_drop': 'pass'})
+    """
+    def margin(hi, drop):
+        return "unestimable" if hi is None else ("fail" if hi < -drop else "pass")
+    p = r.get("agree_prec_mean")
+    clauses = {"precision_floor": "unestimable" if p is None else ("pass" if p >= GATE_PRECISION else "fail"),
+               "coverage": margin(r.get("agree_d_cov_hi"), GATE_COVERAGE_DROP),
+               "precision_drop": margin(r.get("agree_d_prec_hi"), GATE_PRECISION_DROP)}
+    vals = set(clauses.values())
+    return ("fail" if "fail" in vals else "pass" if vals == {"pass"} else "unestimable"), clauses
+
+
 def _gate_ok(r):
-    p, c, bp, bc = (r.get(k) for k in ("agree_prec_mean", "agree_cov_mean", "base_agree_prec_mean", "base_agree_cov_mean"))
-    if None in (p, c, bp, bc):
-        return False
-    return p >= GATE_PRECISION and p >= bp - GATE_PRECISION_DROP and c >= bc - GATE_COVERAGE_DROP
+    """Condition 3 met on one type (``gate_condition`` passes)."""
+    return gate_condition(r)[0] == "pass"
 
 
 INCOMPLETE_STATUS = "submitted, incomplete"
@@ -742,7 +945,9 @@ def arm_status(arm, per_type, submitted=(), types=PILOT_TYPES):
     """The rule of docs/backbone-2026-11.md for one arm. ``per_type`` is ``summarise``'s entry for the arm;
     ``submitted`` the ``(type, arm, seed)`` rows of the task files (``submitted_rows``).
     Returns ``(status, detail)``; statuses: ``winner``, ``meets the doubled rule`` (an arm outside ``ELIGIBLE``),
-    ``fails the gate`` (conditions 1 and 2 met, condition 3 not), ``between-deployment only``, ``worse``,
+    ``fails the gate`` (conditions 1 and 2 met, condition 3 failed on a pilot type), ``gate unestimable``
+    (conditions 1 and 2 met, condition 3 failed nowhere but could not be judged on a type: cannot win),
+    ``between-deployment only``, ``worse``,
     ``non-inferior small``, ``null``, and, short of the three seeds on a pilot type, ``submitted, incomplete`` (a
     missing row was submitted: it is queued, running, or failed and not resubmitted) or ``not yet run``."""
     missing = _missing(per_type, types)
@@ -758,15 +963,18 @@ def arm_status(arm, per_type, submitted=(), types=PILOT_TYPES):
     c1 = [t for t in pooled if (per_type[t]["wc_d_heldout_mean"] or 0) > 0]
     c2 = all(per_type[t][k] is not None and per_type[t][k] >= NON_INFERIOR for t in types
              for k in ("d_heldout_mean", "wc_d_heldout_mean", "d_test_mean"))
-    c3 = all(_gate_ok(per_type[t]) for t in types)
+    gate = {t: gate_condition(per_type[t]) for t in types}
+    c3 = all(res == "pass" for res, _ in gate.values())
+    c3_failed = any(res == "fail" for res, _ in gate.values())
     params, base_params = per_type[types[0]].get("params"), per_type[types[0]].get("base_params")
     small = bool(params and base_params and params < 0.5 * base_params)
     detail = {"thresholds": thr, "condition_1_types": c1, "pooled_bar_types": pooled, "condition_2": c2,
-              "condition_3": c3, "non_inferior_small": small and c2 and c3, "eligible": eligible}
+              "condition_3": c3, "condition_3_by_type": {t: {"result": res, **cl} for t, (res, cl) in gate.items()},
+              "non_inferior_small": small and c2 and c3, "eligible": eligible}
     if c1 and c2 and c3:
         return ("winner" if eligible else "meets the doubled rule"), detail
     if c1 and c2:
-        return "fails the gate", detail
+        return ("fails the gate" if c3_failed else "gate unestimable"), detail
     if pooled and not c1:
         return "between-deployment only", detail
     if not c2:
@@ -946,10 +1154,55 @@ def seeds_markdown(summary):
          "mean Δ within-city held-out", "mean Δ test"], body)
 
 
-def gate_markdown(gates):
+def _seed_list(vals):
+    return ", ".join(_f(v) or "–" for v in vals or [])
+
+
+def _ci_cell(r, k):
+    v, lo, hi = r.get(f"agree_d_{k}"), r.get(f"agree_d_{k}_lo"), r.get(f"agree_d_{k}_hi")
+    cell = "" if v is None else f"{v:+.3f}"
+    cell += " [unestimable]" if lo is None else f" [{lo:+.3f}, {hi:+.3f}]"
+    return cell.strip()
+
+
+def condition3_markdown(summary):
+    """Condition 3 per arm and type: per-seed Agree precision and coverage of both models (descriptive), the seed-mean
+    precision against 0.92, and the paired hierarchical-bootstrap intervals the margins read."""
+    body = []
+    for arm, per in summary.items():
+        if arm == BASELINE_KEY:
+            continue
+        for t, r in per.items():
+            res, cl = gate_condition(r)
+            body.append([f"`{arm}`", t, ", ".join(str(s) for s in r.get("agree_ci_seeds") or r.get("seeds") or []),
+                         _seed_list(r.get("agree_prec_seeds")), _seed_list(r.get("base_agree_prec_seeds")),
+                         _f(r.get("agree_prec_mean")), _seed_list(r.get("agree_cov_seeds")),
+                         _seed_list(r.get("base_agree_cov_seeds")), _ci_cell(r, "cov"),
+                         r.get("agree_cov_dropped", ""), _ci_cell(r, "prec"), r.get("agree_prec_dropped", ""),
+                         f"{res}" + ("" if res == "pass" else " (" + ", ".join(k for k, v in cl.items() if v != "pass")
+                                                                 + ")")])
+    n_boot = next((r.get("agree_ci_n_boot") for per in summary.values() for r in per.values()
+                   if r.get("agree_ci_n_boot")), None)
+    return (f"## Condition 3: Agree at the gate on `test` under `{DECISION_RULE}`\n\n"
+            f"Seed mean of the arm's Agree precision must be ≥ {GATE_PRECISION}. Δ = seed mean of (arm − in-env "
+            f"baseline, same seed); the 95% interval is a paired hierarchical bootstrap ({n_boot or 'no'} replicates): "
+            "the shared seeds resampled with replacement, then whole panoramas with one resample shared by every drawn "
+            "seed and both models, each run on its own val-fitted map. The coverage clause fails only when the "
+            f"interval lies wholly below −{GATE_COVERAGE_DROP:g}, the precision clause only when it lies wholly below "
+            f"−{GATE_PRECISION_DROP:g}. Dropped = replicates left out because a drawn seed's run gated no Agree (or "
+            "the resample had one class); fewer than half kept leaves the interval unestimable. With three seeds the "
+            "seed resampling is crude. Per-seed values are descriptive.\n\n"
+            + _table(["arm", "type", "seeds", "precision by seed", "baseline precision by seed", "mean precision",
+                      "coverage by seed", "baseline coverage by seed", "Δ coverage [95%]", "dropped",
+                      "Δ precision [95%]", "dropped", "condition 3"], body))
+
+
+def gate_markdown(gates, summary=None):
     parts = ["# The 0.92 gate", "", "Coverage and precision of each verdict at the 0.92 gate, uncapped map fitted on "
              "val under each rule's deployment prior (`analysis/prior_rules.py gate_rows`). One table per rule; "
              f"`{DECISION_RULE}` is the rule's input, `{REFERENCE_RULE}` a reference.", ""]
+    if summary:
+        parts += [condition3_markdown(summary)]
     for rule in (DECISION_RULE, REFERENCE_RULE):
         rs = [g for g in gates if g["rule"] == rule]
         body = [[g["type"], f"`{g['arm']}`", g["seed"], f"{g['lr']:g}", g["split"],
@@ -1063,8 +1316,14 @@ def rampnet_markdown(rows, exposure):
 
 
 def decision_markdown(decision, n_compared):
+    def c3(r):
+        by = r.get("condition_3_by_type")
+        if not by:
+            return r.get("condition_3", "")
+        return "; ".join(f"{t} {v['result']}" + ("" if v["result"] == "pass" else " (" + ", ".join(
+            k for k, x in v.items() if k != "result" and x != "pass") + ")") for t, v in by.items())
     body = [[f"`{a}`", r["status"], ", ".join(r.get("condition_1_types") or []), r.get("condition_2", ""),
-             r.get("condition_3", ""), "yes" if r.get("eligible") else ("" if "eligible" not in r else "no")]
+             c3(r), "yes" if r.get("eligible") else ("" if "eligible" not in r else "no")]
             for a, r in decision["arms"].items()]
     extra = ""
     if decision.get("incomplete"):
@@ -1141,7 +1400,7 @@ def cmd_report(args):
     unknown = [a for a in dropped if a not in bb.REGISTRY]
     if unknown:
         raise SystemExit(f"--drop-arms: not registry keys: {unknown}")
-    rows, gates, heldout, slice_rows, env, incomplete, round3 = [], [], [], [], [], [], []
+    rows, gates, heldout, slice_rows, env, incomplete, round3, gate_cis = [], [], [], [], [], [], [], {}
     for t in types:
         split = load_split(args.split_dir, t, inputs, tracker)
         runs = load_runs(args.runs_dir, t, args.tag_prefix, split, inputs["split_sha256"][t], tracker, args.epochs)
@@ -1155,7 +1414,8 @@ def cmd_report(args):
         heldout += h
         slice_rows += sr
         env += env_rows(t, runs, ref, args.n_boot, args.seed)
-    summary = summarise(rows, gates)
+        gate_cis[t] = gate_intervals(t, runs, shares_types, args.n_boot, args.seed)
+    summary = summarise(rows, gates, gate_cis)
     decision = decide(summary, submitted, tuple(types), dropped)
     nulls = [null_winner_rate(thresholds=thr, seed=0, rho=rho) for thr in (THRESHOLDS, {t: 2 * v for t, v in
                                                                                         THRESHOLDS.items()})
@@ -1163,7 +1423,7 @@ def cmd_report(args):
     os.makedirs(args.out, exist_ok=True)
     outputs = {
         "arms.md": arms_markdown(rows, heldout, incomplete, round3),
-        "seeds.md": seeds_markdown(summary), "gate.md": gate_markdown(gates), "slices.md": slices_markdown(slice_rows),
+        "seeds.md": seeds_markdown(summary), "gate.md": gate_markdown(gates, summary), "slices.md": slices_markdown(slice_rows),
         "cost.md": cost_markdown(rows), "env.md": env_markdown(env), "lr.md": lr_markdown(rows),
         "rampnet.md": rampnet_markdown(rows, exposure),
         "decision.md": decision_markdown(decision, len({r["arm"] for r in rows} - {BASELINE_KEY})),

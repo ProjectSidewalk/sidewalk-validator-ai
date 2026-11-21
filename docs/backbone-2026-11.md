@@ -242,12 +242,27 @@ SurfaceProblem**.
      seeds, **and** mean within-city Δ held-out AUC > 0 on that type;
   2. on both pilot types, mean Δ held-out AUC ≥ −0.005, mean within-city Δ held-out AUC ≥ −0.005 and mean Δ test
      AUC ≥ −0.005;
-  3. on both pilot types, under `majority2`, the Agree verdict's precision at the gate on `test` (mean over seeds)
-     is ≥ 0.92 and not more than 0.01 below the in-env baseline's, with coverage not more than 2 points below the
-     baseline's.
+  3. on both pilot types, under `majority2`, on `test`: the Agree verdict's precision at the gate (mean over seeds)
+     is ≥ 0.92, and neither harm screen against the in-env baseline fails. The coverage screen fails only when the
+     95% interval of the paired seed-mean Δ Agree coverage at the gate (arm − baseline) lies wholly below −0.02; the
+     precision screen fails only when the 95% interval of the paired seed-mean Δ Agree precision lies wholly below
+     −0.01. The interval is a paired hierarchical bootstrap: each replicate resamples the shared training seeds with
+     replacement (a drawn seed brings both models' runs), then whole panoramas, with one panorama resample shared by
+     every drawn seed and both models; the statistic is the mean over the drawn seeds of (arm − baseline), each run
+     read through its own val-fitted map (maps are not refitted), with the prior weights recomputed on the resample.
+     2.5 and 97.5 percentiles of the report's bootstrap count (1,000; seeded per arm from `--seed`). A replicate whose
+     statistic is undefined (a drawn seed's run gates no Agree) is dropped and counted, and with fewer than half kept
+     the screen is unestimable. Per-seed precision and coverage of both models, the point estimates and the dropped
+     counts are reported beside the intervals (`gate.md`). Seed resampling with three seeds is crude: about 30% of
+     replicates never draw a given seed, so the interval's upper end sits near the best seed's difference, and a
+     screen in practice fails only when the drop is beyond the margin on every seed. Amended before any result was
+     read (J17).
 - *Between-deployment only*: condition 1's pooled bar is met but the within-city mean Δ is ≤ 0. Reported under
   that name; cannot win.
-- *Fails the gate*: conditions 1 and 2 hold and condition 3 does not. Reported under that name; cannot win.
+- *Fails the gate*: conditions 1 and 2 hold and condition 3 fails on a pilot type. Reported under that name; cannot
+  win. *Gate unestimable* (report mechanics, J17): conditions 1 and 2 hold and condition 3 fails nowhere, but one of
+  its clauses cannot be judged on a pilot type (no seed of the arm gates any Agree, or under half the bootstrap
+  replicates are defined). Reported under that name; cannot win.
 - *Other arms* (`convnextv2-base`, `dinov3-vitl16-256`, `dinov3-vitb16`) are explanatory. One is promoted to a
   winner only if it meets the rule with thresholds doubled (+0.020 / +0.032) and no eligible arm wins.
 - *Non-inferior small* (any arm with under half the baseline's parameters): condition 2 and condition 3 hold over
@@ -292,7 +307,8 @@ n_correct over deployments with at least 10 labels of both classes (round 3's de
 interval from 1,000 panorama bootstrap draws resampled within each deployment (seed 0). Pooled Δ and slice Δ use the
 existing panorama bootstrap (`confident_learning.overall_deltas`, `slices.paired_delta_table`). The gate readout is
 `prior_rules.gate_rows` on each run's predictions under the `majority2` prior (decision) and `margin` (reference),
-never in the same table; calibration is not part of the job.
+never in the same table; condition 3's intervals (`gate_intervals`) read the same val-fitted maps row by row and
+group panoramas as the AUC intervals do. Calibration is not part of the job.
 
 ## Runs
 
@@ -351,7 +367,7 @@ converted rows, which no DINOv2 or DINOv3 arm takes. Records land in `$KEEP/<LT>
 |---|---|
 | `arms.md` / `arms.json`: every run against the same-seed baseline, each held-out deployment | not yet run |
 | `seeds.md`: mean ± sd over seeds | not yet run |
-| `gate.md`: Agree and Disagree at the 0.92 gate, `majority2` and `margin` | not yet run |
+| `gate.md`: condition 3 (per-seed values, paired intervals), then Agree and Disagree at the 0.92 gate, `majority2` and `margin` | not yet run |
 | `slices.md`: type × severity and type × tag, with training counts and round 3's own AUC | not yet run |
 | `cost.md`: parameters, tokens, model class, GPU, seconds per step, peak memory | not yet run |
 | `env.md`: in-env baseline against round 3 | not yet run |
@@ -458,8 +474,10 @@ Listed with the default this branch uses; none blocks the pilot. Numbered as in 
   lives aside, or `run_one` finds `evaluated`/`slimmed` and copies the old outputs back: `$RUNS/<LT>/<TAG>/`,
   `$KEEP/<LT>/runs/<TAG>/`, and the tagged files `$DATA/<LT>/{metrics,predictions,per_city,slices,report}_<TAG>.*`.
   Then `resubmit` a task file of those 8 rows. That needs about 8 more GPU jobs than the 55 cap leaves. Alternative: keep them and report the deviation beside every RampNet number.
-- **J17. Gate-coverage guard against seed noise** (PR #121 review S1). Condition 3 allows a coverage drop of 2 points
-  in the three-seed mean, while round 3's baseline seeds alone vary by about 0.06 (CurbRamp) and 0.10
-  (SurfaceProblem) in Agree coverage under `majority2`, so an arm no different from the baseline fails the guard
-  often. Default: the rule as signed off. Alternatives: scale the tolerance to the measured seed sd, as the AUC
-  thresholds are, or keep it and report its pass rate under no difference. Undecided; no result has been read.
+- **J17. Gate-coverage guard against seed noise** (PR #121 review S1). **Decided 2026-11-20, before any result was
+  read, at Jon's direction to follow standard practice: intervals that include seed variance; same form as PR #120's
+  C3.** As signed off, condition 3 allowed a coverage drop of 2 points in the three-seed mean, while round 3's
+  baseline seeds alone vary by about 0.06 (CurbRamp) and 0.10 (SurfaceProblem) in Agree coverage under `majority2`,
+  so a fixed margin on a three-seed mean mostly measured seed noise. Its coverage and relative-precision clauses now
+  fail only when a paired seed-and-panorama bootstrap interval lies wholly beyond the margin (−0.02, −0.01); the 0.92
+  floor on the seed-mean precision is unchanged (condition 3 above). Seed resampling with three seeds is crude.

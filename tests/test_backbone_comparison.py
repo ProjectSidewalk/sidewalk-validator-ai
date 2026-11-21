@@ -39,11 +39,19 @@ def test_tags_round_trip(key, seed, lr, rand):
 # the rule
 # ---------------------------------------------------------------------------------------------------------------------
 
-def per_type(d=0.0, n_pos=3, wc=0.0, test=0.0, prec=0.95, cov=0.5, n_seeds=3, params=304e6, base_prec=0.95):
+def per_type(d=0.0, n_pos=3, wc=0.0, test=0.0, prec=0.95, cov=0.5, n_seeds=3, params=304e6, base_prec=0.95,
+             cov_ci=None, prec_ci=None):
+    """A ``summarise`` entry. Condition 3's intervals default to the point difference (no width); ``cov_ci`` /
+    ``prec_ci`` give ``(lo, hi)`` explicitly, ``(None, None)`` for an unestimable one."""
+    dc, dp = cov - 0.5, prec - base_prec
+    cl, ch = cov_ci or (dc, dc)
+    pl, ph = prec_ci or (dp, dp)
     return {"n_seeds": n_seeds, "seeds": list(bc.SEEDS[:n_seeds]) + list(range(45, 42 + n_seeds)),
             "d_heldout_mean": d, "n_pos_heldout": n_pos, "wc_d_heldout_mean": wc,
             "d_test_mean": test, "agree_prec_mean": prec, "agree_cov_mean": cov, "base_agree_prec_mean": base_prec,
-            "base_agree_cov_mean": 0.5, "params": params, "base_params": 304e6}
+            "base_agree_cov_mean": 0.5, "params": params, "base_params": 304e6,
+            "agree_d_cov": dc, "agree_d_cov_lo": cl, "agree_d_cov_hi": ch, "agree_d_prec": dp, "agree_d_prec_lo": pl,
+            "agree_d_prec_hi": ph}
 
 
 def summary(arm, cr, sp):
@@ -137,6 +145,134 @@ def test_rule_edges_that_survived_mutation():
     assert status(reg, four, per_type(0.0, n_seeds=4)) == "winner"
     assert not bc._gate_ok(per_type(prec=0.915, base_prec=0.92))   # within 0.01 of the baseline, under 0.92
     assert bc._gate_ok(per_type(prec=0.921, base_prec=0.92))
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# condition 3 (J17): intervals that include seed variance
+# ---------------------------------------------------------------------------------------------------------------------
+
+PI = {"correct": 0.6, "incorrect": 0.4}
+
+
+def gate_data(n=2400, seed=0):
+    """``n`` rows in panoramas of four; Agree on every row (right when the true class is correct)."""
+    rng = np.random.default_rng(seed)
+    y = rng.random(n) < 0.4
+    groups = np.array([f"p{i // 4}" for i in range(n)])
+    return y, groups, rng
+
+
+def runs_at(y, rng, probs, shift=None):
+    """``{seed: (agree, passed, right)}``: each seed passes the rows whose uniform draw is under its probability;
+    ``shift`` gives the arm's per-seed probabilities on the baseline's draws (a paired run on the same rows)."""
+    base, arm = {}, {}
+    for s, p in probs.items():
+        u = rng.random(len(y))
+        base[s] = (np.ones(len(y), bool), u < p, ~y)
+        if shift is not None:
+            arm[s] = (np.ones(len(y), bool), u < shift[s], ~y)
+    return base, arm
+
+
+def test_seed_noise_wider_than_the_margin_passes_condition_3():
+    """Per-seed Δ coverage −0.10, +0.05, −0.02: the mean (−0.023) is past −0.02, but the interval, which includes
+    seed variance, spans it, so the coverage clause passes."""
+    y, g, rng = gate_data()
+    base, arm = runs_at(y, rng, {42: 0.7, 43: 0.8, 44: 0.6}, {42: 0.6, 43: 0.85, 44: 0.58})
+    r = bc.gate_delta_ci(y, g, PI, arm, base, n_boot=400, seed=1)
+    assert r["seeds"] == [42, 43, 44] and r["d_cov"] < -0.02
+    assert r["d_cov_lo"] < -0.02 < r["d_cov_hi"] and r["cov_dropped"] == 0
+    per = {**per_type(0.012, wc=0.004), **{f"agree_{k}": r[k] for k in bc.GATE_CI_KEYS}, "agree_prec_mean": 0.95}
+    assert bc.gate_condition(per) == ("pass", {"precision_floor": "pass", "coverage": "pass", "precision_drop": "pass"})
+    assert status("dinov2-reg-large", per, per_type(0.0)) == "winner"
+
+
+def test_a_consistent_coverage_drop_fails_condition_3():
+    y, g, rng = gate_data()
+    probs = {42: 0.7, 43: 0.8, 44: 0.6}
+    base, arm = runs_at(y, rng, probs, {s: p - 0.06 for s, p in probs.items()})
+    r = bc.gate_delta_ci(y, g, PI, arm, base, n_boot=400, seed=1)
+    assert r["d_cov_hi"] < -0.02 and r["d_cov"] == pytest.approx(-0.06, abs=0.015)
+    assert r["d_prec_lo"] <= 0 <= r["d_prec_hi"] or abs(r["d_prec"]) < 0.01   # precision unchanged by design
+    per = {**per_type(0.012, wc=0.004), **{f"agree_{k}": r[k] for k in bc.GATE_CI_KEYS}, "agree_prec_mean": 0.95}
+    res, cl = bc.gate_condition(per)
+    assert res == "fail" and cl["coverage"] == "fail"
+    assert status("dinov2-reg-large", per, per_type(0.0)) == "fails the gate"
+    # the per-seed values are the plain gate statistics, and the point estimate is their paired mean
+    w = np.where(y, PI["incorrect"] / y.mean(), PI["correct"] / (1 - y.mean()))
+    cov = {s: w[arm[s][1]].sum() / w.sum() - w[base[s][1]].sum() / w.sum() for s in probs}
+    assert r["d_cov"] == pytest.approx(np.mean(list(cov.values())))
+    assert [p["seed"] for p in r["per_seed"]] == [42, 43, 44]
+    assert r["per_seed"][0]["cov"] == pytest.approx(w[arm[42][1]].sum() / w.sum())
+
+
+def test_condition_3_precision_clause_and_floor():
+    assert bc.gate_condition(per_type(prec=0.95, prec_ci=(-0.03, -0.011)))[1]["precision_drop"] == "fail"
+    assert bc.gate_condition(per_type(prec=0.95, prec_ci=(-0.03, -0.009)))[0] == "pass"
+    assert bc.gate_condition(per_type(prec=0.919, base_prec=0.919))[1]["precision_floor"] == "fail"
+    # a mean coverage drop past 0.02 with an interval that spans the margin passes; one wholly beyond it fails
+    assert bc.gate_condition(per_type(cov=0.47, cov_ci=(-0.08, 0.01)))[0] == "pass"
+    assert bc.gate_condition(per_type(cov=0.47, cov_ci=(-0.04, -0.021)))[0] == "fail"
+
+
+def test_nan_replicates_are_dropped_counted_and_can_leave_the_interval_unestimable():
+    y, g, rng = gate_data(n=1200)
+    probs = {42: 0.7, 43: 0.8, 44: 0.6}
+    base, arm = runs_at(y, rng, probs, probs)
+    # the arm gates no Agree at all on seed 44: its precision is undefined there, and most replicates draw seed 44
+    a, _, right = arm[44]
+    arm[44] = (a, np.zeros(len(y), bool), right)
+    r = bc.gate_delta_ci(y, g, PI, arm, base, n_boot=300, seed=2)
+    assert r["d_prec"] is None and r["per_seed"][2]["prec"] is None
+    assert r["prec_dropped"] > 150 and r["d_prec_lo"] is None and r["d_prec_hi"] is None
+    # coverage 0 on that seed is still a coverage: nothing dropped. With three seeds, about 30% of replicates never
+    # draw seed 44, so the upper end sits at the other seeds' difference (0 here): one bad seed alone cannot fail it
+    assert r["cov_dropped"] == 0 and r["d_cov_lo"] < -0.2 and r["d_cov_hi"] == pytest.approx(0.0, abs=1e-9)
+    per = {**per_type(0.012, wc=0.004), **{f"agree_{k}": r[k] for k in bc.GATE_CI_KEYS}, "agree_prec_mean": 0.95}
+    assert bc.gate_condition(per) == ("unestimable", {"precision_floor": "pass", "coverage": "pass",
+                                                      "precision_drop": "unestimable"})
+    assert status("dinov2-reg-large", per, per_type(0.0)) == "gate unestimable"   # cannot win
+    unest = per_type(0.012, wc=0.004, prec_ci=(None, None))
+    assert bc.gate_condition(unest)[0] == "unestimable"
+    assert status("dinov2-reg-large", unest, per_type(0.0)) == "gate unestimable"
+    # NaN only in some panorama resamples: every passing Agree of the arm sits in one panorama
+    base, arm = runs_at(y, rng, probs, probs)
+    for s in probs:
+        a, _, right = arm[s]
+        only = np.zeros(len(y), bool)
+        only[(g == "p0") & ~y] = True
+        arm[s] = (a, only, right)
+    if not only.any():
+        pytest.skip("panorama p0 has no correct row under this seed")
+    r = bc.gate_delta_ci(y, g, PI, arm, base, n_boot=300, seed=2)
+    assert 0 < r["prec_dropped"] < 150 and r["d_prec_lo"] is not None
+
+
+def test_the_gate_bootstrap_is_deterministic_under_its_seed():
+    y, g, rng = gate_data(n=800)
+    base, arm = runs_at(y, rng, {42: 0.7, 43: 0.8, 44: 0.6}, {42: 0.65, 43: 0.82, 44: 0.55})
+    a = bc.gate_delta_ci(y, g, PI, arm, base, n_boot=100, seed=5)
+    assert a == bc.gate_delta_ci(y, g, PI, arm, base, n_boot=100, seed=5)
+    assert a["d_cov_lo"] != bc.gate_delta_ci(y, g, PI, arm, base, n_boot=100, seed=6)["d_cov_lo"]
+    none = bc.gate_delta_ci(y, g, PI, arm, base, n_boot=0, seed=5)
+    assert none["d_cov"] == a["d_cov"] and none["d_cov_lo"] is None
+
+
+def test_summarise_carries_the_gate_intervals_into_the_rule():
+    rows, gates = [], []
+    for arm in ("dinov2-large", "dinov2-reg-large"):
+        for s in bc.SEEDS:
+            rows.append({"type": "CurbRamp", "arm": arm, "seed": s, "lr": 1e-5, "d_heldout": 0.01})
+            gates.append({"type": "CurbRamp", "arm": arm, "seed": s, "lr": 1e-5, "rule": "majority2", "split": "test",
+                          "verdict": "correct", "gate_precision": 0.95, "gate_coverage": 0.5 + (s - 43) / 10})
+    ci = {"d_cov": -0.03, "d_cov_lo": -0.09, "d_cov_hi": 0.02, "cov_dropped": 0, "d_prec": 0.0, "d_prec_lo": -0.004,
+          "d_prec_hi": 0.005, "prec_dropped": 3, "seeds": [42, 43, 44], "n_boot": 1000}
+    r = bc.summarise(rows, gates, {"CurbRamp": {"dinov2-reg-large": ci}})["dinov2-reg-large"]["CurbRamp"]
+    assert r["agree_d_cov_hi"] == 0.02 and r["agree_prec_dropped"] == 3 and r["agree_ci_n_boot"] == 1000
+    assert r["agree_cov_seeds"] == pytest.approx([0.4, 0.5, 0.6])
+    assert bc.gate_condition(r)[0] == "pass"
+    bare = bc.summarise(rows, gates)["dinov2-reg-large"]["CurbRamp"]   # no intervals: never passes
+    assert bare["agree_d_cov_hi"] is None and bc.gate_condition(bare)[0] == "unestimable"
 
 
 def test_summarise_reads_the_agree_gate_on_test_under_majority2_at_lr_1e5():
@@ -422,6 +558,30 @@ def test_gate_tables_never_mix_rules(synthetic):
     assert [s.split("`")[1] for s in sections] == ["majority2", "margin"]
     rows = json.loads((out / "decision.json").read_text())
     assert rows["thresholds"] == bc.THRESHOLDS
+
+
+def test_report_reads_condition_3_from_the_paired_intervals(synthetic):
+    out = synthetic["tmp"] / "out"
+    run_report(synthetic, out)
+    gate = (out / "gate.md").read_text()
+    assert "## Condition 3: Agree at the gate on `test` under `majority2`" in gate
+    assert gate.index("## Condition 3") < gate.index("## prior rule ")
+    a = json.loads((out / "arms.json").read_text())
+    for t in bc.PILOT_TYPES:
+        s = a["summary"]["dinov2-reg-large"][t]
+        assert s["agree_ci_seeds"] == list(bc.SEEDS) and s["agree_ci_n_boot"] == 50
+        assert s["agree_d_cov_lo"] is not None and s["agree_d_cov_lo"] <= s["agree_d_cov_hi"]
+        # the interval's point estimate is the paired mean of the gate table's own per-seed coverage
+        assert s["agree_d_cov"] == pytest.approx(np.mean(s["agree_cov_seeds"]) - np.mean(s["base_agree_cov_seeds"]))
+        assert "agree_d_cov" not in a["summary"]["dinov2-large"][t]
+    d = json.loads((out / "decision.json").read_text())["decision"]["arms"]["dinov2-reg-large"]
+    assert set(d["condition_3_by_type"]) == set(bc.PILOT_TYPES)
+    want = all(bc.gate_condition(a["summary"]["dinov2-reg-large"][t])[0] == "pass" for t in bc.PILOT_TYPES)
+    assert d["condition_3"] == want
+    # deterministic: a second report writes the same intervals
+    run_report(synthetic, synthetic["tmp"] / "out2")
+    b = json.loads((synthetic["tmp"] / "out2" / "arms.json").read_text())
+    assert b["summary"]["dinov2-reg-large"] == a["summary"]["dinov2-reg-large"]
 
 
 def test_slices_and_lr_and_env_tables(synthetic):
