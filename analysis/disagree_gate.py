@@ -15,7 +15,9 @@ Subcommands:
   (``prior_rules.val_map``), gate statistics for both verdicts on ``test`` and ``test_heldout`` (``gate_stats``),
   the same under the ``margin`` prior as a reference row, the map's maximum Disagree value, a fit on ``test``
   evaluated on ``test_heldout`` (fit-split sensitivity), test / held-out AUC, and the paired held-out contrast of
-  ``cl-drop`` against the gold-free baseline (mean of per-seed deltas, one panorama resample shared by all seeds).
+  ``cl-drop`` against the gold-free baseline (mean of per-seed deltas, one panorama resample shared by all seeds),
+  and C3's paired Agree-gate contrast (``agree_gate``: weighted Agree coverage and precision at the gate, a paired
+  hierarchical bootstrap over training seeds and panoramas with each run's map held fixed).
 - ``gold`` (Mac only; the only place expert verdicts are read): joins the gold predictions to ``gold.csv`` and
   computes the gold rows of the bar (gated Disagrees, false alarms on hard-correct items, round-stratified AUC, the
   primary paired contrast P4, strata, rounds, slices, sensitivity rows, crop parity, the three-seed ensemble). The
@@ -83,6 +85,10 @@ A3_SHARE, A3_LOWER = 0.92, 0.80
 C2_MAX_AUC_LOSS = 0.010  # cl-drop's mean test AUC may not fall further below the baseline's
 C3_MAX_COVERAGE_LOSS = 0.03   # Agree coverage at the gate, absolute
 C3_MAX_PRECISION_LOSS = 0.01  # prior-weighted Agree precision, relative to the gold-free baseline (A6)
+# C3 (amended 2026-11-20, J15) judges each clause on a paired hierarchical bootstrap interval of cl-drop minus the
+# baseline (``paired_agree_gate_delta``); a clause is unestimable when fewer than this share of the requested
+# replicates give a number (the rest dropped as undefined, e.g. an arm gating no Agree in that resample).
+C3_MIN_VALID_SHARE = 0.5
 PRIVACY_MIN_CELL = 5     # a gold cell under 5 items shows its size only
 ROUND_FLAG_RATIO = 2.0   # A3 per round: flag a round overturned at twice the other's rate
 STATUSES = ("hold_back", "shadow_eligible")
@@ -302,6 +308,83 @@ def paired_seed_delta(preds_a, preds_b, groups, split, n_boot=N_BOOT, seed=0):
     return out
 
 
+C3_FIELDS = {"coverage": "coverage_weighted", "precision": "precision_weighted"}   # C3 clause -> gate_stats field
+
+
+def paired_agree_gate_delta(scored_a, scored_b, groups, split, pi, n_boot=N_BOOT, seed=0):
+    """C3's interval: ``b - a`` in the Agree verdict's prior-weighted coverage and precision at the gate on ``split``,
+    the mean over the shared training seeds, with a 95% percentile interval from a paired hierarchical bootstrap.
+
+    ``scored_a`` / ``scored_b`` are ``{seed: rows}`` carrying ``label_uid``, ``split``, ``true``, ``verdict`` and
+    ``served``: each run's predictions served through its own map fit on val (``served_with_map``). The maps are
+    fixed per run and never refit here, and the statistic is ``gate_stats``, so a seed's point delta is the
+    difference of the two runs' ``gates`` records. Each replicate (1) draws the shared seeds with replacement, a
+    drawn seed bringing both arms' runs of that seed, and (2) draws one resample of whole panoramas (``groups``, via
+    ``slices.boot_indices``) shared by every drawn seed and both arms; the replicate's value is the mean over the
+    drawn seeds of the per-seed delta. A replicate whose value is undefined (a NaN precision when an arm gates no
+    Agree in that resample) is dropped and counted in ``n_dropped``; a clause's ``lo`` / ``hi`` are NaN (C3 reads
+    the clause as unestimable) when fewer than ``C3_MIN_VALID_SHARE`` of the ``n_boot`` requested replicates remain.
+
+    Example: with baseline Agree coverage 0.80 on seeds 42, 43, 44 and ``cl-drop`` at 0.80, 0.80, 0.50, the mean
+    delta is -0.10, but a replicate that draws seed 44 zero times (probability 8/27) gives about 0, so the interval
+    reaches above -0.03 and the coverage clause passes (``tests/test_disagree_gate.py``).
+    """
+    seeds = sorted(set(scored_a) & set(scored_b))
+    if not seeds:
+        return None
+    frames = {}
+    for s in seeds:
+        a = scored_a[s][scored_a[s]["split"] == split][["label_uid", "true", "verdict", "served"]]
+        b = scored_b[s][scored_b[s]["split"] == split][["label_uid", "verdict", "served"]]
+        frames[s] = a.merge(b, on="label_uid", suffixes=("_a", "_b"), validate="one_to_one")
+    common = set.intersection(*(set(f["label_uid"]) for f in frames.values()))
+    base = frames[seeds[0]]
+    base = base[base["label_uid"].isin(common)][["label_uid", "true"]].reset_index(drop=True)
+    arrays = {}
+    for s in seeds:
+        f = base[["label_uid"]].merge(frames[s].drop(columns="true"), on="label_uid", how="left",
+                                      validate="one_to_one")
+        arrays[s] = {arm: (f[f"verdict_{arm}"].to_numpy(), f[f"served_{arm}"].to_numpy(dtype=float)) for arm in "ab"}
+    true = base["true"].astype(str).to_numpy()
+    y = (true == "incorrect").astype(int)
+    g = base["label_uid"].map(groups).fillna(base["label_uid"]).to_numpy()
+
+    def deltas(s, idx=None):
+        st = {}
+        for arm in "ab":
+            v, sv = arrays[s][arm]
+            if idx is not None:
+                v, sv, t = v[idx], sv[idx], true[idx]
+            else:
+                t = true
+            st[arm] = gate_stats(pd.DataFrame({"verdict": v, "served": sv, "true": t}), "correct", pi)
+        return {k: float(st["b"][f]) - float(st["a"][f]) for k, f in C3_FIELDS.items()}
+
+    per = {s: deltas(s) for s in seeds}
+    out = {"split": split, "seeds": seeds, "n": int(len(base)), "n_boot": int(n_boot), "n_replicates": 0}
+    for k in C3_FIELDS:
+        out[k] = {"per_seed": {s: per[s][k] for s in seeds}, "mean": float(np.mean([per[s][k] for s in seeds])),
+                  "lo": float("nan"), "hi": float("nan"), "n_valid": 0, "n_dropped": 0}
+    if not n_boot or not len(base):
+        return out
+    rng = np.random.default_rng(seed)
+    idxs = sl.boot_indices(y, g, n_boot, rng)
+    draws = rng.integers(0, len(seeds), size=(len(idxs), len(seeds)))
+    boots = {k: np.full(len(idxs), np.nan) for k in C3_FIELDS}
+    for i, (idx, draw) in enumerate(zip(idxs, draws)):
+        uniq, counts = np.unique(draw, return_counts=True)
+        dd = [deltas(seeds[j], idx) for j in uniq]
+        for k in C3_FIELDS:
+            boots[k][i] = np.average([d[k] for d in dd], weights=counts)     # NaN if any drawn seed is NaN
+    out["n_replicates"] = int(len(idxs))
+    for k in C3_FIELDS:
+        valid = boots[k][~np.isnan(boots[k])]
+        out[k]["n_valid"], out[k]["n_dropped"] = int(len(valid)), int(len(idxs) - len(valid))
+        if len(valid) and len(valid) >= C3_MIN_VALID_SHARE * n_boot:
+            out[k]["lo"], out[k]["hi"] = float(np.percentile(valid, 2.5)), float(np.percentile(valid, 97.5))
+    return out
+
+
 def load_run_predictions(r4, label_type, tag, inputs=None):
     """One run's ``predictions_<tag>.csv`` or None; ``inputs`` (a dict) collects the path's sha256."""
     p = os.path.join(r4, label_type, f"predictions_{tag}.csv")
@@ -356,7 +439,7 @@ def cmd_maps(args):
         if args.priors:
             check_prior_equal(pi, args.priors, t, args.prior_rule)
         rec = {"prior": pi, "prior_reference": pi_ref, "runs": {}}
-        preds = {}
+        preds, scored = {}, {}
         for variant in runs:
             if variant == "cl-drop" and t not in CL_DROP_TYPES:
                 continue
@@ -368,6 +451,8 @@ def cmd_maps(args):
                     continue
                 preds.setdefault(variant, {})[s] = pred
                 r, amap = map_record(pred, pi, pi_ref)
+                if variant in ("baseline", "cl-drop"):
+                    scored.setdefault(variant, {})[s] = served_with_map(pred, amap)   # C3's bootstrap input
                 rec["runs"][tag] = {"variant": variant, "seed": s, **r}
                 with open(os.path.join(args.out, "maps", f"{t}_{tag}.json"), "w") as f:
                     json.dump(amap, f, indent=1)
@@ -378,6 +463,10 @@ def cmd_maps(args):
             groups = dict(zip(sp["label_uid"], scene_group_keys(sp)))
             rec["contrasts"] = {"cl-drop": {s: paired_seed_delta(preds["baseline"], preds["cl-drop"], groups, s,
                                                                  args.n_boot, args.seed) for s in EVAL_SPLITS}}
+            # C3 (amended 2026-11-20): paired hierarchical bootstrap over seeds and panoramas, maps fixed per run.
+            rec["agree_gate"] = {"cl-drop": {s: paired_agree_gate_delta(scored["baseline"], scored["cl-drop"],
+                                                                        groups, s, pi, args.n_boot, args.seed)
+                                             for s in EVAL_SPLITS}}
         out[t] = rec
         print(f"{t}: {sum(1 for r in rec['runs'].values() if not r.get('missing'))} runs with predictions")
     out["_provenance"] = provenance(inputs, n_boot=args.n_boot, boot_seed=args.seed, seeds=seeds,
@@ -932,25 +1021,31 @@ def recipe(label_type, mtype, gtype):
     else:
         crit.append({"id": "C2", "result": "fail" if b < a - C2_MAX_AUC_LOSS else "pass", "baseline": a,
                      "cl-drop": b, "delta": b - a, "seeds": sorted(per), "per_seed": per})
-    # C3: Agree non-regression (coverage absolute; precision relative to the baseline, A6). The per-seed values are
-    # recorded and printed beside the means (descriptive; the rule reads only the means). The rule is an "or", so
-    # each clause is judged on its own: a split fails when either clause is estimable and bad, passes when both are
-    # estimable and fine, and is unestimable otherwise. (Before 2026-11-19 an undefined precision skipped the
-    # coverage clause too, so an arm that gated no Agree on any shared seed escaped C3; a bug fix, not a rule change.)
+    # C3: Agree non-regression (coverage absolute; precision relative to the baseline, A6), a harm screen in the
+    # form of C1 and C4 since the 2026-11-20 amendment (J15): a clause fails only when the 95% interval of cl-drop
+    # minus the baseline (paired hierarchical bootstrap over training seeds and panoramas, ``agree_gate`` in
+    # maps.json) lies wholly below minus its threshold. The seed means and per-seed values are recorded and printed
+    # as descriptive columns. The rule is an "or", so each clause is judged on its own: a split fails when either
+    # clause is estimable and its interval is wholly beyond the threshold, passes when both are estimable and not,
+    # and is unestimable otherwise (a clause is unestimable when its interval is missing: no maps record, or too
+    # few bootstrap replicates defined; C3_MIN_VALID_SHARE). (The per-clause judgment is the 2026-11-19 bug fix.)
     c3 = {"id": "C3", "result": "pass", "splits": {}}
     for s in EVAL_SPLITS:
         cb, cc, cov_per = paired_seed_means(runs, ("gates", s, "Agree", "coverage_weighted"))
         pb, pc, prec_per = paired_seed_means(runs, ("gates", s, "Agree", "precision_weighted"))
-        cov, prec = [cb, cc], [pb, pc]
-        row = {"coverage_baseline": cov[0], "coverage_cl-drop": cov[1], "precision_baseline": prec[0],
-               "precision_cl-drop": prec[1],
-               "baseline_precision_under_gate": None if prec[0] is None else prec[0] < GATE,
-               "cl-drop_precision_under_gate": None if prec[1] is None else prec[1] < GATE,
+        row = {"coverage_baseline": cb, "coverage_cl-drop": cc, "precision_baseline": pb, "precision_cl-drop": pc,
+               "baseline_precision_under_gate": None if pb is None else pb < GATE,
+               "cl-drop_precision_under_gate": None if pc is None else pc < GATE,
                "per_seed_coverage": cov_per, "per_seed_precision": prec_per}
-        row["coverage_result"] = ("unestimable" if None in cov else
-                                  "fail" if cov[0] - cov[1] > C3_MAX_COVERAGE_LOSS else "pass")
-        row["precision_result"] = ("unestimable" if None in prec else
-                                   "fail" if prec[0] - prec[1] > C3_MAX_PRECISION_LOSS else "pass")
+        ag = _get(mtype, "agree_gate", "cl-drop", s)
+        for clause, limit in (("coverage", C3_MAX_COVERAGE_LOSS), ("precision", C3_MAX_PRECISION_LOSS)):
+            iv = _get(ag, clause) if ag else None
+            lo, hi = (None, None) if iv is None else (iv.get("lo"), iv.get("hi"))
+            row[f"{clause}_delta"] = None if iv is None else iv.get("mean")
+            row[f"{clause}_lo"], row[f"{clause}_hi"] = lo, hi
+            row[f"{clause}_dropped"] = None if iv is None else iv.get("n_dropped")
+            row[f"{clause}_result"] = ("unestimable" if _nan(lo) or _nan(hi) else
+                                       "fail" if hi < -limit else "pass")
         clauses = (row["coverage_result"], row["precision_result"])
         row["result"] = "fail" if "fail" in clauses else "unestimable" if "unestimable" in clauses else "pass"
         if row["result"] == "fail":
@@ -1164,7 +1259,36 @@ def maps_markdown(maps):
                 per = ", ".join(f"{k}: {v:+.3f}" for k, v in sorted(c["per_seed"].items(), key=lambda kv: int(kv[0])))
                 lines.append(f"| {t} | {s} | {_f(c['mean'], '{:+.3f}')} [{_f(c['lo'], '{:+.3f}')}, "
                              f"{_f(c['hi'], '{:+.3f}')}] | {per} | {c['n']:,} |")
+    lines += ["", "**C3: Agree at the gate, `cl-drop` minus the gold-free baseline** (prior-weighted coverage and "
+              "precision, each run's own map fit on val; mean of per-seed paired deltas with a 95% interval from a "
+              "paired hierarchical bootstrap that resamples the training seeds and then whole panoramas, one panorama "
+              "resample shared by every drawn seed and both arms; a clause fails when its interval lies wholly below "
+              f"-{C3_MAX_COVERAGE_LOSS:g} (coverage) or -{C3_MAX_PRECISION_LOSS:g} (precision)).", "",
+              "| Type | split | coverage mean [95%] | per seed | precision mean [95%] | per seed | replicates "
+              "undefined (coverage, precision) | n |", "|---|---|---:|---|---:|---|---:|---:|"]
+    for t in LABEL_TYPES:
+        for s in EVAL_SPLITS:
+            c = _get(maps.get(t) or {}, "agree_gate", "cl-drop", s)
+            if not c:
+                continue
+            cells = []
+            for k in C3_FIELDS:
+                b = c[k]
+                per = ", ".join(f"{sd}: {_f(v, '{:+.3f}')}"
+                                for sd, v in sorted(b["per_seed"].items(), key=lambda kv: int(kv[0])))
+                cells += [f"{_f(b['mean'], '{:+.3f}')} [{_f(b['lo'], '{:+.3f}')}, {_f(b['hi'], '{:+.3f}')}]", per]
+            dropped = f"{c['coverage']['n_dropped']}, {c['precision']['n_dropped']} of {c['n_replicates']}"
+            lines.append(f"| {t} | {s} | {' | '.join(cells)} | {dropped} | {c['n']:,} |")
     return "\n".join(lines)
+
+
+def _iv(row, clause):
+    """``-0.100 [-0.310, +0.012]`` for one C3 clause of a ``bar.json`` split row, with the bootstrap replicates
+    dropped as undefined when there were any."""
+    text = (f"{_f(row.get(f'{clause}_delta'), '{:+.3f}')} [{_f(row.get(f'{clause}_lo'), '{:+.3f}')}, "
+            f"{_f(row.get(f'{clause}_hi'), '{:+.3f}')}]")
+    dropped = row.get(f"{clause}_dropped")
+    return text + (f" ({dropped} replicates undefined)" if dropped else "")
 
 
 def _crit_text(c):
@@ -1179,14 +1303,13 @@ def _crit_text(c):
         for s, row in c["splits"].items():
             clauses = (f" (coverage {row['coverage_result']}, precision {row['precision_result']})"
                        if "coverage_result" in row else "")
-            if row.get("result") == "unestimable":
-                parts.append(f"{s} unestimable{clauses}")
-                continue
             per = "; ".join(f"s{k} {_f(v['baseline'])}/{_f(v['cl-drop'])}"
                             for k, v in sorted((row.get("per_seed_coverage") or {}).items(), key=lambda kv: int(kv[0])))
-            parts.append(f"{s} {row['result']}{clauses}: Agree coverage {_f(row['coverage_cl-drop'])} vs "
-                         f"{_f(row['coverage_baseline'])} (per seed baseline/cl-drop: {per}), weighted precision "
-                         f"{_f(row['precision_cl-drop'])} vs {_f(row['precision_baseline'])}")
+            parts.append(f"{s} {row['result']}{clauses}: Agree coverage cl-drop minus baseline "
+                         f"{_iv(row, 'coverage')}, means {_f(row['coverage_cl-drop'])} vs "
+                         f"{_f(row['coverage_baseline'])} (per seed baseline/cl-drop: {per}); weighted precision "
+                         f"{_iv(row, 'precision')}, means {_f(row['precision_cl-drop'])} vs "
+                         f"{_f(row['precision_baseline'])}")
         return f"{i} {res} ({'; '.join(parts)})"
     if c.get("detail"):
         return f"{i} {res} ({c['detail']})"
