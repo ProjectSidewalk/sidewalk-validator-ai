@@ -242,27 +242,49 @@ SurfaceProblem**.
      seeds, **and** mean within-city Δ held-out AUC > 0 on that type;
   2. on both pilot types, mean Δ held-out AUC ≥ −0.005, mean within-city Δ held-out AUC ≥ −0.005 and mean Δ test
      AUC ≥ −0.005;
-  3. on both pilot types, under `majority2`, on `test`: the Agree verdict's precision at the gate (mean over seeds)
-     is ≥ 0.92, and neither harm screen against the in-env baseline fails. The coverage screen fails only when the
-     95% interval of the paired seed-mean Δ Agree coverage at the gate (arm − baseline) lies wholly below −0.02; the
-     precision screen fails only when the 95% interval of the paired seed-mean Δ Agree precision lies wholly below
-     −0.01. The interval is a paired hierarchical bootstrap: each replicate resamples the shared training seeds with
-     replacement (a drawn seed brings both models' runs), then whole panoramas, with one panorama resample shared by
-     every drawn seed and both models; the statistic is the mean over the drawn seeds of (arm − baseline), each run
-     read through its own val-fitted map (maps are not refitted), with the prior weights recomputed on the resample.
-     2.5 and 97.5 percentiles of the report's bootstrap count (1,000; seeded per arm from `--seed`). A replicate whose
-     statistic is undefined (a drawn seed's run gates no Agree) is dropped and counted, and with fewer than half kept
-     the screen is unestimable. Per-seed precision and coverage of both models, the point estimates and the dropped
-     counts are reported beside the intervals (`gate.md`). Seed resampling with three seeds is crude: about 30% of
-     replicates never draw a given seed, so the interval's upper end sits near the best seed's difference, and a
-     screen in practice fails only when the drop is beyond the margin on every seed. Amended before any result was
-     read (J17).
+  3. on both pilot types, under `majority2`, on `test`: the Agree verdict's precision at the gate, mean over every
+     seed shared with the baseline, is ≥ 0.92 (unestimable when any of those seeds' runs gates no Agree, since the
+     mean is then undefined), and neither harm screen against the in-env baseline fails. The coverage screen fails
+     only when the nominal 95% interval of the paired seed-mean Δ Agree coverage at the gate (arm − baseline) lies
+     wholly below −0.02; the precision screen fails only when the nominal 95% interval of the paired seed-mean Δ
+     Agree precision lies wholly below −0.01. The interval is a paired hierarchical bootstrap: each replicate
+     resamples the shared training seeds with replacement (a drawn seed brings both models' runs), then whole
+     panoramas, with one panorama resample shared by every drawn seed and both models; the statistic is the mean over
+     the drawn seeds of (arm − baseline), each run read through its own val-fitted map (maps are not refitted), with
+     the prior weights recomputed on the resample. 2.5 and 97.5 percentiles of the report's bootstrap count (1,000;
+     seeded per arm from `--seed`). A replicate whose statistic is undefined (a drawn seed's run gates no Agree) is
+     dropped and counted, and with fewer than half kept the screen is unestimable, with one exception: when the
+     precision interval is missing only because the **baseline** gates no Agree on **every** shared seed (its
+     precision is undefined throughout) and the arm's precision is defined on every shared seed, the precision screen
+     reads as pass, with a note; the 0.92 floor still protects served precision. A baseline undefined on some seeds
+     only stays unestimable, because a real precision loss on the other seeds would otherwise read as a pass; so does
+     an arm-side or mixed cause. Where a seed's precision is undefined, the means over the seeds where both models'
+     precision is defined are printed as a mark when they differ by more than 0.01. The cause of every unestimable
+     clause, and of that pass, is named in `decision.json` (`condition_3_by_type`), `gate.md` and `decision.md`, and
+     the number of shared seeds is printed beside condition 3, marked when under three. Per-seed precision and coverage of both models, the point estimates and the dropped counts are
+     reported beside the intervals (`gate.md`).
+
+     *What the screen is with three seeds.* Seed resampling with k = 3 is coarse: about 30% of replicates ((2/3)³)
+     never draw a given seed, so the interval's upper end sits near the best seed's difference. The nominal 95%
+     screen therefore behaves roughly as "fails only when all shared seeds are past the margin". Its one-sided
+     false-fail level at a true drop exactly at the margin is near 12.5% ((1/2)³), not 2.5%: the "95%" is nominal.
+     That is the same evidential form as condition 1's "Δ > 0 in 3 of 3 seeds". Resampling the
+     runs and the evaluation data within them follows practice for studies with few training runs: Agarwal et al.
+     2021 (stratified bootstrap confidence intervals over runs, "Deep Reinforcement Learning at the Edge of the
+     Statistical Precipice", NeurIPS) and Bouthillier et al. 2021 (accounting for seed and data-sampling variance
+     together, "Accounting for Variance in Machine Learning Benchmarks", MLSys). Operating characteristics are in the
+     table below the null-winner paragraph. Descriptive flags in `gate.md` and `decision.md`, which never decide:
+     fewer than three shared seeds; any seed where one model gates no Agree while the other gates some; any seed whose
+     Δ coverage is below −3 × 0.02; the partial-seed precision mark above; and, on a winner, a margin clause whose
+     point estimate is beyond the margin while its interval spans it.
+     Amended before any result was read (J17).
 - *Between-deployment only*: condition 1's pooled bar is met but the within-city mean Δ is ≤ 0. Reported under
   that name; cannot win.
 - *Fails the gate*: conditions 1 and 2 hold and condition 3 fails on a pilot type. Reported under that name; cannot
   win. *Gate unestimable* (report mechanics, J17): conditions 1 and 2 hold and condition 3 fails nowhere, but one of
-  its clauses cannot be judged on a pilot type (no seed of the arm gates any Agree, or under half the bootstrap
-  replicates are defined). Reported under that name; cannot win.
+  its clauses cannot be judged on a pilot type (a seed of the arm gates no Agree, the baseline gates no Agree on some
+  seeds but not all, or under half the bootstrap replicates are defined for another reason). Reported under that
+  name, with the cause; cannot win.
 - *Other arms* (`convnextv2-base`, `dinov3-vitl16-256`, `dinov3-vitb16`) are explanatory. One is promoted to a
   winner only if it meets the rule with thresholds doubled (+0.020 / +0.032) and no eligible arm wins.
 - *Non-inferior small* (any arm with under half the baseline's parameters): condition 2 and condition 3 hold over
@@ -293,14 +315,35 @@ SurfaceProblem**.
 - Slices never decide. A slice with ≥ `MIN_N` rows whose Δ interval is entirely below zero for a winner is listed
   under "where it got worse".
 
-Computed before any run (`null_winner_rate`, 20,000 seeded draws, per-seed Δ with the sds above and the gate
-condition assumed met): with three eligible arms, **0.021 expected null winners** (P(at least one) 0.021) when the
+Computed before any run (`null_winner_rate`, 20,000 seeded draws, per-seed Δ with the sds above, and condition 3
+treated as passing; it can only remove winners, so these rates are upper bounds over it): with three eligible arms, **0.021 expected null winners** (P(at least one) 0.021) when the
 three Δs are independent; at the doubled thresholds, about 0.0001. Pooled and within-city Δ held-out are read from the
 same held-out rows, so they are positively correlated, and independence understates the rate. With per-seed
 correlation ρ between them the expected count is 0.021 (ρ = 0), 0.043 (ρ = 0.5) and 0.056 (ρ = 1, the bound);
 P(at least one) is 0.021, 0.043 and 0.055. The true ρ is not known, so the null winner rate is **0.021 to 0.056**.
 `null.md` gives the range at both thresholds. All three eligible arms are now in the comparison (`dinov3-vitl16`
 through the `dinov3` stage).
+
+Condition 3's coverage screen alone (margin 0.02), on one type (J17). A **simplified simulation**, not the report's
+code: per seed, the paired Δ is normal with the given sd across seeds plus a panorama-level standard error of 0.012; three
+seeds; margin 0.02; 4,000 simulations per cell. Each cell is the probability that the clause fails. "This screen" is
+the seed-and-panorama percentile bootstrap; "all 3 seeds past margin" fails when every seed's Δ is below −0.02;
+"t, df = 2" is a seed-mean t-interval (rejected, J17); "old rule" is the signed-off rule (seed-mean Δ < −0.02).
+
+| paired seed sd | true drop | this screen | all 3 seeds past margin | t, df=2 | old rule (mean < −0.02) |
+|---|---|---|---|---|---|
+| 0.08 | 0 | 0.05 | 0.06 | 0.01 | 0.33 |
+| 0.08 | −0.02 | 0.10 | 0.12 | 0.03 | 0.51 |
+| 0.08 | −0.10 | 0.59 | 0.60 | 0.17 | 0.95 |
+| 0.08 | −0.25 | 1.00 | 0.99 | 0.71 | 1.00 |
+| 0.14 | 0 | 0.08 | 0.08 | 0.02 | 0.41 |
+| 0.14 | −0.10 | 0.39 | 0.38 | 0.09 | 0.85 |
+| 0.14 | −0.25 | 0.88 | 0.87 | 0.37 | 1.00 |
+
+Read as: with no true difference the screen fails about 5–8% of the time, so treating condition 3 as passing makes
+the null-winner rates above slight overstatements (upper bounds); a true coverage drop of 0.10 is caught 39–59% of
+the time and one of 0.25 88–100%. The signed-off rule failed a third or more of simulated cases with no true
+difference; the t-interval rarely fails even a 0.10 drop.
 
 Mechanics of the report (fixed with the rule): within-city AUC is the per-deployment AUC weighted by n_incorrect ×
 n_correct over deployments with at least 10 labels of both classes (round 3's definition); its paired Δ has a 95%
@@ -480,4 +523,14 @@ Listed with the default this branch uses; none blocks the pilot. Numbered as in 
   baseline seeds alone vary by about 0.06 (CurbRamp) and 0.10 (SurfaceProblem) in Agree coverage under `majority2`,
   so a fixed margin on a three-seed mean mostly measured seed noise. Its coverage and relative-precision clauses now
   fail only when a paired seed-and-panorama bootstrap interval lies wholly beyond the margin (−0.02, −0.01); the 0.92
-  floor on the seed-mean precision is unchanged (condition 3 above). Seed resampling with three seeds is crude.
+  floor on the seed-mean precision is unchanged (condition 3 above). Seed resampling with three seeds is coarse:
+  the nominal 95% screen fails roughly when all shared seeds are past the margin (one-sided false-fail near 12.5% at
+  the margin, not 2.5%), the same evidential form as condition 1's 3-of-3; operating characteristics are tabled
+  beside the null-winner paragraph. **A seed-mean t-interval (t₀.₉₇₅, df = 2 = 4.30) was considered and rejected the
+  same day (2026-11-20), before any result was read: at k = 3 it is near-powerless (in the simulation it fails a
+  true 0.10 coverage drop 9–17% of the time, against 39–59% for this screen).** Fix round the same day: a missing
+  precision interval reads as pass, with a note, only when the baseline gates no Agree on every shared seed and the
+  arm's precision is defined on every one (a baseline undefined on some seeds only stays unestimable, since a real
+  loss on the other seeds would read as a pass; amended from PR #120's final review); the cause of every unestimable
+  clause is named; the 0.92 floor reads the mean over every shared seed; the shared-seed count is printed beside
+  condition 3.

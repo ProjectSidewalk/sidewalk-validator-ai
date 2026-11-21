@@ -258,6 +258,219 @@ def test_the_gate_bootstrap_is_deterministic_under_its_seed():
     assert none["d_cov"] == a["d_cov"] and none["d_cov_lo"] is None
 
 
+def with_ci(r, **extra):
+    """A ``summarise`` entry that passes conditions 1 and 2, carrying ``gate_delta_ci`` result ``r``."""
+    return {**per_type(0.012, wc=0.004), **{f"agree_{k}": r[k] for k in bc.GATE_CI_KEYS},
+            "agree_ci_per_seed": r["per_seed"], "agree_ci_seeds": r["seeds"], "agree_ci_n_boot": r["n_boot"],
+            "agree_prec_mean": 0.95, **extra}
+
+
+def test_the_precision_difference_is_right_over_passed_rows():
+    """PR #121 review S3: a known precision difference. The baseline passes every row (precision = the prior's
+    correct share, 0.6); the arm passes every correct row and a quarter of the incorrect ones."""
+    y, g, rng = gate_data()
+    ones = np.ones(len(y), bool)
+    passed = ~y | (rng.random(len(y)) < 0.25)
+    base = {s: (ones, ones, ~y) for s in bc.SEEDS}
+    arm = {s: (ones, passed, ~y) for s in bc.SEEDS}
+    r = bc.gate_delta_ci(y, g, PI, arm, base, n_boot=50, seed=1)
+    w = np.where(y, PI["incorrect"] / y.mean(), PI["correct"] / (1 - y.mean()))
+    want = (w * passed * ~y).sum() / (w * passed).sum() - PI["correct"]
+    assert r["d_prec"] == pytest.approx(want) and want == pytest.approx(0.6 / 0.7 - 0.6, abs=0.03)
+    assert r["per_seed"][0]["base_prec"] == pytest.approx(PI["correct"])
+
+
+def test_the_interval_is_the_2_5_and_97_5_percentiles():
+    """PR #121 review S3: per-seed Δ coverage −0.20, −0.10 and exactly 0. All three draws land on the 0 seed in 1/27
+    (3.7%) of replicates, so the 97.5th percentile is 0 and the 2.5th near −0.20; a 25–75 interval would end near
+    −0.07. This is also why, with three seeds, the upper end sits at the best seed's difference."""
+    y, g, rng = gate_data()
+    ones = np.ones(len(y), bool)
+    u = {s: rng.random(len(y)) for s in bc.SEEDS}
+    base = {s: (ones, u[s] < 0.7, ~y) for s in u}
+    arm = {s: (ones, u[s] < 0.7 + d, ~y) for s, d in zip(u, (-0.20, -0.10, 0.0))}
+    r = bc.gate_delta_ci(y, g, PI, arm, base, n_boot=400, seed=1)
+    assert r["d_cov_hi"] == pytest.approx(0.0, abs=1e-9) and r["d_cov_lo"] < -0.17
+
+
+def test_the_precision_interval_resamples_seeds_too():
+    """Per-seed Δ precision −0.20, −0.10 and exactly 0 (every row passes; the arm calls a share of correct rows
+    wrong): the precision interval, like coverage's, reaches the best seed's 0 and the worst seed's −0.20."""
+    y, g, rng = gate_data()
+    ones = np.ones(len(y), bool)
+    u = rng.random(len(y))
+    base = {s: (ones, ones, ~y) for s in bc.SEEDS}
+    arm = {s: (ones, ones, ~y & (u >= f)) for s, f in zip(bc.SEEDS, (1 / 3, 1 / 6, 0.0))}
+    r = bc.gate_delta_ci(y, g, PI, arm, base, n_boot=400, seed=1)
+    assert r["d_prec"] == pytest.approx(-0.10, abs=0.02)
+    assert r["d_prec_hi"] == pytest.approx(0.0, abs=1e-9) and r["d_prec_lo"] < -0.17
+
+
+def test_panoramas_not_rows_are_resampled():
+    """PR #121 review S3: one seed (so the seed level adds nothing), passes decided per panorama of 20 rows. Resampling
+    panoramas must give a much wider interval than treating every row as its own panorama."""
+    rng = np.random.default_rng(3)
+    n, size = 2000, 20
+    y = rng.random(n) < 0.4
+    pano = np.arange(n) // size
+    a, b = ((rng.random(n // size) < 0.5)[pano] for _ in range(2))
+    run = {42: (np.ones(n, bool), a, ~y)}, {42: (np.ones(n, bool), b, ~y)}
+    clustered = bc.gate_delta_ci(y, np.array([f"p{i}" for i in pano]), PI, *run, n_boot=400, seed=1)
+    rows = bc.gate_delta_ci(y, np.arange(n).astype(str), PI, *run, n_boot=400, seed=1)
+    assert clustered["d_cov"] == rows["d_cov"]
+    width = {k: r["d_cov_hi"] - r["d_cov_lo"] for k, r in (("clustered", clustered), ("rows", rows))}
+    assert width["clustered"] > 2.5 * width["rows"]
+
+
+def test_a_baseline_with_no_gated_agree_on_every_seed_reads_the_precision_clause_as_pass():
+    """PR #121 fix round S1, as amended from #120's final review: only when the baseline gates no Agree on EVERY
+    shared seed (its precision undefined throughout) and the arm's is defined on every seed does the relative-precision
+    clause read as pass, cause named, the 0.92 floor still applying. A baseline undefined on some seeds only, an
+    arm-side or a mixed cause stays unestimable, with its cause named."""
+    y, g, rng = gate_data(n=1200)
+    probs = {42: 0.7, 43: 0.8, 44: 0.6}
+    base, arm = runs_at(y, rng, probs, probs)
+    none = np.zeros(len(y), bool)
+    kept = dict(base)
+    for s in probs:
+        base[s] = (base[s][0], none, base[s][2])
+    r = bc.gate_delta_ci(y, g, PI, arm, base, n_boot=300, seed=2)
+    assert r["d_prec_hi"] is None and all(p["base_prec"] is None and p["prec"] is not None for p in r["per_seed"])
+    per = with_ci(r)
+    res, cl, notes = bc.gate_detail(per)
+    assert res == "pass" and cl["precision_drop"] == "pass" and set(notes) == {"precision_drop"}
+    assert notes["precision_drop"].startswith("baseline-side: the baseline gates no Agree on every shared seed (42, 43, 44)")
+    assert "0.92 floor still applies" in notes["precision_drop"]
+    assert bc.gate_detail(with_ci(r, agree_prec_mean=0.91))[1]["precision_floor"] == "fail"   # the floor still bites
+    d = bc.decide(summary("dinov2-reg-large", per, per_type(0.0)))
+    arm_r = d["arms"]["dinov2-reg-large"]
+    assert arm_r["status"] == "winner"
+    by = arm_r["condition_3_by_type"]["CurbRamp"]
+    assert by["notes"]["precision_drop"].startswith("baseline-side") and by["shared_seeds"] == 3
+    assert "seed 44: the baseline gates no Agree, the arm gates some" in by["flags"]
+    text = bc.decision_markdown(d, 1)
+    assert "baseline-side" in text and "seed 44: the baseline gates no Agree" in text and "3 shared seeds" in text
+    # the baseline undefined on seed 44 only: a precision loss on 42 and 43 could hide behind it, so unestimable
+    base = dict(kept)
+    base[44] = (base[44][0], none, base[44][2])
+    r = bc.gate_delta_ci(y, g, PI, arm, base, n_boot=300, seed=2)
+    res, cl, notes = bc.gate_detail(with_ci(r))
+    assert (res, cl["precision_drop"]) == ("unestimable", "unestimable")
+    assert notes["precision_drop"] == ("baseline-side, some seeds: the baseline gates no Agree on seed 44 but not on "
+                                       "every shared seed")
+    assert bc.decide(summary("dinov2-reg-large", with_ci(r), per_type(0.0)))["arms"]["dinov2-reg-large"]["status"] \
+        == "gate unestimable"
+    b44 = kept[44]
+    # arm-side: unestimable, cause named
+    base[44], a44 = b44, arm[44]
+    arm[44] = (a44[0], none, a44[2])
+    r = bc.gate_delta_ci(y, g, PI, arm, base, n_boot=300, seed=2)
+    res, cl, notes = bc.gate_detail(with_ci(r))
+    assert (res, cl["precision_drop"]) == ("unestimable", "unestimable")
+    assert notes["precision_drop"] == "arm-side: the arm gates no Agree on seed 44"
+    d = bc.decide(summary("dinov2-reg-large", with_ci(r), per_type(0.0)))["arms"]["dinov2-reg-large"]
+    assert d["status"] == "gate unestimable"
+    assert d["condition_3_by_type"]["CurbRamp"]["notes"]["precision_drop"].startswith("arm-side")
+    # mixed: the arm on 44, the baseline on 43
+    b43 = base[43]
+    base[43] = (b43[0], none, b43[2])
+    r = bc.gate_delta_ci(y, g, PI, arm, base, n_boot=300, seed=2)
+    res, cl, notes = bc.gate_detail(with_ci(r))
+    assert res == "unestimable"
+    assert notes["precision_drop"] == "mixed: the arm gates no Agree on seed 44 and the baseline on seed 43"
+    # every seed defined but under half the replicates kept: the replicates are named
+    rep = bc.gate_detail({**per, "agree_d_prec_hi": None, "agree_prec_dropped": 200,
+                          "agree_ci_per_seed": [{"seed": 42, "cov": 0.5, "base_cov": 0.5, "prec": 0.9,
+                                                 "base_prec": 0.9}]})
+    assert rep[0] == "unestimable" and rep[2]["precision_drop"] == "under half of the 300 bootstrap replicates defined (200 dropped)"
+    # no interval at all
+    assert bc.gate_detail(per_type(prec_ci=(None, None)))[2]["precision_drop"].startswith("no paired interval")
+    # the exception is the precision clause's only: a baseline with no Agree verdict on any seed leaves coverage
+    # unestimable
+    no_cov = [{"seed": s, "cov": 0.5, "base_cov": None, "prec": 0.95, "base_prec": None} for s in bc.SEEDS]
+    res, cl, notes = bc.gate_detail({**per_type(cov_ci=(None, None), prec_ci=(None, None)),
+                                     "agree_ci_per_seed": no_cov})
+    assert (res, cl["coverage"], cl["precision_drop"]) == ("unestimable", "unestimable", "pass")
+    assert notes["coverage"] == "baseline-side: the baseline gives no Agree verdict on every shared seed (42, 43, 44)"
+
+
+def test_margin_and_floor_edges_pass():
+    """PR #121 fix round N1: an upper end exactly at the margin, and a precision exactly at the floor, pass."""
+    assert bc.gate_condition(per_type(cov=0.47, cov_ci=(-0.05, -0.02)))[1]["coverage"] == "pass"
+    assert bc.gate_condition(per_type(prec=0.95, prec_ci=(-0.03, -0.01)))[1]["precision_drop"] == "pass"
+    assert bc.gate_condition(per_type(prec=0.92, base_prec=0.92))[1]["precision_floor"] == "pass"
+
+
+def test_partial_precision_means_and_a_short_seed_count_are_marked():
+    """PR #121 fix round (from #120's final review): with a seed's precision undefined the paired mean is undefined,
+    so the means over the seeds where both are defined are printed when they differ by more than 0.01; fewer than
+    three shared seeds is marked beside condition 3. Neither decides."""
+    seeds = [{"seed": 42, "cov": 0.5, "base_cov": 0.5, "prec": 0.93, "base_prec": 0.96},
+             {"seed": 43, "cov": 0.5, "base_cov": 0.5, "prec": 0.94, "base_prec": 0.96},
+             {"seed": 44, "cov": 0.5, "base_cov": 0.5, "prec": 0.95, "base_prec": None}]
+    r = {**per_type(prec_ci=(None, None)), "agree_ci_per_seed": seeds, "agree_ci_seeds": [42, 43, 44]}
+    assert "precision over the seeds where both models' is defined (42, 43): arm 0.935, baseline 0.960, Δ -0.025, " \
+           "beyond the margin 0.01" in bc.gate_flags(r)
+    assert bc.gate_detail(r)[1]["precision_drop"] == "unestimable"
+    close = [dict(p, prec=p["base_prec"] or 0.95) for p in seeds]
+    assert not any(f.startswith("precision over") for f in bc.gate_flags({**r, "agree_ci_per_seed": close}))
+    two = {**per_type(), "agree_ci_per_seed": seeds[:2], "agree_ci_seeds": [42, 43]}
+    assert bc.gate_flags(two)[0] == "2 shared seeds (under 3)"
+    assert "| 2 (under 3) |" in bc.condition3_markdown(summary("dinov2-reg-large", two, per_type()))
+    assert "| 3 |" in bc.condition3_markdown(summary("dinov2-reg-large", r, per_type()))
+
+
+def test_flags_never_decide_and_reach_both_reports():
+    """Flags: a seed whose Δ coverage is below −0.06, and on a winner a point estimate beyond the margin whose interval
+    spans it. Listed in decision.md and gate.md; the status is unchanged."""
+    reg = "dinov2-reg-large"
+    seeds = [{"seed": 42, "cov": 0.42, "base_cov": 0.5, "prec": 0.95, "base_prec": 0.95},
+             {"seed": 43, "cov": 0.5, "base_cov": 0.5, "prec": 0.95, "base_prec": 0.95},
+             {"seed": 44, "cov": 0.49, "base_cov": 0.5, "prec": 0.95, "base_prec": 0.95}]
+    cr = {**per_type(0.012, wc=0.004, cov=0.47, cov_ci=(-0.08, 0.01)), "agree_ci_per_seed": seeds,
+          "agree_cov_dropped": None, "agree_prec_dropped": None}
+    s = summary(reg, cr, per_type(0.0))
+    d = bc.decide(s)
+    assert d["arms"][reg]["status"] == "winner"
+    flags = d["arms"][reg]["condition_3_by_type"]["CurbRamp"]["flags"]
+    assert flags == ["seed 42: Δ coverage -0.080, below -0.06",
+                     "Δ coverage: point estimate -0.030 beyond the margin -0.02, interval spans it"]
+    dec = bc.decision_markdown(d, 1)
+    gate = bc.condition3_markdown(s, d)
+    for text in (dec, gate):
+        assert "seed 42: Δ coverage -0.080, below -0.06" in text and "interval spans it" in text
+        assert "never decide" in text
+    assert "None" not in gate   # N2: missing dropped counts print blank
+    # not a winner: the per-seed flag stays, the winner flag does not
+    assert "interval spans it" not in bc.condition3_markdown(s)
+    assert bc.gate_flags(cr) == flags[:1]
+    # edges: −0.05 on a seed is not below −3 × 0.02; a point estimate beyond the margin with the interval wholly
+    # beyond it too (the clause fails) is not "spans it"
+    seeds[0]["cov"] = 0.45
+    assert bc.gate_flags(cr) == []
+    assert bc.winner_flags({"agree_d_cov": -0.05, "agree_d_cov_hi": -0.03}) == []
+    assert bc.winner_flags({"agree_d_cov": -0.05, "agree_d_cov_hi": -0.02}) != []
+
+
+def test_the_precision_floor_reads_every_paired_seed():
+    """PR #121 fix round N3: the 0.92 floor is judged on the mean over every paired seed, and is unestimable (cause
+    named) when one seed's run gates no Agree."""
+    rows, gates = [], []
+    for arm in ("dinov2-large", "dinov2-reg-large"):
+        for s, p in zip(bc.SEEDS, (0.95, float("nan"), 0.95)):
+            rows.append({"type": "CurbRamp", "arm": arm, "seed": s, "lr": 1e-5, "d_heldout": 0.01})
+            gates.append({"type": "CurbRamp", "arm": arm, "seed": s, "lr": 1e-5, "rule": "majority2", "split": "test",
+                          "verdict": "correct", "gate_precision": p, "gate_coverage": 0.5})
+    r = bc.summarise(rows, gates)["dinov2-reg-large"]["CurbRamp"]
+    assert r["agree_prec_mean"] is None
+    res, cl, notes = bc.gate_detail(r)
+    assert cl["precision_floor"] == "unestimable"
+    assert notes["precision_floor"].startswith("arm-side: the arm gates no Agree on seed 43")
+    gates[4]["gate_precision"] = 0.86   # the arm's seed 43: mean (0.95 + 0.86 + 0.95) / 3 = 0.92
+    r = bc.summarise(rows, gates)["dinov2-reg-large"]["CurbRamp"]
+    assert r["agree_prec_mean"] == pytest.approx(0.92)
+
+
 def test_summarise_carries_the_gate_intervals_into_the_rule():
     rows, gates = [], []
     for arm in ("dinov2-large", "dinov2-reg-large"):
@@ -567,21 +780,99 @@ def test_report_reads_condition_3_from_the_paired_intervals(synthetic):
     assert "## Condition 3: Agree at the gate on `test` under `majority2`" in gate
     assert gate.index("## Condition 3") < gate.index("## prior rule ")
     a = json.loads((out / "arms.json").read_text())
+    checked, undefined = [], []
     for t in bc.PILOT_TYPES:
         s = a["summary"]["dinov2-reg-large"][t]
         assert s["agree_ci_seeds"] == list(bc.SEEDS) and s["agree_ci_n_boot"] == 50
         assert s["agree_d_cov_lo"] is not None and s["agree_d_cov_lo"] <= s["agree_d_cov_hi"]
         # the interval's point estimate is the paired mean of the gate table's own per-seed coverage
         assert s["agree_d_cov"] == pytest.approx(np.mean(s["agree_cov_seeds"]) - np.mean(s["base_agree_cov_seeds"]))
+        # and each seed's precision (correct verdicts over passed ones) is the gate table's, for both models; the
+        # paired mean is that of the gate table where every seed's is defined, and undefined otherwise
+        for per, prec, base_prec in zip(s["agree_ci_per_seed"], s["agree_prec_seeds"], s["base_agree_prec_seeds"]):
+            for mine, table in ((per["prec"], prec), (per["base_prec"], base_prec)):
+                assert (mine is None) == (table is None)
+                if table is not None:
+                    assert mine == pytest.approx(table, rel=1e-9)
+                    checked.append(table)
+        if None in s["agree_prec_seeds"] + s["base_agree_prec_seeds"]:
+            assert s["agree_d_prec"] is None
+            undefined.append(t)
+        else:
+            assert s["agree_d_prec"] == pytest.approx(np.mean(s["agree_prec_seeds"])
+                                                      - np.mean(s["base_agree_prec_seeds"]), rel=1e-9)
         assert "agree_d_cov" not in a["summary"]["dinov2-large"][t]
+    assert any(v < 1 for v in checked)   # a precision under 1 was compared, so a wrong numerator would show
     d = json.loads((out / "decision.json").read_text())["decision"]["arms"]["dinov2-reg-large"]
     assert set(d["condition_3_by_type"]) == set(bc.PILOT_TYPES)
+    for t in undefined:   # the fixture's baseline gates no Agree on a seed: the cause is named in every output
+        note = d["condition_3_by_type"][t]["notes"]["precision_drop"]
+        assert note.startswith("baseline-side") or note.startswith("arm-side") or note.startswith("mixed")
+        assert note in gate and note in (out / "decision.md").read_text()
     want = all(bc.gate_condition(a["summary"]["dinov2-reg-large"][t])[0] == "pass" for t in bc.PILOT_TYPES)
     assert d["condition_3"] == want
+    assert "nominal 95%" in gate and "| None |" not in gate
     # deterministic: a second report writes the same intervals
     run_report(synthetic, synthetic["tmp"] / "out2")
     b = json.loads((synthetic["tmp"] / "out2" / "arms.json").read_text())
     assert b["summary"]["dinov2-reg-large"] == a["summary"]["dinov2-reg-large"]
+
+
+def gate_runs(synthetic, lt="CurbRamp"):
+    """The synthetic fixture's complete lr 1e-5 runs of ``lt`` as ``gate_intervals`` reads them, with ``pano_id``."""
+    split = pd.read_csv(synthetic["split_dir"] / lt / "split.csv", dtype={"pano_id": str, "label_uid": str})
+    runs = {}
+    for key in ("dinov2-large", "dinov2-reg-large"):
+        for seed in bc.SEEDS:
+            tag = bc.make_tag("bb-", key, seed)
+            pred = pd.read_csv(synthetic["keep"] / lt / "runs" / tag / f"predictions_{tag}.csv", dtype={"label_uid": str})
+            pred = pred.merge(split[["label_uid", "pano_id"]], on="label_uid", how="left", validate="one_to_one")
+            runs[tag] = {"tag": tag, "status": "complete", "parsed": {"key": key, "seed": seed, "lr": 1e-5},
+                         "pred": pred}
+    return runs
+
+
+def _shares():
+    with open(SHARES) as f:
+        return json.load(f)["types"]
+
+
+def _same_intervals(a, b):
+    assert set(a) == set(b)
+    for arm in a:
+        for k in bc.GATE_CI_KEYS:
+            assert a[arm][k] == pytest.approx(b[arm][k], abs=1e-12), (arm, k)
+
+
+def test_gate_intervals_align_runs_by_label_uid(synthetic):
+    """PR #121 review S3: one run's predictions shuffled; ``_agree_rows`` sorts by ``label_uid``, so the intervals are
+    unchanged."""
+    runs = gate_runs(synthetic)
+    want = bc.gate_intervals("CurbRamp", runs, _shares(), 40, 0)
+    tag = bc.make_tag("bb-", "dinov2-reg-large", 43)
+    runs[tag]["pred"] = runs[tag]["pred"].sample(frac=1, random_state=7).reset_index(drop=True)
+    _same_intervals(bc.gate_intervals("CurbRamp", runs, _shares(), 40, 0), want)
+
+
+def test_gate_intervals_ignore_a_one_class_heldout_split(synthetic):
+    """PR #121 fix round S4: only ``test`` is read, so a one-class ``test_heldout`` (whose prior weights are undefined)
+    must not stop it."""
+    runs = gate_runs(synthetic)
+    want = bc.gate_intervals("CurbRamp", runs, _shares(), 40, 0)
+    for r in runs.values():
+        r["pred"].loc[r["pred"]["split"] == "test_heldout", "true"] = "correct"
+    _same_intervals(bc.gate_intervals("CurbRamp", runs, _shares(), 40, 0), want)
+
+
+def test_gate_intervals_refuse_runs_whose_true_classes_differ(synthetic):
+    """PR #121 fix round N4: every run must carry the reference run's true classes."""
+    runs = gate_runs(synthetic)
+    tag = bc.make_tag("bb-", "dinov2-reg-large", 44)
+    pred = runs[tag]["pred"]
+    i = pred.index[pred["split"] == "test"][0]
+    pred.loc[i, "true"] = "incorrect" if pred.loc[i, "true"] == "correct" else "correct"
+    with pytest.raises(ValueError, match="true classes differ"):
+        bc.gate_intervals("CurbRamp", runs, _shares(), 40, 0)
 
 
 def test_slices_and_lr_and_env_tables(synthetic):

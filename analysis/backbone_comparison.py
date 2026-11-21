@@ -65,7 +65,8 @@ DELTA_SD = {t: round(math.sqrt(2) * s, 4) for t, s in BASE_SEED_SD.items()}
 THRESHOLDS = {"CurbRamp": 0.010, "SurfaceProblem": 0.016}
 NON_INFERIOR = -0.005
 # Condition 3 (as amended by J17): seed-mean Agree precision >= GATE_PRECISION, and a harm screen on the paired
-# seed-mean differences that fails only when its 95% seed-and-panorama bootstrap interval lies wholly below -DROP.
+# seed-mean differences that fails only when its nominal 95% seed-and-panorama bootstrap interval lies wholly below
+# -DROP (with three seeds, roughly: only when every shared seed is past the margin).
 GATE_PRECISION = 0.92
 GATE_PRECISION_DROP = 0.01
 GATE_COVERAGE_DROP = 0.02
@@ -392,7 +393,9 @@ def _gate_sums(cw, cols):
 
 def gate_delta_ci(y_incorrect, groups, pi, arm, base, n_boot=1000, seed=0, max_tries=20):
     """Seed-mean paired difference (arm − baseline) of the Agree verdict's coverage and precision at the 0.92 gate,
-    with 95% intervals from a paired hierarchical bootstrap (docs/backbone-2026-11.md, condition 3, J17).
+    with nominal 95% percentile intervals from a paired hierarchical bootstrap (docs/backbone-2026-11.md, condition
+    3, J17). With three seeds the seed level is coarse: the interval's upper end sits near the best seed's difference,
+    so a screen on it fails roughly when every shared seed is past the margin, not at a 2.5% one-sided level.
 
     Each replicate resamples the shared training seeds with replacement (a drawn seed brings both arms' runs), then
     whole panoramas (``groups``) with replacement, one panorama resample shared by every drawn seed and both arms; the
@@ -487,11 +490,13 @@ def gate_delta_ci(y_incorrect, groups, pi, arm, base, n_boot=1000, seed=0, max_t
 def _agree_rows(pred, pi, split="test"):
     """One run's ``split`` rows under its own val-fitted uncapped map (``prior_rules.served_and_weights``, the map
     ``gate_stats`` reads), sorted by ``label_uid``: ``label_uid``, ``pano_id``, ``incorrect`` and the Agree arrays
-    ``agree``, ``passed``, ``right``."""
+    ``agree``, ``passed``, ``right``. Only ``val`` (the map's fit) and ``split`` are passed on, so another eval split
+    with one class (whose prior weights are undefined) cannot stop it."""
     from analysis import prior_rules as pr
+    cols = ["label_uid", "split", "true", "p_correct", "p_incorrect", "pano_id"]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        s = pr.served_and_weights(pred[["label_uid", "split", "true", "p_correct", "p_incorrect", "pano_id"]], pi)
+        s = pr.served_and_weights(pred.loc[pred["split"].isin(["val", split]), cols], pi)
     s = s[s["split"] == split].sort_values("label_uid", kind="mergesort").reset_index(drop=True)
     return pd.DataFrame({"label_uid": s["label_uid"].astype(str), "pano_id": s["pano_id"].astype(str),
                          "incorrect": (s["true"].astype(str) == "incorrect").to_numpy(),
@@ -529,6 +534,8 @@ def gate_intervals(label_type, runs, shares_types, n_boot, seed, split="test", r
                 d = arrays(key, s)
                 if not d["label_uid"].equals(ref["label_uid"]):
                     raise ValueError(f"{label_type} {key} seed {s}: {split} rows differ from the baseline's")
+                if not d["incorrect"].equals(ref["incorrect"]):
+                    raise ValueError(f"{label_type} {key} seed {s}: {split} true classes differ from the baseline's")
                 dst[s] = (d["agree"].to_numpy(), d["passed"].to_numpy(), d["right"].to_numpy())
         out[arm] = gate_delta_ci(ref["incorrect"].to_numpy(), ref["pano_id"].to_numpy(), pi, runs_a, runs_b, n_boot,
                                  sl.slice_seed(seed, f"gate:{arm}:{split}"))
@@ -813,6 +820,13 @@ def _mean(vals):
     return float(np.mean(vals)) if vals else None
 
 
+def _strict_mean(vals):
+    """Mean of ``vals``, or None when there are none or any is missing (None or NaN)."""
+    if not vals or any(v is None or (isinstance(v, float) and np.isnan(v)) for v in vals):
+        return None
+    return float(np.mean(vals))
+
+
 def _sd(vals):
     vals = [v for v in vals if v is not None and not (isinstance(v, float) and np.isnan(v))]
     return float(np.std(vals, ddof=1)) if len(vals) > 1 else None
@@ -824,7 +838,9 @@ GATE_CI_KEYS = ("d_cov", "d_cov_lo", "d_cov_hi", "cov_dropped", "d_prec", "d_pre
 def summarise(rows, gates, gate_cis=None):
     """Per arm and type over the seeds at lr 1e-5: the inputs of ``decide``. ``gate_cis`` is ``{type: {arm:
     gate_delta_ci result}}`` (``gate_intervals``); its paired differences and intervals join as ``agree_<key>``
-    (``agree_d_cov_lo``, ...), next to the per-seed Agree precision and coverage of both models."""
+    (``agree_d_cov_lo``, ...), its per-seed values as ``agree_ci_per_seed``, next to the per-seed Agree precision and
+    coverage of both models. ``agree_prec_mean`` (condition 3's 0.92 floor) is the mean over every paired seed, and
+    None when any of those seeds' runs gates no Agree (its precision is undefined)."""
     out = {}
     gate_cis = gate_cis or {}
     main = [r for r in rows if math.isclose(r["lr"], DEFAULT_LR)]
@@ -847,7 +863,7 @@ def summarise(rows, gates, gate_cis=None):
                 "wc_d_heldout_mean": _mean([r.get("wc_d_heldout") for r in rs]),
                 "d_test_mean": _mean([r.get("d_test") for r in rs]),
                 "wc_d_test_mean": _mean([r.get("wc_d_test") for r in rs]),
-                "agree_prec_mean": _mean([g.get("gate_precision") for g in gs]),
+                "agree_prec_mean": _strict_mean([g.get("gate_precision") for g in gs]),
                 "agree_cov_mean": _mean([g.get("gate_coverage") for g in gs]),
                 "base_agree_prec_mean": _mean([g.get("gate_precision") for g in gb]),
                 "base_agree_cov_mean": _mean([g.get("gate_coverage") for g in gb]),
@@ -863,36 +879,148 @@ def summarise(rows, gates, gate_cis=None):
                 out[arm][t].update({f"agree_{k}": (ci or {}).get(k) for k in GATE_CI_KEYS})
                 out[arm][t]["agree_ci_seeds"] = (ci or {}).get("seeds")
                 out[arm][t]["agree_ci_n_boot"] = (ci or {}).get("n_boot")
+                out[arm][t]["agree_ci_per_seed"] = (ci or {}).get("per_seed")
     return out
 
 
-def gate_condition(r):
-    """Condition 3 on one type (docs/backbone-2026-11.md, as amended by J17): ``(result, clauses)`` with ``result``
-    ``pass``, ``fail`` or ``unestimable``. Three clauses, each ``pass`` / ``fail`` / ``unestimable``:
+def _interval_cause(r, key):
+    """Why condition 3's ``key`` (``cov`` or ``prec``) interval is missing: ``(side, text)``, ``side`` one of
+    ``baseline`` (the baseline is undefined on every shared seed, the arm on none), ``baseline-some`` (on some shared
+    seeds only), ``arm``, ``mixed``, ``replicates`` or ``none``. A run with no Agree verdict has no coverage; a run
+    that gates no Agree has no precision."""
+    per = r.get("agree_ci_per_seed") or []
+    if not per:
+        return "none", "no paired interval (no seed shared with the baseline, or no interval computed)"
+    what = "gives no Agree verdict" if key == "cov" else "gates no Agree"
 
-    - ``precision_floor``: the arm's seed-mean Agree precision at the gate is ≥ 0.92 (unestimable when no seed's run
-      gates any Agree);
-    - ``coverage``: fails only when the 95% interval of the paired seed-mean Δ Agree coverage lies wholly below −0.02
-      (its upper end is under −0.02);
+    def on(seeds):
+        return ("seed " if len(seeds) == 1 else "seeds ") + ", ".join(map(str, seeds))
+    arm = [p["seed"] for p in per if p.get(key) is None]
+    base = [p["seed"] for p in per if p.get(f"base_{key}") is None]
+    if arm and base:
+        return "mixed", f"mixed: the arm {what} on {on(arm)} and the baseline on {on(base)}"
+    if arm:
+        return "arm", f"arm-side: the arm {what} on {on(arm)}"
+    if base and len(base) == len(per):
+        return "baseline", f"baseline-side: the baseline {what} on every shared seed ({', '.join(map(str, base))})"
+    if base:
+        return "baseline-some", (f"baseline-side, some seeds: the baseline {what} on {on(base)} but not on every "
+                                 "shared seed")
+    return "replicates", (f"under half of the {r.get('agree_ci_n_boot')} bootstrap replicates defined "
+                          f"({r.get(f'agree_{key}_dropped')} dropped)")
+
+
+def gate_detail(r):
+    """Condition 3 on one type (docs/backbone-2026-11.md, as amended by J17): ``(result, clauses, notes)`` with
+    ``result`` ``pass``, ``fail`` or ``unestimable``. Three clauses, each ``pass`` / ``fail`` / ``unestimable``:
+
+    - ``precision_floor``: the arm's Agree precision at the gate, mean over every paired seed, is ≥ 0.92
+      (unestimable when any of those seeds' runs gates no Agree, so the mean is undefined);
+    - ``coverage``: fails only when the nominal 95% interval of the paired seed-mean Δ Agree coverage lies wholly
+      below −0.02 (its upper end is under −0.02);
     - ``precision_drop``: fails only when the interval of the paired seed-mean Δ Agree precision lies wholly below
       −0.01.
 
-    The interval clauses are unestimable when ``gate_delta_ci`` left no interval. The type fails when any clause
-    fails, passes when all three pass, and is unestimable otherwise; only ``pass`` meets condition 3.
+    The interval clauses are unestimable when ``gate_delta_ci`` left no interval, with one exception: when the
+    precision interval is missing only because the baseline gates no Agree on **every** shared seed (its precision is
+    undefined throughout) and the arm's precision is defined on every shared seed, ``precision_drop`` reads as pass
+    (the 0.92 floor still protects served precision). A baseline undefined on some seeds only stays unestimable: a
+    real precision loss on the other seeds must not read as a pass. ``notes`` names, per clause, the cause of every
+    unestimable clause and of that pass.
+    The type fails when any clause fails, passes when all three pass, and is unestimable otherwise; only ``pass``
+    meets condition 3.
+
+    >>> gate_detail({"agree_prec_mean": 0.95, "agree_d_cov_hi": -0.021, "agree_d_prec_hi": 0.0})
+    ('fail', {'precision_floor': 'pass', 'coverage': 'fail', 'precision_drop': 'pass'}, {})
+    >>> per = [{"seed": 42, "cov": 0.5, "base_cov": 0.0, "prec": 0.95, "base_prec": None}]
+    >>> res, cl, notes = gate_detail({"agree_prec_mean": 0.95, "agree_d_cov_hi": 0.5, "agree_d_prec_hi": None,
+    ...                               "agree_ci_per_seed": per})
+    >>> res, notes["precision_drop"].startswith("baseline-side: the baseline gates no Agree on every shared seed")
+    ('pass', True)
+    """
+    notes = {}
+
+    def margin(key, drop, name):
+        hi = r.get(f"agree_d_{key}_hi")
+        if hi is not None:
+            return "fail" if hi < -drop else "pass"
+        side, why = _interval_cause(r, key)
+        if key == "prec" and side == "baseline":
+            notes[name] = (f"{why}, so its precision is undefined there; the arm's is defined on every shared seed, "
+                           "so the relative-precision clause reads as pass and the 0.92 floor still applies")
+            return "pass"
+        notes[name] = why
+        return "unestimable"
+    p = r.get("agree_prec_mean")
+    if p is None:
+        floor = "unestimable"
+        none = [s for s, v in zip(r.get("seeds") or [], r.get("agree_prec_seeds") or []) if v is None]
+        notes["precision_floor"] = (f"arm-side: the arm gates no Agree on seed{'s' if len(none) > 1 else ''} "
+                                    f"{', '.join(map(str, none))}, so the mean over seeds is undefined" if none
+                                    else "no seed-mean precision")
+    else:
+        floor = "pass" if p >= GATE_PRECISION else "fail"
+    clauses = {"precision_floor": floor, "coverage": margin("cov", GATE_COVERAGE_DROP, "coverage"),
+               "precision_drop": margin("prec", GATE_PRECISION_DROP, "precision_drop")}
+    vals = set(clauses.values())
+    return ("fail" if "fail" in vals else "pass" if vals == {"pass"} else "unestimable"), clauses, notes
+
+
+def gate_condition(r):
+    """``gate_detail`` without the notes: ``(result, clauses)``.
 
     >>> gate_condition({"agree_prec_mean": 0.95, "agree_d_cov_hi": -0.01, "agree_d_prec_hi": 0.0})[0]
     'pass'
     >>> gate_condition({"agree_prec_mean": 0.95, "agree_d_cov_hi": -0.021, "agree_d_prec_hi": 0.0})
     ('fail', {'precision_floor': 'pass', 'coverage': 'fail', 'precision_drop': 'pass'})
     """
-    def margin(hi, drop):
-        return "unestimable" if hi is None else ("fail" if hi < -drop else "pass")
-    p = r.get("agree_prec_mean")
-    clauses = {"precision_floor": "unestimable" if p is None else ("pass" if p >= GATE_PRECISION else "fail"),
-               "coverage": margin(r.get("agree_d_cov_hi"), GATE_COVERAGE_DROP),
-               "precision_drop": margin(r.get("agree_d_prec_hi"), GATE_PRECISION_DROP)}
-    vals = set(clauses.values())
-    return ("fail" if "fail" in vals else "pass" if vals == {"pass"} else "unestimable"), clauses
+    return gate_detail(r)[:2]
+
+
+def gate_flags(r):
+    """Condition 3's flags (descriptive; they never decide): fewer than three shared seeds; every shared seed where one
+    model gates no Agree while the other gates some; every seed whose Δ Agree coverage is below −3 × 0.02; and, when
+    some seed's precision is undefined (so the paired mean is), the means over the seeds where both models' precision
+    is defined, when they differ by more than the 0.01 margin.
+
+    >>> gate_flags({"agree_ci_per_seed": [{"seed": 44, "cov": 0.40, "base_cov": 0.5, "prec": None, "base_prec": 0.95}]})
+    ['1 shared seed (under 3)', 'seed 44: the arm gates no Agree, the baseline gates some', 'seed 44: Δ coverage -0.100, below -0.06']
+    """
+    out = []
+    per = r.get("agree_ci_per_seed") or []
+    n = len(per)
+    if per and n < N_SEEDS:
+        out.append(f"{n} shared seed{'s' if n != 1 else ''} (under {N_SEEDS})")
+    both = [p for p in per if p.get("prec") is not None and p.get("base_prec") is not None]
+    if both and len(both) < n:
+        a, b = float(np.mean([p["prec"] for p in both])), float(np.mean([p["base_prec"] for p in both]))
+        if abs(a - b) > GATE_PRECISION_DROP:
+            out.append(f"precision over the seeds where both models' is defined ({', '.join(str(p['seed']) for p in both)}): "
+                       f"arm {a:.3f}, baseline {b:.3f}, Δ {a - b:+.3f}, beyond the margin {GATE_PRECISION_DROP:g}")
+    for p in per:
+        if (p.get("prec") is None) != (p.get("base_prec") is None):
+            out.append(f"seed {p['seed']}: the " + ("arm gates no Agree, the baseline gates some" if p.get("prec") is None
+                                                     else "baseline gates no Agree, the arm gates some"))
+        if p.get("cov") is not None and p.get("base_cov") is not None \
+                and p["cov"] - p["base_cov"] < -3 * GATE_COVERAGE_DROP:
+            out.append(f"seed {p['seed']}: Δ coverage {p['cov'] - p['base_cov']:+.3f}, below "
+                       f"{-3 * GATE_COVERAGE_DROP:g}")
+    return out
+
+
+def winner_flags(r):
+    """For a winner (descriptive; never decides): each margin clause whose point estimate is beyond the margin while
+    its interval spans it.
+
+    >>> winner_flags({"agree_d_cov": -0.03, "agree_d_cov_hi": 0.01})
+    ['Δ coverage: point estimate -0.030 beyond the margin -0.02, interval spans it']
+    """
+    out = []
+    for key, drop, name in (("cov", GATE_COVERAGE_DROP, "coverage"), ("prec", GATE_PRECISION_DROP, "precision")):
+        d, hi = r.get(f"agree_d_{key}"), r.get(f"agree_d_{key}_hi")
+        if d is not None and hi is not None and d < -drop <= hi:
+            out.append(f"Δ {name}: point estimate {d:+.3f} beyond the margin {-drop:g}, interval spans it")
+    return out
 
 
 def _gate_ok(r):
@@ -963,15 +1091,20 @@ def arm_status(arm, per_type, submitted=(), types=PILOT_TYPES):
     c1 = [t for t in pooled if (per_type[t]["wc_d_heldout_mean"] or 0) > 0]
     c2 = all(per_type[t][k] is not None and per_type[t][k] >= NON_INFERIOR for t in types
              for k in ("d_heldout_mean", "wc_d_heldout_mean", "d_test_mean"))
-    gate = {t: gate_condition(per_type[t]) for t in types}
-    c3 = all(res == "pass" for res, _ in gate.values())
-    c3_failed = any(res == "fail" for res, _ in gate.values())
+    gate = {t: gate_detail(per_type[t]) for t in types}
+    c3 = all(res == "pass" for res, _, _ in gate.values())
+    c3_failed = any(res == "fail" for res, _, _ in gate.values())
     params, base_params = per_type[types[0]].get("params"), per_type[types[0]].get("base_params")
     small = bool(params and base_params and params < 0.5 * base_params)
     detail = {"thresholds": thr, "condition_1_types": c1, "pooled_bar_types": pooled, "condition_2": c2,
-              "condition_3": c3, "condition_3_by_type": {t: {"result": res, **cl} for t, (res, cl) in gate.items()},
+              "condition_3": c3, "condition_3_by_type": {t: {"result": res, **cl, "notes": notes,
+                                                             "flags": gate_flags(per_type[t]),
+                                                             "shared_seeds": n_shared_seeds(per_type[t])}
+                                                         for t, (res, cl, notes) in gate.items()},
               "non_inferior_small": small and c2 and c3, "eligible": eligible}
     if c1 and c2 and c3:
+        for t in types:
+            detail["condition_3_by_type"][t]["flags"] += winner_flags(per_type[t])
         return ("winner" if eligible else "meets the doubled rule"), detail
     if c1 and c2:
         return ("fails the gate" if c3_failed else "gate unestimable"), detail
@@ -1060,7 +1193,8 @@ def decide(summary, submitted=(), types=PILOT_TYPES, dropped=()):
 def null_winner_rate(delta_sd=None, thresholds=None, n_arms=len(bb.ELIGIBLE), n_seeds=N_SEEDS, n_sims=20000, seed=0,
                      types=PILOT_TYPES, rho=0.0):
     """Monte Carlo of the rule under no true difference: each eligible arm's per-seed Δ held-out, Δ within-city
-    held-out and Δ test are N(0, ``delta_sd[type]``) draws (the gate condition assumed met). Δ test is independent.
+    held-out and Δ test are N(0, ``delta_sd[type]``) draws. Condition 3 is treated as passing; it can only remove
+    winners, so the rate is an upper bound over the gate (docs/backbone-2026-11.md). Δ test is independent.
     Each seed's Δ within-city held-out is ``rho`` × its Δ held-out + sqrt(1 − rho²) × an independent draw: both are
     read from the same held-out rows, so they are positively correlated; ``rho`` = 0 is the pre-registered
     calculation and ``rho`` = 1 the bound. ``{"expected_winners", "p_any_winner", ...}`` among ``n_arms`` arms.
@@ -1165,10 +1299,39 @@ def _ci_cell(r, k):
     return cell.strip()
 
 
-def condition3_markdown(summary):
+WINNING = ("winner", "meets the doubled rule")
+
+
+def _blank(v):
+    return "" if v is None else v
+
+
+def n_shared_seeds(r):
+    """Seeds condition 3's interval pairs (``agree_ci_seeds``; else the summary's paired seeds)."""
+    seeds = r.get("agree_ci_seeds")
+    return len(seeds if seeds is not None else r.get("seeds") or [])
+
+
+def _n_seeds_cell(n):
+    return f"{n}" + (f" (under {N_SEEDS})" if n < N_SEEDS else "")
+
+
+def _c3_notes(arm, t, r, winner):
+    """Bullet lines for one arm and type: the cause of each unestimable clause (and of a baseline-side pass), then
+    the descriptive flags."""
+    _, _, notes = gate_detail(r)
+    flags = gate_flags(r) + (winner_flags(r) if winner else [])
+    return ([f"- `{arm}` {t}, {k}: {v}" for k, v in notes.items()]
+            + [f"- `{arm}` {t}, flag: {f}" for f in flags])
+
+
+def condition3_markdown(summary, decision=None):
     """Condition 3 per arm and type: per-seed Agree precision and coverage of both models (descriptive), the seed-mean
-    precision against 0.92, and the paired hierarchical-bootstrap intervals the margins read."""
-    body = []
+    precision against 0.92, the paired hierarchical-bootstrap intervals the margins read, and below the table the
+    cause of every unestimable clause and the descriptive flags (``gate_flags``; ``winner_flags`` for an arm that
+    ``decision`` names a winner or promotes)."""
+    body, lines = [], []
+    status = {a: r["status"] for a, r in ((decision or {}).get("arms") or {}).items()}
     for arm, per in summary.items():
         if arm == BASELINE_KEY:
             continue
@@ -1178,31 +1341,39 @@ def condition3_markdown(summary):
                          _seed_list(r.get("agree_prec_seeds")), _seed_list(r.get("base_agree_prec_seeds")),
                          _f(r.get("agree_prec_mean")), _seed_list(r.get("agree_cov_seeds")),
                          _seed_list(r.get("base_agree_cov_seeds")), _ci_cell(r, "cov"),
-                         r.get("agree_cov_dropped", ""), _ci_cell(r, "prec"), r.get("agree_prec_dropped", ""),
-                         f"{res}" + ("" if res == "pass" else " (" + ", ".join(k for k, v in cl.items() if v != "pass")
+                         _blank(r.get("agree_cov_dropped")), _ci_cell(r, "prec"), _blank(r.get("agree_prec_dropped")),
+                         _n_seeds_cell(n_shared_seeds(r)), f"{res}" + ("" if res == "pass" else " (" + ", ".join(k for k, v in cl.items() if v != "pass")
                                                                  + ")")])
+            lines += _c3_notes(arm, t, r, status.get(arm) in WINNING)
     n_boot = next((r.get("agree_ci_n_boot") for per in summary.values() for r in per.values()
                    if r.get("agree_ci_n_boot")), None)
+    notes = ("\n### Causes and flags (descriptive; they never decide)\n\n" + "\n".join(lines) + "\n") if lines else ""
     return (f"## Condition 3: Agree at the gate on `test` under `{DECISION_RULE}`\n\n"
-            f"Seed mean of the arm's Agree precision must be ≥ {GATE_PRECISION}. Δ = seed mean of (arm − in-env "
-            f"baseline, same seed); the 95% interval is a paired hierarchical bootstrap ({n_boot or 'no'} replicates): "
-            "the shared seeds resampled with replacement, then whole panoramas with one resample shared by every drawn "
+            f"The arm's Agree precision, mean over every paired seed, must be ≥ {GATE_PRECISION} (unestimable when a "
+            "seed's run gates no Agree). Δ = seed mean of (arm − in-env baseline, same seed); the interval is a "
+            f"nominal 95% percentile interval from a paired hierarchical bootstrap ({n_boot or 'no'} replicates): the "
+            "shared seeds resampled with replacement, then whole panoramas with one resample shared by every drawn "
             "seed and both models, each run on its own val-fitted map. The coverage clause fails only when the "
             f"interval lies wholly below −{GATE_COVERAGE_DROP:g}, the precision clause only when it lies wholly below "
-            f"−{GATE_PRECISION_DROP:g}. Dropped = replicates left out because a drawn seed's run gated no Agree (or "
-            "the resample had one class); fewer than half kept leaves the interval unestimable. With three seeds the "
-            "seed resampling is crude. Per-seed values are descriptive.\n\n"
+            f"−{GATE_PRECISION_DROP:g}. With three seeds the interval's upper end sits near the best seed's "
+            "difference, so a clause fails roughly when every shared seed is past the margin: about a 12.5% one-sided "
+            "false-fail level at a true drop exactly at the margin, not 2.5% (docs/backbone-2026-11.md, condition 3). "
+            "Dropped = replicates left out because a drawn seed's run gated no Agree (or the resample had one class); "
+            "fewer than half kept leaves the interval unestimable, except that a baseline that gates no Agree on "
+            "every shared seed (the arm on none) reads the precision clause as pass; a baseline undefined on some seeds "
+            f"only stays unestimable (causes listed below). Shared seeds = the seeds paired; under {N_SEEDS} is "
+            "marked. Per-seed values are descriptive.\n\n"
             + _table(["arm", "type", "seeds", "precision by seed", "baseline precision by seed", "mean precision",
-                      "coverage by seed", "baseline coverage by seed", "Δ coverage [95%]", "dropped",
-                      "Δ precision [95%]", "dropped", "condition 3"], body))
+                      "coverage by seed", "baseline coverage by seed", "Δ coverage [nominal 95%]", "dropped",
+                      "Δ precision [nominal 95%]", "dropped", "shared seeds", "condition 3"], body) + notes)
 
 
-def gate_markdown(gates, summary=None):
+def gate_markdown(gates, summary=None, decision=None):
     parts = ["# The 0.92 gate", "", "Coverage and precision of each verdict at the 0.92 gate, uncapped map fitted on "
              "val under each rule's deployment prior (`analysis/prior_rules.py gate_rows`). One table per rule; "
              f"`{DECISION_RULE}` is the rule's input, `{REFERENCE_RULE}` a reference.", ""]
     if summary:
-        parts += [condition3_markdown(summary)]
+        parts += [condition3_markdown(summary, decision)]
     for rule in (DECISION_RULE, REFERENCE_RULE):
         rs = [g for g in gates if g["rule"] == rule]
         body = [[g["type"], f"`{g['arm']}`", g["seed"], f"{g['lr']:g}", g["split"],
@@ -1321,7 +1492,9 @@ def decision_markdown(decision, n_compared):
         if not by:
             return r.get("condition_3", "")
         return "; ".join(f"{t} {v['result']}" + ("" if v["result"] == "pass" else " (" + ", ".join(
-            k for k, x in v.items() if k != "result" and x != "pass") + ")") for t, v in by.items())
+            k for k, x in v.items() if k not in ("result", "notes", "flags", "shared_seeds") and x != "pass") + ")")
+            + ("" if v.get("shared_seeds") is None else f", {_n_seeds_cell(v['shared_seeds'])} shared seeds")
+            for t, v in by.items())
     body = [[f"`{a}`", r["status"], ", ".join(r.get("condition_1_types") or []), r.get("condition_2", ""),
              c3(r), "yes" if r.get("eligible") else ("" if "eligible" not in r else "no")]
             for a, r in decision["arms"].items()]
@@ -1333,10 +1506,20 @@ def decision_markdown(decision, n_compared):
     if decision.get("not_run"):
         extra += ("Eligible arms not run (never submitted, or dropped with `--drop-arms`): "
                   + ", ".join(f"`{a}`" for a in decision["not_run"]) + ". The recommendation is among the arms run.\n\n")
+    lines = [f"- `{a}` {t}, {k}: {why}" for a, r in decision["arms"].items()
+             for t, v in (r.get("condition_3_by_type") or {}).items() for k, why in (v.get("notes") or {}).items()]
+    lines += [f"- `{a}` {t}, flag: {f}" for a, r in decision["arms"].items()
+              for t, v in (r.get("condition_3_by_type") or {}).items() for f in v.get("flags") or []]
+    notes = ("\n## Condition 3: causes and flags (descriptive; they never decide)\n\n"
+             "Causes of unestimable clauses, and of a relative-precision clause read as pass because the baseline "
+             "gates no Agree on every shared seed; flags for fewer than three shared seeds, a seed where one model "
+             f"gates no Agree and the other some, a seed whose Δ coverage is below {-3 * GATE_COVERAGE_DROP:g}, "
+             "precision means over the seeds where both are defined that differ by more than the margin, and, for a "
+             "winner, a point estimate beyond a margin whose interval spans it (gate.md).\n\n" + "\n".join(lines) + "\n") if lines else ""
     return (f"# Decision\n\nRecommendation: **{decision['recommendation']}**\n\n{extra}Arms compared: {n_compared}; "
             "the family is not corrected for multiplicity (null.md gives the expected number of null winners under this "
             "rule).\n\n"
-            + _table(["arm", "status", "condition 1 met on", "condition 2", "condition 3", "eligible"], body))
+            + _table(["arm", "status", "condition 1 met on", "condition 2", "condition 3", "eligible"], body) + notes)
 
 
 def null_markdown(results):
@@ -1349,7 +1532,8 @@ def null_markdown(results):
     return ("# Expected winners under no true difference\n\n"
             f"Seeded Monte Carlo ({res['n_sims']:,} draws, seed {res['seed']}): each eligible arm's per-seed paired Δ "
             f"held-out, Δ within-city held-out and Δ test are N(0, sd) with sd "
-            f"{', '.join(f'{t} {s}' for t, s in res['delta_sd'].items())}; the gate condition is assumed met. Δ test "
+            f"{', '.join(f'{t} {s}' for t, s in res['delta_sd'].items())}; condition 3 is treated as passing, and since it "
+            "can only remove winners the rates are upper bounds over it. Δ test "
             "is independent. Δ within-city held-out is read from the same held-out rows as Δ held-out, so the two are "
             "positively correlated; ρ is that per-seed correlation, from 0 (the pre-registered, independent "
             "calculation) to 1 (the bound). Their true correlation is not known, so the null winner rate is the range "
@@ -1423,7 +1607,7 @@ def cmd_report(args):
     os.makedirs(args.out, exist_ok=True)
     outputs = {
         "arms.md": arms_markdown(rows, heldout, incomplete, round3),
-        "seeds.md": seeds_markdown(summary), "gate.md": gate_markdown(gates, summary), "slices.md": slices_markdown(slice_rows),
+        "seeds.md": seeds_markdown(summary), "gate.md": gate_markdown(gates, summary, decision), "slices.md": slices_markdown(slice_rows),
         "cost.md": cost_markdown(rows), "env.md": env_markdown(env), "lr.md": lr_markdown(rows),
         "rampnet.md": rampnet_markdown(rows, exposure),
         "decision.md": decision_markdown(decision, len({r["arm"] for r in rows} - {BASELINE_KEY})),
