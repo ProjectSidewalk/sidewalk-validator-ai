@@ -509,9 +509,26 @@ def grad_cam(model, pixel_values, target_class=None):
 # Model I/O -- needs torch + transformers; not covered by CI
 # ---------------------------------------------------------------------------------------------------------------------
 
+def require_dinov2(config, checkpoint):
+    """``SystemExit`` unless ``config`` (a checkpoint's ``config.json`` as a dict) is a DINOv2 model: the
+    attention rollout, the 16 x 16 patch grid and the class names here assume ``Dinov2ForImageClassification``, so
+    a checkpoint of the backbone comparison (issue #119) on another encoder is refused rather than explained wrongly.
+
+    >>> require_dinov2({"model_type": "dinov2"}, "ck")
+    """
+    model_type = (config or {}).get("model_type")
+    if model_type != "dinov2":
+        raise SystemExit(f"{checkpoint}: explain.py supports DINOv2 checkpoints only (model_type 'dinov2'), not "
+                         f"{model_type!r} (docs/backbone-2026-11.md, 'What a different backbone would need')")
+
+
 def load_model(checkpoint, revision=None, device="cpu"):
-    """``(image_processor, model)``: the saved slow processor and the classifier with eager attention, in eval mode."""
-    from transformers import AutoImageProcessor, AutoModelForImageClassification
+    """``(image_processor, model)``: the saved slow processor and the classifier with eager attention, in eval mode.
+    Only DINOv2 checkpoints (``require_dinov2``)."""
+    from transformers import AutoImageProcessor, AutoModelForImageClassification, PretrainedConfig
+
+    config, _ = PretrainedConfig.get_config_dict(checkpoint, revision=revision)
+    require_dinov2(config, checkpoint)
 
     processor = AutoImageProcessor.from_pretrained(checkpoint, revision=revision, use_fast=False)
     model = AutoModelForImageClassification.from_pretrained(checkpoint, revision=revision,

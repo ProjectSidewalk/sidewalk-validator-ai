@@ -684,6 +684,32 @@ def check_depth_sized(root, label_type):
             check_depth_rows(_rows_to_check(path), path)
 
 
+def check_backbone(root, label_type):
+    """Raise ``PublishError`` if the model under ``<root>/<label_type>/dinov2/`` is not the round-3 recipe on
+    ``facebook/dinov2-large`` (issue #119): ``training_run.json`` records a non-default ``backbone.key`` or
+    ``learning_rate``, or the best checkpoint's ``config.json`` has a ``model_type`` other than ``dinov2``. The run
+    record is optional (older runs have none of these fields); the checkpoint's config is not. The model cards,
+    ``explain.py`` and sidewalk-ai-api assume DINOv2-L at 1e-5 (docs/backbone-2026-11.md)."""
+    import backbones
+    from fine_tune_classifier import DEFAULT_LEARNING_RATE
+    base = os.path.join(root, label_type, "dinov2")
+    run = _read_json(os.path.join(base, "training_run.json")) or {}
+    key = (run.get("backbone") or {}).get("key", backbones.DEFAULT)
+    if key != backbones.DEFAULT:
+        raise PublishError(f"{base}/training_run.json: backbone {key!r} is a comparison run (issue #119); only "
+                           f"{backbones.DEFAULT} is published")
+    lr = run.get("learning_rate", DEFAULT_LEARNING_RATE)
+    if lr != DEFAULT_LEARNING_RATE:
+        raise PublishError(f"{base}/training_run.json: learning_rate {lr} is not the published recipe's "
+                           f"{DEFAULT_LEARNING_RATE} (issue #119)")
+    best_dir, _ = resolve_checkpoints(root, label_type)
+    config = _read_json(os.path.join(best_dir, "config.json"))
+    model_type = (config or {}).get("model_type")
+    if model_type != "dinov2":
+        raise PublishError(f"{best_dir}/config.json: model_type {model_type!r}, not 'dinov2'; only DINOv2 "
+                           "checkpoints are published (issue #119)")
+
+
 NOT_SERVED = (f"Serving sizes every crop by int({CROP_DEPTH_CONSTANT} / depth_m) with the {SERVED_DEPTH_ENCODER}/"
               f"{SERVED_DEPTH_DATASET} depth model; a fixed-size, whole-view or job-window model needs a serving "
               f"change in sidewalk-ai-api, and then a reviewed change to this check (docs/publishing.md), before it "
@@ -1233,6 +1259,7 @@ def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_pat
         raise PublishError(f"stage: --what must be both, model or dataset, not {what!r}")
     validate_prefix(prefix)
     check_depth_sized(root, label_type)
+    check_backbone(root, label_type)
     pub = os.path.join(root, label_type, "publish")
     dataset_dir, model_dir = os.path.join(pub, "dataset"), os.path.join(pub, "model")
     m_repo, d_repo = model_repo_id(label_type, prefix), dataset_repo_id(label_type, prefix)
@@ -1326,6 +1353,7 @@ def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None, what="
     ``--what model`` (a full staging can be pushed with any ``--what``).
     """
     check_depth_sized(root, label_type)
+    check_backbone(root, label_type)
     pub = os.path.join(root, label_type, "publish")
     dataset_dir, model_dir = os.path.join(pub, "dataset"), os.path.join(pub, "model")
     record = _read_json(os.path.join(pub, STAGING_RECORD))
