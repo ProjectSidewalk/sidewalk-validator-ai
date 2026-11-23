@@ -5,6 +5,7 @@ import doctest
 import json
 import os
 import shutil
+import re
 import subprocess
 import sys
 
@@ -342,6 +343,156 @@ def test_g2_counts_held_out_rows_and_refuses_an_incomplete_recrop():
     assert not g["passed"] and g["not_attempted"] == 1
 
 
+def test_g2_refuses_a_row_never_attempted_even_within_the_allowance():
+    rec = _rec(1000)
+    frame = rec[["label_uid", "label_type", "split"]]
+    g = cc.gate_g2(frame, rec.iloc[1:])                                  # 0.1 % of the type, all of it unattempted
+    assert g["by_type"]["CurbRamp"]["passed"] and g["not_attempted"] == 1 and not g["passed"]
+
+
+def test_load_recrop_prefers_an_ok_row_over_a_stale_error_in_a_later_file(tmp_path):
+    work = str(tmp_path)
+    os.makedirs(os.path.join(work, "recrop"))
+    base = {f: "" for f in cc.RECROP_FIELDS}
+    rows = {0: [{**base, "label_uid": "c:1", "status": "ok"}, {**base, "label_uid": "c:2", "status": "error:x"}],
+            1: [{**base, "label_uid": "c:1", "status": "error:old"}, {**base, "label_uid": "c:2", "status": "ok"},
+                {**base, "label_uid": "c:3", "status": "error:a"}, {**base, "label_uid": "c:3", "status": "no_pano"}]}
+    for k, rr in rows.items():
+        pd.DataFrame(rr, columns=cc.RECROP_FIELDS).to_csv(cc.chunk_path(work, k), index=False)
+    rec = cc.load_recrop(work).set_index("label_uid").status
+    assert rec.to_dict() == {"c:1": "ok", "c:2": "ok", "c:3": "no_pano"}
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# preflight (G0) and the gates command
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _store(tmp_path, panos, missing=()):
+    store = str(tmp_path / "store")
+    os.makedirs(store, exist_ok=True)
+    with open(os.path.join(store, dg.PANO_STORE_MARKER), "w") as f:
+        f.write("test store\n")
+    for c, p in panos:
+        if p not in missing:
+            path = dg.pano_store_path(store, c, p)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            open(path, "w").close()
+    return store
+
+
+def _preflight(root, store, **kw):
+    pins, _ = cc.da.input_pins(root, os.path.join(root, "rawlabels"), ("CurbRamp",))
+    args = {"package": lambda: "pkg@abc", "versions": {k: "1" for k in cc.REQUIRED_VERSIONS}, "expected_pins": pins}
+    args.update(kw)
+    return cc.preflight(root, os.path.join(root, "rawlabels"), ("CurbRamp",), store, **args)
+
+
+@pytest.fixture
+def r3_400(tmp_path):
+    root = str(tmp_path / "r3")
+    panos = {"CurbRamp": [("pub-a", f"AA{i:04d}") for i in range(400)]}
+    make_round3(root, panos=panos, labels_per_pano=1, write_stored=False)
+    return root, panos["CurbRamp"]
+
+
+def test_preflight_passes_a_matching_round3_and_store(r3_400, tmp_path):
+    root, panos = r3_400
+    rec = _preflight(root, _store(tmp_path, panos))
+    assert rec["g0"]["passed"] and rec["store"]["passed"] and rec["store"]["missing_panoramas"] == 0
+    assert rec["package_source"] == {"now": "pkg@abc", "round3": {"CurbRamp": "pkg@abc"}}
+
+
+def test_preflight_refuses_a_pin_mismatch(r3_400, tmp_path):
+    root, panos = r3_400
+    pins, _ = cc.da.input_pins(root, os.path.join(root, "rawlabels"), ("CurbRamp",))
+    bad = {k: ("0" * 64 if i == 0 else v) for i, (k, v) in enumerate(pins.items())}
+    rec = _preflight(root, _store(tmp_path, panos), expected_pins=bad)
+    assert not rec["g0"]["passed"] and "pins" in rec["g0"]["failures"][0]
+
+
+def test_preflight_refuses_another_panorama_tools_commit(r3_400, tmp_path):
+    root, panos = r3_400
+    rec = _preflight(root, _store(tmp_path, panos), package=lambda: "pkg@def")
+    assert not rec["g0"]["passed"] and "sidewalk-panorama-tools" in rec["g0"]["failures"][0]
+
+
+def test_preflight_refuses_unrecorded_versions(r3_400, tmp_path):
+    root, panos = r3_400
+    rec = _preflight(root, _store(tmp_path, panos), versions={"torch": "2.5.1"})
+    assert not rec["g0"]["passed"] and "versions not recorded" in rec["g0"]["failures"][0]
+
+
+def test_preflight_tolerates_missing_panoramas_only_within_g2(r3_400, tmp_path):
+    root, panos = r3_400
+    one = _preflight(root, _store(tmp_path / "a", panos, missing={panos[0][1]}))   # 1 of 400 rows: 0.25 %
+    assert one["store"]["passed"] and one["store"]["missing_panoramas"] == 1
+    assert one["store"]["missing_rows"]["CurbRamp"]["lost"] == 1
+    three = _preflight(root, _store(tmp_path / "b", panos, missing={p for _, p in panos[:3]}))   # 0.75 %
+    assert not three["store"]["passed"] and "break G2" in three["store"]["failures"][0]
+    assert three["g0"]["passed"]                                         # the store fails, not G0
+
+
+def test_preflight_refuses_a_store_without_its_marker(r3_400, tmp_path):
+    root, panos = r3_400
+    store = _store(tmp_path, panos)
+    os.remove(os.path.join(store, dg.PANO_STORE_MARKER))
+    assert not _preflight(root, store)["store"]["passed"]
+
+
+def test_the_preflight_command_exits_non_zero_on_a_failure(r3_400, tmp_path, monkeypatch):
+    root, panos = r3_400
+    store = _store(tmp_path, panos, missing={p for _, p in panos[:3]})
+    rec = _preflight(root, store)                       # the real check, with this round 3's pins and package
+    monkeypatch.setattr(cc, "preflight", lambda *a, **k: rec)
+    out = str(tmp_path / "preflight.json")
+    with pytest.raises(SystemExit) as e:
+        cc.main(["preflight", "--root", root, "--rawlabels-dir", os.path.join(root, "rawlabels"), "--types",
+                 "CurbRamp", "--pano-store", store, "--out", out])
+    assert e.value.code and "preflight failed" in str(e.value.code)
+    with open(out) as f:
+        assert not json.load(f)["store"]["passed"]
+
+
+def _gates(root, work, g0=True):
+    os.makedirs(work, exist_ok=True)
+    cc.write_json(os.path.join(work, "preflight.json"), {"g0": {"passed": g0, "failures": []},
+                                                        "store": {"pano_store": "/s"}})
+    return ["gates", "--root", root, "--rawlabels-dir", os.path.join(root, "rawlabels"), "--types",
+            ",".join(TYPES), "--work", work]
+
+
+def test_a_failed_gate_writes_no_arm_directory_and_exits_non_zero(r3, tmp_path):
+    root, frame = r3                                     # MISS and SMALL panoramas: far above G2's allowance
+    work = str(tmp_path / "w")
+    run_recrop(root, frame, work)
+    with pytest.raises(SystemExit) as e:
+        cc.main(_gates(root, work))
+    assert "no arm directory" in str(e.value.code)
+    assert not any(os.path.exists(os.path.join(cc.arm_dir(work, c), t, f)) for c in cc.ARMS for t in TYPES
+                   for f in ("split.csv", "manifest.csv", "generation_run.json"))   # the crops alone exist
+    with open(os.path.join(work, "gates.json")) as f:
+        g = json.load(f)
+    assert not g["passed"] and not g["G2"]["passed"] and "arms" not in g
+
+
+def test_the_gates_command_writes_the_arms_only_when_every_gate_passes(tmp_path):
+    root = str(tmp_path / "r3")
+    panos = {t: [("pub-a", f"{t[:2].upper()}{i:03d}") for i in range(6)] for t in TYPES}
+    frame = make_round3(root, panos=panos)
+    work = str(tmp_path / "w")
+    run_recrop(root, frame, work)
+    with pytest.raises(SystemExit):                      # G0 failed in preflight: still nothing written
+        cc.main(_gates(root, work, g0=False))
+    assert not any(os.path.exists(os.path.join(cc.arm_dir(work, c), t, "split.csv")) for c in cc.ARMS for t in TYPES)
+    cc.main(_gates(root, work))
+    with open(os.path.join(work, "gates.json")) as f:
+        g = json.load(f)
+    assert g["passed"] and g["G2"]["passed"] and g["G3"]["passed"]
+    for c in cc.ARMS:
+        for t in TYPES:
+            assert os.path.exists(os.path.join(cc.arm_dir(work, c), t, "split.csv"))
+
+
 def _parity(mads, store="/s/a"):
     return pd.DataFrame({"label_uid": [f"c:{i}" for i in range(len(mads))], "label_type": "CurbRamp",
                          "status": "ok", "parity_mad": mads, "store_root": store})
@@ -512,6 +663,10 @@ def test_seed_guard_by_registered_seed_count(deltas, k, ok):
     assert cc.seed_guard(deltas, k) is ok
 
 
+def test_seed_guard_refuses_a_list_of_another_length():
+    assert not cc.seed_guard([0.01, 0.02, 0.03, 0.04], 5) and not cc.seed_guard([0.01] * 4, 3)
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # The read-out (R3 with the three amendments)
 # ---------------------------------------------------------------------------------------------------------------------
@@ -542,6 +697,11 @@ def test_the_held_out_within_city_clause():
     assert not cc.arm_passes(cell(within=-1e-9))[0]
     ok, why = cc.arm_passes(cell(within=None))
     assert not ok and "held-out" in why
+
+
+def test_an_unestimable_cell_never_reads_as_pass_in_its_verdict():
+    assert cc.verdict(cell(unestimable="seed 43 has no prediction for 1 of 120 rows")) == "unestimable"
+    assert cc.verdict(cell(point=-0.03, reg_lo=-0.05, hier_lo=-0.05, unestimable="x")) == "unestimable"
 
 
 def test_unestimable_is_never_a_pass():
@@ -596,6 +756,8 @@ def test_a_significantly_worse_arm_is_reported_as_worse():
 def test_the_few_seeds_caveat_is_printed():
     r = cc.rule_readout({"CurbRamp": {4000: cell(), 8000: fail()}})
     assert "3.7 %" in r["caveat"]
+    five = cell(seeds=(0.01,) * 5)
+    assert "0.032 %" in cc.rule_readout({"CurbRamp": {4000: five, 8000: {**five, "reg_lo": -0.1}}})["caveat"]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -692,6 +854,55 @@ def test_a_run_trained_on_another_arm_is_caught(tmp_path):
     assert "crop_depth_constant" in res["cells"][8000]["unestimable"]
 
 
+@pytest.mark.parametrize("value", [None, "8000x", "absent"])
+def test_a_run_recording_no_usable_crop_constant_is_unestimable(tmp_path, value):
+    work = str(tmp_path)
+    make_family(work, gain=0.8)
+    for s in (42, 43, 44, 45, 46):
+        p = os.path.join(work, "runs", "c8000", "CurbRamp", f"s{s}", "training_run.json")
+        with open(p) as f:
+            run = json.load(f)
+        if value == "absent":
+            run.pop("crop_depth_constant")
+        else:
+            run["crop_depth_constant"] = value
+        with open(p, "w") as f:
+            json.dump(run, f)
+    res = cc.compare_type(work, "CurbRamp", seeds=(42, 43, 44, 45, 46), n_boot=30)
+    assert "crop_depth_constant" in res["cells"][8000]["unestimable"] and res["cells"][4000]["unestimable"] is None
+
+
+@pytest.mark.parametrize("seeds", [(42, 43, 44), (42, 43, 45), (42, 43, 44, 45)])
+def test_a_reading_on_a_subset_of_the_trained_seeds_is_unestimable(tmp_path, seeds):
+    work = str(tmp_path)
+    make_family(work, gain=0.8)                                        # seeds 42 to 46 trained and on disk
+    res = cc.compare_type(work, "CurbRamp", seeds=seeds, n_boot=30)
+    for c in (4000, 8000):
+        assert "outside the registered" in res["cells"][c]["unestimable"]
+    shutil.rmtree(os.path.join(work, "runs", "c8000", "CurbRamp", "s46"))   # a run record alone still counts
+    os.remove(os.path.join(cc.arm_dir(work, 8000), "CurbRamp", "predictions_s46.csv"))
+    os.makedirs(os.path.join(work, "runs", "c8000", "CurbRamp", "s47"))
+    cc.write_json(os.path.join(work, "runs", "c8000", "CurbRamp", "s47", "training_run.json"), {"seed": 47})
+    res = cc.compare_type(work, "CurbRamp", seeds=(42, 43, 44, 45), n_boot=30)
+    why = res["cells"][8000]["unestimable"]
+    assert "c8000 holds predictions or runs for seeds outside the registered ones (s47)" in why
+    assert "baseline: c6100 holds" in why and "(s46)" in why             # c6100 still holds s46
+
+
+def test_compare_reads_the_registered_seeds_and_takes_no_seed_option(tmp_path, capsys):
+    assert cc.REGISTERED_SEEDS == (42, 43, 44, 45, 46)
+    with pytest.raises(SystemExit):
+        cc.main(["compare", "--work", str(tmp_path), "--seeds", "42,43,44", "--out", str(tmp_path / "c.json")])
+    work = str(tmp_path / "w")
+    make_family(work, seeds=(42, 43, 44), gain=0.8)
+    cc.main(["compare", "--work", work, "--types", "CurbRamp", "--n-boot", "20", "--out", str(tmp_path / "c.json")])
+    with open(tmp_path / "c.json") as f:
+        out = json.load(f)
+    assert out["seeds"] == [42, 43, 44, 45, 46] and out["readout"]["outcome"] == "unestimable"
+    cc.main(["registered-seeds"])
+    assert capsys.readouterr().out.strip().splitlines()[-1] == "42,43,44,45,46"
+
+
 def test_fewer_than_ten_of_a_class_is_unestimable(tmp_path):
     work = str(tmp_path)
     make_family(work, n_pano=100)
@@ -748,6 +959,67 @@ def test_report_names_no_non_public_deployment(tmp_path):
     assert (assets / "tables.md").exists() and (assets / "crop_constant.png").exists()
 
 
+def _report(tmp_path, res, seeds=(42, 43, 44)):
+    path = tmp_path / "compare.json"
+    cc.write_json(str(path), cc.compare_output(res, seeds=seeds))
+    pub = tmp_path / "public.json"
+    pub.write_text(json.dumps(["pub-a", "pub-b", "held-x", "held-y"]))
+    assets = tmp_path / "assets"
+    cc.main(["report", "--compare", str(path), "--public-cities", str(pub), "--out-dir", str(assets)])
+    return (assets / "tables.md").read_text()
+
+
+@pytest.mark.parametrize("split, city", [("test", "secret-town"), ("test_heldout", "secret-held"),
+                                         ("test", "pub-a")])
+def test_a_missing_prediction_names_no_row_in_the_report(tmp_path, split, city):
+    work = str(tmp_path / "w")
+    make_family(work, seeds=(42, 43, 44), gain=0.5)
+    p = os.path.join(cc.arm_dir(work, 4000), "CurbRamp", "predictions_s43.csv")
+    d = pd.read_csv(p)
+    gone = d[d.label_uid.str.startswith(city) & (d.split == split)].label_uid.iloc[0]
+    d[d.label_uid != gone].to_csv(p, index=False)
+    res = {"CurbRamp": cc.compare_type(work, "CurbRamp", seeds=(42, 43, 44), n_boot=30)}
+    why = res["CurbRamp"]["cells"][4000]["unestimable"]
+    assert why == f"c4000 {split} seed 43 has no prediction for 1 of {120 if split == 'test' else 72} rows"
+    text = _report(tmp_path, res)
+    assert "unestimable" in text and gone not in text and "secret" not in text
+    assert not any(re.search(rf"{c}:\d", text) for c in ("pub-a", "pub-b", "held-x", "held-y"))
+
+
+def test_a_negative_control_with_a_missing_row_names_no_row(tmp_path):
+    work = str(tmp_path / "w")
+    make_family(work, seeds=(42, 43, 44), gain=0.5)
+    ctrl = tmp_path / "r3" / "CurbRamp"
+    ctrl.mkdir(parents=True)
+    src = os.path.join(cc.arm_dir(work, 6100), "CurbRamp")
+    d = pd.read_csv(os.path.join(src, "predictions_s42.csv"))
+    gone = d[d.label_uid.str.startswith("secret-town") & (d.split == "test")].label_uid.iloc[0]
+    d[d.label_uid != gone].to_csv(ctrl / "predictions.csv", index=False)
+    for s in (43, 44):
+        shutil.copy(os.path.join(src, f"predictions_s{s}.csv"), ctrl / f"predictions_baseline-s{s}.csv")
+    res = {"CurbRamp": cc.compare_type(work, "CurbRamp", seeds=(42, 43, 44), n_boot=30,
+                                       control_root=str(tmp_path / "r3"))}
+    note = res["CurbRamp"]["negative_control"]["note"]
+    assert note == "stored round-3 test seed 42 has no prediction for 1 of 120 rows"
+    text = _report(tmp_path, res)
+    assert gone not in text and "secret" not in text
+
+
+def test_report_refuses_text_with_a_non_public_id_or_a_label_id(tmp_path):
+    work = str(tmp_path / "w")
+    make_family(work, seeds=(42, 43, 44), gain=0.5)
+    res = {"CurbRamp": cc.compare_type(work, "CurbRamp", seeds=(42, 43, 44), n_boot=30)}
+    for leak in ("secret-town", "pub-a:17"):          # as if some future code path put it into a cell's text
+        res["CurbRamp"]["cells"][4000] = {"unestimable": f"broken near {leak}", "k": 3}
+        d = tmp_path / leak.replace(":", "_")
+        d.mkdir()
+        with pytest.raises(SystemExit, match="refusing to write the report"):
+            _report(d, res)
+        assert not (d / "assets" / "tables.md").exists()
+    assert cc.report_leaks("| c4000 | 0.01 |", {"secret-town", "pub-a"}, {"pub-a"}) == []
+    assert cc.report_leaks("Secret-Town", {"secret-town"}, set())
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Launchers
 # ---------------------------------------------------------------------------------------------------------------------
@@ -795,7 +1067,7 @@ def _dry_run(tmp_path, **env):
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
 def test_submit_dry_run_prints_the_whole_chain(tmp_path):
-    r = _dry_run(tmp_path, SEEDS="42,43,44")
+    r = _dry_run(tmp_path)
     assert r.returncode == 0, r.stderr
     W = "/gscratch/scrubbed/tester/crop-constant-2026-11"
     lines = r.stdout.splitlines()
@@ -814,12 +1086,13 @@ def test_submit_dry_run_prints_the_whole_chain(tmp_path):
     n_chunks = cc.chunk_plan(make_round3_frame(tmp_path), cc.max_labels_for("8:00:00")).nunique()
     assert f"--array=0-{n_chunks - 1}" in rec[0] and "--time=8:00:00" in rec[0] and "TIME_LIMIT=8:00:00" in rec[0]
     train = [line for line in sb if "confident_learning.slurm" in line]
-    assert len(train) == 3 * 2 * 3                                     # arms x types x seeds
+    assert len(train) == 3 * 2 * 5                                     # arms x types x registered seeds
+    assert {f"SEED={s}," for s in cc.REGISTERED_SEEDS} == {re.search(r"SEED=\d+,", x).group(0) for x in train}
     for line in train:
         assert "--dependency=afterok:dry4" in line and "VARIANT=baseline" in line and "KEEP_CKPT=0" in line
     runs = {c: [line for line in train if f"DATA={W}/c{c}," in line] for c in cc.ARMS}
     for c, ls in runs.items():
-        assert len(ls) == 6 and all(f"RUNS={W}/runs/c{c}," in line for line in ls)   # one RUNS directory per arm
+        assert len(ls) == 10 and all(f"RUNS={W}/runs/c{c}," in line for line in ls)  # one RUNS directory per arm
     assert all("--kill-on-invalid-dep=yes" in line for line in sb)
 
 
@@ -845,3 +1118,13 @@ def test_submit_without_restage_reads_a_shared_store_and_needs_the_baseline_arm(
     assert "PANO_STORE=/gscratch/scrubbed/tester/shared/store" in pre and "--dependency" not in pre
     r = _dry_run(tmp_path, ARMS="4000 8000")
     assert r.returncode == 2 and "6100" in r.stderr
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+def test_submit_takes_no_seed_setting_and_tests_a_real_write_first(tmp_path):
+    r = _dry_run(tmp_path, SEEDS="42,43,44")
+    assert r.returncode == 2 and "REGISTERED_SEEDS" in r.stderr and "sbatch" not in r.stdout
+    text = read_launcher("crop_constant_submit.sh")
+    assert "dd if=/dev/zero" in text and "bs=1M count=8" in text
+    assert text.index("dd if=/dev/zero") < text.index("sb --chdir")        # before the first submission
+    assert 'JOB=$("${SBATCH[@]}" "$@")' in text and 'echo "${SBATCH[*]} $*"' in text   # one argument list

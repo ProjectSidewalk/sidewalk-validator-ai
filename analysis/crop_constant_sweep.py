@@ -65,7 +65,9 @@ SWEPT = (4000, 8000)
 STAGE1_TYPES = ("CurbRamp", "SurfaceProblem")
 STAGE2_TYPES = ("NoCurbRamp", "Obstacle", "Crosswalk")
 ALL_TYPES = STAGE1_TYPES + STAGE2_TYPES
-DEFAULT_SEEDS = (42, 43, 44, 45, 46)        # PROVISIONAL (decision 2 for Jon): five seeds recommended, three possible
+REGISTERED_SEEDS = (42, 43, 44, 45, 46)     # PROVISIONAL (decision 2 for Jon): five seeds recommended, three possible.
+# The registration itself: the submit script trains exactly these (``registered-seeds``) and ``compare`` reads exactly
+# these, so changing the seed count is a commit, made before the first training job. There is no CLI override.
 M_ARMS = 2                                  # m in the level 1 - 0.05 / m, fixed at 2 for every type and stage
 ALPHA = 0.05
 N_BOOT = 2000
@@ -402,7 +404,8 @@ def recrop(frame, work, chunk, max_labels, pano_store=None, stored_root=None, de
 
 
 def load_recrop(work):
-    """Every chunk's rows, one per label (the later row of a retried label wins)."""
+    """Every chunk's rows, one per label: an ``ok`` row wins over any other, then the later row (a retried label;
+    files read in name order, so a stale ``error:*`` row in a later chunk file never beats an ``ok`` one)."""
     paths = sorted(glob.glob(os.path.join(work, "recrop", "chunk_*.csv")))
     if not paths:
         return pd.DataFrame(columns=RECROP_FIELDS)
@@ -412,8 +415,10 @@ def load_recrop(work):
         if os.path.getsize(p):
             parts.append(pd.read_csv(p, dtype={"label_uid": str, "status": str, "store_root": str,
                                                "label_type": str, "renderer": str}))
-    rec = pd.concat(parts, ignore_index=True).drop_duplicates("label_uid", keep="last")
-    return rec.reset_index(drop=True)
+    rec = pd.concat(parts, ignore_index=True)
+    rec = rec.assign(_ok=rec.status.eq("ok"), _order=np.arange(len(rec)))
+    rec = rec.sort_values(["_ok", "_order"], kind="stable").drop_duplicates("label_uid", keep="last")
+    return rec.sort_values("_order").drop(columns=["_ok", "_order"]).reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -729,7 +734,7 @@ def rule_readout(results, m=M_ARMS):
                       if stage1 else "."))
     caveat = None
     if k:
-        caveat = (f"With {k} registered seeds, (1/{k})^{k} = {100 * (1 / k) ** k:.1f} % of hierarchical replicates "
+        caveat = (f"With {k} registered seeds, (1/{k})^{k} = {100 * (1 / k) ** k:.2g} % of hierarchical replicates "
                   f"draw one given seed only (for example the worst), so the hierarchical level is nominal.")
     mdd = {t: {int(a): c.get("mdd") for a, c in results[t].items() if not c.get("unestimable")} for t in types}
     return {"outcome": outcome, "passing_arms": passing, "stage2_triggered": outcome == "candidate" and stage1,
@@ -768,6 +773,10 @@ def _read_arm(work, t, c, seeds, runs_root):
     split = pd.read_csv(split_p, dtype={"label_uid": str, "pano_id": str, "city": str}, low_memory=False) \
         if os.path.exists(split_p) else None
     preds, runs = {}, {}
+    on_disk = {int(m.group(1)) for x in glob.glob(os.path.join(d, "predictions_s*.csv"))
+               if (m := re.fullmatch(r"predictions_s(\d+)\.csv", os.path.basename(x)))}
+    on_disk |= {int(m.group(1)) for x in glob.glob(os.path.join(runs_root, arm_name(c), t, "s*", "training_run.json"))
+                if (m := re.fullmatch(r"s(\d+)", os.path.basename(os.path.dirname(x))))}
     inputs = {f"{arm_name(c)}/{t}/split.csv": sha256_file(split_p)} if split is not None else {}
     for s in seeds:
         pp = os.path.join(d, f"predictions_s{s}.csv")
@@ -778,17 +787,24 @@ def _read_arm(work, t, c, seeds, runs_root):
                 runs[s] = json.load(f)
             inputs[f"{arm_name(c)}/{t}/predictions_s{s}.csv"] = sha256_file(pp)
             inputs[f"runs/{arm_name(c)}/{t}/s{s}/training_run.json"] = sha256_file(rp)
-    return {"split": split, "preds": preds, "runs": runs, "inputs": inputs}
+    return {"split": split, "preds": preds, "runs": runs, "inputs": inputs,
+            "unregistered": sorted(on_disk - {int(x) for x in seeds})}
 
 
-def _matrix(preds, seeds, uids):
-    """``k x n`` p_incorrect scores in ``uids`` order; raises KeyError naming the first missing label."""
+class Unestimable(Exception):
+    """A cell (or the negative control) that cannot be read. Its text goes into ``compare.json`` and ``tables.md``, so
+    it is built only from seeds, counts, arm and split names: never a label id, city id or other row identifier."""
+
+
+def _matrix(preds, seeds, uids, what):
+    """``k x n`` p_incorrect scores in ``uids`` order; raises :class:`Unestimable` with the count of missing rows
+    (never which rows: a ``label_uid`` carries its city id)."""
     out = []
     for s in seeds:
         p = preds[s].drop_duplicates("label_uid").set_index("label_uid").p_incorrect
         miss = uids[~uids.isin(p.index)]
         if len(miss):
-            raise KeyError(f"seed {s} has no prediction for {len(miss)} rows (e.g. {miss.iloc[0]})")
+            raise Unestimable(f"{what} seed {s} has no prediction for {len(miss)} of {len(uids)} rows")
         out.append(p.loc[uids].to_numpy(float))
     return np.stack(out)
 
@@ -887,13 +903,15 @@ def control_predictions(control_root, t, seeds=(42, 43, 44)):
     return out
 
 
-def compare_type(work, t, seeds=DEFAULT_SEEDS, arms=SWEPT, n_boot=N_BOOT, seed=SEED, runs_root=None,
+def compare_type(work, t, seeds=REGISTERED_SEEDS, arms=SWEPT, n_boot=N_BOOT, seed=SEED, runs_root=None,
                  control_root=None, logs_dir=None):
     """Everything ``compare`` computes for one type: the R3 cells and every reported table.
 
     A cell is unestimable, and never passes, when: the family differs (:func:`family_problems`); either side has
-    fewer runs with predictions than the registered seeds (``len(seeds)``); a run records another
-    ``crop_depth_constant`` than its arm; the arms' rows differ; or ``test`` has fewer than 10 rows of a class."""
+    fewer runs with predictions than the registered seeds (``len(seeds)``), or holds predictions or runs for a seed
+    outside them (a reading on a subset); a run records no ``crop_depth_constant`` or another one than its arm; the
+    arms' rows differ; a prediction is missing; or ``test`` has fewer than 10 rows of a class. The family check is per
+    label type: pairing is within a type, and stage 2 is its own family."""
     runs_root = runs_root or os.path.join(work, "runs")
     k = len(seeds)
     data = {c: _read_arm(work, t, c, seeds, runs_root) for c in (BASELINE,) + tuple(arms)}
@@ -902,17 +920,23 @@ def compare_type(work, t, seeds=DEFAULT_SEEDS, arms=SWEPT, n_boot=N_BOOT, seed=S
     res = {"type": t, "seeds": list(seeds), "k": k, "arms": [int(a) for a in arms], "family_problems": fam,
            "cells": {}, "heldout": {}, "lodo": {}, "slices": [], "recall_at_precision": {}, "auc_test": {},
            "gpu": {}, "negative_control": None,
-           "inputs": {name: h for d in data.values() for name, h in d["inputs"].items()}}
+           "inputs": {name: h for d in data.values() for name, h in d["inputs"].items()},
+           "cities": sorted({str(x) for d in data.values() if d["split"] is not None for x in d["split"].city})}
 
     def problem(c):
         d = data[c]
         if d["split"] is None:
             return f"no {arm_name(c)} split.csv"
+        if d["unregistered"]:
+            return (f"{arm_name(c)} holds predictions or runs for seeds outside the registered ones "
+                    f"({', '.join(f's{s}' for s in d['unregistered'])}): no reading on a subset")
         if len(d["runs"]) < k:
             return (f"{arm_name(c)} has {len(d['runs'])} of the {k} registered seeds (no reading on a subset; "
                     f"missing: {', '.join(f's{s}' for s in seeds if s not in d['runs'])})")
-        wrong = [f"s{s}" for s, r in d["runs"].items()
-                 if r.get("crop_depth_constant") is not None and int(r["crop_depth_constant"]) != c]
+        absent = [f"s{s}" for s, r in sorted(d["runs"].items()) if r.get("crop_depth_constant") is None]
+        if absent:                         # every arm's generation_run.json records it, and training copies it
+            return f"{arm_name(c)} runs {', '.join(absent)} record no crop_depth_constant"
+        wrong = [f"s{s}" for s, r in sorted(d["runs"].items()) if not _is_constant(r["crop_depth_constant"], c)]
         if wrong:
             return f"{arm_name(c)} runs {', '.join(wrong)} record another crop_depth_constant"
         return None
@@ -928,7 +952,7 @@ def compare_type(work, t, seeds=DEFAULT_SEEDS, arms=SWEPT, n_boot=N_BOOT, seed=S
         if not why:
             try:
                 cell.update(_score_arm(data, c, t, seeds, k, n_boot, seed, res))
-            except (KeyError, ValueError) as e:
+            except Unestimable as e:                  # anything else is a bug and stops compare
                 cell = {"unestimable": str(e), "k": k}
         res["cells"][int(c)] = cell
         if logs_dir:
@@ -938,6 +962,13 @@ def compare_type(work, t, seeds=DEFAULT_SEEDS, arms=SWEPT, n_boot=N_BOOT, seed=S
     if control_root and base_problem is None:
         res["negative_control"] = _control(control_root, t, base, n_boot, seed)
     return res
+
+
+def _is_constant(value, c):
+    try:
+        return float(value) == c
+    except (TypeError, ValueError):
+        return False
 
 
 def _rows(split_df, name):
@@ -950,15 +981,17 @@ def _score_arm(data, c, t, seeds, k, n_boot, seed, res):
     split = base["split"]
     test, y, clusters = _rows(split, "test")
     if min(y.sum(), (~y).sum()) < MIN_CLASS:
-        raise ValueError(f"fewer than {MIN_CLASS} test rows of a class ({int(y.sum())} incorrect, "
+        raise Unestimable(f"fewer than {MIN_CLASS} test rows of a class ({int(y.sum())} incorrect, "
                          f"{int((~y).sum())} correct)")
-    A, B = _matrix(arm["preds"], seeds, test.label_uid), _matrix(base["preds"], seeds, test.label_uid)
+    A = _matrix(arm["preds"], seeds, test.label_uid, f"{arm_name(c)} test")
+    B = _matrix(base["preds"], seeds, test.label_uid, "c6100 test")
     s0 = sl.slice_seed(seed, f"{t}:{c}")
     cell = paired_stats(y, A, B, clusters, k, n_boot=n_boot, seed=s0)
     held, yh, ch = _rows(split, "test_heldout")
     within = None
     if len(held):
-        Ah, Bh = _matrix(arm["preds"], seeds, held.label_uid), _matrix(base["preds"], seeds, held.label_uid)
+        Ah = _matrix(arm["preds"], seeds, held.label_uid, f"{arm_name(c)} test_heldout")
+        Bh = _matrix(base["preds"], seeds, held.label_uid, "c6100 test_heldout")
         ones = np.ones(len(held))
         w = [WithinCityScores(a, held.city).auc(yh, ones) - WithinCityScores(b, held.city).auc(yh, ones)
              for a, b in zip(Ah, Bh)]
@@ -1008,8 +1041,9 @@ def _control(control_root, t, base, n_boot, seed):
         return {"seeds": sorted(stored), "note": "fewer than three stored or regenerated seeds; not read"}
     test, y, clusters = _rows(base["split"], "test")
     try:
-        A, B = _matrix(stored, seeds, test.label_uid), _matrix(base["preds"], seeds, test.label_uid)
-    except KeyError as e:
+        A = _matrix(stored, seeds, test.label_uid, "stored round-3 test")
+        B = _matrix(base["preds"], seeds, test.label_uid, "c6100 test")
+    except Unestimable as e:
         return {"seeds": seeds, "note": str(e)}
     st = paired_stats(y, A, B, clusters, len(seeds), n_boot=n_boot, seed=sl.slice_seed(seed, f"{t}:control"))
     return {**st, "seeds": seeds, "what": "stored round-3 6100 minus regenerated c6100",
@@ -1035,7 +1069,8 @@ def compare_output(results, seeds):
     commit, dirty = da.git_commit()
     readout = rule_readout({t: r["cells"] for t, r in results.items()})
     return {"stage": "compare", "date": datetime.date.today().isoformat(), "git_commit": commit, "git_dirty": dirty,
-            "seeds": list(seeds), "m": M_ARMS, "alpha": ALPHA, "types": results, "readout": readout}
+            "seeds": list(seeds), "registration": "REGISTERED_SEEDS in analysis/crop_constant_sweep.py at git_commit",
+            "m": M_ARMS, "alpha": ALPHA, "types": results, "readout": readout}
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1229,6 +1264,10 @@ def cmd_chunks(args):
     print(plan.nunique())
 
 
+def cmd_registered_seeds(args):
+    print(",".join(str(x) for x in REGISTERED_SEEDS))
+
+
 def cmd_preflight(args):
     types = split_types(args.types)
     rec = preflight(args.root, args.rawlabels_dir, types, args.pano_store)
@@ -1287,7 +1326,7 @@ def cmd_gates(args):
 
 def cmd_compare(args):
     types = split_types(args.types)
-    seeds = split_ints(args.seeds)
+    seeds = REGISTERED_SEEDS                         # the committed registration; never a command-line choice
     arms, arms2 = split_ints(args.arms), split_ints(args.stage2_arms or args.arms)
     res = {t: compare_type(args.work, t, seeds, arms2 if t in STAGE2_TYPES else arms, args.n_boot,
                            runs_root=args.runs_root, control_root=args.control_root, logs_dir=args.logs_dir)
@@ -1305,14 +1344,32 @@ def cmd_compare(args):
         print(ro["caveat"])
 
 
+def report_leaks(text, cities, public):
+    """Why ``text`` must not be written: a non-public city id anywhere (case-insensitive), or anything shaped like a
+    label id (``<city>:<digits>``) for any city. Empty when the text is clean. The last check before ``report``
+    writes, whatever the code that built the text."""
+    low = text.lower()
+    hidden = sorted(c for c in cities if c not in public)
+    found = [f"a non-public deployment id ({len([c for c in hidden if c.lower() in low])} of {len(hidden)})"] \
+        if any(c.lower() in low for c in hidden) else []
+    if any(re.search(re.escape(c.lower()) + r":\d", low) for c in cities):
+        found.append("a label id")
+    return found
+
+
 def cmd_report(args):
     with open(args.compare) as f:
         out = json.load(f)
     public, listing = da.resolve_public(args.public_cities, args.cities_json)
+    text = report_tables(out, public)
+    cities = {c for r in out["types"].values() for c in r.get("cities", [])}
+    leaks = report_leaks(text, cities, public)
+    if leaks:
+        sys.exit(f"refusing to write the report: the tables would contain {' and '.join(leaks)}")
     os.makedirs(args.out_dir, exist_ok=True)
     tables = os.path.join(args.out_dir, "tables.md")
     with open(tables, "w") as f:
-        f.write(report_tables(out, public))
+        f.write(text)
     fig = os.path.join(args.out_dir, "crop_constant.png")
     report_figure(out, fig)
     write_json(os.path.join(args.out_dir, "provenance.json"), {
@@ -1338,6 +1395,9 @@ def main(argv=None):
     s.add_argument("--types", default=",".join(STAGE1_TYPES))
     s.add_argument("--time-limit", required=True, help="the recrop job's --time (Slurm format)")
     s.set_defaults(func=cmd_chunks)
+
+    s = sub.add_parser("registered-seeds", help="print the registered seeds (the submit script trains these)")
+    s.set_defaults(func=cmd_registered_seeds)
 
     s = sub.add_parser("preflight", help="G0 and the store check")
     s.add_argument("--root", required=True)
@@ -1370,8 +1430,6 @@ def main(argv=None):
     s = sub.add_parser("compare", help="the R3 read-out and the reported tables")
     s.add_argument("--work", required=True, help="a copy of the klone working directory (arms, runs)")
     s.add_argument("--types", default=",".join(STAGE1_TYPES))
-    s.add_argument("--seeds", default=",".join(str(x) for x in DEFAULT_SEEDS),
-                   help="the REGISTERED seeds; fewer runs than these makes a cell unestimable")
     s.add_argument("--arms", default="4000,8000")
     s.add_argument("--stage2-arms", default=None, help="the arm trained for the stage-2 types (default --arms)")
     s.add_argument("--runs-root", default=None, help="default <work>/runs")
