@@ -133,8 +133,10 @@ and the default here in one reviewed PR (with a CLI flag if one is wanted). It l
 
 - Held-out deployments: pooled and within-city ΔAUC with both intervals, and leave-one-deployment-out (three held-out
   deployments). Non-public deployments are never named (`non-public deployment A`, `B`). `report` refuses to write
-  `tables.md` if its text holds a non-public deployment id or anything shaped like a label id (`<city>:<digits>`),
-  whatever the code that built it. `compare.json` holds deployment ids and stays off the repo.
+  `tables.md` if its text holds a non-public deployment id (as a whole token) or anything shaped like a label id
+  (`<city>:<digits>`), whatever the code that built it, and refuses a `compare.json` that records no `cities` to
+  check against. `compare.json` lists every deployment id, so `compare` refuses an `--out` inside the repository and
+  `.gitignore` lists `docs/crop-constant-2026-11/compare.json`.
 - Slices, per the standing rule: type × severity and type × tag, seed-mean Δ beside the baseline AUC, with training
   counts and the thin-slice flag (`train_n < 100`).
 - Mechanism slices: the baseline `crop_half_px` quartile and the capture-year band.
@@ -244,7 +246,9 @@ env are only read.
    then `compare --work <that copy> --control-root $R3 --logs-dir <logs> [--fixed238 <#51's CurbRamp predictions>]
    --out compare.json` (the registered seeds come from the code; copy every seed's files, since a seed left behind
    reads as missing) and `report --compare compare.json --out-dir docs/crop-constant-2026-11`. Paste section 8 and
-   pin the hashes above. Keep `compare.json` in `~/Data`, not in the repo.
+   pin the hashes above. Keep `compare.json` in `~/Data` (compare refuses a path inside the repo). If `report`
+   refuses for a non-public id, it gives a count, never the id: to find it, build the text in a local Python session
+   (`report_tables(json.load(open("compare.json")), public)`) and search it for the ids in `compare.json`'s `cities`.
 
 A run whose `git status` timed out records `git_dirty: null`, which makes its whole family unestimable; the only
 remedy is to retrain that run, so check that the clone on klone is clean and its file system responsive before step 4.

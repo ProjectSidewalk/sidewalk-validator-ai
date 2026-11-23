@@ -1324,7 +1324,16 @@ def cmd_gates(args):
         sys.exit("a gate failed; no arm directory was written. See gates.json")
 
 
+def _inside_repo(path):
+    """True when ``path`` would land inside this checkout (``compare.json`` lists every deployment id)."""
+    target, repo = os.path.realpath(os.path.abspath(path)), os.path.realpath(REPO)
+    return os.path.commonpath([target, repo]) == repo
+
+
 def cmd_compare(args):
+    if _inside_repo(args.out):
+        sys.exit(f"refusing: --out {args.out} is inside the repository; compare.json lists every deployment id, "
+                 f"public or not, so write it outside (e.g. ~/Data/sidewalk-validator-ai-crop-constant-2026-11/)")
     types = split_types(args.types)
     seeds = REGISTERED_SEEDS                         # the committed registration; never a command-line choice
     arms, arms2 = split_ints(args.arms), split_ints(args.stage2_arms or args.arms)
@@ -1344,15 +1353,25 @@ def cmd_compare(args):
         print(ro["caveat"])
 
 
+def _token(city_id):
+    """A case-insensitive pattern for ``city_id`` as a whole token: not inside a longer id or word (``held`` does not
+    match ``held-x``), since city ids are letters, digits, ``-`` and ``_``."""
+    return r"(?<![\w-])" + re.escape(city_id.lower()) + r"(?![\w-])"
+
+
 def report_leaks(text, cities, public):
-    """Why ``text`` must not be written: a non-public city id anywhere (case-insensitive), or anything shaped like a
-    label id (``<city>:<digits>``) for any city. Empty when the text is clean. The last check before ``report``
-    writes, whatever the code that built the text."""
+    """Why ``text`` must not be written: a non-public city id as a whole token (case-insensitive), or anything shaped
+    like a label id (``<city>:<digits>``) for any city. Empty when the text is clean. The last check before ``report``
+    writes, whatever the code that built the text. It gives counts, never an id.
+
+    >>> report_leaks("| held-x | 0.01 |", {"held", "held-x"}, {"held-x"}), report_leaks("Held:12", {"held"}, set())
+    ([], ['a non-public deployment id (1 of 1)', 'a label id'])
+    """
     low = text.lower()
     hidden = sorted(c for c in cities if c not in public)
-    found = [f"a non-public deployment id ({len([c for c in hidden if c.lower() in low])} of {len(hidden)})"] \
-        if any(c.lower() in low for c in hidden) else []
-    if any(re.search(re.escape(c.lower()) + r":\d", low) for c in cities):
+    hits = [c for c in hidden if re.search(_token(c), low)]
+    found = [f"a non-public deployment id ({len(hits)} of {len(hidden)})"] if hits else []
+    if any(re.search(r"(?<![\w-])" + re.escape(c.lower()) + r":\d", low) for c in cities):
         found.append("a label id")
     return found
 
@@ -1362,7 +1381,11 @@ def cmd_report(args):
         out = json.load(f)
     public, listing = da.resolve_public(args.public_cities, args.cities_json)
     text = report_tables(out, public)
-    cities = {c for r in out["types"].values() for c in r.get("cities", [])}
+    bare = sorted(t for t, r in out["types"].items() if not isinstance(r.get("cities"), list) or not r["cities"])
+    if bare:                                 # no ids to check against: the check would pass anything, so refuse
+        sys.exit(f"refusing to write the report: {', '.join(bare)} in {args.compare} records no cities (a compare.json "
+                 f"from before the check, or edited); rerun compare")
+    cities = {c for r in out["types"].values() for c in r["cities"]}
     leaks = report_leaks(text, cities, public)
     if leaks:
         sys.exit(f"refusing to write the report: the tables would contain {' and '.join(leaks)}")

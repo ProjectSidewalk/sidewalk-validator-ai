@@ -889,6 +889,36 @@ def test_a_reading_on_a_subset_of_the_trained_seeds_is_unestimable(tmp_path, see
     assert "baseline: c6100 holds" in why and "(s46)" in why             # c6100 still holds s46
 
 
+def test_an_unregistered_seed_is_found_from_a_predictions_file_alone(tmp_path):
+    work = str(tmp_path)
+    make_family(work, gain=0.8)
+    shutil.copy(os.path.join(cc.arm_dir(work, 4000), "CurbRamp", "predictions_s46.csv"),
+                os.path.join(cc.arm_dir(work, 4000), "CurbRamp", "predictions_s47.csv"))   # no run directory
+    res = cc.compare_type(work, "CurbRamp", seeds=(42, 43, 44, 45, 46), n_boot=30)
+    assert "outside the registered ones (s47)" in res["cells"][4000]["unestimable"]
+    assert res["cells"][8000]["unestimable"] is None
+
+
+def test_an_error_that_is_not_unestimable_stops_compare(tmp_path, monkeypatch):
+    work = str(tmp_path)
+    make_family(work, seeds=(42, 43, 44), gain=0.8)
+
+    def broken(*a, **k):
+        raise RuntimeError("bug near secret-town:4")
+    monkeypatch.setattr(cc, "paired_stats", broken)
+    with pytest.raises(RuntimeError):                  # never stringified into a cell or a table
+        cc.compare_type(work, "CurbRamp", seeds=(42, 43, 44), n_boot=30)
+
+
+def test_compare_refuses_an_output_inside_the_repository(tmp_path):
+    for out in (os.path.join(REPO, "docs", "crop-constant-2026-11", "compare.json"), os.path.join(REPO, "c.json")):
+        with pytest.raises(SystemExit, match="inside the repository"):
+            cc.main(["compare", "--work", str(tmp_path), "--out", out])
+        assert not os.path.exists(out)
+    with open(os.path.join(REPO, ".gitignore")) as f:
+        assert "docs/crop-constant-2026-11/compare.json" in f.read().split()
+
+
 def test_compare_reads_the_registered_seeds_and_takes_no_seed_option(tmp_path, capsys):
     assert cc.REGISTERED_SEEDS == (42, 43, 44, 45, 46)
     with pytest.raises(SystemExit):
@@ -1018,6 +1048,27 @@ def test_report_refuses_text_with_a_non_public_id_or_a_label_id(tmp_path):
         assert not (d / "assets" / "tables.md").exists()
     assert cc.report_leaks("| c4000 | 0.01 |", {"secret-town", "pub-a"}, {"pub-a"}) == []
     assert cc.report_leaks("Secret-Town", {"secret-town"}, set())
+    assert cc.report_leaks("| held-x | x |", {"held", "x", "held-x"}, {"held-x"}) == [   # whole tokens only
+        "a non-public deployment id (1 of 2)"]                                       # 'x' is a whole token here
+    assert cc.report_leaks("| held-x | 0.01 |", {"held", "held-x"}, {"held-x"}) == []
+    assert cc.report_leaks("near secret-town:4.", {"secret-town"}, set()) == [
+        "a non-public deployment id (1 of 1)", "a label id"]
+    assert cc.report_leaks("pub-a:17", {"pub-a"}, {"pub-a"}) == ["a label id"]
+
+
+@pytest.mark.parametrize("cities", ["absent", [], None])
+def test_report_refuses_a_compare_record_without_cities(tmp_path, cities):
+    work = str(tmp_path / "w")
+    make_family(work, seeds=(42, 43, 44), gain=0.5)
+    res = {"CurbRamp": cc.compare_type(work, "CurbRamp", seeds=(42, 43, 44), n_boot=30)}
+    res["CurbRamp"]["cells"][4000] = {"unestimable": "broken near secret-town:4", "k": 3}
+    if cities == "absent":
+        res["CurbRamp"].pop("cities")
+    else:
+        res["CurbRamp"]["cities"] = cities
+    with pytest.raises(SystemExit, match="records no cities"):
+        _report(tmp_path, res)
+    assert not (tmp_path / "assets" / "tables.md").exists()
 
 
 # ---------------------------------------------------------------------------------------------------------------------
