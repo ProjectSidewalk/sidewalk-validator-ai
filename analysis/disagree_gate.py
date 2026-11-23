@@ -103,10 +103,15 @@ P5_A, P5_B = "matched-rb", "symmetric-rb"
 RB_VARIANTS = (P5_A, P5_B)
 P5_RULE = "symmetric"     # confident_learning.passes_rule(base split rows, P5_RULE) defines the agreed rows
 P5_MIN_CLASS = 10         # a co-primary with fewer rows of either class is unestimable
+P5_BOOT_SEED = 0          # the registered bootstrap seed (with N_BOOT resamples); decide refuses any other
+P5_MIN_VALID_SHARE = 0.5  # an interval with fewer defined replicates than this share of N_BOOT is unestimable
 P5_YES = "yes, test `symmetric` on a fresh pull"
 P5_NO = "no, the training rule stays `margin`"
 P5_UNESTIMABLE = "no (unestimable)"
 P5_NOT_RUN = "not run"
+# Not an answer: some of the six rebalanced runs (two arms x seeds 42, 43, 44) of a type are missing or were scored
+# on different rows, so maps / gold withheld every P5 number of that type (decision rule of 2026-11-23, S2).
+P5_WITHHELD = "withheld (rebalanced runs incomplete; not an answer)"
 # maps and gold read every arm by default, so stage 2's rebalanced runs are never left out by a forgotten flag.
 DEFAULT_RUNS = ",".join(("baseline", "cl-drop", "round3") + RB_VARIANTS)
 PRIVACY_MIN_CELL = 5     # a gold cell under 5 items shows its size only
@@ -667,8 +672,8 @@ def paired_seed_delta_hierarchical(preds_a, preds_b, groups, split, n_boot=N_BOO
 
     per = {s: delta(s, slice(None)) for s in seeds}
     out = {"split": split, "seeds": seeds, "per_seed": per, "mean": float(np.mean(list(per.values()))),
-           "lo": float("nan"), "hi": float("nan"), "n": int(len(y)), "n_boot": int(n_boot), "n_replicates": 0,
-           "n_valid": 0}
+           "lo": float("nan"), "hi": float("nan"), "n": int(len(y)), "n_boot": int(n_boot), "boot_seed": int(seed),
+           "n_replicates": 0, "n_valid": 0}
     if not n_boot or not len(y):
         return out
     rng = np.random.default_rng(seed)
@@ -688,7 +693,10 @@ def paired_gold_delta_hierarchical(rows_a, rows_b, n_boot=N_BOOT, seed=0):
     deltas over the drawn seeds with the draw counts as weights.
 
     The items must be the same in every seed and both arms (ValueError otherwise): P4's ``paired_gold_delta``
-    intersects the item sets silently, P5 does not. Items are sorted by ``label_uid``.
+    intersects the item sets silently, P5 does not. Items are sorted by ``label_uid``, so the result does not depend
+    on gold.csv's row order, while ``paired_gold_delta`` keeps that order. The index draws are therefore P4's, but
+    replicate ``i`` picks the same items as P4's replicate ``i`` only when gold.csv is sorted by ``label_uid``; the
+    two intervals are equivalent in distribution, not replicate for replicate.
     """
     seeds = sorted(set(rows_a) & set(rows_b))
     if not seeds:
@@ -710,7 +718,8 @@ def paired_gold_delta_hierarchical(rows_a, rows_b, n_boot=N_BOOT, seed=0):
 
     per = {s: delta(s, slice(None)) for s in seeds}
     out = {"seeds": seeds, "per_seed": per, "mean": float(np.mean(list(per.values()))), "lo": float("nan"),
-           "hi": float("nan"), "n": int(len(y)), "n_boot": int(n_boot), "n_replicates": 0, "n_valid": 0}
+           "hi": float("nan"), "n": int(len(y)), "n_boot": int(n_boot), "boot_seed": int(seed), "n_replicates": 0,
+           "n_valid": 0}
     if not n_boot or not len(y):
         return out
     rng = np.random.default_rng(seed)
@@ -722,21 +731,117 @@ def _p5_seeds(runs_a, runs_b):
     return {P5_A: sorted(int(s) for s in runs_a), P5_B: sorted(int(s) for s in runs_b)}
 
 
+def rb_tags():
+    """``(variant, seed, tag)`` of the six registered rebalanced runs: both arms, seeds 42, 43, 44 (``SEEDS``)."""
+    return [(v, s, run_tag(v, s)) for v in RB_VARIANTS for s in SEEDS]
+
+
+def rb_unused_tags(directory, prefix):
+    """Tags of rebalanced runs on disk (``<directory>/<prefix><variant>-s<seed>.csv``) whose seed is not one of the
+    registered ``SEEDS``: listed as not used, never read into P5 (only seeds 42, 43, 44 count)."""
+    import glob
+    out = []
+    for v in RB_VARIANTS:
+        for path in glob.glob(os.path.join(glob.escape(directory), f"{prefix}{v}-s*.csv")):
+            m = re.fullmatch(re.escape(f"{prefix}{v}-s") + r"(\d+)\.csv", os.path.basename(path))
+            if m and int(m.group(1)) not in SEEDS:
+                out.append(run_tag(v, int(m.group(1))))
+    return sorted(out)
+
+
+def rb_set_status(ids, not_used=()):
+    """Whether one type's rebalanced set is complete: ``ids`` is ``{tag: set of label ids, or None for a missing
+    run}`` over the six registered runs (``rb_tags``). Complete only when all six are present with the same ids.
+
+    The decision rule of 2026-11-23 (docs/round4-2026-11.md, "Decision rules"): ``maps`` and ``gold`` withhold every
+    rebalanced number of a type whose set is not complete (no per-run record, no map, no AUC, no delta, no
+    interval) and write only which runs are missing or mismatched. A failed training or scoring job can then be
+    resubmitted without an interim look, and the first ``decide`` on a complete set is P5's answer.
+
+    >>> st = rb_set_status({"matched-rb": {"a", "b"}, "symmetric-rb": None, "symmetric-rb-s43": {"a"}})
+    >>> st["complete"], st["missing"], st["mismatched"]
+    (False, ['symmetric-rb'], 'symmetric-rb-s43 scored 1 rows, matched-rb 2; 1 in only one of them')
+    """
+    present = [k for k, v in ids.items() if v is not None]
+    missing = [k for k, v in ids.items() if v is None]
+    mismatched = None
+    for k in present[1:]:
+        if ids[k] != ids[present[0]]:
+            mismatched = (f"{k} scored {len(ids[k])} rows, {present[0]} {len(ids[present[0]])}; "
+                          f"{len(ids[k] ^ ids[present[0]])} in only one of them")
+            break
+    return {"complete": not missing and mismatched is None, "present": present, "missing": missing,
+            "mismatched": mismatched, "seeds_not_used": sorted(not_used)}
+
+
+def rb_withheld_leg(status):
+    """The leg ``maps`` / ``gold`` write for a type whose rebalanced set is incomplete: which runs, nothing else."""
+    return {"a": P5_A, "b": P5_B, "withheld": True,
+            **{k: status[k] for k in ("present", "missing", "mismatched", "seeds_not_used")}}
+
+
+def _registered_valid_panoramas(y, g, n_boot, seed):
+    """Defined replicates of ``paired_seed_delta``'s interval. Its resamples are ``slices.boot_indices`` from
+    ``default_rng(seed)``: a resample with one class is redrawn and one still single-class after the retries is left
+    out, and every AUC of a two-class resample is defined, so the count is ``len(boot_indices(...))``. Which groups
+    are drawn does not depend on the row order, so neither does the count."""
+    if not n_boot:
+        return 0
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return len(sl.boot_indices(np.asarray(y), np.asarray(g), n_boot, np.random.default_rng(seed)))
+
+
+def _p4_ref(rows_a, rows_b):
+    """``paired_gold_delta``'s item frame: the first shared seed's AI-Disagree rows of ``rows_a``, in their order,
+    kept where every run of both arms scored them."""
+    seeds = sorted(set(rows_a) & set(rows_b))
+    ref = rows_a[seeds[0]]
+    ref = ref[ref["ai_vote"] == "Disagree"]
+    for s in seeds:
+        for rows in (rows_a[s], rows_b[s]):
+            ref = ref[ref["label_uid"].isin(rows["label_uid"])]
+    return ref
+
+
+def p4_item_ids(rows_a, rows_b):
+    """The items P4 is computed on (``paired_gold_delta``'s intersection), as a set of label ids."""
+    return set(_p4_ref(rows_a, rows_b)["label_uid"])
+
+
+def _registered_valid_items(rows_a, rows_b, n_boot, seed):
+    """Defined replicates of ``paired_gold_delta``'s interval, by replaying its draws (one ``rng.integers(0, n, n)``
+    per replicate from ``default_rng(seed)``, over its item order): a replicate is defined when some round of the
+    resample holds both classes, which is when ``stratified_auc`` is not NaN."""
+    ref = _p4_ref(rows_a, rows_b)
+    y, rounds = (ref["expert"] == "incorrect").astype(int).to_numpy(), ref["round"].to_numpy()
+    if not n_boot or not len(y):
+        return 0
+    rng, n = np.random.default_rng(seed), 0
+    for _ in range(n_boot):
+        idx = rng.integers(0, len(y), len(y))
+        yy, rr = y[idx], rounds[idx]
+        n += any(0 < yy[rr == k].sum() < (rr == k).sum() for k in np.unique(rr))
+    return n
+
+
 def p5_maps_leg(preds_a, preds_b, sp, n_boot=N_BOOT, seed=0, split="test_heldout"):
     """P5 (a) for one type, from ``maps``: ``symmetric-rb`` (``preds_b``) minus ``matched-rb`` (``preds_a``), each
     ``{seed: predictions}``, on ``split`` of the base ``split.csv`` ``sp``. Callers pass ``(matched-rb,
     symmetric-rb)``, so a positive delta means ``symmetric-rb`` is better.
 
-    ``<split>_agreed`` is the co-primary (the agreed rows, ``p5_agreed_rows``) and ``<split>`` (every scored row) is
+    ``<split>_agreed`` is the co-primary (the agreed rows, ``p5_agreed_rows``) and ``<split>`` (every row) is
     descriptive. Each carries the class counts, the number of panoramas, the registered interval
     (``paired_seed_delta``: one panorama resample shared by every seed and both arms) and the hierarchical one
-    (``paired_seed_delta_hierarchical``). ``mde`` is the minimum detectable difference on the agreed rows' class
-    counts (``mde``: rows, not panoramas, and no seed variance). ``seeds`` lists each arm's runs with predictions;
-    ``decide`` judges whether that is enough (``p5_coprimary``).
+    (``paired_seed_delta_hierarchical``), each recording ``n_boot``, ``boot_seed`` and its defined replicates
+    ``n_valid``. ``mde`` is the minimum detectable difference on the agreed rows' class counts (``mde``: rows, not
+    panoramas, and no seed variance). ``seeds`` lists each arm's runs; ``decide`` judges whether that is enough
+    (``p5_coprimary``).
 
     ``error`` (and no numbers) when the arms or seeds were scored on different rows, when a scored row is not a
-    ``split`` row of ``sp`` or carries a different class there, or when ``sp`` is missing or lacks the rule's
-    columns: P5 never intersects or guesses (amendment item 5).
+    ``split`` row of ``sp`` or carries a different class there, when a ``split`` row of ``sp`` was not scored
+    (``evaluate.py`` scores every val, test and test_heldout row, so every run must), or when ``sp`` is missing or
+    lacks the rule's columns: P5 never intersects or guesses (amendment item 5).
     """
     out = {"a": P5_A, "b": P5_B, "rule": P5_RULE, "split": split, "seeds": _p5_seeds(preds_a, preds_b),
            "error": None}
@@ -766,6 +871,11 @@ def p5_maps_leg(preds_a, preds_b, sp, n_boot=N_BOOT, seed=0, split="test_heldout
     if outside:
         out["error"] = f"{len(outside)} scored {split} rows are not {split} rows of split.csv"
         return out
+    unscored = set(cls) - scored
+    if unscored:
+        out["error"] = (f"{len(unscored)} of the {len(cls)} {split} rows of split.csv were not scored (evaluate.py "
+                        "scores every one)")
+        return out
     for (arm, s), tr in sorted(true.items()):
         if any(tr[u] != cls[u] for u in tr):
             out["error"] = f"the true class of {arm} seed {s} differs from split.csv's label_class"
@@ -781,7 +891,11 @@ def p5_maps_leg(preds_a, preds_b, sp, n_boot=N_BOOT, seed=0, split="test_heldout
         fa = {s: p[(p["split"] == split) & p["label_uid"].isin(keep)] for s, p in preds_a.items()}
         fb = {s: p[(p["split"] == split) & p["label_uid"].isin(keep)] for s, p in preds_b.items()}
         if set(fa) & set(fb) and part["n_correct"] and part["n_incorrect"]:
-            part["registered"] = paired_seed_delta(fa, fb, groups, split, n_boot, seed)
+            reg = paired_seed_delta(fa, fb, groups, split, n_boot, seed)
+            reg.update(n_boot=int(n_boot), boot_seed=int(seed), n_valid=_registered_valid_panoramas(
+                (sub["label_class"] == "incorrect").astype(int).to_numpy(), [groups[u] for u in sub["label_uid"]],
+                n_boot, seed))
+            part["registered"] = reg
             part["hierarchical"] = paired_seed_delta_hierarchical(fa, fb, groups, split, n_boot, seed)
         out[name] = part
     a = out[f"{split}_agreed"]
@@ -794,12 +908,14 @@ def p5_gold_join(headline, pred):
     return headline.merge(pred[["label_uid", "p_incorrect"]], on="label_uid", how="inner", validate="one_to_one")
 
 
-def p5_gold_leg(rows_a, rows_b, n_boot=N_BOOT, seed=0):
+def p5_gold_leg(rows_a, rows_b, n_boot=N_BOOT, seed=0, p4_items=None):
     """P5 (b) for one type, from ``gold``: ``symmetric-rb`` (``rows_b``) minus ``matched-rb`` (``rows_a``), each
     ``{seed: p5_gold_join rows}``, on P4's rows (the AI-Disagree headline items with a uniform crop). The registered
     interval is P4's own (``paired_gold_delta``, unchanged: one unstratified item resample for every seed and both
-    arms); the hierarchical one is ``paired_gold_delta_hierarchical``. ``error`` (and no numbers) when the arms or
-    seeds scored different items: P5 does not intersect them as P4 does."""
+    arms); the hierarchical one is ``paired_gold_delta_hierarchical``; both record ``n_boot``, ``boot_seed`` and
+    ``n_valid``. ``error`` (and no numbers) when the arms or seeds scored different items (P5 does not intersect
+    them as P4 does), or when ``p4_items`` (P4's item set, ``p4_item_ids``, when P4 was computed) is given and the
+    items differ from it: item 2 puts (b) on P4's rows. The error names both counts."""
     out = {"a": P5_A, "b": P5_B, "seeds": _p5_seeds(rows_a, rows_b), "error": None}
     ids = {}
     for arm, runs in ((P5_A, rows_a), (P5_B, rows_b)):
@@ -812,37 +928,70 @@ def p5_gold_leg(rows_a, rows_b, n_boot=N_BOOT, seed=0):
     out["error"] = p5_id_error(ids)
     if out["error"] or not ids:
         return out
+    items = next(iter(ids.values()))
+    if p4_items is not None and items != set(p4_items):
+        out["error"] = (f"P5 (b) has {len(items)} items and P4 {len(set(p4_items))} ({len(items ^ set(p4_items))} in "
+                        "only one): (b) must be computed on P4's rows")
+        return out
     ref = next(iter(rows_a.values()), None)
     ref = next(iter(rows_b.values())) if ref is None else ref
     ref = ref[ref["ai_vote"] == "Disagree"]
     out.update(n=int(len(ref)), n_correct=int((ref["expert"] == "correct").sum()),
                n_incorrect=int((ref["expert"] == "incorrect").sum()), registered=None, hierarchical=None)
     if set(rows_a) & set(rows_b) and out["n_correct"] and out["n_incorrect"]:
-        out["registered"] = paired_gold_delta(rows_a, rows_b, n_boot, seed)
+        reg = paired_gold_delta(rows_a, rows_b, n_boot, seed)
+        reg.update(n_boot=int(n_boot), boot_seed=int(seed), n_valid=_registered_valid_items(rows_a, rows_b, n_boot,
+                                                                                            seed))
+        out["registered"] = reg
         out["hierarchical"] = paired_gold_delta_hierarchical(rows_a, rows_b, n_boot, seed)
     return out
 
 
-P5_MISSING = {"a": "maps.json has no P5 entry (maps was run without the rebalanced runs, or none had predictions)",
-              "b": "gold.json has no P5 entry (no uniform-crop gold file, or gold was run without the rebalanced runs)"}
+P5_MISSING = {"a": "maps.json has no P5 entry for this type (run maps with the rebalanced runs)",
+              "b": "gold.json has no P5 entry for this type (run gold on uniform crops with the rebalanced runs)"}
 
 
-def p5_coprimary(leg, part_key, coprimary):
+def p5_withheld_text(leg):
+    """Why a leg was withheld: the missing runs, the mismatch, and any seed on disk that is not used.
+
+    >>> p5_withheld_text({"withheld": True, "missing": ["symmetric-rb-s44"], "mismatched": None})
+    'rebalanced runs incomplete: missing symmetric-rb-s44'
+    """
+    parts = []
+    if leg.get("missing"):
+        parts.append(f"missing {', '.join(leg['missing'])}")
+    if leg.get("mismatched"):
+        parts.append(f"scored on different rows ({leg['mismatched']})")
+    return "rebalanced runs incomplete: " + ("; ".join(parts) or "unknown")
+
+
+def p5_coprimary(leg, part_key, coprimary, registered_n_boot=N_BOOT):
     """One co-primary's result from its leg (``maps.json`` ``contrasts.symmetric-rb`` for (a), with ``part_key``
-    ``test_heldout_agreed``; ``gold.json`` ``p5`` for (b), ``part_key`` None). ``positive`` only when the registered
-    and the hierarchical interval both lie wholly above 0 (``lo > 0``: an interval touching 0 is not above it).
-    ``unestimable``, with each cause named, when the leg is missing or an error, when either arm has fewer than the
-    three registered seeds, when the rows hold fewer than ``P5_MIN_CLASS`` of either class, or when an interval
-    could not be computed. ``not positive`` otherwise.
+    ``test_heldout_agreed``; ``gold.json`` ``p5`` for (b), ``part_key`` None).
 
-    >>> iv = lambda lo: {"mean": 0.05, "lo": lo, "hi": 0.09}
+    - ``withheld`` when the leg is missing or ``maps`` / ``gold`` withheld it (the type's six rebalanced runs are
+      not all present with equal ids): not an answer; the missing runs may be resubmitted.
+    - ``unestimable``, with each cause named, when the leg is an error, when either arm has fewer than the three
+      registered seeds, when the rows hold fewer than ``P5_MIN_CLASS`` of either class, or when an interval is
+      missing, was not computed at the registered ``N_BOOT`` resamples and bootstrap seed ``P5_BOOT_SEED``, or
+      rests on fewer defined replicates than ``P5_MIN_VALID_SHARE`` of them. For (b) the class cause names no
+      count: the class split of P4's rows is an expert-verdict cell (the doc's masking rule).
+    - ``positive`` only when the registered and the hierarchical interval both lie wholly above 0 (``lo > 0``: an
+      interval touching 0 is not above it); ``not positive`` otherwise.
+
+    ``registered_n_boot`` exists for the tests only (they bootstrap with fewer resamples); ``decide`` always uses
+    ``N_BOOT``.
+
+    >>> iv = lambda lo: {"mean": 0.05, "lo": lo, "hi": 0.09, "n_boot": 2000, "boot_seed": 0, "n_valid": 2000}
     >>> leg = {"seeds": {"matched-rb": [42, 43, 44], "symmetric-rb": [42, 43, 44]}, "n_correct": 50,
     ...        "n_incorrect": 40, "registered": iv(0.01), "hierarchical": iv(-0.01)}
     >>> p5_coprimary(leg, None, "b")["result"]
     'not positive'
     """
     if leg is None:
-        return {"result": "unestimable", "causes": [P5_MISSING[coprimary]]}
+        return {"result": "withheld", "causes": [P5_MISSING[coprimary]]}
+    if leg.get("withheld"):
+        return {"result": "withheld", "causes": [p5_withheld_text(leg)]}
     if leg.get("error"):
         return {"result": "unestimable", "causes": [f"error: {leg['error']}"]}
     part = leg if part_key is None else (leg.get(part_key) or {})
@@ -854,12 +1003,19 @@ def p5_coprimary(leg, part_key, coprimary):
     for c in VERDICTS:
         n = int(part.get(f"n_{c}") or 0)
         if n < P5_MIN_CLASS:
-            causes.append(f"{n} {c} rows (fewer than {P5_MIN_CLASS})")
+            causes.append(f"{n} {c} rows (fewer than {P5_MIN_CLASS})" if coprimary == "a"
+                          else f"fewer than {P5_MIN_CLASS} {c} rows")
     reg, hier = part.get("registered"), part.get("hierarchical")
     if not causes:
         for name, iv in (("registered", reg), ("hierarchical", hier)):
             if not iv or _nan(iv.get("lo")) or _nan(iv.get("hi")):
                 causes.append(f"no {name} interval")
+            elif iv.get("n_boot") != registered_n_boot or iv.get("boot_seed") != P5_BOOT_SEED:
+                causes.append(f"{name} interval computed with {iv.get('n_boot')} resamples and bootstrap seed "
+                              f"{iv.get('boot_seed')}, not the registered {registered_n_boot:,} and {P5_BOOT_SEED}")
+            elif (iv.get("n_valid") or 0) < P5_MIN_VALID_SHARE * registered_n_boot:
+                causes.append(f"{name} interval: {iv.get('n_valid') or 0} of {registered_n_boot:,} replicates defined "
+                              f"(fewer than {P5_MIN_VALID_SHARE:.0%})")
     if causes:
         return {"result": "unestimable", "causes": causes}
     return {"result": "positive" if reg["lo"] > 0 and hier["lo"] > 0 else "not positive", "causes": []}
@@ -873,36 +1029,48 @@ def _p5_summary(part):
             "registered_hi": reg.get("hi"), "hierarchical_lo": hier.get("lo"), "hierarchical_hi": hier.get("hi")}
 
 
-def p5_decision(maps, gold=None, types=RB_TYPES):
-    """P5's one answer across types (amendment items 3 to 5), from ``maps.json`` and ``gold.json``: ``P5_YES`` only
-    when all four co-primaries ((a) and (b) for CurbRamp and Crosswalk) are ``positive`` (``p5_coprimary``);
-    ``P5_UNESTIMABLE``, with the causes, when any of them is unestimable; ``P5_NO`` otherwise. Adoption is one
-    global rule, so this is an intersection-union test and needs no multiplicity correction. ``P5_NOT_RUN`` when
-    neither file holds a P5 entry for any type (no rebalanced run was read). The full ``test_heldout`` row is
-    printed as descriptive and never decides.
+def _p5_leg_has_runs(leg):
+    return leg is not None and (not leg.get("withheld") or bool(leg.get("present")))
+
+
+def p5_decision(maps, gold=None, types=RB_TYPES, registered_n_boot=N_BOOT):
+    """P5's one answer across types (amendment items 3 to 5), from ``maps.json`` and ``gold.json``:
+
+    - ``P5_NOT_RUN`` when no leg of any type holds a rebalanced run (the pilot);
+    - ``P5_WITHHELD`` when any co-primary is ``withheld`` (some type's six rebalanced runs are not all present with
+      equal ids, or a leg was not computed): not an answer (decision rule of 2026-11-23);
+    - ``P5_YES`` only when all four co-primaries ((a) and (b) for CurbRamp and Crosswalk) are ``positive``
+      (``p5_coprimary``); adoption is one global rule, so this is an intersection-union test and needs no
+      multiplicity correction;
+    - ``P5_UNESTIMABLE``, with the causes, when any of them is unestimable, which on a complete set is final;
+    - ``P5_NO`` otherwise.
+
+    The every-row ``test_heldout`` contrast is printed as descriptive and never decides. ``registered_n_boot`` is
+    for the tests only (``p5_coprimary``).
 
     >>> p5_decision({"Obstacle": {}}, None)["answer"]
     'not run'
     """
     legs = {t: (_get(maps or {}, t, "contrasts", P5_B), _get(gold or {}, t, "p5")) for t in types}
-    if all(a is None and b is None for a, b in legs.values()):
+    if not any(_p5_leg_has_runs(a) or _p5_leg_has_runs(b) for a, b in legs.values()):
         return {"answer": P5_NOT_RUN, "rows": [], "causes": []}
     rows, causes = [], []
     for t, (a, b) in legs.items():
         for cop, leg, key in (("a", a, "test_heldout_agreed"), ("b", b, None)):
-            st = p5_coprimary(leg, key, cop)
-            ok = leg is not None and not leg.get("error")
+            st = p5_coprimary(leg, key, cop, registered_n_boot)
+            ok = leg is not None and not leg.get("error") and not leg.get("withheld")
             part = (leg if key is None else leg.get(key)) if ok else None
             row = {"label_type": t, "coprimary": cop, "role": "co-primary", **st, **_p5_summary(part)}
             if cop == "a":
-                row["mde"] = (a or {}).get("mde")
+                row["mde"] = (a or {}).get("mde") if ok else None
             rows.append(row)
             causes += [f"{t} ({cop}): {c}" for c in st["causes"]]
             if cop == "a" and ok and a.get("test_heldout"):
                 rows.append({"label_type": t, "coprimary": "a, every row", "role": "descriptive",
                              "result": "descriptive", "causes": [], **_p5_summary(a["test_heldout"])})
     results = [r["result"] for r in rows if r["role"] == "co-primary"]
-    answer = (P5_YES if all(r == "positive" for r in results) else
+    answer = (P5_WITHHELD if "withheld" in results else
+              P5_YES if all(r == "positive" for r in results) else
               P5_UNESTIMABLE if "unestimable" in results else P5_NO)
     return {"answer": answer, "rows": rows, "causes": causes}
 
@@ -962,25 +1130,38 @@ def cmd_maps(args):
             check_prior_equal(pi, args.priors, t, args.prior_rule)
         rec = {"prior": pi, "prior_reference": pi_ref, "runs": {}}
         preds, scored = {}, {}
-        for variant in runs:
-            if (variant == "cl-drop" and t not in CL_DROP_TYPES) or (variant in RB_VARIANTS and t not in RB_TYPES):
+        plan = [(variant, s) for variant in runs if variant not in RB_VARIANTS
+                and not (variant == "cl-drop" and t not in CL_DROP_TYPES)
+                for s in ([SHIP_SEED] if variant == "round3" else seeds)]
+        # The rebalanced runs (P5): only seeds 42, 43, 44, and nothing of them is computed or written unless all six
+        # are present with equal ids (decision rule of 2026-11-23); otherwise only which runs are missing.
+        rb_wanted, rb_status, rb_loaded = t in RB_TYPES and any(v in runs for v in RB_VARIANTS), None, {}
+        if rb_wanted:
+            rb_loaded = {tag: load_run_predictions(args.r4, t, tag, inputs) for _, _, tag in rb_tags()}
+            rb_status = rb_set_status({tag: None if p is None else set(p["label_uid"]) for tag, p in rb_loaded.items()},
+                                      rb_unused_tags(os.path.join(args.r4, t), "predictions_"))
+            if rb_status["complete"]:
+                plan += [(v, s) for v, s, _ in rb_tags()]
+        for variant, s in plan:
+            tag = run_tag(variant, s)
+            pred = rb_loaded[tag] if variant in RB_VARIANTS else load_run_predictions(args.r4, t, tag, inputs)
+            if pred is None:
+                rec["runs"][tag] = {"variant": variant, "seed": s, "missing": True}
                 continue
-            for s in ([SHIP_SEED] if variant == "round3" else seeds):
-                tag = run_tag(variant, s)
-                pred = load_run_predictions(args.r4, t, tag, inputs)
-                if pred is None:
-                    rec["runs"][tag] = {"variant": variant, "seed": s, "missing": True}
-                    continue
-                preds.setdefault(variant, {})[s] = pred
-                r, amap = map_record(pred, pi, pi_ref)
-                if variant in ("baseline", "cl-drop"):
-                    scored.setdefault(variant, {})[s] = served_with_map(pred, amap)   # C3's bootstrap input
-                rec["runs"][tag] = {"variant": variant, "seed": s, **r}
-                with open(os.path.join(args.out, "maps", f"{t}_{tag}.json"), "w") as f:
-                    json.dump(amap, f, indent=1)
+            preds.setdefault(variant, {})[s] = pred
+            r, amap = map_record(pred, pi, pi_ref)
+            if variant in ("baseline", "cl-drop"):
+                scored.setdefault(variant, {})[s] = served_with_map(pred, amap)   # C3's bootstrap input
+            rec["runs"][tag] = {"variant": variant, "seed": s, **r}
+            with open(os.path.join(args.out, "maps", f"{t}_{tag}.json"), "w") as f:
+                json.dump(amap, f, indent=1)
+        if rb_wanted and not rb_status["complete"]:
+            for v, s, tag in rb_tags():
+                rec["runs"][tag] = {"variant": v, "seed": s, **({"missing": True} if rb_loaded[tag] is None
+                                                                else {"withheld": True})}
         split_path = os.path.join(args.r4, t, "split.csv")
         sp = None
-        needs_split = ("baseline" in preds and "cl-drop" in preds) or any(v in preds for v in RB_VARIANTS)
+        needs_split = ("baseline" in preds and "cl-drop" in preds) or bool(rb_wanted and rb_status["complete"])
         if needs_split and os.path.exists(split_path):
             inputs[split_path] = sha256_file(split_path)
             sp = pd.read_csv(split_path, dtype=str, keep_default_na=False)
@@ -995,15 +1176,23 @@ def cmd_maps(args):
             for s, ag in rec["agree_gate"]["cl-drop"].items():
                 if ag and ag["collapse"]["flagged"]:
                     print(f"{t} {s}: C3 COLLAPSE FLAG (descriptive, does not decide C3): {collapse_text(ag['collapse'])}")
-        if t in RB_TYPES and any(v in preds for v in RB_VARIANTS):
+        if rb_wanted:
             # P5 (a), amended 2026-11-23: symmetric-rb minus matched-rb on the agreed test_heldout rows (co-primary)
             # and on every test_heldout row (descriptive); decide combines it with gold's P5 (b).
-            leg = p5_maps_leg(preds.get(P5_A, {}), preds.get(P5_B, {}), sp, args.n_boot, args.seed)
+            if rb_status["complete"]:
+                leg = p5_maps_leg(preds[P5_A], preds[P5_B], sp, args.n_boot, args.seed)
+                leg.update({k: rb_status[k] for k in ("present", "missing", "mismatched", "seeds_not_used")})
+            else:
+                leg = rb_withheld_leg(rb_status)
+                print(f"{t}: P5 WITHHELD ({p5_withheld_text(leg)}); no rebalanced number written", file=sys.stderr)
             rec.setdefault("contrasts", {})[P5_B] = leg
-            if leg["error"]:
+            if leg.get("error"):
                 print(f"{t}: P5 ERROR (P5 reads as unestimable): {leg['error']}", file=sys.stderr)
+            if leg["seeds_not_used"]:
+                print(f"{t}: P5 uses seeds 42, 43, 44 only; not used: {', '.join(leg['seeds_not_used'])}")
         out[t] = rec
-        print(f"{t}: {sum(1 for r in rec['runs'].values() if not r.get('missing'))} runs with predictions")
+        print(f"{t}: {sum(1 for r in rec['runs'].values() if not r.get('missing') and not r.get('withheld'))} runs "
+              "with predictions")
     out["_provenance"] = provenance(inputs, n_boot=args.n_boot, boot_seed=args.seed, seeds=seeds,
                                     prior_rule=args.prior_rule, runs=runs, types=types)
     path = os.path.join(args.out, "maps.json")
@@ -1300,52 +1489,70 @@ def cmd_gold(args):
                        "consensus_back": g[gold_population(g, consensus_back=True)[1]]}
         tr = {"populations": {k: int(len(v)) for k, v in populations.items()}, "runs": {}, "sensitivity": {}}
         joined = {}
-        for variant in runs:
-            if (variant == "cl-drop" and t not in CL_DROP_TYPES) or (variant in RB_VARIANTS and t not in RB_TYPES):
-                continue
-            for s in ([SHIP_SEED] if variant == "round3" else seeds):
-                tag = run_tag(variant, s)
+        plan = [(variant, s) for variant in runs if variant not in RB_VARIANTS
+                and not (variant == "cl-drop" and t not in CL_DROP_TYPES)
+                for s in ([SHIP_SEED] if variant == "round3" else seeds)]
+        # The rebalanced runs: seeds 42, 43, 44 only, and nothing of them is computed or written unless all six gold
+        # prediction files of these crops are present with equal ids (decision rule of 2026-11-23).
+        rb_wanted, rb_status, rb_pred = t in RB_TYPES and any(v in runs for v in RB_VARIANTS), None, {}
+        if rb_wanted:
+            for _, _, tag in rb_tags():
                 pp = os.path.join(args.pred_dir, t, f"gold_predictions_{args.crops}_{tag}.csv")
-                mp = os.path.join(args.maps, f"{t}_{tag}.json")
-                if not (os.path.exists(pp) and os.path.exists(mp)):
-                    tr["runs"][tag] = {"missing": True}
-                    continue
-                inputs[pp], inputs[mp] = sha256_file(pp), sha256_file(mp)
-                pred = pd.read_csv(pp, dtype={"label_uid": str})
-                with open(mp) as f:
-                    amap = json.load(f)
-                rows = gold_rows_for_run(populations["headline"], pred, amap)
-                joined.setdefault(variant, {})[s] = rows
-                tr["runs"][tag] = {"variant": variant, "seed": s, **gold_run_stats(rows, pools)}
-                if variant == "round3":  # approximation of "scenes it did not train on": not a round-3 train row
-                    nr = rows[rows["round3_split"] != "train"]
-                    tr["sensitivity"]["round3_not_train_rows"] = gold_run_stats(nr, pools)
-                if s == SHIP_SEED:
-                    tr["sensitivity"][tag] = {k: gold_run_stats(gold_rows_for_run(populations[k], pred, amap), pools)
-                                              for k in ("val_back", "consensus_back")}
-                if args.parity and args.crops == "uniform":
-                    rp = os.path.join(args.pred_dir, t, f"gold_predictions_r3crops_{tag}.csv")
-                    if os.path.exists(rp):
-                        inputs[rp] = sha256_file(rp)
-                        tr["runs"][tag]["parity"] = crop_parity(pd.read_csv(rp, dtype={"label_uid": str}), pred, amap)
+                if os.path.exists(pp):
+                    inputs[pp] = sha256_file(pp)
+                    rb_pred[tag] = pd.read_csv(pp, dtype={"label_uid": str})
+            rb_status = rb_set_status({tag: set(rb_pred[tag]["label_uid"]) if tag in rb_pred else None
+                                       for _, _, tag in rb_tags()},
+                                      rb_unused_tags(os.path.join(args.pred_dir, t), f"gold_predictions_{args.crops}_"))
+            if rb_status["complete"]:
+                plan += [(v, s) for v, s, _ in rb_tags()]
+        for variant, s in plan:
+            tag = run_tag(variant, s)
+            pp = os.path.join(args.pred_dir, t, f"gold_predictions_{args.crops}_{tag}.csv")
+            mp = os.path.join(args.maps, f"{t}_{tag}.json")
+            if not (os.path.exists(pp) and os.path.exists(mp)):
+                tr["runs"][tag] = {"missing": True}
+                continue
+            inputs[pp], inputs[mp] = sha256_file(pp), sha256_file(mp)
+            pred = pd.read_csv(pp, dtype={"label_uid": str})
+            with open(mp) as f:
+                amap = json.load(f)
+            rows = gold_rows_for_run(populations["headline"], pred, amap)
+            joined.setdefault(variant, {})[s] = rows
+            tr["runs"][tag] = {"variant": variant, "seed": s, **gold_run_stats(rows, pools)}
+            if variant == "round3":  # approximation of "scenes it did not train on": not a round-3 train row
+                nr = rows[rows["round3_split"] != "train"]
+                tr["sensitivity"]["round3_not_train_rows"] = gold_run_stats(nr, pools)
+            if s == SHIP_SEED:
+                tr["sensitivity"][tag] = {k: gold_run_stats(gold_rows_for_run(populations[k], pred, amap), pools)
+                                          for k in ("val_back", "consensus_back")}
+            if args.parity and args.crops == "uniform":
+                rp = os.path.join(args.pred_dir, t, f"gold_predictions_r3crops_{tag}.csv")
+                if os.path.exists(rp):
+                    inputs[rp] = sha256_file(rp)
+                    tr["runs"][tag]["parity"] = crop_parity(pd.read_csv(rp, dtype={"label_uid": str}), pred, amap)
+        if rb_wanted and not rb_status["complete"]:
+            for v, s, tag in rb_tags():
+                tr["runs"][tag] = {"variant": v, "seed": s, **({"withheld": True} if tag in rb_pred
+                                                               else {"missing": True})}
         tr["ensemble"] = {v: e for v, by_seed in joined.items() if (e := ensemble_stats(by_seed))}
         if "baseline" in joined and "cl-drop" in joined and args.crops == "uniform":
             tr["p4"] = paired_gold_delta(joined["baseline"], joined["cl-drop"], args.n_boot, args.seed)
-        if args.crops == "uniform" and t in RB_TYPES:
-            # P5 (b), amended 2026-11-23: the rebalanced runs joined without a map (the AUC needs none), so a run
-            # whose map is absent still counts; differing item sets are an error, never intersected.
-            p5_rows = {}
-            for variant in (v for v in RB_VARIANTS if v in runs):
-                for s in seeds:
-                    pp = os.path.join(args.pred_dir, t, f"gold_predictions_{args.crops}_{run_tag(variant, s)}.csv")
-                    if os.path.exists(pp):
-                        inputs[pp] = sha256_file(pp)
-                        p5_rows.setdefault(variant, {})[s] = p5_gold_join(populations["headline"],
-                                                                         pd.read_csv(pp, dtype={"label_uid": str}))
-            if p5_rows:
-                tr["p5"] = p5_gold_leg(p5_rows.get(P5_A, {}), p5_rows.get(P5_B, {}), args.n_boot, args.seed)
-                if tr["p5"]["error"]:
-                    print(f"{t}: P5 ERROR (P5 reads as unestimable): {tr['p5']['error']}", file=sys.stderr)
+        if rb_wanted and args.crops == "uniform":
+            # P5 (b), amended 2026-11-23: the rebalanced runs joined without a map (the AUC needs none), on P4's rows;
+            # differing item sets are an error, never intersected.
+            if rb_status["complete"]:
+                p5_rows = {v: {s: p5_gold_join(populations["headline"], rb_pred[run_tag(v, s)]) for s in SEEDS}
+                           for v in RB_VARIANTS}
+                p4_items = p4_item_ids(joined["baseline"], joined["cl-drop"]) if tr.get("p4") else None
+                leg = p5_gold_leg(p5_rows[P5_A], p5_rows[P5_B], args.n_boot, args.seed, p4_items)
+                leg.update({k: rb_status[k] for k in ("present", "missing", "mismatched", "seeds_not_used")})
+            else:
+                leg = rb_withheld_leg(rb_status)
+                print(f"{t}: P5 WITHHELD ({p5_withheld_text(leg)}); no rebalanced number written", file=sys.stderr)
+            tr["p5"] = leg
+            if leg.get("error"):
+                print(f"{t}: P5 ERROR (P5 reads as unestimable): {leg['error']}", file=sys.stderr)
         res[t] = tr
     res["_provenance"] = provenance(inputs, n_boot=args.n_boot, boot_seed=args.seed, seeds=seeds, runs=runs,
                                     types=types, crops=args.crops, parity=bool(args.parity))
@@ -1793,6 +2000,9 @@ def maps_markdown(maps):
             if r.get("missing"):
                 lines.append(f"| {t} | {tag} | | | not run | | | | | |")
                 continue
+            if r.get("withheld"):          # a rebalanced run of an incomplete set: nothing of it is shown (P5)
+                lines.append(f"| {t} | {tag} | | | withheld (rebalanced runs incomplete) | | | | | |")
+                continue
             for s in EVAL_SPLITS:
                 for v in ("Disagree", "Agree"):
                     g = _get(r, "gates", s, v)
@@ -1822,7 +2032,7 @@ def maps_markdown(maps):
               "| Type | run | test | test_heldout |", "|---|---|---:|---:|"]
     for t in LABEL_TYPES:
         for tag, r in (maps.get(t) or {}).get("runs", {}).items():
-            if not r.get("missing"):
+            if not r.get("missing") and not r.get("withheld"):
                 lines.append(f"| {t} | {tag} | {_f(_get(r, 'auc', 'test'))} | {_f(_get(r, 'auc', 'test_heldout'))} |")
     lines += ["", "**`cl-drop` minus the gold-free baseline** (AUC, mean of per-seed paired deltas, one panorama "
               "resample shared by every seed; the held-out row is the replication check C4).", "",
@@ -1998,13 +2208,21 @@ def p5_markdown(bar):
              "a co-primary is positive only when its registered and its hierarchical 95% interval both lie wholly "
              "above 0, and the answer is yes only when all four are positive."]
     if p5.get("causes"):
-        lines += ["", "Unestimable: " + "; ".join(p5["causes"]) + "."]
-    lines += ["", "| Type | rows | correct / incorrect | panoramas | mean [registered 95%] | hierarchical 95% | per seed | "
-              "result |", "|---|---|---:|---:|---:|---:|---|---|"]
+        lines += ["", ("Withheld or unestimable: " if p5["answer"] == P5_WITHHELD else "Unestimable: ")
+                  + "; ".join(p5["causes"]) + "."]
+    if p5["answer"] == P5_WITHHELD:
+        lines[0] = (f"**Answer: {p5['answer']}.** Some type's six rebalanced runs (two arms, seeds 42, 43, 44) are not "
+                    "all present with equal ids, so its P5 numbers were withheld; resubmit the missing runs. The "
+                    "first `decide` on a complete set is the answer (decision rule of 2026-11-23).")
+    lines += ["", "| Type | rows | n (correct / incorrect) | panoramas | mean [registered 95%] | hierarchical 95% | "
+              "per seed | result |", "|---|---|---:|---:|---:|---:|---|---|"]
     for r in p5.get("rows") or []:
         per = ", ".join(f"{k}: {_f(v, '{:+.3f}')}" for k, v in sorted((r.get("per_seed") or {}).items(),
                                                                       key=lambda kv: int(kv[0])))
-        counts = ("" if r.get("n_correct") is None else f"{r['n_correct']:,} / {r['n_incorrect']:,}")
+        # (a)'s class counts come from the public split; (b)'s are the expert verdicts of P4's rows, so (b) prints
+        # n only (the doc's masking rule: P4's table prints n only too); its class counts stay in bar.json.
+        counts = ("" if r.get("n") is None else f"{r['n']:,}" if r["coprimary"] == "b"
+                  else f"{r['n']:,} ({r['n_correct']:,} / {r['n_incorrect']:,})")
         result = r["result"] + (f" ({'; '.join(r['causes'])})" if r.get("causes") else "")
         lines.append(f"| {r['label_type']} | {P5_COPRIMARY_NAME.get(r['coprimary'], r['coprimary'])} | {counts} | "
                      f"{'—' if r.get('n_panoramas') is None else format(r['n_panoramas'], ',')} | "
@@ -2041,7 +2259,7 @@ def gold_markdown(gold):
               "round-stratified AUC | pooled AUC |", "|---|---|---:|---:|---:|---:|---:|---:|"]
     for t in LABEL_TYPES:
         for tag, r in (gold.get(t) or {}).get("runs", {}).items():
-            if r.get("missing"):
+            if r.get("missing") or r.get("withheld"):
                 continue
             n_cell, share, pw = _gated_cells(r["gated_disagree"])
             lines.append(f"| {t} | {tag} | {n_cell} | {share} | {pw} | "
@@ -2069,7 +2287,7 @@ def gold_markdown(gold):
               "|---|---|---|---:|---:|---:|---:|---:|"]
     for t in LABEL_TYPES:
         for tag, r in (gold.get(t) or {}).get("runs", {}).items():
-            if r.get("missing") or r.get("seed") != SHIP_SEED:
+            if r.get("missing") or r.get("withheld") or r.get("seed") != SHIP_SEED:
                 continue
             for name, b in (r.get("by_round") or {}).items():
                 n_cell, share, pw = _gated_cells(b["gated_disagree"])
