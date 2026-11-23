@@ -201,9 +201,9 @@ def test_lint_rejects(key, value, match):
 
 
 @pytest.mark.parametrize("text", [
-    "Released under a licence of the provider.", "Licensed for research.", "Copyright the city.",
+    "Released under a licence.", "Licensed for research.", "Copyright 2026.",
     "See the terms of use.", "Subject to the Terms of Service.", "May not be redistributed.",
-    "Used with permission.", "Proprietary imagery.", "Scraped from a website.",
+    "Used with permission.", "Proprietary data.", "Scraped from a website.",
 ])
 def test_lint_rejects_licence_statements(text):
     doc = _good_doc()
