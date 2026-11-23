@@ -731,6 +731,23 @@ def test_depth_sized_crop_clips_near_features():
         dg.depth_sized_crop(img, 0.0)
 
 
+def test_depth_sized_crop_default_constant_is_unchanged():
+    """The served constant: every existing call (no ``constant``) still cuts int(6100 / depth_m)."""
+    img = np.zeros((2048, 2048, 3), np.uint8)
+    assert dg.CROP_DEPTH_CONSTANT == 6100
+    assert dg.depth_sized_crop(img, 10.0)[1] == 610
+
+
+@pytest.mark.parametrize("constant, half", [(4000, 400), (8000, 800), (6100, 610)])
+def test_depth_sized_crop_takes_the_sweep_constant(constant, half):
+    """Issue #21's constant sweep cuts its 4000 and 8000 arms through ``constant=`` (analysis/crop_constant_sweep.py)."""
+    img = np.zeros((2048, 2048, 3), np.uint8)
+    crop, got, clipped = dg.depth_sized_crop(img, 10.0, constant=constant)
+    assert got == half and not clipped and crop.shape == (640, 640, 3)
+    with pytest.raises(ValueError):
+        dg.depth_sized_crop(img, float("nan"), constant=constant)
+
+
 @pytest.mark.parametrize("module", [dg, hard_examples, crop_pose, job_crop])
 def test_doctests(module):
     result = doctest.testmod(module)
@@ -778,6 +795,21 @@ def test_fine_tune_records_a_fixed_crop_size_only_when_there_is_one(tmp_path):
     (base / "generation_run.json").write_text(json.dumps({"tilt_beta": 0.95, "fixed_crop_half_px": 300}))
     assert ft.generation_settings("Toy", str(tmp_path)) == {"tilt_beta": 0.95, "depth_encoder": None,
                                                             "fixed_crop_half_px": 300}
+
+
+def test_fine_tune_records_the_crop_constant_only_when_there_is_one(tmp_path):
+    """A constant-sweep arm's generation_run.json records ``crop_depth_constant`` (issue #21); training_run.json
+    carries it so publish_to_hf.py can refuse a model trained on another constant. Absent: the record is unchanged."""
+    import fine_tune_classifier as ft
+    base = tmp_path / "Toy"
+    base.mkdir()
+    (base / "generation_run.json").write_text(json.dumps({"tilt_beta": 0.95, "depth_encoder": "vitb",
+                                                          "crop_depth_constant": 4000}))
+    assert ft.generation_settings("Toy", str(tmp_path)) == {"tilt_beta": 0.95, "depth_encoder": "vitb",
+                                                            "crop_depth_constant": 4000}
+    (base / "generation_run.json").write_text(json.dumps({"tilt_beta": 0.95, "depth_encoder": "vitb",
+                                                          "crop_depth_constant": None}))
+    assert "crop_depth_constant" not in ft.generation_settings("Toy", str(tmp_path))
 
 
 def test_fine_tune_records_job_window_crops_only_when_set(tmp_path):

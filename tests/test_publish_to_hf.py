@@ -1978,6 +1978,69 @@ def test_a_depth_encoder_refusal_names_what_was_recorded():
             pub.check_depth_encoder({"depth_encoder": near_miss}, "g.json")
 
 
+def test_the_served_crop_constant_is_the_generation_default():
+    """A literal beside SERVED_DEPTH_ENCODER, so changing data_generation's default alone cannot move the guard."""
+    import data_generation as dg
+    assert pub.SERVED_CROP_DEPTH_CONSTANT == 6100
+    assert pub.SERVED_CROP_DEPTH_CONSTANT == dg.CROP_DEPTH_CONSTANT
+
+
+@pytest.mark.parametrize("constant", [4000, 8000, "4000", 6099.0])
+@pytest.mark.parametrize("place", ["top", "settings"])
+def test_check_crop_constant_refuses_another_constant(constant, place):
+    run = {"crop_depth_constant": constant} if place == "top" else {"settings": {"crop_depth_constant": constant}}
+    with pytest.raises(pub.PublishError, match=re.escape(f"g.json records crop_depth_constant {constant}") +
+                       ".*int\\(6100 / depth_m\\)"):
+        pub.check_crop_constant(run, "g.json")
+
+
+def test_check_crop_constant_passes_the_served_constant_or_no_record():
+    for run in ({"crop_depth_constant": 6100}, {"settings": {"crop_depth_constant": 6100}},
+                {"crop_depth_constant": 6100.0}, {"crop_depth_constant": None}, {"settings": {}}, {}, None):
+        pub.check_crop_constant(run, "g.json")
+    with pytest.raises(pub.PublishError, match="crop_depth_constant deep"):    # not a number: refused, not ignored
+        pub.check_crop_constant({"crop_depth_constant": "deep"}, "g.json")
+
+
+@pytest.mark.parametrize("place", ["top", "settings", "both"])
+def test_a_sweep_arm_generation_record_is_refused_by_name(tmp_path, place):
+    """The rows refuse a 4000 crop already; the record check comes first, so the message names the constant."""
+    root, *_ = make_root(tmp_path)
+    _set_record(root, place, crop_depth_constant=4000)
+    with pytest.raises(pub.PublishError, match="generation_run.json records crop_depth_constant 4000"):
+        pub.check_depth_sized(root, T)
+    with pytest.raises(pub.PublishError, match="records crop_depth_constant 4000"):
+        pub.stage(root, T)
+
+
+@pytest.mark.parametrize("with_generation_run", [True, False])
+def test_a_sweep_arm_training_record_is_refused_by_name(tmp_path, with_generation_run):
+    """fine_tune_classifier.py copies ``crop_depth_constant`` into training_run.json, so a model-only staging away
+    from the arm's crops still shows it."""
+    root, *_ = make_root(tmp_path)
+    _set_training_record(root, crop_depth_constant=8000)
+    if not with_generation_run:
+        os.remove(os.path.join(root, T, "generation_run.json"))
+    with pytest.raises(pub.PublishError, match=re.escape(os.path.join("dinov2", "training_run.json")) +
+                       " records crop_depth_constant 8000"):
+        pub.stage(root, T, what="model")
+
+
+def test_the_served_crop_constant_in_either_record_passes(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _set_record(root, "both", crop_depth_constant=6100)
+    _set_training_record(root, crop_depth_constant=6100)
+    pub.check_depth_sized(root, T)
+
+
+def test_rows_cut_at_8000_are_refused(tmp_path):
+    """Regression (passes before the record check existed): the row check refuses the 8000 arm too."""
+    root, *_ = make_root(tmp_path)
+    _rewrite_csv(root, "split.csv", _set("crop_half_px", 800))           # int(8000 / 10.0): the 8000 sweep arm
+    with pytest.raises(pub.PublishError, match=f"{len(ROWS)} of {len(ROWS)} rows were not cut"):
+        pub.check_depth_sized(root, T)
+
+
 def _rows(depth_m, crop_half_px):
     return pd.DataFrame({"depth_m": depth_m, "crop_half_px": crop_half_px})
 

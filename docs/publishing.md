@@ -126,6 +126,9 @@ ViT-B (vKITTI) metric depth. Staging, and `--push-staged` again, refuses a run t
   windows of [#53](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/53));
 - either record names a `depth_encoder` other than `vitb` or a `depth_dataset` other than `vkitti`
   (`fine_tune_classifier.py` copies the encoder into `training_run.json`, so it is read there too);
+- either record names a `crop_depth_constant` other than 6100 (`SERVED_CROP_DEPTH_CONSTANT`, a literal that must
+  equal `data_generation.CROP_DEPTH_CONSTANT`): the 4000 and 8000 arms of the constant sweep
+  ([`crop-constant-2026-11.md`](crop-constant-2026-11.md)) record theirs, and the refusal names it;
 - whatever the records say, any row of `split.csv`, or any `ok` row of `manifest.csv`, has no `depth_m` (blank,
   non-numeric, non-finite or ≤ 0), or a `crop_half_px` more than 1 px from `int(6100 / depth_m)`; a file without
   either column is refused too. The staged copies in `publish/dataset/` are checked again before upload.

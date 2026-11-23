@@ -107,7 +107,7 @@ import numpy as np
 import pandas as pd
 
 import hf_cards
-from data_generation import CROP_DEPTH_CONSTANT, DEPTH_DATASET, PANO_ID_DTYPE
+from data_generation import DEPTH_DATASET, PANO_ID_DTYPE
 
 LABEL_TYPES = ("CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk")
 CLASSES = ("correct", "incorrect")
@@ -151,7 +151,7 @@ MIN_TERM_LEN = 4
 TEXT_SUFFIXES = (".md", ".json", ".jsonld", ".csv", ".txt", ".yaml", ".yml", ".html")
 """Staged files the survivor gate reads; everything else staged is weights or images."""
 DEPTH_HALF_TOLERANCE_PX = 1
-"""How far a row's ``crop_half_px`` may sit from ``int(CROP_DEPTH_CONSTANT / depth_m)``: ``depth_m`` is stored to
+"""How far a row's ``crop_half_px`` may sit from ``int(SERVED_CROP_DEPTH_CONSTANT / depth_m)``: ``depth_m`` is stored to
 4 dp, so the recomputed size can land one pixel off the one cut (17 of 64,465 round-3 rows; none by more than 1)."""
 DEPTH_M_ROUNDING = 0.5e-4
 """Half a unit in the last stored place of ``depth_m`` (``round(depth, 4)`` in ``data_generation.py``). The crop was
@@ -163,6 +163,10 @@ SERVED_DEPTH_ENCODER = "vitb"
 together with serving; a dataset made under the old encoder is then refused, as intended."""
 SERVED_DEPTH_DATASET = DEPTH_DATASET
 """The metric checkpoint's training set (``vkitti``), likewise served."""
+SERVED_CROP_DEPTH_CONSTANT = 6100
+"""The constant sidewalk-ai-api sizes crops with (``int(inv_depth * 6100)``): every crop's half-width is
+``int(6100 / depth_m)``. A literal rather than data_generation's default, so that changing the generation default
+alone cannot move this guard (issue #21: a change of constant lands together with serving, in one reviewed PR)."""
 
 
 def city_lists(cities_api=CITIES_API, public_cities_file=None):
@@ -664,8 +668,8 @@ def check_depth_sized(root, label_type):
     records ``fixed_crop_half_px`` or ``job_window_crops``: those crops come from the fixed-size ablation (issue #21)
     or the crop-job-window experiment (issue #53), serving renders a depth-sized view of every label, and the cards
     say so. Then, in this order, if either record names a depth model other than the served one
-    (:func:`check_depth_encoder`), or if ``split.csv`` (every row) or the ``ok`` rows of ``manifest.csv`` (each file
-    when present) hold a row not cut at ``int(CROP_DEPTH_CONSTANT / depth_m)`` (:func:`check_depth_rows`): the
+    (:func:`check_depth_encoder`) or a crop constant other than the served one (:func:`check_crop_constant`), or if ``split.csv`` (every row) or the ``ok`` rows of ``manifest.csv`` (each file
+    when present) hold a row not cut at ``int(SERVED_CROP_DEPTH_CONSTANT / depth_m)`` (:func:`check_depth_rows`): the
     records are optional, the rows are not. Checked before anything is staged, and again before ``--push-staged``."""
     base = os.path.join(root, label_type)
     runs = [_read_json(os.path.join(base, "generation_run.json")),
@@ -676,15 +680,16 @@ def check_depth_sized(root, label_type):
         raise PublishError(f"{base}: {e}. Retrain on depth-sized crops (data_generation.py without "
                            f"--fixed-crop-half-px or --job-window-crops) to publish") from e
     for run, name in zip(runs, ("generation_run.json", os.path.join("dinov2", "training_run.json"))):
-        if run is not None:               # fine_tune_classifier.py copies depth_encoder into training_run.json
+        if run is not None:               # fine_tune_classifier.py copies both keys into training_run.json
             check_depth_encoder(run, os.path.join(base, name))
+            check_crop_constant(run, os.path.join(base, name))
     for name in DEPTH_ROW_FILES:
         path = os.path.join(base, name)
         if os.path.exists(path):          # a missing file is reported by read_dataset_context with its own message
             check_depth_rows(_rows_to_check(path), path)
 
 
-NOT_SERVED = (f"Serving sizes every crop by int({CROP_DEPTH_CONSTANT} / depth_m) with the {SERVED_DEPTH_ENCODER}/"
+NOT_SERVED = (f"Serving sizes every crop by int({SERVED_CROP_DEPTH_CONSTANT} / depth_m) with the {SERVED_DEPTH_ENCODER}/"
               f"{SERVED_DEPTH_DATASET} depth model; a fixed-size, whole-view or job-window model needs a serving "
               f"change in sidewalk-ai-api, and then a reviewed change to this check (docs/publishing.md), before it "
               f"can be published, not an edited record")
@@ -736,10 +741,36 @@ def check_depth_encoder(generation_run, what):
                            f"not published")
 
 
+def check_crop_constant(run, what):
+    """Raise ``PublishError`` if ``run`` (a parsed ``generation_run.json``, or the ``training_run.json`` that copies
+    it) records, at top level or under ``settings``, a ``crop_depth_constant`` other than
+    :data:`SERVED_CROP_DEPTH_CONSTANT`. Issue #21's sweep arms record their constant; their rows already fail
+    :func:`check_depth_rows`, and this check names the constant in the refusal. An absent record, an absent key or
+    a null value passes; a value that is not a number is refused.
+
+    Example::
+
+        check_crop_constant({"settings": {"crop_depth_constant": 6100}}, "gen.json")   # passes
+        check_crop_constant({"crop_depth_constant": 4000}, "gen.json")                 # PublishError
+    """
+    for d in (run or {}, (run or {}).get("settings") or {}):
+        value = d.get("crop_depth_constant")
+        if value is None:
+            continue
+        try:
+            served = float(value) == SERVED_CROP_DEPTH_CONSTANT
+        except (TypeError, ValueError):
+            served = False
+        if not served:
+            raise PublishError(f"{what} records crop_depth_constant {value}, but serving sizes every crop at "
+                               f"int({SERVED_CROP_DEPTH_CONSTANT} / depth_m); a model trained on crops cut at another "
+                               f"constant is not published. {NOT_SERVED}")
+
+
 def check_depth_rows(df, what):
     """Raise ``PublishError`` unless every row of ``df`` shows a crop sized by depth at the served constant: a
     ``depth_m`` that is a finite number above 0, and a ``crop_half_px`` within :data:`DEPTH_HALF_TOLERANCE_PX` of
-    ``int(CROP_DEPTH_CONSTANT / depth_m)``, or, for a very near depth, anywhere in the span that the 4-dp rounding of
+    ``int(SERVED_CROP_DEPTH_CONSTANT / depth_m)``, or, for a very near depth, anywhere in the span that the 4-dp rounding of
     ``depth_m`` allows (:data:`DEPTH_M_ROUNDING`). ``df`` is a ``split.csv``, or the ``ok`` rows of a ``manifest.csv``
     (:func:`_rows_to_check`); an empty frame passes. This is the backstop behind the JSON records of
     :func:`check_depth_sized`: a fixed-size or whole-view dataset staged without its ``generation_run.json`` still has
@@ -775,16 +806,16 @@ def check_depth_rows(df, what):
     if "crop_half_px" not in df.columns:
         _no_crop_half_px(what)
     half = pd.to_numeric(df["crop_half_px"], errors="coerce").astype(float)
-    expected = np.floor(CROP_DEPTH_CONSTANT / depth)
+    expected = np.floor(SERVED_CROP_DEPTH_CONSTANT / depth)
     # The sizes the unrounded depth could have given; a stored depth at or under the rounding step has no upper bound.
-    lowest = np.floor(CROP_DEPTH_CONSTANT / (depth + DEPTH_M_ROUNDING))
+    lowest = np.floor(SERVED_CROP_DEPTH_CONSTANT / (depth + DEPTH_M_ROUNDING))
     bounded = depth > DEPTH_M_ROUNDING
-    highest = np.floor(CROP_DEPTH_CONSTANT / (depth - DEPTH_M_ROUNDING).where(bounded)).where(bounded, np.inf)
+    highest = np.floor(SERVED_CROP_DEPTH_CONSTANT / (depth - DEPTH_M_ROUNDING).where(bounded)).where(bounded, np.inf)
     within = ((half - expected).abs() <= DEPTH_HALF_TOLERANCE_PX) | ((half >= lowest) & (half <= highest))
     off = ~within                                                     # a blank or non-numeric crop_half_px is off
     n_off = int(off.sum())
     if n_off:
-        raise PublishError(f"{what}: {n_off} of {n} rows were not cut at int({CROP_DEPTH_CONSTANT} / depth_m) (within "
+        raise PublishError(f"{what}: {n_off} of {n} rows were not cut at int({SERVED_CROP_DEPTH_CONSTANT} / depth_m) (within "
                            f"{DEPTH_HALF_TOLERANCE_PX} px, or the rounding of depth_m); the crops come from another "
                            f"constant or sizing rule, which serving does not reproduce. {NOT_SERVED}")
 
@@ -792,7 +823,7 @@ def check_depth_rows(df, what):
 def _no_crop_half_px(what):
     """Refuse ``what`` for lacking a ``crop_half_px`` column (:func:`check_depth_rows`), whatever its row count."""
     raise PublishError(f"{what} has no crop_half_px column, so nothing shows its crops were cut at "
-                       f"int({CROP_DEPTH_CONSTANT} / depth_m); refusing to publish it. {NOT_SERVED}")
+                       f"int({SERVED_CROP_DEPTH_CONSTANT} / depth_m); refusing to publish it. {NOT_SERVED}")
 
 
 def read_dataset_context(root, label_type):
