@@ -875,7 +875,7 @@ def dataset_card(ctx, license_id=None):
              "| `generation_run.json` | generator settings and the selection hash |\n"
              "| `dataset_info.json` | the counts on this card, machine-readable |\n"
              "| `SHA256SUMS` | sha256 of every crop |\n"
-             "| `croissant.json` | Croissant 1.1 metadata |\n",
+             "| `croissant.json` | Croissant 1.1 metadata with RAI 1.0 fields |\n",
              "The absolute panorama-store paths recorded at generation time (`pano_path`, `pano_store`, `pano_store_marker`) are "
              "removed from the published copies.\n",
              "## Intended use\n",

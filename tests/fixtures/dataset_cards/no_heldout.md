@@ -80,7 +80,7 @@ The panorama is read from the lab's panorama store and resized to 8192×4096. A 
 | `generation_run.json` | generator settings and the selection hash |
 | `dataset_info.json` | the counts on this card, machine-readable |
 | `SHA256SUMS` | sha256 of every crop |
-| `croissant.json` | Croissant 1.1 metadata |
+| `croissant.json` | Croissant 1.1 metadata with RAI 1.0 fields |
 
 The absolute panorama-store paths recorded at generation time (`pano_path`, `pano_store`, `pano_store_marker`) are removed from the published copies.
 
