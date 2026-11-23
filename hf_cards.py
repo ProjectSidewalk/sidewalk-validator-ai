@@ -121,6 +121,23 @@ def require_depth_sized(*runs):
                          f"this is an ablation-only model or dataset, and it is not published")
 
 
+def require_grouped_split(*runs):
+    """Raise ``ValueError`` if any of ``runs`` (``training_run.json`` dicts, top level or under ``settings``) records
+    ``split_mode``: fine_tune_classifier.py records it only for a label-level split (analysis/split_leak.py, issue
+    #3), which puts labels of one panorama on both sides of the split on purpose. Such a model's test numbers are
+    inflated by design, and it is never published.
+
+    >>> require_grouped_split({"seed": 42}, None)
+    """
+    for run in runs:
+        run = run or {}
+        for d in (run, run.get("settings") or {}):
+            if d.get("split_mode"):
+                raise ValueError(f"the model was trained on a label-level split (split_mode={d['split_mode']}, "
+                                 f"analysis/split_leak.py, issue #3): labels of one panorama sit in train and test, "
+                                 f"so it is an experiment-only model and it is not published")
+
+
 _BARE = re.compile(r"^[A-Za-z][A-Za-z0-9_./-]*$")
 _YAML_WORDS = {"true", "false", "yes", "no", "on", "off", "null", "none", "~"}
 
@@ -455,10 +472,12 @@ def model_card(ctx):
 
     Raises:
         ValueError: if ``training_run`` or ``generation_run`` records ``fixed_crop_half_px`` (the card's crop
-            description would be wrong; see :func:`require_depth_sized`).
+            description would be wrong; see :func:`require_depth_sized`), or ``training_run`` records a label-level
+            ``split_mode`` (:func:`require_grouped_split`).
     """
     t = ctx["label_type"]
     require_depth_sized(ctx.get("training_run"), ctx.get("generation_run"))
+    require_grouped_split(ctx.get("training_run"))
     overrides = ctx.get("overrides") or {}
     metrics = ctx.get("metrics") or {}
     trainer = ctx.get("trainer") or {}
@@ -706,10 +725,12 @@ def dataset_card(ctx, license_id=None):
             is guessed, and no ``TODO:`` is written, so an unset license does not block a push.
 
     Raises:
-        ValueError: if ``generation_run`` records ``fixed_crop_half_px`` (see :func:`require_depth_sized`).
+        ValueError: if ``generation_run`` records ``fixed_crop_half_px`` (see :func:`require_depth_sized`), or a
+            ``training_run`` in ``ctx`` records a label-level ``split_mode`` (:func:`require_grouped_split`).
     """
     t = ctx["label_type"]
     require_depth_sized(ctx.get("generation_run"))
+    require_grouped_split(ctx.get("training_run"))
     overrides = ctx.get("overrides") or {}
     license_id = license_id or overrides.get("dataset_license")
     split_seed = overrides.get("split_seed")

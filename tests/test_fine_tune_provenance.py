@@ -4,6 +4,8 @@ import doctest
 import os
 import subprocess
 
+import pytest
+
 import fine_tune_classifier as ft
 import hf_cards
 
@@ -121,3 +123,46 @@ def test_card_training_sentence(monkeypatch):
     assert "Trained 2026-11-11 (UTC), Slurm job 42918974." in no_git
     old = hf_cards.model_card({**ctx, "training_run": {"label_type": "CurbRamp", "seed": 42, "epochs": 25}})
     assert "Trained 20" not in old and "Slurm job 4" not in old  # the file-table row still names the fields
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Issue 3: a label-level (leaky) split is marked, recorded, and never trained into the production directory
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _split_file(path, mode=None):
+    import pandas as pd
+    df = pd.DataFrame({"label_uid": ["a:1", "a:2"], "label_class": ["correct", "incorrect"],
+                       "crop_path": ["c/a_1.webp", "i/a_2.webp"]})
+    if mode is not None:
+        df["split_mode"] = mode
+        df["split_grouped"] = ["train", "test"]
+    df["split"] = ["train", "train"]
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    df.to_csv(path, index=False)
+    return str(path)
+
+
+def test_split_mode_of_reads_the_marker_column(tmp_path):
+    assert ft.split_mode_of(_split_file(tmp_path / "g.csv")) is None
+    assert ft.split_mode_of(_split_file(tmp_path / "l.csv", "label_level")) == "label_level"
+    assert ft.split_mode_of(str(tmp_path / "absent.csv")) is None
+
+
+def test_split_mode_is_recorded_only_for_a_marked_split(tmp_path):
+    assert ft.split_settings(_split_file(tmp_path / "g.csv")) == {}
+    assert ft.split_settings(_split_file(tmp_path / "l.csv", "label_level")) == {"split_mode": "label_level"}
+
+
+def test_a_marked_split_is_refused_at_the_default_output_dir_before_torch(tmp_path):
+    data = tmp_path / "data"
+    leaky = _split_file(tmp_path / "runs" / "leaky.csv", "label_level")
+    # explicitly pointed at the production directory
+    with pytest.raises(SystemExit) as e:
+        ft.main(["--label_type", "CurbRamp", "--data-dir", str(data), "--split", leaky,
+                 "--output-dir", str(data / "CurbRamp" / "dinov2")])
+    assert "label-level" in str(e.value)
+    # a marked file copied over the production split.csv, with the default output dir
+    _split_file(data / "CurbRamp" / "split.csv", "label_level")
+    with pytest.raises(SystemExit) as e:
+        ft.main(["--label_type", "CurbRamp", "--data-dir", str(data)])
+    assert "label-level" in str(e.value)

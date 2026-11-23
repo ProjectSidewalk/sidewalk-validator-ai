@@ -22,6 +22,11 @@ describe the code that was imported; https://github.com/ProjectSidewalk/sidewalk
 written to the output dir, next to the checkpoints. ``finished_at`` is the model's training date for the card and
 for sidewalk-ai-api's ``MODEL_MAP``.
 
+Leaky splits (issue #3, ``analysis/split_leak.py``): a split file with a ``split_mode`` column (``label_level``, a
+deliberately file-level split that puts labels of one panorama on both sides) records ``"split_mode"`` in
+``training_run.json`` (an unmarked split records nothing new), and is refused, before torch loads, when the output dir
+is ``<label_type>/dinov2``. publish_to_hf.py refuses any recorded ``split_mode``.
+
 Resuming: a run that is interrupted (a klone ``ckpt`` preemption requeues the job) continues from its last saved
 epoch. ``run_key.json`` in the output dir records the split's hash and the settings that shape training; checkpoints
 written under a different key are never resumed, and the run stops instead of mixing them. The key covers all of
@@ -207,6 +212,57 @@ def select_trainer(target, trainer_cls):
 def split_path(label_type, data_dir=".", split=None):
     """The split file a run trains on: ``split`` if given (``--split``), else ``<data_dir>/<label_type>/split.csv``."""
     return split if split else os.path.join(data_dir, label_type, "split.csv")
+
+
+LABEL_LEVEL = "label_level"
+"""The ``split_mode`` value analysis/split_leak.py (issue #3) writes into a deliberately leaky split file."""
+
+
+def split_mode_of(path):
+    """The ``split_mode`` marker of a split file (``"label_level"`` for analysis/split_leak.py's leaky splits), or
+    None for an unmarked (grouped) split or a missing file. Only the column is read.
+
+    Raises ``ValueError`` if a file carries more than one ``split_mode`` value.
+    """
+    if not path or not os.path.isfile(path):
+        return None
+    with open(path) as f:
+        header = f.readline().rstrip("\r\n").split(",")
+    if "split_mode" not in header:
+        return None
+    modes = set(pd.read_csv(path, usecols=["split_mode"], dtype=str, keep_default_na=False)["split_mode"])
+    modes.discard("")
+    if len(modes) > 1:
+        raise ValueError(f"{path}: more than one split_mode ({sorted(modes)})")
+    return modes.pop() if modes else None
+
+
+def split_settings(path):
+    """``{"split_mode": <marker>}`` for ``training_run.json`` when the split file is marked (issue #3), else ``{}``,
+    so an unmarked run's record is exactly what it was. hf_cards.require_grouped_split refuses a recorded mode.
+
+    Example::
+
+        run = {**split_settings("runs/CurbRamp/splits/label_level_s42.csv"), ...}   # {"split_mode": "label_level"}
+    """
+    mode = split_mode_of(path)
+    return {"split_mode": mode} if mode else {}
+
+
+def refuse_marked_split_in_production_dir(label_type, data_dir, split, output_dir):
+    """Raise ``SystemExit`` if the split file is marked (label-level, issue #3) and the run would write to
+    ``<data_dir>/<label_type>/dinov2``, where evaluate.py and publish_to_hf.py look for the production model.
+    Called before torch is imported."""
+    path = split_path(label_type, data_dir, split)
+    mode = split_mode_of(path)
+    if mode is None:
+        return
+    target = output_dir or default_output_dir(data_dir, label_type)
+    production = default_output_dir(data_dir, label_type)
+    if os.path.realpath(target) == os.path.realpath(production):
+        raise SystemExit(f"{path} is a label-level split (split_mode={mode}, analysis/split_leak.py, issue #3): it "
+                         f"leaks panoramas between train and test on purpose, so it is never trained into the "
+                         f"production directory {production}. Pass --output-dir under the run directory.")
 
 
 def load_split_frames(label_type, data_dir=".", target="hard", vote_weights=None, split=None, extra_columns=()):
@@ -600,6 +656,7 @@ def main(argv=None):
         parser.error(f'--split {args.split} not found')
     if (args.target == 'weighted') != (args.vote_weights is not None):
         parser.error('--vote-weights is required by, and only used with, --target weighted')
+    refuse_marked_split_in_production_dir(args.label_type, args.data_dir, args.split, args.output_dir)
 
     import datasets
     import torch
@@ -757,6 +814,7 @@ def main(argv=None):
            **generation_settings(label_type, args.data_dir),
            "split_source": "split.csv" if frames is not None else "imagefolder",
            **({"split_path": os.path.abspath(args.split), "split_sha256": key["split_sha256"]} if args.split else {}),
+           **split_settings(split_path(label_type, args.data_dir, args.split)),
            **target_settings(args), **region_settings(args), **init_settings(args), **context_settings(args),
            **run_provenance(started_at, started, resume),
            "versions": versions}
