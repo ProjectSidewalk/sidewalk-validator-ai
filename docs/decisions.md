@@ -3,6 +3,50 @@
 Choices about the training data that are deliberate, not oversights, with the evidence behind each one and
 what would change it. One section per decision, newest first.
 
+## Issue #9's data-generation robustness items: where each was resolved (November 2026)
+
+Issue [#9](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/9) collected six gaps in
+`data_generation.py` from the [October audit](audit-2026-10-14.md). Each is now a code change or a recorded decision;
+this is where each one lives (checked against master at 97aa718).
+
+1. **Out-of-frame labels.** Code change, PR [#25](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/25):
+   `equirectangular_point_to_perspective` is gone; `render_label_view` renders a view centred on the label with
+   `sidewalk_panorama_tools.geometry.label_view`, and `create_perspective_crop` reads depth at the view centre
+   (`VIEW_SIZE // 2`), so no label can index outside the frame. A crop that runs past the view edge is cut short and
+   recorded (`clipped`). The one way a click can still leave the sphere, a Panoramax pitch-only offset past a pole, is
+   skipped with its own status (`panoramax_pitch_offset_past_pole`) before any panorama is read, PR
+   [#96](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/96).
+2. **AI-authored labels.** Decision, issue [#79](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/79)
+   (the "AI-placed labels" section below), implemented in PR
+   [#90](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/90): they enter training only with
+   `--include-ai-labels` and tagged (`author = ai` in the manifest), and `ai_label_holdout.py` carves a held-out share
+   before selection under either setting.
+3. **Tilt mis-centering.** Code change, PR [#25](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/25):
+   GSV crops are rendered with the rig-tilt correction from the label's `camera_pitch`/`camera_roll` at
+   `--tilt-beta` (default `DEFAULT_TILT_BETA = 0.95`), the measurement of
+   [sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54). The pose per
+   provider (`crop_pose.pose_for_row`) came with PR [#81](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/81);
+   serving applies the same correction in
+   [sidewalk-ai-api#17](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/17).
+4. **Non-GSV providers.** Code change: panoramas are read only from the pano store (`read_store_panorama`), PR
+   [#28](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/28), and Mapillary and Panoramax labels are kept
+   and cropped with their provider's pose, PR [#81](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/81)
+   (the "Labels on Mapillary and Panoramax imagery are kept" section below), with the Panoramax pose limits of PR
+   [#96](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/96). Any other provider is dropped and counted
+   as `unsupported_source`.
+5. **Thread pool against Google.** Code change, PR [#28](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/28):
+   the tile fetcher and its `ThreadPoolExecutor(max_workers=100)` were removed, so `data_generation.py` makes no
+   request to Google and has no thread pool. Its only network calls are one `rawLabels` CSV per city, in sequence with
+   one retry (none with a complete `--rawlabels-cache`), and, with `--mapillary-token-env`, sequential Mapillary Graph
+   API lookups whose answers are cached. There is no rate to measure here any more.
+6. **Broad `except` and failure categories.** Code change, PR
+   [#25](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/25): `is_fatal` re-raises broken invariants,
+   CUDA and out-of-memory errors and a pano store that stopped answering; any other exception prints its traceback
+   (`traceback.print_exc`) and records the row as `error:<ExceptionType>`, and 50 in a row stop the run. The end-of-run
+   summary prints `status counts:` by category (`ok`, each `error:*` type, `no_pano`, `bad_pano`, the `panoramax_*`
+   skips, `skipped (already ok)`), and the manifest keeps every row's `status`. Pinned by
+   `tests/test_generation_run.py::test_non_fatal_errors_are_counted_by_category_with_their_traceback`.
+
 ## The deployment prior is the ≥ 2-vote human majority, not the training margin rule (November 2026)
 
 Issue [#56](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/56).
