@@ -13,7 +13,7 @@ python publish_to_hf.py --label_type CurbRamp --out /path/to/output   # writes C
 | folder | contents |
 |---|---|
 | `publish/model/` | `model.safetensors`, `config.json`, `preprocessor_config.json` from the best checkpoint (the one `evaluate.py` scores: `best_model_checkpoint` in the latest checkpoint's `trainer_state.json`); that `trainer_state.json` trimmed to its log history and best-checkpoint fields; the map from `calibration/calibrate.py` renamed `confidence_precision_map.json`, with its `calibration_report.json`; `metrics.json`; `training_run.json`; the model card |
-| `publish/dataset/` | crops as `<split>/<class>/<city>_<label_id>.webp`, placed by `split.csv` (never by listing a directory), hard-linked or copied (`--link-mode copy`); `split.csv` with `crop_path` rewritten to that layout; `manifest.csv`; this type's `deployment_priors.json` entry; `generation_run.json`; `dataset_info.json`; `SHA256SUMS`; `croissant.json`; the dataset card |
+| `publish/dataset/` | crops as `<split>/<class>/<city>_<label_id>.webp`, placed by `split.csv` (never by listing a directory), hard-linked or copied (`--link-mode copy`); `split.csv` with `crop_path` rewritten to that layout; `manifest.csv`; this type's `deployment_priors.json` entry; `generation_run.json`; `dataset_info.json`; `SHA256SUMS`; `croissant.json` (Croissant 1.1 with RAI fields, below); the dataset card |
 
 ## The October 2026 publish
 
@@ -71,13 +71,56 @@ from the map and its report; class balance, split sizes, cities, capture years a
 What the pipeline does not record goes in `<out>/<label_type>/card_overrides.json`:
 
 ```json
-{"failure_modes": ["..."], "split_seed": 42, "dataset_license": "<hub license id>", "doi": "...", "model_doi": "..."}
+{"failure_modes": ["..."], "split_seed": 42, "dataset_license": "<hub license id>", "doi": "...", "model_doi": "...",
+ "rai": {"rai:dataBiases": "..."}}
 ```
 
 Anything still unknown is written as `TODO:` (the DOI lines just say none has been minted yet). The dataset
 license is the exception: with no `dataset_license` (or `--dataset-license`), the card has no license metadata and
 no license line.
-`croissant.json` is validated when `mlcroissant` is installed and written unvalidated otherwise.
+
+### Croissant metadata
+
+`croissant.json` describes the dataset in [Croissant 1.1](https://docs.mlcommons.org/croissant/docs/croissant-spec-1.1.html)
+with the [RAI 1.0](https://docs.mlcommons.org/croissant/docs/croissant-rai-spec.html) fields (`hf_croissant.py`);
+`conformsTo` names both. It has two record sets: `labels` (`split.csv`, every column described in
+`publish_to_hf.CROISSANT_FIELDS`) and `crops` (the WebP files, with split and class read from the path).
+
+- **The RAI block** holds 18 `rai:` properties, built from the redacted dataset summary, the staged `split.csv`
+  and `manifest.csv` (private deployments already dropped), the prior and generation run as the card receives
+  them, and the card's own sentences. It never says `TODO:`: a sentence whose input is missing is left out, and a
+  property with nothing left is omitted. Only `rai:dataCollectionType` is a list.
+- **Two RAI properties are left out on purpose**, `dataCollectionTimeframe` and `dataManipulationProtocol`:
+  `mlcroissant` 1.1.1 parses them only as `dataCollectionTimeFrame` and `dataDataManipulationProtocol` and ignores
+  the spec's spelling without a warning. Staging refuses either spelling.
+- **Changing the wording**: add a `rai` object to `card_overrides.json`, keyed by the prefixed name, then restage
+  (an override edited after staging is not applied by `--push-staged`):
+
+  ```json
+  {"rai": {"rai:dataBiases": "Replacement text."}}
+  ```
+
+  A bare key (`dataBiases`) is refused with the prefixed name in the message.
+- **Staging refuses** (`hf_croissant.lint`) an unknown `rai:` key, a list where the RAI spec and `mlcroissant` do not
+  both allow several values, an empty value, a `TODO:` marker, a licence statement (licence terms go in the `license`
+  field), and a `conformsTo` without both URIs. `--push-staged` runs the same lint on the staged file again, so a
+  rule tightened since staging asks for a restage.
+- **A `split.csv` column with no description** is left out of the `labels` record set with a warning, recorded in
+  `publish/staging.json` as `croissant_undescribed_columns` and printed again before `--push-staged`. A test keeps
+  `CROISSANT_FIELDS` in step with `data_generation.MANIFEST_COLUMNS`.
+- **Validation**: staging validates the file with `mlcroissant` when it is installed and records the result in
+  `publish/staging.json` (`croissant_validated`, `croissant_warnings`; that file is not uploaded); `--push-staged`
+  prints it. The klone environment does not have `mlcroissant`, so a staging there records `false`. Validate on a
+  machine that has it (`pip install mlcroissant==1.1.1`, the version CI pins):
+
+  ```bash
+  mlcroissant validate --jsonld ROOT/CurbRamp/publish/dataset/croissant.json
+  ```
+
+  It exits 0 when there are only warnings.
+- **No licence id, no `license` field.** Croissant 1.1 lists `license` (and `datePublished`, taken from the
+  generation run's start) as required, and `mlcroissant` only warns when they are missing, so a file staged without
+  `--dataset-license` validates with a warning but is not strictly conforming.
 
 ## Pushing
 
