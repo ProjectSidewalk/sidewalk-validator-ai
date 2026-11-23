@@ -22,7 +22,9 @@
 #
 # The presets' seed lists must equal DECISION_RULE's (analysis/context_arms.py): the launcher passes them to the
 # preflight, which refuses a mismatch. The rule reads five confirmatory seeds (Jon's decision J5, 2026-11-20, before
-# any stage-A run), so stages A and B need A5=1; A5 unset (or 0) trains three and is refused before any sbatch. The
+# stage A was submitted), so stages A and B need A5=1; A5 unset (or 0) trains three and is refused before any sbatch.
+# That refusal lives only in the preflight: with PREFLIGHT=0 the three-seed preset is submitted, and every confirmatory
+# verdict on it reads INCOMPLETE (missing arm seeds 45 and 46). The
 # switch is kept rather than made the default, so each launch names its seed count and the preflight checks it against
 # the rule. A repeated label type or a repeated tag is refused, and (where squeue exists) so is a job whose type and
 # tag is already queued or running under any stage: two trainers must never share a run directory (the job also holds
@@ -58,7 +60,7 @@
 #                 40); ALLOW_OVER_SESSION_CAP=1 overrides, deliberately
 #   JOBS_DIR      where context_jobs_<stage>.txt live (default: this clone's root)
 #   DRY_RUN       1: print the sbatch lines, submit nothing, log nothing
-#   PREFLIGHT     0 skips the preflight (tests only; never on klone)
+#   PREFLIGHT     0 skips the preflight (tests only; never on klone: it also skips the A5=1 check above)
 #   ENV, HF_HOME  as in analysis/context_arms.slurm (preflight runs "$ENV/bin/python")
 set -euo pipefail
 cd "$(dirname "$0")/.."

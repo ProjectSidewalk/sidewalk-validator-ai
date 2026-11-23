@@ -332,6 +332,7 @@ def test_report_runs_to_the_end_on_the_pilots_state(pilot):
     assert oc["sd_seed_source"] == "baseline-rerun, 5 seeds" and oc["arm_seeds_5"]["n_arm"] == 5
     md = (out / "decision.md").read_text()
     assert "| two_scale | confirmatory | — | INCOMPLETE |" in md and "Drift row" in md and "80% power at" in md
+    assert "The rule reads 5 confirmatory arm seeds" in md and "the 5-arm-seed row is the one that applies" in md
     gate = (out / "gate.md").read_text()
     assert "| baseline-rerun-s45 | majority2 | test | Agree |" in gate and "| baseline | margin |" in gate
     assert "Wilson lo" in gate
@@ -370,6 +371,8 @@ def test_power_table_from_octobers_trio(pilot):
     assert t["arm_seeds_5"]["power"]["0.05"] >= t["arm_seeds_3"]["power"]["0.05"] - 0.05
     md = ca.power_markdown({"Toy": t})
     assert md.count("| Toy |") == 2 and "recommended arm seeds" in md
+    n = len(ca.DECISION_RULE["seeds_confirmatory"])
+    assert f"The rule reads {n} confirmatory arm seeds" in md and f"the {n}-arm-seed row is the one that applies" in md
     assert "error" in ca.power_table(str(root), "Toy", "two_scale", n_boot=10)
 
 

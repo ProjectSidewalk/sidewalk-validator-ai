@@ -205,7 +205,8 @@ DECISION_RULE = {
     "min_delta": 0.02, "level": 0.95, "min_positive_deployments": 2, "all_seeds_above_baseline_mean": True,
     "test_no_harm_lower": -0.02, "regression_test_upper": -0.01, "prior_rule": "majority2", "gate": "report_only",
     "baseline_variant": "baseline-rerun",
-    # five confirmatory seeds: Jon's decision J5 (2026-11-20), taken before any stage-A run (power table in the doc)
+    # five confirmatory seeds: Jon's decision J5 (2026-11-20), taken from the power table on October's trio after the
+    # pilot's trainings had finished and before stage A was submitted (the doc's Deviations entry)
     "seeds_confirmatory": [42, 43, 44, 45, 46], "seeds_baseline": [42, 43, 44, 45, 46],
 }
 CONFIRMATORY = ("two_scale", "view_heatmap")
@@ -851,6 +852,19 @@ def _iv(r):
     return f"{r['delta']:+.3f} [{r['lo']:+.3f}, {r['hi']:+.3f}]"
 
 
+def rule_row_note(rule=DECISION_RULE):
+    """One sentence under an operating-characteristics table naming the row the rule uses (the tables print both the
+    three- and the five-arm-seed rows; the rule reads ``len(rule["seeds_confirmatory"])``).
+
+    >>> rule_row_note({"seeds_confirmatory": [42, 43, 44, 45, 46]}).startswith("The rule reads 5 confirmatory")
+    True
+    """
+    n = len(rule["seeds_confirmatory"])
+    which = (f"so the {n}-arm-seed row is the one that applies; the other row is for comparison" if n in (3, 5)
+             else "so neither row applies")
+    return f"The rule reads {n} confirmatory arm seeds (`seeds_confirmatory`), {which}."
+
+
 def decision_markdown(decisions, rule=DECISION_RULE):
     lines = ["# Context arms: pre-registered decision", "",
              "Applied mechanically from `DECISION_RULE` (below and in `decision.json`; "
@@ -910,6 +924,7 @@ def decision_markdown(decisions, rule=DECISION_RULE):
                 lines.append(f"| {o['n_arm']} | {o['false_win']:.3f} | {o['null_regression']:.3f} | "
                              f"{o['power']['0.02']:.2f} | {o['power']['0.03']:.2f} | {o['power']['0.05']:.2f} | "
                              f"{'+%.3f' % o['mde80'] if o['mde80'] is not None else 'above +0.15'} |")
+            lines += ["", rule_row_note(rule)]
         lines.append("")
     return "\n".join(lines) + "\n"
 
@@ -1018,6 +1033,7 @@ def power_markdown(tables):
             lines.append(f"| {lt} | {t['sd_seed']:.3f} | {t['sd_boot']:.3f} | {o['n_arm']} | {o['false_win']:.3f} | "
                          f"{o['null_regression']:.3f} | {o['power']['0.02']:.2f} | {o['power']['0.03']:.2f} | "
                          f"{o['power']['0.05']:.2f} | {mde} | {rec if k == 'arm_seeds_3' else ''} |")
+    lines += ["", rule_row_note() + " The recommendation column is the sign-off's rule, read from the three-seed row."]
     spread = [f"{lt} {min(t['sd_boot_all_pairs'].values()):.4f} to {max(t['sd_boot_all_pairs'].values()):.4f} "
               f"over {len(t['sd_boot_all_pairs'])} pairs" for lt, t in tables.items() if t.get("sd_boot_all_pairs")]
     if spread:
@@ -1414,8 +1430,10 @@ def preflight(data, runs, types, arms, stage="", keep=None, pano_store=None, bac
     problems = []
     for got, key in ((confirmatory_seeds, "seeds_confirmatory"), (baseline_seeds, "seeds_baseline")):
         if got is not None and sorted(set(got)) != sorted(rule[key]):
+            hint = (f"stages A and B: launch with A5=1, which trains the rule's {len(rule[key])} seeds; otherwise "
+                    if key == "seeds_confirmatory" else "")
             problems.append(f"stage {stage} trains seeds {sorted(set(got))} where DECISION_RULE[{key!r}] reads "
-                            f"{rule[key]}: change the rule (and the doc's json block) before the stage, or the "
+                            f"{rule[key]}: {hint}change the rule (and the doc's json block) before the stage, or the "
                             "stage, never after")
     rec = read_shadow(data)
     if rec is None:

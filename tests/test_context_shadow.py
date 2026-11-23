@@ -245,7 +245,7 @@ def test_preflight_writes_the_stage_list_for_a_store_not_staged_yet(ready, tmp_p
 def test_preflight_refuses_a_stage_seed_list_the_rule_does_not_read(ready):
     rule = ca.DECISION_RULE
     assert pf(ready, confirmatory_seeds=rule["seeds_confirmatory"] * 2, baseline_seeds=rule["seeds_baseline"])[0] == []
-    # J5 (Jon, 2026-11-20, before any stage-A run): five confirmatory seeds, so A5=1 passes and the three-seed
+    # J5 (Jon, 2026-11-20, before stage A was submitted): five confirmatory seeds, so A5=1 passes and the three-seed
     # preset (A5 unset) is refused
     assert rule["seeds_confirmatory"] == [42, 43, 44, 45, 46]
     assert not any("seeds_confirmatory" in p for p in pf(ready, confirmatory_seeds=[42, 43, 44, 45, 46] * 2)[0])
@@ -253,6 +253,16 @@ def test_preflight_refuses_a_stage_seed_list_the_rule_does_not_read(ready):
     assert any("seeds_confirmatory" in p and "[42, 43, 44]" in p for p in problems)
     problems, _ = pf(ready, baseline_seeds=[42, 43, 44])
     assert any("seeds_baseline" in p and "[42, 43, 44]" in p for p in problems)
+
+
+def test_preflight_seed_refusal_names_the_a5_switch(ready):
+    """Forgetting A5=1 is the common way to hit the confirmatory-seed refusal, so its message names the switch
+    before it suggests changing the rule; the baseline-seed refusal (no switch fixes it) does not."""
+    conf = [p for p in pf(ready, confirmatory_seeds=[42, 43, 44])[0] if "seeds_confirmatory" in p]
+    assert len(conf) == 1
+    assert "launch with A5=1" in conf[0] and conf[0].index("A5=1") < conf[0].index("change the rule")
+    base = [p for p in pf(ready, baseline_seeds=[42, 43, 44])[0] if "seeds_baseline" in p]
+    assert len(base) == 1 and "A5=1" not in base[0] and "change the rule" in base[0]
 
 
 def test_preflight_skip_backfill_needs_a_covering_index(ready):

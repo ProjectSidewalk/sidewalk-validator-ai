@@ -6,7 +6,8 @@ and scored on the same rows as the round-3 model.
 
 ## Status
 
-**Smoke-tested on klone 2026-11-19; pilot submitted (running, job IDs below); the two image arms are not yet run.**
+**Smoke-tested on klone 2026-11-19; the pilot's trainings finished by the morning of 2026-11-20 (job IDs below), and
+no report has been run on them yet; the two image arms are not yet run.**
 No number in this document is a result of the arms. The image arms (`two_scale`, `view_heatmap`) need their
 context images re-rendered from the panoramas, and the round-3 panorama store on klone is gone: about 450 GB
 (39,240 panoramas for the three target types) has to be restaged first (see [Launch checklist](#launch-checklist)).
@@ -14,8 +15,8 @@ context images re-rendered from the panoramas, and the round-3 panorama store on
 | stage | what | jobs | state |
 |---|---|---|---|
 | smoke | NoCurbRamp on the 217 round-3 rows whose panorama is in the one surviving staged store; 1 epoch; every arm and the baseline rerun | 43403247 (backfill), 43403248 to 43403253 (six trainings), 43403800 (a resubmit of a finished run) | all completed, 2026-11-19 17:20 to 17:48 PST: `check-run` ok for all six tags, every checkpoint deleted after its record was copied, the backfill's `--verify 50` passed (below), the resubmit exited with "already evaluated" in 28 s. `report` on the smoke shadow was run before the three image-arm jobs had finished, so its image-arm rows read "not run"; rerun locally on all six runs it exits 0 with every row `INCOMPLETE` (subset shadow). The klone clone was fast-forwarded once while a smoke job ran (harmless here; the checklist says not to) |
-| pilot | target types x (`baseline-rerun` seeds 42 to 46, `side_info` and `side_info_nohq` at seed 42); full round-3 recipe; **pilot code: 9dace0c** | 43404266, 43404267, 43404269 to 43404287 (21 jobs, ids and commands in `context_jobs_pilot.txt` in the scratch clone; copy it and `context_jobs_smoke.txt` to `$KEEP` when the pilot ends, scratch is purged) | running (submitted 2026-11-19 17:50 PST; all 21 running at 2:50 h on 2026-11-19, effective time limit 9:05 h); no number from it yet |
-| A | confirmatory arms x target types x seeds 42 to 46 (`A5=1`; Jon's decision J5, 2026-11-20, before any stage-A run), `view_heatmap-r448` at seed 42, 3 backfills | 36 | needs the restage and Jon's go |
+| pilot | target types x (`baseline-rerun` seeds 42 to 46, `side_info` and `side_info_nohq` at seed 42); full round-3 recipe; **pilot code: 9dace0c** | 43404266, 43404267, 43404269 to 43404287 (21 jobs, ids and commands in `context_jobs_pilot.txt` in the scratch clone; copy it and `context_jobs_smoke.txt` to `$KEEP` when the pilot ends, scratch is purged) | all 21 completed (submitted 2026-11-19, first job started 17:49 PST per the job accounting; the last ended by the morning of 2026-11-20); no `report` has been run on the pilot yet (the only `report` job so far is the smoke's), so no decision file exists |
+| A | confirmatory arms x target types x seeds 42 to 46 (`A5=1`; Jon's decision J5, 2026-11-20, before stage A was submitted; see [Deviations](#deviations)), `view_heatmap-r448` at seed 42, 3 backfills | 36 | needs the restage and Jon's go |
 | B | only for an arm with a `WIN` in stage A: that arm (the rule's confirmatory seeds, 42 to 46) and `baseline-rerun` (seeds 42 to 46) on CurbRamp and Crosswalk | 11 per guard type with a backfill | needs a `WIN` |
 
 What exists:
@@ -115,7 +116,7 @@ never lands in `<Type>/dinov2/` where `evaluate.py` and `publish_to_hf.py` look 
   alongside the wide crop's, each with its own `RandomResizedCrop` but one shared horizontal flip, so the two
   streams are never mirrored against each other (they never are at evaluation; tested).
 
-## Pre-registered design and decision rule (2026-11-19, proposed, awaiting Jon's confirmation)
+## Pre-registered design and decision rule (2026-11-19; J5 decided 2026-11-20; the rest as proposed)
 
 Written before any arm was trained on the round-3 data. `analysis/context_arms.py report` applies it mechanically
 and writes `decision.md` / `decision.json`; nothing below is changed after a result is seen without an entry under
@@ -126,9 +127,10 @@ constants are unchanged): stage B trains the baseline at all five rule seeds; on
 record must also match its tag's arm, view resolution, the recipe's epochs and the knobs the job file pins (best
 metric, target, per-device batch); a verdict needs at least 200 kept bootstrap resamples.
 
-One constant changed after the proposal, before any stage-A run existed (no confirmatory arm had been trained beyond
-the 1-epoch smoke): **five confirmatory seeds**, `seeds_confirmatory` from `[42, 43, 44]` to `[42, 43, 44, 45, 46]`,
-Jon's decision J5 on 2026-11-20, following the power table below. The other constants are unchanged.
+One constant changed after the proposal, before stage A was submitted (no confirmatory arm had been trained beyond
+the 1-epoch smoke), but after the pilot's trainings had finished: **five confirmatory seeds**, `seeds_confirmatory`
+from `[42, 43, 44]` to `[42, 43, 44, 45, 46]`, Jon's decision J5 on 2026-11-20, following the power table below. The
+timing is recorded under [Deviations](#deviations). The other constants are unchanged.
 
 **Data and recipe.** Round-3 dataset, split and recipe, unchanged (DINOv2-L, 25 epochs, lr 1e-5, effective batch 32,
 hard targets, best checkpoint by validation macro-F1).
@@ -144,7 +146,8 @@ a type, that is stated at the top of the report, and the decision still uses the
 **Types.** Target: NoCurbRamp, Obstacle, SurfaceProblem. Guard: CurbRamp, Crosswalk.
 
 **Stages.**
-- Pilot (submitted 2026-11-19): baseline reruns x 5 seeds and the two side arms at seed 42, target types.
+- Pilot (submitted 2026-11-19; trainings finished by the morning of 2026-11-20; no report run yet): baseline reruns x
+  5 seeds and the two side arms at seed 42, target types.
 - Stage A (needs the panorama restage): confirmatory arms x target types x seeds 42 to 46 (30 trainings; Jon took
   the five-seed recommendation of the power table below, decision J5, 2026-11-20), `view_heatmap-r448` at seed 42
   (3 trainings), 3 backfills: 36 jobs, launched with `A5=1`.
@@ -209,8 +212,11 @@ arms); analytic cost and measured training throughput.
 **Known limits, stated up front.** Six confirmatory tests with no multiplicity correction; criteria 1, 3 and 4 are
 the protection, and the simulated false-`WIN` rate is printed. Even with five arm seeds the power is low (table
 below). Three held-out deployments, two private, 138 to 1,812 labels per type: the interval covers label sampling
-and training seed, not "which deployments were held out". The held-out split is not a fresh test set. The Tier-A
-gold set cannot score these models.
+and training seed, not "which deployments were held out". Five arm seeds narrow the interval, so the simulated null
+rates are slightly higher than with three (table below: false `WIN` at 0 from 0.005 to 0.011 at three arm seeds to
+0.009 to 0.012 at five; `REGRESSION` at 0 from 0.005 to 0.010 to 0.009 to 0.016). These are per-test rates,
+and there are six uncorrected tests. The held-out split is not a fresh test set. The Tier-A gold set cannot score
+these models.
 
 Constants (`DECISION_RULE` in `analysis/context_arms.py` must equal this block; a test compares them):
 
@@ -223,7 +229,8 @@ Constants (`DECISION_RULE` in `analysis/context_arms.py` must equal this block; 
 From `analysis/context_arms.py power` (simulation of criteria 1 to 3 and the held-out `REGRESSION` test, 4,000 draws;
 criteria 4 and 5 are not simulated, so the `WIN` rates are upper bounds). Inputs: the within-city held-out seed sd
 of October's trio and the bootstrap sd of a difference between two of its seeds (1,000 joint panorama resamples).
-The pilot's five baseline seeds replace October's sds when they finish; the report recomputes the table then.
+The pilot's five baseline seeds replace October's sds in the table `report` prints; the pilot's trainings have
+finished, but `report` has not been run on them yet.
 The bootstrap sd of D comes from one seed pair at one bootstrap seed: at another bootstrap seed the review measured
 0.0107 / 0.0137 against 0.0099 / 0.0151 (Obstacle / SurfaceProblem), which moves Obstacle's power at +0.03 with three
 seeds from 0.41 to about 0.36. The conclusion below does not change; `power` now also prints the sd over every seed
@@ -238,6 +245,10 @@ pair.
 | SurfaceProblem | 0.021 | 0.015 | 3 | 0.005 | 0.007 | 0.06 | 0.12 | 0.37 | +0.085 | 5 |
 | SurfaceProblem | 0.021 | 0.015 | 5 | 0.010 | 0.013 | 0.09 | 0.19 | 0.55 | +0.070 |  |
 
+The rule reads 5 confirmatory arm seeds (`seeds_confirmatory`, J5), so the 5-arm-seed rows are the ones that apply;
+the 3-arm-seed rows and the "recommended arm seeds" column are the comparison that J5 was taken from. `report` and
+`power` print the same note under their tables.
+
 Klone job 43403551 (2026-11-19), on the full shadow of the round-3 data: `analysis/context_arms.py power
 --data-dir $WORK/data --variant baseline`, bootstrap pair `baseline-s43` minus `baseline-s44`, seed 0.
 
@@ -248,12 +259,20 @@ Obstacle. The false-`WIN` rate stays at or under about 1% in every row. Followin
 for any type whose power at +0.03 with three seeds is below 0.5), the **recommended default for stage A is five arm
 seeds (`A5=1`) for all three target types**: 30 trainings instead of 18. Even then a `NO GAIN` rules out only
 large gains, which is why every output words it as "no gain detected at this power". **Decided (J5, Jon,
-2026-11-20, before any stage-A run): five arm seeds**, so `seeds_confirmatory` is `[42, 43, 44, 45, 46]`; no other
-criterion was relaxed.
+2026-11-20, before stage A was submitted; timing under [Deviations](#deviations)): five arm seeds**, so
+`seeds_confirmatory` is `[42, 43, 44, 45, 46]`; no other criterion was relaxed.
 
 ### Deviations
 
-None.
+- **J5, five confirmatory seeds (2026-11-20): taken after the pilot's trainings had finished.** The five-seed
+  recommendation (the sign-off rule: five arm seeds where power at +0.03 with three is below 0.5) was computed from
+  October's baseline trio by the job `context-arms-launch-power-october`, which ended 2026-11-19 17:33 PST, before the
+  pilot was submitted (its first job started 17:49 PST the same day). The pilot's 21 trainings all completed, the last
+  by the morning of 2026-11-20. Jon confirmed five seeds (J5) on 2026-11-20, after that, so the pilot's
+  `baseline-rerun` per-run outputs (each run's evaluate files) were on disk when J5 was confirmed. No pilot `report`
+  or decision had been generated: the only `report` job run so far is the smoke's (2026-11-19 17:39 PST), and no
+  decision file exists in the work or keep directories. Whether any individual pilot run's metrics were looked at before J5 was confirmed is not
+  recorded. The change adds seeds and relaxes no criterion; stage A had not been submitted when it was made.
 
 ## Setup
 
@@ -439,7 +458,7 @@ Not yet run. The report writes, under [`context-arms-2026-11/`](context-arms-202
 | NoCurbRamp | two_scale / view_heatmap | not yet run | not yet run |
 | Obstacle | two_scale / view_heatmap | not yet run | not yet run |
 | SurfaceProblem | two_scale / view_heatmap | not yet run | not yet run |
-| target types | side_info / side_info_nohq (exploratory) | running (pilot) | running |
+| target types | side_info / side_info_nohq (exploratory) | trained (pilot); report not yet run | report not yet run |
 
 ## What could ship
 
