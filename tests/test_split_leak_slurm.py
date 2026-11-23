@@ -106,8 +106,79 @@ def test_dry_run_stage1_and_stage2_arrays(tmp_path):
     assert tasks == [f"task {i}: {t} L 42" for i, t in enumerate(
         ("CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk"))]
     r = _dry(tmp_path, STAGE="2", MAX_PARALLEL="2", FRESH_G="1")
+    assert r.returncode == 2 and "G-s42/predictions.csv" in r.stderr      # no fresh grouped seed 42 yet
+    for t in ("CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk"):
+        (tmp_path / "runs" / t / "G-s42").mkdir()
+        (tmp_path / "runs" / t / "G-s42" / "predictions.csv").write_text("x\n")
+    r = _dry(tmp_path, STAGE="2", MAX_PARALLEL="2", FRESH_G="1")
+    assert r.returncode == 0, r.stderr
     sb = [line for line in r.stdout.splitlines() if line.startswith("sbatch")]
     assert "--array=0-19%2" in sb[0]                       # 5 types x (L, G) x seeds 43, 44
     assert "SEEDS=42:43:44" in sb[1] and "G_SEEDS=42:43:44" in sb[1] and "G_SOURCE=fresh" in sb[1]
     tasks = [line for line in r.stdout.splitlines() if line.startswith("task ")]
     assert tasks[0] == "task 0: CurbRamp L 43" and tasks[1] == "task 1: CurbRamp G 43"   # interleaved
+
+
+def test_dry_run_stage1_refuses_without_design_or_bound(tmp_path):
+    """The per-split files alone are not Stage 0: design.json and bound.json gate the GPU stages too."""
+    _stage0_outputs(tmp_path)
+    for name in ("design.json", "bound.json"):
+        f = tmp_path / "runs" / "report" / name
+        f.unlink()
+        r = _dry(tmp_path, STAGE="1")
+        assert r.returncode == 2 and name in r.stderr, name
+        f.write_text("{}")
+    assert _dry(tmp_path, STAGE="1").returncode == 0
+
+
+def _gpu_task(tmp_path, run_files, checkpoints):
+    """Run split_leak.slurm for one L task with stub python/conda/module/nvidia-smi on PATH; python logs its
+    arguments and fails on predict and training (a stand-in for a best checkpoint that is already gone)."""
+    import time
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    log = tmp_path / "python.log"
+    (bin_ / "python").write_text(f'#!/bin/bash\necho "$*" >> {log}\n'
+                                 'case "$*" in *predict*|*fine_tune*) exit 1;; esac\nexit 0\n')
+    for name in ("conda", "module", "nvidia-smi"):
+        (bin_ / name).write_text("#!/bin/bash\nexit 0\n")
+    for f in bin_.iterdir():
+        f.chmod(0o755)
+    runs = tmp_path / "runs"
+    (runs / "CurbRamp" / "splits").mkdir(parents=True)
+    (runs / "CurbRamp" / "splits" / "label_level_s42.csv").write_text("x\n")
+    run = runs / "CurbRamp" / "L-s42"
+    run.mkdir()
+    for name in run_files:                     # in order, each newer than the last
+        (run / name).write_text("x\n")
+        os.utime(run / name, (time.time() + run_files.index(name), time.time() + run_files.index(name)))
+    for c in checkpoints:
+        (run / c).mkdir()
+        (run / c / "trainer_state.json").write_text("{}")
+    (tmp_path / "tasks.txt").write_text("CurbRamp L 42\n")
+    env = {**os.environ, "PATH": f"{bin_}:{os.environ['PATH']}", "DATA": str(tmp_path / "data"),
+           "RUNS": str(runs), "TASKS": str(tmp_path / "tasks.txt"), "SLURM_ARRAY_TASK_ID": "0",
+           "ENV": str(tmp_path / "env")}
+    r = subprocess.run(["bash", os.path.join(ROOT, GPU)], cwd=ROOT, env=env, capture_output=True, text=True)
+    return r, run, (log.read_text() if log.exists() else "")
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+def test_a_requeue_during_weight_deletion_only_finishes_the_deletion(tmp_path):
+    """Review round 1, S1: predictions.csv newer than training_run.json with a checkpoint left means preempted
+    inside the deletion. The task must delete the rest and succeed, never train or score again."""
+    r, run, log = _gpu_task(tmp_path, ["training_run.json", "trainer_state.best.json", "predictions.csv"],
+                            ["checkpoint-1500"])
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not list(run.glob("checkpoint-*")) and (run / "predictions.csv").exists()
+    assert "predict" not in log and "fine_tune" not in log
+    assert "finishing the deletion" in r.stdout
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+def test_a_requeue_after_training_still_scores(tmp_path):
+    """Trained, not scored (no predictions.csv): the task scores rather than trains (here predict fails)."""
+    r, run, log = _gpu_task(tmp_path, ["training_run.json"], ["checkpoint-1000"])
+    assert r.returncode == 1 and "predict failed" in r.stderr
+    assert "predict" in log and "fine_tune" not in log
+    assert list(run.glob("checkpoint-*"))                  # nothing deleted before scoring succeeds

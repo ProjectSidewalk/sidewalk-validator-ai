@@ -284,7 +284,8 @@ type's grouped split and stops unless it equals round 3's `split.csv` byte for b
 for seeds 42, 43 and 44 under `$RUNS/<Type>/splits/`, audits them (`design.json`) and writes the planning figures
 (`bound.md`). Stages 1 and 2 refuse until those exist; each is one GPU array (`ckpt-all`, `--requeue`, 24 h per
 task, at most `MAX_PARALLEL`, default 4, at once) that trains into `$RUNS/<Type>/<arm>-s<seed>`, scores the arm's
-own eval rows and deletes the weights, followed by a report job. Nothing is written under `DATA`. Design, rule and
+own eval rows and deletes the weights, followed by a report job. `FRESH_G=1` at Stage 2 refuses unless Stage 1
+also ran with it. Nothing is written under `DATA`. Design, rule and
 the GPU-hour estimates: [`split-leak-2026-11.md`](split-leak-2026-11.md).
 
 ## Depth agreement (issue #21)

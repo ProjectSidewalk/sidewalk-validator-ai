@@ -10,7 +10,9 @@
 # Everything is written under RUN=$RUNS/<Type>/<arm>-s<seed> (training_run.json, trainer_state.best.json,
 # predictions.csv); nothing under $DATA, which is only read. Restartable: ckpt-all may preempt and requeue, and
 # fine_tune_classifier.py resumes from its last complete checkpoint (run_key.json guards the split hash); once
-# predictions.csv is written and the weights are gone, a requeue does nothing.
+# predictions.csv is written and the weights are gone, a requeue does nothing. A requeue that lands while the weights
+# are being deleted (predictions.csv newer than training_run.json, checkpoints left) only finishes the deletion: the
+# predictions are already written atomically, and the best checkpoint may be gone.
 #
 #   DATA=/gscratch/makelab/$USER/sidewalk-validator-ai/retrain-2026-10 RUNS=/gscratch/scrubbed/$USER/split-leak \
 #       TASKS=$RUNS/split_leak_tasks_stage1.txt sbatch --array=0-4%4 analysis/split_leak.slurm
@@ -48,6 +50,21 @@ eval "$(conda shell.bash hook)"
 conda activate "$ENV"
 export HF_HOME="${HF_HOME:-/gscratch/makelab/$USER/hf_cache}" HF_HUB_OFFLINE=1
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+# Keep the training record and the best epoch's trainer state, drop the weights (3.5 GB per checkpoint): the
+# predictions are the product, and a leaky model must not outlive its scoring.
+finish() {
+  if [ ! -f "$RUN/trainer_state.best.json" ]; then
+    BEST=$(python -c "import evaluate,sys; print(evaluate.best_checkpoint_in(sys.argv[1]))" "$RUN" 2>/dev/null) \
+      && cp "$BEST/trainer_state.json" "$RUN/trainer_state.best.json" 2>/dev/null || true
+  fi
+  rm -rf "$RUN"/checkpoint-*
+  touch "$RUN/predictions.csv"  # newer than training_run.json, so a requeue sees the task as done
+  echo "$(date) done $LT $ARM s$SEED; removed $RUN/checkpoint-*"
+}
+if [ -f "$RUN/predictions.csv" ] && [ -f "$RUN/training_run.json" ] && [ "$RUN/predictions.csv" -nt "$RUN/training_run.json" ]; then
+  echo "$(date) $LT $ARM s$SEED scored already (requeued while deleting the weights); finishing the deletion"
+  finish; exit 0
+fi
 mkdir -p "$RUN"
 if [ -f "$RUN/training_run.json" ] && ls -d "$RUN"/checkpoint-* >/dev/null 2>&1; then
   echo "$(date) $LT $ARM s$SEED trained already (requeued before scoring); scoring"
@@ -58,10 +75,4 @@ else
 fi
 python -u analysis/split_leak.py predict --data "$DATA" --label_type "$LT" --split "$SPLIT" --run-dir "$RUN" \
     --out "$RUN/predictions.csv" || { echo "predict failed" >&2; exit 1; }
-# Keep the training record and the best epoch's trainer state, drop the weights (3.5 GB per checkpoint): the
-# predictions are the product, and a leaky model must not outlive its scoring.
-BEST=$(python -c "import evaluate,sys; print(evaluate.best_checkpoint_in(sys.argv[1]))" "$RUN")
-cp "$BEST/trainer_state.json" "$RUN/trainer_state.best.json" 2>/dev/null || true
-rm -rf "$RUN"/checkpoint-*
-touch "$RUN/predictions.csv"  # newer than training_run.json, so a requeue sees the task as done
-echo "$(date) done $LT $ARM s$SEED; removed $RUN/checkpoint-*"
+finish

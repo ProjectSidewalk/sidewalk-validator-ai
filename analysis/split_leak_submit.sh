@@ -12,7 +12,9 @@
 # bound.json): the planning figures go into the doc before any GPU job. Each GPU stage is one array, one task per
 # (type, arm, seed), at most MAX_PARALLEL (default 4) running at once, then one report job (afterany).
 # FRESH_G=1 interleaves a fresh grouped arm (G) with L in the same array (~95 more GPU-h over three seeds; a Jon
-# decision, J1); without it the report uses round 3's stored grouped predictions (descriptive inflation).
+# decision, J1); without it the report uses round 3's stored grouped predictions (descriptive inflation). Stage 2
+# with FRESH_G=1 refuses unless Stage 1 also ran with FRESH_G=1 (every type's G-s42/predictions.csv), since its
+# report reads a fresh grouped seed 42.
 # Optional: RAWLABELS (Stage 0; default $DATA/rawlabels), TYPES (space list), PARTITION_ARGS for the GPU array.
 # Job ids are appended to split_leak_jobs.txt in the submit directory.
 set -euo pipefail
@@ -54,6 +56,12 @@ for f in "$REPORT/design.json" "$REPORT/bound.json"; do
   [ -f "$f" ] || { echo "no $f: run Stage 0 (STAGE=0) and put its figures in the doc first" >&2; exit 2; }
 done
 ARMS="L"; [ "$FRESH_G" = 1 ] && ARMS="L G"
+if [ "$FRESH_G" = 1 ] && [ "$STAGE" = 2 ]; then
+  for LT in $TYPES; do
+    [ -f "$RUNS/$LT/G-s42/predictions.csv" ] || { echo "no $RUNS/$LT/G-s42/predictions.csv: FRESH_G=1 at Stage 2" \
+      "needs the fresh grouped seed 42 (run Stage 1 with FRESH_G=1 first)" >&2; exit 2; }
+  done
+fi
 TASKS="$RUNS/split_leak_tasks_stage$STAGE.txt"
 LINES=()
 for SEED in $SEEDS; do

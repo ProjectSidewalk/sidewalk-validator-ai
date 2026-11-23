@@ -397,12 +397,14 @@ def git_commit():
 def check(data, runs, types, seeds, rawlabels, out):
     """Stage 0's audit of every leaky split: coupling with the production split by sha256 and per (class, split)
     counts, the exposure table (written to :func:`exposure_path`), the census against the iid expectation, and the
-    deployment shift aggregate; then ``<out>/design.json`` with the sha256 of every input. Raises
+    deployment shift aggregate; then ``<out>/design.json`` with the sha256 of every input and, per type, the share
+    of its production test rows whose panorama also carries a test row of another type. Raises
     ``SplitLeakError`` (and writes no design.json) on the first failure."""
     design = {"issue": 3, "constants": constants(), "commit": git_commit(), "coordinate_source": "rawlabels",
               "types": {}}
     heldout_counts = set()
     pending = []
+    test_panos = {}
     for t in types:
         split_path = os.path.join(data, t, "split.csv")
         with open(split_path, "rb") as f:
@@ -410,6 +412,7 @@ def check(data, runs, types, seeds, rawlabels, out):
         production = read_str_csv(split_path)
         held = heldout_deployments(production)
         heldout_counts.add(len(held))
+        test_panos[t] = production.loc[(production["split"] == "test") & (production["pano_id"] != ""), "pano_id"]
         coords = _coordinates(production, rawlabels)
         manifest = os.path.join(data, t, "manifest.csv")
         rec = {"manifest_sha256": sha256_file(manifest) if os.path.exists(manifest) else None,
@@ -448,6 +451,11 @@ def check(data, runs, types, seeds, rawlabels, out):
         design["types"][t] = rec
     design["heldout_deployments"] = {"count": heldout_counts.pop() if len(heldout_counts) == 1
                                      else sorted(heldout_counts)}
+    # Types are bootstrapped independently; this sizes the link a shared panorama makes between them.
+    design["cross_type_test_share"] = {}
+    for t, panos in test_panos.items():
+        others = set().union(*[set(v) for u, v in test_panos.items() if u != t])
+        design["cross_type_test_share"][t] = float(panos.isin(others).mean()) if len(panos) else None
     for path, expo in pending:
         expo.to_csv(path, index=False, lineterminator="\n")
     os.makedirs(out, exist_ok=True)
@@ -711,8 +719,10 @@ def _type_stats(td, seeds_l, seeds_g, n_boot, boot_seed, min_unexposed):
 def estimate(types, n_boot=N_BOOT, boot_seed=BOOT_SEED, min_unexposed=MIN_UNEXPOSED):
     """Every estimate of the study, with 95% percentile intervals from ``n_boot`` replicates. Per type, whole merged
     groups are drawn from the union of groups with a row in G test or any L test (val and test_heldout: their own
-    universes), one draw shared by both arms and every seed; seeds are resampled independently per arm, the same
-    seed draw for every type. Types are drawn independently. Row 0 of every replicate matrix is the point estimate.
+    universes), one draw shared by both arms and every seed. The exposure contrasts (deciding and descriptive) hold
+    the seeds fixed and resample groups only; the across-arm deltas (inflation, held-out, singleton, gap of gaps) also
+    resample seeds, independently per arm, the same seed draw for every type. Types are drawn independently. Row 0
+    of every replicate matrix is the point estimate.
 
     Returns a dict: ``contrast`` (pooled exposed - unexposed, ``error`` at 0.5 and ``p_true``, with the t interval
     on per-seed values), ``contrast_by_type``, ``contrast_descriptive`` (subsets of the exposed rows, chain-only
@@ -738,10 +748,12 @@ def estimate(types, n_boot=N_BOOT, boot_seed=BOOT_SEED, min_unexposed=MIN_UNEXPO
         return np.vstack([per_type[t][arm][s][key] for s in seeds])
 
     def pooled_ratio(key, ts):
+        # Groups only, seeds held fixed (amendment 2026-11-23): each row carries its three seeds' split and exposure,
+        # so the group draw already resamples the scatter; drawing seeds as well counts it twice.
         num = sum(stack("l", f"{key}:num", t) for t in ts)
         den = sum(stack("l", f"{key}:den", t) for t in ts)
         with np.errstate(invalid="ignore", divide="ignore"):
-            vec = _select(num, sel_l).sum(1) / _select(den, sel_l).sum(1)
+            vec = num.sum(0) / den.sum(0)
             seed_values = num[:, 0] / den[:, 0]
         return _summ(vec, t_interval(seed_values)), seed_values
 
@@ -772,6 +784,10 @@ def estimate(types, n_boot=N_BOOT, boot_seed=BOOT_SEED, min_unexposed=MIN_UNEXPO
         macro_g = np.mean([stack("g", key, t)[:, 0] for t in names], axis=0)
         welch = welch_interval(macro_l, macro_g)
         out = {"pooled": _summ(pooled, welch), "by_type": {t: _summ(by_type[t]) for t in names}}
+        # Per-arm macro AUC by seed (the arms are unpaired: never an L - G delta per seed); rule_outcome counts them.
+        for arm, seeds, macro in (("l", seeds_l, macro_l), ("g", seeds_g, macro_g)):
+            out["pooled"][f"per_seed_{arm}"] = {str(s): (float(v) if np.isfinite(v) else None)
+                                                for s, v in zip(seeds, macro)}
         return out, pooled
 
     res["inflation"] = {}
@@ -803,24 +819,45 @@ def _inflation_class(lo, hi, margin):
     return "shown" if lo > 0 else ("none" if lo > -margin and hi < margin else "unresolved")
 
 
+def _estimable_seeds(per_seed):
+    return int(sum(v is not None and bool(np.isfinite(v)) for v in per_seed.values()))
+
+
+def _provisional_tail(n_estimable, has_t):
+    """The provisional suffix, or "" for a confirmatory label: fewer than ``CONFIRMATORY_SEEDS`` estimable seeds, or
+    no t interval."""
+    if n_estimable < CONFIRMATORY_SEEDS:
+        return f" (provisional: {n_estimable} of {CONFIRMATORY_SEEDS} seeds)"
+    return "" if has_t else " (provisional: no t interval)"
+
+
 def rule_outcome(contrast, inflation, n_seeds, g_source, margin=INFLATION_MARGIN):
     """The pre-registered reading (docs/split-leak-2026-11.md, "Pre-registered rule").
 
-    ``contrast`` and ``inflation`` are dicts with the deciding bootstrap interval ``lo``/``hi`` and the sensitivity
-    t interval ``t_lo``/``t_hi`` (None when unavailable). The contrast is exposed minus unexposed error, so a leak is
-    negative: "leak shown" when the upper bound is below 0, "exposure hurts" when the lower bound is above 0, "not
-    shown" otherwise. Inflation: "shown" when the interval lies above 0, "no material inflation" inside
-    ±``margin``, otherwise "unresolved, upper bound X". When the two intervals give different outcomes the reading is
-    "unresolved". Against stored baselines (``g_source="stored"``) the inflation label is descriptive; with fewer
-    than ``CONFIRMATORY_SEEDS`` seeds both labels are provisional.
+    ``contrast`` and ``inflation`` are dicts with the deciding bootstrap interval ``lo``/``hi`` and the t interval
+    ``t_lo``/``t_hi`` (None when unavailable). The contrast is exposed minus unexposed error, so a leak is negative:
+    "leak shown" when the upper bound is below 0, "exposure hurts" when the lower bound is above 0, "not shown"
+    otherwise. Inflation: "shown" when the interval lies above 0, "no material inflation" inside ±``margin``,
+    otherwise "unresolved, upper bound X". Whenever a t interval exists and gives a different outcome, the reading
+    is "unresolved". Against stored baselines (``g_source="stored"``) the inflation label is descriptive.
 
-    >>> rule_outcome({"lo": -0.03, "hi": -0.01}, {"lo": 0.001, "hi": 0.004}, 3, "fresh")["contrast"]
+    A label is confirmatory only with ``CONFIRMATORY_SEEDS`` estimable seeds and its t interval. Estimable seeds are
+    counted from the data: the contrast's ``per_seed`` values, and for the inflation the smaller of the two arms'
+    counts (``per_seed_l``, ``per_seed_g``); without them, ``n_seeds`` (the planned count, also the cap). Otherwise
+    the label ends in "(provisional: k of 3 seeds)" or "(provisional: no t interval)".
+
+    >>> rule_outcome({"lo": -0.03, "hi": -0.01, "t_lo": -0.04, "t_hi": -0.005}, {"lo": 0.001, "hi": 0.004}, 3,
+    ...              "fresh")["contrast"]
     'leak shown'
+    >>> rule_outcome({"lo": 0.02, "hi": 0.18, "per_seed": {"42": None, "43": None, "44": 0.07}},
+    ...              {"lo": 0.0, "hi": 0.01}, 3, "fresh")["contrast"]
+    'exposure hurts (provisional: 1 of 3 seeds)'
     """
     if g_source not in ("stored", "fresh"):
         raise ValueError(f"g_source must be stored or fresh, not {g_source!r}")
     lo, hi = contrast["lo"], contrast["hi"]
     t_lo, t_hi = contrast.get("t_lo"), contrast.get("t_hi")
+    k_c = min(_estimable_seeds(contrast["per_seed"]), n_seeds) if "per_seed" in contrast else n_seeds
     c = _contrast_class(lo, hi) if lo is not None else None
     if c is None:
         c_text = f"not estimable (every stratum has fewer than {MIN_UNEXPOSED} unexposed rows)"
@@ -829,8 +866,15 @@ def rule_outcome(contrast, inflation, n_seeds, g_source, margin=INFLATION_MARGIN
     else:
         c_text = {"leak": "leak shown", "hurts": "exposure hurts"}.get(
             c, f"not shown (95% interval [{lo:+.4f}, {hi:+.4f}])")
+    c_tail = _provisional_tail(k_c, t_lo is not None)
+    if c is not None:
+        c_text += c_tail
     lo, hi = inflation["lo"], inflation["hi"]
     t_lo, t_hi = inflation.get("t_lo"), inflation.get("t_hi")
+    if "per_seed_l" in inflation and "per_seed_g" in inflation:
+        k_i = min(_estimable_seeds(inflation["per_seed_l"]), _estimable_seeds(inflation["per_seed_g"]), n_seeds)
+    else:
+        k_i = n_seeds
     i = _inflation_class(lo, hi, margin) if lo is not None else None
     if i is None:
         i_text = "not estimable (no bootstrap interval)"
@@ -840,13 +884,14 @@ def rule_outcome(contrast, inflation, n_seeds, g_source, margin=INFLATION_MARGIN
         i_text = {"shown": "shown", "none": "no material inflation"}.get(i, f"unresolved, upper bound {hi:+.4f}")
     if g_source == "stored":
         i_text += " (descriptive: runs from different dates and environments)"
-    provisional = n_seeds < CONFIRMATORY_SEEDS
-    if provisional:
-        tail = f" (provisional: {n_seeds} seed{'s' if n_seeds != 1 else ''})"
-        c_text += tail
-        i_text += tail
-    return {"contrast": c_text, "inflation": i_text, "provisional": provisional,
-            "confirmatory_inflation": g_source == "fresh" and not provisional}
+    i_tail = _provisional_tail(k_i, t_lo is not None)
+    if i is not None:
+        i_text += i_tail
+    prov_c, prov_i = c is None or bool(c_tail), i is None or bool(i_tail)
+    return {"contrast": c_text, "inflation": i_text, "provisional": prov_c or prov_i,
+            "provisional_contrast": prov_c, "provisional_inflation": prov_i,
+            "estimable_seeds": {"contrast": k_c, "inflation": k_i},
+            "confirmatory_inflation": g_source == "fresh" and not prov_i}
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -935,6 +980,9 @@ def bound(data, runs, types, rawlabels, out, g_seeds=(42, 43, 44), n_boot=N_BOOT
     for t in types:
         split_path = os.path.join(data, t, "split.csv")
         prod = read_str_csv(split_path)
+        for need, step in ((leaky_split_path(runs, t, seed), "make-split"), (exposure_path(runs, t, seed), "check")):
+            if not os.path.isfile(need):
+                raise SplitLeakError(f"{t}: no {need}; run {step} first")
         coords = _coordinates(prod, rawlabels)
         y_all = (prod["label_class"] == "incorrect").to_numpy()
         preds, hashes = {}, {}
@@ -955,8 +1003,7 @@ def bound(data, runs, types, rawlabels, out, g_seeds=(42, 43, 44), n_boot=N_BOOT
         p42 = preds[seed]
         rng = np.random.default_rng(np.random.SeedSequence([boot_seed, _name_tag(t), _name_tag("memo")]))
         memo = memorisation_bound(y_all[idx], p42[idx], [np.array(comp[x], bool) for x in idx], rng=rng)
-        gcode = pd.factorize(read_str_csv(leaky_split_path(runs, t, seed))["split_group"])[0] \
-            if os.path.isfile(leaky_split_path(runs, t, seed)) else pd.factorize(prod["pano_id"])[0]
+        gcode = pd.factorize(read_str_csv(leaky_split_path(runs, t, seed))["split_group"])[0]
         members = np.unique(gcode[idx])
         col = {g: c for c, g in enumerate(members)}
         m = _multiplicities(len(members), n_boot,
@@ -968,10 +1015,7 @@ def bound(data, runs, types, rawlabels, out, g_seeds=(42, 43, 44), n_boot=N_BOOT
         size = np.bincount(gcode)[gcode]
         multi_share = float((size[idx] > 1).mean())
         hw = expected_halfwidth(sd_seed, sd_boot, multi_share)
-        expo_path = exposure_path(runs, t, seed)
-        if not os.path.isfile(expo_path):
-            raise SplitLeakError(f"{t}: no {expo_path}; run check first")
-        expo = read_str_csv(expo_path)
+        expo = read_str_csv(exposure_path(runs, t, seed))
         expo = expo[expo["split"] == "test"].assign(k=lambda d: kbin(d["k"].astype(int)))
         st = []
         for k in K_STRATA:
@@ -1195,7 +1239,9 @@ def tables_markdown(est, rule, g_source, min_unexposed=MIN_UNEXPOSED):
     lines = ["# Split leak (issue #3): results", "",
              f"Label-level arm seeds: {seeds}. Grouped arm: {g_source} runs, seeds "
              f"{', '.join(map(str, est['seeds_g']))}. Intervals: 95% percentile bootstrap over whole merged groups "
-             f"and seeds; after the semicolon, the t interval on seed-level values (the sensitivity check).", "",
+             f"(seeds held fixed for the exposure contrast, seeds resampled too for the across-arm deltas); after "
+             f"the semicolon, the t interval on seed-level values (Welch for the deltas). The rule needs the two to "
+             f"agree.", "",
              "## Pre-registered reading", "", f"- Exposure contrast: **{rule['contrast']}**",
              f"- Inflation: **{rule['inflation']}**", "",
              "## Exposure contrast (test rows of the label-level models)", "",

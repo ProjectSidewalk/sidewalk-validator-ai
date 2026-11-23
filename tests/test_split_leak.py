@@ -166,6 +166,22 @@ def test_exposure_on_a_hand_made_frame():
     assert no_xy.loc["B", "k"] == 0 and no_xy.loc["D", "k"] == 1
 
 
+def test_blank_pano_ids_are_not_one_panorama_for_exposure():
+    """Rows with no ``pano_id`` are companions only by distance, never of each other through the blank id."""
+    df = pd.DataFrame({"label_uid": list("ABCD"), "pano_id": ["", "", "", "pz"],
+                       "label_class": ["correct"] * 4, "split": ["test", "train", "val", "train"],
+                       "split_group": list("ABCD")})
+    i, j, _ = sl.direct_pairs(df)
+    assert len(i) == 0
+    e = sl.exposure_table(df, None).set_index("label_uid")
+    assert e.loc["A", "k"] == 0 and e.loc["A", "exposure"] == "singleton"
+    coords = pd.DataFrame({"latitude": [_north(0), _north(1.0), _north(400), _north(800)],
+                           "longitude": [-122.0] * 4}, index=df.label_uid)
+    e = sl.exposure_table(df, coords).set_index("label_uid")
+    assert e.loc["A", "k"] == 1 and e.loc["A", "exposure"] == "exposed" and e.loc["A", "via"] == "nearby"
+    assert e.loc["C", "k"] == 0
+
+
 def test_census_against_the_iid_expectation():
     e = pd.DataFrame({"split": ["test"] * 4 + ["val", "train"], "k": [1, 1, 2, 0, 3, 1],
                       "exposure": ["exposed", "unexposed", "exposed", "singleton", "exposed", "train"]})
@@ -188,6 +204,7 @@ def test_check_writes_exposure_and_design_and_stops_on_a_coupling_mismatch(root)
     assert t["production_split_sha256"] == hashlib.sha256(root["split"].read_bytes()).hexdigest()
     assert set(t["leaky_split_sha256"]) == {"42", "43"} and t["census"]["42"]["ok"] is True
     assert on_disk["heldout_deployments"] == {"count": 1}
+    assert on_disk["cross_type_test_share"] == {T: 0.0}         # one type: nothing links it to another
     # a coupling mismatch: one grouped label changed
     path = sl.leaky_split_path(root["runs"], T, 43)
     leaky = read(path)
@@ -198,6 +215,30 @@ def test_check_writes_exposure_and_design_and_stops_on_a_coupling_mismatch(root)
     with pytest.raises(sl.SplitLeakError, match="coupling"):
         sl.check(root["data"], root["runs"], [T], [42, 43], root["raw"], root["out"])
     assert not (root["out"] / "design.json").exists()
+
+
+def test_check_sizes_the_link_between_types(root):
+    """A second type on the same panoramas: half its test panoramas also carry a test row of the first."""
+    import shutil
+    make(root, 42)
+    other = "Toy2"
+    shutil.copytree(root["data"] / T, root["data"] / other)
+    os.makedirs(sl.leaky_split_path(root["runs"], other, 42).parent)
+    shutil.copy(sl.leaky_split_path(root["runs"], T, 42), sl.leaky_split_path(root["runs"], other, 42))
+    design = sl.check(root["data"], root["runs"], [T, other], [42], root["raw"], root["out"])
+    assert design["cross_type_test_share"] == {T: 1.0, other: 1.0}
+    # rename half of the second type's test panoramas (in both files, so the coupling holds): they link no more
+    split = read(root["split"])
+    test = split[split.split == "test"]
+    renamed = set(test.pano_id.unique()[::2])
+    for path in (root["data"] / other / "split.csv", sl.leaky_split_path(root["runs"], other, 42)):
+        df = read(path)
+        df["pano_id"] = [p + "x" if p in renamed else p for p in df.pano_id]
+        df.to_csv(path, index=False, lineterminator="\n")
+    design = sl.check(root["data"], root["runs"], [T, other], [42], root["raw"], root["out"])
+    expected = float((~test.pano_id.isin(renamed)).mean())
+    assert 0 < expected < 1
+    assert design["cross_type_test_share"] == pytest.approx({T: expected, other: expected})
 
 
 def test_check_stops_on_a_census_under_the_threshold(root):
@@ -297,23 +338,53 @@ def synthetic_type(rng, name="A", n_groups=700, leak=0.0, seeds=(42, 43, 44), g_
 
 
 def test_null_simulation_covers_zero_for_the_contrast_and_the_inflation():
-    """Equal-quality arms and no memorisation: the deciding 95% interval covers 0 in 200 seeded replications.
-
-    The inflation interval sits in the plan's band (0.88-0.99). The contrast's is conservative: resampling seeds on
-    top of groups counts the scatter's randomisation twice (each seed is a fresh scatter of the same rows), and
-    measured null coverage is 0.99-1.0 (0.95 with the seeds held fixed), so its upper limit here is 1.0; the
-    implementer's report flags this for a decision. The lower limit, the validity check, is the plan's."""
+    """Equal-quality arms and no memorisation: the deciding 95% interval covers 0 in the plan's band (0.88-0.99) over
+    200 seeded replications, for the contrast (groups only, seeds fixed) and the inflation (groups and seeds).
+    ``n_boot`` is 400: at 200 the percentile endpoints under-cover (review round 1 measured 0.93)."""
     rng = np.random.default_rng(7)
     hits_c = hits_i = 0
     reps = 200
     for r in range(reps):
         td = synthetic_type(rng, n_groups=1200, noise=0.5)
-        est = sl.estimate([td], n_boot=100, boot_seed=r, min_unexposed=10)
+        est = sl.estimate([td], n_boot=400, boot_seed=r, min_unexposed=10)
         c, i = est["contrast"]["error"], est["inflation"]["test"]["pooled"]
         hits_c += c["lo"] <= 0 <= c["hi"]
         hits_i += i["lo"] <= 0 <= i["hi"]
-    assert 0.88 <= hits_c / reps <= 1.0, hits_c
+    assert 0.88 <= hits_c / reps <= 0.99, hits_c
     assert 0.88 <= hits_i / reps <= 0.99, hits_i
+
+
+def test_only_the_across_arm_deltas_resample_seeds(monkeypatch):
+    """The contrasts resample groups with the seeds held fixed; the inflation and the other L - G deltas also
+    resample seeds. Pinning every seed draw to the identity leaves the contrasts' intervals unchanged and changes
+    the deltas'."""
+    td = synthetic_type(np.random.default_rng(5), n_groups=1500)
+    a = sl.estimate([td], n_boot=200, boot_seed=1, min_unexposed=10)
+    monkeypatch.setattr(sl, "_seed_draws", lambda n, b, rng: np.tile(np.arange(n), (b + 1, 1)))
+    b = sl.estimate([td], n_boot=200, boot_seed=1, min_unexposed=10)
+    for metric in ("error", "p_true"):
+        assert (a["contrast"][metric]["lo"], a["contrast"][metric]["hi"]) == \
+            (b["contrast"][metric]["lo"], b["contrast"][metric]["hi"])
+        assert a["contrast_descriptive"]["via_pano"][metric]["lo"] == b["contrast_descriptive"]["via_pano"][metric]["lo"]
+    for key in ("inflation", "heldout_delta", "singleton_delta"):
+        d_a = a[key]["test"]["pooled"] if key == "inflation" else a[key]["pooled"]
+        d_b = b[key]["test"]["pooled"] if key == "inflation" else b[key]["pooled"]
+        assert d_a["point"] == d_b["point"] and (d_a["lo"], d_a["hi"]) != (d_b["lo"], d_b["hi"]), key
+
+
+def test_a_contrast_from_one_estimable_seed_is_provisional():
+    """Review round 1, B2: two of three seeds have every stratum blank, so the t interval does not exist. The reading
+    must say provisional, not give a confirmatory label from one seed's data."""
+    rng = np.random.default_rng(7)
+    for _ in range(121):
+        td = synthetic_type(rng, n_groups=1200, noise=0.5)
+    est = sl.estimate([td], n_boot=20, boot_seed=120, min_unexposed=10)
+    c = est["contrast"]["error"]
+    assert sum(v is not None for v in c["per_seed"].values()) == 1 and c["t_lo"] is None
+    rule = sl.rule_outcome(c, est["inflation"]["test"]["pooled"], 3, "fresh")
+    assert rule["contrast"].endswith("(provisional: 1 of 3 seeds)"), rule["contrast"]
+    assert rule["provisional"] is True and rule["provisional_contrast"] is True
+    assert rule["estimable_seeds"]["contrast"] == 1
 
 
 @pytest.mark.parametrize("leak, outcome", [(3.0, "leak shown"), (-3.0, "exposure hurts")])
@@ -344,8 +415,12 @@ def test_estimate_point_equals_cmh_over_its_own_strata():
 # The pre-registered rule
 # ---------------------------------------------------------------------------------------------------------------------
 
-def ci(lo, hi, t_lo=None, t_hi=None):
-    return {"point": (lo + hi) / 2, "lo": lo, "hi": hi, "t_lo": t_lo, "t_hi": t_hi}
+def ci(lo, hi, t_lo=None, t_hi=None, **extra):
+    return {"point": (lo + hi) / 2, "lo": lo, "hi": hi, "t_lo": t_lo, "t_hi": t_hi, **extra}
+
+
+LEAK = ci(-0.05, -0.01, -0.06, -0.005)          # a confirmatory contrast (both intervals below 0)
+FLAT = ci(-0.001, 0.002, -0.002, 0.003)         # a confirmatory "no material inflation"
 
 
 @pytest.mark.parametrize("contrast, label", [
@@ -353,9 +428,10 @@ def ci(lo, hi, t_lo=None, t_hi=None):
     (ci(0.01, 0.04, 0.001, 0.05), "exposure hurts"),
     (ci(-0.02, 0.01, -0.03, 0.02), "not shown (95% interval [-0.0200, +0.0100])"),
     (ci(-0.05, -0.01, -0.07, 0.01), "unresolved (the bootstrap and t intervals disagree)"),
+    (ci(-0.05, -0.01), "leak shown (provisional: no t interval)"),
 ])
 def test_rule_contrast_branches(contrast, label):
-    assert sl.rule_outcome(contrast, ci(-0.001, 0.002), n_seeds=3, g_source="fresh")["contrast"] == label
+    assert sl.rule_outcome(contrast, FLAT, n_seeds=3, g_source="fresh")["contrast"] == label
 
 
 @pytest.mark.parametrize("inflation, label", [
@@ -363,21 +439,47 @@ def test_rule_contrast_branches(contrast, label):
     (ci(-0.004, 0.005, -0.005, 0.0055), "no material inflation"),
     (ci(-0.004, 0.009, -0.005, 0.01), "unresolved, upper bound +0.0090"),
     (ci(-0.004, 0.005, -0.008, 0.009), "unresolved, upper bound +0.0090 (the bootstrap and t intervals disagree)"),
-    (ci(-0.004, 0.005), "no material inflation"),
+    (ci(-0.02, 0.005, -0.03, 0.005), "unresolved, upper bound +0.0050"),      # the lower side of the band
+    (ci(-0.004, 0.005), "no material inflation (provisional: no t interval)"),
 ])
 def test_rule_inflation_branches(inflation, label):
-    assert sl.rule_outcome(ci(-0.05, -0.01), inflation, n_seeds=3, g_source="fresh")["inflation"] == label
+    assert sl.rule_outcome(LEAK, inflation, n_seeds=3, g_source="fresh")["inflation"] == label
 
 
 def test_rule_labels_for_stored_baselines_and_one_seed():
-    r = sl.rule_outcome(ci(-0.05, -0.01), ci(0.002, 0.02), n_seeds=3, g_source="stored")
+    shown = ci(0.002, 0.02, 0.001, 0.03)
+    r = sl.rule_outcome(LEAK, shown, n_seeds=3, g_source="stored")
     assert r["inflation"] == "shown (descriptive: runs from different dates and environments)"
     assert r["contrast"] == "leak shown" and r["provisional"] is False and r["confirmatory_inflation"] is False
     r = sl.rule_outcome(ci(-0.05, -0.01), ci(0.002, 0.02), n_seeds=1, g_source="fresh")
-    assert r["contrast"] == "leak shown (provisional: 1 seed)"
-    assert r["inflation"] == "shown (provisional: 1 seed)" and r["provisional"] is True
+    assert r["contrast"] == "leak shown (provisional: 1 of 3 seeds)"
+    assert r["inflation"] == "shown (provisional: 1 of 3 seeds)" and r["provisional"] is True
     with pytest.raises(ValueError):
-        sl.rule_outcome(ci(-0.05, -0.01), ci(0.002, 0.02), n_seeds=3, g_source="old")
+        sl.rule_outcome(LEAK, shown, n_seeds=3, g_source="old")
+
+
+def test_rule_counts_estimable_seeds_from_the_data():
+    """Seeds are counted from ``per_seed`` (contrast) and the smaller arm (inflation), never from the plan alone;
+    a t interval at two seeds still decides disagreement, and provisional is added to it, not put in its place."""
+    two = {"42": -0.02, "43": None, "44": -0.03}
+    r = sl.rule_outcome(ci(-0.05, -0.01, -0.07, 0.01, per_seed=two), FLAT, n_seeds=3, g_source="fresh")
+    assert r["contrast"] == "unresolved (the bootstrap and t intervals disagree) (provisional: 2 of 3 seeds)"
+    assert r["provisional_contrast"] is True and r["provisional_inflation"] is False
+    r = sl.rule_outcome(ci(-0.05, -0.01, -0.06, -0.005, per_seed=two), FLAT, n_seeds=3, g_source="fresh")
+    assert r["contrast"] == "leak shown (provisional: 2 of 3 seeds)"
+    full = {"42": 0.9, "43": 0.91, "44": 0.92}
+    infl = ci(0.002, 0.02, 0.001, 0.03, per_seed_l=full, per_seed_g={"42": 0.9, "43": None, "44": None})
+    r = sl.rule_outcome(LEAK, infl, n_seeds=3, g_source="fresh")
+    assert r["inflation"] == "shown (provisional: 1 of 3 seeds)" and r["confirmatory_inflation"] is False
+    assert r["estimable_seeds"] == {"contrast": 3, "inflation": 1}
+    r = sl.rule_outcome(ci(-0.05, -0.01, -0.06, -0.005, per_seed=dict.fromkeys(full)), FLAT, 3, "fresh")
+    assert r["provisional"] is True                                     # a contrast with no estimable seed
+    blank = {"point": None, "lo": None, "hi": None, "t_lo": None, "t_hi": None, "per_seed": dict.fromkeys(full)}
+    r = sl.rule_outcome(blank, FLAT, n_seeds=3, g_source="fresh")
+    assert r["contrast"].startswith("not estimable") and "provisional" not in r["contrast"]
+    assert r["provisional_contrast"] is True and r["provisional_inflation"] is False
+    r = sl.rule_outcome(LEAK, FLAT, n_seeds=3, g_source="fresh")
+    assert r["provisional"] is False and r["confirmatory_inflation"] is True
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -413,7 +515,9 @@ def test_bound_and_report_on_the_toy_root_blank_thin_strata_and_name_no_deployme
                     "42", "--g-seeds", "42", "--g-source", "stored", "--out", str(root["out"]),
                     "--n-boot", "50"]) == 0
     res = json.loads((root["out"] / "results.json").read_text())
-    assert "provisional" in res["rule"]["contrast"] and res["rule"]["provisional"] is True
+    assert res["rule"]["contrast"].startswith("not estimable") and res["rule"]["provisional"] is True
+    assert res["rule"]["inflation"].endswith("(provisional: 1 of 3 seeds)")
+    assert res["rule"]["estimable_seeds"] == {"contrast": 0, "inflation": 1}
     assert any(s["blank"] for s in res["strata"])            # the toy has fewer than 30 unexposed rows per stratum
     tables = (root["out"] / "tables.md").read_text()
     assert "blank" in tables and "fewer than 30 unexposed" in tables
@@ -437,6 +541,35 @@ def test_report_refuses_predictions_that_do_not_cover_the_arm(root):
         sl.load_study(root["data"], root["runs"], [T], [42], [42], "stored")
 
 
+def test_predictions_with_a_duplicated_row_are_refused(root):
+    prod = read(root["split"])
+    path = root["data"] / T / "predictions.csv"
+    fake_predictions(prod, np.random.default_rng(0), path)
+    pred = pd.read_csv(path, dtype=str)
+    pd.concat([pred, pred.iloc[:1]]).to_csv(path, index=False)
+    with pytest.raises(sl.SplitLeakError, match="cover exactly"):
+        sl._read_predictions(path, prod, prod["split"], "G")
+
+
+def test_bound_stops_before_make_split_and_check(root):
+    fake_predictions(read(root["split"]), np.random.default_rng(0), root["data"] / T / "predictions.csv")
+    args = ["bound", "--data", str(root["data"]), "--runs", str(root["runs"]), "--types", T,
+            "--rawlabels", str(root["raw"]), "--out", str(root["out"]), "--n-boot", "10"]
+    with pytest.raises(sl.SplitLeakError, match="run make-split first"):
+        sl.bound(root["data"], root["runs"], [T], root["raw"], root["out"], n_boot=10)
+    make(root, 42)
+    with pytest.raises(sl.SplitLeakError, match="run check first"):
+        sl.bound(root["data"], root["runs"], [T], root["raw"], root["out"], n_boot=10)
+    assert sl.main(args) == 2 and not (root["out"] / "bound.json").exists()
+
+
+def test_make_split_refuses_runs_under_the_data_directory(root, capsys):
+    assert sl.main(["make-split", "--data", str(root["data"]), "--runs", str(root["data"] / "runs"), "--types", T,
+                    "--seeds", "42", "--rawlabels", str(root["raw"])]) == 2
+    assert "--runs" in capsys.readouterr().err          # main's own guard, before make_split's per-file one
+    assert not (root["data"] / "runs").exists()
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # The doc quotes the code's constants
 # ---------------------------------------------------------------------------------------------------------------------
@@ -451,5 +584,6 @@ def test_the_doc_quotes_the_constants_and_the_rule():
     assert "three seeds" in text and sl.CONFIRMATORY_SEEDS == 3
     assert "run held, no result exists" in text.lower() or "Run held, no result exists" in text
     for label in ("leak shown", "exposure hurts", "not shown", "no material inflation", "unresolved",
-                  "descriptive: runs from different dates and environments", "provisional"):
+                  "descriptive: runs from different dates and environments", "(provisional: 1 of 3 seeds)",
+                  "(provisional: k of 3 seeds)", "(provisional: no t interval)", "Amendment, 2026-11-23"):
         assert label in text, label

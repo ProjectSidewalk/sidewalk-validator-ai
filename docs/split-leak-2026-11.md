@@ -105,20 +105,51 @@ Each model scores its own val, test and `test_heldout` rows.
 
 ### Intervals
 
-- **Deciding interval:** a 95% percentile bootstrap, 2,000 replicates, bootstrap seed 3. Within each type, whole
+- **Bootstrap interval:** a 95% percentile bootstrap, 2,000 replicates, bootstrap seed 3. Within each type, whole
   merged groups are drawn from the union of groups with a row in G test or any L test (val and `test_heldout`
-  from their own groups). One draw is shared by both arms and every seed. Seeds are resampled independently per
-  arm, with the same seed draw for every type. Types are drawn independently of each other.
-- **Sensitivity check:** a t interval on the seed-level values. For the contrast that is a one-sample t on the
-  per-seed pooled contrasts; for the inflation, a Welch interval on the per-seed macro AUCs of the two arms. Three
-  seeds make the seed level of a bootstrap coarse.
-- If the two give different outcomes under the rule, the reading is "unresolved".
+  from their own groups). One draw is shared by both arms and every seed. Types are drawn independently of each
+  other.
+  - **Exposure contrast** (confirmatory and descriptive): groups only, with the three seeds held fixed.
+  - **Inflation and the other L − G deltas:** seeds are also resampled, independently per arm, with the same seed
+    draw for every type.
+- **t interval:** on the seed-level values. For the contrast that is a one-sample t on the per-seed pooled
+  contrasts; for the inflation, a Welch interval on the per-seed macro AUCs of the two arms (unpaired: the stored
+  G runs share no seed with an L run).
+- Both intervals decide. If they give different outcomes under the rule, the reading is "unresolved". For the
+  inflation the Welch interval is co-deciding, not only a check: in the review's null simulations (see the
+  amendment and Limits) the bootstrap interval under-covered when seed variance dominated and the Welch interval
+  when sampling variance did, and the two excluded 0 together in 2–7% of replications.
+- 2,000 replicates, because with 200 the percentile endpoints under-cover (93% in the review's simulations); 400
+  and above were nominal.
+
+### Amendment, 2026-11-23 (before any run)
+
+Made in review of the PR that adds this page. When it was made, no leaky split, no Stage 0 figure and no L model
+existed; nothing had been submitted to klone.
+
+1. **The contrast's bootstrap holds the seeds fixed.** The plan resampled seeds on top of groups for every
+   estimate. Each row carries its three seeds' split and exposure with it, so drawing groups already resamples the
+   scatter's randomisation; drawing seeds as well counts it twice. In the review's null simulations (1,500
+   replications at 400 or more replicates, with and without per-model quality differences, no memorisation) that
+   form covered 0 in 98–100% of replications, against 95.7% for groups only, and its interval was about 1.5 times
+   as wide. The implementer's simulations agreed (99.7% against 95.3%).
+   Exposure is randomised inside each model, so under the null a better or worse model shifts its exposed and
+   unexposed rows alike and adds no seed-level variance to the contrast. The inflation keeps its seed resampling,
+   since seed-to-seed quality differences are real variance there (with per-model quality differences, the
+   groups-only form covered the inflation in only 19–37%).
+2. **Seeds are counted from the data.** A seed whose strata are all blank contributes no per-seed contrast, and
+   with fewer than two the t interval does not exist. A label is confirmatory only with three estimable seeds (for
+   the inflation, the smaller of the two arms' counts) and its t interval; otherwise it ends in
+   "(provisional: k of 3 seeds)", or "(provisional: no t interval)" when the seeds are there but the interval is
+   not. A t interval that exists still decides disagreement at two seeds; provisional is added to "unresolved",
+   not put in its place.
 
 ## Pre-registered rule (committed before any L model exists)
 
 The labels in quotes are the exact strings `rule_outcome()` prints.
 
-- "leak shown" if the pooled contrast's upper bound on (exposed − unexposed) error is below 0, with three seeds.
+- "leak shown" if the pooled contrast's upper bound on (exposed − unexposed) error is below 0, with three
+  estimable seeds.
 - "exposure hurts" if its lower bound is above 0. This is reported as its own outcome, not as a leak.
 - "not shown" otherwise, reported with the interval.
 - **Inflation** (pooled; per type is descriptive): "shown" if the interval lies above 0; "no material inflation" if
@@ -127,9 +158,12 @@ The labels in quotes are the exact strings `rule_outcome()` prints.
   "(descriptive: runs from different dates and environments)". They are confirmatory only with a fresh G arm.
 - The 0.006 margin is round 3's own single-seed caveat ([`retrain-2026-10.md`](retrain-2026-10.md), "What this does
   not establish": two runs of one setting differed by 0.006 in best validation macro-F1).
-- A run stopped after Stage 1 is reported as provisional, whatever its direction: both labels end in "(provisional:
-  1 seed)". No stopping rule uses Stage 1's numbers.
-- If every stratum is blank, the contrast reads "not estimable"; that is not an outcome of the rule.
+- A label is provisional, whatever its direction, with fewer than three estimable seeds or no t interval (see
+  the amendment): it ends in "(provisional: k of 3 seeds)" or "(provisional: no t interval)", added after
+  "unresolved (the bootstrap and t intervals disagree)" when the two intervals disagree. A run stopped after
+  Stage 1 reads "(provisional: 1 of 3 seeds)". No stopping rule uses Stage 1's numbers.
+- If every stratum is blank, the contrast reads "not estimable"; that is not an outcome of the rule, and it is
+  marked provisional.
 - The constants live in `analysis/split_leak.py`, and a test checks that this page quotes them.
 
 ## Stages (all held; provisional pending J1–J3)
@@ -169,13 +203,17 @@ Run held, no result exists.
   G arm makes it confirmatory.
 - Exposure is randomised only among multi-member rows, so the contrast says nothing about singleton rows (which
   cannot leak).
-- The deciding interval of the contrast is conservative. In the tests' null simulation (equal-quality arms, no
-  memorisation, 200 replications) it covered 0 in 99–100% of replications, against about 95% with the seeds held
-  fixed: each seed is a fresh scatter of the same rows, so resampling seeds on top of groups counts the scatter's
-  randomisation twice. The inflation interval covered 96–99%. The seed-level t interval on the inflation covered
-  only 81–94% (it holds seed variance alone), so under no effect "unresolved" because the two intervals disagree
-  will come up more often than one time in twenty.
+- With a real effect, the contrast's bootstrap interval (seeds fixed) describes these three trained models, not
+  every training run; the seed-level t interval carries that, and "leak shown" needs the two to agree.
+- In null simulations the inflation's bootstrap interval covered 0 in 95–99% of replications, but only 81–85% when
+  every trained model had its own quality; its Welch interval covered 76–92% under the plain null. Each alone is
+  too narrow in one of the two cases, which is why both decide (above).
+- The k = 3+ stratum pools rows whose chance of being unexposed differs by an order of magnitude (2.7% at k = 3,
+  under 0.1% at k = 6), so inside it exposure is confounded with k. At 30 unexposed rows it will almost always be
+  blank.
 - Types are resampled independently; a panorama carrying labels of several types links them, which this ignores.
+  `check` writes the share of test rows whose panorama also carries a test row of another type
+  (`cross_type_test_share` in `design.json`), which sizes this limit.
 - The minimum detectable difference ignores clustering within merged groups, so the real one is larger.
 
 ## Provenance (to be filled by the results PR)
