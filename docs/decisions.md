@@ -12,7 +12,8 @@ this is where each one lives (checked against master at 97aa718).
 1. **Out-of-frame labels.** Code change, PR [#25](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/25):
    `equirectangular_point_to_perspective` is gone; `render_label_view` renders a view centred on the label with
    `sidewalk_panorama_tools.geometry.label_view`, and `create_perspective_crop` reads depth at the view centre
-   (`VIEW_SIZE // 2`), so no label can index outside the frame. A crop that runs past the view edge is cut short and
+   (`VIEW_SIZE // 2`), so no label can index outside the frame. (The `--job-window-crops` path cuts no view; a label
+   outside its pano is skipped there as `out_of_frame`.) A crop that runs past the view edge is cut short and
    recorded (`clipped`). The one way a click can still leave the sphere, a Panoramax pitch-only offset past a pole, is
    skipped with its own status (`panoramax_pitch_offset_past_pole`) before any panorama is read, PR
    [#96](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/96).
@@ -22,9 +23,12 @@ this is where each one lives (checked against master at 97aa718).
    `--include-ai-labels` and tagged (`author = ai` in the manifest), and `ai_label_holdout.py` carves a held-out share
    before selection under either setting.
 3. **Tilt mis-centering.** Code change, PR [#25](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/25):
-   GSV crops are rendered with the rig-tilt correction from the label's `camera_pitch`/`camera_roll` at
-   `--tilt-beta` (default `DEFAULT_TILT_BETA = 0.95`), the measurement of
-   [sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54). The pose per
+   human-authored GSV labels with a DB pose are rendered with the rig-tilt correction from the label's
+   `camera_pitch`/`camera_roll` at `--tilt-beta` (default `DEFAULT_TILT_BETA = 0.95`). The mis-centering was measured
+   on [sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54) and the 0.95
+   on [sidewalk-panorama-tools#191](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/191).
+   AI-authored labels (`rig_frame`, placed on the rig image) and GSV labels without a stored pose (`gsv_no_db_pose`)
+   are rendered uncorrected, and the manifest's `pose_source` says which. The pose per
    provider (`crop_pose.pose_for_row`) came with PR [#81](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/81);
    serving applies the same correction in
    [sidewalk-ai-api#17](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/17).
@@ -36,15 +40,18 @@ this is where each one lives (checked against master at 97aa718).
    as `unsupported_source`.
 5. **Thread pool against Google.** Code change, PR [#28](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/28):
    the tile fetcher and its `ThreadPoolExecutor(max_workers=100)` were removed, so `data_generation.py` makes no
-   request to Google and has no thread pool. Its only network calls are one `rawLabels` CSV per city, in sequence with
-   one retry (none with a complete `--rawlabels-cache`), and, with `--mapillary-token-env`, sequential Mapillary Graph
+   request to Google and has no thread pool. Its only network calls are the `/v3/api/cities` listing and one
+   `rawLabels` CSV per city, each in sequence with one retry (none when `--rawlabels-cache` holds `cities.json` and
+   every city's CSV and `--refresh-cities` is not given), and, with `--mapillary-token-env`, sequential Mapillary Graph
    API lookups whose answers are cached. There is no rate to measure here any more.
 6. **Broad `except` and failure categories.** Code change, PR
-   [#25](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/25): `is_fatal` re-raises broken invariants,
-   CUDA and out-of-memory errors and a pano store that stopped answering; any other exception prints its traceback
+   [#25](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/25): the `except Exception` block in `main`
+   re-raises what `is_fatal` classes as fatal (broken invariants, CUDA and out-of-memory errors, a pano store that
+   stopped answering); any other exception prints its traceback
    (`traceback.print_exc`) and records the row as `error:<ExceptionType>`, and 50 in a row stop the run. The end-of-run
-   summary prints `status counts:` by category (`ok`, each `error:*` type, `no_pano`, `bad_pano`, the `panoramax_*`
-   skips, `skipped (already ok)`), and the manifest keeps every row's `status`. Pinned by
+   summary prints `status counts:` by category for the rows this run attempted (`ok`, each `error:*` type, `no_pano`,
+   `bad_pano`, the `panoramax_*` skips, with `--job-window-crops` the `dims_mismatch`/`out_of_frame` skips, and
+   `skipped (already ok)`), and the manifest's `status` column is the cumulative record over every run. Pinned by
    `tests/test_generation_run.py::test_non_fatal_errors_are_counted_by_category_with_their_traceback`.
 
 ## The deployment prior is the ≥ 2-vote human majority, not the training margin rule (November 2026)
