@@ -35,6 +35,8 @@ OVERRIDE_KEYS = {
     "dataset_license": "Hub license id for the dataset (same as --dataset-license)",
     "doi": "the dataset's DOI, once minted",
     "model_doi": "the model's DOI, once minted",
+    "rai": "object: Croissant RAI text that replaces generated values, keyed 'rai:<property>' (hf_croissant); "
+           "applied at the next staging",
 }
 """Keys allowed in ``<out>/<label_type>/card_overrides.json``: facts the pipeline's files do not record."""
 ENCODER_NAMES = {"vits": "ViT-S", "vitb": "ViT-B", "vitl": "ViT-L"}

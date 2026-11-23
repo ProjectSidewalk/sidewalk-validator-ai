@@ -372,10 +372,11 @@ def test_missing_crop_fails(tmp_path):
 def test_croissant(staged):
     with open(os.path.join(staged["dataset"], "croissant.json")) as f:
         doc = json.load(f)
-    assert doc["conformsTo"] == "http://mlcommons.org/croissant/1.1"
+    assert doc["conformsTo"] == ["http://mlcommons.org/croissant/1.1", "http://mlcommons.org/croissant/RAI/1.0"]
     fields = {f["name"] for f in doc["recordSet"][0]["field"]}
     assert {"label_uid", "label_class", "split", "crop_path"} <= fields
-    pytest.importorskip("mlcroissant")
+    from conftest import require_mlcroissant
+    require_mlcroissant()
     assert pub.validate_croissant(os.path.join(staged["dataset"], "croissant.json"))[0]
 
 
