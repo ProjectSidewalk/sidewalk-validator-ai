@@ -27,8 +27,9 @@ this is where each one lives (checked against master at 97aa718).
    `camera_pitch`/`camera_roll` at `--tilt-beta` (default `DEFAULT_TILT_BETA = 0.95`). The mis-centering was measured
    on [sidewalk-panorama-tools#54](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/54) and the 0.95
    on [sidewalk-panorama-tools#191](https://github.com/ProjectSidewalk/sidewalk-panorama-tools/issues/191).
-   AI-authored labels (`rig_frame`, placed on the rig image) and GSV labels without a stored pose (`gsv_no_db_pose`)
-   are rendered uncorrected, and the manifest's `pose_source` says which. The pose per
+   AI-authored labels (placed on the rig image; manifest `pose_source = rig_frame`) and GSV labels without a stored
+   pose (`pose_source = none`, reason `gsv_no_db_pose` in `generation_run.json["pose_counts"]`) are rendered
+   uncorrected. The pose per
    provider (`crop_pose.pose_for_row`) came with PR [#81](https://github.com/ProjectSidewalk/sidewalk-validator-ai/pull/81);
    serving applies the same correction in
    [sidewalk-ai-api#17](https://github.com/ProjectSidewalk/sidewalk-ai-api/pull/17).
