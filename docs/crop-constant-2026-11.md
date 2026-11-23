@@ -54,8 +54,11 @@ run is read from its log.
 Panoramax skip, an error) is removed from every arm.
 
 **Seeds.** 42 to 46, each arm paired with c6100 at the same seed (*provisional*, decision 2; three seeds is the
-alternative). The registered seed count `k` is fixed before the first training job is submitted, and `compare
---seeds` must name exactly those seeds.
+alternative). **The registration is committed**: `REGISTERED_SEEDS` in `analysis/crop_constant_sweep.py`. The submit
+script trains exactly those seeds (it refuses a `SEEDS` setting) and `compare` reads exactly those (it has no seed
+option), so changing `k` is a commit made before the first training job, and every run records that commit. A cell
+is unestimable when a seed is missing on either side, or when predictions or a run record exist for a seed outside
+the registration, so a reading on a subset of the trained seeds cannot be produced.
 
 **Types, staged.** Stage 1 is CurbRamp and SurfaceProblem. Stage 2 (NoCurbRamp, Obstacle, Crosswalk) runs only if
 exactly one arm passes for both stage-1 types, and it trains that arm and c6100. Because the default changes only if
@@ -103,17 +106,22 @@ are logged, dated, in the depth doc's section 7.
 - **Both arms pass:** nothing changes, stage 2 is not triggered, and the result does not read as a constant effect.
   (R3 as registered would have taken the larger summed ΔAUC; this is stricter.)
 - **A stage-1 pass with stage 2 not run** is a candidate only; the default does not change.
-- **Unestimable is never a pass**: fewer runs than the registered seeds on either side (no reading on a subset), fewer
-  than 10 `test` rows of a class, a run that records another arm's `crop_depth_constant`, or a family whose runs
+- **Unestimable is never a pass**: fewer runs than the registered seeds on either side, or a run or predictions for a
+  seed outside them (no reading on a subset); a `test` or `test_heldout` row with no prediction; fewer than 10
+  `test` rows of a class; a run that records no `crop_depth_constant`, or another arm's; or a family whose runs
   differ in `versions` or `git_commit`, record `git_dirty` other than false, or record `git_state_at_finish` (the
-  checkout moved during a run). The cause is named.
+  checkout moved during a run). The family check is per label type: pairing is within a type, and stage 2, trained
+  later, is its own family. The cause is named by seed, count, arm and split, never by row.
+- **An unestimable cell withholds the whole read-out.** If any cell of the family is unestimable, the outcome is
+  `unestimable`, not `no_change` or a pass for another arm: nothing changes and stage 2 is not triggered until the
+  cause is fixed and the whole family re-read. This holds even when another arm clearly fails.
 - An arm whose two upper bounds are both below 0 is reported as **worse**; it does not "pass" by excluding zero.
 - **R1 or R2 arms added later** re-read the whole family with the new m, and nothing changes until the family is
   complete.
 
 The read-out also prints, per type and arm, the **MDD** (the Δ that both lower bounds would have needed to clear 0
 at the same widths) and the few-seeds caveat: with three seeds, (1/3)³ = 3.7 % of hierarchical replicates draw one
-given seed only (for example the worst), so the hierarchical level is nominal.
+given seed only (for example the worst), so the hierarchical level is nominal; with five, (1/5)⁵ = 0.032 %.
 
 `rule_readout` implements this and is tested at every boundary named above (`tests/test_crop_constant_sweep.py`).
 
@@ -124,7 +132,9 @@ and the default here in one reviewed PR (with a CLI flag if one is wanted). It l
 ## 5. Reported, not deciding
 
 - Held-out deployments: pooled and within-city ΔAUC with both intervals, and leave-one-deployment-out (three held-out
-  deployments). Non-public deployments are never named (`non-public deployment A`, `B`).
+  deployments). Non-public deployments are never named (`non-public deployment A`, `B`). `report` refuses to write
+  `tables.md` if its text holds a non-public deployment id or anything shaped like a label id (`<city>:<digits>`),
+  whatever the code that built it. `compare.json` holds deployment ids and stays off the repo.
 - Slices, per the standing rule: type × severity and type × tag, seed-mean Δ beside the baseline AUC, with training
   counts and the thin-slice flag (`train_n < 100`).
 - Mechanism slices: the baseline `crop_half_px` quartile and the capture-year band.
@@ -149,20 +159,23 @@ and the default here in one reviewed PR (with a CLI flag if one is wanted). It l
   `SMOKE=1` measures it first. The array is chunked so that chunk labels × 3.5 s × 1.5 fits inside `--time` (8 h by
   default: at most 5,485 labels a chunk), so a slow node does not time out in a requeue loop.
 - Scrubbed storage: the restage plus about 6 GB of crops (78,867 files) for stage 1, and no kept checkpoints.
-  Scrubbed purges after 21 days and was 98 % full on 11-03, so a real write test comes first (both job files do one)
-  and training must follow the re-cut within the window.
+  Scrubbed purges after 21 days and was 98 % full on 11-03, so a real write test comes first: the submit script
+  writes 8 MiB under the working directory before it submits anything, and the recrop job does again on its node.
+  The stage job (the largest writer) and the trainings do no write test of their own. Training must follow the
+  re-cut within the window.
 - The stage job (`analysis/ai_labels_stage.slurm`, reused unchanged) opens one ssh connection per 1,000-file batch,
   sequentially (about 23 for stage 1, minutes apart), and stops without retrying on any rsync error other than 23
   (missing files). Its own default destination is the lab's durable store, which cannot take this volume, so the
   submit script always passes `DEST` and refuses one outside the working directory.
-- Preconditions: klone can reach the panorama store (tested with one connection), and klone is free of the other
-  runs now using it.
+- Preconditions, both still to be checked: klone can reach the panorama store (to be tested with one connection; not
+  tested yet), and klone is free of the other runs now using it.
 
 ## 7. Decisions for Jon (recommendations are provisional and implemented as recommended)
 
 1. **Scope.** Recommended: stage 1 only, stage 2 triggered by a single-arm pass on both types (`TYPES`, default
    `CurbRamp SurfaceProblem`). Alternatives: all five at once, or CurbRamp only (a candidate at most).
-2. **Seeds: three or five.** Recommended: five (`SEEDS`, default `42,43,44,45,46`; about 53 GPU-h for stage 1
+2. **Seeds: three or five.** Recommended: five (`REGISTERED_SEEDS`, now `42,43,44,45,46`; three is a one-line commit
+   before the first training job; about 53 GPU-h for stage 1
    against 32). On SurfaceProblem the seed noise in a Δ is about the size of the effect #51 found, so three seeds
    would probably miss a true +0.01. With five the guard is four of five.
 3. **The restage.** A store of our own on scrubbed (`RESTAGE=1`, the default; about 215 to 260 GB for stage 1), or
@@ -228,6 +241,10 @@ env are only read.
    (`RESTAGE=1` puts the stage job in front instead of step 2). Job ids go to `$W/crop_constant_jobs.txt`.
 5. **Mac:** copy each arm's `split.csv` and `predictions_s*.csv`, `runs/*/*/*/training_run.json`, the logs,
    `preflight.json`, `gates.json` and `recrop_parity.csv` into `~/Data/sidewalk-validator-ai-crop-constant-2026-11/w`,
-   then `compare --work <that copy> --seeds <the registered seeds> --control-root $R3 --logs-dir <logs>
-   [--fixed238 <#51's CurbRamp predictions>] --out compare.json` and `report --compare compare.json --out-dir docs/crop-constant-2026-11`. Paste section 8 and pin
-   the hashes above.
+   then `compare --work <that copy> --control-root $R3 --logs-dir <logs> [--fixed238 <#51's CurbRamp predictions>]
+   --out compare.json` (the registered seeds come from the code; copy every seed's files, since a seed left behind
+   reads as missing) and `report --compare compare.json --out-dir docs/crop-constant-2026-11`. Paste section 8 and
+   pin the hashes above. Keep `compare.json` in `~/Data`, not in the repo.
+
+A run whose `git status` timed out records `git_dirty: null`, which makes its whole family unestimable; the only
+remedy is to retrain that run, so check that the clone on klone is clean and its file system responsive before step 4.

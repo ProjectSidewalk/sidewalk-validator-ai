@@ -313,6 +313,11 @@ Changes to this section after `b58f433`, each visible in `git log -p -- docs/dep
   seed spread (SurfaceProblem test AUC 0.896 / 0.910 / 0.893) and the crop-size distribution at each constant.
   The sweep also departs from section 9 as first written: no `sizing_depth_m` column (it would equal `depth_m`),
   and the 6100 baseline is regenerated and trained on every seed rather than reused.
+- 2026-11-23, the same PR: the R0 to R3 thresholds are **adopted under the standing statistics delegation**
+  (statistical design follows standard ML practice without waiting on Jon), replacing "Pending Jon's confirmation" in
+  this section's opening and in section 11. R0 to R2 are unchanged from their registration on 2026-11-12; R3 changed
+  only as in the entry above. When this was written, section 8 was still "Not run yet": no ViT-L, Google, klone-arm or
+  sweep result existed.
 
 - **R0, parity.** At least 99 % of GPU-rendered Set A labels have `|d_vitb / depth_m − 1| < 0.001`. The threshold's
   source: serving parity found depth maps reproducing to ≤ 1.8 mm across torch versions
