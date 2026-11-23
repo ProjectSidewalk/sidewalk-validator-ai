@@ -351,21 +351,22 @@ def test_card_derived_rai_text_appears_in_the_card(tmp_path):
                                        + [_strip(rule) for _, rule in hf_cards.vote_rules(0)]),
         "rai:dataAnnotationAnalysis": _sentences_without_todo(hf_cards.prior_sentence(prior)),
         "rai:machineAnnotationTools": [_strip(hf_cards.ai_labels_text(False))],
+        "rai:dataReleaseMaintenancePlan": _sentences_without_todo(hf_cards.versioning_text(gen.get("selection_sha256"),
+                                                                                           None)),
     }
+    rewrites = _hc().CARD_TO_RAI_REWRITES
+    used = set()
     for key, frags in fragments.items():
         assert frags, key
         for frag in frags:
             frag = frag.rstrip(".;")
-            assert frag in doc[key] or frag[:1].upper() + frag[1:] in doc[key], (key, frag)
             assert frag in card or frag[:1].lower() + frag[1:] in card, (key, frag)
-    # the versioning text, with the one phrase that points at the card's layout rewritten
-    for frag in _sentences_without_todo(hf_cards.versioning_text(gen.get("selection_sha256"), None)):
-        frag = frag.rstrip(".")
-        assert frag in card
-        rewritten = frag
-        for old, new in _hc().CARD_TO_RAI_REWRITES.items():
-            rewritten = rewritten.replace(old, new)
-        assert rewritten in doc["rai:dataReleaseMaintenancePlan"]
+            for old, new in rewrites.items():     # the RAI text words these phrases differently, and only these
+                if old in frag:
+                    used.add(old)
+                    frag = frag.replace(old, new)
+            assert frag in doc[key] or frag[:1].upper() + frag[1:] in doc[key], (key, frag)
+    assert used == set(rewrites)                  # every rewrite still matches card text
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -469,14 +470,68 @@ def test_validate_croissant_returns_the_warnings(tmp_path):
     assert any("license" in w.lower() for w in warnings)      # no licence passed: Croissant 1.1 wants one
 
 
+def _outcome(fn):
+    """The exception ``fn()`` raises, caught as BaseException: a pytest skip or fail raised inside would otherwise
+    pass through ``pytest.raises`` of the other kind and decide this test's own outcome."""
+    try:
+        fn()
+    except BaseException as e:    # noqa: B036 (pytest's outcomes are BaseException subclasses)
+        return e
+    return None
+
+
 def test_require_mlcroissant_fails_in_ci_and_skips_elsewhere(monkeypatch):
     import sys
 
     from conftest import require_mlcroissant
     monkeypatch.setitem(sys.modules, "mlcroissant", None)          # import now raises ImportError
     monkeypatch.setenv("REQUIRE_MLCROISSANT", "1")
-    with pytest.raises(pytest.fail.Exception, match="REQUIRE_MLCROISSANT"):
-        require_mlcroissant()
+    e = _outcome(require_mlcroissant)
+    assert type(e) is pytest.fail.Exception and "REQUIRE_MLCROISSANT" in str(e), repr(e)
     monkeypatch.delenv("REQUIRE_MLCROISSANT")
-    with pytest.raises(pytest.skip.Exception):
-        require_mlcroissant()
+    e = _outcome(require_mlcroissant)
+    assert type(e) is pytest.skip.Exception, repr(e)
+
+
+def test_doctests():
+    import doctest
+    assert doctest.testmod(_hc()).failed == 0
+    finder, runner = doctest.DocTestFinder(), doctest.DocTestRunner()
+    for test in finder.find(pub.undescribed_columns, globs={"undescribed_columns": pub.undescribed_columns}):
+        runner.run(test)
+    assert runner.summarize(verbose=False).attempted >= 1 and runner.failures == 0
+
+
+def test_expert_counts_of_the_whole_selection_stay_out_of_the_rai_text(tmp_path):
+    """generation_run.json's class_source_counts cover rows staging drops (non-public deployments); the RAI text
+    must not repeat them (each published row's class_source is in split.csv)."""
+    root, *_ = make_root(tmp_path)
+    m_path = os.path.join(root, T, "manifest.csv")
+    m = pd.read_csv(m_path).assign(class_source="margin")
+    extra = pd.concat([m.iloc[[0]]] * 3).assign(city="zurich", label_uid=["zurich:5", "zurich:6", "zurich:7"],
+                                               label_id=[5, 6, 7], class_source="expert",
+                                               crop_path="correct/zurich_5.webp")
+    pd.concat([m, extra]).to_csv(m_path, index=False)
+    gen_path = os.path.join(root, T, "generation_run.json")
+    gen = _read_json(gen_path)
+    gen.update(n_experts=2, class_source_counts={"margin": 13, "expert": 3})
+    with open(gen_path, "w") as f:
+        json.dump(gen, f)
+    _, d = pub.stage(root, T, lists=LISTS)
+    text = _croissant(d)["rai:dataAnnotationAnalysis"]
+    assert "Expert votes came from 2 project-team accounts" in text
+    assert "expert in the selection" not in text and "3 expert" not in text
+
+
+def test_city_mix_and_vote_statistics_say_only_what_the_files_show(tmp_path):
+    root, *_ = make_root(tmp_path)
+    split = pd.read_csv(os.path.join(root, T, "split.csv"), dtype=str)
+    split["human_agree"] = ""
+    split["human_disagree"] = ""
+    _rewrite_split(root, split)
+    _, d = pub.stage(root, T, lists=TEST_LISTS)
+    rai = _rai(_croissant(d))
+    assert "rai:annotationsPerItem" not in rai                       # no votes recorded: nothing to report
+    assert "unequal" not in rai["rai:dataBiases"] and "Crops per city: chicago 4, oradell 2, teaneck 6." in \
+        rai["rai:dataBiases"]
+    assert "volunteers" not in json.dumps(rai) and "where Project Sidewalk users chose" in rai["rai:dataLimitations"]

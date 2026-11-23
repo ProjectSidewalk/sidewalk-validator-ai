@@ -1,5 +1,7 @@
 """Shared test setup."""
+import atexit
 import os
+import shutil
 import tempfile
 
 import pytest
@@ -8,7 +10,10 @@ REQUIRE_MLCROISSANT_ENV = "REQUIRE_MLCROISSANT"
 
 # mlcroissant creates its cache (default ~/.cache/croissant) when it is first imported, which staging does when the
 # package is installed; point it at a temporary directory before any test can import it.
-os.environ.setdefault("CROISSANT_CACHE", tempfile.mkdtemp(prefix="croissant-cache-"))
+if "CROISSANT_CACHE" not in os.environ:
+    _croissant_cache = tempfile.mkdtemp(prefix="croissant-cache-")
+    os.environ["CROISSANT_CACHE"] = _croissant_cache
+    atexit.register(shutil.rmtree, _croissant_cache, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)

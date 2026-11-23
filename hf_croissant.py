@@ -60,15 +60,19 @@ LICENCE_STEMS = (r"licen[cs]", r"copyright", r"terms of (use|service)", r"redist
                  r"scrap")
 """Case-insensitive patterns :func:`lint` refuses in RAI text: licence statements belong in the ``license`` field."""
 
-CARD_TO_RAI_REWRITES = {"the content hash above": "the content hash in this file's description"}
-"""Card phrases that point at the card's own layout, and what the RAI text says instead."""
+CARD_TO_RAI_REWRITES = {"the content hash above": "the content hash in this file's description",
+                        "where volunteers chose": "where Project Sidewalk users chose"}
+"""Card phrases the RAI text words differently: one points at the card's own layout, and one calls the labelers
+volunteers where the rest of the RAI text says Project Sidewalk users."""
 
 COLLECTION_TYPES = ["User-generated content data", "Web API"]
 
 IMPUTATION = "No values are imputed; blank cells are missing values."
-ANNOTATION_PLATFORM = ("Project Sidewalk's validation interface (https://projectsidewalk.org), in which users vote "
+ANNOTATION_PLATFORM = ("Project Sidewalk's validation interfaces (https://projectsidewalk.org), in which users vote "
                        "Agree, Disagree or Unsure on labels.")
-ANNOTATOR_DEMOGRAPHICS = "No annotator demographics or identifiers are included in this dataset."
+ANNOTATOR_DEMOGRAPHICS = ("No annotator demographics or user identifiers are included in this dataset's files. Each "
+                          "row's label_uid can be joined to the deployment's public /v3/api/rawLabels export, which "
+                          "does include user identifiers.")
 PERSONAL_SENSITIVE = ("Crops are street-level imagery that can show pedestrians, vehicles (number plates included) "
                       "and building fronts.")
 SOCIAL_IMPACT = ("The data is for training and evaluating validators of crowdsourced sidewalk accessibility labels. "
@@ -118,6 +122,18 @@ def known(text):
     return " ".join(s for s in sentences(plain_text(text)) if hf_cards.TODO not in s)
 
 
+def from_card(text):
+    """A card paragraph as RAI text: :func:`known` sentences with :data:`CARD_TO_RAI_REWRITES` applied.
+
+    >>> from_card("Labels exist where volunteers chose to label in `split.csv`. Beta = TODO: tilt beta.")
+    'Labels exist where Project Sidewalk users chose to label in split.csv.'
+    """
+    text = known(text)
+    for old, new in CARD_TO_RAI_REWRITES.items():
+        text = text.replace(old, new)
+    return text
+
+
 def _join(*parts):
     return " ".join(p for p in parts if p).strip()
 
@@ -133,12 +149,17 @@ def vote_stats(split_df):
     >>> import pandas as pd
     >>> vote_stats(pd.DataFrame({"human_agree": [3, 4, 6], "human_disagree": [0, 1, None]}))
     {'min': 3, 'median': 5, 'max': 6}
+    >>> vote_stats(pd.DataFrame({"human_agree": [None], "human_disagree": [None]})) is None
+    True
     """
     import pandas as pd
     if split_df is None or not {"human_agree", "human_disagree"} <= set(split_df.columns) or not len(split_df):
         return None
-    total = (pd.to_numeric(split_df["human_agree"], errors="coerce").fillna(0)
-             + pd.to_numeric(split_df["human_disagree"], errors="coerce").fillna(0))
+    agree = pd.to_numeric(split_df["human_agree"], errors="coerce")
+    disagree = pd.to_numeric(split_df["human_disagree"], errors="coerce")
+    if agree.isna().all() and disagree.isna().all():      # no vote recorded at all: nothing to report
+        return None
+    total = agree.fillna(0) + disagree.fillna(0)
     median = float(total.median())
     return {"min": int(total.min()), "median": int(median) if median.is_integer() else median,
             "max": int(total.max())}
@@ -171,8 +192,8 @@ def _collection(ds):
 def _missing_data(manifest_df):
     counts = _status_counts(manifest_df)
     return _join("Labels the class rules leave out (unvalidated, unsure or contested) are not in this dataset.",
-                 f"manifest.csv lists every label the generator attempted, with its status: {counts}; only ok rows "
-                 "have a crop." if counts else "")
+                 f"manifest.csv lists the labels from public deployments that the generator attempted, with their "
+                 f"status: {counts}; only ok rows have a crop." if counts else "")
 
 
 def _annotation_protocol(n_experts):
@@ -181,8 +202,10 @@ def _annotation_protocol(n_experts):
     return _join(plain_text(hf_cards.VOTE_SOURCE_TEXT), f"Class rules over human votes: {rules}.")
 
 
-def _annotation_analysis(prior, n_experts, source_counts):
-    return _join(known(hf_cards.expert_text(n_experts, source_counts)),
+def _annotation_analysis(prior, n_experts):
+    # The expert sentence without the generation run's class_source counts: those cover the whole selection, including
+    # rows staging drops, so they would not match the published files (each row's class_source is in split.csv).
+    return _join(known(hf_cards.expert_text(n_experts, {})),
                  known(hf_cards.prior_sentence(prior, n_experts)) if prior else "")
 
 
@@ -205,19 +228,11 @@ def _machine_tools(gen, include_ai):
 
 def _biases(ds):
     cities = ds.get("cities") or {}
-    mix = (f"The cities contribute unequal numbers of crops ({', '.join(f'{c} {n}' for c, n in cities.items())})."
-           if len(cities) > 1 else "")
+    mix = f"Crops per city: {', '.join(f'{c} {n}' for c, n in cities.items())}." if len(cities) > 1 else ""
     return _join("Labels exist only where Project Sidewalk users chose to label, so coverage follows where users "
                  "worked, not where features are.", mix,
                  "Only labels with a decisive human vote are included, so borderline cases are under-represented.",
                  AI_VOTES_BIAS)
-
-
-def _maintenance(selection, doi):
-    text = known(hf_cards.versioning_text(selection, doi))
-    for old, new in CARD_TO_RAI_REWRITES.items():
-        text = text.replace(old, new)
-    return text
 
 
 def rai_metadata(ctx, split_df, manifest_df):
@@ -240,7 +255,7 @@ def rai_metadata(ctx, split_df, manifest_df):
     overrides = ctx.get("overrides") or {}
     n_experts = gen.get("n_experts") or 0
     include_ai = settings.get("include_ai_labels", gen.get("include_ai_labels"))
-    use = sentences(known(hf_cards.intended_use_text(t)))
+    use = sentences(from_card(hf_cards.intended_use_text(t)))
     values = {
         "dataCollection": _collection(ds),
         "dataCollectionType": list(COLLECTION_TYPES),
@@ -249,13 +264,12 @@ def rai_metadata(ctx, split_df, manifest_df):
                                   "/v3/api/rawLabels export; the panoramas are read from the lab's panorama store."),
         "dataImputationProtocol": IMPUTATION,
         "dataPreprocessingProtocol": _join(
-            _capitalise(known(hf_cards.imagery_sentence(ds.get("pano_sources") or {}, settings))),
-            known(hf_cards.downsample_text(gen)), known(hf_cards.crop_text(ds, gen)),
-            known(hf_cards.split_text(ds.get("heldout_cities") or [], overrides.get("split_seed")))),
+            _capitalise(from_card(hf_cards.imagery_sentence(ds.get("pano_sources") or {}, settings))),
+            from_card(hf_cards.downsample_text(gen)), from_card(hf_cards.crop_text(ds, gen)),
+            from_card(hf_cards.split_text(ds.get("heldout_cities") or [], overrides.get("split_seed")))),
         "dataAnnotationProtocol": _annotation_protocol(n_experts),
         "dataAnnotationPlatform": ANNOTATION_PLATFORM,
-        "dataAnnotationAnalysis": _annotation_analysis(ctx.get("prior"), n_experts,
-                                                       gen.get("class_source_counts") or {}),
+        "dataAnnotationAnalysis": _annotation_analysis(ctx.get("prior"), n_experts),
         "annotationsPerItem": _annotations_per_item(vote_stats(split_df)),
         "annotatorDemographics": ANNOTATOR_DEMOGRAPHICS,
         "machineAnnotationTools": _machine_tools(gen, include_ai),
@@ -265,7 +279,8 @@ def rai_metadata(ctx, split_df, manifest_df):
                                            "(<city>:<label_id>)."),
         "dataSocialImpact": SOCIAL_IMPACT,
         "personalSensitiveInformation": PERSONAL_SENSITIVE,
-        "dataReleaseMaintenancePlan": _maintenance(gen.get("selection_sha256"), overrides.get("doi")),
+        "dataReleaseMaintenancePlan": from_card(hf_cards.versioning_text(gen.get("selection_sha256"),
+                                                                         overrides.get("doi"))),
     }
     out = {}
     for name in RAI_PROPERTIES:

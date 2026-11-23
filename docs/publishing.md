@@ -102,8 +102,9 @@ with the [RAI 1.0](https://docs.mlcommons.org/croissant/docs/croissant-rai-spec.
 
   A bare key (`dataBiases`) is refused with the prefixed name in the message.
 - **Staging refuses** (`hf_croissant.lint`) an unknown `rai:` key, a list where the RAI spec and `mlcroissant` do not
-  both allow several values, an empty value, a `TODO:` marker, a licence statement (licence terms go in the `license`
-  field), and a `conformsTo` without both URIs. `--push-staged` runs the same lint on the staged file again, so a
+  both allow several values, an empty value, a `TODO:` marker, text matching a short list of licence words
+  (`hf_croissant.LICENCE_STEMS`; licence terms go in the `license` field, and the list is a guard, not a
+  classifier), and a `conformsTo` without both URIs. `--push-staged` runs the same lint on the staged file again, so a
   rule tightened since staging asks for a restage.
 - **A `split.csv` column with no description** is left out of the `labels` record set with a warning, recorded in
   `publish/staging.json` as `croissant_undescribed_columns` and printed again before `--push-staged`. A test keeps
