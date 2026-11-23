@@ -654,6 +654,9 @@ def test_compare_reads_a_complete_family(tmp_path):
         assert res["cells"][c]["unestimable"] is None and res["cells"][c]["k"] == 5
         assert res["cells"][c]["point"] > 0
     assert res["family_problems"] == []
+    assert len(res["inputs"]) == 3 * (1 + 2 * 5)                       # every split, prediction and run record
+    assert res["inputs"]["c4000/CurbRamp/predictions_s42.csv"] == cc.sha256_file(
+        os.path.join(cc.arm_dir(work, 4000), "CurbRamp", "predictions_s42.csv"))
 
 
 def test_four_of_five_registered_seeds_is_unestimable(tmp_path):
@@ -714,11 +717,14 @@ def test_compare_reports_slices_with_training_counts_and_the_negative_control(tm
     res = cc.compare_type(work, "CurbRamp", seeds=(42, 43, 44), n_boot=50, control_root=str(tmp_path / "r3"))
     ctl = res["negative_control"]
     assert ctl["point"] == 0 and ctl["seeds"] == [42, 43, 44]
+    assert ctl["inputs_sha256"]["s42"] == cc.sha256_file(str(ctrl / "predictions.csv"))
     tags = [r for r in res["slices"] if r["by"] == "tag" and r["split"] == "test" and r["arm"] == 4000]
     assert tags and all("train_n" in r and "needs_data" in r and "base_auc" in r for r in tags)
     assert {r["by"] for r in res["slices"]} >= {"severity", "tag", "crop_half_px_quartile", "capture_year"}
     assert set(res["recall_at_precision"][4000]) == {"correct", "incorrect"}
     assert {r["left_out"] for r in res["lodo"][4000]} == {"held-x", "held-y", "secret-held"}
+    ctx = cc.context_auc(work, "CurbRamp", os.path.join(src, "predictions_s42.csv"))
+    assert ctx["auc"] == pytest.approx(res["auc_test"][6100]["s42"])
 
 
 # ---------------------------------------------------------------------------------------------------------------------

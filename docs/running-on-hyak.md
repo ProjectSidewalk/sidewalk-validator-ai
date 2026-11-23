@@ -286,3 +286,14 @@ about 1 GPU-h). The ViT-L checkpoint is `depth_anything_v2_metric_vkitti_vitl.pt
 job refuses to start until `VITL_REV` (a 40-hex commit) and `VITL_SHA256` (verified against the file) are set: read
 the commit on a login node and pin both here and in the job file. Recipe and expected outputs:
 [`depth-ablation-2026-11.md`](depth-ablation-2026-11.md), "Reproduce".
+
+## Crop-constant sweep (issue #21)
+
+Run from a clone in `/gscratch/scrubbed/$USER/crop-constant-2026-11/sidewalk-validator-ai`; everything is written
+under that working directory. `analysis/crop_constant_submit.sh` (`DRY_RUN=1` prints the commands) chains the
+optional restage (`analysis/ai_labels_stage.slurm`, always with `DEST` inside the working directory, because its own
+default is the lab's durable store), `analysis/crop_constant_recrop.slurm` for `preflight`, the `recrop` array and
+`gates` (the job file refuses any other working directory and writes 8 MiB first), and one
+`analysis/confident_learning.slurm` training per arm, type and seed with `RUNS=$W/runs/c<C>`. Measure the re-cut rate
+with `SMOKE=1` first. Not run; the recipe, cost and pre-registered rule are in
+[`crop-constant-2026-11.md`](crop-constant-2026-11.md).

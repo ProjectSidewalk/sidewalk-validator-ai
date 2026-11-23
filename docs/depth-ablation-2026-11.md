@@ -278,8 +278,8 @@ Figures are binned only. No per-label scatter is committed.
 **Fixed on 2026-11-12, before the klone run**, in commit `b58f433`, the commit that added this file (branch
 `depth-agreement`; the numbers of section 4 came from code at `b2756eb`). **They were written after the flat-ground
 results of section 4 were known, and before any ViT-L, Google or sweep number existed.** They are pre-registered
-with respect to those arms, not with respect to the ViT-B / flat-ground relation. **Pending Jon's confirmation** of
-the thresholds (section 11).
+with respect to those arms, not with respect to the ViT-B / flat-ground relation. The thresholds were adopted under
+the standing statistics delegation (section 11).
 
 What each rule was written with knowledge of:
 
@@ -300,6 +300,19 @@ Changes to this section after `b58f433`, each visible in `git log -p -- docs/dep
   "marginal" sentence now says what the code and its tests do (a flag on [86 %, 94 %], which never changes the
   verdict); (b) R2 says how a bracket end exactly on a band edge is read; (c) the table above was added, and
   R2's "1.37 in ln" was corrected to 1.40 (the 15 % it leads to is unchanged). No threshold changed.
+- 2026-11-23, the sweep PR ([`crop-constant-2026-11.md`](crop-constant-2026-11.md)), before any arm was cut or
+  trained, under the standing statistics delegation. Three amendments to R3, each stricter than as registered:
+  (a) **both intervals**: an arm passes a type only when the registered panorama interval **and** a hierarchical
+  interval that also resamples the seed pairs (one panorama draw per replicate, shared by every drawn seed and both
+  models) have lower bounds above 0; (b) **the seed guard**, by the registered seed count k: with three seeds all
+  three pairs ahead, with five or more at least k − 1 of k; (c) **both arms pass**: nothing changes and stage 2 is
+  not triggered (R3 would have taken the larger summed ΔAUC). Clarifications made at the same time: m = 2 for every
+  type, whatever stage 2 trains; "the three seed pairs" reads "the registered seed pairs"; a cell is unestimable,
+  never a pass, with fewer runs than the registered seeds, fewer than 10 `test` rows of a class, or a family of runs
+  that differs in `versions` or `git_commit`. Known then: #51's result, sections 4 and 5, the stored baselines'
+  seed spread (SurfaceProblem test AUC 0.896 / 0.910 / 0.893) and the crop-size distribution at each constant.
+  The sweep also departs from section 9 as first written: no `sizing_depth_m` column (it would equal `depth_m`),
+  and the 6100 baseline is regenerated and trained on every seed rather than reused.
 
 - **R0, parity.** At least 99 % of GPU-rendered Set A labels have `|d_vitb / depth_m − 1| < 0.001`. The threshold's
   source: serving parity found depth maps reproducing to ≤ 1.8 mm across torch versions
@@ -341,7 +354,9 @@ Changes to this section after `b58f433`, each visible in `git log -p -- docs/dep
     exists for one provider (round 4 trains on three), and only for panoramas the backfill has reached and that
     still serve a payload. Its plane model also omits the objects Obstacle labels sit on. A trig-sized arm is
     possible **for ground types, given a camera height per provider**; it is not provider-free.
-- **R3, the constant and any added arm** (the sweep PR). For each swept type and arm, the statistic is the **mean
+- **R3, the constant and any added arm** (the sweep PR; **amended on 2026-11-23**, see the change list above and
+  [`crop-constant-2026-11.md`](crop-constant-2026-11.md), section 4, which is the rule as it is read). For each
+  swept type and arm, the statistic is the **mean
   over the three seed pairs** (arm seed 42 with baseline seed 42, 43 with 43, 44 with 44) of the paired ΔAUC against
   the 6100 baseline. It is recomputed inside each of 2,000 panorama resamples, with interval level `1 − 0.05 / m`,
   where m is the number of non-baseline arms run for that type (two arms: 97.5 %).
@@ -376,15 +391,13 @@ also reports how many rows each rule was read on; the rules set no minimum (sect
 ### 8.7 Selection on coverage
 ### 8.8 Rule read-out
 
-## 9. Constant sweep (later PR)
+## 9. Constant sweep
 
-`analysis/crop_constant_sweep.py recrop` (not in this PR). It re-cuts CurbRamp and SurfaceProblem at 4000 and 8000
-from the same views (read through `read_store_panorama`, torch render, `crop_pose` pose). The 6100 arm reuses the
-manifest's `crop_half_px` as its control, because 17 round-3 rows differ from `int(6100 / depth_m)` by 1 px. Each arm
-keeps `depth_m` as the ViT-B value and adds `sizing_depth_m` and `crop_depth_constant`. Seeds 42, 43 and 44. The
-baseline's seeds 43 and 44 already exist on round 3's split, so only the new arms are trained. Estimated cost on
-klone's free `ckpt-all`: about 45 GPU-h for both types, about 20 for CurbRamp alone. These estimates are unverified
-until replaced by the existing runs' `train_runtime`. R1 and R2 may add one arm each.
+Designed and pre-registered in [`crop-constant-2026-11.md`](crop-constant-2026-11.md) (code:
+`analysis/crop_constant_sweep.py` and its two klone launchers; not run). It re-cuts CurbRamp and SurfaceProblem at
+4000, 6100 and 8000 from one render per label, sizes the arms from the recorded `depth_m`, trains a regenerated
+6100 baseline beside them on every seed, and reads R3 as amended (section 7's change list). Stage 2 covers the other
+three types only after a single-arm pass on both. R1 and R2 may add one arm each.
 
 ## 10. Outcome and what was recorded
 
@@ -405,10 +418,15 @@ until replaced by the existing runs' `train_runtime`. R1 and R2 may add one arm 
   reports the roll distribution. The artifact-pose lookup is a pose study and is deferred
   (`TODO(#21): npz_pose arm`).
 
-Decisions owed by Jon: the go for the klone run (about 1 GPU-h, free, and one rsync connection to makelab2); the
-thresholds of R0 to R3; R1's estimand (city-balanced with the weighted share as a veto, as written, or the weighted
-share as the rule); the sweep scope (CurbRamp + SurfaceProblem with three seeds, CurbRamp only, or one seed); the
-2.5 m headline height; whether `camera_roll` gets its own issue. **Two readings need confirming.**
+**The R0 to R3 thresholds were adopted under the standing statistics delegation** (statistical design follows
+standard ML practice without waiting on Jon), as were the 2026-11-23 amendments to R3; they no longer wait on his
+confirmation. The sweep's own run-time choices (scope, seeds, the restage, the go) are listed in
+[`crop-constant-2026-11.md`](crop-constant-2026-11.md), section 7.
+
+Decisions owed by Jon: the go for the klone run (about 1 GPU-h, free, and one rsync connection to makelab2); R1's
+estimand (city-balanced with the weighted share as a veto, as written, or the weighted share as the rule); the sweep
+scope (now in [`crop-constant-2026-11.md`](crop-constant-2026-11.md), section 7); the 2.5 m headline height; whether
+`camera_roll` gets its own issue. **Two readings need confirming.**
 
 1. *R1's marginal band.* The plan's R1 text said a type between 86 % and 94 % "counts as not met", but its boundary
    test says exactly 90 % is met. Those cannot both hold. This note, the module and the tests now say one thing:

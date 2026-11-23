@@ -768,6 +768,7 @@ def _read_arm(work, t, c, seeds, runs_root):
     split = pd.read_csv(split_p, dtype={"label_uid": str, "pano_id": str, "city": str}, low_memory=False) \
         if os.path.exists(split_p) else None
     preds, runs = {}, {}
+    inputs = {f"{arm_name(c)}/{t}/split.csv": sha256_file(split_p)} if split is not None else {}
     for s in seeds:
         pp = os.path.join(d, f"predictions_s{s}.csv")
         rp = os.path.join(runs_root, arm_name(c), t, f"s{s}", "training_run.json")
@@ -775,7 +776,9 @@ def _read_arm(work, t, c, seeds, runs_root):
             preds[s] = pd.read_csv(pp, dtype={"label_uid": str})
             with open(rp) as f:
                 runs[s] = json.load(f)
-    return {"split": split, "preds": preds, "runs": runs}
+            inputs[f"{arm_name(c)}/{t}/predictions_s{s}.csv"] = sha256_file(pp)
+            inputs[f"runs/{arm_name(c)}/{t}/s{s}/training_run.json"] = sha256_file(rp)
+    return {"split": split, "preds": preds, "runs": runs, "inputs": inputs}
 
 
 def _matrix(preds, seeds, uids):
@@ -880,6 +883,7 @@ def control_predictions(control_root, t, seeds=(42, 43, 44)):
         p = os.path.join(control_root, t, name)
         if os.path.exists(p):
             out[s] = pd.read_csv(p, dtype={"label_uid": str})
+            out[s].attrs["sha256"] = sha256_file(p)
     return out
 
 
@@ -897,7 +901,8 @@ def compare_type(work, t, seeds=DEFAULT_SEEDS, arms=SWEPT, n_boot=N_BOOT, seed=S
     fam = family_problems(allruns) if allruns else []
     res = {"type": t, "seeds": list(seeds), "k": k, "arms": [int(a) for a in arms], "family_problems": fam,
            "cells": {}, "heldout": {}, "lodo": {}, "slices": [], "recall_at_precision": {}, "auc_test": {},
-           "gpu": {}, "negative_control": None}
+           "gpu": {}, "negative_control": None,
+           "inputs": {name: h for d in data.values() for name, h in d["inputs"].items()}}
 
     def problem(c):
         d = data[c]
@@ -1007,7 +1012,22 @@ def _control(control_root, t, base, n_boot, seed):
     except KeyError as e:
         return {"seeds": seeds, "note": str(e)}
     st = paired_stats(y, A, B, clusters, len(seeds), n_boot=n_boot, seed=sl.slice_seed(seed, f"{t}:control"))
-    return {**st, "seeds": seeds, "what": "stored round-3 6100 minus regenerated c6100"}
+    return {**st, "seeds": seeds, "what": "stored round-3 6100 minus regenerated c6100",
+            "inputs_sha256": {f"s{s}": stored[s].attrs.get("sha256") for s in seeds}}
+
+
+def context_auc(work, t, path):
+    """The test AUC of another run's predictions (#51's fixed 238 px CurbRamp run) on c6100's test rows, beside the
+    arms as context only: it comes from another pipeline and decides nothing. None when it misses a row."""
+    from sklearn.metrics import roc_auc_score
+    split = pd.read_csv(os.path.join(arm_dir(work, BASELINE), t, "split.csv"), dtype={"label_uid": str})
+    test = split[split.split == "test"]
+    p = pd.read_csv(path, dtype={"label_uid": str}).drop_duplicates("label_uid").set_index("label_uid")
+    if not test.label_uid.isin(p.index).all():
+        return {"path_sha256": sha256_file(path), "auc": None, "note": "misses some c6100 test rows"}
+    y = (test.label_class == "incorrect").to_numpy()
+    return {"path_sha256": sha256_file(path), "n": int(len(test)),
+            "auc": float(roc_auc_score(y, p.loc[test.label_uid, "p_incorrect"].to_numpy(float)))}
 
 
 def compare_output(results, seeds):
@@ -1059,6 +1079,10 @@ def report_tables(out, public):
         for a, aucs in r.get("auc_test", {}).items():
             lines.append(f"| {t} | c{a} | " + " | ".join(_f(aucs.get(f's{s}'), "{:.4f}") for s in out["seeds"])
                          + " |")
+    ctx = [(t, r["context_fixed238"]) for t, r in out["types"].items() if r.get("context_fixed238")]
+    for t, c in ctx:
+        lines += ["", f"Context only (another pipeline, decides nothing): #51's fixed 238 px {t} run, test AUC "
+                  f"{_f(c.get('auc'), '{:.4f}') or c.get('note', '')} on the same test rows."]
     lines += ["", "## Negative control (decides nothing)", "",
               "Stored round-3 6100 predictions minus the regenerated c6100, seeds 42 to 44. Stored seed 42 came "
               "from `fine_tune.slurm` (4 workers), 43 and 44 from `confident_learning.slurm` (7 workers).", "",
@@ -1268,6 +1292,8 @@ def cmd_compare(args):
     res = {t: compare_type(args.work, t, seeds, arms2 if t in STAGE2_TYPES else arms, args.n_boot,
                            runs_root=args.runs_root, control_root=args.control_root, logs_dir=args.logs_dir)
            for t in types}
+    if args.fixed238 and "CurbRamp" in res:
+        res["CurbRamp"]["context_fixed238"] = context_auc(args.work, "CurbRamp", args.fixed238)
     out = compare_output(res, seeds)
     write_json(args.out, out)
     ro = out["readout"]
@@ -1351,6 +1377,7 @@ def main(argv=None):
     s.add_argument("--runs-root", default=None, help="default <work>/runs")
     s.add_argument("--control-root", default=None, help="round 3's data root, for the negative control")
     s.add_argument("--logs-dir", default=None, help="the training logs, for the GPU model of each run")
+    s.add_argument("--fixed238", default=None, help="#51's fixed 238 px CurbRamp predictions (a context row)")
     s.add_argument("--n-boot", type=int, default=N_BOOT)
     s.add_argument("--out", required=True)
     s.set_defaults(func=cmd_compare)
