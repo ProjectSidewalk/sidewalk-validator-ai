@@ -113,8 +113,8 @@ Each model scores its own val, test and `test_heldout` rows.
   - **Inflation and the other L − G deltas:** seeds are also resampled, independently per arm, with the same seed
     draw for every type.
 - **t interval:** on the seed-level values. For the contrast that is a one-sample t on the per-seed pooled
-  contrasts; for the inflation, a Welch interval on the per-seed macro AUCs of the two arms (unpaired: the stored
-  G runs share no seed with an L run).
+  contrasts; for the inflation, a Welch interval on the per-seed macro AUCs of the two arms (unpaired: an L run and
+  a G run with the same seed number are different trainings on different splits, not a pair).
 - Both intervals decide. If they give different outcomes under the rule, the reading is "unresolved". For the
   inflation the Welch interval is co-deciding, not only a check: in the review's null simulations (see the
   amendment and Limits) the bootstrap interval under-covered when seed variance dominated and the Welch interval

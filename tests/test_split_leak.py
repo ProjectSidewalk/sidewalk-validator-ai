@@ -480,6 +480,18 @@ def test_rule_counts_estimable_seeds_from_the_data():
     assert r["provisional_contrast"] is True and r["provisional_inflation"] is False
     r = sl.rule_outcome(LEAK, FLAT, n_seeds=3, g_source="fresh")
     assert r["provisional"] is False and r["confirmatory_inflation"] is True
+    # the inflation's disagreement reading keeps its text and gains the suffix
+    two_g = {"42": 0.9, "43": 0.91, "44": None}
+    infl = ci(-0.004, 0.005, -0.008, 0.009, per_seed_l=full, per_seed_g=two_g)
+    r = sl.rule_outcome(LEAK, infl, n_seeds=3, g_source="fresh")
+    assert r["inflation"] == ("unresolved, upper bound +0.0090 (the bootstrap and t intervals disagree) "
+                              "(provisional: 2 of 3 seeds)")
+    # n_seeds is the cap: more per-seed values than planned never count past it
+    r = sl.rule_outcome(ci(-0.05, -0.01, -0.06, -0.005, per_seed=full), ci(0.002, 0.02, 0.001, 0.03,
+                        per_seed_l=full, per_seed_g=full), n_seeds=1, g_source="fresh")
+    assert r["estimable_seeds"] == {"contrast": 1, "inflation": 1}
+    assert r["contrast"] == "leak shown (provisional: 1 of 3 seeds)"
+    assert r["inflation"] == "shown (provisional: 1 of 3 seeds)"
 
 
 # ---------------------------------------------------------------------------------------------------------------------
