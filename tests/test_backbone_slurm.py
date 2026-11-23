@@ -262,12 +262,12 @@ def test_an_unverified_conversion_skips_rampnet(launcher):
     assert r.returncode == 0 and "skipping rampnet-convnextv2-base" in r.stdout
 
 
-def test_the_job_cap_refuses_the_56th_element(launcher):
-    out = launcher["out"]
-    (out / "backbone_jobs.txt").write_text("t\t1\t26\tsmoke\tc\tf\ts\n")
+def test_the_job_cap_refuses_the_64th_element(launcher):
+    out = launcher["out"]   # the pilot stage is 30 elements and the cap is 63
+    (out / "backbone_jobs.txt").write_text("t\t1\t34\tsmoke\tc\tf\ts\n")
     r = launcher["run"]("pilot")
     assert r.returncode != 0 and "cap" in r.stderr and not launcher["log"].exists()
-    (out / "backbone_jobs.txt").write_text("t\t1\t25\tsmoke\tc\tf\ts\n")
+    (out / "backbone_jobs.txt").write_text("t\t1\t33\tsmoke\tc\tf\ts\n")
     assert launcher["run"]("pilot").returncode == 0
 
 

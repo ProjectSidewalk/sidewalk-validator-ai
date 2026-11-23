@@ -43,8 +43,9 @@ SBATCH="${SBATCH:-sbatch}"
 SQUEUE="${SQUEUE:-squeue}"
 CITIES_URL="${CITIES_URL:-https://sidewalk-columbus.cs.washington.edu/v3/api/cities}"
 # Jon's cap for this stream: at most 40 GPU jobs in all, array elements counted (2026-11-19), raised to 55 the same
-# night for the 18 DINOv3 runs plus resubmits. Raise it only on his word.
-JOB_CAP=55
+# night for the 18 DINOv3 runs plus resubmits, and to 63 on 2026-11-20 for the J16 rerun of the 8 RampNet pilot rows.
+# Raise it only on his word.
+JOB_CAP=63
 EPOCHS_MAIN=25
 DINOV3_ARMS="dinov3-vitl16 dinov3-vitl16-256 dinov3-vitb16"
 LEDGER="$OUT/backbone_jobs.txt"

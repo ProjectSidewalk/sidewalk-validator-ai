@@ -147,10 +147,10 @@ analysis/backbone_submit.sh dinov3            # 18 elements: 3 DINOv3 arms x 2 p
 
 Every submit first writes 8 MiB to `$OUT` (a `touch` proves nothing on scrubbed), checks free space on scrubbed and
 `/gscratch/makelab`, skips an arm the manifest lists as unavailable, refuses a `smoke-` tag outside the smoke job,
-skips a row whose `$KEEP/<LT>/runs/<TAG>/done` exists, and refuses to go past 55 GPU jobs for the stream (array
-elements counted, read from `$OUT/backbone_jobs.txt`; Jon's cap was 40 and he raised it to 55 on 2026-11-19 for the
-DINOv3 runs). It submits with `EPOCHS=25` set explicitly and without the caller's conda state, and the job refuses
-to train unless torch 2.7.1, transformers 4.56.2 and pandas 2.3.1 import. It appends the job id, element count,
+skips a row whose `$KEEP/<LT>/runs/<TAG>/done` exists, and refuses to go past 63 GPU jobs for the stream (array
+elements counted, read from `$OUT/backbone_jobs.txt`; Jon's cap was 40, he raised it to 55 on 2026-11-19 for the
+DINOv3 runs and to 63 on 2026-11-20 for the J16 rerun of the 8 RampNet pilot rows). It submits with `EPOCHS=25`
+set explicitly and without the caller's conda state, and the job refuses to train unless torch 2.7.1, transformers 4.56.2 and pandas 2.3.1 import. It appends the job id, element count,
 stage, commit and the task file's sha256 to that ledger and copies the ledger, the task file,
 `backbone_manifest.json`, `pip_freeze.txt`, `constraints.txt` and `cities.json` to `$KEEP`.
 
@@ -394,8 +394,9 @@ clone:
 MAX_PARALLEL=8 analysis/backbone_submit.sh pilot    # sbatch analysis/backbone.slurm with STEP=train
 ```
 
-GPU jobs used by this stream: 31 of 40 at the pilot (smoke 1, pilot 30); the cap is now 55, and the `dinov3` stage
-takes 18 more (49 of 55), leaving 6 for resubmitting failed elements (`backbone_submit.sh resubmit`).
+GPU jobs used by this stream: 31 of 40 at the pilot (smoke 1, pilot 30); the cap was raised to 55 for the `dinov3`
+stage, which takes 18 more (49 of 55), and to 63 on 2026-11-20 for the J16 rerun of the 8 RampNet pilot rows (57 of
+63), leaving 6 for resubmitting failed elements (`backbone_submit.sh resubmit`).
 
 **DINOv3: submitted 2026-11-19.** Job `43409815`, one array of 18 elements (3 arms × 2 pilot types × 3 seeds),
 job name `backbone-comparison-dinov3`, from a second clone at `d9327db`. Both clones share `$OUT`, `$KEEP`, the data
@@ -496,8 +497,8 @@ hunk and should merge first; this branch then rebases.
 Listed with the default this branch uses; none blocks the pilot. Numbered as in the PR.
 
 - **J1. Environment.** Default: the overlay venv above, baseline retrained inside it. Alternative: bump the one env.
-- **J2. HF access for DINOv3.** Done 2026-11-19: Jon prefetched the weights with his token and raised the cap to 55;
-  the `dinov3` stage was submitted the same night.
+- **J2. HF access for DINOv3.** Done 2026-11-19: Jon prefetched the weights with his token and raised the cap to 55
+  (later 63, for J16); the `dinov3` stage was submitted the same night.
 - **J3. Preprocessing.** Default: the baseline's 256/224 slow processor for every arm.
 - **J4. RampNet weights.** Default: stage two only. The crop-model row trained directly on labels of deployments in
   round 3's `test` split, so only its held-out numbers would be readable.
@@ -511,11 +512,13 @@ Listed with the default this branch uses; none blocks the pilot. Numbered as in 
 - **J12. DINOv3 positional augmentation.** Default: as released. Alternative: off.
 - **J13. More families.** Not built. SigLIP 2 needs its own normalisation and mean pooling, so it breaks the
   fixed-preprocessing design and would be a second PR.
-- **J16. The pilot's RampNet rows (shared head).** Default: rerun the 8 rows after the pilot finishes, from the
+- **J16. The pilot's RampNet rows (shared head).** **Decided 2026-11-20 (Jon): the default, rerun the 8 rows; he
+  raised the stream cap from 55 to 63 for it. Not yet submitted.** Rerun them after the pilot finishes, from the
   fixed commit, under the same tags (the report parses only the planned tags). First move all three places a run
   lives aside, or `run_one` finds `evaluated`/`slimmed` and copies the old outputs back: `$RUNS/<LT>/<TAG>/`,
   `$KEEP/<LT>/runs/<TAG>/`, and the tagged files `$DATA/<LT>/{metrics,predictions,per_city,slices,report}_<TAG>.*`.
-  Then `resubmit` a task file of those 8 rows. That needs about 8 more GPU jobs than the 55 cap leaves. Alternative: keep them and report the deviation beside every RampNet number.
+  Then `resubmit` a task file of those 8 rows; the 8 jobs are what the raise to 63 covers. The alternative not taken
+  was to keep them and report the deviation beside every RampNet number.
 - **J17. Gate-coverage guard against seed noise** (PR #121 review S1). **Decided 2026-11-20, before any result was
   read, at Jon's direction to follow standard practice: intervals that include seed variance; same form as PR #120's
   C3.** As signed off, condition 3 allowed a coverage drop of 2 points in the three-seed mean, while round 3's
