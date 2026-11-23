@@ -245,8 +245,12 @@ def test_preflight_writes_the_stage_list_for_a_store_not_staged_yet(ready, tmp_p
 def test_preflight_refuses_a_stage_seed_list_the_rule_does_not_read(ready):
     rule = ca.DECISION_RULE
     assert pf(ready, confirmatory_seeds=rule["seeds_confirmatory"] * 2, baseline_seeds=rule["seeds_baseline"])[0] == []
-    problems, _ = pf(ready, confirmatory_seeds=[42, 43, 44, 45, 46] * 2)
-    assert rule["seeds_confirmatory"] == [42, 43, 44, 45, 46] or any("seeds_confirmatory" in p for p in problems)
+    # J5 (Jon, 2026-11-20, before any stage-A run): five confirmatory seeds, so A5=1 passes and the three-seed
+    # preset (A5 unset) is refused
+    assert rule["seeds_confirmatory"] == [42, 43, 44, 45, 46]
+    assert not any("seeds_confirmatory" in p for p in pf(ready, confirmatory_seeds=[42, 43, 44, 45, 46] * 2)[0])
+    problems, _ = pf(ready, confirmatory_seeds=[42, 43, 44] * 2)
+    assert any("seeds_confirmatory" in p and "[42, 43, 44]" in p for p in problems)
     problems, _ = pf(ready, baseline_seeds=[42, 43, 44])
     assert any("seeds_baseline" in p and "[42, 43, 44]" in p for p in problems)
 

@@ -458,28 +458,32 @@ def preset_seeds(lines):
 @needs_bash
 def test_every_stage_preset_trains_exactly_the_rules_seeds(tmp_path):
     """Each stage's preset satisfies the decision's completeness check (S2): the baseline at seeds_baseline wherever
-    it is trained, each confirmatory arm at seeds_confirmatory; and the launcher hands both lists to the preflight."""
+    it is trained, each confirmatory arm at seeds_confirmatory; and the launcher hands both lists to the preflight.
+    The rule reads five confirmatory seeds (J5, 2026-11-20), so stages A and B take A5=1."""
     from analysis import context_arms as ca
     rule = ca.DECISION_RULE
     _, pilot = launcher(tmp_path, STAGE="pilot")
     assert preset_seeds(pilot)["baseline-rerun"] == rule["seeds_baseline"]
-    _, a = launcher(tmp_path, STAGE="A", PANO_STORE="/abs/store")
+    _, a = launcher(tmp_path, STAGE="A", A5="1", PANO_STORE="/abs/store")
     sa = preset_seeds(a)
     assert sa["two_scale"] == sa["view_heatmap"] == rule["seeds_confirmatory"]
     for winner in ca.CONFIRMATORY:
-        _, b = launcher(tmp_path, "CurbRamp", STAGE="B", WINNER=winner, PANO_STORE="/abs/store")
+        _, b = launcher(tmp_path, "CurbRamp", STAGE="B", WINNER=winner, A5="1", PANO_STORE="/abs/store")
         sb = preset_seeds(b)
         assert sb["baseline-rerun"] == rule["seeds_baseline"] and sb[winner] == rule["seeds_confirmatory"]
     record = tmp_path / "preflight_args"
     ok = f'#!/bin/bash\necho "$@" > {record}\nexit 0\n'
-    launcher(tmp_path, "CurbRamp", STAGE="B", WINNER="two_scale", PANO_STORE="/abs/store", preflight="1",
+    launcher(tmp_path, "CurbRamp", STAGE="B", WINNER="two_scale", A5="1", PANO_STORE="/abs/store", preflight="1",
              env_python=ok)
     args = record.read_text()
-    assert "--confirmatory-seeds 42,43,44" in args and "--baseline-seeds 42,43,44,45,46" in args
-    # A5=1 trains seeds the current rule does not read: the launcher passes them and the preflight refuses
+    assert "--confirmatory-seeds 42,43,44,45,46 " in args and "--baseline-seeds 42,43,44,45,46" in args
     r, _ = launcher(tmp_path, STAGE="A", A5="1", PANO_STORE="/abs/store", preflight="1", env_python=ok)
     for text in (record.read_text(), r.stdout):   # each seed once, though both arms list them
         assert re.search(r"--confirmatory-seeds 42,43,44,45,46(\s|$)", text), text
+    # without A5=1 the preset trains three seeds the rule does not read: the launcher passes them, and the preflight
+    # refuses them (test_preflight_refuses_a_stage_seed_list_the_rule_does_not_read)
+    launcher(tmp_path, STAGE="A", PANO_STORE="/abs/store", preflight="1", env_python=ok)
+    assert re.search(r"--confirmatory-seeds 42,43,44(\s|$)", record.read_text())
     # a RUNS_SPEC rerun of single jobs is not compared
     launcher(tmp_path, STAGE="A", RUNS_SPEC="two_scale:43", SKIP_BACKFILL="1", preflight="1", env_python=ok)
     assert "--confirmatory-seeds" not in record.read_text()

@@ -15,8 +15,8 @@ context images re-rendered from the panoramas, and the round-3 panorama store on
 |---|---|---|---|
 | smoke | NoCurbRamp on the 217 round-3 rows whose panorama is in the one surviving staged store; 1 epoch; every arm and the baseline rerun | 43403247 (backfill), 43403248 to 43403253 (six trainings), 43403800 (a resubmit of a finished run) | all completed, 2026-11-19 17:20 to 17:48 PST: `check-run` ok for all six tags, every checkpoint deleted after its record was copied, the backfill's `--verify 50` passed (below), the resubmit exited with "already evaluated" in 28 s. `report` on the smoke shadow was run before the three image-arm jobs had finished, so its image-arm rows read "not run"; rerun locally on all six runs it exits 0 with every row `INCOMPLETE` (subset shadow). The klone clone was fast-forwarded once while a smoke job ran (harmless here; the checklist says not to) |
 | pilot | target types x (`baseline-rerun` seeds 42 to 46, `side_info` and `side_info_nohq` at seed 42); full round-3 recipe; **pilot code: 9dace0c** | 43404266, 43404267, 43404269 to 43404287 (21 jobs, ids and commands in `context_jobs_pilot.txt` in the scratch clone; copy it and `context_jobs_smoke.txt` to `$KEEP` when the pilot ends, scratch is purged) | running (submitted 2026-11-19 17:50 PST; all 21 running at 2:50 h on 2026-11-19, effective time limit 9:05 h); no number from it yet |
-| A | confirmatory arms x target types x seeds 42 to 46 (`A5=1`, recommended; 42 to 44 without it), `view_heatmap-r448` at seed 42, 3 backfills | 36 (24) | needs the restage and Jon's go |
-| B | only for an arm with a `WIN` in stage A: that arm (the rule's confirmatory seeds) and `baseline-rerun` (seeds 42 to 46) on CurbRamp and Crosswalk | 9 per guard type with a backfill | needs a `WIN` |
+| A | confirmatory arms x target types x seeds 42 to 46 (`A5=1`; Jon's decision J5, 2026-11-20, before any stage-A run), `view_heatmap-r448` at seed 42, 3 backfills | 36 | needs the restage and Jon's go |
+| B | only for an arm with a `WIN` in stage A: that arm (the rule's confirmatory seeds, 42 to 46) and `baseline-rerun` (seeds 42 to 46) on CurbRamp and Crosswalk | 11 per guard type with a backfill | needs a `WIN` |
 
 What exists:
 
@@ -126,6 +126,10 @@ constants are unchanged): stage B trains the baseline at all five rule seeds; on
 record must also match its tag's arm, view resolution, the recipe's epochs and the knobs the job file pins (best
 metric, target, per-device batch); a verdict needs at least 200 kept bootstrap resamples.
 
+One constant changed after the proposal, before any stage-A run existed (no confirmatory arm had been trained beyond
+the 1-epoch smoke): **five confirmatory seeds**, `seeds_confirmatory` from `[42, 43, 44]` to `[42, 43, 44, 45, 46]`,
+Jon's decision J5 on 2026-11-20, following the power table below. The other constants are unchanged.
+
 **Data and recipe.** Round-3 dataset, split and recipe, unchanged (DINOv2-L, 25 epochs, lr 1e-5, effective batch 32,
 hard targets, best checkpoint by validation macro-F1).
 
@@ -141,17 +145,17 @@ a type, that is stated at the top of the report, and the decision still uses the
 
 **Stages.**
 - Pilot (submitted 2026-11-19): baseline reruns x 5 seeds and the two side arms at seed 42, target types.
-- Stage A (needs the panorama restage): confirmatory arms x target types x seeds 42, 43, 44 (18 trainings),
-  `view_heatmap-r448` at seed 42 (3 trainings), 3 backfills. If Jon takes the five-seed recommendation of the
-  power table below (`A5=1`, seeds 42 to 46, 30 trainings), `seeds_confirmatory` becomes `[42, 43, 44, 45, 46]` here
-  and in `DECISION_RULE` before stage A is launched.
+- Stage A (needs the panorama restage): confirmatory arms x target types x seeds 42 to 46 (30 trainings; Jon took
+  the five-seed recommendation of the power table below, decision J5, 2026-11-20), `view_heatmap-r448` at seed 42
+  (3 trainings), 3 backfills: 36 jobs, launched with `A5=1`.
 - Stage B (only for an arm with a `WIN` in stage A): that arm at the rule's confirmatory seeds and `baseline-rerun`
   at seeds 42 to 46 (the rule's baseline seeds on every type; with three, a guard-type `REGRESSION` could never be
   read) x guard types, plus 2 backfills.
 - Only the rule's seeds are read: `seeds_baseline` for the baseline, `seeds_confirmatory` for a confirmatory arm. A
   seed trained beyond those lists is listed in `decision.md` as "on disk, not used" and enters nothing, so a partly
   finished or extended stage cannot move a verdict. The launcher hands each stage preset's seed lists to `preflight`,
-  which refuses a list the rule does not read (so `A5=1` cannot run until the rule says five).
+  which refuses a list the rule does not read (the rule reads five confirmatory seeds, so a stage-A or stage-B
+  launch without `A5=1`, which trains three, is refused before any `sbatch`).
 - No other run is added after looking at results without an entry under Deviations.
 
 **Primary endpoint.** `D` = mean over the arm's seeds minus mean over the baseline's seeds of the **within-city AUC
@@ -159,8 +163,8 @@ on `test_heldout`**. Its 95% interval is `D ± t · se`, with
 `se² = s_arm²/n_arm + s_base²/n_base + var_boot(D)`: the sample variance across seeds of each group, and the
 variance of `D` over a joint bootstrap of panoramas within deployment applied to every run (the same resample for
 every run; a deployment whose resample loses a class is redrawn up to 20 times, then the resample is dropped, and
-the report counts both). `t` is the Welch t quantile for the two seed terms. Five baseline seeds against three arm
-seeds is unbalanced on purpose (the baseline is shared by every arm); the Welch form handles it.
+the report counts both). `t` is the Welch t quantile for the two seed terms. Arm and baseline both have five seeds;
+the Welch form is kept because the two groups' seed variances need not be equal.
 
 **Verdict per type x confirmatory arm.** `WIN` when all of:
 1. `D >= +0.02`;
@@ -203,15 +207,15 @@ thin flag, per seed and seed mean (`slices_seeds.md`, with October's round-3 AUC
 arms); analytic cost and measured training throughput.
 
 **Known limits, stated up front.** Six confirmatory tests with no multiplicity correction; criteria 1, 3 and 4 are
-the protection, and the simulated false-`WIN` rate is printed. With three seeds the power is low (table below).
-Three held-out deployments, two private, 138 to 1,812 labels per type: the interval covers label sampling and
-training seed, not "which deployments were held out". The held-out split is not a fresh test set. The Tier-A gold
-set cannot score these models.
+the protection, and the simulated false-`WIN` rate is printed. Even with five arm seeds the power is low (table
+below). Three held-out deployments, two private, 138 to 1,812 labels per type: the interval covers label sampling
+and training seed, not "which deployments were held out". The held-out split is not a fresh test set. The Tier-A
+gold set cannot score these models.
 
 Constants (`DECISION_RULE` in `analysis/context_arms.py` must equal this block; a test compares them):
 
 ```json
-{"all_seeds_above_baseline_mean": true, "baseline_variant": "baseline-rerun", "gate": "report_only", "level": 0.95, "min_delta": 0.02, "min_positive_deployments": 2, "prior_rule": "majority2", "regression_test_upper": -0.01, "seeds_baseline": [42, 43, 44, 45, 46], "seeds_confirmatory": [42, 43, 44], "test_no_harm_lower": -0.02}
+{"all_seeds_above_baseline_mean": true, "baseline_variant": "baseline-rerun", "gate": "report_only", "level": 0.95, "min_delta": 0.02, "min_positive_deployments": 2, "prior_rule": "majority2", "regression_test_upper": -0.01, "seeds_baseline": [42, 43, 44, 45, 46], "seeds_confirmatory": [42, 43, 44, 45, 46], "test_no_harm_lower": -0.02}
 ```
 
 ### Operating characteristics
@@ -243,8 +247,9 @@ smallest effect detected with 80% power is +0.065 to +0.085 for NoCurbRamp and S
 Obstacle. The false-`WIN` rate stays at or under about 1% in every row. Following the sign-off rule (five arm seeds
 for any type whose power at +0.03 with three seeds is below 0.5), the **recommended default for stage A is five arm
 seeds (`A5=1`) for all three target types**: 30 trainings instead of 18. Even then a `NO GAIN` rules out only
-large gains, which is why every output words it as "no gain detected at this power". The rule itself is not
-changed; whether to accept this power, or to relax a criterion before any arm is trained, is Jon's call.
+large gains, which is why every output words it as "no gain detected at this power". **Decided (J5, Jon,
+2026-11-20, before any stage-A run): five arm seeds**, so `seeds_confirmatory` is `[42, 43, 44, 45, 46]`; no other
+criterion was relaxed.
 
 ### Deviations
 
@@ -257,7 +262,7 @@ None.
 | Data | the round-3 dataset on klone (`retrain-2026-10/<Type>/`), **read only**. Every job reads and writes a shadow of it on `/gscratch/scrubbed` instead (below) |
 | Split | the round-3 `split.csv` (panorama-grouped, three deployments held out), byte-identical in the shadow; every run trains on its train rows and is scored on its val/test/test_heldout rows |
 | Recipe | round 3 (above); `--batch-size` only moves the split between per-device batch and gradient accumulation, effective batch 32 either way |
-| Seeds | `baseline-rerun` 42 to 46 (pilot); confirmatory arms 42, 43, 44 (stage A; 42 to 46 with `A5=1`); exploratory arms 42 |
+| Seeds | `baseline-rerun` 42 to 46 (pilot); confirmatory arms 42 to 46 (stages A and B, `A5=1`; J5); exploratory arms 42 |
 | Evaluation | the baseline rerun: `evaluate.py --checkpoint <best> --tag <tag> --per-city`; an arm: `context_model.py predict`, then `evaluate.py --skip-inference --tag <tag> --per-city`; the decision by `analysis/context_arms.py report` |
 | Missing side features | share of rows with no severity / no imagery date / no depth, from `preflight`: NoCurbRamp 5.5% / 0.0% / 0.0% (18,162 rows); Obstacle 6.2% / 0.0% / 0.0% (16,894); SurfaceProblem 5.9% / 0.0% / 0.0% (15,852) |
 | Storage | the shadow and checkpoints on `/gscratch/scrubbed/$USER/context-arms-launch-2026-11/` (purged after 21 days unread); small durable artifacts (each run's records, metrics, predictions) on `/gscratch/makelab/$USER/context-arms-launch-2026-11-keep/` |
@@ -314,9 +319,9 @@ $ENV/bin/python analysis/context_arms.py check-run --data $WORK/smoke/data --lab
 STAGE=pilot DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP analysis/context_submit.sh NoCurbRamp Obstacle SurfaceProblem
 
 # 4. stage A: first the restage (Jon's decision; below), then a dry run (never refused by the session cap)
-STAGE=A DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP PANO_STORE=<staged store> DRY_RUN=1 \
+STAGE=A A5=1 DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP PANO_STORE=<staged store> DRY_RUN=1 \
     analysis/context_submit.sh NoCurbRamp Obstacle SurfaceProblem      # read it; then, once Jon has approved:
-STAGE=A DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP PANO_STORE=<staged store> ALLOW_OVER_SESSION_CAP=1 \
+STAGE=A A5=1 DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP PANO_STORE=<staged store> ALLOW_OVER_SESSION_CAP=1 \
     analysis/context_submit.sh NoCurbRamp Obstacle SurfaceProblem      # the smoke and pilot logs hold 29 jobs
 
 # 5. the decision (no GPU; anywhere with the shadow)
@@ -324,8 +329,9 @@ $ENV/bin/python analysis/context_arms.py report --data-dir $WORK/data --label-ty
     --out docs/context-arms-2026-11
 ```
 
-`A5=1` (five confirmatory seeds) is refused by the preflight until `seeds_confirmatory` is `[42, 43, 44, 45, 46]` in
-`DECISION_RULE` and in the json block above (Jon's call, before stage A).
+`A5=1` (five confirmatory seeds) is required for stages A and B: `seeds_confirmatory` is `[42, 43, 44, 45, 46]` in
+`DECISION_RULE` and in the json block above (J5, 2026-11-20), and a launch without it trains three seeds, which the
+preflight refuses before any `sbatch`.
 
 Every invocation of the launcher appends its job ids and each job's full command to `context_jobs_<stage>.txt` in
 the clone, refuses more than 40 jobs per invocation (`MAX_JOBS`) and, except under `DRY_RUN=1`, more than 40 summed
@@ -385,8 +391,8 @@ has been purged, rebuilding it takes seconds, but the context images need the pa
 |---|---:|---:|---:|
 | smoke | 6 (1 epoch, 217 rows) | 1 | under 1 |
 | pilot | 21 | 0 | about 21 x 2.5 = 50 |
-| A | 21 (33 with `A5=1`) | 3 | about 70 (110), `two_scale` and `view_heatmap-r448` at about 2x and 3x the step time |
-| B | 8 per guard type (10 with `A5=1`) | 1 per guard type | about 27 (33) |
+| A | 33 | 3 | about 110, `two_scale` and `view_heatmap-r448` at about 2x and 3x the step time |
+| B | 10 per guard type | 1 per guard type | about 33 |
 
 Estimates from October's tight-crop runs (0:10 to 2:41 h per run on `ckpt-all`, NoCurbRamp 2:41) times the arm's
 backbone passes and tokens. All on klone's free `ckpt-all` partition. Measured smoke throughput (1 epoch on 217

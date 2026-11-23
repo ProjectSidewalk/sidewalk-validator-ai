@@ -204,7 +204,9 @@ def clipping_markdown(rows):
 DECISION_RULE = {
     "min_delta": 0.02, "level": 0.95, "min_positive_deployments": 2, "all_seeds_above_baseline_mean": True,
     "test_no_harm_lower": -0.02, "regression_test_upper": -0.01, "prior_rule": "majority2", "gate": "report_only",
-    "baseline_variant": "baseline-rerun", "seeds_confirmatory": [42, 43, 44], "seeds_baseline": [42, 43, 44, 45, 46],
+    "baseline_variant": "baseline-rerun",
+    # five confirmatory seeds: Jon's decision J5 (2026-11-20), taken before any stage-A run (power table in the doc)
+    "seeds_confirmatory": [42, 43, 44, 45, 46], "seeds_baseline": [42, 43, 44, 45, 46],
 }
 CONFIRMATORY = ("two_scale", "view_heatmap")
 EXPLORATORY = ("view_heatmap-r448", "side_info", "side_info_nohq")
@@ -1401,7 +1403,7 @@ def preflight(data, runs, types, arms, stage="", keep=None, pano_store=None, bac
       ``skip_backfill``: ``context/index.csv`` covers every ok manifest row;
     - ``confirmatory_seeds`` / ``baseline_seeds`` (a stage preset's seed lists): equal to ``rule``'s
       ``seeds_confirmatory`` / ``seeds_baseline``, so a stage never trains a seed list the decision does not read
-      (``A5=1`` needs the rule and the doc's json block changed first);
+      (the rule reads five confirmatory seeds, so stages A and B need ``A5=1``; the three-seed preset is refused);
     - ``versions`` (default ``installed_versions()``): pandas 2.x, transformers at ``environment.yml``'s pin;
     - the backbone in the HF cache (``hf_home``; a path check, not a load);
     - a real 8 MiB write to ``runs`` and ``data``;

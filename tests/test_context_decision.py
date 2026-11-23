@@ -206,8 +206,8 @@ def test_null_arm_from_the_baselines_own_spread_rarely_regresses():
 
 # ---------------------------------------------------------------------------------------------------- verdicts
 
-def add_arm(root, df, arm, strength, seeds=(42, 43, 44)):
-    for s in seeds:
+def add_arm(root, df, arm, strength, seeds=None):
+    for s in seeds or ca.DECISION_RULE["seeds_confirmatory"]:
         write_run(root, df, tag_of(arm, s), s, strength, noise_seed=s + 200)
 
 
@@ -216,7 +216,7 @@ def test_win(pilot):
     add_arm(root, df, "two_scale", 0.9)
     r = row(decide(root, df), "two_scale")
     assert r["verdict"] == "WIN", r
-    assert all(c["pass"] for c in r["criteria"][:5]) and r["heldout"]["n_arm"] == 3 and r["heldout"]["n_base"] == 5
+    assert all(c["pass"] for c in r["criteria"][:5]) and r["heldout"]["n_arm"] == 5 and r["heldout"]["n_base"] == 5
     assert set(r["deployments"]) == {"delta", "private city A (outside the US)", "private city B (US)"}
 
 
@@ -376,7 +376,7 @@ def test_power_table_from_octobers_trio(pilot):
 # ---------------------------------------------------------------------------------------------------- fix round 1
 
 def test_only_the_rules_seeds_enter_the_verdict(pilot):
-    """S1: seeds trained beyond the rule's lists (a partly finished A5=1 stage, a stray baseline seed) are listed as
+    """S1: seeds trained beyond the rule's lists (a stray extra arm seed, a stray baseline seed) are listed as
     not used and change nothing: D, its interval, criterion 3 and the per-deployment differences stay put."""
     root, df = pilot
     add_arm(root, df, "two_scale", 0.35)
@@ -388,20 +388,20 @@ def test_only_the_rules_seeds_enter_the_verdict(pilot):
 
     r0, h0, t0, dep0 = snapshot()
     assert r0["seeds"] == ca.DECISION_RULE["seeds_confirmatory"] and r0["seeds_not_used"] == []
-    add_arm(root, df, "two_scale", 0.9, seeds=(45, 46))            # strong extra arm seeds
+    add_arm(root, df, "two_scale", 0.9, seeds=(47, 48))            # strong extra arm seeds
     r1, h1, t1, dep1 = snapshot()
     assert (h1, t1, dep1) == (h0, t0, dep0) and r1["verdict"] == r0["verdict"]
-    assert r1["seeds"] == [42, 43, 44] and r1["seeds_not_used"] == [45, 46]
+    assert r1["seeds"] == [42, 43, 44, 45, 46] and r1["seeds_not_used"] == [47, 48]
     write_run(root, df, "baseline-rerun-s47", 47, -0.2)             # a weak extra baseline seed
     r2, h2, t2, dep2 = snapshot()
     assert (h2, t2, dep2) == (h0, t0, dep0) and r2["baseline_seeds_not_used"] == [47]
     assert r2["baseline_seeds"] == ca.DECISION_RULE["seeds_baseline"]
     out = run_report(root)
     d = json.load(open(out / "decision.json"))
-    assert d["rule"]["seeds_confirmatory"] == [42, 43, 44]
-    assert {r["arm"]: r for r in d["types"]["Toy"]["rows"]}["two_scale"]["seeds"] == [42, 43, 44]
+    assert d["rule"]["seeds_confirmatory"] == [42, 43, 44, 45, 46]
+    assert {r["arm"]: r for r in d["types"]["Toy"]["rows"]}["two_scale"]["seeds"] == [42, 43, 44, 45, 46]
     md = (out / "decision.md").read_text()
-    assert "seeds on disk, not used by the rule" in md and "two_scale [45, 46]" in md and "baseline-rerun [47]" in md
+    assert "seeds on disk, not used by the rule" in md and "two_scale [47, 48]" in md and "baseline-rerun [47]" in md
     assert d["types"]["Toy"]["drift"]["rerun_seeds"] == [42, 43, 44, 45, 46]
 
 

@@ -4,7 +4,8 @@
 #
 #   STAGE=pilot DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP analysis/context_submit.sh NoCurbRamp Obstacle SurfaceProblem
 #   STAGE=smoke DATA=$WORK/smoke/data RUNS=$WORK/smoke/runs PANO_STORE=/abs/store analysis/context_submit.sh NoCurbRamp
-#   STAGE=A DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP PANO_STORE=/abs/store DRY_RUN=1 analysis/context_submit.sh ...
+#   STAGE=A A5=1 DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP PANO_STORE=/abs/store DRY_RUN=1 \
+#     analysis/context_submit.sh NoCurbRamp Obstacle SurfaceProblem
 #
 # Stage presets (the job list of each stage lives here and is tested, not typed by hand). A run spec is
 # variant[@res]:seed[,seed...]; variants: baseline-rerun (ARM=none, the tight-crop model on today's code), two_scale,
@@ -13,16 +14,19 @@
 #   smoke  baseline-rerun:42 two_scale:42 view_heatmap:42 view_heatmap@448:42 side_info:42 side_info_nohq:42, EPOCHS=1,
 #          plus the backfill: 7 jobs per type (every code path once)
 #   pilot  baseline-rerun:42,43,44,45,46 side_info:42 side_info_nohq:42: 7 jobs per type, no backfill, no panoramas
-#   A      two_scale:42,43,44 view_heatmap:42,43,44 view_heatmap@448:42 plus one backfill: 8 jobs per type (A5=1: the
-#          two confirmatory arms at seeds 42 to 46, 12 jobs per type)
-#   B      baseline-rerun:42,43,44,45,46 $WINNER:42,43,44 (A5=1: 42 to 46) plus one backfill when $WINNER reads the
-#          context images: the rule reads the same five baseline seeds on every type, guard types included
+#   A      A5=1: two_scale:42,43,44,45,46 view_heatmap:42,43,44,45,46 view_heatmap@448:42 plus one backfill: 12 jobs
+#          per type (without A5=1 the confirmatory arms get seeds 42,43,44, 8 jobs per type, and the preflight refuses)
+#   B      A5=1: baseline-rerun:42,43,44,45,46 $WINNER:42,43,44,45,46 plus one backfill when $WINNER reads the context
+#          images (without A5=1, $WINNER:42,43,44, refused): the rule reads the same five baseline seeds on every type,
+#          guard types included
 #
 # The presets' seed lists must equal DECISION_RULE's (analysis/context_arms.py): the launcher passes them to the
-# preflight, which refuses a mismatch, so A5=1 needs seeds_confirmatory changed in the rule and the doc's json block
-# first. A repeated label type or a repeated tag is refused, and (where squeue exists) so is a job whose type and tag
-# is already queued or running under any stage: two trainers must never share a run directory (the job also holds a
-# lock on it).
+# preflight, which refuses a mismatch. The rule reads five confirmatory seeds (Jon's decision J5, 2026-11-20, before
+# any stage-A run), so stages A and B need A5=1; A5 unset (or 0) trains three and is refused before any sbatch. The
+# switch is kept rather than made the default, so each launch names its seed count and the preflight checks it against
+# the rule. A repeated label type or a repeated tag is refused, and (where squeue exists) so is a job whose type and
+# tag is already queued or running under any stage: two trainers must never share a run directory (the job also holds
+# a lock on it).
 #
 # Per type: at most one backfill; the image arms (two_scale, view_heatmap) wait for it (afterok), the baseline rerun and
 # the side arms start at once and never die with a failed backfill. Before any sbatch the stage's preflight runs on this
@@ -42,7 +46,8 @@
 #   PANO_STORE    the pano store, needed when the stage submits a backfill
 #   RUNS_SPEC     replaces the preset's run list (e.g. "side_info_nohq:43" to rerun one job)
 #   WINNER        stage B: the arm that won stage A
-#   A5            stage A: 1 runs the confirmatory arms at five seeds
+#   A5            stages A and B: 1 runs the confirmatory arms at five seeds, the rule's (required: unset, the
+#                 preflight refuses the three-seed preset)
 #   BACKFILL_JOB  attach the image arms to this already submitted backfill (one label type per invocation)
 #   SKIP_BACKFILL 1: the shadow's context/index.csv already covers the manifest (preflight checks it)
 #   EPOCHS        passed to the jobs (smoke default 1)
