@@ -276,6 +276,17 @@ that store until it ends. The gate2 fold weights and the crops of this study are
 
 Design, bar and results: [`nosidewalk-2026-11.md`](nosidewalk-2026-11.md).
 
+## Split leak (issue #3)
+
+Three stages, each submitted from the repo root with `analysis/split_leak_submit.sh` (`STAGE=0|1|2`, `DATA` = round
+3's data directory, `RUNS` on `/gscratch/scrubbed`, never under `DATA`). Stage 0 is one CPU job: it recomputes each
+type's grouped split and stops unless it equals round 3's `split.csv` byte for byte, writes the label-level splits
+for seeds 42, 43 and 44 under `$RUNS/<Type>/splits/`, audits them (`design.json`) and writes the planning figures
+(`bound.md`). Stages 1 and 2 refuse until those exist; each is one GPU array (`ckpt-all`, `--requeue`, 24 h per
+task, at most `MAX_PARALLEL`, default 4, at once) that trains into `$RUNS/<Type>/<arm>-s<seed>`, scores the arm's
+own eval rows and deletes the weights, followed by a report job. Nothing is written under `DATA`. Design, rule and
+the GPU-hour estimates: [`split-leak-2026-11.md`](split-leak-2026-11.md).
+
 ## Depth agreement (issue #21)
 
 Two jobs, run from `/gscratch/scrubbed/$USER/depth-ablation-2026-11` (both refuse any other directory):
