@@ -150,8 +150,9 @@ Every submit first writes 8 MiB to `$OUT` (a `touch` proves nothing on scrubbed)
 skips a row whose `$KEEP/<LT>/runs/<TAG>/done` exists, and refuses to go past 63 GPU jobs for the stream (array
 elements counted, read from `$OUT/backbone_jobs.txt`; Jon's cap was 40, he raised it to 55 on 2026-11-19 for the
 DINOv3 runs and to 63 on 2026-11-20 for the J16 rerun of the 8 RampNet pilot rows). It submits with `EPOCHS=25`
-set explicitly and without the caller's conda state, and the job refuses to train unless torch 2.7.1, transformers 4.56.2 and pandas 2.3.1 import. It appends the job id, element count,
-stage, commit and the task file's sha256 to that ledger and copies the ledger, the task file,
+set explicitly and without the caller's conda state, and the job refuses to train unless torch 2.7.1, transformers
+4.56.2 and pandas 2.3.1 import. It appends the job id, element count, stage, commit and the task file's sha256 to
+that ledger and copies the ledger, the task file,
 `backbone_manifest.json`, `pip_freeze.txt`, `constraints.txt` and `cities.json` to `$KEEP`.
 
 No row is submitted while it is queued or running. The launcher reads `squeue` (this user's jobs named
