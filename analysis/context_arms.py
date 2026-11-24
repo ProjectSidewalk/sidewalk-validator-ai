@@ -1000,7 +1000,8 @@ def power_table(data_dir, label_type, variant=OCTOBER, n_boot=1000, seed=0, with
     preds = {n: p for n, p in preds.items() if p is not None}
     names = [n for n in runs.values() if n in preds]
     if len(names) < 2:
-        return {"variant": variant, "seeds": sorted(runs), "error": "fewer than two seeds with predictions"}
+        return {"variant": variant, "seeds": sorted(runs), "error": "fewer than two seeds with predictions",
+                "rule": rule}
     b = within_city_boot(preds, "test_heldout", names, within_min_n, n_boot, seed)
     sd_seed = _mean_sd([b["point"][n] for n in names])[1]
     sd_boot = boot_var_of_delta(b["boot"], names, names[1:2], names[2:3] or names[:1]) ** 0.5
@@ -1010,7 +1011,7 @@ def power_table(data_dir, label_type, variant=OCTOBER, n_boot=1000, seed=0, with
     n_base = len(rule["seeds_baseline"])
     return {"variant": variant, "seeds": sorted(runs), "within_city_heldout": {n: b["point"][n] for n in names},
             "sd_seed": sd_seed, "sd_boot": sd_boot, "sd_boot_pair": [names[1], (names[2:3] or names[:1])[0]],
-            "sd_boot_all_pairs": all_pairs,
+            "sd_boot_all_pairs": all_pairs, "rule": rule,
             "n_boot": n_boot, "kept": int(len(b["boot"])),
             "arm_seeds_3": operating_characteristics(sd_seed, sd_boot, 3, n_base, rule, n_sim, seed),
             "arm_seeds_5": operating_characteristics(sd_seed, sd_boot, 5, n_base, rule, n_sim, seed)}
@@ -1018,7 +1019,9 @@ def power_table(data_dir, label_type, variant=OCTOBER, n_boot=1000, seed=0, with
 
 def power_markdown(tables):
     """The doc's operating-characteristics table; the recommendation follows A7 of the sign-off: five arm seeds for
-    a type whose power at +0.03 with three is below 0.5."""
+    a type whose power at +0.03 with three is below 0.5. The note naming the row that applies is computed from the
+    rule each table was built with (``power_table``'s ``rule``, kept in the table; ``DECISION_RULE`` for a table
+    without one), one note per distinct rule."""
     lines = ["| type | seed sd | bootstrap sd of D | arm seeds | false WIN at 0 | REGRESSION at 0 | power +0.02 | "
              "+0.03 | +0.05 | effect at 80% power | recommended arm seeds |",
              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
@@ -1033,7 +1036,13 @@ def power_markdown(tables):
             lines.append(f"| {lt} | {t['sd_seed']:.3f} | {t['sd_boot']:.3f} | {o['n_arm']} | {o['false_win']:.3f} | "
                          f"{o['null_regression']:.3f} | {o['power']['0.02']:.2f} | {o['power']['0.03']:.2f} | "
                          f"{o['power']['0.05']:.2f} | {mde} | {rec if k == 'arm_seeds_3' else ''} |")
-    lines += ["", rule_row_note() + " The recommendation column is the sign-off's rule, read from the three-seed row."]
+    rules = []
+    for t in tables.values():
+        r = t.get("rule", DECISION_RULE)
+        if r not in rules:
+            rules.append(r)
+    lines += [""] + [rule_row_note(r) for r in rules or [DECISION_RULE]]
+    lines[-1] += " The recommendation column is the sign-off's rule, read from the three-seed row."
     spread = [f"{lt} {min(t['sd_boot_all_pairs'].values()):.4f} to {max(t['sd_boot_all_pairs'].values()):.4f} "
               f"over {len(t['sd_boot_all_pairs'])} pairs" for lt, t in tables.items() if t.get("sd_boot_all_pairs")]
     if spread:

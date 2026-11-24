@@ -376,6 +376,16 @@ def test_power_table_from_octobers_trio(pilot):
     assert "error" in ca.power_table(str(root), "Toy", "two_scale", n_boot=10)
 
 
+def test_power_markdown_captions_with_the_tables_rule(pilot):
+    """#122 review nit: a table built under a non-default rule is captioned with that rule's seed count, not
+    ``DECISION_RULE``'s."""
+    root, _ = pilot
+    three = {**ca.DECISION_RULE, "seeds_confirmatory": [42, 43, 44]}
+    md = ca.power_markdown({"Toy": ca.power_table(str(root), "Toy", "baseline", n_boot=40, n_sim=200, rule=three)})
+    assert "The rule reads 3 confirmatory arm seeds" in md and "the 3-arm-seed row is the one that applies" in md
+    assert "The rule reads 5" not in md
+
+
 # ---------------------------------------------------------------------------------------------------- fix round 1
 
 def test_only_the_rules_seeds_enter_the_verdict(pilot):
