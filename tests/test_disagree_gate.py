@@ -5,6 +5,7 @@ import json
 import math
 import os
 import re
+import shutil
 import warnings
 
 import numpy as np
@@ -1632,10 +1633,11 @@ def test_p5_gold_items_must_be_p4s_items(tmp_path, allow_test_boot):
     p5 = ok["CurbRamp"]["p5"]
     assert p5["error"] is None and p5["n"] == n4 and p5["registered"]["n_boot"] == 20
     assert p5["registered"]["boot_seed"] == 0 and p5["registered"]["n_valid"] == 20
-    # N-b: without P4 (no baseline / cl-drop gold rows) (b)'s rows cannot be checked: an error, no numbers
+    # N-b, then F1 (final review of #123): without P4 (no baseline / cl-drop gold rows) (b)'s rows cannot be
+    # checked: withheld, no numbers (not a final error)
     rc, nop4 = p5_run_gold(lay, tmp_path / "out4", "--runs", "matched-rb,symmetric-rb")
     leg = nop4["CurbRamp"]["p5"]
-    assert leg["error"].startswith("P4 was not computed") and "registered" not in leg
+    assert leg["withheld"] and leg["not_computed"].startswith("P4 was not computed") and not p5_has_number(leg)
     # P5 (b) is a uniform-crop statistic: gold on round-3 crops writes no P5 entry at all
     rc, r3 = p5_run_gold(lay, tmp_path / "out3", "--crops", "r3crops")
     assert "p5" not in r3["CurbRamp"]
@@ -1792,6 +1794,91 @@ def test_p5_uses_exactly_the_registered_seeds(tmp_path, allow_test_boot):
     rc, g = p5_run_gold(lay, tmp_path / "gout", "--seeds", "42,43,44,45")
     assert g["CurbRamp"]["p5"]["seeds_not_used"] == leg["seeds_not_used"]
     assert g["CurbRamp"]["p5"]["registered"]["seeds"] == [42, 43, 44]
+
+
+def test_p5_complete_unit_without_p4_is_withheld_not_final(tmp_path, allow_test_boot):
+    """Final review of #123, F1: with a complete rebalanced unit, a type whose P4 was not computed (no baseline or
+    cl-drop gold rows on uniform crops) is an incomplete state: withheld, no number of any leg, never the final "no
+    (unestimable)". The baseline and cl-drop gold files are outside the 24-file unit, so a missing one has to be
+    rescored before P5 is answered, not turned into a final answer."""
+    lay = p5_layout(tmp_path)
+    gate = tmp_path / "gate"
+    rc, m = p5_run_maps(lay, gate)
+    assert rc == 0 and m["CurbRamp"]["contrasts"]["symmetric-rb"]["error"] is None
+    for tag in ("baseline", "baseline-s43", "baseline-s44"):          # one type loses P4's inputs
+        (lay["r4"] / "Crosswalk" / f"gold_predictions_uniform_{tag}.csv").unlink()
+    for f in (gate / "maps").glob("*-rb*.json"):                       # the rebalanced maps that maps wrote
+        shutil.copy(f, lay["maps"] / f.name)
+    rc, g = p5_run_gold(lay, tmp_path / "gold")
+    assert rc == 0 and "p4" not in g["Crosswalk"] and "p4" in g["CurbRamp"]
+    # the type without P4 writes no rebalanced gold row; the other type keeps its descriptive rows
+    assert all(v == {"variant": v["variant"], "seed": v["seed"], "withheld": True}
+               for k, v in g["Crosswalk"]["runs"].items() if "-rb" in k)
+    assert not any("-rb" in v for v in g["Crosswalk"]["ensemble"])
+    assert not any("-rb" in k for k in g["Crosswalk"]["sensitivity"])
+    assert "symmetric-rb" in g["CurbRamp"]["ensemble"]
+    leg = g["Crosswalk"]["p5"]
+    assert leg.get("withheld") and not leg.get("error") and not p5_has_number(leg)
+    assert leg["not_computed"].startswith("P4 was not computed")
+    assert len(leg["present"]) == 24 and not leg["missing"] and not leg["mismatched"]
+    st = dgt.p5_coprimary(leg, None, "b")
+    assert st["result"] == "withheld" and "P4 was not computed" in st["causes"][0]
+    assert "incomplete" not in st["causes"][0]
+    dgt.main(["decide", "--maps", str(gate / "maps.json"), "--gold", str(tmp_path / "gold" / "gold.json"),
+              "--out", str(gate / "bar.json")])
+    b = json.loads((gate / "bar.json").read_text())
+    assert b["p5"]["answer"] == dgt.P5_WITHHELD and not p5_has_number(b["p5"])
+    assert any(c.startswith("Crosswalk (b): ") and "P4 was not computed" in c for c in b["p5"]["causes"])
+
+
+def test_p5_withheld_headline_names_a_leg_not_computed():
+    """Final review of #123, N2: a complete unit with a leg not computed (decide before gold, or gold without P4)
+    is withheld, and the block's first line must not say that the unit is incomplete."""
+    maps, _ = p5_files()
+    d = dgt.p5_decision(maps, None)                                   # decide run before gold
+    assert d["answer"] == dgt.P5_WITHHELD
+    head = dgt.p5_markdown({"p5": d}).splitlines()[0]
+    assert "or a leg was not computed" in head and "and it is incomplete" not in head
+    assert "not computed" in dgt.P5_WITHHELD
+
+
+def test_p5_gold_plan_skips_an_incomplete_unit_even_with_rebalanced_maps_on_disk(tmp_path):
+    """Final review of #123, N1: gold must not add an incomplete unit's runs to its plan. With rebalanced map files
+    on disk (a stray or earlier maps output), such runs would otherwise be joined and reach the ensemble and the
+    seed-42 sensitivity rows."""
+    lay = p5_layout(tmp_path)
+    for k, s in enumerate(SEEDS3):
+        for v in dgt.RB_VARIANTS:
+            (lay["maps"] / f"CurbRamp_{dgt.run_tag(v, s)}.json").write_text(json.dumps(dgt.fit_map(predictions(k),
+                                                                                                    PI)))
+    (lay["r4"] / "Crosswalk" / "predictions_matched-rb-s44.csv").unlink()         # the unit is incomplete
+    rc, g = p5_run_gold(lay, tmp_path / "gold")
+    assert rc == 0
+    tr = g["CurbRamp"]
+    assert tr["p5"]["withheld"] and not p5_has_number(tr["p5"])
+    assert not any("-rb" in v for v in tr["ensemble"]) and not any("-rb" in k for k in tr["sensitivity"])
+    assert all(set(v) == {"variant", "seed", "withheld"} for k, v in tr["runs"].items() if "-rb" in k)
+    assert "-rb" not in dgt.gold_markdown(g)
+
+
+def test_p5_maps_leg_records_the_counted_defined_replicates(monkeypatch):
+    """Final review of #123, N1: (a)'s registered interval records the defined replicates counted on the rows it
+    is computed on (``_registered_valid_panoramas``), not ``n_boot``, so ``decide``'s floor reads a real count."""
+    calls = []
+
+    def spy(y, g, n_boot, seed):
+        calls.append((len(y), int(np.sum(y)), len(set(g)), n_boot, seed))
+        return 3
+    monkeypatch.setattr(dgt, "_registered_valid_panoramas", spy)
+    a = {s: p5_pred(s) for s in SEEDS3}
+    b = {s: p5_pred(s, better=0.1) for s in SEEDS3}
+    leg = dgt.p5_maps_leg(a, b, p5_split(), n_boot=20, seed=0)
+    part = leg["test_heldout_agreed"]
+    assert part["registered"]["n_valid"] == 3 and leg["test_heldout"]["registered"]["n_valid"] == 3
+    assert (part["n"], part["n_incorrect"], part["n_panoramas"], 20, 0) in calls
+    st = dgt.p5_coprimary(leg, "test_heldout_agreed", "a", registered_n_boot=20)
+    assert st == {"result": "unestimable", "causes": ["registered interval: 3 of 20 replicates defined (fewer than "
+                                                      "50%)"]}
 
 
 def test_doctests():

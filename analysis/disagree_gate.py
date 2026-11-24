@@ -110,8 +110,9 @@ P5_NO = "no, the training rule stays `margin`"
 P5_UNESTIMABLE = "no (unestimable)"
 P5_NOT_RUN = "not run"
 # Not an answer: the rebalanced unit (rb_unit_status: 24 files, both types x both arms x seeds 42, 43, 44 x both
-# file kinds) is incomplete, so maps / gold / decide withheld every P5 number (decision rule of 2026-11-23).
-P5_WITHHELD = "withheld (rebalanced runs incomplete; not an answer)"
+# file kinds) is incomplete, or a leg of a complete unit was not computed (decide before gold, or gold without P4),
+# so maps / gold / decide withheld every P5 number (decision rule of 2026-11-23).
+P5_WITHHELD = "withheld (rebalanced runs incomplete or a leg not computed; not an answer)"
 # maps and gold read every arm by default, so stage 2's rebalanced runs are never left out by a forgotten flag.
 DEFAULT_RUNS = ",".join(("baseline", "cl-drop", "round3") + RB_VARIANTS)
 PRIVACY_MIN_CELL = 5     # a gold cell under 5 items shows its size only
@@ -1012,10 +1013,13 @@ P5_MISSING = {"a": "maps.json has no P5 entry for this type (run maps with the r
 
 
 def p5_withheld_text(leg):
-    """Why a leg was withheld: the missing runs, the mismatch, and any seed on disk that is not used.
+    """Why a leg was withheld: the missing runs and the mismatch (the unit is incomplete), or, on a complete unit,
+    the leg that was not computed (``not_computed``: gold without P4, final review of #123, F1).
 
     >>> p5_withheld_text({"withheld": True, "missing": ["symmetric-rb-s44"], "mismatched": None})
     'rebalanced runs incomplete: missing symmetric-rb-s44'
+    >>> p5_withheld_text({"withheld": True, "missing": [], "mismatched": [], "not_computed": "P4 was not computed"})
+    'leg not computed: P4 was not computed'
     """
     parts = []
     if leg.get("missing"):
@@ -1023,7 +1027,10 @@ def p5_withheld_text(leg):
     if leg.get("mismatched"):
         mm = leg["mismatched"]
         parts.append(f"scored on different rows ({mm if isinstance(mm, str) else '; '.join(mm)})")
-    return "rebalanced runs incomplete: " + ("; ".join(parts) or "unknown")
+    out = ["rebalanced runs incomplete: " + "; ".join(parts)] if parts else []
+    if leg.get("not_computed"):
+        out.append(f"leg not computed: {leg['not_computed']}")
+    return "; ".join(out) or "rebalanced runs incomplete: unknown"
 
 
 def p5_coprimary(leg, part_key, coprimary, registered_n_boot=N_BOOT):
@@ -1031,7 +1038,8 @@ def p5_coprimary(leg, part_key, coprimary, registered_n_boot=N_BOOT):
     ``test_heldout_agreed``; ``gold.json`` ``p5`` for (b), ``part_key`` None).
 
     - ``withheld`` when the leg is missing or ``maps`` / ``gold`` withheld it (the rebalanced unit,
-      ``rb_unit_status``, is incomplete): not an answer; the missing runs may be resubmitted.
+      ``rb_unit_status``, is incomplete, or ``gold`` found no P4 to check (b)'s rows against): not an answer; the
+      missing runs may be resubmitted, or the missing leg computed.
     - ``unestimable``, with each cause named, when the leg is an error, when either arm has fewer than the three
       registered seeds, when the rows hold fewer than ``P5_MIN_CLASS`` of either class, or when an interval is
       missing, was not computed at the registered ``N_BOOT`` resamples and bootstrap seed ``P5_BOOT_SEED``, or
@@ -1599,6 +1607,15 @@ def cmd_gold(args):
                 tr["runs"][tag] = {"variant": v, "seed": s, **({"withheld": True} if
                                                                f"{t}/gold_predictions_uniform_{tag}.csv" in
                                                                unit["present"] else {"missing": True})}
+        if (rb_wanted and unit["complete"] and args.crops == "uniform"
+                and not ("baseline" in joined and "cl-drop" in joined)):
+            # F1 (final review of #123): no P4 for this type, so P5 is withheld; so are the rebalanced runs'
+            # descriptive gold rows (per run, sensitivity, ensemble), as for an incomplete unit.
+            for v, s, tag in rb_tags():
+                tr["runs"][tag] = {"variant": v, "seed": s, "withheld": True}
+                tr["sensitivity"].pop(tag, None)
+            for v in RB_VARIANTS:
+                joined.pop(v, None)
         tr["ensemble"] = {v: e for v, by_seed in joined.items() if (e := ensemble_stats(by_seed))}
         if "baseline" in joined and "cl-drop" in joined and args.crops == "uniform":
             tr["p4"] = paired_gold_delta(joined["baseline"], joined["cl-drop"], args.n_boot, args.seed)
@@ -1606,9 +1623,12 @@ def cmd_gold(args):
             # P5 (b), amended 2026-11-23: the rebalanced runs joined without a map (the AUC needs none), on P4's rows;
             # differing item sets are an error, never intersected.
             if unit["complete"] and not tr.get("p4"):
-                leg = {"a": P5_A, "b": P5_B, "seeds": _p5_seeds(SEEDS, SEEDS), **rb_unit_fields(unit),
-                       "error": "P4 was not computed (no baseline and cl-drop gold rows), so (b)'s rows cannot be "
-                                "checked against P4's"}
+                # Final review of #123, F1: the baseline / cl-drop gold files are outside the 24-file unit, so P4
+                # missing is an incomplete state (withheld, no number), never a final "no (unestimable)".
+                leg = {**rb_withheld_leg(unit), "not_computed": "P4 was not computed (no baseline and cl-drop gold "
+                                                                "rows on uniform crops), so (b)'s rows cannot be "
+                                                                "checked against P4's"}
+                print(f"{t}: P5 WITHHELD ({p5_withheld_text(leg)}); no rebalanced number written", file=sys.stderr)
             elif unit["complete"]:
                 rb_pred = {tag: pd.read_csv(os.path.join(args.pred_dir, t, f"gold_predictions_uniform_{tag}.csv"),
                                             dtype={"label_uid": str}) for _, _, tag in rb_tags()}
@@ -2281,9 +2301,10 @@ def p5_markdown(bar):
                   + "; ".join(p5["causes"]) + "."]
     if p5["answer"] == P5_WITHHELD:
         lines[0] = (f"**Answer: {p5['answer']}.** The rebalanced runs are one unit (both types, both arms, seeds 42, "
-                    "43, 44, prediction and uniform gold-prediction files), and it is incomplete, so every P5 number "
-                    "was withheld; resubmit the missing runs. The first `decide` on a complete unit is the answer "
-                    "(decision rule of 2026-11-23).")
+                    "43, 44, prediction and uniform gold-prediction files). Either it is incomplete or a leg was not "
+                    "computed (the causes below), so every P5 number was withheld: resubmit the missing runs, or "
+                    "compute the missing leg (`maps`, `gold` on uniform crops with P4's inputs). The first `decide` "
+                    "on a complete unit with every leg computed is the answer (decision rule of 2026-11-23).")
     lines += ["", "| Type | rows | n (correct / incorrect) | panoramas | mean [registered 95%] | hierarchical 95% | "
               "per seed | result |", "|---|---|---:|---:|---:|---:|---|---|"]
     for r in p5.get("rows") or []:
