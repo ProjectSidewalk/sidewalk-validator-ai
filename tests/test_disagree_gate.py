@@ -1443,12 +1443,13 @@ def test_p5_report_block_not_run_and_with_an_answer():
     # S3: the (b) rows print n only (P4's rows' expert-verdict split stays in bar.json); (a) rows keep the counts
     assert "| CurbRamp | (b) gold, P4's rows | 110 | 200 |" in text and "| CurbRamp | (a) agreed test_heldout rows | " \
            "400 (300 / 100) | 200 |" in text
-    # the doc carries the block, in its not-run state, so report can splice it once stage 2 has outputs
+    # the doc carries the block, either in its not-run state or as report spliced it from bar.json (stage 2's
+    # results were spliced on 2026-11-24; `report --check` against $GATE, outside the repo, pins its content)
     with open(os.path.join(dgt.REPO_DIR, "docs", "round4-2026-11.md")) as f:
         doc = f.read()
     blk = re.search(re.escape(dgt.BEGIN.format(name="p5")) + r"\n\n(.*?)\n\n" + re.escape(dgt.END.format(name="p5")),
                     doc, re.S)
-    assert blk and blk.group(1) == dgt.P5_NOT_RUN_TEXT
+    assert blk and (blk.group(1) == dgt.P5_NOT_RUN_TEXT or blk.group(1).startswith("**Answer: "))
 
 
 def p5_layout(tmp_path, gold_n=160, n_rb_gold=None, extra_seed=None, rb=True):
