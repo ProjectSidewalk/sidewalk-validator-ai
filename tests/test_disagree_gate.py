@@ -1881,6 +1881,219 @@ def test_p5_maps_leg_records_the_counted_defined_replicates(monkeypatch):
                                                       "50%)"]}
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# Complementary suppression of the gold blocks (review of #129, S1)
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _sc(n, k):
+    """A gated-Disagree cell as gold.json stores it."""
+    return {"n": n, "confirmed": k, "overturned": n - k, "share": k / n if n else float("nan"), "lo": 0.1,
+            "hi": 0.9, "share_pool_weighted": 0.5, "weighting": "pool stratum (per round)"}
+
+
+def _srun(tot, seed=42, rounds=None, strata=None):
+    return {"variant": "x", "seed": seed, "gated_disagree": _sc(*tot), "false_alarm_gated": 0.019,
+            "false_alarm_any": 0.5, "auc_round_stratified": 0.8, "auc_pooled": 0.8, "round_flag": False,
+            "by_round": {r: {"n": 50, "gated_disagree": _sc(*v), "auc": 0.8} for r, v in (rounds or {}).items()},
+            "by_stratum": {k: {"n": 20, "gated_disagree": _sc(*v)} for k, v in (strata or {}).items()}}
+
+
+def suppression_fixture():
+    """One synthetic gold.json with each pattern of the review (cell values are made up):
+    a: total minus the sibling round; b: a round minus its printed strata; c: strata whose masked sum is forced
+    (all confirmed); d: the val-items-back row minus the headline row; round3: the headline minus its
+    not-train-rows row; e: an all-confirmed total, which forces every part; f: two masked rounds whose sum is not
+    forced (nothing extra to hide); g: a masked headline row of another seed."""
+    runs = {
+        "a": _srun((15, 13), rounds={"1": (3, 3), "2": (12, 10)}),
+        "b": _srun((30, 25), rounds={"1": (10, 8), "2": (20, 17)},
+                   strata={"1/x": (10, 8), "2/x": (17, 14), "2/y": (3, 3)}),
+        "c": _srun((12, 9), rounds={"1": (12, 9)}, strata={"1/x": (7, 4), "1/y": (2, 2), "1/z": (3, 3)}),
+        "d": _srun((15, 12)),
+        "round3": _srun((20, 18)),
+        "e": _srun((15, 15), rounds={"1": (3, 3), "2": (12, 12)}),
+        "f": _srun((20, 15), rounds={"1": (2, 1), "2": (3, 2), "3": (15, 12)}),
+        "g": _srun((3, 2), seed=43),
+    }
+    sens = {"d": {"val_back": {"gated_disagree": _sc(19, 15)}, "consensus_back": {"gated_disagree": _sc(15, 12)}},
+            "round3_not_train_rows": {"gated_disagree": _sc(17, 15)}}
+    return {"_crops": "uniform", "Crosswalk": {"runs": runs, "sensitivity": sens}}
+
+
+def _shown(md):
+    """Every count cell gold_markdown printed: {key: (n, confirmed or None when only the size is shown)}."""
+    out, section = {}, None
+    for ln in md.splitlines():
+        if ln.startswith("| Type | run | gated Disagree confirmed"):
+            section = "run"
+        elif ln.startswith("| Type | run | group |"):
+            section = "group"
+        elif ln.startswith("| Type | row | gated"):
+            section = "sens"
+        elif not ln.startswith("|") or ln.startswith("|---"):
+            if not ln.startswith("|---"):
+                section = None if not ln.startswith("|") else section
+            continue
+        if section is None or ln.startswith("| Type"):
+            continue
+        c = [x.strip() for x in ln.strip("|").split("|")]
+        if section == "group" and c[2] == "round flag":
+            continue
+        cell = c[4] if section == "group" else c[2]
+        val = (int(cell[2:]), None) if cell.startswith("n=") else tuple(int(x) for x in reversed(cell.split("/")))
+        if section == "run":
+            key = ("run", c[0], c[1])
+        elif section == "group":
+            key = ("round", c[0], c[1], c[2][6:]) if c[2].startswith("round ") else ("stratum", c[0], c[1], c[2])
+        else:
+            key = ("sens", c[0], *[x.strip() for x in c[1].split(",")])
+        out[key] = val
+    return out
+
+
+def _component(k):
+    """The run a printed cell belongs to: cells of different runs share no sum."""
+    if k[0] == "sens":
+        return (k[1], "round3" if k[2] == "round3_not_train_rows" else k[2])
+    return (k[1], k[2])
+
+
+def _feasible(shown, relations):
+    """Brute force, independent of the module, one run at a time: every assignment of the hidden counts (0..n
+    each) under which every relation ``parent = sum(children) + remainder`` holds with the remainder a valid cell.
+    Returns {key: set of feasible values} for the hidden cells and the remainders."""
+    feas = {}
+    for comp in {_component(k) for k in shown}:
+        sub = {k: v for k, v in shown.items() if _component(k) == comp}
+        rel = [(i, p, ch) for i, (p, ch) in enumerate(relations) if _component(p) == comp]
+        _feasible_one(sub, rel, feas)
+    return feas
+
+
+def _feasible_one(shown, relations, feas):
+    import itertools
+    hidden = sorted(k for k, (n, v) in shown.items() if v is None and n > 0)
+    for combo in itertools.product(*[range(shown[k][0] + 1) for k in hidden]):
+        val = {k: v for k, (n, v) in shown.items() if v is not None or n == 0}
+        val.update({k: 0 for k, (n, v) in shown.items() if n == 0})
+        val.update(dict(zip(hidden, combo)))
+        rems, ok = {}, True
+        for i, p, ch in relations:
+            n_rem = shown[p][0] - sum(shown[c][0] for c in ch)
+            k_rem = val[p] - sum(val[c] for c in ch)
+            if not 0 <= k_rem <= n_rem:
+                ok = False
+                break
+            rems[("rem", i)] = (n_rem, k_rem)
+        if not ok:
+            continue
+        for k in hidden:
+            feas.setdefault(k, set()).add(val[k])
+        for k, (n, v) in rems.items():
+            feas.setdefault(k, set()).add(v)
+            feas.setdefault(("rem-n", k), {n})
+
+
+def _relations(shown):
+    """The sums, written here from the block's own structure (not the module's): headline over rounds, round over
+    its strata, val/consensus rows over the headline, round3 over its not-train rows."""
+    rel = []
+    for k in shown:
+        if k[0] == "run" and any(x[0] == "round" and x[1:3] == k[1:3] for x in shown):
+            rel.append((k, [x for x in shown if x[0] == "round" and x[1:3] == k[1:3]]))
+        if k[0] == "round":
+            rel.append((k, [x for x in shown if x[0] == "stratum" and x[1:3] == k[1:3]
+                            and x[3].split("/")[0] == k[3]]))
+        if k[0] == "sens" and len(k) == 4 and ("run", k[1], k[2]) in shown:
+            rel.append((k, [("run", k[1], k[2])]))
+        if k == ("sens", k[1], "round3_not_train_rows"):
+            rel.append((("run", k[1], "round3"), [k]))
+    return rel
+
+
+def test_gold_masked_cells_cannot_be_worked_out_by_subtraction():
+    """Review of #129, S1: no masked cell (under 5) and no unprinted remainder under 5 follows from the printed
+    cells by subtraction or a forced sum; checked by brute force over every assignment of the hidden counts."""
+    gold = suppression_fixture()
+    md = dgt.gold_markdown(gold)
+    shown = _shown(md)
+    rel = _relations(shown)
+    feas = _feasible(shown, rel)
+    thin = [k for k, (n, v) in shown.items() if 0 < n < dgt.PRIVACY_MIN_CELL]
+    rems = [k for k in feas if k[0] == "rem" and 0 < next(iter(feas[("rem-n", k)])) < dgt.PRIVACY_MIN_CELL]
+    assert len(thin) == 8 and len(rems) == 6             # every pattern of the fixture is in play
+    for k in thin + rems:
+        assert len(feas[k]) >= 2, (k, feas[k])
+    # each pattern, by the cell the old code printed and the suppression now hides
+    assert shown[("round", "Crosswalk", "a", "2")] == (12, None)                    # total minus sibling round
+    assert shown[("run", "Crosswalk", "a")] == (15, 13)                             # the headline stays
+    assert shown[("stratum", "Crosswalk", "b", "2/x")] == (17, None)                # round minus printed strata
+    assert shown[("stratum", "Crosswalk", "c", "1/x")] == (7, None)                 # forced sum
+    assert shown[("sens", "Crosswalk", "d", "val_back")] == (19, None)              # val items back minus headline
+    assert shown[("sens", "Crosswalk", "d", "consensus_back")] == (15, 12)          # nothing added: printed
+    assert shown[("sens", "Crosswalk", "round3_not_train_rows")] == (17, None)
+    assert shown[("run", "Crosswalk", "e")] == (15, None)                           # all confirmed: total hidden
+    assert shown[("round", "Crosswalk", "f", "3")] == (15, 12)                      # not forced: nothing extra
+    # the masked headline row's gated false-alarm rate would give its overturned count: masked with it
+    g_row = next(ln for ln in md.splitlines() if ln.startswith("| Crosswalk | g |"))
+    assert "— / 0.500" in g_row and "0.019" not in g_row
+    assert "worked out by subtraction" in md
+
+
+def test_gold_suppression_is_minimal_and_generic():
+    """Nothing is hidden beyond the thin cells when no subtraction applies, and the result depends only on the
+    values, not on key names or the order of the rows."""
+    gold = {"Crosswalk": {"runs": {"z": _srun((20, 15), rounds={"1": (2, 1), "2": (3, 2), "3": (15, 12)})}}}
+    assert dgt.gold_suppressed(gold) == {("round", "Crosswalk", "z", "1"), ("round", "Crosswalk", "z", "2")}
+    a = suppression_fixture()
+    b = copy.deepcopy(a)
+    b["Crosswalk"]["runs"] = dict(reversed(list(b["Crosswalk"]["runs"].items())))
+    assert dgt.gold_suppressed(a) == dgt.gold_suppressed(b)
+
+
+def test_bar_block_masks_a_thin_a3_count():
+    bar = {"types": [{"label_type": "Crosswalk", "recipe": "cl-drop", "recipe_status": "decided",
+                      "status": "hold_back", "reason": "A3: thin: 1 of 3 overturned",
+                      "criteria": [{"id": "A3", "result": "fail", "detail": "thin: 1 of 3 overturned"}]}]}
+    text = dgt.bar_markdown(bar)
+    assert "1 of 3" not in text and "thin: 3 gated, some overturned" in text
+
+
+def test_p5_caveat_states_the_bound_for_the_hierarchical_interval():
+    """Review of #129, S3: the printed caveat agrees with P5 item 6 as corrected on 2026-11-24."""
+    assert "each interval" not in dgt.P5_CAVEAT
+    assert "the hierarchical interval's false-yes rate is about 12.5% at most" in dgt.P5_CAVEAT
+    assert "two-interval rule" in dgt.P5_CAVEAT
+
+
+def test_p5_f1_guard_edges(tmp_path, allow_test_boot):
+    """Review of #129, N4: (1) baseline and cl-drop present with no seed in common: P4 is None, so the leg and the
+    rebalanced descriptive rows are both withheld; (2) an incomplete unit without P4 keeps its missing records;
+    (3) gold on round-3 crops keeps the rebalanced runs as missing (they have no round-3-crop predictions)."""
+    lay = p5_layout(tmp_path / "one")
+    gate = tmp_path / "gate"
+    p5_run_maps(lay, gate)
+    for f in (gate / "maps").glob("*-rb*.json"):
+        shutil.copy(f, lay["maps"] / f.name)
+    for tag in ("baseline-s43", "baseline-s44", "cl-drop"):                 # baseline {42}, cl-drop {43, 44}
+        (lay["r4"] / "Crosswalk" / f"gold_predictions_uniform_{tag}.csv").unlink()
+    rc, g = p5_run_gold(lay, tmp_path / "g1")
+    tr = g["Crosswalk"]
+    assert tr.get("p4") is None and tr["p5"]["withheld"] and tr["p5"]["not_computed"]
+    assert all(v == {"variant": v["variant"], "seed": v["seed"], "withheld": True}
+               for k, v in tr["runs"].items() if "-rb" in k)
+    assert not any("-rb" in v for v in tr["ensemble"])
+    lay2 = p5_layout(tmp_path / "two")
+    for tag in ("baseline", "baseline-s43", "baseline-s44"):
+        (lay2["r4"] / "Crosswalk" / f"gold_predictions_uniform_{tag}.csv").unlink()
+    (lay2["r4"] / "CurbRamp" / "gold_predictions_uniform_matched-rb.csv").unlink()      # unit incomplete
+    rc, g2 = p5_run_gold(lay2, tmp_path / "g2")
+    assert g2["CurbRamp"]["runs"]["matched-rb"] == {"variant": "matched-rb", "seed": 42, "missing": True}
+    assert g2["Crosswalk"]["runs"]["matched-rb"] == {"variant": "matched-rb", "seed": 42, "withheld": True}
+    rc, g3 = p5_run_gold(p5_layout(tmp_path / "three"), tmp_path / "g3", "--crops", "r3crops")
+    assert all(v == {"missing": True} for k, v in g3["CurbRamp"]["runs"].items() if "-rb" in k)
+
+
 def test_doctests():
     import doctest
     failed, _ = doctest.testmod(dgt)
