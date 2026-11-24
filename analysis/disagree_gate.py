@@ -2349,13 +2349,38 @@ def p5_markdown(bar):
     return "\n".join(lines)
 
 
-def _gated_cells(g, hidden=False):
+def _gated_cells(g, hidden=False, masked_below=False):
     """``(confirmed/n, share [95%], pool-weighted)`` with thin cells masked, and with any cell ``hidden`` by the
-    complementary suppression (``gold_suppressed``) shown by its size only (``n=12``)."""
+    complementary suppression (``gold_suppressed``) shown by its size only (``n=12``). ``masked_below``: a cell
+    beneath this row is masked, so its pool-weighted share is masked too (the weights can be rebuilt from public
+    pools and the printed item counts, and the weighted share would then pin the masked split; review of #129,
+    R1)."""
     thin = g["n"] < PRIVACY_MIN_CELL or (hidden and g["n"] > 0)
     n_cell = f"n={g['n']}" if hidden and g["n"] > 0 else mask_thin(g["n"], g["confirmed"])
     return (n_cell, "—" if thin else f"{_f(g['share'])} [{_f(g['lo'])}, {_f(g['hi'])}]",
-            "—" if thin else _f(g.get("share_pool_weighted")))
+            "—" if thin or masked_below else _f(g.get("share_pool_weighted")))
+
+
+def _shown_masked(g, hidden):
+    """True when a gated cell is printed by its size only and its count is not otherwise known (``n`` > 0)."""
+    return g["n"] > 0 and (g["n"] < PRIVACY_MIN_CELL or hidden)
+
+
+def gold_masked_below(gold, hidden):
+    """Rows of the seed-42 runs with a masked cell beneath them: ``{("run", t, tag)}`` when any of the run's round
+    or stratum cells is masked, ``{("round", t, tag, r)}`` when any of round ``r``'s strata is."""
+    out = set()
+    for t in LABEL_TYPES:
+        for tag, r in ((gold.get(t) or {}).get("runs") or {}).items():
+            if r.get("missing") or r.get("withheld") or r.get("seed") != SHIP_SEED:
+                continue
+            for name, b in (r.get("by_stratum") or {}).items():
+                if _shown_masked(b["gated_disagree"], ("stratum", t, tag, name) in hidden):
+                    out |= {("run", t, tag), ("round", t, tag, name.split("/", 1)[0])}
+            for name, b in (r.get("by_round") or {}).items():
+                if _shown_masked(b["gated_disagree"], ("round", t, tag, name) in hidden):
+                    out.add(("run", t, tag))
+    return out
 
 
 # Kinds of gold cell, in the order complementary suppression hides them: a sensitivity row first, a run's
@@ -2493,6 +2518,7 @@ def gold_suppressed(gold, min_cell=PRIVACY_MIN_CELL):
 
 def gold_markdown(gold):
     hidden = gold_suppressed(gold)
+    below = gold_masked_below(gold, hidden)
     lines = []
     if gold.get("_caption"):
         lines += [gold["_caption"], ""]
@@ -2503,9 +2529,9 @@ def gold_markdown(gold):
             if r.get("missing") or r.get("withheld"):
                 continue
             key = ("run", t, tag)
-            n_cell, share, pw = _gated_cells(r["gated_disagree"], key in hidden)
+            n_cell, share, pw = _gated_cells(r["gated_disagree"], key in hidden, key in below)
             # a masked row's gated false-alarm rate would give its overturned count, so it is masked with it
-            masked = r["gated_disagree"]["n"] > 0 and (r["gated_disagree"]["n"] < PRIVACY_MIN_CELL or key in hidden)
+            masked = _shown_masked(r["gated_disagree"], key in hidden)
             lines.append(f"| {t} | {tag} | {n_cell} | {share} | {pw} | "
                          f"{'—' if masked else _f(r['false_alarm_gated'])} / {_f(r['false_alarm_any'])} | "
                          f"{_f(r['auc_round_stratified'])} | {_f(r['auc_pooled'])} |")
@@ -2527,7 +2553,7 @@ def gold_markdown(gold):
     # Per round and per stratum, seed-42 runs only (the rest are in gold.json).
     lines += ["", "**By round and by stratum** (seed-42 runs; gated Disagrees; a cell under "
               f"{PRIVACY_MIN_CELL} shows its size only, and so does any cell from which one could be worked out by "
-              "subtraction).", "",
+              "subtraction; a pool-weighted share and the round flag are masked when a cell beneath them is).", "",
               "| Type | run | group | items | gated Disagree confirmed | share [95%] | pool-weighted | AUC |",
               "|---|---|---|---:|---:|---:|---:|---:|"]
     for t in LABEL_TYPES:
@@ -2535,13 +2561,19 @@ def gold_markdown(gold):
             if r.get("missing") or r.get("withheld") or r.get("seed") != SHIP_SEED:
                 continue
             for name, b in (r.get("by_round") or {}).items():
-                n_cell, share, pw = _gated_cells(b["gated_disagree"], ("round", t, tag, name) in hidden)
+                key = ("round", t, tag, name)
+                n_cell, share, pw = _gated_cells(b["gated_disagree"], key in hidden, key in below)
                 lines.append(f"| {t} | {tag} | round {name} | {mask_thin(b.get('n', 0))} | {n_cell} | {share} | {pw} "
                              f"| {_f(b.get('auc'))} |")
             for name, b in (r.get("by_stratum") or {}).items():
                 n_cell, share, _ = _gated_cells(b["gated_disagree"], ("stratum", t, tag, name) in hidden)
                 lines.append(f"| {t} | {tag} | {name} | {mask_thin(b['n'])} | {n_cell} | {share} | — | |")
-            if r.get("round_flag"):
+            # With a round cell masked, the flag (or its absence) would bound the masked count: print it as masked
+            # either way, so that the line carries no information (review of #129, R1).
+            if any(_shown_masked(b["gated_disagree"], ("round", t, tag, name) in hidden)
+                   for name, b in (r.get("by_round") or {}).items()):
+                lines.append(f"| {t} | {tag} | round flag | | masked (a round cell is masked) | | | |")
+            elif r.get("round_flag"):
                 lines.append(f"| {t} | {tag} | round flag | | one round overturned at twice the other's rate | | | |")
     par = [(t, tag, r["parity"]) for t in LABEL_TYPES for tag, r in ((gold.get(t) or {}).get("runs") or {}).items()
            if not r.get("missing") and r.get("parity")]

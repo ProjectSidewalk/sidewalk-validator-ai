@@ -2050,6 +2050,136 @@ def test_gold_suppression_is_minimal_and_generic():
     b["Crosswalk"]["runs"] = dict(reversed(list(b["Crosswalk"]["runs"].items())))
     assert dgt.gold_suppressed(a) == dgt.gold_suppressed(b)
 
+# Pool-weighted shares and the round flag (review of #129, round 2, R1). Strata are the leaves: each stratum has
+# its printed item count, its pool count (public: the pools and the stratum rule are in the repo) and its gated
+# cell; rounds and the headline are sums of their strata, and every pool-weighted share is recomputed from them,
+# as gold_run_stats does (item weight = pool count / item count of its stratum, per round).
+PW_STRATA = {   # run -> {"<round>/<stratum>": (items, pool count, gated n, confirmed)}
+    "p": {"1/a": (40, 400, 20, 15), "2/x": (10, 300, 3, 2), "2/y": (10, 100, 3, 3), "2/z": (10, 50, 4, 3)},
+    "q": {"1/a": (6, 60, 2, 2), "2/x": (20, 100, 7, 7)},
+}
+
+
+def _pw(strata, k):
+    """Pool-weighted confirmed share over ``strata`` with confirmed counts ``k`` (by stratum)."""
+    num = sum(pc / it * k[s] for s, (it, pc, n, _) in strata.items())
+    den = sum(pc / it * n for s, (it, pc, n, _) in strata.items())
+    return num / den if den else float("nan")
+
+
+def _pw_flag(rounds):
+    """gold_run_stats' round flag from ``{round: (n, confirmed)}``."""
+    rates = [(n - k) / n for n, k in rounds.values() if n]
+    return bool(len(rates) == 2 and max(rates) > 0 and max(rates) >= dgt.ROUND_FLAG_RATIO * min(rates))
+
+
+def pw_fixture():
+    runs = {}
+    for tag, strata in PW_STRATA.items():
+        k = {s: v[3] for s, v in strata.items()}
+        by_round = {}
+        for r in sorted({s.split("/")[0] for s in strata}):
+            sub = {s: v for s, v in strata.items() if s.split("/")[0] == r}
+            n, c = sum(v[2] for v in sub.values()), sum(v[3] for v in sub.values())
+            cell = _sc(n, c)
+            cell["share_pool_weighted"] = _pw(sub, k)
+            by_round[r] = {"n": sum(v[0] for v in sub.values()), "gated_disagree": cell, "auc": 0.8}
+        tot = _sc(sum(v[2] for v in strata.values()), sum(v[3] for v in strata.values()))
+        tot["share_pool_weighted"] = _pw(strata, k)
+        runs[tag] = {"variant": tag, "seed": 42, "gated_disagree": tot, "false_alarm_gated": 0.019,
+                     "false_alarm_any": 0.5, "auc_round_stratified": 0.8, "auc_pooled": 0.8,
+                     "round_flag": _pw_flag({r: (b["gated_disagree"]["n"], b["gated_disagree"]["confirmed"])
+                                             for r, b in by_round.items()}),
+                     "by_round": by_round,
+                     "by_stratum": {s: {"n": v[0], "gated_disagree": _sc(v[2], v[3])} for s, v in strata.items()}}
+    return {"_crops": "uniform", "Crosswalk": {"runs": runs}}
+
+
+def _printed_pw_and_flags(md):
+    """{("run", t, tag) | ("round", t, tag, r): printed pool-weighted text} and {(t, tag): round-flag text}."""
+    pw, flags, section = {}, {}, None
+    for ln in md.splitlines():
+        if ln.startswith("| Type | run | gated Disagree confirmed"):
+            section = "run"
+            continue
+        if ln.startswith("| Type | run | group |"):
+            section = "group"
+            continue
+        if not ln.startswith("|"):
+            section = None if ln.strip() else section
+            continue
+        if ln.startswith("|---") or section is None:
+            continue
+        c = [x.strip() for x in ln.strip("|").split("|")]
+        if section == "run":
+            pw[("run", c[0], c[1])] = c[4]
+        elif c[2] == "round flag":
+            flags[(c[0], c[1])] = c[4]
+        elif c[2].startswith("round "):
+            pw[("round", c[0], c[1], c[2][6:])] = c[6]
+    return pw, flags
+
+
+def test_gold_pool_weighted_share_and_round_flag_pin_no_masked_cell():
+    """Review of #129 round 2, R1: with the pool weights known to the reader, no masked cell under 5 follows from
+    the printed counts, the printed pool-weighted shares and the round-flag line together (brute force over every
+    assignment of the masked strata's confirmed counts)."""
+    import itertools
+    gold = pw_fixture()
+    md = dgt.gold_markdown(gold)
+    shown = _shown(md)
+    pw, flags = _printed_pw_and_flags(md)
+    for tag, strata in PW_STRATA.items():
+        skey = {s: ("stratum", "Crosswalk", tag, s) for s in strata}
+        free = [s for s in strata if shown[skey[s]][1] is None and strata[s][2] > 0]
+        feas = {}
+        for combo in itertools.product(*[range(strata[s][2] + 1) for s in free]):
+            k = {s: (shown[skey[s]][1] if shown[skey[s]][1] is not None else 0) for s in strata}
+            k.update(dict(zip(free, combo)))
+            cells = {skey[s]: (strata[s][2], k[s]) for s in strata}
+            rounds = {}
+            for r in sorted({s.split("/")[0] for s in strata}):
+                sub = [s for s in strata if s.split("/")[0] == r]
+                rounds[r] = (sum(strata[s][2] for s in sub), sum(k[s] for s in sub))
+                cells[("round", "Crosswalk", tag, r)] = rounds[r]
+            cells[("run", "Crosswalk", tag)] = (sum(v[2] for v in strata.values()), sum(k.values()))
+            if any(shown[c][1] is not None and shown[c][1] != v[1] for c, v in cells.items()):
+                continue                                        # disagrees with a printed count
+            ok = True
+            for key, text in pw.items():
+                if key[2] != tag or text == "—":
+                    continue
+                sub = strata if key[0] == "run" else {s: v for s, v in strata.items() if s.split("/")[0] == key[3]}
+                ok &= f"{_pw(sub, k):.3f}" == text
+            flag = flags.get(("Crosswalk", tag))
+            if flag is None:
+                ok &= not _pw_flag(rounds)
+            elif not flag.startswith("masked"):
+                ok &= _pw_flag(rounds)
+            if not ok:
+                continue
+            for c, (n, v) in cells.items():
+                feas.setdefault(c, set()).add(v)
+        thin = [c for c in feas if 0 < shown[c][0] < dgt.PRIVACY_MIN_CELL]
+        assert thin
+        for c in thin:
+            assert len(feas[c]) >= 2, (c, feas[c])
+    # the two patterns of the review: a round's printed weighted share over masked strata, and a missing flag line
+    assert pw[("round", "Crosswalk", "p", "2")] == "—" and pw[("run", "Crosswalk", "p")] == "—"
+    assert pw[("round", "Crosswalk", "p", "1")] != "—"
+    assert flags[("Crosswalk", "q")].startswith("masked") and ("Crosswalk", "p") not in flags
+
+
+def test_gold_false_alarm_rate_masked_on_hidden_and_thin_rows():
+    """Review of #129 round 2, nit: the gated false-alarm rate is masked on a row hidden by the suppression (``e``,
+    15 gated, all confirmed) and on a thin row (``g``, 3 gated), and printed on an ordinary row (``a``)."""
+    first_table = dgt.gold_markdown(suppression_fixture()).split("\n\n")[0]    # the headline rows
+    row = {c[1]: c for c in ([x.strip() for x in ln.strip("|").split("|")] for ln in first_table.splitlines()
+                             if ln.startswith("| Crosswalk | "))}
+    assert row["e"][2] == "n=15" and row["e"][5] == "— / 0.500"
+    assert row["g"][2] == "n=3" and row["g"][5] == "— / 0.500"
+    assert row["a"][5] == "0.019 / 0.500"
+
 
 def test_bar_block_masks_a_thin_a3_count():
     bar = {"types": [{"label_type": "Crosswalk", "recipe": "cl-drop", "recipe_status": "decided",
