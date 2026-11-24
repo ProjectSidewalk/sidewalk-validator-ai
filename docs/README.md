@@ -7,6 +7,7 @@ because each reports one measurement at one point in time; the pipeline pages ar
 
 | page | what it covers |
 |---|---|
+| [`round4-2026-11.md`](round4-2026-11.md) | The round-4 recipe on round-3 data and the pre-registered Disagree bar: gold-free baselines and `cl-drop` (3 seeds), the gold set kept out of training with its scenes, the maps under `majority2`, the rules that make a Disagree map `shadow_eligible` (pilot running; results not yet run; [#74](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/74)) |
 | [`running-on-hyak.md`](running-on-hyak.md) | Setup (submodule, environment, depth checkpoint), the three SLURM jobs, resume and cache semantics, outputs, calibration, smoke tests, the held-out-city recipe |
 | [`training-data.md`](training-data.md) | Which labels become training data and why: the vote-margin and expert rules, exclusions, cities, soft and reliability-weighted targets, the gold slice, crop geometry and tilt correction |
 | [`publishing.md`](publishing.md) | `publish_to_hf.py`: staging, what it refuses, cards, pushing, the October 2026 publish |
