@@ -662,7 +662,11 @@ report-only and no arm is proposed, so nobody needs to read it for a ship decisi
   byte-identical to the committed files. Only `provenance.json` was replaced. It differs from the first only in
   `arguments.data_dir`, `arguments.shares`, `arguments.out` (which names that scratch directory, `regen-aad8ad2`)
   and `git_commit`; all 132 file hashes and 63 run entries are unchanged. So the committed outputs other than
-  `provenance.json` come from the report code at 8709891, and `provenance.json` comes from aad8ad2.
+  `provenance.json` come from the report code at 8709891, and `provenance.json` comes from aad8ad2. An earlier
+  regeneration, at 1a74e80, ran while uncommitted doc edits were in the tree, so its `provenance.json` recorded
+  `git_dirty: true`; it was discarded. Every re-run reproduced the nine decision outputs byte for byte: both
+  regenerations, and the reviewer's own re-runs in both review rounds of the pull request. The report is
+  deterministic, and no number changed.
 
 ## What could ship
 
