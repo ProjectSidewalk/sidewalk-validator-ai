@@ -18,15 +18,19 @@ Subcommands:
   ``cl-drop`` against the gold-free baseline (mean of per-seed deltas, one panorama resample shared by all seeds),
   and C3's paired Agree-gate contrast (``agree_gate``: weighted Agree coverage and precision at the gate, a paired
   hierarchical bootstrap over training seeds and panoramas with each run's map held fixed, plus the descriptive
-  collapse flag).
+  collapse flag). For CurbRamp and Crosswalk with the stage-2 rebalanced runs, P5 (a) (``contrasts.symmetric-rb``,
+  ``p5_maps_leg``): ``symmetric-rb`` minus ``matched-rb`` in held-out AUC on the agreed rows (co-primary) and on
+  every row (descriptive), each with the registered panorama interval and the paired hierarchical one.
 - ``gold`` (Mac only; the only place expert verdicts are read): joins the gold predictions to ``gold.csv`` and
   computes the gold rows of the bar (gated Disagrees, false alarms on hard-correct items, round-stratified AUC, the
   primary paired contrast P4, strata, rounds, slices, sensitivity rows, crop parity, the three-seed ensemble). The
-  pool-weighted share uses one pool file per gold round (``--pool 1=... --pool 2=...``).
+  pool-weighted share uses one pool file per gold round (``--pool 1=... --pool 2=...``). On uniform crops, P5 (b)
+  (``p5``, ``p5_gold_leg``): the same rebalanced contrast on P4's rows, joined without a map.
 - ``mde``: the minimum detectable AUC difference per type for P4 from verdict counts only (Hanley and McNeil 1982,
   doi:10.1148/radiology.143.1.7063747; paired correlation an assumption, stated).
 - ``decide``: applies the rules mechanically; one record per type with each criterion's number and pass / fail /
-  unestimable and a status in ``{hold_back, shadow_eligible}``.
+  unestimable and a status in ``{hold_back, shadow_eligible}``, plus P5's one answer across types (``p5``,
+  ``p5_decision``: yes only when all four co-primary interval pairs lie wholly above 0).
 - ``report``: splices the generated blocks into the doc after a privacy check against the live ``/v3/api/cities``
   (``--check``: exit 1 when the doc is stale, write nothing).
 
@@ -39,7 +43,7 @@ Usage::
 
     python analysis/disagree_gate.py mde --gold ~/Data/.../gold.csv --out docs/round4-2026-11
     python analysis/disagree_gate.py maps --r4 $R4 --shares docs/deployment-prior-2026-11/shares.json \\
-        --runs baseline,cl-drop,round3 --out ~/Data/sidewalk-validator-ai-round4-2026-11/gate
+        --runs baseline,cl-drop,round3,matched-rb,symmetric-rb --out ~/Data/sidewalk-validator-ai-round4-2026-11/gate
     python analysis/disagree_gate.py gold --gold ~/Data/.../gold.csv --pred-dir $PRED --maps $GATE/maps \\
         --crops r3crops --out $GATE/r3crops
     python analysis/disagree_gate.py gold --gold ~/Data/.../gold.csv --pred-dir $PRED --maps $GATE/maps \\
@@ -92,6 +96,24 @@ C3_MAX_PRECISION_LOSS = 0.01  # prior-weighted Agree precision, relative to the 
 # replicates give a number (the rest dropped as undefined, e.g. an arm gating no Agree in that resample).
 C3_MIN_VALID_SHARE = 0.5
 C3_COLLAPSE_FACTOR = 3   # collapse flag (descriptive): a seed whose coverage delta is below -3 x 0.03
+# P5, the rule as a definition (stage 2; amended 2026-11-23, "Primary contrasts" in the doc): symmetric-rb minus
+# matched-rb, so every P5 helper call passes (P5_A, P5_B) and reads b minus a.
+RB_TYPES = ("CurbRamp", "Crosswalk")   # the rebalanced arms' types (round4_submit.sh RB_TYPES)
+P5_A, P5_B = "matched-rb", "symmetric-rb"
+RB_VARIANTS = (P5_A, P5_B)
+P5_RULE = "symmetric"     # confident_learning.passes_rule(base split rows, P5_RULE) defines the agreed rows
+P5_MIN_CLASS = 10         # a co-primary with fewer rows of either class is unestimable
+P5_BOOT_SEED = 0          # the registered bootstrap seed (with N_BOOT resamples); decide refuses any other
+P5_MIN_VALID_SHARE = 0.5  # an interval with fewer defined replicates than this share of N_BOOT is unestimable
+P5_YES = "yes, test `symmetric` on a fresh pull"
+P5_NO = "no, the training rule stays `margin`"
+P5_UNESTIMABLE = "no (unestimable)"
+P5_NOT_RUN = "not run"
+# Not an answer: the rebalanced unit (rb_unit_status: 24 files, both types x both arms x seeds 42, 43, 44 x both
+# file kinds) is incomplete, so maps / gold / decide withheld every P5 number (decision rule of 2026-11-23).
+P5_WITHHELD = "withheld (rebalanced runs incomplete; not an answer)"
+# maps and gold read every arm by default, so stage 2's rebalanced runs are never left out by a forgotten flag.
+DEFAULT_RUNS = ",".join(("baseline", "cl-drop", "round3") + RB_VARIANTS)
 PRIVACY_MIN_CELL = 5     # a gold cell under 5 items shows its size only
 ROUND_FLAG_RATIO = 2.0   # A3 per round: flag a round overturned at twice the other's rate
 STATUSES = ("hold_back", "shadow_eligible")
@@ -529,6 +551,595 @@ def defined_seed_mark(c, limit=None):
             f"{', '.join(map(str, ok))})")
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# P5: the rule as a definition (stage 2; definitions fixed by the amendment of 2026-11-23)
+# ---------------------------------------------------------------------------------------------------------------------
+
+def p5_agreed_rows(sp, split="test_heldout"):
+    """The ``split`` rows of the base ``split.csv`` ``sp`` with an ``agreed`` column: True for a row "whose class the
+    two rules agree on", which the amendment defines as ``confident_learning.passes_rule(rows, "symmetric")``, the
+    one implementation the ``symmetric`` arm is built with (``round4.symmetric_rb``). Nothing is recomputed from the
+    vote counts here. Expert-sourced rows are agreed; a crowd-sourced ``incorrect`` row at net Disagree 2 is not.
+
+    Raises ValueError when a column the rule reads is missing: without ``class_source`` every expert-sourced row
+    would silently count as crowd-sourced.
+
+    >>> sp = pd.DataFrame({"label_uid": ["a:1", "a:2", "a:3"], "split": ["test_heldout"] * 2 + ["train"],
+    ...                    "label_class": ["incorrect"] * 3, "class_source": ["margin", "expert", "margin"],
+    ...                    "human_agree": ["0"] * 3, "human_disagree": ["2", "0", "3"]})
+    >>> p5_agreed_rows(sp)["agreed"].tolist()
+    [False, True]
+    """
+    from analysis import confident_learning as cl
+    need = ("label_uid", "split", "label_class", "class_source", "human_agree", "human_disagree")
+    missing = [c for c in need if c not in sp.columns]
+    if missing:
+        raise ValueError(f"split.csv has no {', '.join(missing)} column (P5's agreed rows need passes_rule's inputs)")
+    rows = sp[sp["split"] == split]
+    return rows.assign(agreed=cl.passes_rule(rows, P5_RULE).to_numpy(dtype=bool))
+
+
+def p5_id_error(ids):
+    """``None`` when every run in ``ids`` (``{(arm, seed): set of label ids}``) has the same ids, else a message
+    naming the first run that differs from the first one. P5 never intersects: two arms or two seeds scored on
+    different rows are an error (amendment item 5).
+
+    >>> p5_id_error({("matched-rb", 42): {"a", "b"}, ("symmetric-rb", 42): {"a", "b"}}) is None
+    True
+    >>> p5_id_error({("matched-rb", 42): {"a", "b"}, ("symmetric-rb", 43): {"a"}})
+    'row ids differ between matched-rb seed 42 (2 rows) and symmetric-rb seed 43 (1 rows): 1 in only one of them'
+    """
+    keys = sorted(ids)
+    for k in keys[1:]:
+        if ids[k] != ids[keys[0]]:
+            return (f"row ids differ between {keys[0][0]} seed {keys[0][1]} ({len(ids[keys[0]])} rows) and {k[0]} "
+                    f"seed {k[1]} ({len(ids[k])} rows): {len(ids[keys[0]] ^ ids[k])} in only one of them")
+    return None
+
+
+def _hierarchical_draws(rng, idxs, k):
+    """C3's seed draws, taken after the row resamples from the same ``rng``: ``(n, k)`` seed indices."""
+    return rng.integers(0, k, size=(len(idxs), k))
+
+
+def _hierarchical_interval(out, idxs, draws, seeds, delta):
+    """Fill ``out``'s ``lo`` / ``hi`` / ``n_replicates`` / ``n_valid``: replicate ``i`` applies row resample
+    ``idxs[i]`` to every seed drawn in ``draws[i]`` and both arms, and averages ``delta(seed, idx)`` over the drawn
+    seeds with the draw counts as weights (``paired_agree_gate_delta``'s arithmetic). NaN replicates are dropped."""
+    boots = np.full(len(idxs), np.nan)
+    for i, (idx, draw) in enumerate(zip(idxs, draws)):
+        uniq, counts = np.unique(draw, return_counts=True)
+        boots[i] = np.average([delta(seeds[j], idx) for j in uniq], weights=counts)
+    valid = boots[~np.isnan(boots)]
+    out["n_replicates"], out["n_valid"] = int(len(idxs)), int(len(valid))
+    if len(valid):
+        out["lo"], out["hi"] = float(np.percentile(valid, 2.5)), float(np.percentile(valid, 97.5))
+    return out
+
+
+def _p5_frames(runs_a, runs_b, seeds, select, what):
+    """``{(arm, seed): rows}`` sorted by ``label_uid`` (``select`` picks a run's rows and columns); ValueError when a
+    run repeats a label or the runs' ids differ (``p5_id_error``)."""
+    frames = {}
+    for arm, runs in (("a", runs_a), ("b", runs_b)):
+        for s in seeds:
+            f = select(runs[s])
+            if not f["label_uid"].is_unique:
+                raise ValueError(f"P5 {what}: label_uid is not unique in arm {arm}, seed {s}")
+            frames[arm, s] = f.sort_values("label_uid", kind="mergesort").reset_index(drop=True)
+    err = p5_id_error({k: set(f["label_uid"]) for k, f in frames.items()})
+    if err:
+        raise ValueError(f"P5 {what}: {err}")
+    return frames
+
+
+def paired_seed_delta_hierarchical(preds_a, preds_b, groups, split, n_boot=N_BOOT, seed=0):
+    """P5 (a)'s second interval: the mean over the shared training seeds of the paired AUC difference ``b - a`` of
+    ``p_incorrect`` on ``split`` (``preds_a`` / ``preds_b``: ``{seed: predictions}``), with a 95% percentile interval
+    from C3's paired hierarchical bootstrap (training seeds, then whole panoramas).
+
+    The draws are C3's, in C3's order (``paired_agree_gate_delta``): one ``np.random.default_rng(seed)``; first
+    ``slices.boot_indices`` (``n_boot`` resamples of whole panoramas, ``groups``), then ``rng.integers(0, k, (n,
+    k))`` for the ``k`` shared seeds. Replicate ``i`` applies panorama resample ``i`` to every drawn seed and both
+    arms, and its value is the mean of the per-seed deltas over the drawn seeds (a seed drawn twice counts twice:
+    ``np.average`` with the draw counts as weights). A drawn seed brings both arms' runs of that seed; the arms are
+    never drawn separately. 2.5th and 97.5th percentiles of the defined replicates.
+
+    ``per_seed`` and ``mean`` equal ``paired_seed_delta``'s, whose interval (one panorama resample for every seed
+    and both arms, no seed resampling) is the registered one. Unlike ``paired_seed_delta``, the rows must be the
+    same in every seed and both arms, and so must ``true`` (ValueError otherwise: P5 never intersects). Rows are
+    sorted by ``label_uid``, so the input order does not change the result.
+
+    Example: deltas of +0.02 on seeds 42 and 43 and -0.01 on seed 44 have mean +0.010, but a replicate that draws
+    seed 44 three times (probability 1/27, more than 2.5%) gives about -0.01, so the interval reaches below 0.
+    """
+    seeds = sorted(set(preds_a) & set(preds_b))
+    if not seeds:
+        return None
+    frames = _p5_frames(preds_a, preds_b, seeds,
+                        lambda p: p[p["split"] == split][["label_uid", "true", "p_incorrect"]], split)
+    ref = frames["a", seeds[0]]
+    true = ref["true"].astype(str).to_numpy()
+    for (arm, s), f in frames.items():
+        if not np.array_equal(f["true"].astype(str).to_numpy(), true):
+            raise ValueError(f"P5 {split}: the true class differs between runs (arm {arm}, seed {s})")
+    y = (true == "incorrect").astype(int)
+    g = ref["label_uid"].map(groups).fillna(ref["label_uid"]).to_numpy()
+    sc = {k: f["p_incorrect"].to_numpy(dtype=float) for k, f in frames.items()}
+
+    def delta(s, idx):
+        return auc(y[idx], sc["b", s][idx]) - auc(y[idx], sc["a", s][idx])
+
+    per = {s: delta(s, slice(None)) for s in seeds}
+    out = {"split": split, "seeds": seeds, "per_seed": per, "mean": float(np.mean(list(per.values()))),
+           "lo": float("nan"), "hi": float("nan"), "n": int(len(y)), "n_boot": int(n_boot), "boot_seed": int(seed),
+           "n_replicates": 0, "n_valid": 0}
+    if not n_boot or not len(y):
+        return out
+    rng = np.random.default_rng(seed)
+    idxs = sl.boot_indices(y, g, n_boot, rng)
+    return _hierarchical_interval(out, idxs, _hierarchical_draws(rng, idxs, len(seeds)), seeds, delta)
+
+
+def paired_gold_delta_hierarchical(rows_a, rows_b, n_boot=N_BOOT, seed=0):
+    """P5 (b)'s second interval: P4's statistic (``paired_gold_delta``: the round-stratified AUC of ``b - a`` on the
+    AI-Disagree items, the mean of the per-seed deltas; ``rows_a`` / ``rows_b``: ``{seed: joined gold rows}``) with
+    C3's paired hierarchical bootstrap, items in place of panoramas.
+
+    The draws follow C3's order with P4's item resample: one ``np.random.default_rng(seed)``; first ``n_boot`` item
+    resamples, each ``rng.integers(0, n, n)`` as in ``paired_gold_delta`` (unstratified; a resample in which no
+    round holds both classes is NaN and dropped), then ``rng.integers(0, k, (n_boot, k))`` for the ``k`` shared
+    seeds. Replicate ``i`` applies item resample ``i`` to every drawn seed and both arms and averages the per-seed
+    deltas over the drawn seeds with the draw counts as weights.
+
+    The items must be the same in every seed and both arms (ValueError otherwise): P4's ``paired_gold_delta``
+    intersects the item sets silently, P5 does not. Items are sorted by ``label_uid``, so the result does not depend
+    on gold.csv's row order, while ``paired_gold_delta`` keeps that order. The index draws are therefore P4's, but
+    replicate ``i`` picks the same items as P4's replicate ``i`` only when gold.csv is sorted by ``label_uid``; the
+    two intervals are equivalent in distribution, not replicate for replicate.
+    """
+    seeds = sorted(set(rows_a) & set(rows_b))
+    if not seeds:
+        return None
+    frames = _p5_frames(rows_a, rows_b, seeds,
+                        lambda r: r[r["ai_vote"] == "Disagree"][["label_uid", "expert", "round", "p_incorrect"]],
+                        "gold")
+    ref = frames["a", seeds[0]]
+    for (arm, s), f in frames.items():
+        if not (f["expert"].astype(str).to_numpy() == ref["expert"].astype(str).to_numpy()).all():
+            raise ValueError(f"P5 gold: the expert verdict differs between runs (arm {arm}, seed {s})")
+    y = (ref["expert"] == "incorrect").astype(int).to_numpy()
+    rounds = ref["round"].to_numpy()
+    sc = {k: f["p_incorrect"].to_numpy(dtype=float) for k, f in frames.items()}
+
+    def delta(s, idx):
+        return (stratified_auc(y[idx], sc["b", s][idx], rounds[idx])
+                - stratified_auc(y[idx], sc["a", s][idx], rounds[idx]))
+
+    per = {s: delta(s, slice(None)) for s in seeds}
+    out = {"seeds": seeds, "per_seed": per, "mean": float(np.mean(list(per.values()))), "lo": float("nan"),
+           "hi": float("nan"), "n": int(len(y)), "n_boot": int(n_boot), "boot_seed": int(seed), "n_replicates": 0,
+           "n_valid": 0}
+    if not n_boot or not len(y):
+        return out
+    rng = np.random.default_rng(seed)
+    idxs = [rng.integers(0, len(y), len(y)) for _ in range(n_boot)]
+    return _hierarchical_interval(out, idxs, _hierarchical_draws(rng, idxs, len(seeds)), seeds, delta)
+
+
+def _p5_seeds(runs_a, runs_b):
+    return {P5_A: sorted(int(s) for s in runs_a), P5_B: sorted(int(s) for s in runs_b)}
+
+
+def rb_tags():
+    """``(variant, seed, tag)`` of the six registered rebalanced runs: both arms, seeds 42, 43, 44 (``SEEDS``)."""
+    return [(v, s, run_tag(v, s)) for v in RB_VARIANTS for s in SEEDS]
+
+
+def rb_unused_tags(directory, prefix):
+    """Tags of rebalanced runs on disk (``<directory>/<prefix><variant>-s<seed>.csv``) whose seed is not one of the
+    registered ``SEEDS``: listed as not used, never read into P5 (only seeds 42, 43, 44 count)."""
+    import glob
+    out = []
+    for v in RB_VARIANTS:
+        for path in glob.glob(os.path.join(glob.escape(directory), f"{prefix}{v}-s*.csv")):
+            m = re.fullmatch(re.escape(f"{prefix}{v}-s") + r"(\d+)\.csv", os.path.basename(path))
+            if m and int(m.group(1)) not in SEEDS:
+                out.append(run_tag(v, int(m.group(1))))
+    return sorted(out)
+
+
+def rb_set_status(ids, not_used=()):
+    """Whether one type's six rebalanced files of one kind are complete: ``ids`` is ``{tag: set of label ids, or
+    None for a missing file}`` over the six registered runs (``rb_tags``). Complete only when all six are present
+    with the same ids. ``rb_unit_status`` combines the four (type, file kind) groups into the one unit that the
+    decision rule of 2026-11-23 withholds as a whole.
+
+    >>> st = rb_set_status({"matched-rb": {"a", "b"}, "symmetric-rb": None, "symmetric-rb-s43": {"a"}})
+    >>> st["complete"], st["missing"], st["mismatched"]
+    (False, ['symmetric-rb'], 'symmetric-rb-s43 scored 1 rows, matched-rb 2; 1 in only one of them')
+    """
+    present = [k for k, v in ids.items() if v is not None]
+    missing = [k for k, v in ids.items() if v is None]
+    mismatched = None
+    for k in present[1:]:
+        if ids[k] != ids[present[0]]:
+            mismatched = (f"{k} scored {len(ids[k])} rows, {present[0]} {len(ids[present[0]])}; "
+                          f"{len(ids[k] ^ ids[present[0]])} in only one of them")
+            break
+    return {"complete": not missing and mismatched is None, "present": present, "missing": missing,
+            "mismatched": mismatched, "seeds_not_used": sorted(not_used)}
+
+
+RB_FILE_KINDS = ("predictions_", "gold_predictions_uniform_")   # P5 (a)'s input and P5 (b)'s, per run tag
+# Tests only: lets maps / gold run a complete rebalanced set with fewer resamples. Never set outside the tests.
+TEST_ONLY_ALLOW_UNREGISTERED_BOOT = False
+
+
+def rb_unit_status(directory, inputs=None):
+    """The rebalanced set as ONE unit (decision rule of 2026-11-23, under "Decision rules"): both types
+    (``RB_TYPES``) x both arms x seeds 42, 43, 44, in both file kinds (``RB_FILE_KINDS``: the 12
+    ``predictions_<tag>.csv`` and the 12 ``gold_predictions_uniform_<tag>.csv`` under ``<directory>/<Type>/``).
+    Complete only when all 24 files are present and, within each type and file kind, the six runs' ids are equal.
+    Only the ``label_uid`` column is read (no gold.csv is needed). ``maps`` (``--r4``) and ``gold`` (``--pred-dir``)
+    read the same directory in the runbook, so both judge the same unit; neither writes a rebalanced number unless
+    it is complete. ``any`` is False when none of the 24 files exists (P5 not run). ``inputs`` collects sha256s.
+
+    ``present`` / ``missing`` are ``<Type>/<file>`` names; ``mismatched`` lists each type and file kind whose six
+    runs scored different ids; ``seeds_not_used`` the files of other seeds, never read into P5."""
+    present, missing, mismatched, not_used = [], [], [], []
+    for t in RB_TYPES:
+        for kind in RB_FILE_KINDS:
+            ids = {}
+            for _, _, tag in rb_tags():
+                path = os.path.join(directory, t, f"{kind}{tag}.csv")
+                if not os.path.exists(path):
+                    ids[tag] = None
+                    missing.append(f"{t}/{kind}{tag}.csv")
+                    continue
+                if inputs is not None:
+                    inputs[path] = sha256_file(path)
+                ids[tag] = set(pd.read_csv(path, usecols=["label_uid"], dtype=str, keep_default_na=False)["label_uid"])
+                present.append(f"{t}/{kind}{tag}.csv")
+            st = rb_set_status(ids)
+            if st["mismatched"]:
+                mismatched.append(f"{t} {kind}*.csv: {st['mismatched']}")
+            not_used += [f"{t}/{kind}{x}.csv" for x in rb_unused_tags(os.path.join(directory, t), kind)]
+    return {"complete": not missing and not mismatched, "any": bool(present), "present": present, "missing": missing,
+            "mismatched": mismatched, "seeds_not_used": sorted(not_used)}
+
+
+def rb_withheld_leg(unit):
+    """The leg ``maps`` / ``gold`` write while the rebalanced unit is incomplete: which files, nothing else."""
+    return {"a": P5_A, "b": P5_B, "withheld": True,
+            **{k: unit[k] for k in ("present", "missing", "mismatched", "seeds_not_used")}}
+
+
+def rb_unit_fields(unit):
+    return {k: unit[k] for k in ("present", "missing", "mismatched", "seeds_not_used")}
+
+
+def rb_print_unit(unit):
+    """The one line ``maps`` / ``gold`` print about the rebalanced unit: nothing when no rebalanced file exists (P5
+    not run, the pilot), the withholding when it is incomplete, and any seed on disk that is not used."""
+    if not unit or not unit["any"]:
+        return
+    if not unit["complete"]:
+        print(f"P5 WITHHELD ({p5_withheld_text(unit)}); no rebalanced number written", file=sys.stderr)
+    if unit["seeds_not_used"]:
+        print(f"P5 uses seeds 42, 43, 44 only; not used: {', '.join(unit['seeds_not_used'])}")
+
+
+def refuse_unregistered_boot(args, cmd):
+    """The refusal message when the complete rebalanced unit is in the plan and ``--n-boot`` / ``--seed`` are not
+    the registered 2,000 and 0, else None. A complete set is P5's answer (the first ``decide`` on it is final), so
+    it is never computed at other settings (``TEST_ONLY_ALLOW_UNREGISTERED_BOOT`` is for the tests)."""
+    if TEST_ONLY_ALLOW_UNREGISTERED_BOOT or (args.n_boot == N_BOOT and args.seed == P5_BOOT_SEED):
+        return None
+    return (f"{cmd}: refused, nothing written: the complete rebalanced set is in the plan, so P5 must be computed "
+            f"with the registered --n-boot {N_BOOT} and --seed {P5_BOOT_SEED} (got {args.n_boot} and {args.seed})")
+
+
+def _registered_valid_panoramas(y, g, n_boot, seed):
+    """Defined replicates of ``paired_seed_delta``'s interval. Its resamples are ``slices.boot_indices`` from
+    ``default_rng(seed)``: a resample with one class is redrawn and one still single-class after the retries is left
+    out, and every AUC of a two-class resample is defined, so the count is ``len(boot_indices(...))``. Which groups
+    are drawn does not depend on the row order, so neither does the count."""
+    if not n_boot:
+        return 0
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return len(sl.boot_indices(np.asarray(y), np.asarray(g), n_boot, np.random.default_rng(seed)))
+
+
+def _p4_ref(rows_a, rows_b):
+    """``paired_gold_delta``'s item frame: the first shared seed's AI-Disagree rows of ``rows_a``, in their order,
+    kept where every run of both arms scored them."""
+    seeds = sorted(set(rows_a) & set(rows_b))
+    ref = rows_a[seeds[0]]
+    ref = ref[ref["ai_vote"] == "Disagree"]
+    for s in seeds:
+        for rows in (rows_a[s], rows_b[s]):
+            ref = ref[ref["label_uid"].isin(rows["label_uid"])]
+    return ref
+
+
+def p4_item_ids(rows_a, rows_b):
+    """The items P4 is computed on (``paired_gold_delta``'s intersection), as a set of label ids."""
+    return set(_p4_ref(rows_a, rows_b)["label_uid"])
+
+
+def _registered_valid_items(rows_a, rows_b, n_boot, seed):
+    """Defined replicates of ``paired_gold_delta``'s interval, by replaying its draws (one ``rng.integers(0, n, n)``
+    per replicate from ``default_rng(seed)``, over its item order): a replicate is defined when some round of the
+    resample holds both classes, which is when ``stratified_auc`` is not NaN."""
+    ref = _p4_ref(rows_a, rows_b)
+    y, rounds = (ref["expert"] == "incorrect").astype(int).to_numpy(), ref["round"].to_numpy()
+    if not n_boot or not len(y):
+        return 0
+    rng, n = np.random.default_rng(seed), 0
+    for _ in range(n_boot):
+        idx = rng.integers(0, len(y), len(y))
+        yy, rr = y[idx], rounds[idx]
+        n += any(0 < yy[rr == k].sum() < (rr == k).sum() for k in np.unique(rr))
+    return n
+
+
+def p5_maps_leg(preds_a, preds_b, sp, n_boot=N_BOOT, seed=0, split="test_heldout"):
+    """P5 (a) for one type, from ``maps``: ``symmetric-rb`` (``preds_b``) minus ``matched-rb`` (``preds_a``), each
+    ``{seed: predictions}``, on ``split`` of the base ``split.csv`` ``sp``. Callers pass ``(matched-rb,
+    symmetric-rb)``, so a positive delta means ``symmetric-rb`` is better.
+
+    ``<split>_agreed`` is the co-primary (the agreed rows, ``p5_agreed_rows``) and ``<split>`` (every row) is
+    descriptive. Each carries the class counts, the number of panoramas, the registered interval
+    (``paired_seed_delta``: one panorama resample shared by every seed and both arms) and the hierarchical one
+    (``paired_seed_delta_hierarchical``), each recording ``n_boot``, ``boot_seed`` and its defined replicates
+    ``n_valid``. ``mde`` is the minimum detectable difference on the agreed rows' class counts (``mde``: rows, not
+    panoramas, and no seed variance). ``seeds`` lists each arm's runs; ``decide`` judges whether that is enough
+    (``p5_coprimary``).
+
+    ``error`` (and no numbers) when the arms or seeds were scored on different rows, when a scored row is not a
+    ``split`` row of ``sp`` or carries a different class there, when a ``split`` row of ``sp`` was not scored
+    (``evaluate.py`` scores every val, test and test_heldout row, so every run must), or when ``sp`` is missing or
+    lacks the rule's columns: P5 never intersects or guesses (amendment item 5).
+    """
+    out = {"a": P5_A, "b": P5_B, "rule": P5_RULE, "split": split, "seeds": _p5_seeds(preds_a, preds_b),
+           "error": None}
+    if sp is None:
+        out["error"] = "no split.csv, so no agreed rows"
+        return out
+    try:
+        rows = p5_agreed_rows(sp, split)
+    except ValueError as e:
+        out["error"] = str(e)
+        return out
+    ids, true = {}, {}
+    for arm, preds in ((P5_A, preds_a), (P5_B, preds_b)):
+        for s, p in preds.items():
+            f = p[p["split"] == split]
+            if not f["label_uid"].is_unique:
+                out["error"] = f"label_uid is not unique in {arm} seed {s}"
+                return out
+            ids[arm, s] = set(f["label_uid"])
+            true[arm, s] = dict(zip(f["label_uid"], f["true"].astype(str)))
+    out["error"] = p5_id_error(ids)
+    if out["error"] or not ids:
+        return out
+    scored = next(iter(ids.values()))
+    cls = dict(zip(rows["label_uid"], rows["label_class"].astype(str)))
+    outside = scored - set(cls)
+    if outside:
+        out["error"] = f"{len(outside)} scored {split} rows are not {split} rows of split.csv"
+        return out
+    unscored = set(cls) - scored
+    if unscored:
+        out["error"] = (f"{len(unscored)} of the {len(cls)} {split} rows of split.csv were not scored (evaluate.py "
+                        "scores every one)")
+        return out
+    for (arm, s), tr in sorted(true.items()):
+        if any(tr[u] != cls[u] for u in tr):
+            out["error"] = f"the true class of {arm} seed {s} differs from split.csv's label_class"
+            return out
+    groups = dict(zip(sp["label_uid"], scene_group_keys(sp)))
+    agreed = set(rows.loc[rows["agreed"].to_numpy(), "label_uid"]) & scored
+    for name, keep in ((split, scored), (f"{split}_agreed", agreed)):
+        sub = rows[rows["label_uid"].isin(keep)]
+        part = {"n": int(len(sub)), "n_correct": int((sub["label_class"] == "correct").sum()),
+                "n_incorrect": int((sub["label_class"] == "incorrect").sum()),
+                "n_panoramas": int(len({groups[u] for u in sub["label_uid"]})), "registered": None,
+                "hierarchical": None}
+        fa = {s: p[(p["split"] == split) & p["label_uid"].isin(keep)] for s, p in preds_a.items()}
+        fb = {s: p[(p["split"] == split) & p["label_uid"].isin(keep)] for s, p in preds_b.items()}
+        if set(fa) & set(fb) and part["n_correct"] and part["n_incorrect"]:
+            reg = paired_seed_delta(fa, fb, groups, split, n_boot, seed)
+            reg.update(n_boot=int(n_boot), boot_seed=int(seed), n_valid=_registered_valid_panoramas(
+                (sub["label_class"] == "incorrect").astype(int).to_numpy(), [groups[u] for u in sub["label_uid"]],
+                n_boot, seed))
+            part["registered"] = reg
+            part["hierarchical"] = paired_seed_delta_hierarchical(fa, fb, groups, split, n_boot, seed)
+        out[name] = part
+    a = out[f"{split}_agreed"]
+    out["mde"] = mde(a["n_incorrect"], a["n_correct"]) if a["n_incorrect"] > 1 and a["n_correct"] > 1 else float("nan")
+    return out
+
+
+def p5_gold_join(headline, pred):
+    """The headline gold rows joined one to one with one run's gold predictions. No map: P5 (b) is an AUC."""
+    return headline.merge(pred[["label_uid", "p_incorrect"]], on="label_uid", how="inner", validate="one_to_one")
+
+
+def p5_gold_leg(rows_a, rows_b, n_boot=N_BOOT, seed=0, p4_items=None):
+    """P5 (b) for one type, from ``gold``: ``symmetric-rb`` (``rows_b``) minus ``matched-rb`` (``rows_a``), each
+    ``{seed: p5_gold_join rows}``, on P4's rows (the AI-Disagree headline items with a uniform crop). The registered
+    interval is P4's own (``paired_gold_delta``, unchanged: one unstratified item resample for every seed and both
+    arms); the hierarchical one is ``paired_gold_delta_hierarchical``; both record ``n_boot``, ``boot_seed`` and
+    ``n_valid``. ``error`` (and no numbers) when the arms or seeds scored different items (P5 does not intersect
+    them as P4 does), or when ``p4_items`` (P4's item set, ``p4_item_ids``, when P4 was computed) is given and the
+    items differ from it: item 2 puts (b) on P4's rows. The error names both counts."""
+    out = {"a": P5_A, "b": P5_B, "seeds": _p5_seeds(rows_a, rows_b), "error": None}
+    ids = {}
+    for arm, runs in ((P5_A, rows_a), (P5_B, rows_b)):
+        for s, r in runs.items():
+            d = r[r["ai_vote"] == "Disagree"]
+            if not d["label_uid"].is_unique:
+                out["error"] = f"label_uid is not unique in {arm} seed {s}"
+                return out
+            ids[arm, s] = set(d["label_uid"])
+    out["error"] = p5_id_error(ids)
+    if out["error"] or not ids:
+        return out
+    items = next(iter(ids.values()))
+    if p4_items is not None and items != set(p4_items):
+        out["error"] = (f"P5 (b) has {len(items)} items and P4 {len(set(p4_items))} ({len(items ^ set(p4_items))} in "
+                        "only one): (b) must be computed on P4's rows")
+        return out
+    ref = next(iter(rows_a.values()), None)
+    ref = next(iter(rows_b.values())) if ref is None else ref
+    ref = ref[ref["ai_vote"] == "Disagree"]
+    out.update(n=int(len(ref)), n_correct=int((ref["expert"] == "correct").sum()),
+               n_incorrect=int((ref["expert"] == "incorrect").sum()), registered=None, hierarchical=None)
+    if set(rows_a) & set(rows_b) and out["n_correct"] and out["n_incorrect"]:
+        reg = paired_gold_delta(rows_a, rows_b, n_boot, seed)
+        reg.update(n_boot=int(n_boot), boot_seed=int(seed), n_valid=_registered_valid_items(rows_a, rows_b, n_boot,
+                                                                                            seed))
+        out["registered"] = reg
+        out["hierarchical"] = paired_gold_delta_hierarchical(rows_a, rows_b, n_boot, seed)
+    return out
+
+
+P5_MISSING = {"a": "maps.json has no P5 entry for this type (run maps with the rebalanced runs)",
+              "b": "gold.json has no P5 entry for this type (run gold on uniform crops with the rebalanced runs)"}
+
+
+def p5_withheld_text(leg):
+    """Why a leg was withheld: the missing runs, the mismatch, and any seed on disk that is not used.
+
+    >>> p5_withheld_text({"withheld": True, "missing": ["symmetric-rb-s44"], "mismatched": None})
+    'rebalanced runs incomplete: missing symmetric-rb-s44'
+    """
+    parts = []
+    if leg.get("missing"):
+        parts.append(f"missing {', '.join(leg['missing'])}")
+    if leg.get("mismatched"):
+        mm = leg["mismatched"]
+        parts.append(f"scored on different rows ({mm if isinstance(mm, str) else '; '.join(mm)})")
+    return "rebalanced runs incomplete: " + ("; ".join(parts) or "unknown")
+
+
+def p5_coprimary(leg, part_key, coprimary, registered_n_boot=N_BOOT):
+    """One co-primary's result from its leg (``maps.json`` ``contrasts.symmetric-rb`` for (a), with ``part_key``
+    ``test_heldout_agreed``; ``gold.json`` ``p5`` for (b), ``part_key`` None).
+
+    - ``withheld`` when the leg is missing or ``maps`` / ``gold`` withheld it (the rebalanced unit,
+      ``rb_unit_status``, is incomplete): not an answer; the missing runs may be resubmitted.
+    - ``unestimable``, with each cause named, when the leg is an error, when either arm has fewer than the three
+      registered seeds, when the rows hold fewer than ``P5_MIN_CLASS`` of either class, or when an interval is
+      missing, was not computed at the registered ``N_BOOT`` resamples and bootstrap seed ``P5_BOOT_SEED``, or
+      rests on fewer defined replicates than ``P5_MIN_VALID_SHARE`` of them. For (b) the class cause names no
+      count: the class split of P4's rows is an expert-verdict cell (the doc's masking rule).
+    - ``positive`` only when the registered and the hierarchical interval both lie wholly above 0 (``lo > 0``: an
+      interval touching 0 is not above it); ``not positive`` otherwise.
+
+    ``registered_n_boot`` exists for the tests only (they bootstrap with fewer resamples); ``decide`` always uses
+    ``N_BOOT``.
+
+    >>> iv = lambda lo: {"mean": 0.05, "lo": lo, "hi": 0.09, "n_boot": 2000, "boot_seed": 0, "n_valid": 2000}
+    >>> leg = {"seeds": {"matched-rb": [42, 43, 44], "symmetric-rb": [42, 43, 44]}, "n_correct": 50,
+    ...        "n_incorrect": 40, "registered": iv(0.01), "hierarchical": iv(-0.01)}
+    >>> p5_coprimary(leg, None, "b")["result"]
+    'not positive'
+    """
+    if leg is None:
+        return {"result": "withheld", "causes": [P5_MISSING[coprimary]]}
+    if leg.get("withheld"):
+        return {"result": "withheld", "causes": [p5_withheld_text(leg)]}
+    if leg.get("error"):
+        return {"result": "unestimable", "causes": [f"error: {leg['error']}"]}
+    part = leg if part_key is None else (leg.get(part_key) or {})
+    causes = []
+    for arm in (P5_A, P5_B):
+        have = {int(s) for s in ((leg.get("seeds") or {}).get(arm) or [])} & set(SEEDS)
+        if len(have) < len(SEEDS):
+            causes.append(f"{arm} has {len(have)} of the {len(SEEDS)} registered seeds")
+    for c in VERDICTS:
+        n = int(part.get(f"n_{c}") or 0)
+        if n < P5_MIN_CLASS:
+            causes.append(f"{n} {c} rows (fewer than {P5_MIN_CLASS})" if coprimary == "a"
+                          else f"fewer than {P5_MIN_CLASS} {c} rows")
+    reg, hier = part.get("registered"), part.get("hierarchical")
+    if not causes:
+        for name, iv in (("registered", reg), ("hierarchical", hier)):
+            if not iv or _nan(iv.get("lo")) or _nan(iv.get("hi")):
+                causes.append(f"no {name} interval")
+            elif iv.get("n_boot") != registered_n_boot or iv.get("boot_seed") != P5_BOOT_SEED:
+                causes.append(f"{name} interval computed with {iv.get('n_boot')} resamples and bootstrap seed "
+                              f"{iv.get('boot_seed')}, not the registered {registered_n_boot:,} and {P5_BOOT_SEED}")
+            elif (iv.get("n_valid") or 0) < P5_MIN_VALID_SHARE * registered_n_boot:
+                causes.append(f"{name} interval: {iv.get('n_valid') or 0} of {registered_n_boot:,} replicates defined "
+                              f"(fewer than {P5_MIN_VALID_SHARE:.0%})")
+    if causes:
+        return {"result": "unestimable", "causes": causes}
+    return {"result": "positive" if reg["lo"] > 0 and hier["lo"] > 0 else "not positive", "causes": []}
+
+
+def _p5_summary(part):
+    reg, hier = (part or {}).get("registered") or {}, (part or {}).get("hierarchical") or {}
+    return {"n": (part or {}).get("n"), "n_correct": (part or {}).get("n_correct"),
+            "n_incorrect": (part or {}).get("n_incorrect"), "n_panoramas": (part or {}).get("n_panoramas"),
+            "mean": reg.get("mean"), "per_seed": reg.get("per_seed"), "registered_lo": reg.get("lo"),
+            "registered_hi": reg.get("hi"), "hierarchical_lo": hier.get("lo"), "hierarchical_hi": hier.get("hi")}
+
+
+def _p5_leg_has_runs(leg):
+    return leg is not None and (not leg.get("withheld") or bool(leg.get("present")))
+
+
+def p5_decision(maps, gold=None, types=RB_TYPES, registered_n_boot=N_BOOT):
+    """P5's one answer across types (amendment items 3 to 5), from ``maps.json`` and ``gold.json``:
+
+    - ``P5_NOT_RUN`` when no leg of any type holds a rebalanced run (the pilot);
+    - ``P5_WITHHELD`` when any co-primary is ``withheld`` (the rebalanced unit, ``rb_unit_status``, is incomplete,
+      or a leg was not computed): not an answer (decision rule of 2026-11-23), and the rows then carry no number of
+      any leg, only each co-primary's state and causes;
+    - ``P5_YES`` only when all four co-primaries ((a) and (b) for CurbRamp and Crosswalk) are ``positive``
+      (``p5_coprimary``); adoption is one global rule, so this is an intersection-union test and needs no
+      multiplicity correction;
+    - ``P5_UNESTIMABLE``, with the causes, when any of them is unestimable, which on a complete set is final;
+    - ``P5_NO`` otherwise.
+
+    The every-row ``test_heldout`` contrast is printed as descriptive and never decides. ``registered_n_boot`` is
+    for the tests only (``p5_coprimary``).
+
+    >>> p5_decision({"Obstacle": {}}, None)["answer"]
+    'not run'
+    """
+    legs = {t: (_get(maps or {}, t, "contrasts", P5_B), _get(gold or {}, t, "p5")) for t in types}
+    if not any(_p5_leg_has_runs(a) or _p5_leg_has_runs(b) for a, b in legs.values()):
+        return {"answer": P5_NOT_RUN, "rows": [], "causes": []}
+    rows, causes = [], []
+    for t, (a, b) in legs.items():
+        for cop, leg, key in (("a", a, "test_heldout_agreed"), ("b", b, None)):
+            st = p5_coprimary(leg, key, cop, registered_n_boot)
+            ok = leg is not None and not leg.get("error") and not leg.get("withheld")
+            part = (leg if key is None else leg.get(key)) if ok else None
+            row = {"label_type": t, "coprimary": cop, "role": "co-primary", **st, **_p5_summary(part)}
+            if cop == "a":
+                row["mde"] = (a or {}).get("mde") if ok else None
+            rows.append(row)
+            causes += [f"{t} ({cop}): {c}" for c in st["causes"]]
+            if cop == "a" and ok and a.get("test_heldout"):
+                rows.append({"label_type": t, "coprimary": "a, every row", "role": "descriptive",
+                             "result": "descriptive", "causes": [], **_p5_summary(a["test_heldout"])})
+    results = [r["result"] for r in rows if r["role"] == "co-primary"]
+    if "withheld" in results:      # not an answer: no number of any leg is written (decision rule of 2026-11-23)
+        rows = [{k: r[k] for k in ("label_type", "coprimary", "role", "result", "causes")} for r in rows
+                if r["role"] == "co-primary"]
+    answer = (P5_WITHHELD if "withheld" in results else
+              P5_YES if all(r == "positive" for r in results) else
+              P5_UNESTIMABLE if "unestimable" in results else P5_NO)
+    return {"answer": answer, "rows": rows, "causes": causes}
+
+
 def load_run_predictions(r4, label_type, tag, inputs=None):
     """One run's ``predictions_<tag>.csv`` or None; ``inputs`` (a dict) collects the path's sha256."""
     p = os.path.join(r4, label_type, f"predictions_{tag}.csv")
@@ -576,6 +1187,14 @@ def cmd_maps(args):
     inputs = {args.shares: sha256_file(args.shares)}
     if args.priors:
         inputs[args.priors] = sha256_file(args.priors)
+    # The rebalanced runs (P5) are one unit across both types and both file kinds (rb_unit_status): nothing of them
+    # is computed or written unless the unit is complete; otherwise only which files are present / missing.
+    unit = (rb_unit_status(args.r4, inputs) if any(v in runs for v in RB_VARIANTS) and set(types) & set(RB_TYPES)
+            else None)
+    if unit and unit["complete"] and (msg := refuse_unregistered_boot(args, "maps")):
+        print(msg, file=sys.stderr)
+        return 2
+    rb_print_unit(unit)
     os.makedirs(os.path.join(args.out, "maps"), exist_ok=True)
     for t in types:
         pi = load_shares_prior(args.shares, t, args.prior_rule)
@@ -584,26 +1203,37 @@ def cmd_maps(args):
             check_prior_equal(pi, args.priors, t, args.prior_rule)
         rec = {"prior": pi, "prior_reference": pi_ref, "runs": {}}
         preds, scored = {}, {}
-        for variant in runs:
-            if variant == "cl-drop" and t not in CL_DROP_TYPES:
+        plan = [(variant, s) for variant in runs if variant not in RB_VARIANTS
+                and not (variant == "cl-drop" and t not in CL_DROP_TYPES)
+                for s in ([SHIP_SEED] if variant == "round3" else seeds)]
+        # Seeds 42, 43, 44 only (rb_tags), and only when the whole unit is complete.
+        rb_wanted = unit is not None and t in RB_TYPES
+        if rb_wanted and unit["complete"]:
+            plan += [(v, s) for v, s, _ in rb_tags()]
+        for variant, s in plan:
+            tag = run_tag(variant, s)
+            pred = load_run_predictions(args.r4, t, tag, inputs)
+            if pred is None:
+                rec["runs"][tag] = {"variant": variant, "seed": s, "missing": True}
                 continue
-            for s in ([SHIP_SEED] if variant == "round3" else seeds):
-                tag = run_tag(variant, s)
-                pred = load_run_predictions(args.r4, t, tag, inputs)
-                if pred is None:
-                    rec["runs"][tag] = {"variant": variant, "seed": s, "missing": True}
-                    continue
-                preds.setdefault(variant, {})[s] = pred
-                r, amap = map_record(pred, pi, pi_ref)
-                if variant in ("baseline", "cl-drop"):
-                    scored.setdefault(variant, {})[s] = served_with_map(pred, amap)   # C3's bootstrap input
-                rec["runs"][tag] = {"variant": variant, "seed": s, **r}
-                with open(os.path.join(args.out, "maps", f"{t}_{tag}.json"), "w") as f:
-                    json.dump(amap, f, indent=1)
+            preds.setdefault(variant, {})[s] = pred
+            r, amap = map_record(pred, pi, pi_ref)
+            if variant in ("baseline", "cl-drop"):
+                scored.setdefault(variant, {})[s] = served_with_map(pred, amap)   # C3's bootstrap input
+            rec["runs"][tag] = {"variant": variant, "seed": s, **r}
+            with open(os.path.join(args.out, "maps", f"{t}_{tag}.json"), "w") as f:
+                json.dump(amap, f, indent=1)
+        if rb_wanted and not unit["complete"]:
+            for v, s, tag in rb_tags():
+                rec["runs"][tag] = {"variant": v, "seed": s, **({"withheld": True} if f"{t}/predictions_{tag}.csv"
+                                                                in unit["present"] else {"missing": True})}
         split_path = os.path.join(args.r4, t, "split.csv")
-        if "baseline" in preds and "cl-drop" in preds and os.path.exists(split_path):
+        sp = None
+        needs_split = ("baseline" in preds and "cl-drop" in preds) or bool(rb_wanted and unit["complete"])
+        if needs_split and os.path.exists(split_path):
             inputs[split_path] = sha256_file(split_path)
             sp = pd.read_csv(split_path, dtype=str, keep_default_na=False)
+        if "baseline" in preds and "cl-drop" in preds and sp is not None:
             groups = dict(zip(sp["label_uid"], scene_group_keys(sp)))
             rec["contrasts"] = {"cl-drop": {s: paired_seed_delta(preds["baseline"], preds["cl-drop"], groups, s,
                                                                  args.n_boot, args.seed) for s in EVAL_SPLITS}}
@@ -614,8 +1244,20 @@ def cmd_maps(args):
             for s, ag in rec["agree_gate"]["cl-drop"].items():
                 if ag and ag["collapse"]["flagged"]:
                     print(f"{t} {s}: C3 COLLAPSE FLAG (descriptive, does not decide C3): {collapse_text(ag['collapse'])}")
+        if rb_wanted:
+            # P5 (a), amended 2026-11-23: symmetric-rb minus matched-rb on the agreed test_heldout rows (co-primary)
+            # and on every test_heldout row (descriptive); decide combines it with gold's P5 (b).
+            if unit["complete"]:
+                leg = p5_maps_leg(preds[P5_A], preds[P5_B], sp, args.n_boot, args.seed)
+                leg.update(rb_unit_fields(unit))
+            else:
+                leg = rb_withheld_leg(unit)
+            rec.setdefault("contrasts", {})[P5_B] = leg
+            if leg.get("error"):
+                print(f"{t}: P5 ERROR (P5 reads as unestimable): {leg['error']}", file=sys.stderr)
         out[t] = rec
-        print(f"{t}: {sum(1 for r in rec['runs'].values() if not r.get('missing'))} runs with predictions")
+        print(f"{t}: {sum(1 for r in rec['runs'].values() if not r.get('missing') and not r.get('withheld'))} runs "
+              "with predictions")
     out["_provenance"] = provenance(inputs, n_boot=args.n_boot, boot_seed=args.seed, seeds=seeds,
                                     prior_rule=args.prior_rule, runs=runs, types=types)
     path = os.path.join(args.out, "maps.json")
@@ -905,6 +1547,14 @@ def cmd_gold(args):
     runs = [r for r in args.runs.split(",") if r]
     res = {"_crops": args.crops, "_caption": R3CROPS_CAPTION if args.crops == "r3crops" else None,
            "_pool_rounds": sorted(pools)}
+    # The rebalanced unit (rb_unit_status), judged on the same files as maps: nothing rebalanced is computed or
+    # written unless all 24 files are present with equal ids per type and file kind.
+    unit = (rb_unit_status(args.pred_dir, inputs) if any(v in runs for v in RB_VARIANTS) and set(types) & set(RB_TYPES)
+            else None)
+    if unit and unit["complete"] and (msg := refuse_unregistered_boot(args, "gold")):
+        print(msg, file=sys.stderr)
+        return 2
+    rb_print_unit(unit)
     for t in types:
         g = gold[gold["label_type"] == t]
         _, head = gold_population(g)
@@ -912,37 +1562,66 @@ def cmd_gold(args):
                        "consensus_back": g[gold_population(g, consensus_back=True)[1]]}
         tr = {"populations": {k: int(len(v)) for k, v in populations.items()}, "runs": {}, "sensitivity": {}}
         joined = {}
-        for variant in runs:
-            if variant == "cl-drop" and t not in CL_DROP_TYPES:
+        plan = [(variant, s) for variant in runs if variant not in RB_VARIANTS
+                and not (variant == "cl-drop" and t not in CL_DROP_TYPES)
+                for s in ([SHIP_SEED] if variant == "round3" else seeds)]
+        # Seeds 42, 43, 44 only (rb_tags), and only when the whole unit is complete.
+        rb_wanted = unit is not None and t in RB_TYPES
+        if rb_wanted and unit["complete"]:
+            plan += [(v, s) for v, s, _ in rb_tags()]
+        for variant, s in plan:
+            tag = run_tag(variant, s)
+            pp = os.path.join(args.pred_dir, t, f"gold_predictions_{args.crops}_{tag}.csv")
+            mp = os.path.join(args.maps, f"{t}_{tag}.json")
+            if not (os.path.exists(pp) and os.path.exists(mp)):
+                tr["runs"][tag] = {"missing": True}
                 continue
-            for s in ([SHIP_SEED] if variant == "round3" else seeds):
-                tag = run_tag(variant, s)
-                pp = os.path.join(args.pred_dir, t, f"gold_predictions_{args.crops}_{tag}.csv")
-                mp = os.path.join(args.maps, f"{t}_{tag}.json")
-                if not (os.path.exists(pp) and os.path.exists(mp)):
-                    tr["runs"][tag] = {"missing": True}
-                    continue
-                inputs[pp], inputs[mp] = sha256_file(pp), sha256_file(mp)
-                pred = pd.read_csv(pp, dtype={"label_uid": str})
-                with open(mp) as f:
-                    amap = json.load(f)
-                rows = gold_rows_for_run(populations["headline"], pred, amap)
-                joined.setdefault(variant, {})[s] = rows
-                tr["runs"][tag] = {"variant": variant, "seed": s, **gold_run_stats(rows, pools)}
-                if variant == "round3":  # approximation of "scenes it did not train on": not a round-3 train row
-                    nr = rows[rows["round3_split"] != "train"]
-                    tr["sensitivity"]["round3_not_train_rows"] = gold_run_stats(nr, pools)
-                if s == SHIP_SEED:
-                    tr["sensitivity"][tag] = {k: gold_run_stats(gold_rows_for_run(populations[k], pred, amap), pools)
-                                              for k in ("val_back", "consensus_back")}
-                if args.parity and args.crops == "uniform":
-                    rp = os.path.join(args.pred_dir, t, f"gold_predictions_r3crops_{tag}.csv")
-                    if os.path.exists(rp):
-                        inputs[rp] = sha256_file(rp)
-                        tr["runs"][tag]["parity"] = crop_parity(pd.read_csv(rp, dtype={"label_uid": str}), pred, amap)
+            inputs[pp], inputs[mp] = sha256_file(pp), sha256_file(mp)
+            pred = pd.read_csv(pp, dtype={"label_uid": str})
+            with open(mp) as f:
+                amap = json.load(f)
+            rows = gold_rows_for_run(populations["headline"], pred, amap)
+            joined.setdefault(variant, {})[s] = rows
+            tr["runs"][tag] = {"variant": variant, "seed": s, **gold_run_stats(rows, pools)}
+            if variant == "round3":  # approximation of "scenes it did not train on": not a round-3 train row
+                nr = rows[rows["round3_split"] != "train"]
+                tr["sensitivity"]["round3_not_train_rows"] = gold_run_stats(nr, pools)
+            if s == SHIP_SEED:
+                tr["sensitivity"][tag] = {k: gold_run_stats(gold_rows_for_run(populations[k], pred, amap), pools)
+                                          for k in ("val_back", "consensus_back")}
+            if args.parity and args.crops == "uniform":
+                rp = os.path.join(args.pred_dir, t, f"gold_predictions_r3crops_{tag}.csv")
+                if os.path.exists(rp):
+                    inputs[rp] = sha256_file(rp)
+                    tr["runs"][tag]["parity"] = crop_parity(pd.read_csv(rp, dtype={"label_uid": str}), pred, amap)
+        if rb_wanted and not unit["complete"]:
+            for v, s, tag in rb_tags():
+                tr["runs"][tag] = {"variant": v, "seed": s, **({"withheld": True} if
+                                                               f"{t}/gold_predictions_uniform_{tag}.csv" in
+                                                               unit["present"] else {"missing": True})}
         tr["ensemble"] = {v: e for v, by_seed in joined.items() if (e := ensemble_stats(by_seed))}
         if "baseline" in joined and "cl-drop" in joined and args.crops == "uniform":
             tr["p4"] = paired_gold_delta(joined["baseline"], joined["cl-drop"], args.n_boot, args.seed)
+        if rb_wanted and args.crops == "uniform":
+            # P5 (b), amended 2026-11-23: the rebalanced runs joined without a map (the AUC needs none), on P4's rows;
+            # differing item sets are an error, never intersected.
+            if unit["complete"] and not tr.get("p4"):
+                leg = {"a": P5_A, "b": P5_B, "seeds": _p5_seeds(SEEDS, SEEDS), **rb_unit_fields(unit),
+                       "error": "P4 was not computed (no baseline and cl-drop gold rows), so (b)'s rows cannot be "
+                                "checked against P4's"}
+            elif unit["complete"]:
+                rb_pred = {tag: pd.read_csv(os.path.join(args.pred_dir, t, f"gold_predictions_uniform_{tag}.csv"),
+                                            dtype={"label_uid": str}) for _, _, tag in rb_tags()}
+                p5_rows = {v: {s: p5_gold_join(populations["headline"], rb_pred[run_tag(v, s)]) for s in SEEDS}
+                           for v in RB_VARIANTS}
+                leg = p5_gold_leg(p5_rows[P5_A], p5_rows[P5_B], args.n_boot, args.seed,
+                                  p4_item_ids(joined["baseline"], joined["cl-drop"]))
+                leg.update(rb_unit_fields(unit))
+            else:
+                leg = rb_withheld_leg(unit)
+            tr["p5"] = leg
+            if leg.get("error"):
+                print(f"{t}: P5 ERROR (P5 reads as unestimable): {leg['error']}", file=sys.stderr)
         res[t] = tr
     res["_provenance"] = provenance(inputs, n_boot=args.n_boot, boot_seed=args.seed, seeds=seeds, runs=runs,
                                     types=types, crops=args.crops, parity=bool(args.parity))
@@ -1345,12 +2024,14 @@ def cmd_decide(args):
     out = {"_provenance": provenance(inputs, ship_seed=args.ship_seed, gold_used=gold is not None,
                                      maps_commit=_get(maps, "_provenance", "git_commit"),
                                      gold_commit=_get(gold, "_provenance", "git_commit") if gold else None),
-           "types": res}
+           "types": res, "p5": p5_decision(maps, gold)}
     with open(args.out, "w") as f:
         json.dump(cal.without_nan(out), f, indent=2, default=float)
         f.write("\n")
     for r in res:
         print(f"{r['label_type']}: recipe {r['recipe']} ({r['recipe_status']}); {r['status']} ({r['reason']})")
+    p5 = out["p5"]
+    print(f"P5 (symmetric): {p5['answer']}" + (f" ({'; '.join(p5['causes'])})" if p5["causes"] else ""))
     return 0
 
 
@@ -1388,6 +2069,9 @@ def maps_markdown(maps):
             if r.get("missing"):
                 lines.append(f"| {t} | {tag} | | | not run | | | | | |")
                 continue
+            if r.get("withheld"):          # a rebalanced run of an incomplete set: nothing of it is shown (P5)
+                lines.append(f"| {t} | {tag} | | | withheld (rebalanced runs incomplete) | | | | | |")
+                continue
             for s in EVAL_SPLITS:
                 for v in ("Disagree", "Agree"):
                     g = _get(r, "gates", s, v)
@@ -1417,7 +2101,7 @@ def maps_markdown(maps):
               "| Type | run | test | test_heldout |", "|---|---|---:|---:|"]
     for t in LABEL_TYPES:
         for tag, r in (maps.get(t) or {}).get("runs", {}).items():
-            if not r.get("missing"):
+            if not r.get("missing") and not r.get("withheld"):
                 lines.append(f"| {t} | {tag} | {_f(_get(r, 'auc', 'test'))} | {_f(_get(r, 'auc', 'test_heldout'))} |")
     lines += ["", "**`cl-drop` minus the gold-free baseline** (AUC, mean of per-seed paired deltas, one panorama "
               "resample shared by every seed; the held-out row is the replication check C4).", "",
@@ -1567,6 +2251,69 @@ def bar_markdown(bar):
     return "\n".join(lines)
 
 
+P5_NOT_RUN_TEXT = "Not yet run (stage 2): no `symmetric-rb` or `matched-rb` output has been read."
+P5_CAVEAT = ("**Few seeds.** With three seeds the hierarchical interval's lower end sits near the worst seed's delta "
+             "(a replicate draws one seed three times with probability 1/27, more than 2.5%). Under a null with "
+             "symmetric seed noise, each interval's false-yes rate is about 12.5% at most ((1/2)^3), and lower "
+             "jointly. The error to guard against here is a false yes, not a false no. Fewer than three seeds for "
+             "either arm is unestimable, never a yes.")
+P5_COPRIMARY_NAME = {"a": "(a) agreed test_heldout rows", "a, every row": "every test_heldout row (descriptive)",
+                     "b": "(b) gold, P4's rows"}
+
+
+def p5_markdown(bar):
+    """The ``p5`` block from ``bar.json``: the one answer, the causes of an unestimable one, a row per type and
+    co-primary (row and panorama counts, the mean of the per-seed deltas with the registered interval, the
+    hierarchical interval, the per-seed deltas) plus the descriptive every-row contrast, the minimum detectable
+    difference for (a) and the few-seeds caveat. ``P5_NOT_RUN_TEXT`` alone when no rebalanced run was read.
+
+    >>> p5_markdown({"p5": {"answer": "not run", "rows": [], "causes": []}}) == P5_NOT_RUN_TEXT
+    True
+    """
+    p5 = bar.get("p5") or {}
+    if p5.get("answer", P5_NOT_RUN) == P5_NOT_RUN:
+        return P5_NOT_RUN_TEXT
+    lines = [f"**Answer: {p5['answer']}.** `symmetric-rb` minus `matched-rb`, seed s against seed s (42, 43, 44); "
+             "a co-primary is positive only when its registered and its hierarchical 95% interval both lie wholly "
+             "above 0, and the answer is yes only when all four are positive."]
+    if p5.get("causes"):
+        lines += ["", ("Withheld or unestimable: " if p5["answer"] == P5_WITHHELD else "Unestimable: ")
+                  + "; ".join(p5["causes"]) + "."]
+    if p5["answer"] == P5_WITHHELD:
+        lines[0] = (f"**Answer: {p5['answer']}.** The rebalanced runs are one unit (both types, both arms, seeds 42, "
+                    "43, 44, prediction and uniform gold-prediction files), and it is incomplete, so every P5 number "
+                    "was withheld; resubmit the missing runs. The first `decide` on a complete unit is the answer "
+                    "(decision rule of 2026-11-23).")
+    lines += ["", "| Type | rows | n (correct / incorrect) | panoramas | mean [registered 95%] | hierarchical 95% | "
+              "per seed | result |", "|---|---|---:|---:|---:|---:|---|---|"]
+    for r in p5.get("rows") or []:
+        per = ", ".join(f"{k}: {_f(v, '{:+.3f}')}" for k, v in sorted((r.get("per_seed") or {}).items(),
+                                                                      key=lambda kv: int(kv[0])))
+        # (a)'s class counts come from the public split; (b)'s are the expert verdicts of P4's rows, so (b) prints
+        # n only (the doc's masking rule: P4's table prints n only too); its class counts stay in bar.json.
+        counts = ("" if r.get("n") is None else f"{r['n']:,}" if r["coprimary"] == "b"
+                  else f"{r['n']:,} ({r['n_correct']:,} / {r['n_incorrect']:,})")
+        result = r["result"] + (f" ({'; '.join(r['causes'])})" if r.get("causes") else "")
+        lines.append(f"| {r['label_type']} | {P5_COPRIMARY_NAME.get(r['coprimary'], r['coprimary'])} | {counts} | "
+                     f"{'—' if r.get('n_panoramas') is None else format(r['n_panoramas'], ',')} | "
+                     f"{_f(r.get('mean'), '{:+.3f}')} [{_f(r.get('registered_lo'), '{:+.3f}')}, "
+                     f"{_f(r.get('registered_hi'), '{:+.3f}')}] | [{_f(r.get('hierarchical_lo'), '{:+.3f}')}, "
+                     f"{_f(r.get('hierarchical_hi'), '{:+.3f}')}] | {per} | {result} |")
+    mdes = [r for r in p5.get("rows") or [] if r["coprimary"] == "a" and not _nan(r.get("mde"))]
+    if mdes:
+        lines += ["", "**Minimum detectable difference for (a)**: " + "; ".join(
+            f"{r['label_type']} {r['mde']:.3f} ({r['n_incorrect']:,} incorrect / {r['n_correct']:,} correct agreed rows)"
+            for r in mdes) + ". Two-sided 5% test at 80% power, Hanley-McNeil standard error at an assumed AUC of 0.75, "
+            "paired correlation 0.8 between the two arms' AUC estimates (assumptions, as in P4's table); it counts "
+            "rows, not panoramas, and leaves out seed variance, so the intervals above can only detect larger "
+            "differences. Class counts only."]
+    lines += ["", P5_CAVEAT]
+    commit = _get(bar, "_provenance", "git_commit")
+    if commit:
+        lines += ["", f"From `bar.json` written at commit `{commit[:7]}`; input sha256 in its `_provenance`."]
+    return "\n".join(lines)
+
+
 def _gated_cells(g):
     """``(confirmed/n, share [95%], pool-weighted)`` with thin cells masked."""
     thin = g["n"] < PRIVACY_MIN_CELL
@@ -1582,7 +2329,7 @@ def gold_markdown(gold):
               "round-stratified AUC | pooled AUC |", "|---|---|---:|---:|---:|---:|---:|---:|"]
     for t in LABEL_TYPES:
         for tag, r in (gold.get(t) or {}).get("runs", {}).items():
-            if r.get("missing"):
+            if r.get("missing") or r.get("withheld"):
                 continue
             n_cell, share, pw = _gated_cells(r["gated_disagree"])
             lines.append(f"| {t} | {tag} | {n_cell} | {share} | {pw} | "
@@ -1610,7 +2357,7 @@ def gold_markdown(gold):
               "|---|---|---|---:|---:|---:|---:|---:|"]
     for t in LABEL_TYPES:
         for tag, r in (gold.get(t) or {}).get("runs", {}).items():
-            if r.get("missing") or r.get("seed") != SHIP_SEED:
+            if r.get("missing") or r.get("withheld") or r.get("seed") != SHIP_SEED:
                 continue
             for name, b in (r.get("by_round") or {}).items():
                 n_cell, share, pw = _gated_cells(b["gated_disagree"])
@@ -1688,7 +2435,10 @@ def build_blocks(d):
             blocks["gold_r3crops" if g.get("_crops") == "r3crops" else "gold"] = gold_markdown(g)
     if os.path.exists(p("bar.json")):
         with open(p("bar.json")) as f:
-            blocks["bar"] = bar_markdown(json.load(f))
+            bar = json.load(f)
+        blocks["bar"] = bar_markdown(bar)
+        if "p5" in bar:                         # a bar.json written before P5 was built has none
+            blocks["p5"] = p5_markdown(bar)
     for name, parts in REPORT_FILES.items():
         if os.path.exists(p(*parts)):
             with open(p(*parts)) as f:
@@ -1745,7 +2495,8 @@ def build_parser():
     m.add_argument("--shares", default=os.path.join(REPO_DIR, "docs", "deployment-prior-2026-11", "shares.json"))
     m.add_argument("--priors", default=None, help="a deployment_priors.json with a rules block: priors must agree")
     m.add_argument("--types", default=types)
-    m.add_argument("--runs", default="baseline,cl-drop,round3")
+    m.add_argument("--runs", default=DEFAULT_RUNS, help="runs to read; a missing one is recorded as not run (the "
+                   "rebalanced runs feed P5 (a))")
     m.add_argument("--seeds", default=",".join(map(str, SEEDS)), help="training seeds of the runs to read")
     m.add_argument("--prior-rule", default=PRIOR_RULE)
     m.add_argument("--n-boot", type=int, default=N_BOOT)
@@ -1760,7 +2511,8 @@ def build_parser():
                    help="one pool per gold round, for the pool-weighted share (e.g. 1=relabel_pool.csv "
                         "2=round2/pool.csv; repeat the flag); a round without one is reported raw only")
     g.add_argument("--types", default=types)
-    g.add_argument("--runs", default="baseline,cl-drop,round3")
+    g.add_argument("--runs", default=DEFAULT_RUNS, help="runs to read (the rebalanced runs feed P5 (b), "
+                   "with or without a map)")
     g.add_argument("--seeds", default=",".join(map(str, SEEDS)))
     g.add_argument("--crops", choices=["uniform", "r3crops"], required=True)
     g.add_argument("--parity", action="store_true")

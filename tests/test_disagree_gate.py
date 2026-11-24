@@ -3,6 +3,8 @@ decision rules and the report splice (issue #74). Synthetic fixtures only."""
 import copy
 import json
 import math
+import os
+import re
 import warnings
 
 import numpy as np
@@ -1114,6 +1116,681 @@ def test_report_splices_report_files_and_check_mode(tmp_path):
     assert "against the gold-free baseline" in text and "#### Severity" in text and "##### Obstacle" in text
     args.check = True
     assert dgt.cmd_report(args, lists) == 0
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# P5: symmetric-rb minus matched-rb (amendment of 2026-11-23)
+# ---------------------------------------------------------------------------------------------------------------------
+
+def test_p5_agreed_rows_are_passes_rule_symmetric():
+    sp = pd.DataFrame({
+        "label_uid": [f"a:{i}" for i in range(8)],
+        "split": ["test_heldout"] * 7 + ["train"],
+        "label_class": ["incorrect", "incorrect", "correct", "incorrect", "incorrect", "incorrect", "correct",
+                        "incorrect"],
+        "class_source": ["margin", "margin", "margin", "expert", "", "", "margin", "margin"],
+        "human_agree": ["0", "0", "3", "0", "0", "1", "4", "0"],
+        "human_disagree": ["2", "3", "0", "0", "2", "4", "1", "3"]})
+    got = dgt.p5_agreed_rows(sp)
+    assert got["label_uid"].tolist() == [f"a:{i}" for i in range(7)]           # test_heldout rows only
+    # margin-incorrect at net Disagree 2: not agreed; at 3: agreed; margin-correct at net Agree 3: agreed;
+    # expert-incorrect at net Disagree 0: agreed; empty class_source falls back to the votes (net 2 no, net 3 yes)
+    assert got["agreed"].tolist() == [False, True, True, True, False, True, True]
+    with pytest.raises(ValueError, match="class_source"):
+        dgt.p5_agreed_rows(sp.drop(columns="class_source"))
+
+
+# Panorama fixture for P5 (a): 120 panoramas x 4 rows on test_heldout; 20% expert-sourced; half the crowd-sourced
+# incorrect rows at net Disagree 2 (the only rows the two rules disagree on). Both arms of a seed share its noise.
+P5_NP, P5_R = 120, 4
+P5_UIDS = [f"p:{i:05d}" for i in range(P5_NP * P5_R)]       # zero-padded: sorted order is the fixture's order
+P5_PANO = np.arange(len(P5_UIDS)) // P5_R
+P5_GROUPS = {u: f"c|P{p}" for u, p in zip(P5_UIDS, P5_PANO)}
+_p5 = np.random.default_rng(11)
+P5_Y = _p5.random(len(P5_UIDS)) < 0.4
+P5_EXPERT = _p5.random(len(P5_UIDS)) < 0.2
+P5_DIS2 = P5_Y & ~P5_EXPERT & (_p5.random(len(P5_UIDS)) < 0.5)
+P5_BPANO = _p5.random(P5_NP) < 0.3
+
+
+def p5_split():
+    agree = np.where(P5_EXPERT | P5_Y, 0, 4)
+    dis = np.where(P5_EXPERT | ~P5_Y, 0, np.where(P5_DIS2, 2, 4))
+    return pd.DataFrame({"label_uid": P5_UIDS, "city": "c", "pano_id": [f"P{p}" for p in P5_PANO],
+                         "split": "test_heldout", "label_class": np.where(P5_Y, "incorrect", "correct"),
+                         "class_source": np.where(P5_EXPERT, "expert", "margin"), "human_agree": agree.astype(str),
+                         "human_disagree": dis.astype(str)})
+
+
+def p5_pred(seed, better=0.0, worse_dis2=0.0, pano_bonus=0.0, noise=0.3):
+    """One run's test_heldout predictions: ``better`` raises the incorrect score on the agreed incorrect rows,
+    ``worse_dis2`` lowers it on the net-Disagree-2 rows, ``pano_bonus`` raises it on the incorrect rows of a fixed
+    set of panoramas (shared by every seed)."""
+    e = np.random.default_rng(seed).normal(0, noise, len(P5_UIDS))
+    p = (0.5 + np.where(P5_Y, 0.15, -0.15) + e + np.where(P5_Y & ~P5_DIS2, better, 0) - np.where(P5_DIS2, worse_dis2, 0)
+         + np.where(P5_Y & P5_BPANO[P5_PANO], pano_bonus, 0))
+    return pd.DataFrame({"label_uid": P5_UIDS, "split": "test_heldout", "true": np.where(P5_Y, "incorrect", "correct"),
+                         "p_incorrect": p, "p_correct": 1 - p})
+
+
+def p5_ref_interval(a, b, mode, n_boot, seed=0):
+    """P5 (a)'s hierarchical interval computed here without the module (sklearn's AUC, its own alignment).
+    ``shared`` is the registered design (C3's draws: panorama resamples first, then seed draws, one panorama
+    resample for every drawn seed and both arms); ``per_seed`` and ``per_arm`` are the mistakes the test must
+    catch (a fresh panorama resample per drawn seed; the two arms' seeds drawn separately)."""
+    from sklearn.metrics import roc_auc_score
+    from analysis import slices as sl
+    uids = sorted(a[42]["label_uid"])
+    y = (a[42].set_index("label_uid").loc[uids, "true"] == "incorrect").astype(int).to_numpy()
+    g = np.array([P5_GROUPS[u] for u in uids])
+    A = {s: a[s].set_index("label_uid").loc[uids, "p_incorrect"].to_numpy(float) for s in SEEDS3}
+    B = {s: b[s].set_index("label_uid").loc[uids, "p_incorrect"].to_numpy(float) for s in SEEDS3}
+    rng = np.random.default_rng(seed)
+    idxs = sl.boot_indices(y, g, n_boot, rng)
+    draws = rng.integers(0, len(SEEDS3), size=(len(idxs), len(SEEDS3)))
+    vals = []
+    for idx, draw in zip(idxs, draws):
+        if mode == "shared":
+            vals.append(np.mean([roc_auc_score(y[idx], B[SEEDS3[j]][idx]) - roc_auc_score(y[idx], A[SEEDS3[j]][idx])
+                                 for j in draw]))
+        elif mode == "per_seed":
+            d = []
+            for j in draw:
+                own = sl.boot_indices(y, g, 1, rng)[0]
+                d.append(roc_auc_score(y[own], B[SEEDS3[j]][own]) - roc_auc_score(y[own], A[SEEDS3[j]][own]))
+            vals.append(np.mean(d))
+        else:                                                                           # per_arm
+            draw_b = rng.integers(0, len(SEEDS3), len(SEEDS3))
+            vals.append(np.mean([roc_auc_score(y[idx], B[SEEDS3[j]][idx]) for j in draw_b])
+                        - np.mean([roc_auc_score(y[idx], A[SEEDS3[j]][idx]) for j in draw]))
+    return float(np.percentile(vals, 2.5)), float(np.percentile(vals, 97.5))
+
+
+def test_p5_panorama_hierarchical_interval_matches_an_independent_reference():
+    a = {s: p5_pred(s) for s in SEEDS3}
+    b = {s: p5_pred(s, pano_bonus=0.3) for s in SEEDS3}
+    n_boot = 300
+    h = dgt.paired_seed_delta_hierarchical(a, b, P5_GROUPS, "test_heldout", n_boot=n_boot, seed=0)
+    assert (h["lo"], h["hi"]) == pytest.approx(p5_ref_interval(a, b, "shared", n_boot), abs=1e-12)
+    assert h["n_replicates"] == h["n_valid"] == n_boot
+    # the point values are paired_seed_delta's (the registered interval's statistic)
+    reg = dgt.paired_seed_delta(a, b, P5_GROUPS, "test_heldout", n_boot=0)
+    assert h["mean"] == pytest.approx(reg["mean"]) and h["per_seed"] == pytest.approx(reg["per_seed"])
+    width = h["hi"] - h["lo"]
+    for mode in ("per_seed", "per_arm"):
+        lo, hi = p5_ref_interval(a, b, mode, n_boot)
+        assert max(width / (hi - lo), (hi - lo) / width) > 1.3, (mode, width, hi - lo)
+    # input order does not change the result
+    shuffled = dict(a)
+    shuffled[42] = a[42].sample(frac=1.0, random_state=1)
+    again = dgt.paired_seed_delta_hierarchical(shuffled, b, P5_GROUPS, "test_heldout", n_boot=n_boot, seed=0)
+    assert (again["lo"], again["hi"]) == (h["lo"], h["hi"])
+
+
+# Gold fixture for P5 (b): 160 items in two rounds, 85% AI-Disagree (P4's rows); b better on a fixed item subset.
+G5_N = 160
+G5_UIDS = [f"g:{i:04d}" for i in range(G5_N)]
+_g5 = np.random.default_rng(21)
+G5_Y = _g5.random(G5_N) < 0.55
+G5_ROUND = np.where(np.arange(G5_N) < G5_N // 2, "1", "2")
+G5_DIS = _g5.random(G5_N) < 0.85
+G5_B = _g5.random(G5_N) < 0.3
+
+
+def g5_rows(seed, bonus=0.0, noise=0.3):
+    e = np.random.default_rng(seed + 100).normal(0, noise, G5_N)
+    p = 0.5 + np.where(G5_Y, 0.15, -0.15) + e + np.where(G5_Y & G5_B, bonus, 0)
+    return pd.DataFrame({"label_uid": G5_UIDS, "ai_vote": np.where(G5_DIS, "Disagree", "Agree"),
+                         "expert": np.where(G5_Y, "incorrect", "correct"), "round": G5_ROUND, "p_incorrect": p})
+
+
+def g5_ref_interval(a, b, mode, n_boot, seed=0):
+    """P5 (b)'s hierarchical interval computed here without the module: P4's item resamples first
+    (``rng.integers(0, n, n)`` each), then the seed draws; ``per_seed`` / ``per_arm`` are the two mistakes."""
+    from sklearn.metrics import roc_auc_score
+
+    def strat(y, s, r):
+        num = den = 0.0
+        for k in np.unique(r):
+            m = r == k
+            n1, n0 = y[m].sum(), m.sum() - y[m].sum()
+            if n1 and n0:
+                num, den = num + roc_auc_score(y[m], s[m]) * n1 * n0, den + n1 * n0
+        return num / den if den else float("nan")
+
+    d = a[42][a[42]["ai_vote"] == "Disagree"].sort_values("label_uid")
+    uids = list(d["label_uid"])
+    y, r = (d["expert"] == "incorrect").astype(int).to_numpy(), d["round"].to_numpy()
+    A = {s: a[s].set_index("label_uid").loc[uids, "p_incorrect"].to_numpy(float) for s in SEEDS3}
+    B = {s: b[s].set_index("label_uid").loc[uids, "p_incorrect"].to_numpy(float) for s in SEEDS3}
+    rng = np.random.default_rng(seed)
+    idxs = [rng.integers(0, len(y), len(y)) for _ in range(n_boot)]
+    draws = rng.integers(0, len(SEEDS3), size=(n_boot, len(SEEDS3)))
+    vals = []
+    for idx, draw in zip(idxs, draws):
+        if mode == "shared":
+            vals.append(np.mean([strat(y[idx], B[SEEDS3[j]][idx], r[idx]) - strat(y[idx], A[SEEDS3[j]][idx], r[idx])
+                                 for j in draw]))
+        elif mode == "per_seed":
+            dd = []
+            for j in draw:
+                own = rng.integers(0, len(y), len(y))
+                dd.append(strat(y[own], B[SEEDS3[j]][own], r[own]) - strat(y[own], A[SEEDS3[j]][own], r[own]))
+            vals.append(np.mean(dd))
+        else:                                                                           # per_arm
+            draw_b = rng.integers(0, len(SEEDS3), len(SEEDS3))
+            vals.append(np.mean([strat(y[idx], B[SEEDS3[j]][idx], r[idx]) for j in draw_b])
+                        - np.mean([strat(y[idx], A[SEEDS3[j]][idx], r[idx]) for j in draw]))
+    return float(np.percentile(vals, 2.5)), float(np.percentile(vals, 97.5))
+
+
+def test_p5_item_hierarchical_interval_matches_an_independent_reference():
+    a = {s: g5_rows(s) for s in SEEDS3}
+    b = {s: g5_rows(s, bonus=0.3) for s in SEEDS3}
+    n_boot = 300
+    h = dgt.paired_gold_delta_hierarchical(a, b, n_boot=n_boot, seed=0)
+    assert (h["lo"], h["hi"]) == pytest.approx(g5_ref_interval(a, b, "shared", n_boot), abs=1e-12)
+    assert h["n"] == int(G5_DIS.sum())                                   # P4's rows: AI-Disagree items only
+    reg = dgt.paired_gold_delta(a, b, n_boot=0)                          # the registered interval's statistic
+    assert h["mean"] == pytest.approx(reg["mean"]) and h["per_seed"] == pytest.approx(reg["per_seed"])
+    width = h["hi"] - h["lo"]
+    for mode in ("per_seed", "per_arm"):
+        lo, hi = g5_ref_interval(a, b, mode, n_boot)
+        assert max(width / (hi - lo), (hi - lo) / width) > 1.3, (mode, width, hi - lo)
+
+
+def test_p5_sign_is_symmetric_rb_minus_matched_rb():
+    matched = {s: p5_pred(s) for s in SEEDS3}
+    symmetric = {s: p5_pred(s, better=0.1) for s in SEEDS3}
+    leg = dgt.p5_maps_leg(matched, symmetric, p5_split(), n_boot=50)
+    assert (leg["a"], leg["b"]) == ("matched-rb", "symmetric-rb")
+    for part in ("test_heldout_agreed", "test_heldout"):
+        for iv in ("registered", "hierarchical"):
+            assert leg[part][iv]["mean"] > 0.03 and all(v > 0 for v in leg[part][iv]["per_seed"].values())
+    g = dgt.p5_gold_leg({s: g5_rows(s) for s in SEEDS3}, {s: g5_rows(s, bonus=0.3) for s in SEEDS3}, n_boot=50)
+    assert g["registered"]["mean"] > 0 and g["hierarchical"]["mean"] > 0
+
+
+def test_p5_agreed_rows_mask_the_rows_the_rules_disagree_on():
+    # symmetric-rb is better on the agreed incorrect rows and worse on the net-Disagree-2 rows: (a) on the agreed
+    # rows reads positive on both intervals, the descriptive every-row contrast spans 0 on both.
+    sp = p5_split()
+    leg = dgt.p5_maps_leg({s: p5_pred(s) for s in SEEDS3}, {s: p5_pred(s, 0.1, 0.12) for s in SEEDS3}, sp,
+                          n_boot=300)
+    agreed, every = leg["test_heldout_agreed"], leg["test_heldout"]
+    assert agreed["registered"]["lo"] > 0 and agreed["hierarchical"]["lo"] > 0
+    for iv in ("registered", "hierarchical"):
+        assert every[iv]["lo"] < 0 < every[iv]["hi"]
+    n_agreed = int((~P5_DIS2).sum())
+    assert (agreed["n"], every["n"]) == (n_agreed, len(P5_UIDS))
+    assert agreed["n_incorrect"] == int((P5_Y & ~P5_DIS2).sum()) and agreed["n_correct"] == int((~P5_Y).sum())
+    assert agreed["n_panoramas"] == len({P5_PANO[i] for i in np.flatnonzero(~P5_DIS2)})
+    assert leg["mde"] == pytest.approx(dgt.mde(agreed["n_incorrect"], agreed["n_correct"]))
+    st = dgt.p5_coprimary(leg, "test_heldout_agreed", "a", registered_n_boot=300)
+    assert st["result"] == "positive"
+    assert leg["test_heldout_agreed"]["registered"]["n_valid"] == 300           # every resample has both classes
+
+
+def test_p5_differing_row_ids_are_an_error_never_intersected():
+    sp = p5_split()
+    a = {s: p5_pred(s) for s in SEEDS3}
+    b = {s: p5_pred(s, better=0.1) for s in SEEDS3}
+    b[43] = b[43].iloc[1:]                                               # one row missing from one seed of one arm
+    leg = dgt.p5_maps_leg(a, b, sp, n_boot=20)
+    assert "row ids differ" in leg["error"] and "test_heldout_agreed" not in leg
+    with pytest.raises(ValueError, match="row ids differ"):
+        dgt.paired_seed_delta_hierarchical(a, b, P5_GROUPS, "test_heldout", n_boot=10)
+    # a scored row whose class differs from split.csv's is an error too
+    c = {s: p5_pred(s) for s in SEEDS3}
+    c[44] = c[44].copy()
+    c[44].loc[0, "true"] = "correct" if P5_Y[0] else "incorrect"
+    assert "differs from split.csv" in (dgt.p5_maps_leg(a, c, sp, n_boot=0)["error"] or "")
+    # gold: P4 intersects silently (unchanged); P5's gold leg reports an error
+    ga = {s: g5_rows(s) for s in SEEDS3}
+    gb = {s: g5_rows(s, bonus=0.3) for s in SEEDS3}
+    gb[44] = gb[44].iloc[1:]
+    assert dgt.paired_gold_delta(ga, gb, n_boot=0)["n"] < int(G5_DIS.sum())
+    gleg = dgt.p5_gold_leg(ga, gb, n_boot=0)
+    assert "row ids differ" in gleg["error"] and "registered" not in gleg
+    with pytest.raises(ValueError, match="row ids differ"):
+        dgt.paired_gold_delta_hierarchical(ga, gb, n_boot=0)
+    d = dgt.p5_decision({"CurbRamp": {"contrasts": {"symmetric-rb": leg}}}, {"CurbRamp": {"p5": gleg}},
+                        types=("CurbRamp",))
+    assert d["answer"] == dgt.P5_UNESTIMABLE
+    assert any(c.startswith("CurbRamp (a): error: row ids differ") for c in d["causes"])
+    assert any(c.startswith("CurbRamp (b): error: row ids differ") for c in d["causes"])
+
+
+def p5_iv(lo, hi, mean=None, n_boot=2000, boot_seed=0, n_valid=2000):
+    mean = (lo + hi) / 2 if mean is None else mean
+    return {"mean": mean, "lo": lo, "hi": hi, "per_seed": {"42": mean, "43": mean, "44": mean}, "n_boot": n_boot,
+            "boot_seed": boot_seed, "n_valid": n_valid}
+
+
+def p5_part(reg=(0.01, 0.05), hier=(0.005, 0.06), n=(300, 100)):
+    return {"n": sum(n), "n_correct": n[0], "n_incorrect": n[1], "n_panoramas": 200,
+            "registered": p5_iv(*reg), "hierarchical": p5_iv(*hier)}
+
+
+def p5_seeds(a=(42, 43, 44), b=(42, 43, 44)):
+    return {"matched-rb": list(a), "symmetric-rb": list(b)}
+
+
+def p5_files(maps_over=None, gold_over=None):
+    """maps.json / gold.json fragments with all four co-primaries positive; ``*_over`` replaces a type's leg."""
+    maps = {t: {"contrasts": {"symmetric-rb": {"seeds": p5_seeds(), "error": None, "test_heldout_agreed": p5_part(),
+                                               "test_heldout": p5_part((-0.01, 0.02)), "mde": 0.05}}}
+            for t in dgt.RB_TYPES}
+    gold = {t: {"p5": {"seeds": p5_seeds(), "error": None, **p5_part(n=(50, 60))}} for t in dgt.RB_TYPES}
+    for t, leg in (maps_over or {}).items():
+        maps[t]["contrasts"]["symmetric-rb"] = leg
+    for t, leg in (gold_over or {}).items():
+        gold[t]["p5"] = leg
+    return as_json(maps), as_json(gold)
+
+
+def test_p5_decision_needs_all_four_interval_pairs_wholly_above_zero():
+    maps, gold = p5_files()
+    d = dgt.p5_decision(maps, gold)
+    assert d["answer"] == dgt.P5_YES and not d["causes"]
+    assert [r["result"] for r in d["rows"] if r["role"] == "co-primary"] == ["positive"] * 4
+    assert sum(r["role"] == "descriptive" for r in d["rows"]) == 2           # the every-row contrast never decides
+    # registered interval above 0, hierarchical spanning 0: not positive, so the answer is no
+    m2, _ = p5_files({"Crosswalk": {**maps["Crosswalk"]["contrasts"]["symmetric-rb"],
+                                    "test_heldout_agreed": p5_part(hier=(-0.004, 0.06))}})
+    d2 = dgt.p5_decision(m2, gold)
+    assert d2["answer"] == dgt.P5_NO and not d2["causes"]
+    row = next(r for r in d2["rows"] if r["label_type"] == "Crosswalk" and r["coprimary"] == "a")
+    assert row["result"] == "not positive" and row["registered_lo"] > 0
+    # three of four positive (CurbRamp's gold leg spans 0 on the registered interval): no
+    _, g3 = p5_files(gold_over={"CurbRamp": {"seeds": p5_seeds(), "error": None,
+                                             **p5_part(reg=(-0.01, 0.05), n=(50, 60))}})
+    d3 = dgt.p5_decision(maps, g3)
+    assert d3["answer"] == dgt.P5_NO
+    assert [r["result"] for r in d3["rows"] if r["role"] == "co-primary"].count("positive") == 3
+    # an interval touching 0 is not wholly above it
+    _, g4 = p5_files(gold_over={"Crosswalk": {"seeds": p5_seeds(), "error": None,
+                                              **p5_part(hier=(0.0, 0.05), n=(50, 60))}})
+    assert dgt.p5_decision(maps, g4)["answer"] == dgt.P5_NO
+
+
+def test_p5_decision_unestimable_cases_are_never_a_yes():
+    maps, gold = p5_files()
+    # a missing seed of one arm
+    leg = {**maps["CurbRamp"]["contrasts"]["symmetric-rb"], "seeds": p5_seeds(a=(42, 43))}
+    d = dgt.p5_decision(p5_files({"CurbRamp": leg})[0], gold)
+    assert d["answer"] == dgt.P5_UNESTIMABLE
+    assert d["causes"] == ["CurbRamp (a): matched-rb has 2 of the 3 registered seeds"]
+    # a thin class on the rows a co-primary is computed on
+    _, g = p5_files(gold_over={"Crosswalk": {"seeds": p5_seeds(), "error": None, **p5_part(n=(50, 9))}})
+    d = dgt.p5_decision(maps, g)
+    assert d["answer"] == dgt.P5_UNESTIMABLE and d["causes"] == ["Crosswalk (b): fewer than 10 incorrect rows"]
+    # no gold at all: both (b) legs withheld (not an answer), with the cause named
+    d = dgt.p5_decision(maps, None)
+    assert d["answer"] == dgt.P5_WITHHELD and sum("(b): gold.json has no P5 entry" in c for c in d["causes"]) == 2
+    # neither file has any P5 entry: not run (the pilot)
+    assert dgt.p5_decision({"CurbRamp": {"contrasts": {"cl-drop": {}}}}, {"CurbRamp": {}})["answer"] == dgt.P5_NOT_RUN
+
+
+def test_p5_report_block_not_run_and_with_an_answer():
+    assert dgt.p5_markdown({"p5": dgt.p5_decision({}, None)}) == dgt.P5_NOT_RUN_TEXT
+    maps, gold = p5_files()
+    text = dgt.p5_markdown({"p5": dgt.p5_decision(maps, gold), "_provenance": {"git_commit": "abcdef0123"}})
+    assert text.startswith(f"**Answer: {dgt.P5_YES}.**")
+    assert "every test_heldout row (descriptive)" in text and "+0.030 [+0.010, +0.050] | [+0.005, +0.060]" in text
+    assert "Minimum detectable difference for (a)" in text and "100 incorrect / 300 correct agreed rows" in text
+    assert "false yes" in text and "false-fail" not in text and "`abcdef0`" in text
+    # S3: the (b) rows print n only (P4's rows' expert-verdict split stays in bar.json); (a) rows keep the counts
+    assert "| CurbRamp | (b) gold, P4's rows | 110 | 200 |" in text and "| CurbRamp | (a) agreed test_heldout rows | " \
+           "400 (300 / 100) | 200 |" in text
+    # the doc carries the block, in its not-run state, so report can splice it once stage 2 has outputs
+    with open(os.path.join(dgt.REPO_DIR, "docs", "round4-2026-11.md")) as f:
+        doc = f.read()
+    blk = re.search(re.escape(dgt.BEGIN.format(name="p5")) + r"\n\n(.*?)\n\n" + re.escape(dgt.END.format(name="p5")),
+                    doc, re.S)
+    assert blk and blk.group(1) == dgt.P5_NOT_RUN_TEXT
+
+
+def p5_layout(tmp_path, gold_n=160, n_rb_gold=None, extra_seed=None, rb=True):
+    """One stage-2 layout under ``tmp_path``, as the runbook has it (``maps --r4 $PRED``, ``gold --pred-dir $PRED``):
+    ``r4/<Type>/`` for CurbRamp and Crosswalk with split.csv, the rebalanced runs' ``predictions_<tag>.csv``
+    (``symmetric-rb`` better on every seed) and every run's ``gold_predictions_uniform_<tag>.csv``; ``maps/`` with
+    baseline / cl-drop maps (so ``gold`` computes P4); ``gold.csv`` for both types; ``shares.json``.
+    ``n_rb_gold`` keeps only the first rows of every rebalanced gold file alike; ``extra_seed`` adds a rebalanced
+    run of another seed in both file kinds; ``rb=False`` writes no rebalanced file at all (the pilot)."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    r4, maps = tmp_path / "r4", tmp_path / "maps"
+    maps.mkdir()
+    vt = predictions(0)
+    vt = vt[vt["split"] != "test_heldout"]
+    golds = []
+    seeds = SEEDS3 + ((extra_seed,) if extra_seed else ())
+    for t in dgt.RB_TYPES:
+        d = r4 / t
+        d.mkdir(parents=True)
+        other = pd.DataFrame({"label_uid": vt["label_uid"], "city": "c", "pano_id": [f"V{i}" for i in range(len(vt))],
+                              "split": vt["split"], "label_class": vt["true"], "class_source": "margin",
+                              "human_agree": "", "human_disagree": ""})
+        pd.concat([other, p5_split()]).to_csv(d / "split.csv", index=False)
+        gold = real_gold(gold_n, t)
+        gold["label_uid"] = gold["label_uid"].str.replace("c:", f"{t[:2].lower()}:")      # unique across types
+        golds.append(gold)
+        y = (gold["expert"] == "incorrect").to_numpy()
+        for k, s in enumerate(seeds):
+            e = np.random.default_rng(k).normal(0, 0.25, len(y))
+            for v, bonus in (("baseline", 0.0), ("cl-drop", 0.02), ("matched-rb", 0.0), ("symmetric-rb", 0.15)):
+                if (v in ("baseline", "cl-drop") and s not in SEEDS3) or (v.endswith("-rb") and not rb):
+                    continue
+                tag = dgt.run_tag(v, s)
+                if v.endswith("-rb"):
+                    pd.concat([vt, p5_pred(min(s, 44), better=0.1 if v == "symmetric-rb" else 0.0)]).to_csv(
+                        d / f"predictions_{tag}.csv", index=False)
+                p = np.where(y, 0.6 + bonus, 0.4) + e
+                g = pd.DataFrame({"label_uid": gold["label_uid"], "p_correct": 1 - p, "p_incorrect": p})
+                if v.endswith("-rb") and n_rb_gold:
+                    g = g.iloc[:n_rb_gold]
+                g.to_csv(d / f"gold_predictions_uniform_{tag}.csv", index=False)
+                if v in ("baseline", "cl-drop"):
+                    (maps / f"{t}_{tag}.json").write_text(json.dumps(dgt.fit_map(predictions(k), PI)))
+    gold_path, shares = tmp_path / "gold.csv", tmp_path / "shares.json"
+    pd.concat(golds).to_csv(gold_path, index=False)
+    rules = {"majority2": {"correct": 80, "incorrect": 20}, "margin": {"correct": 70, "incorrect": 30}}
+    shares.write_text(json.dumps({"types": {t: {"rules": rules} for t in dgt.RB_TYPES}}))
+    return {"r4": r4, "maps": maps, "gold": gold_path, "shares": shares}
+
+
+def p5_run_maps(lay, out, *extra, types="CurbRamp,Crosswalk", n_boot=10):
+    rc = dgt.main(["maps", "--r4", str(lay["r4"]), "--shares", str(lay["shares"]), "--types", types,
+                   "--n-boot", str(n_boot), "--out", str(out), *extra])
+    return rc, (json.loads((out / "maps.json").read_text()) if rc == 0 else None)
+
+
+def p5_run_gold(lay, out, *extra, types="CurbRamp,Crosswalk", n_boot=20, maps=None):
+    rc = dgt.main(["gold", "--gold", str(lay["gold"]), "--pred-dir", str(lay["r4"]), "--maps",
+                   str(maps or lay["maps"]), "--types", types, "--crops", "uniform", "--n-boot", str(n_boot),
+                   "--out", str(out), *extra])
+    return rc, (json.loads((out / "gold.json").read_text()) if rc == 0 else None)
+
+
+@pytest.fixture
+def allow_test_boot(monkeypatch):
+    """The tests' explicit override: maps / gold run a complete rebalanced set with fewer than 2,000 resamples."""
+    monkeypatch.setattr(dgt, "TEST_ONLY_ALLOW_UNREGISTERED_BOOT", True)
+
+
+def test_p5_end_to_end_maps_gold_decide_report(tmp_path, allow_test_boot):
+    lay = p5_layout(tmp_path)
+    gate = tmp_path / "gate"
+    # default --runs: the rebalanced runs are read without being named
+    rc, m = p5_run_maps(lay, gate, n_boot=40)
+    assert rc == 0
+    leg = m["CurbRamp"]["contrasts"]["symmetric-rb"]
+    assert leg["error"] is None and leg["seeds"] == {"matched-rb": [42, 43, 44], "symmetric-rb": [42, 43, 44]}
+    assert leg["test_heldout_agreed"]["n"] == int((~P5_DIS2).sum()) and leg["test_heldout"]["n"] == len(P5_UIDS)
+    assert leg["test_heldout_agreed"]["registered"]["mean"] > 0                    # symmetric-rb minus matched-rb
+    assert leg["test_heldout_agreed"]["hierarchical"]["n_replicates"] == 40
+    assert len(leg["present"]) == 24 and not leg["missing"] and not leg["mismatched"]
+    assert {"symmetric-rb", "matched-rb-s44"} <= set(m["CurbRamp"]["runs"])
+    assert str(lay["r4"] / "CurbRamp" / "split.csv") in m["_provenance"]["inputs_sha256"]
+    gold_file = lay["r4"] / "Crosswalk" / "gold_predictions_uniform_symmetric-rb.csv"     # maps reads its ids
+    assert str(gold_file) in m["_provenance"]["inputs_sha256"]
+    # gold: the rebalanced runs have uniform gold predictions but no map; P5 (b) is computed anyway, on P4's rows
+    out = tmp_path / "goldout"
+    rc, g = p5_run_gold(lay, out, n_boot=40)
+    assert rc == 0
+    p5 = g["CurbRamp"]["p5"]
+    assert p5["error"] is None and p5["registered"]["seeds"] == [42, 43, 44] and p5["registered"]["mean"] > 0
+    assert p5["n"] == g["CurbRamp"]["p4"]["n"] and p5["hierarchical"]["n_replicates"] == 40
+    assert g["CurbRamp"]["runs"]["symmetric-rb"] == {"missing": True}            # no map: no gate statistics
+    bar = gate / "bar.json"
+    assert dgt.main(["decide", "--maps", str(gate / "maps.json"), "--gold", str(out / "gold.json"),
+                     "--out", str(bar)]) == 0
+    b = json.loads(bar.read_text())
+    # decide refuses intervals not computed at the registered 2,000 resamples (this test used 40)
+    assert b["p5"]["answer"] == dgt.P5_UNESTIMABLE
+    assert "CurbRamp (a): registered interval computed with 40 resamples and bootstrap seed 0, not the registered " \
+           "2,000 and 0" in b["p5"]["causes"]
+    d40 = dgt.p5_decision(m, g, registered_n_boot=40)                             # the tests-only override
+    assert not d40["causes"] and d40["answer"] in (dgt.P5_YES, dgt.P5_NO)
+    doc = tmp_path / "doc.md"
+    doc.write_text("".join(f"{dgt.BEGIN.format(name=n)}\nold\n{dgt.END.format(name=n)}\n"
+                           for n in ("maps", "bar", "p5")))
+    args = dgt.build_parser().parse_args(["report", "--dir", str(gate), "--doc", str(doc)])
+    assert dgt.cmd_report(args, {"public": set(), "non_public_terms": set()}) == 0
+    assert f"**Answer: {dgt.P5_UNESTIMABLE}.**" in doc.read_text()
+
+
+def test_p5_coprimary_paths_to_a_wrong_yes_are_pinned():
+    """Review round 1, S4: each case below survived a mutation of p5_coprimary before it had a test."""
+    seeds_ok = p5_seeds()
+
+    def leg(reg=(0.01, 0.05), hier=(0.005, 0.06), n=(50, 60), seeds=seeds_ok, **iv):
+        part = p5_part(reg, hier, n)
+        for k, v in iv.items():
+            part[k] = v
+        return as_json({"seeds": seeds, "error": None, **part})
+
+    st = lambda lg, cop="b": dgt.p5_coprimary(lg, None, cop)        # noqa: E731
+    assert st(leg())["result"] == "positive"
+    # a NaN / null interval end, or a missing interval, is unestimable, never positive
+    nan_lo = leg()
+    nan_lo["registered"]["lo"] = None
+    assert st(nan_lo) == {"result": "unestimable", "causes": ["no registered interval"]}
+    nan_hi = leg()
+    nan_hi["hierarchical"]["hi"] = float("nan")
+    assert st(nan_hi) == {"result": "unestimable", "causes": ["no hierarchical interval"]}
+    assert st(leg(registered=None)) == {"result": "unestimable", "causes": ["no registered interval"]}
+    # the registered interval touching 0 is not wholly above it
+    assert st(leg(reg=(0.0, 0.05)))["result"] == "not positive"
+    # symmetric-rb short of a seed; seeds 41, 42, 43 count as two of the registered three
+    assert st(leg(seeds=p5_seeds(b=(42, 44))))["causes"] == ["symmetric-rb has 2 of the 3 registered seeds"]
+    assert st(leg(seeds=p5_seeds(a=(41, 42, 43))))["causes"] == ["matched-rb has 2 of the 3 registered seeds"]
+    # a thin correct class; exactly 10 of each class is estimable; (a) names the count, (b) does not (S3)
+    assert st(leg(n=(9, 60)), "a")["causes"] == ["9 correct rows (fewer than 10)"]
+    assert st(leg(n=(9, 60)))["causes"] == ["fewer than 10 correct rows"]
+    assert st(leg(n=(10, 10)))["result"] == "positive"
+    # N1: not the registered 2,000 resamples / bootstrap seed 0; N2: fewer than half the replicates defined
+    off = leg()
+    off["hierarchical"]["boot_seed"] = 1
+    assert st(off)["causes"] == ["hierarchical interval computed with 2000 resamples and bootstrap seed 1, not the "
+                                 "registered 2,000 and 0"]
+    thin = leg()
+    thin["registered"]["n_valid"] = 999
+    assert st(thin)["causes"] == ["registered interval: 999 of 2,000 replicates defined (fewer than 50%)"]
+    thin["registered"]["n_valid"] = 1000
+    assert st(thin)["result"] == "positive"
+
+
+def test_p5_scored_rows_must_be_exactly_the_split_rows():
+    sp = p5_split()
+    # S1 (a): every run lacking the same 200 rows passes the cross-run check, and is an error
+    a = {s: p5_pred(s).iloc[200:] for s in SEEDS3}
+    b = {s: p5_pred(s, better=0.1).iloc[200:] for s in SEEDS3}
+    leg = dgt.p5_maps_leg(a, b, sp, n_boot=0)
+    assert leg["error"] == ("200 of the 480 test_heldout rows of split.csv were not scored (evaluate.py scores "
+                            "every one)")
+    assert "test_heldout_agreed" not in leg
+    # a scored row that is not a test_heldout row of split.csv is an error too
+    extra = pd.DataFrame({"label_uid": ["p:99999"], "split": "test_heldout", "true": "correct", "p_incorrect": 0.2,
+                          "p_correct": 0.8})
+    a2 = {s: pd.concat([p5_pred(s), extra]) for s in SEEDS3}
+    b2 = {s: pd.concat([p5_pred(s, better=0.1), extra]) for s in SEEDS3}
+    assert dgt.p5_maps_leg(a2, b2, sp, n_boot=0)["error"] == "1 scored test_heldout rows are not test_heldout rows " \
+                                                             "of split.csv"
+
+
+def test_p5_gold_items_must_be_p4s_items(tmp_path, allow_test_boot):
+    # S1 (b): the rebalanced gold files truncated alike pass the cross-run check; P5 (b) must still be on P4's rows
+    rc, g = p5_run_gold(p5_layout(tmp_path / "t", n_rb_gold=100), tmp_path / "out")
+    n4 = g["CurbRamp"]["p4"]["n"]
+    err = g["CurbRamp"]["p5"]["error"]
+    assert err.startswith("P5 (b) has ") and f"items and P4 {n4} " in err
+    assert "registered" not in g["CurbRamp"]["p5"]
+    lay = p5_layout(tmp_path / "full")
+    rc, ok = p5_run_gold(lay, tmp_path / "out2")
+    p5 = ok["CurbRamp"]["p5"]
+    assert p5["error"] is None and p5["n"] == n4 and p5["registered"]["n_boot"] == 20
+    assert p5["registered"]["boot_seed"] == 0 and p5["registered"]["n_valid"] == 20
+    # N-b: without P4 (no baseline / cl-drop gold rows) (b)'s rows cannot be checked: an error, no numbers
+    rc, nop4 = p5_run_gold(lay, tmp_path / "out4", "--runs", "matched-rb,symmetric-rb")
+    leg = nop4["CurbRamp"]["p5"]
+    assert leg["error"].startswith("P4 was not computed") and "registered" not in leg
+    # P5 (b) is a uniform-crop statistic: gold on round-3 crops writes no P5 entry at all
+    rc, r3 = p5_run_gold(lay, tmp_path / "out3", "--crops", "r3crops")
+    assert "p5" not in r3["CurbRamp"]
+
+
+def test_p5_registered_resample_settings_are_refused_not_computed(tmp_path):
+    # R2: a complete rebalanced set with a non-registered --n-boot or --seed: non-zero exit, nothing written
+    lay = p5_layout(tmp_path)
+    for extra in (("--n-boot", "40"), ("--seed", "1")):
+        out = tmp_path / ("m" + extra[0])
+        assert dgt.main(["maps", "--r4", str(lay["r4"]), "--shares", str(lay["shares"]), "--types", "CurbRamp",
+                         *extra, "--out", str(out)]) == 2
+        assert not out.exists()
+        gout = tmp_path / ("g" + extra[0])
+        assert dgt.main(["gold", "--gold", str(lay["gold"]), "--pred-dir", str(lay["r4"]), "--maps", str(lay["maps"]),
+                         "--types", "CurbRamp", "--crops", "uniform", *extra, "--out", str(gout)]) == 2
+        assert not gout.exists()
+    # an incomplete set is withheld, so other settings are harmless there and run
+    (lay["r4"] / "Crosswalk" / "gold_predictions_uniform_matched-rb.csv").unlink()
+    assert p5_run_maps(lay, tmp_path / "inc", n_boot=40)[0] == 0
+    assert p5_run_gold(lay, tmp_path / "incg", n_boot=40)[0] == 0
+
+
+def p5_has_number(obj):
+    """Whether a JSON value holds any non-bool number."""
+    if isinstance(obj, dict):
+        return any(p5_has_number(v) for v in obj.values())
+    if isinstance(obj, list):
+        return any(p5_has_number(v) for v in obj)
+    return isinstance(obj, (int, float)) and not isinstance(obj, bool)
+
+
+def test_p5_incomplete_unit_is_withheld_in_both_commands_and_both_types(tmp_path):
+    # R1: one failed GOLD scoring job of the OTHER type withholds every rebalanced number of maps too, for both types
+    lay = p5_layout(tmp_path)
+    (lay["r4"] / "Crosswalk" / "gold_predictions_uniform_symmetric-rb-s44.csv").unlink()
+    gate = tmp_path / "gate"
+    rc, m = p5_run_maps(lay, gate)
+    assert rc == 0
+    for t in dgt.RB_TYPES:
+        leg = m[t]["contrasts"]["symmetric-rb"]
+        assert leg["withheld"] and leg["missing"] == ["Crosswalk/gold_predictions_uniform_symmetric-rb-s44.csv"]
+        assert set(leg) == {"a", "b", "withheld", "present", "missing", "mismatched", "seeds_not_used"}
+        assert len(leg["present"]) == 23
+        rb_runs = {k: v for k, v in m[t]["runs"].items() if "-rb" in k}
+        assert len(rb_runs) == 6 and all(v == {"variant": v["variant"], "seed": v["seed"], "withheld": True}
+                                         for v in rb_runs.values())
+        assert not p5_has_number({k: {kk: vv for kk, vv in v.items() if kk != "seed"} for k, v in rb_runs.items()})
+    assert not list((gate / "maps").glob("*-rb*.json"))                         # no rebalanced map
+    text = dgt.maps_markdown(m)
+    assert not [ln for ln in text.splitlines() if "-rb" in ln and re.search(r"\d\.\d", ln)]   # no AUC on any rb row
+    out = tmp_path / "goldout"
+    rc, g = p5_run_gold(lay, out)
+    for t in dgt.RB_TYPES:
+        assert g[t]["p5"]["withheld"] and not p5_has_number(g[t]["p5"])
+        assert all(not p5_has_number({kk: vv for kk, vv in v.items() if kk != "seed"})
+                   for k, v in g[t]["runs"].items() if "-rb" in k)
+        assert not any("-rb" in v for v in g[t]["ensemble"])
+    assert "-rb" not in dgt.gold_markdown(g)
+    bar = gate / "bar.json"
+    dgt.main(["decide", "--maps", str(gate / "maps.json"), "--gold", str(out / "gold.json"), "--out", str(bar)])
+    b = json.loads(bar.read_text())
+    assert b["p5"]["answer"] == dgt.P5_WITHHELD and not p5_has_number(b["p5"])
+    assert "CurbRamp (a): rebalanced runs incomplete: missing Crosswalk/gold_predictions_uniform_symmetric-rb-s44.csv" \
+        in b["p5"]["causes"]
+    block = dgt.p5_markdown(b)
+    assert "resubmit the missing runs" in block and not re.search(r"[+-]\d\.\d{3}", block)
+    # decide: one withheld leg among three complete ones writes no number of any leg
+    maps_ok, gold_ok = p5_files()
+    maps_ok["Crosswalk"]["contrasts"]["symmetric-rb"] = m["Crosswalk"]["contrasts"]["symmetric-rb"]
+    d = dgt.p5_decision(maps_ok, gold_ok)
+    assert d["answer"] == dgt.P5_WITHHELD and not p5_has_number(d["rows"]) and len(d["rows"]) == 4
+
+
+def test_p5_mismatched_ids_are_withheld_in_maps_and_gold(tmp_path):
+    # one rebalanced prediction file scored on other rows: withheld, and the mismatch is named
+    lay = p5_layout(tmp_path / "a")
+    f = lay["r4"] / "CurbRamp" / "predictions_matched-rb-s43.csv"
+    pd.read_csv(f).iloc[1:].to_csv(f, index=False)
+    rc, m = p5_run_maps(lay, tmp_path / "ga")
+    leg = m["CurbRamp"]["contrasts"]["symmetric-rb"]
+    assert leg["withheld"] and not leg["missing"] and "matched-rb-s43 scored" in leg["mismatched"][0]
+    assert "scored on different rows" in dgt.p5_coprimary(leg, "test_heldout_agreed", "a")["causes"][0]
+    # N-a: one rebalanced GOLD file with different ids: gold withholds (not a final error), and so does maps
+    lay = p5_layout(tmp_path / "b")
+    f = lay["r4"] / "Crosswalk" / "gold_predictions_uniform_symmetric-rb.csv"
+    pd.read_csv(f).iloc[1:].to_csv(f, index=False)
+    rc, g = p5_run_gold(lay, tmp_path / "gb")
+    for t in dgt.RB_TYPES:
+        assert g[t]["p5"]["withheld"] and "error" not in g[t]["p5"]
+        assert g[t]["p5"]["mismatched"][0].startswith("Crosswalk gold_predictions_uniform_*.csv: symmetric-rb scored")
+        assert all(set(v) == {"variant", "seed", "withheld"} for k, v in g[t]["runs"].items() if "-rb" in k)
+    rc, m = p5_run_maps(lay, tmp_path / "gbm")
+    assert m["CurbRamp"]["contrasts"]["symmetric-rb"]["withheld"]
+
+
+def test_p5_no_rebalanced_file_is_not_run(tmp_path, capsys):
+    # N-a and N-c: the pilot layout (no rebalanced file at all): decide on the real maps.json says "not run", and
+    # maps / gold print no P5 WITHHELD line
+    lay = p5_layout(tmp_path, rb=False)
+    gate = tmp_path / "gate"
+    rc, m = p5_run_maps(lay, gate)
+    rc, g = p5_run_gold(lay, tmp_path / "gold")
+    assert "P5 WITHHELD" not in capsys.readouterr().err
+    dgt.main(["decide", "--maps", str(gate / "maps.json"), "--gold", str(tmp_path / "gold" / "gold.json"),
+              "--out", str(gate / "bar.json")])
+    b = json.loads((gate / "bar.json").read_text())
+    assert b["p5"]["answer"] == dgt.P5_NOT_RUN and dgt.p5_markdown(b) == dgt.P5_NOT_RUN_TEXT
+    # one rebalanced file is enough for "withheld", and for the stderr line
+    pd.DataFrame({"label_uid": ["x"]}).to_csv(lay["r4"] / "CurbRamp" / "predictions_matched-rb.csv", index=False)
+    rc, m = p5_run_maps(lay, tmp_path / "one")
+    assert "P5 WITHHELD" in capsys.readouterr().err
+    assert dgt.p5_decision(m, None)["answer"] == dgt.P5_WITHHELD
+
+
+def test_p5_defined_replicate_counters(tmp_path):
+    # N-a: both counters of the registered intervals' defined replicates, against an independent count
+    assert dgt._registered_valid_panoramas(np.zeros(6, int), [f"p{i}" for i in range(6)], 50, 0) == 0
+    assert dgt._registered_valid_panoramas(np.r_[1, 0, 0, 1], ["a", "b", "c", "d"], 50, 0) == 50
+
+    def rows(n_c, n_i, seed):
+        y = np.r_[np.zeros(n_c, bool), np.ones(n_i, bool)]
+        p = 0.5 + np.where(y, .15, -.15) + np.random.default_rng(seed).normal(0, .3, len(y))
+        return pd.DataFrame({"label_uid": [f"g:{i:03d}" for i in range(len(y))], "ai_vote": "Disagree",
+                             "expert": np.where(y, "incorrect", "correct"), "round": [str(1 + i % 2) for i in
+                                                                                     range(len(y))],
+                             "p_incorrect": p}).sample(frac=1, random_state=9)
+
+    for n_c, n_i in ((3, 3), (40, 2), (10, 10)):
+        ra = {s: rows(n_c, n_i, s) for s in SEEDS3}
+        rb = {s: rows(n_c, n_i, s + 7) for s in SEEDS3}
+        ref = ra[42]
+        y, r = (ref["expert"] == "incorrect").astype(int).to_numpy(), ref["round"].to_numpy()
+        rng, n = np.random.default_rng(0), 0
+        for _ in range(500):                                   # paired_gold_delta's loop; a defined AUC is not NaN
+            idx = rng.integers(0, len(y), len(y))
+            n += not np.isnan(dgt.stratified_auc(y[idx], ref["p_incorrect"].to_numpy()[idx], r[idx]))
+        assert dgt._registered_valid_items(ra, rb, 500, 0) == n
+        if (n_c, n_i) == (40, 2):
+            assert n < 500                                     # the thin case does drop replicates
+
+
+def test_p5_uses_exactly_the_registered_seeds(tmp_path, allow_test_boot):
+    # N3: seed-45 runs on disk (and --seeds naming 45) are listed as not used; the intervals use 42, 43, 44
+    lay = p5_layout(tmp_path, extra_seed=45)
+    rc, m = p5_run_maps(lay, tmp_path / "gate", "--seeds", "42,43,44,45")
+    leg = m["CurbRamp"]["contrasts"]["symmetric-rb"]
+    assert "CurbRamp/predictions_matched-rb-s45.csv" in leg["seeds_not_used"]
+    assert "Crosswalk/gold_predictions_uniform_symmetric-rb-s45.csv" in leg["seeds_not_used"]
+    assert len(leg["seeds_not_used"]) == 8
+    assert leg["seeds"] == {"matched-rb": [42, 43, 44], "symmetric-rb": [42, 43, 44]}
+    assert leg["test_heldout_agreed"]["registered"]["seeds"] == [42, 43, 44]
+    assert leg["test_heldout_agreed"]["hierarchical"]["seeds"] == [42, 43, 44]
+    rc, g = p5_run_gold(lay, tmp_path / "gout", "--seeds", "42,43,44,45")
+    assert g["CurbRamp"]["p5"]["seeds_not_used"] == leg["seeds_not_used"]
+    assert g["CurbRamp"]["p5"]["registered"]["seeds"] == [42, 43, 44]
 
 
 def test_doctests():
