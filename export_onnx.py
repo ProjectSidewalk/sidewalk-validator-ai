@@ -322,6 +322,8 @@ def export_model(model, out_dir, revision=None, opset=OPSET, image_size=None):
     import torch
     from transformers import AutoImageProcessor, AutoModelForImageClassification
 
+    import backbones
+    backbones.register_auto()  # a DINOv3 checkpoint of the backbone comparison (issue #119)
     os.makedirs(out_dir, exist_ok=True)
     processor = AutoImageProcessor.from_pretrained(model, revision=revision, use_fast=False)
     net = AutoModelForImageClassification.from_pretrained(model, revision=revision, attn_implementation="eager").eval()
@@ -482,6 +484,9 @@ def bench_torch(model, revision, pixels, device, batch_sizes, warmup, runs, scor
     """Logits on every crop and median latency per batch size for the PyTorch fp32 model on ``device``."""
     import torch
     from transformers import AutoModelForImageClassification
+
+    import backbones
+    backbones.register_auto()  # a DINOv3 checkpoint of the backbone comparison (issue #119)
     net = AutoModelForImageClassification.from_pretrained(model, revision=revision)   # fp32, as the API loads it
     net = net.to(device).eval()
     order = [net.config.label2id[c] for c in CLASSES]

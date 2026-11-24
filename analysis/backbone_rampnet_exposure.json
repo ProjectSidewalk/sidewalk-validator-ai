@@ -1,0 +1,67 @@
+{
+  "_source": "RampNet docs/data_provenance.md section 1 and stage_one/crop_model/ps_model/data/download_data.py (RampNet 7f0167c0): the Project Sidewalk servers the crop model's training labels came from, mapped to city_id through the /v3/api/cities url field; visibility checked against the live listing on 2026-11-19 (all public). Round-3 splits read from the CurbRamp and SurfaceProblem split.csv on klone.",
+  "summary": "RampNet stage two trained on open-government curb-ramp locations in three cities that are not Project Sidewalk deployments, with keypoints placed by a crop model. That crop model trained on Project Sidewalk CurbRamp labels (Agree - Disagree >= 2) from the 12 deployments below, every one of them in round 3's train, val and test splits (one of them in val for CurbRamp only); none of round 3's three held-out deployments is among them.",
+  "stage_two_cities_outside_project_sidewalk": 3,
+  "deployments": [
+    {
+      "city_id": "blackhawk-hills-il",
+      "stage": "crop model (CurbRamp labels)",
+      "round3_splits": "train, test (val: CurbRamp only)"
+    },
+    {
+      "city_id": "chicago-il",
+      "stage": "crop model (CurbRamp labels)",
+      "round3_splits": "train, val, test"
+    },
+    {
+      "city_id": "cliffside-park-nj",
+      "stage": "crop model (CurbRamp labels)",
+      "round3_splits": "train, val, test"
+    },
+    {
+      "city_id": "columbus-oh",
+      "stage": "crop model (CurbRamp labels)",
+      "round3_splits": "train, val, test"
+    },
+    {
+      "city_id": "knox-oh",
+      "stage": "crop model (CurbRamp labels)",
+      "round3_splits": "train, val, test"
+    },
+    {
+      "city_id": "mendota-il",
+      "stage": "crop model (CurbRamp labels)",
+      "round3_splits": "train, val, test"
+    },
+    {
+      "city_id": "newberg-or",
+      "stage": "crop model (CurbRamp labels)",
+      "round3_splits": "train, val, test"
+    },
+    {
+      "city_id": "oradell-nj",
+      "stage": "crop model (CurbRamp labels)",
+      "round3_splits": "train, val, test"
+    },
+    {
+      "city_id": "pittsburgh-pa",
+      "stage": "crop model (CurbRamp labels)",
+      "round3_splits": "train, val, test"
+    },
+    {
+      "city_id": "seattle-wa",
+      "stage": "crop model (CurbRamp labels)",
+      "round3_splits": "train, val, test"
+    },
+    {
+      "city_id": "st-louis-mo",
+      "stage": "crop model (CurbRamp labels)",
+      "round3_splits": "train, val, test"
+    },
+    {
+      "city_id": "teaneck-nj",
+      "stage": "crop model (CurbRamp labels)",
+      "round3_splits": "train, val, test"
+    }
+  ]
+}
