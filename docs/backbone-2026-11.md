@@ -7,8 +7,13 @@ baseline retrained in the same environment, and decides with a rule written befo
 
 ## Status
 
-**Pilot submitted (job `43406096`, 30 runs) and the DINOv3 runs submitted (job `43409815`, 18 runs); no result read
-yet.** The GPU smoke test passed (job `43404752`). What exists:
+**Pilot read (2026-11-24). Decision under the pre-registered rule: keep `facebook/dinov2-large` (no arm met the
+rule).** All 48 runs were counted and none was incomplete: the 30 pilot rows (job `43406096`, the 8 RampNet rows
+being the J16 reruns of job `43479837`) and the 18 DINOv3 rows (job `43409815`). Every arm, the three eligible ones
+included, fails condition 2 (non-inferiority) on at least one pilot type, and none meets condition 1 on either type.
+The environment readout is not called out: the in-env baseline is within twice round 3's seed sd of round 3's own
+baseline on both types. See [Results](#results) and its [Reading](#reading). The GPU smoke test passed (job
+`43404752`). What exists:
 
 - [`backbones.py`](../backbones.py): the registry (pinned revisions), the fixed preprocessing, a DINOv3 classifier
   class, RampNet's ConvNeXt V2-B converted into the native `ConvNextV2ForImageClassification`, the weight prefetch.
@@ -18,8 +23,8 @@ yet.** The GPU smoke test passed (job `43404752`). What exists:
 - [`analysis/backbone_comparison.py`](../analysis/backbone_comparison.py) (`view`, `report`) and the klone chain
   `analysis/backbone_env.sh`, `backbone_prefetch.sh`, `backbone_submit.sh`, `backbone.slurm`.
 
-The GPU smoke test and the pilot's job IDs are under [Runs](#runs). Every table under [Results](#results) reads "not
-yet run" until `report` is run on the pilot's records.
+The GPU smoke test and the pilot's job IDs are under [Runs](#runs). The tables `report` wrote from the pilot's records
+are in [`backbone-2026-11/`](backbone-2026-11/), listed under [Results](#results).
 
 ## Why
 
@@ -64,7 +69,8 @@ which a run's consistency check then refuses to count as a result. On 2026-11-19
   template. The converted directory also holds a two-class classifier (the template's), but it is a placeholder:
   `build_classifier` draws a new head for a converted row under the run's seed, as every other arm's head is drawn,
   so RampNet and its control differ only in stem and stage weights. (Until PR #121's fix round the saved head was
-  loaded as is, so the pilot's RampNet runs share one head across seeds; see "Pilot deviations" below.) `convert-rampnet
+  loaded as is, so the pilot's first RampNet runs shared one head across seeds; they were rerun from the fixed commit
+  under decision J16, and the report reads the reruns; see "Pilot deviations" below.) `convert-rampnet
   --verify-with-timm` checks the converted features against timm's on a seeded batch (max abs difference recorded
   in `conversion.json`).
 
@@ -224,7 +230,9 @@ and to judge it. Plus six learning-rate rows (below). The DINOv3 arms join with 
 start every seed from one shared head (review B1; fixed in `build_classifier`, rerun is decision J16), and (b) a
 preemption between deleting `checkpoint-*` and the `slimmed` marker would fail a finished element (review S6; fixed,
 and a pilot element it hit is finished by `resubmit` from the fixed commit, which treats a complete `best/` with no
-best checkpoint left as copied).
+best checkpoint left as copied). How each was resolved: (a) the 8 RampNet rows were rerun from `e19dce6` under the
+same tags (J16, job `43479837`), and only the reruns are counted; (b) no pilot element needed it, since every one of
+the 30 left a `done` marker and the ledger's only `resubmit` is the J16 rerun.
 
 **Endpoints.** Primary: paired Δ held-out AUC against the same-seed in-env baseline on the same rows, read
 together with the paired **within-city** Δ held-out AUC. Guards: Δ test AUC, Δ within-city test AUC, the gate
@@ -385,7 +393,8 @@ from round 3's timing (25 epochs on CurbRamp in 2.5 to 3 h on an L40S), about 3.
 5.5 to 6 h per SurfaceProblem run, less for ConvNeXt V2-B; roughly 140 GPU-hours on free `ckpt`. `cost.md` will
 give the measured rate.
 
-**Pilot: submitted 2026-11-19 (02:45 UTC on 11-20), not yet read.** Job `43406096`, one array `--array=1-30%8`,
+**Pilot: submitted 2026-11-19 (02:45 UTC on 11-20), all 30 elements finished on 2026-11-20 (the last at 14:41 UTC);
+read 2026-11-24.** Job `43406096`, one array `--array=1-30%8`,
 job name `backbone-comparison-pilot`, `ckpt-all` with `--requeue`. Task file
 `$OUT/tasks_pilot_20261120T024531Z.tsv` (sha256 `0d80a1fd70d5370b3117326196be67386c4ccd6ec8b887f8dfd478d4c36ec6e0`;
 a copy is in `$KEEP`): the 24 main rows (seed 42 first, then 43, then 44) and the six 3e-5 rows. Command, from the
@@ -395,32 +404,158 @@ clone:
 MAX_PARALLEL=8 analysis/backbone_submit.sh pilot    # sbatch analysis/backbone.slurm with STEP=train
 ```
 
-GPU jobs used by this stream: 31 of 40 at the pilot (smoke 1, pilot 30); the cap was raised to 55 for the `dinov3`
-stage, which takes 18 more (49 of 55), and to 63 on 2026-11-20 for the J16 rerun of the 8 RampNet pilot rows (57 of
-63), leaving 6 for resubmitting failed elements (`backbone_submit.sh resubmit`).
+GPU jobs used by this stream: **57 of 63** (smoke 1, pilot 30, `dinov3` 18, J16 rerun 8; ledger
+`$KEEP/backbone_jobs.txt`, four lines). The cap was 40 at the pilot (31 used), raised to 55 for the `dinov3` stage
+and to 63 on 2026-11-20 for the J16 rerun; the 6 left are unused.
 
-**DINOv3: submitted 2026-11-19.** Job `43409815`, one array of 18 elements (3 arms × 2 pilot types × 3 seeds),
+**DINOv3: submitted 2026-11-19, all 18 elements finished on 2026-11-20 (the last at 15:13 UTC).** Job `43409815`, one array of 18 elements (3 arms × 2 pilot types × 3 seeds),
 job name `backbone-comparison-dinov3`, from a second clone at `d9327db`. Both clones share `$OUT`, `$KEEP`, the data
 view and the ledger, so `report` reads the two sets from one `--runs-dir`. `fine_tune_classifier.py` and
 `evaluate.py` are the same at both commits; the only training-path change between them is the head draw for
 converted rows, which no DINOv2 or DINOv3 arm takes. Records land in `$KEEP/<LT>/runs/<TAG>/`; the ledger is `$KEEP/backbone_jobs.txt`.
 
+**J16 rerun of the 8 RampNet pilot rows: submitted 2026-11-23 16:54 UTC, all 8 finished the same day (the last at
+18:30 UTC).** Job `43479837` (`resubmit`), from a clone at `e19dce6` (the head of PR #121, which carries the head-draw
+fix). Task file `$OUT/tasks_resubmit_20261123T165434Z.tsv` (sha256
+`a0dc0df359006661139046c2955fbfc6deb24ab0d9d2d3c4e1621958ba8cec48`; a copy is in `$KEEP`): the 6 main RampNet rows
+and the 2 RampNet 3e-5 rows, under their planned tags. Before it was submitted, the original 8 rows' records were
+moved to `$KEEP/pre-J16-rampnet-shared-head/<LT>/runs/<TAG>/`; they are kept there and `report` does not read them
+(it reads `<runs-dir>/<LT>/runs/` for the two pilot types only). Each of the 8 counted RampNet records names commit
+`e19dce62422b`, a clean tree and job `43479837` in its `training_run.json`, so none is an old output copied back.
+
+**Preemptions.** Four runs, all SurfaceProblem, were preempted and resumed from a checkpoint (`convnextv2-base` seed
+43 and `dinov2-large` seed 44 twice each; `dinov2-reg-large` seed 44 and `dinov3-vitl16` seed 43 once each). They
+finished 25 epochs and passed the consistency check like the rest.
+
 ## Results
+
+`report --out docs/backbone-2026-11` wrote these files next to this page on 2026-11-24, from the 48 counted runs (none
+INCOMPLETE) and the report code at `cedc25e` (clean tree; recorded in `provenance.json`).
 
 | table | status |
 |---|---|
-| `arms.md` / `arms.json`: every run against the same-seed baseline, each held-out deployment | not yet run |
-| `seeds.md`: mean ± sd over seeds | not yet run |
-| `gate.md`: condition 3 (per-seed values, paired intervals), then Agree and Disagree at the 0.92 gate, `majority2` and `margin` | not yet run |
-| `slices.md`: type × severity and type × tag, with training counts and round 3's own AUC | not yet run |
-| `cost.md`: parameters, tokens, model class, GPU, seconds per step, peak memory | not yet run |
-| `env.md`: in-env baseline against round 3 | not yet run |
-| `lr.md`: learning-rate rows | not yet run |
-| `rampnet.md`: RampNet against its control, and the exposure table | not yet run |
-| `decision.md` / `decision.json`: each arm's status and the recommendation | not yet run |
-| `null.md`: expected null winners | written by `report` |
+| [`arms.md`](backbone-2026-11/arms.md) / `arms.json`: every run against the same-seed baseline, each held-out deployment | written 2026-11-24 |
+| [`seeds.md`](backbone-2026-11/seeds.md): mean ± sd over seeds | written 2026-11-24 |
+| [`gate.md`](backbone-2026-11/gate.md): condition 3 (per-seed values, paired intervals), then Agree and Disagree at the 0.92 gate, `majority2` and `margin` | written 2026-11-24 |
+| [`slices.md`](backbone-2026-11/slices.md): type × severity and type × tag, with training counts and round 3's own AUC | written 2026-11-24 (seed 42) |
+| [`cost.md`](backbone-2026-11/cost.md): parameters, tokens, model class, GPU, seconds per step, peak memory | written 2026-11-24 |
+| [`env.md`](backbone-2026-11/env.md): in-env baseline against round 3 | written 2026-11-24 |
+| [`lr.md`](backbone-2026-11/lr.md): learning-rate rows | written 2026-11-24 |
+| [`rampnet.md`](backbone-2026-11/rampnet.md): RampNet against its control, and the exposure table | written 2026-11-24 |
+| [`decision.md`](backbone-2026-11/decision.md) / `decision.json`: each arm's status and the recommendation | written 2026-11-24 |
+| [`null.md`](backbone-2026-11/null.md): expected null winners | written 2026-11-24 (computed before any run; unchanged) |
+| [`provenance.json`](backbone-2026-11/provenance.json): sha256 of every file read and written | written 2026-11-24 |
 
-`report --out docs/backbone-2026-11` writes these files next to this page.
+Key numbers, from `seeds.md` and `decision.md` (Δ = arm − in-env `dinov2-large`, same seed, same rows; means over
+seeds 42, 43, 44; lr 1e-5). The bar for condition 1 is +0.010 (CurbRamp) and +0.016 (SurfaceProblem) with Δ > 0 in 3
+of 3 seeds, doubled for the explanatory arms; condition 2 needs every mean below to be ≥ −0.005.
+
+| arm | eligible | type | mean Δ held-out (seeds > 0) | mean Δ within-city held-out | mean Δ test | condition 3 | status |
+|---|---|---|---|---|---|---|---|
+| `dinov2-reg-large` | yes | CurbRamp | −0.009 (0 of 3) | −0.006 | −0.004 | pass | worse (fails condition 2) |
+| | | SurfaceProblem | +0.018 (2 of 3) | −0.014 | +0.002 | pass | |
+| `dinov3-vitl16` | yes | CurbRamp | −0.014 (0 of 3) | −0.001 | −0.006 | pass | worse (fails condition 2) |
+| | | SurfaceProblem | −0.028 (0 of 3) | −0.026 | +0.010 | pass | |
+| `rampnet-convnextv2-base` | yes | CurbRamp | −0.029 (0 of 3) | −0.036 | −0.017 | pass | worse (fails condition 2) |
+| | | SurfaceProblem | −0.030 (1 of 3) | −0.045 | −0.051 | pass | |
+| `convnextv2-base` | no | CurbRamp | −0.028 (0 of 3) | −0.018 | −0.026 | pass | worse (fails condition 2) |
+| | | SurfaceProblem | −0.036 (1 of 3) | −0.027 | −0.035 | fail (coverage) | |
+| `dinov3-vitl16-256` | no | CurbRamp | −0.010 (1 of 3) | +0.001 | −0.007 | pass | worse (fails condition 2) |
+| | | SurfaceProblem | −0.024 (0 of 3) | −0.042 | +0.006 | pass | |
+| `dinov3-vitb16` | no | CurbRamp | −0.014 (0 of 3) | +0.006 | −0.016 | pass | worse (fails condition 2) |
+| | | SurfaceProblem | −0.000 (2 of 3) | −0.002 | −0.003 | pass | |
+
+### Reading
+
+This applies the rule as `decision.md` states it; nothing here changes a status.
+
+- **Recommendation: keep `facebook/dinov2-large`** (`decision.md`: "keep dinov2-large among the arms run (no arm met
+  the rule)"). All three eligible arms were run at three seeds on both pilot types, so no arm is listed as not run and
+  nothing holds the recommendation. Under the rule's "No winner" branch, round 4 keeps the current backbone, and the
+  confirmation stage on the other three types is not triggered.
+- **No arm meets condition 1** on either type. The only mean Δ held-out at or above its bar is `dinov2-reg-large` on
+  SurfaceProblem (+0.018 against +0.016), but Δ is positive in 2 of 3 seeds, not 3, and its mean within-city Δ
+  held-out is −0.014, so the pooled bar is not met and the arm is not "between-deployment only" either. Every other
+  arm's mean Δ held-out is below zero on CurbRamp, and on SurfaceProblem at most −0.000.
+- **Every arm fails condition 2** (the code's status for this is "worse"). For the eligible arms: `dinov2-reg-large`
+  on CurbRamp (Δ held-out −0.009, within-city −0.006) and SurfaceProblem (within-city −0.014); `dinov3-vitl16` on
+  CurbRamp (Δ held-out −0.014, Δ test −0.006) and SurfaceProblem (Δ held-out −0.028, within-city −0.026);
+  `rampnet-convnextv2-base` on every clause of both types.
+- **What the intervals rule out.** No eligible arm has a per-seed Δ held-out interval wholly above zero on CurbRamp;
+  on SurfaceProblem one does (`dinov2-reg-large` seed 44, +0.048 [+0.022, +0.075]), while that arm's seeds 42 and 43
+  span zero. Several per-seed intervals lie wholly below zero (in `arms.md`: `dinov2-reg-large` CurbRamp seed 44,
+  `dinov3-vitl16` CurbRamp seed 42 and SurfaceProblem seed 42, `rampnet-convnextv2-base` both types at seed 42 and
+  CurbRamp seed 44), so for those runs a gain of any size is ruled out at 95% (panorama bootstrap, one seed each).
+- **Condition 3 (the 0.92 gate under `majority2` on `test`)** passes for every arm on both types except
+  `convnextv2-base` on SurfaceProblem, whose paired seed-mean Δ Agree coverage is −0.185 [−0.348, −0.036], wholly
+  below −0.02. Every arm's mean Agree precision is 0.972 or more, above the 0.92 floor; all six arms had 3 shared
+  seeds and no bootstrap replicate was dropped. The per-seed coverage flags in `gate.md` are descriptive.
+- **Explanatory arms** (`convnextv2-base`, `dinov3-vitl16-256`, `dinov3-vitb16`): none meets the doubled rule, so none
+  is promoted.
+- **Non-inferior small**: `convnextv2-base`, `rampnet-convnextv2-base` and `dinov3-vitb16` have under half the
+  baseline's 304.4M parameters, but each fails condition 2 (`dinov3-vitb16` on CurbRamp: Δ held-out −0.014, Δ test
+  −0.016), so none is reported as a serving-cost option.
+- **RampNet.** Against its `convnextv2-base` control (`rampnet.md`), the per-seed Δ held-out runs from −0.007 to
+  +0.022 and every interval spans zero; the within-city Δ held-out runs from −0.035 to +0.000, also spanning zero.
+  These are the J16 reruns, each seed with its own head. Its `test` numbers are indirectly exposed (threat 8) and
+  are not used for this reading.
+- **Learning-rate rows.** By the pre-registered wording, `convnextv2-base`'s SurfaceProblem result is
+  **recipe-limited**: its 3e-5 run beats its 1e-5 run by +0.035 [+0.011, +0.060] on held-out AUC at seed 42, above
+  the +0.016 threshold. The rule therefore proposes, for Jon, a three-seed follow-up of `convnextv2-base` at 3e-5.
+  `lr.md` notes that the threshold was set for a three-seed mean and is applied here to one paired run. For context,
+  from the same tables: `convnextv2-base` is explanatory, so it would need the doubled bar (+0.032) to be promoted,
+  and its 3e-5 held-out AUC on SurfaceProblem (0.670) is below the in-env baseline's at 1e-5, seed 42 (0.728,
+  `env.md`). The launcher plans 3e-5 rows at seed 42 only, so a follow-up would need its own PR and cap jobs. No other
+  arm is recipe-limited. `dinov2-large` at 3e-5 is below its own 1e-5 run on both types (−0.024 CurbRamp, −0.070
+  SurfaceProblem).
+- **Environment readout** (`env.md`, not a gate): the mean in-env minus round-3 difference is +0.004 held-out and
+  −0.000 test on CurbRamp, and −0.015 held-out and −0.004 test on SurfaceProblem. Each is within twice round 3's
+  seed sd (0.012, 0.020), so none is called out. On SurfaceProblem, seed 44 alone is lower in-env by −0.042
+  [−0.061, −0.024] held-out.
+- **Multiplicity.** Six arms were compared (three eligible, three explanatory) plus six learning-rate rows, with no
+  correction. The expected number of null winners under this rule is 0.021 to 0.056 (`null.md`). With no winner,
+  this bears on how much to trust a positive, of which there is none.
+- **Slices** never decide. "Where it got worse" lists only a winner's slices, so it is empty. `slices.md` gives every
+  type × severity and type × tag slice for each arm at seed 42 (`--slice-seeds` default), on `test` and held-out,
+  with its training rows, the thin flag (under 100 training rows) and round 3's own AUC. Its intervals are not
+  corrected for the number of slices.
+
+### Limits
+
+- **Two label types.** Only CurbRamp and SurfaceProblem were run. NoCurbRamp, Obstacle and Crosswalk were not, and
+  with no winner the confirmation stage that would run them was not triggered.
+- **Three seeds.** The in-env baseline's own held-out seed sd was 0.004 on CurbRamp and 0.020 on SurfaceProblem
+  (`seeds.md`). With three seeds, a true gain smaller than that seed noise could go undetected, on SurfaceProblem
+  especially.
+- **Three held-out deployments** (546 CurbRamp and 847 SurfaceProblem rows; two are private and lettered in the
+  tables). The same deployments were read by the context-arms, confident-learning and region-transfer studies
+  (threat 7). Per-deployment Δ in `arms.md` varies widely between them, for example −0.12 to −0.14 for
+  `convnextv2-base` on CurbRamp's private city B against −0.02 to +0.03 on private city A, across the three seeds.
+- **One recipe.** Every arm used lr 1e-5 and the 256/224 preprocessing chosen for DINOv2-L (threats 1 and 4). The
+  learning-rate rows test one alternative rate at one seed.
+- **Records only.** Weights live on scrubbed and are deleted 21 days after their last write, so a model cannot be
+  re-scored or exported once they are gone. The `$KEEP` records rebuild every table here.
+- **Not checked from here:** whether the moved-aside originals were also moved out of `$RUNS` and the data view. The
+  counted RampNet records name `e19dce6` and job `43479837`, which an old output copied back would not, but the
+  weights that would show distinct heads across seeds stay on klone.
+
+### Reproducing this report
+
+Inputs, read only: the `$KEEP` records copied from klone, and a local copy of `retrain-2026-10`. The report reads
+`<LT>/split.csv` (it checks the hash against `analysis/backbone_inputs.json`) and round 3's `predictions*.csv` (each
+equal to its pin in `backbone_inputs.json`; all hashed in `provenance.json`). The public-city list was read live from
+`/v3/api/cities` on 2026-11-24.
+
+```bash
+K=~/Data/sidewalk-validator-ai-backbone-2026-11/keep
+python analysis/backbone_comparison.py report --split-dir ~/Data/sidewalk-validator-ai-cl-2026-10/retrain-2026-10 \
+    --runs-dir $K --shares docs/deployment-prior-2026-11/shares.json --label-types CurbRamp,SurfaceProblem \
+    --manifest $K/backbone_manifest.json --pip-freeze $K/pip_freeze.txt --out docs/backbone-2026-11
+```
+
+The run took about 12 minutes on a laptop (Python 3.12, pandas 2.3.1, 1,000 bootstrap draws, seed 0). The bootstrap
+is seeded, so a rerun on the same inputs should give the same numbers (not rerun to check). If the live public-city
+list changes, the held-out deployments' names or letters, and so the output hashes, can change.
 
 ## What a different backbone would need downstream
 
@@ -514,7 +649,9 @@ Listed with the default this branch uses; none blocks the pilot. Numbered as in 
 - **J13. More families.** Not built. SigLIP 2 needs its own normalisation and mean pooling, so it breaks the
   fixed-preprocessing design and would be a second PR.
 - **J16. The pilot's RampNet rows (shared head).** **Decided 2026-11-20 (Jon): the default, rerun the 8 rows; he
-  raised the stream cap from 55 to 63 for it. Not yet submitted.** Rerun them after the pilot finishes, from the
+  raised the stream cap from 55 to 63 for it. Done 2026-11-23: job `43479837`, 8 elements, from `e19dce6`, all
+  finished the same day; the original 8 rows' records were moved to `$KEEP/pre-J16-rampnet-shared-head/` and are not
+  read by the report (see [Runs](#runs)).** Rerun them after the pilot finishes, from the
   fixed commit, under the same tags (the report parses only the planned tags). First move all three places a run
   lives aside, or `run_one` finds `evaluated`/`slimmed` and copies the old outputs back: `$RUNS/<LT>/<TAG>/`,
   `$KEEP/<LT>/runs/<TAG>/`, and the tagged files `$DATA/<LT>/{metrics,predictions,per_city,slices,report}_<TAG>.*`.
