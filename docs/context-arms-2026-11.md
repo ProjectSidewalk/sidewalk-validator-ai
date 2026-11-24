@@ -6,18 +6,24 @@ and scored on the same rows as the round-3 model.
 
 ## Status
 
-**Smoke-tested on klone 2026-11-19; the pilot's trainings finished by the morning of 2026-11-20 (job IDs below), and
-no report has been run on them yet; the two image arms are not yet run.**
-No number in this document is a result of the arms. The image arms (`two_scale`, `view_heatmap`) need their
-context images re-rendered from the panoramas, and the round-3 panorama store on klone is gone: about 450 GB
-(39,240 panoramas for the three target types) has to be restaged first (see [Launch checklist](#launch-checklist)).
+**Pilot and stage A done; the pre-registered decision was run once, on 2026-11-24 ([Results](#results)). No arm
+wins on any target type: `two_scale` is `NO GAIN` on NoCurbRamp, Obstacle and SurfaceProblem, and `view_heatmap` is
+`REGRESSION` on all three.** The panoramas were restaged on 2026-11-23 (39,231 from the lab store, 9 from an earlier
+copy on klone; see [Provenance](#provenance)) and stage A ran on 2026-11-23/24 from commit aa8ef24.
+
+**What the rule says to do next: stop.** Stage B runs only for an arm with a `WIN` in stage A, so it is not run: the
+launcher's `WINNER` has no value to take, and no guard type (CurbRamp, Crosswalk) is trained. Under "What each outcome
+triggers", [#14](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/14) is to be closed as "no gain
+detected under the round-3 recipe at the stated power", and the arms are not carried into round 4. The exploratory arms
+(`view_heatmap-r448`, `side_info`, `side_info_nohq`) produce no verdict; under the rule, one that looks good earns a
+new pre-registered confirmatory run, not a verdict, and whether to start one is Jon's call. Nothing has been launched.
 
 | stage | what | jobs | state |
 |---|---|---|---|
 | smoke | NoCurbRamp on the 217 round-3 rows whose panorama is in the one surviving staged store; 1 epoch; every arm and the baseline rerun | 43403247 (backfill), 43403248 to 43403253 (six trainings), 43403800 (a resubmit of a finished run) | all completed, 2026-11-19 17:20 to 17:48 PST: `check-run` ok for all six tags, every checkpoint deleted after its record was copied, the backfill's `--verify 50` passed (below), the resubmit exited with "already evaluated" in 28 s. `report` on the smoke shadow was run before the three image-arm jobs had finished, so its image-arm rows read "not run"; rerun locally on all six runs it exits 0 with every row `INCOMPLETE` (subset shadow). The klone clone was fast-forwarded once while a smoke job ran (harmless here; the checklist says not to) |
-| pilot | target types x (`baseline-rerun` seeds 42 to 46, `side_info` and `side_info_nohq` at seed 42); full round-3 recipe; **pilot code: 9dace0c** | 43404266, 43404267, 43404269 to 43404287 (21 jobs, ids and commands in `context_jobs_pilot.txt` in the scratch clone; copy it and `context_jobs_smoke.txt` to `$KEEP` when the pilot ends, scratch is purged) | all 21 completed (submitted 2026-11-19, first job started 17:49 PST per the job accounting; the last ended by the morning of 2026-11-20); no `report` has been run on the pilot yet (the only `report` job so far is the smoke's), so no decision file exists |
-| A | confirmatory arms x target types x seeds 42 to 46 (`A5=1`; Jon's decision J5, 2026-11-20, before stage A was submitted; see [Deviations](#deviations)), `view_heatmap-r448` at seed 42, 3 backfills | 36 | needs the restage and Jon's go |
-| B | only for an arm with a `WIN` in stage A: that arm (the rule's confirmatory seeds, 42 to 46) and `baseline-rerun` (seeds 42 to 46) on CurbRamp and Crosswalk | 11 per guard type with a backfill | needs a `WIN` |
+| pilot | target types x (`baseline-rerun` seeds 42 to 46, `side_info` and `side_info_nohq` at seed 42); full round-3 recipe; **pilot code: 9dace0c** | 43404266, 43404267, 43404269 to 43404287 (21 jobs, ids and commands in `context_jobs_pilot.txt` in the scratch clone; copy it and `context_jobs_smoke.txt` to `$KEEP` when the pilot ends, scratch is purged) | all 21 completed (submitted 2026-11-19, first job started 17:49 PST per the job accounting; the last ended 2026-11-19 23:17 PST per the run records); scored by the one `report` run of 2026-11-24 together with stage A |
+| A | confirmatory arms x target types x seeds 42 to 46 (`A5=1`; Jon's decision J5, 2026-11-20, before stage A was submitted; see [Deviations](#deviations)), `view_heatmap-r448` at seed 42, 3 backfills; **stage-A code: aa8ef24** | 43481236 to 43481271 (36 jobs: the 33 trainings' ids are in their records; the three ids no record names, 43481236, 43481248 and 43481260, are the backfills) | all 36 completed: launched 2026-11-23 with `A5=1` after the restage, first training started 15:10 PST, last ended 2026-11-24 04:46 PST (run records). Nine trainings were preempted and resumed from their last checkpoint, plus one in the pilot ([Provenance](#provenance)). `report` run once, 2026-11-24 |
+| B | only for an arm with a `WIN` in stage A: that arm (the rule's confirmatory seeds, 42 to 46) and `baseline-rerun` (seeds 42 to 46) on CurbRamp and Crosswalk | 11 per guard type with a backfill | **not run: no `WIN` in stage A**, so the rule triggers no stage B |
 
 What exists:
 
@@ -146,9 +152,9 @@ a type, that is stated at the top of the report, and the decision still uses the
 **Types.** Target: NoCurbRamp, Obstacle, SurfaceProblem. Guard: CurbRamp, Crosswalk.
 
 **Stages.**
-- Pilot (submitted 2026-11-19; trainings finished by the morning of 2026-11-20; no report run yet): baseline reruns x
+- Pilot (submitted 2026-11-19; trainings finished the same night; scored by the 2026-11-24 report): baseline reruns x
   5 seeds and the two side arms at seed 42, target types.
-- Stage A (needs the panorama restage): confirmatory arms x target types x seeds 42 to 46 (30 trainings; Jon took
+- Stage A (run 2026-11-23/24 after the panorama restage): confirmatory arms x target types x seeds 42 to 46 (30 trainings; Jon took
   the five-seed recommendation of the power table below, decision J5, 2026-11-20), `view_heatmap-r448` at seed 42
   (3 trainings), 3 backfills: 36 jobs, launched with `A5=1`.
 - Stage B (only for an arm with a `WIN` in stage A): that arm at the rule's confirmatory seeds and `baseline-rerun`
@@ -229,8 +235,8 @@ Constants (`DECISION_RULE` in `analysis/context_arms.py` must equal this block; 
 From `analysis/context_arms.py power` (simulation of criteria 1 to 3 and the held-out `REGRESSION` test, 4,000 draws;
 criteria 4 and 5 are not simulated, so the `WIN` rates are upper bounds). Inputs: the within-city held-out seed sd
 of October's trio and the bootstrap sd of a difference between two of its seeds (1,000 joint panorama resamples).
-The pilot's five baseline seeds replace October's sds in the table `report` prints; the pilot's trainings have
-finished, but `report` has not been run on them yet.
+The pilot's five baseline seeds replace October's sds in the table `report` prints; that table, from the 2026-11-24
+run, is under [Results](#results).
 The bootstrap sd of D comes from one seed pair at one bootstrap seed: at another bootstrap seed the review measured
 0.0107 / 0.0137 against 0.0099 / 0.0151 (Obstacle / SurfaceProblem), which moves Obstacle's power at +0.03 with three
 seeds from 0.41 to about 0.36. The conclusion below does not change; `power` now also prints the sd over every seed
@@ -273,6 +279,11 @@ large gains, which is why every output words it as "no gain detected at this pow
   or decision had been generated: the only `report` job run so far is the smoke's (2026-11-19 17:39 PST), and no
   decision file exists in the work or keep directories. Whether any individual pilot run's metrics were looked at before J5 was confirmed is not
   recorded. The change adds seeds and relaxes no criterion; stage A had not been submitted when it was made.
+- **Nine panoramas came from an earlier copy, not from the lab store (2026-11-23, before stage A).** The restage
+  pulled 39,231 of the 39,240 panoramas from the lab store. The other 9 are no longer on the lab store and were copied
+  from an earlier copy on klone, the one round 3's own crops had been cut from: 4 for NoCurbRamp, 3 for Obstacle and
+  2 for SurfaceProblem. They affect 9 rows (4 `train`, 5 `test_heldout`) out of 50,908. Nothing else about the data
+  changed, and the restage finished before stage A was launched, so no stage-A result existed yet.
 
 ## Setup
 
@@ -440,27 +451,199 @@ have come from source-image drift as well as from the renderer; none was seen.
 
 ## Results
 
-Not yet run. The report writes, under [`context-arms-2026-11/`](context-arms-2026-11/):
+The pre-registered `report` was run once, on 2026-11-24 (command and provenance below). It wrote, under
+[`context-arms-2026-11/`](context-arms-2026-11/):
 
-- `decision.md` / `decision.json`: the verdict per type x confirmatory arm with every criterion and its value, the
-  exploratory arms' intervals (never a verdict), the drift row, the operating characteristics recomputed from the
-  baseline rerun's seeds, and the bootstrap's redraw and drop counts.
-- `gate.md`: the report-only gate block per run.
-- `slices_seeds.md`: type x severity and type x tag across seeds, with training rows, the thin flag and October's
-  round-3 AUC beside.
-- `arms.md` / `arms.json`, `seeds.md`, `slices.md`: per-run tables against October's seed-42 model (descriptive).
-- `clipping.md`: the share of wide crops capped at the whole view, per type, and `wide_half_px` quantiles.
+- [`decision.md`](context-arms-2026-11/decision.md) / `decision.json`: the verdict per type x confirmatory arm with
+  every criterion and its value, the exploratory arms' intervals (never a verdict), the drift row, the operating
+  characteristics recomputed from the baseline rerun's seeds, and the bootstrap's redraw and drop counts.
+- [`gate.md`](context-arms-2026-11/gate.md): the report-only gate block per run.
+- [`slices_seeds.md`](context-arms-2026-11/slices_seeds.md): type x severity and type x tag across seeds, on `test`
+  and `test_heldout`, with training rows, the thin flag and October's round-3 AUC beside.
+- [`arms.md`](context-arms-2026-11/arms.md) / `arms.json`, [`seeds.md`](context-arms-2026-11/seeds.md),
+  [`slices.md`](context-arms-2026-11/slices.md): per-run tables against October's seed-42 model (descriptive;
+  `arms.md` shows each arm's seed-42 run only).
+- [`clipping.md`](context-arms-2026-11/clipping.md): the share of wide crops capped at the whole view, per type, and
+  `wide_half_px` quantiles.
 - `provenance.json`: sha256 of every file read, the arguments, the bootstrap seed, the git commit, the decision
   rule, the shares and shadow hashes, and each run's record status.
 
-| type | arm | verdict | D within-city held-out [95% CI] |
-|---|---|---|---:|
-| NoCurbRamp | two_scale / view_heatmap | not yet run | not yet run |
-| Obstacle | two_scale / view_heatmap | not yet run | not yet run |
-| SurfaceProblem | two_scale / view_heatmap | not yet run | not yet run |
-| target types | side_info / side_info_nohq (exploratory) | trained (pilot); report not yet run | report not yet run |
+**The decision** (from `decision.md`; D = arm seed mean minus `baseline-rerun` seed mean of the within-city AUC;
+95% interval D ± t·se with the seed and joint-bootstrap terms; the exploratory arms' single-seed intervals leave out
+that arm's seed variance, so they are narrower than a confirmatory interval would be):
+
+| type | arm | kind | seeds | verdict | D within-city held-out [95% CI] | D within-city test [95% CI] | arm seeds above baseline mean |
+|---|---|---|---|---|---:|---:|---:|
+| NoCurbRamp | `two_scale` | confirmatory | 42, 43, 44, 45, 46 | NO GAIN | +0.013 [-0.008, +0.035] | +0.011 [-0.003, +0.025] | 5 of 5 |
+| NoCurbRamp | `view_heatmap` | confirmatory | 42, 43, 44, 45, 46 | REGRESSION | -0.108 [-0.155, -0.061] | -0.047 [-0.073, -0.021] | 0 of 5 |
+| NoCurbRamp | `view_heatmap-r448` | exploratory | 42 | none (exploratory) | -0.019 [-0.059, +0.021] | -0.017 [-0.042, +0.009] | 0 of 1 |
+| NoCurbRamp | `side_info` | exploratory | 42 | none (exploratory) | -0.008 [-0.034, +0.018] | -0.001 [-0.018, +0.016] | 0 of 1 |
+| NoCurbRamp | `side_info_nohq` | exploratory | 42 | none (exploratory) | -0.009 [-0.036, +0.017] | -0.001 [-0.022, +0.019] | 0 of 1 |
+| Obstacle | `two_scale` | confirmatory | 42, 43, 44, 45, 46 | NO GAIN | +0.005 [-0.018, +0.028] | +0.001 [-0.009, +0.012] | 4 of 5 |
+| Obstacle | `view_heatmap` | confirmatory | 42, 43, 44, 45, 46 | REGRESSION | -0.055 [-0.100, -0.009] | -0.050 [-0.072, -0.027] | 0 of 5 |
+| Obstacle | `view_heatmap-r448` | exploratory | 42 | none (exploratory) | -0.001 [-0.049, +0.047] | -0.004 [-0.025, +0.017] | 0 of 1 |
+| Obstacle | `side_info` | exploratory | 42 | none (exploratory) | -0.005 [-0.032, +0.023] | -0.012 [-0.028, +0.004] | 0 of 1 |
+| Obstacle | `side_info_nohq` | exploratory | 42 | none (exploratory) | +0.029 [-0.002, +0.060] | -0.013 [-0.031, +0.005] | 1 of 1 |
+| SurfaceProblem | `two_scale` | confirmatory | 42, 43, 44, 45, 46 | NO GAIN | -0.001 [-0.042, +0.039] | -0.001 [-0.016, +0.013] | 4 of 5 |
+| SurfaceProblem | `view_heatmap` | confirmatory | 42, 43, 44, 45, 46 | REGRESSION | -0.075 [-0.122, -0.028] | -0.086 [-0.113, -0.058] | 0 of 5 |
+| SurfaceProblem | `view_heatmap-r448` | exploratory | 42 | none (exploratory) | -0.017 [-0.078, +0.044] | -0.047 [-0.077, -0.018] | 0 of 1 |
+| SurfaceProblem | `side_info` | exploratory | 42 | none (exploratory) | -0.025 [-0.067, +0.018] | -0.010 [-0.030, +0.010] | 0 of 1 |
+| SurfaceProblem | `side_info_nohq` | exploratory | 42 | none (exploratory) | -0.005 [-0.041, +0.032] | -0.001 [-0.017, +0.015] | 0 of 1 |
+
+Every confirmatory verdict rests on five arm seeds and five baseline seeds, every run's record matched its tag, every
+run has a gate block, and the joint bootstrap kept 1,000 of 1,000 resamples on held-out and on test for every type
+(none dropped; redraws for a resample that lost a class: held-out 13 for NoCurbRamp, all in private city A, and 0
+for the other two types; test 46, 683 and 2,079). No seed on disk was left unused, and no row is `INCOMPLETE`.
+
+**Drift row** (the rerun against October's round-3 trio, within-city AUC). No type is flagged: every held-out
+difference is under two of October's seed sds.
+
+| type | baseline-rerun within-city held-out, mean ± sd (5 seeds) | October round 3, mean ± sd (3 seeds) | rerun − October | test: rerun | test: October | drift flag |
+|---|---:|---:|---:|---:|---:|---|
+| NoCurbRamp | 0.894 ± 0.005 | 0.885 ± 0.024 | +0.009 | 0.909 ± 0.008 | 0.906 ± 0.003 | no |
+| Obstacle | 0.778 ± 0.012 | 0.782 ± 0.009 | -0.004 | 0.867 ± 0.003 | 0.863 ± 0.007 | no |
+| SurfaceProblem | 0.692 ± 0.014 | 0.706 ± 0.021 | -0.015 | 0.860 ± 0.006 | 0.863 ± 0.014 | no |
+
+**Operating characteristics at the rule's five arm seeds**, recomputed by `report` from the rerun's five seeds
+(criteria 1 to 3 simulated, so the `WIN` rates are upper bounds; the three-seed rows are in `decision.md`):
+
+| type | seed sd (rerun) | bootstrap sd of D | false WIN at 0 | REGRESSION at 0 | power +0.02 | +0.03 | +0.05 | effect at 80% power |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| NoCurbRamp | 0.005 | 0.011 | 0.007 | 0.008 | 0.26 | 0.60 | 0.97 | +0.040 |
+| Obstacle | 0.012 | 0.010 | 0.010 | 0.012 | 0.22 | 0.50 | 0.92 | +0.045 |
+| SurfaceProblem | 0.014 | 0.015 | 0.009 | 0.009 | 0.11 | 0.24 | 0.67 | +0.060 |
+
+**Clipping** (`clipping.md`): the wide crop is the whole view for 46% of NoCurbRamp labels, 42% of Obstacle and 50%
+of SurfaceProblem (clipped: 45%, 41%, 49%), under the "about 60%" that the design decisions named as the trigger for
+a 2.5x second pass. So for about half of the labels `two_scale` saw the tight crop plus the whole view.
+
+**Slices** (descriptive; no verdict reads them). The full type x severity and type x tag tables, on `test` and
+`test_heldout`, with every arm, October's round-3 AUC and training counts, are in
+[`slices_seeds.md`](context-arms-2026-11/slices_seeds.md). The held-out rows for the two confirmatory arms:
+
+**NoCurbRamp, `test_heldout`** (seed-mean AUC difference against the baseline rerun's seed mean, k of 5 seeds above it)
+
+| by | slice | n | incorrect | training rows | baseline rerun AUC | `two_scale` Δ (k/5) | `view_heatmap` Δ (k/5) |
+|---|---|---:|---:|---:|---:|---:|---:|
+| severity | 1 | 149 | 138 | 1,839 | 0.857 | +0.070 (5/5) | -0.011 (2/5) |
+| severity | 2 | 158 | 109 | 3,595 | 0.878 | +0.004 (4/5) | -0.194 (0/5) |
+| severity | 3 | 418 | 122 | 6,074 | 0.896 | +0.002 (3/5) | -0.101 (0/5) |
+| tag | no alternate route | 348 | 78 | 4,670 | 0.894 | -0.004 (2/5) | -0.116 (0/5) |
+| tag | alternate route present | 209 | 178 | 2,300 | 0.897 | +0.022 (5/5) | -0.109 (0/5) |
+| tag | unclear if needed | 73 | 57 | 860 | 0.910 | +0.028 (5/5) | -0.137 (0/5) |
+| tag | (none) | 125 | 79 | 4,631 | 0.903 | +0.005 (3/5) | -0.093 (0/5) |
+
+**Obstacle, `test_heldout`** (seed-mean AUC difference against the baseline rerun's seed mean, k of 5 seeds above it)
+
+| by | slice | n | incorrect | training rows | baseline rerun AUC | `two_scale` Δ (k/5) | `view_heatmap` Δ (k/5) |
+|---|---|---:|---:|---:|---:|---:|---:|
+| severity | 1 | 1,006 | 890 | 3,142 | 0.866 | +0.006 (3/5) | -0.046 (0/5) |
+| severity | 2 | 335 | 158 | 2,844 | 0.850 | +0.007 (5/5) | -0.040 (0/5) |
+| severity | 3 | 421 | 136 | 3,899 | 0.799 | -0.004 (2/5) | -0.038 (0/5) |
+| severity | (none) | 50 | 41 | 669 | 0.813 | +0.011 (2/5) | -0.138 (0/5) |
+| tag | pole | 439 | 355 | 2,087 | 0.932 | -0.003 (2/5) | -0.081 (0/5) |
+| tag | trash/recycling can | 286 | 89 | 1,046 | 0.961 | -0.002 (2/5) | -0.049 (0/5) |
+| tag | parked car | 164 | 98 | 1,293 | 0.779 | -0.025 (2/5) | -0.034 (0/5) |
+| tag | vegetation | 156 | 87 | 1,136 | 0.857 | -0.017 (2/5) | -0.031 (1/5) |
+| tag | sign | 139 | 124 | 486 | 0.791 | -0.014 (1/5) | -0.110 (0/5) |
+| tag | outdoor dining area | 128 | 122 | 1 ⚠ thin | 0.631 | +0.150 (5/5) | +0.087 (5/5) |
+| tag | narrow | 75 | 35 | 908 | 0.729 | +0.010 (3/5) | +0.045 (5/5) |
+| tag | parked bike | 60 | 57 | 191 | 0.398 | +0.118 (5/5) | +0.095 (4/5) |
+| tag | construction | 59 | 18 | 416 | 0.724 | +0.013 (4/5) | -0.167 (0/5) |
+| tag | tree | 59 | 48 | 854 | 0.871 | +0.021 (4/5) | -0.038 (1/5) |
+| tag | stairs | 47 | 21 | 35 ⚠ thin | 0.358 | -0.008 (4/5) | +0.049 (4/5) |
+| tag | litter/garbage | 43 | 13 | 235 | 0.777 | +0.003 (2/5) | -0.018 (3/5) |
+| tag | fire hydrant | 37 | 34 | 354 | 0.945 | -0.004 (3/5) | -0.073 (0/5) |
+| tag | (none) | 154 | 116 | 1,933 | 0.814 | -0.013 (1/5) | -0.155 (0/5) |
+
+**SurfaceProblem, `test_heldout`** (seed-mean AUC difference against the baseline rerun's seed mean, k of 5 seeds above it)
+
+| by | slice | n | incorrect | training rows | baseline rerun AUC | `two_scale` Δ (k/5) | `view_heatmap` Δ (k/5) |
+|---|---|---:|---:|---:|---:|---:|---:|
+| severity | 1 | 574 | 337 | 5,050 | 0.703 | -0.004 (2/5) | -0.096 (0/5) |
+| severity | 2 | 174 | 79 | 2,959 | 0.671 | +0.003 (3/5) | -0.119 (0/5) |
+| severity | 3 | 74 | 43 | 1,833 | 0.814 | +0.034 (5/5) | -0.045 (1/5) |
+| tag | brick/cobblestone | 288 | 191 | 337 | 0.590 | -0.020 (3/5) | -0.065 (0/5) |
+| tag | narrow sidewalk | 148 | 120 | 1,160 | 0.662 | -0.003 (2/5) | -0.139 (0/5) |
+| tag | cracks | 113 | 28 | 3,031 | 0.853 | +0.018 (4/5) | -0.117 (0/5) |
+| tag | uneven/slanted | 94 | 38 | 1,574 | 0.663 | -0.014 (1/5) | -0.183 (0/5) |
+| tag | sand/gravel | 80 | 39 | 284 | 0.562 | +0.041 (4/5) | +0.038 (5/5) |
+| tag | utility panel | 68 | 32 | 904 | 0.594 | -0.035 (1/5) | -0.112 (0/5) |
+| tag | bumpy | 63 | 13 | 1,982 | 0.751 | -0.058 (0/5) | -0.175 (0/5) |
+| tag | grass | 57 | 17 | 2,636 | 0.814 | +0.014 (3/5) | -0.031 (0/5) |
+| tag | height difference | 31 | 16 | 770 | 0.953 | +0.017 (5/5) | -0.146 (0/5) |
+
+Not corrected for the number of slices; ⚠ thin = fewer than 100 training rows.
+
+### Reading
+
+This applies the rule as `decision.md` states it; nothing below changes a verdict.
+
+**`two_scale`: `NO GAIN` on all three target types** ("no gain detected at this power"). D on the held-out
+within-city AUC is +0.013 for NoCurbRamp, +0.005 for Obstacle and -0.001 for SurfaceProblem, all below the +0.02
+the rule requires, and every interval includes 0. On NoCurbRamp criteria 3 to 5 pass (all five seeds above the
+baseline mean, positive in 2 of 3 held-out deployments, no harm on test), but criteria 1 and 2 fail. What the
+intervals rule out at 95%: a held-out gain larger than +0.035 (NoCurbRamp), +0.028 (Obstacle) or +0.039
+(SurfaceProblem), and a held-out loss larger than -0.008, -0.018 or -0.042. On `test`, a loss larger than -0.003,
+-0.009 or -0.016 is ruled out. Gains of the +0.02 to +0.03 size the rule was built to find are not ruled out: at five
+seeds the simulated power at +0.03 is 0.60, 0.50 and 0.24.
+
+**`view_heatmap` (224 px): `REGRESSION` on all three target types.** Both regression tests fire on every type: the
+held-out interval lies wholly below 0 (D -0.108 [-0.155, -0.061] for NoCurbRamp, -0.055 [-0.100, -0.009] for
+Obstacle, -0.075 [-0.122, -0.028] for SurfaceProblem), and the upper bound of the test interval is below -0.01
+(-0.021, -0.027, -0.058). No seed of this arm is above the baseline's seed mean on any type. Under the rule a
+`REGRESSION` on one type does not veto another, but here there is no `WIN` anywhere for it to veto.
+
+**Exploratory arms (no verdict, one seed each).** `view_heatmap-r448`, `side_info` and `side_info_nohq` have their
+intervals in the table above; the rule reads none of them. Their intervals omit the arm's seed variance (one seed),
+so they are narrower than a five-seed interval would be. The largest held-out D among them is `side_info_nohq` on
+Obstacle, +0.029 [-0.002, +0.060]; the smallest is `side_info` on SurfaceProblem, -0.025 [-0.067, +0.018]. Under the
+rule an exploratory arm that looks good earns a new pre-registered confirmatory run, not a verdict.
+
+**What the rule says to do next.** There is no `WIN` on any type, so there is no stage-B `WINNER` and no guard type
+to train. The rule's outcome for "No `WIN` anywhere" applies:
+[#14](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/14) is to be closed as "no gain detected under
+the round-3 recipe at the stated power", and the arms are not carried into round 4. The gate block (`gate.md`) is
+report-only and no arm is proposed, so nobody needs to read it for a ship decision.
+
+### Provenance
+
+- **Code.** The pilot's 21 trainings ran from commit 9dace0c (2026-11-19), and stage A's 33 trainings and 3 backfills
+  from aa8ef24 (2026-11-23), both recorded as not dirty in every run's `training_run.json`. Between the two commits,
+  the training and inference code (`fine_tune_classifier.py`, `context_model.py`, `context_crops.py`, `evaluate.py`)
+  is unchanged. Only `analysis/context_arms.py`, the job file's bookkeeping (locks, the "already evaluated" path,
+  checkpoint pruning, the `$KEEP` copy), the launcher and tests changed. One visible consequence: the pilot's job file
+  wrote the `.evaluated` marker beside the checkpoints, not in the run record, so the pilot's records have none. The
+  report does not read the marker.
+- **Run records.** Before the report, each of the 54 runs (15 `baseline-rerun`, 30 confirmatory, 3
+  `view_heatmap-r448`, 6 side-arm) was checked with `check-run`'s checks (seed from the tag, split hash, arm and view
+  resolution, 25 epochs, best metric, target and batch, predictions covering exactly the val, test and held-out rows),
+  and every copy in `$KEEP` was compared with its copy in the shadow. All passed, and the four record files of every run were byte-identical in both places.
+- **Preemptions.** Ten trainings were preempted on `ckpt-all` and resumed from their last checkpoint, as their records
+  show (`resumed_from`, `slurm_restart_count`): in stage A, NoCurbRamp `two_scale` seeds 42 (1 restart) and 46 (2),
+  NoCurbRamp `view_heatmap-r448` (3), Obstacle `two_scale` seeds 42 (2), 43 (1) and 44 (1), SurfaceProblem
+  `two_scale` seeds 42 (1), 45 (1) and 46 (2); in the pilot, Obstacle `baseline-rerun` seed 42 (1). A resume
+  continues the same recipe from the checkpoint's weights, optimizer and scheduler state, but it is not guaranteed to
+  be bit-identical to an unbroken run, and the logged final train loss of a resumed run is not comparable with an
+  unbroken one. All ten passed the record checks and count as
+  ordinary seeds.
+- **Panoramas.** 39,231 were restaged from the lab store on 2026-11-23, and 9 came from an earlier copy on klone, the
+  one round 3's own crops had been cut from (4 / 3 / 2 for NoCurbRamp / Obstacle / SurfaceProblem; 9 rows: 4
+  `train`, 5 `test_heldout`; see [Deviations](#deviations)). The stage-A backfills' `--verify` output was not copied
+  off the cluster, so this document does not record it.
+- **The report run.** `python analysis/context_arms.py report --data-dir <shadow> --label-types
+  NoCurbRamp,Obstacle,SurfaceProblem --out docs/context-arms-2026-11`, run once on 2026-11-24 on a Mac
+  (pandas 2.3.1, CPython 3.12) against a read-only copy of klone's shadow: per type `split.csv`, `manifest.csv`,
+  every run's predictions, metrics and record, October's files, and the three backfills' `context/index.csv`. The
+  images were not copied, and `report` reads none. The public-city list came from the live cities API, so the two
+  private held-out deployments are lettered. The code was commit 8709891: master at b2a61d7 plus the `power_markdown` caption fix, which `report`
+  does not call. A first attempt stopped before invoking `report`, because the context indexes had not been copied
+  yet. It produced no output, and no number was seen before the one run. `provenance.json` holds the sha256 of every file read.
 
 ## What could ship
+
+Nothing, under the 2026-11-24 decision: no arm won on any type ([Results](#results)). These notes were written
+before the result and are kept for any later confirmatory run.
 
 - **`two_scale`**: sidewalk-ai-api already renders the 2048 px view and computes the crop half-width; it would cut
   one more `centre_crop` and run the backbone twice, roughly doubling validator latency. Deployable with a small API
