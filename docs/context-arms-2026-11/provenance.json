@@ -1,0 +1,1027 @@
+{
+  "arguments": {
+    "arms": "two_scale,view_heatmap,view_heatmap-r448,side_info,side_info_nohq",
+    "base_seed": 42,
+    "baseline_variant": "baseline-rerun",
+    "cmd": "report",
+    "data_dir": "/Users/jonfroehlich/Data/sidewalk-validator-ai-context-arms-2026-11/data",
+    "decision_boot": 1000,
+    "label_types": "NoCurbRamp,Obstacle,SurfaceProblem",
+    "n_boot": null,
+    "out": "docs/context-arms-2026-11",
+    "public_cities": null,
+    "seed": 0,
+    "shares": "/private/tmp/claude-501/-Users-jonfroehlich-Git-sidewalk-validator-ai/7abfdf5d-d3e2-4a8e-bfba-bfb7e4f7890c/scratchpad/14-context-stage-a-results/docs/deployment-prior-2026-11/shares.json",
+    "slice_min_n": null,
+    "within_min_n": 10
+  },
+  "bootstrap": {
+    "decision_boot": 1000,
+    "n_boot": null,
+    "seed": 0
+  },
+  "decision_rule": {
+    "all_seeds_above_baseline_mean": true,
+    "baseline_variant": "baseline-rerun",
+    "gate": "report_only",
+    "level": 0.95,
+    "min_delta": 0.02,
+    "min_positive_deployments": 2,
+    "prior_rule": "majority2",
+    "regression_test_upper": -0.01,
+    "seeds_baseline": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "seeds_confirmatory": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "test_no_harm_lower": -0.02
+  },
+  "deployment_priors_sha256": "80d4e685bbce500643c4e3a0c7ed615f769052ec0021c7947a5be4efeb0b01a9",
+  "files_sha256": {
+    "NoCurbRamp/context/index.csv": "1f9613e764de3ce16df5fdca4f4cf60ffa3859f4c5b5ce30377c698a7aa3064e",
+    "NoCurbRamp/metrics.json": "55eda9942bbc02f843eca76703992cc87fda21f781a475ff9c56cce7041964ea",
+    "NoCurbRamp/metrics_baseline-rerun-s43.json": "294848e2c044c18fa951eb9658cc2f50a20dc78ff6a07f6ff312d96678bd6b42",
+    "NoCurbRamp/metrics_baseline-rerun-s44.json": "da286a9839cc360b453833e7259247843cc79fdf4ef18abd41df5884f6aacd8c",
+    "NoCurbRamp/metrics_baseline-rerun-s45.json": "910fcf2a2d1b8b840f3a6d406a977f6f7f04eab295c0251492a19a5680529460",
+    "NoCurbRamp/metrics_baseline-rerun-s46.json": "c328ff581f01f429e3f9e60ebeff1a8aae3434f79dd8755477043a7f59225892",
+    "NoCurbRamp/metrics_baseline-rerun.json": "37c6450ae4bfc2c942b883a472672d0d107d644baa06aaa08ca4d4d091bd3403",
+    "NoCurbRamp/metrics_baseline-s43.json": "7238bb3f3f600b9586d79a7b2697764373a82ec15f81175da0d75c2082f59130",
+    "NoCurbRamp/metrics_baseline-s44.json": "4fa9ce80a83d86319a1502aadebd2d7f91a6a61cf2356ad5fa6737fe4558f446",
+    "NoCurbRamp/metrics_side_info.json": "cb0992c77384b67a35ff69ac681a0dc540a9a2e821404cdfd6a68c573affa9c2",
+    "NoCurbRamp/metrics_side_info_nohq.json": "1160af172b891b1d4cf3ba268710eaa02e26dd351201a548999ed499fcd3410f",
+    "NoCurbRamp/metrics_two_scale-s43.json": "1c69775d0353b86008d36b696fb37894a6649782951983e0596fbd6ec4faf642",
+    "NoCurbRamp/metrics_two_scale-s44.json": "63b864a1f646e565396b4cbd07f78bbda7058bf0af5da933d4a844f3e2242d03",
+    "NoCurbRamp/metrics_two_scale-s45.json": "0ebfd32032a7d6430f481662feb881572eee2b4a60d876462ef884b5136f7f42",
+    "NoCurbRamp/metrics_two_scale-s46.json": "463eae6c027068529996b4e0017754f1dc1e3748ef5ecd65483d01c844a46a22",
+    "NoCurbRamp/metrics_two_scale.json": "18a60f9251ac053ba9048124fa983cf1b7725c11e8aa2617fcac5ad613cd2c8a",
+    "NoCurbRamp/metrics_view_heatmap-r448.json": "d5c809d08c25c805477f8ae32b6e8e3f4111bf2bd394c10d78b122fd5e45c8d6",
+    "NoCurbRamp/metrics_view_heatmap-s43.json": "43892477fbca689834690be9a91255073d9e96ff98e33919f9a2966ade6174b6",
+    "NoCurbRamp/metrics_view_heatmap-s44.json": "cf1c46b2281b0e0ff3373f2a4812abffc6aed0cb62585063e037d9ac7412360d",
+    "NoCurbRamp/metrics_view_heatmap-s45.json": "61e332df78b19e71ba1eb0e4d7789f8f9be6fc191bec8d1ebfb4ce89a4600a8d",
+    "NoCurbRamp/metrics_view_heatmap-s46.json": "274c36d6e21dbf22be75539653e183b829be71d2e4b5a203e85e28f70da5ddf5",
+    "NoCurbRamp/metrics_view_heatmap.json": "4aa5542f22c18bd491ee389328058799977a8feba163ec3dec71e46864026d2a",
+    "NoCurbRamp/predictions.csv": "8a0cfd85047b0428f81aa8b361eb6db6bac87f20ce56c14769a8acb8fc283cee",
+    "NoCurbRamp/predictions_baseline-rerun-s43.csv": "750a6c50c62baf2659d3aefdbf1afb744e6b15124c594a98e4871ac98b8b7540",
+    "NoCurbRamp/predictions_baseline-rerun-s44.csv": "220f75c49f46576d5fceda64d66c912ca5ff0ef8273d58907bea3427a25cb875",
+    "NoCurbRamp/predictions_baseline-rerun-s45.csv": "f4571e934edfded0d380f83eabe2de197f4b92fea2471d4f7fa44bddb3e6008f",
+    "NoCurbRamp/predictions_baseline-rerun-s46.csv": "7c7784c6435693bffca9cda2a8009ac32c833a5c783a2edcdcefc0fb501112ad",
+    "NoCurbRamp/predictions_baseline-rerun.csv": "1c6f45b408fa5ef6aa69fb68c4eed4d342f38fb7609859997774a5cf6cbf320e",
+    "NoCurbRamp/predictions_baseline-s43.csv": "bbc521c4c13ad5d8de5c4ddf4de5bec8eaec9c2bc87d2b2a8ff0f9f9feb784db",
+    "NoCurbRamp/predictions_baseline-s44.csv": "862318f1e300bb45763701d46468f08e282f37411c83193a7bc8f587506aff96",
+    "NoCurbRamp/predictions_side_info.csv": "e6c17937e578840d24a36343367b2248390c98732caac31516fcc570dd452686",
+    "NoCurbRamp/predictions_side_info_nohq.csv": "e63cf569d4fd9ec1b097842402257ff6ade3c24b402f7e362c592090845f8300",
+    "NoCurbRamp/predictions_two_scale-s43.csv": "d2b5ca9c4c4a07b067b8bfd5c58ac1d325a1b5911b991fa6e68fc7ee69db7d12",
+    "NoCurbRamp/predictions_two_scale-s44.csv": "0273f0a23712c3f4dce24ab9fd2bfb00a820a3e95a8d7caf550738398aee0543",
+    "NoCurbRamp/predictions_two_scale-s45.csv": "9e8bef68a5470dcc99a1b575af0a6b2fa41a3622cb9f0924765a71183297d326",
+    "NoCurbRamp/predictions_two_scale-s46.csv": "1ed4a124f1949e9d1bc5207cb5d3bd01e6aaae73eb7fa114fe49e357ec1879dc",
+    "NoCurbRamp/predictions_two_scale.csv": "ba3573aaefc73601bbf792db4c1feb1c2d352675eacab2a50b8684e523fdaf61",
+    "NoCurbRamp/predictions_view_heatmap-r448.csv": "98972d42d1b85414dfa7d4fdfd7b6f1cae7c8cb18dfef5114e93cf943ef686c3",
+    "NoCurbRamp/predictions_view_heatmap-s43.csv": "04b5ac2594c2129d59c7a5d4790119357f708a635590f30c632cf01c8a1ae287",
+    "NoCurbRamp/predictions_view_heatmap-s44.csv": "0eee9e2e1b05f1a2835754915cf0c096fcd5bfb396fdbf530569bcaea9468e4d",
+    "NoCurbRamp/predictions_view_heatmap-s45.csv": "d79bf585b68dc17d5fc627781f878350587c50134050c2540c35ec3f12a42e8b",
+    "NoCurbRamp/predictions_view_heatmap-s46.csv": "1d26766bad9dfc161c8adf1b89f411b81b908f601263274fdcdee5057132330a",
+    "NoCurbRamp/predictions_view_heatmap.csv": "be01dee85c5a5d0471ff4da996f297e44b94bb284a0d5f810594f573e2073fe8",
+    "NoCurbRamp/split.csv": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+    "Obstacle/context/index.csv": "720d04e07bbf52c0c4722cddc78a1bddea59d7ec330ac4b1ba1dc21f5c526327",
+    "Obstacle/metrics.json": "a1344094b8f2839c9e9ede5066d9736a2d322be2573f7c293c1f2b5b153232c2",
+    "Obstacle/metrics_baseline-rerun-s43.json": "413f5205308273926f6c7bf19a042953ced563cb75ec1c54254eff3942462f51",
+    "Obstacle/metrics_baseline-rerun-s44.json": "66c26c3ea73f642ed783dc94617aae68ef7fa61a8d6eb6e5bb2c8c4e1d58fefe",
+    "Obstacle/metrics_baseline-rerun-s45.json": "887bf856915cc4bb3a58c15f02a7a4b35e66cf8e61a75ea392f005afdc6ebbbd",
+    "Obstacle/metrics_baseline-rerun-s46.json": "e96dd7697d9a0caf2f11d24b7dfe6f2f10eadb44b7ab925ab1e12412546f38f7",
+    "Obstacle/metrics_baseline-rerun.json": "0b78e335f6ec74962fd9114e9cdd9c4729dcce4f372bd6acca36a0ab2daedcc3",
+    "Obstacle/metrics_baseline-s43.json": "5b003c71a98d9d88149f4c604e06e6dd18e8a7161532b99c32d40749ba95107b",
+    "Obstacle/metrics_baseline-s44.json": "69502bfdeffad9174d44d0b1a1e2a980051d405e415e3bec3d45dd8822d17692",
+    "Obstacle/metrics_side_info.json": "6f7f43c1073349e76f1e1fd0275ca0e09711b002b65d5703c0969d165168ada9",
+    "Obstacle/metrics_side_info_nohq.json": "98a02739f899c04db938e26255a9a85f04bb2d80dca19df3aea04ad8c48ccd61",
+    "Obstacle/metrics_two_scale-s43.json": "c6b882c5709a9efae6e14ffa1cb67f9807a6013032714029f98cbc7632732200",
+    "Obstacle/metrics_two_scale-s44.json": "1b97aa3c2f65e509775b8aaf1d03bdd0b99eb78e1afafe825576923b0f5ebf13",
+    "Obstacle/metrics_two_scale-s45.json": "f6a5e94724da3d992b63a0d418c96dc3eccb31bbbaa83986ac95ced2773f316b",
+    "Obstacle/metrics_two_scale-s46.json": "c6e57a5cdcc507fe486eecb89ddf5fbef633c48329fd5fb18e0c0212a1716d3b",
+    "Obstacle/metrics_two_scale.json": "2e7001cab9679ed7106abe7b321714a3ee626092a565b68ecc069c76622e0e10",
+    "Obstacle/metrics_view_heatmap-r448.json": "b1620a0600c0d711bc58344ae59a6992be413cb5e0c7d39a058141d59a5ac9d6",
+    "Obstacle/metrics_view_heatmap-s43.json": "e19259386bb9211d445160488902d731e56e29adf5f564ad03b544e4a0372097",
+    "Obstacle/metrics_view_heatmap-s44.json": "c07fd7111489ac1fca0259748708e0c0047e628ea917799520760099c4885a27",
+    "Obstacle/metrics_view_heatmap-s45.json": "8eac2f88d396bdbf7250482882d8d23a9ae8ce8d724a6c4a94c9e149388dbaad",
+    "Obstacle/metrics_view_heatmap-s46.json": "cb7f97bdcbeb7acd1ba42aedce7b3ed3f8a3a0d89a96181c424a82fed567f9d9",
+    "Obstacle/metrics_view_heatmap.json": "7182a4d4153b71b19b8d44d397e7922359a2c94c9dbc1226beebafa7d8ec9cfe",
+    "Obstacle/predictions.csv": "96c936a996c37268c77489490c1ca39f37c748fd6f23d19171eaf7cdd074a14a",
+    "Obstacle/predictions_baseline-rerun-s43.csv": "6c65455899dd36e6de38700f9d549902c9f1e3b37172cdbf6739d1aed567c4fb",
+    "Obstacle/predictions_baseline-rerun-s44.csv": "bc406d8d35f790b6e2abd444af1f8fe4d2cd7d669426442b09d28cc10ce130a7",
+    "Obstacle/predictions_baseline-rerun-s45.csv": "cbb244665985358c51321c02e74ae9bb150e09d8e9e7e71e68552f0e0c81c4d5",
+    "Obstacle/predictions_baseline-rerun-s46.csv": "199bea19510fc99dc4d117d9036266f96f1676179accc8c17dc8d890009bcde3",
+    "Obstacle/predictions_baseline-rerun.csv": "d01f90b6e9a22726f693593a1ce86af096b6479b55773374be94459fe4ec7155",
+    "Obstacle/predictions_baseline-s43.csv": "f85123b29c07a7b0673a7903e199b9e1c56e9d9767fb6a5c3d40e38ebfab6894",
+    "Obstacle/predictions_baseline-s44.csv": "1cbf8e245d69e8b4e43219a0740cb6b6e6b3f5e8cd67110d1cc7b976f03a7d2e",
+    "Obstacle/predictions_side_info.csv": "2cc62f02672b32c6839593335bd01047f6185772f7389a4ca989e0964ae2c983",
+    "Obstacle/predictions_side_info_nohq.csv": "1ad48b0f1519f88fb538a1b5ee9c38a69c8852b2cfe83e40513a7c98c51ad789",
+    "Obstacle/predictions_two_scale-s43.csv": "757af772bb7f863ee3a5272d1bdcacf7d9b961795ab6fc0a609f429fa571c7b3",
+    "Obstacle/predictions_two_scale-s44.csv": "604ae69fd5f40c224da3191e24ab6124229155024f26434c3a633324c93ecdca",
+    "Obstacle/predictions_two_scale-s45.csv": "c4ca9585d7228558dfb5a5178a5dd3a519645f0dd9bedfbfb4e9c27e727910ad",
+    "Obstacle/predictions_two_scale-s46.csv": "cf9d0683c399afd698e961bea1c63b452940fb6102a4189dd0a57ea9de96ad17",
+    "Obstacle/predictions_two_scale.csv": "d2918c7f1fcb42eb2b5dfa4e57fc1be7e6f276a60efd0fda2284d81ecf7592b1",
+    "Obstacle/predictions_view_heatmap-r448.csv": "5b8d4747a7599223f1d346b3eb1ffda3c7c76ae69de758ae357e4dfe257530e2",
+    "Obstacle/predictions_view_heatmap-s43.csv": "4d59fb090979a56d1bf412a529e3cd644ee17a480ec735e3154c5e9794180016",
+    "Obstacle/predictions_view_heatmap-s44.csv": "46f992bb5382add43f3e862a9aac72ae5f709e203f5cdfc7b7752cc80590d0e3",
+    "Obstacle/predictions_view_heatmap-s45.csv": "c5fa3905404be5e2623303145d4ef57e3c4b8eec9eb546b74c9cd04353ffdf4c",
+    "Obstacle/predictions_view_heatmap-s46.csv": "7c85dc9f2b0bff05b21fcca1980438ff0bb51cafef17d4bbcef6fe1b1af1bd40",
+    "Obstacle/predictions_view_heatmap.csv": "522d5067c2f3a6d179de3d21da891bb796c4ebb6e406aeaf93d10c977048b4b6",
+    "Obstacle/split.csv": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+    "SurfaceProblem/context/index.csv": "2a27181c14dd6ca384bdff8504221ec60fca810278fdaacae7c4a7847beea349",
+    "SurfaceProblem/metrics.json": "8ed939331d3171f3f2f37b3fbf60c9f19dc5e2c129e73657ed3f731cc4ee1dd7",
+    "SurfaceProblem/metrics_baseline-rerun-s43.json": "97d52a257a05548c26706a68d1c56dc6b1e07ed10d74b102caa08310fd91c4e0",
+    "SurfaceProblem/metrics_baseline-rerun-s44.json": "905e92812fee45a1c22c12e8cc426489108f57f472fb598d0b259e52822728ae",
+    "SurfaceProblem/metrics_baseline-rerun-s45.json": "957d6a577e02cdb53f755cb8659dc3b07597462822b9652fd1b2679ce2c6d354",
+    "SurfaceProblem/metrics_baseline-rerun-s46.json": "063176b2d549d5eaa68cc8bb6bb0b5b9b24c0caa29b05136363459e17439386a",
+    "SurfaceProblem/metrics_baseline-rerun.json": "00de96a3ca347a5326db61a82386315665845564ef1af3cc5262c4a3da96fa7e",
+    "SurfaceProblem/metrics_baseline-s43.json": "32e014cc9007a334bbe53890c1d93e763a3e1152e397bac150b285f89016c2af",
+    "SurfaceProblem/metrics_baseline-s44.json": "d43d75555fa7e86ff1fcd9f52557db69e454f1390c159e120c40b006c1a52942",
+    "SurfaceProblem/metrics_side_info.json": "18d5259f3991aca9a1ef2c3ab2a681deebfd8d535c1a66e07486bd7a0e3267e5",
+    "SurfaceProblem/metrics_side_info_nohq.json": "2f2127c4ac740b1a70659055adb50414c87568c78afeba1f21beca7f588755da",
+    "SurfaceProblem/metrics_two_scale-s43.json": "6cee57c9ff473ab7ed01dbcdfa229fd21a1343545758cc36f8d95b59efa8e853",
+    "SurfaceProblem/metrics_two_scale-s44.json": "2ede15f3215f34be1447e10f53edbc80484d6d97ef92b4fd1ef98132d09c3d27",
+    "SurfaceProblem/metrics_two_scale-s45.json": "bb3e2e620cd5ac07ba1d36b59729821fd13abc99822c276b1a9fbed5affbbec2",
+    "SurfaceProblem/metrics_two_scale-s46.json": "8e424d282358f034e1d05f803be5c8f45efa96f6458ce2bf6459c8c4fdacb963",
+    "SurfaceProblem/metrics_two_scale.json": "b412dee40bdcfa0a4f126525eba7a02b4cc75015c8c67fd664b22dacfadf8115",
+    "SurfaceProblem/metrics_view_heatmap-r448.json": "bae8d036b3ff1b7485d3c672a018c1268536fd994cea20646ac76ce051a1d0de",
+    "SurfaceProblem/metrics_view_heatmap-s43.json": "2208c81d393e802e49df4a5c1050503f10645b8e94d65c7940dd7f4407c00d6e",
+    "SurfaceProblem/metrics_view_heatmap-s44.json": "3e7ef826a7c0de7c8148b764616960c6d336a910fba4d6d183f8cf4a1672262d",
+    "SurfaceProblem/metrics_view_heatmap-s45.json": "216e917228d31f85b665a521a9f3c7f7d60daa541e778a41b555af2245f24c1c",
+    "SurfaceProblem/metrics_view_heatmap-s46.json": "b83f7d578f6e6f89cffdad1d0c3f834e68fcb8b220005944164dc69e3ae38a0d",
+    "SurfaceProblem/metrics_view_heatmap.json": "ec367a71e2e3d0540c820ece9639a9effbd75d411aec5fa01ff3badc61ccba63",
+    "SurfaceProblem/predictions.csv": "9201b2f111bb51e55deac4da18825405c8931293d5263a6e3351e245f2ef2a95",
+    "SurfaceProblem/predictions_baseline-rerun-s43.csv": "b0a1f2b15c43091954e11703e1418c4188f8ed04fdeaf6e6c442ee97b4c773d3",
+    "SurfaceProblem/predictions_baseline-rerun-s44.csv": "18168b20f13f7f8f8d71a5ba64e908c9dcbb62a903b5fb416ae0a6af897d685e",
+    "SurfaceProblem/predictions_baseline-rerun-s45.csv": "79d62cb10da014dfbaaec753c6522496041c91d0ba32f0dcdb19bb50b2e51a95",
+    "SurfaceProblem/predictions_baseline-rerun-s46.csv": "dbdae0c0740702e23582abdcc95df8251339c815b945aa4f08e66cf482efad21",
+    "SurfaceProblem/predictions_baseline-rerun.csv": "83f9d586f5f0acb20339e7fdf897e45989734af0a0e98d9989ca76fa7c6caa18",
+    "SurfaceProblem/predictions_baseline-s43.csv": "30c4ef038a7636345827e8f1524cf0216d59e046f727f2c0a79674d34aaac092",
+    "SurfaceProblem/predictions_baseline-s44.csv": "52f5f94591ca6d0e01a1b8c633f77a36b0e1a0e238b330cca293b2a19f34ab4c",
+    "SurfaceProblem/predictions_side_info.csv": "2101d86540ff3673224087c77d13d8c110b43e235ada0b11f551db8ecfcad265",
+    "SurfaceProblem/predictions_side_info_nohq.csv": "a67f4a574d591bad12ca95e0b8d21477a65ed89886d8fdea081b7af252b53e12",
+    "SurfaceProblem/predictions_two_scale-s43.csv": "ad03ed951fe77c3a3a0b9d55f58fa86fc7640108cb234bd91034575322d18c0f",
+    "SurfaceProblem/predictions_two_scale-s44.csv": "cf75e30f487c4c7e339da2207677ea47dacc2785f6c0f11344a70ae74df3594e",
+    "SurfaceProblem/predictions_two_scale-s45.csv": "0a9af101b2bdc9e82bb131b0d9db73945057cb4e8eb694527de913c86589c258",
+    "SurfaceProblem/predictions_two_scale-s46.csv": "a6a1bd24ce2edebd14d2c4ea1cd58857fd79d76da1831dd848310053d55645ae",
+    "SurfaceProblem/predictions_two_scale.csv": "f68e9acd9a4772715988f112d3ab50f6ce483d57c7de2fbeed41761b0ac34892",
+    "SurfaceProblem/predictions_view_heatmap-r448.csv": "2867b0c3106fcb9746510c0867b325cbcfdf44b14b28622866368aa9b740b142",
+    "SurfaceProblem/predictions_view_heatmap-s43.csv": "bd0f0f079ada4da332b12c59f7fad943f297894bff3bf36e0229b1d97545e1b6",
+    "SurfaceProblem/predictions_view_heatmap-s44.csv": "abfc2826bcbbfd62ce63b58e8cc65b3b78038cc1ed457b06f26aba0756d60f7b",
+    "SurfaceProblem/predictions_view_heatmap-s45.csv": "edf9f9e6ec8cc8c479375a8472ac0de803252365f269a0c63a1bc35870eb7ddb",
+    "SurfaceProblem/predictions_view_heatmap-s46.csv": "436b8b4bc3f0f3e580f3c3b19938a4259c8e118eee0cdc9f6fa1a83be49c4be6",
+    "SurfaceProblem/predictions_view_heatmap.csv": "aa3567afa4314960be3763d050e09d041dff9b62b5a579476296cb03431a35fd",
+    "SurfaceProblem/split.csv": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd"
+  },
+  "git_commit": "87098916b1a38d12926b8796e0ae75ba47220430",
+  "git_dirty": false,
+  "public_cities_source": "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities",
+  "runs": {
+    "NoCurbRamp/baseline": {
+      "files_sha256": {},
+      "path": null,
+      "problem": null,
+      "seed": 42,
+      "split_sha256": null,
+      "status": "missing",
+      "variant": "baseline"
+    },
+    "NoCurbRamp/baseline-rerun": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "527c8bf644b915992de8a05f37e016c3e274e171163885b6b554ab40d811744b",
+        "trainer_state.json": "2c789f9faf3b900afeaf8a81df943d636b872d6fe6d9a129a6fae52c745e27bc",
+        "training_run.json": "2c435516faa43712dd51865057c52779dde2269747dd6a36ce43c24170dec977"
+      },
+      "path": "NoCurbRamp/runs/baseline-rerun",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "NoCurbRamp/baseline-rerun-s43": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "5ac084309ba74f11daa3bbdaed23cec1d05822c7ac7f4a1d42fdca43556b377b",
+        "trainer_state.json": "939a62305d76b1df4652ce5826baf76b2b2199d24641ddd536b2cf491e7e9589",
+        "training_run.json": "4febb48d6a7a763fde0e8e10b23b8bb1e6019ec806e70decc35d3c3a292b9d54"
+      },
+      "path": "NoCurbRamp/runs/baseline-rerun-s43",
+      "problem": null,
+      "seed": 43,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "NoCurbRamp/baseline-rerun-s44": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "7d99b5bc8b645ea0e11c7fe4007d98bac1e9f5f3c3441983891753789d1e640f",
+        "trainer_state.json": "0a48ccf8277f8685a7d0bf2c48a82e5c563df046afbea72d910d8212536b6bd2",
+        "training_run.json": "5f1e2be5d7669832fcc239e99a88ea949521d7271492deebdbe508eaaf2d3490"
+      },
+      "path": "NoCurbRamp/runs/baseline-rerun-s44",
+      "problem": null,
+      "seed": 44,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "NoCurbRamp/baseline-rerun-s45": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "4300625769276c76ac5a2e7b91d72fc99b7177ccaa1fbf167d574d1a34d48c5d",
+        "trainer_state.json": "45a164e802a065764ca8796c9130378c5141c9a9990348b829156c2c0362b7e3",
+        "training_run.json": "66ff23c6ddc407a6f30f2462bf6d84c2c4a97494fcec2f619c54013fe528581a"
+      },
+      "path": "NoCurbRamp/runs/baseline-rerun-s45",
+      "problem": null,
+      "seed": 45,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "NoCurbRamp/baseline-rerun-s46": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "1b50034e7ddac51898a74fc77ae6940d9c67a7e9823405b6169e6d6c56be1c5d",
+        "trainer_state.json": "c44453b09ce6edc7b3a9a2a40d1437787ed8e66f159227f3c4b47b54b2d71917",
+        "training_run.json": "ee574b7068e5430f01d4389abb72c4c540c902487c400271deee6671d8111b01"
+      },
+      "path": "NoCurbRamp/runs/baseline-rerun-s46",
+      "problem": null,
+      "seed": 46,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "NoCurbRamp/baseline-s43": {
+      "files_sha256": {},
+      "path": null,
+      "problem": null,
+      "seed": 43,
+      "split_sha256": null,
+      "status": "missing",
+      "variant": "baseline"
+    },
+    "NoCurbRamp/baseline-s44": {
+      "files_sha256": {},
+      "path": null,
+      "problem": null,
+      "seed": 44,
+      "split_sha256": null,
+      "status": "missing",
+      "variant": "baseline"
+    },
+    "NoCurbRamp/side_info": {
+      "files_sha256": {
+        "config.json": "273fe11fa2c6412b02f9871c7c5890f61911c69538162a94009294ca80774b14",
+        "run_key.json": "401d25e36876e025c4f00ac77b50282934506e32cc22a408eb6ef8a8155da738",
+        "trainer_state.json": "74652041b96d7cdad69d1ccc7f614a2f3fdccf67090feb4998ae4a8f49a74646",
+        "training_run.json": "3ec05f55519f5e45f8e740cbcc9b91a4e18cc39b6fe187891d26f67517ea6de2"
+      },
+      "path": "NoCurbRamp/runs/side_info",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "side_info"
+    },
+    "NoCurbRamp/side_info_nohq": {
+      "files_sha256": {
+        "config.json": "91688688011f5ce0630ad7e1a2421770eba4a77d187e213e19f44d86a23e0051",
+        "run_key.json": "2c6f0ddc0a7c21f7f643d41f1e6e103eaaaeac9376a8585a811564a747324f0c",
+        "trainer_state.json": "0cd19513bb74b2e2ce491e248718ec3141368613e41edead7dd413a77c40b49d",
+        "training_run.json": "8e7bb3426b1ddd4ac9745e02a606bdff4def91049fee6535bacb97f8d3f455a2"
+      },
+      "path": "NoCurbRamp/runs/side_info_nohq",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "side_info_nohq"
+    },
+    "NoCurbRamp/two_scale": {
+      "files_sha256": {
+        "config.json": "6c2d9affd2c045832a531f38d1ca89c1bf464bd9d990f6c6c171a26572f5ebf4",
+        "run_key.json": "32989f36f138ead88f3e28c34834896248be37db902aa26ee4f1c3d53c41d98f",
+        "trainer_state.json": "4c094f84bb76ea416435aa09d73c8109fe4b4c2f708f51f67af2fdb645720fa7",
+        "training_run.json": "c3d8e635eb4a3e5aaab1ac8d67b622718004388d5be457d6ada0965b2cd3376f"
+      },
+      "path": "NoCurbRamp/runs/two_scale",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "NoCurbRamp/two_scale-s43": {
+      "files_sha256": {
+        "config.json": "6c2d9affd2c045832a531f38d1ca89c1bf464bd9d990f6c6c171a26572f5ebf4",
+        "run_key.json": "a57e13dfe31f4bf8a2fae741716b38f43308ef292cf2d462875cda796f6f26c7",
+        "trainer_state.json": "ac9c373d9450c20615ada390b1ff49c08dc2fd76a1be1b91252758ff0df435dd",
+        "training_run.json": "2e19e8617859b3f8950bb3cf5c54703e0aa31949b6313118eae7fba2851fb3a3"
+      },
+      "path": "NoCurbRamp/runs/two_scale-s43",
+      "problem": null,
+      "seed": 43,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "NoCurbRamp/two_scale-s44": {
+      "files_sha256": {
+        "config.json": "6c2d9affd2c045832a531f38d1ca89c1bf464bd9d990f6c6c171a26572f5ebf4",
+        "run_key.json": "9b307174bdc99d9f3bd83722b6b79d4238716c19f74b4f98ec59cf4ba6195a6c",
+        "trainer_state.json": "8847e723d3897b2714c8e5332b444bf57ee9816cb67a338acfced0e3894342fb",
+        "training_run.json": "ba024637f4b6ea55632d14629668e86b7ba15da10c242304f97661a0278a6da3"
+      },
+      "path": "NoCurbRamp/runs/two_scale-s44",
+      "problem": null,
+      "seed": 44,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "NoCurbRamp/two_scale-s45": {
+      "files_sha256": {
+        "config.json": "6c2d9affd2c045832a531f38d1ca89c1bf464bd9d990f6c6c171a26572f5ebf4",
+        "run_key.json": "069b4b2eb0413bcb50c5698f3cc5aced2f4b941b4a38a42cd4c43135ea6d2bfb",
+        "trainer_state.json": "44e29c5c6ab3a11e8f8c8f7f7032ef7a4cfe3f06d90cb1eb067522c882165ad6",
+        "training_run.json": "895d3338ae44b85443956d90a7086ac2d68a30d598c0af724dc7bc8cd2993146"
+      },
+      "path": "NoCurbRamp/runs/two_scale-s45",
+      "problem": null,
+      "seed": 45,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "NoCurbRamp/two_scale-s46": {
+      "files_sha256": {
+        "config.json": "6c2d9affd2c045832a531f38d1ca89c1bf464bd9d990f6c6c171a26572f5ebf4",
+        "run_key.json": "8305fd422d0500768d839a68f177806707b2767615e0bab7c651e1d098e7240e",
+        "trainer_state.json": "5a62690a552fbd76ef7bb4e864c926d2397993555f649ad60c9485da7f2dac03",
+        "training_run.json": "ac4eb57fa362aa7ff9ce73b93a6526f6f021d3cf4e94fa2c56b99ec510c1fe4b"
+      },
+      "path": "NoCurbRamp/runs/two_scale-s46",
+      "problem": null,
+      "seed": 46,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "NoCurbRamp/view_heatmap": {
+      "files_sha256": {
+        "config.json": "4bccbad14c8a1c9559ed2f25dba214d1f3267523c7629b9f310b238d1cd6724b",
+        "run_key.json": "936ae570a4074da60bbdf33df093338a674c8986609db7d960106211766d4892",
+        "trainer_state.json": "78f688b32e0904346edd31e083c96ae482077663ef5e1991288eca14dca41b47",
+        "training_run.json": "2d07a32f6429dee5d10ab76784c56daca3162b919094c95c4e1c7f93d5b8633a"
+      },
+      "path": "NoCurbRamp/runs/view_heatmap",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "view_heatmap"
+    },
+    "NoCurbRamp/view_heatmap-r448": {
+      "files_sha256": {
+        "config.json": "7356d3fb54a750324b60b34f92f1551db990b1d1f6b6baf84ada6e614d55fc87",
+        "run_key.json": "0e1ab818797fdb1239cda1536579dae55df0dad6e24ea5e3f4a7dd5a5a85fce4",
+        "trainer_state.json": "0e59ef9f33e119d81b89c4aad6a8a4fdda3ed1981d2d38c39c69e8494912d07b",
+        "training_run.json": "e4b6cd1e65bb9557b5d3194aaa62a2dede99e455e89dc81afe384106052bb198"
+      },
+      "path": "NoCurbRamp/runs/view_heatmap-r448",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "view_heatmap-r448"
+    },
+    "NoCurbRamp/view_heatmap-s43": {
+      "files_sha256": {
+        "config.json": "4bccbad14c8a1c9559ed2f25dba214d1f3267523c7629b9f310b238d1cd6724b",
+        "run_key.json": "1f1af382dc6d940f10316a3dc100cbf2b1368084377040ed678321f33850f232",
+        "trainer_state.json": "c16b746049356b3ad6407c4c203c9a5770912eeee89c5aa113ee92c883da653a",
+        "training_run.json": "f12c04ea4793c5705dc2ddf26ff8f15451a98562d255f7498305a6a161ce756f"
+      },
+      "path": "NoCurbRamp/runs/view_heatmap-s43",
+      "problem": null,
+      "seed": 43,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "view_heatmap"
+    },
+    "NoCurbRamp/view_heatmap-s44": {
+      "files_sha256": {
+        "config.json": "4bccbad14c8a1c9559ed2f25dba214d1f3267523c7629b9f310b238d1cd6724b",
+        "run_key.json": "9aef02e8577134832bd5b111640712a3c35d10ae75309ee51eed3394c89142d0",
+        "trainer_state.json": "6394a9dfb198303cfd8d918eee91b6b1e93349e53c333af56ef71b706054335e",
+        "training_run.json": "dcb73c15adff68419dc5b1777bc2689806dd48d1e7930bd33f8d3f143d6add4e"
+      },
+      "path": "NoCurbRamp/runs/view_heatmap-s44",
+      "problem": null,
+      "seed": 44,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "view_heatmap"
+    },
+    "NoCurbRamp/view_heatmap-s45": {
+      "files_sha256": {
+        "config.json": "4bccbad14c8a1c9559ed2f25dba214d1f3267523c7629b9f310b238d1cd6724b",
+        "run_key.json": "6e64fa84689962f156080cf4229b3faf7bccf1ebdd3961179925259b5d4b3f1f",
+        "trainer_state.json": "ac188c763199c873126d17821e2bd58836570a0b38a26d683a01cf91c613bd65",
+        "training_run.json": "573f264e68f910735e79d5bb383ff5d31b8cd952ee0ea69a47204ed1c7e4b418"
+      },
+      "path": "NoCurbRamp/runs/view_heatmap-s45",
+      "problem": null,
+      "seed": 45,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "view_heatmap"
+    },
+    "NoCurbRamp/view_heatmap-s46": {
+      "files_sha256": {
+        "config.json": "4bccbad14c8a1c9559ed2f25dba214d1f3267523c7629b9f310b238d1cd6724b",
+        "run_key.json": "d80a5fc5ea6b9f7822ca5c97c11730ed9b7b3d7cefa6679d540b65edfafa5ca8",
+        "trainer_state.json": "be36760098cb60ca8eb9966c7d81fb5a2d20f4fcccd8b2e345e99dd4d1883f46",
+        "training_run.json": "e3e06c2aea883f3b93dd3a38b7e05e8d97ca51f3f63615a5fc31ac1f38d357a6"
+      },
+      "path": "NoCurbRamp/runs/view_heatmap-s46",
+      "problem": null,
+      "seed": 46,
+      "split_sha256": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+      "status": "ok",
+      "variant": "view_heatmap"
+    },
+    "Obstacle/baseline": {
+      "files_sha256": {},
+      "path": null,
+      "problem": null,
+      "seed": 42,
+      "split_sha256": null,
+      "status": "missing",
+      "variant": "baseline"
+    },
+    "Obstacle/baseline-rerun": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "ac6eaa864c3ad8ee1eab2c900104d81bf92d36b2709c74803f927600dfe95658",
+        "trainer_state.json": "aec222cae8265d6ee5f436664582802437fbbea9727bbfe4891848bd0d803db8",
+        "training_run.json": "b0d1d9e442a514bed81098d1a2202e650155eee8a0ec5d8123c7f77ed5b08fd8"
+      },
+      "path": "Obstacle/runs/baseline-rerun",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "Obstacle/baseline-rerun-s43": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "ffbc7e19860dac9c283ee09bc61c4ceb7939aa2fa74d9570da541db738f6c8a3",
+        "trainer_state.json": "3026ab4ee699f449334f680972765fe6944196f89563cba1f003ce88158d3a11",
+        "training_run.json": "0b4ba2aeac9f1b61dabaa3c7afae7941b3e2d373d3f1a3617b07225c704aad93"
+      },
+      "path": "Obstacle/runs/baseline-rerun-s43",
+      "problem": null,
+      "seed": 43,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "Obstacle/baseline-rerun-s44": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "44e45bda7d1c7c7aad3d849a9693016eca34275adb83de3001885b70431074b6",
+        "trainer_state.json": "5e344f4a3e0ec0fffb4198b8be8773c31dc34934ebad3607b01bf4fc3eefad68",
+        "training_run.json": "b5ec256fa683f1b9bb6436ad09003894efc71fdc5082f48f76067267b793d7d2"
+      },
+      "path": "Obstacle/runs/baseline-rerun-s44",
+      "problem": null,
+      "seed": 44,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "Obstacle/baseline-rerun-s45": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "62d32bc56d6815009489148953ef571d77cb8a34a924e079c347118e58d92b0e",
+        "trainer_state.json": "57a2d5634e6f24fc04acbaae471f6c0cd2ba7c187fef2d4b580603200ba8f13c",
+        "training_run.json": "7fdfe780d8579c76e51cbd0a3b802385901157e89749709ed8fd5980c4dde00d"
+      },
+      "path": "Obstacle/runs/baseline-rerun-s45",
+      "problem": null,
+      "seed": 45,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "Obstacle/baseline-rerun-s46": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "c85db51e769a6f7a60cae9ed762b9b195341dd5f7b7b6846f72443b0e993f19c",
+        "trainer_state.json": "154982dfbfb3aa6bb5123bd0f73afe4dd77271c2943ead9ba7feca7675440911",
+        "training_run.json": "365a0de669c4d84dee1842ed28459d75e8c67551851f43282205b2258fbeef67"
+      },
+      "path": "Obstacle/runs/baseline-rerun-s46",
+      "problem": null,
+      "seed": 46,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "Obstacle/baseline-s43": {
+      "files_sha256": {},
+      "path": null,
+      "problem": null,
+      "seed": 43,
+      "split_sha256": null,
+      "status": "missing",
+      "variant": "baseline"
+    },
+    "Obstacle/baseline-s44": {
+      "files_sha256": {},
+      "path": null,
+      "problem": null,
+      "seed": 44,
+      "split_sha256": null,
+      "status": "missing",
+      "variant": "baseline"
+    },
+    "Obstacle/side_info": {
+      "files_sha256": {
+        "config.json": "049d025a947d5644faea43ccf1cd2a9719c67623040fddd656b4fd4b1cf9d3ef",
+        "run_key.json": "ca9d6983ac3f84fe9124d698f7583b862aa871e6dd2fab6a3233233b2cfb0b8d",
+        "trainer_state.json": "9e7b8e37cdc111728598bc6852d4fa6b469112a78dc7a7c13c0da898ce4e32f0",
+        "training_run.json": "8a6653acd6d3e68ed74104ac446c6b3e14a385ee585231b59721858272a88f23"
+      },
+      "path": "Obstacle/runs/side_info",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "side_info"
+    },
+    "Obstacle/side_info_nohq": {
+      "files_sha256": {
+        "config.json": "2ee21639b52248fa68ba02bf057481cdfb0d4e30547ce0978367f432e1b60956",
+        "run_key.json": "5c05397e009083d15aa6935941b202cefdbf0e74b95f138fec6f8c9c1379e2a9",
+        "trainer_state.json": "21e17bd9dc8ecbe2d1bf247a4b75099ec27c9e50caa3b0f1df448aa7bc6a0bf3",
+        "training_run.json": "4eaa176553ed4bf2140273fb4a11714048a5c5800ba9a6f90864e2096b570629"
+      },
+      "path": "Obstacle/runs/side_info_nohq",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "side_info_nohq"
+    },
+    "Obstacle/two_scale": {
+      "files_sha256": {
+        "config.json": "6ab304ce875d671a8e8fa09d770cb5c680fb95d0821a8f33385838e52dfd576f",
+        "run_key.json": "a7f1449154434371cc1b2ac403219941c95335a285053d89ebb81693a99c1784",
+        "trainer_state.json": "8f53e971960965a653390e029db74206e5f2fe8fd71e7f270cda756ae935b132",
+        "training_run.json": "315991ddd1c3fd03e32c9e4e1f573d9ea4584fd4ed8d652fd622bc3175768a04"
+      },
+      "path": "Obstacle/runs/two_scale",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "Obstacle/two_scale-s43": {
+      "files_sha256": {
+        "config.json": "6ab304ce875d671a8e8fa09d770cb5c680fb95d0821a8f33385838e52dfd576f",
+        "run_key.json": "410a384232812c43b6a22dda38b609b5f8cbe3b0d8a9ec5c2cef18effdf319b8",
+        "trainer_state.json": "718d09aea8bed74a9845e7b2add49bd5e76d7e282e5a5fcd9172ee8016c741d7",
+        "training_run.json": "bcf0cc26836237f99c6437e90c88420d0ee0c5d758572f2ba7e032e936a66c07"
+      },
+      "path": "Obstacle/runs/two_scale-s43",
+      "problem": null,
+      "seed": 43,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "Obstacle/two_scale-s44": {
+      "files_sha256": {
+        "config.json": "6ab304ce875d671a8e8fa09d770cb5c680fb95d0821a8f33385838e52dfd576f",
+        "run_key.json": "f9d1c3231df6fc6b4329b4df1e067ef2c30fdf5e6b7e3b00ad5d1dd44052c340",
+        "trainer_state.json": "04b9b47eebead34d816083c71f946cb5b5cf0e8d86e0622e01897c89f057b060",
+        "training_run.json": "deb012d1dcf8db4d27b3d72e0e695213076f830d411edcae13f92cdac2f2b6d3"
+      },
+      "path": "Obstacle/runs/two_scale-s44",
+      "problem": null,
+      "seed": 44,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "Obstacle/two_scale-s45": {
+      "files_sha256": {
+        "config.json": "6ab304ce875d671a8e8fa09d770cb5c680fb95d0821a8f33385838e52dfd576f",
+        "run_key.json": "22923f30f49da79582ddfe45b5846bf438eee1e33f761b49b9bee2c6f70c348a",
+        "trainer_state.json": "c509e404efca8abfc04501359fa4aac35a9c27f587b9d4be7f2200da0c417631",
+        "training_run.json": "b08e1882f5bc2f91bf709381fade5ac34c7959834df1238652444d0f991e0807"
+      },
+      "path": "Obstacle/runs/two_scale-s45",
+      "problem": null,
+      "seed": 45,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "Obstacle/two_scale-s46": {
+      "files_sha256": {
+        "config.json": "6ab304ce875d671a8e8fa09d770cb5c680fb95d0821a8f33385838e52dfd576f",
+        "run_key.json": "697d8752b2a7fdf6ff961f1b832983341705677d6e24800df79401a8773778eb",
+        "trainer_state.json": "44d4605924aec1067add6f33bebeda385fcfd526300fc2449dcd7df36ec4f66b",
+        "training_run.json": "6fb496f2b3cf229f4911d891253e50f20bea92f0e2a2cedece92f2bd8e889e85"
+      },
+      "path": "Obstacle/runs/two_scale-s46",
+      "problem": null,
+      "seed": 46,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "Obstacle/view_heatmap": {
+      "files_sha256": {
+        "config.json": "d36dda339c3ec4e2b15e17e4c1c9731ce46f6947c2249650632151daedef590a",
+        "run_key.json": "2b290ca48cd064d441588f3f15b3f826fa937ed487e36863a47022fb3f7b7880",
+        "trainer_state.json": "b1ffe573b2b5789996dd92549a4d19e61d0701074e48af99a992238d5519d5bf",
+        "training_run.json": "2950201723622cdc832d1f2bfdf2677bf63543b5d3bb6abc93805c92756348b5"
+      },
+      "path": "Obstacle/runs/view_heatmap",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "view_heatmap"
+    },
+    "Obstacle/view_heatmap-r448": {
+      "files_sha256": {
+        "config.json": "5ebbd3e0fa7aaf0dae13446eb6bb563056ab12d5a598664fde0d98cac3065ba6",
+        "run_key.json": "7d1352160a2f899e570f4348be727941da1806e629f9a6f9a0ebf77fc7d6fb48",
+        "trainer_state.json": "001d3bdb340251665b53c78d74f1fdc7b32c8f3b55f2b603fb3c195684122c71",
+        "training_run.json": "e13cb57afce77ad8e9846eaa23042c67f73a65f6e0fac766a4985167c2a158d4"
+      },
+      "path": "Obstacle/runs/view_heatmap-r448",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "view_heatmap-r448"
+    },
+    "Obstacle/view_heatmap-s43": {
+      "files_sha256": {
+        "config.json": "d36dda339c3ec4e2b15e17e4c1c9731ce46f6947c2249650632151daedef590a",
+        "run_key.json": "7c769bdf84a2c06f5420cc959c3dafece0e5f35c8f7db05f61ee8d342e08f175",
+        "trainer_state.json": "e47c75671c3457be2cca5cf1efcbdeac4f0e813442868db42b0123a602bf23bf",
+        "training_run.json": "8fd16d90bf596f1827f73e0594c6b94badda44200285b8af97172831115e3994"
+      },
+      "path": "Obstacle/runs/view_heatmap-s43",
+      "problem": null,
+      "seed": 43,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "view_heatmap"
+    },
+    "Obstacle/view_heatmap-s44": {
+      "files_sha256": {
+        "config.json": "d36dda339c3ec4e2b15e17e4c1c9731ce46f6947c2249650632151daedef590a",
+        "run_key.json": "759342d3526ca6102f9d3a04d7d1a677bba05b1bc249d899af07878438acfc38",
+        "trainer_state.json": "e2d51a99045c3c3f76bd0639bf33e6effc63dac98432786b69142551930aa38c",
+        "training_run.json": "dea4f19c68202f1ba9213b6e6091575a5d83a84506767641f0df2ef0885b22b0"
+      },
+      "path": "Obstacle/runs/view_heatmap-s44",
+      "problem": null,
+      "seed": 44,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "view_heatmap"
+    },
+    "Obstacle/view_heatmap-s45": {
+      "files_sha256": {
+        "config.json": "d36dda339c3ec4e2b15e17e4c1c9731ce46f6947c2249650632151daedef590a",
+        "run_key.json": "ec05df68230625223c7b9255f50c5c9ad340210f1d883599c11be46761df15f0",
+        "trainer_state.json": "3d2fda27d767cfbd8151643479ae97d418723b642150af929b2b0152bbac6638",
+        "training_run.json": "ab470c27fbe0cb6115746e0b8dfe74b52e1edaa782f38fb8c6080ce8bceaabe1"
+      },
+      "path": "Obstacle/runs/view_heatmap-s45",
+      "problem": null,
+      "seed": 45,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "view_heatmap"
+    },
+    "Obstacle/view_heatmap-s46": {
+      "files_sha256": {
+        "config.json": "d36dda339c3ec4e2b15e17e4c1c9731ce46f6947c2249650632151daedef590a",
+        "run_key.json": "e9f1cc52f9f51373451cd198778de7623ab0cc3c43c5bc8b3905d5fa7ef78ae6",
+        "trainer_state.json": "b9b8642b1a5db6eab2cb067a7a39b371df1fbe98554a1dad19ecbaa4d216d248",
+        "training_run.json": "5b9049d62cadb55817e9821578df77900e00bf82aa6135fd658da68cbd8780b5"
+      },
+      "path": "Obstacle/runs/view_heatmap-s46",
+      "problem": null,
+      "seed": 46,
+      "split_sha256": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+      "status": "ok",
+      "variant": "view_heatmap"
+    },
+    "SurfaceProblem/baseline": {
+      "files_sha256": {},
+      "path": null,
+      "problem": null,
+      "seed": 42,
+      "split_sha256": null,
+      "status": "missing",
+      "variant": "baseline"
+    },
+    "SurfaceProblem/baseline-rerun": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "fd9dfd5e0e4b3a417bd250308b984fe6f680eda73887bfe9e7a62dd7b347783d",
+        "trainer_state.json": "b24a8374461b3b641228f4ab9cef05980fb62dbc3a8b14c0f54827f08f1c74ad",
+        "training_run.json": "9c991e417e9c3d3f5819da0280a927fa1ebb1bb2dffd97868f72773f55ffb211"
+      },
+      "path": "SurfaceProblem/runs/baseline-rerun",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "SurfaceProblem/baseline-rerun-s43": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "eccdd1fc01c1bda9b9614cd027c03722c2f8930b567a42c6e180cc3d7ecf596a",
+        "trainer_state.json": "77c8b85220abba691c56842cac8d4dcfeef41a956262a2f573a3d903b106248c",
+        "training_run.json": "c29970e69d050003897865a3530ecaac2f36398481e74c6128e68f2a40fb835a"
+      },
+      "path": "SurfaceProblem/runs/baseline-rerun-s43",
+      "problem": null,
+      "seed": 43,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "SurfaceProblem/baseline-rerun-s44": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "a407f779ef294d581324cd9b331205c249711f158a72e0011d1e3fe7f7b5b245",
+        "trainer_state.json": "4aebf138f0d926280fff0a70636be5739ed4e11ccaf8c5df43f2c8917cf00fda",
+        "training_run.json": "6b9dc828064aa3173ad1f4618b0ebaa6dc211e39aaf1de1117152f24b41907ab"
+      },
+      "path": "SurfaceProblem/runs/baseline-rerun-s44",
+      "problem": null,
+      "seed": 44,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "SurfaceProblem/baseline-rerun-s45": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "4bd739b66aa470e11d02a55e5daabd563364e539f969134db18a9c3cec5f9d7c",
+        "trainer_state.json": "59c63cce2de4987c9e6a74ef80800727a041872375525f536c751a70f6613dae",
+        "training_run.json": "c58788018ea5b2990204fdf46170c283ce33c2a4b6690d7c9a64081f93b112d0"
+      },
+      "path": "SurfaceProblem/runs/baseline-rerun-s45",
+      "problem": null,
+      "seed": 45,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "SurfaceProblem/baseline-rerun-s46": {
+      "files_sha256": {
+        "config.json": "e8bd765aa3ca4de7576de3679de24e2296f99d5c8d7349d07176ae1986de65f3",
+        "run_key.json": "9f4d648c60e3b5954532df0107466df57fbedab1eea3e56098de0fadd5894da8",
+        "trainer_state.json": "96de8f3a5fd68775f62b74e3631070b5e794f8901653e36994115f4451d1180d",
+        "training_run.json": "b98a7d944782ad536f95a1e1256cb7de13d10e64e8eb33395e6dbc2a70b6eb6e"
+      },
+      "path": "SurfaceProblem/runs/baseline-rerun-s46",
+      "problem": null,
+      "seed": 46,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "baseline-rerun"
+    },
+    "SurfaceProblem/baseline-s43": {
+      "files_sha256": {},
+      "path": null,
+      "problem": null,
+      "seed": 43,
+      "split_sha256": null,
+      "status": "missing",
+      "variant": "baseline"
+    },
+    "SurfaceProblem/baseline-s44": {
+      "files_sha256": {},
+      "path": null,
+      "problem": null,
+      "seed": 44,
+      "split_sha256": null,
+      "status": "missing",
+      "variant": "baseline"
+    },
+    "SurfaceProblem/side_info": {
+      "files_sha256": {
+        "config.json": "98b1da1349931b266f092a6f92c8809678b8be35f2518d56ba02d606ce8ee2b7",
+        "run_key.json": "960fc4e36bd01b3fc54ef2e2f75625eceb1a6268620c892014327e061a59082a",
+        "trainer_state.json": "2c08c5bbcee024ad7fec825b11cbc099cb00486e5695950788acfaff55fb7049",
+        "training_run.json": "9d46503f78ce07023505de175ed70b1945d3956007b1d8fef658807a566c019b"
+      },
+      "path": "SurfaceProblem/runs/side_info",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "side_info"
+    },
+    "SurfaceProblem/side_info_nohq": {
+      "files_sha256": {
+        "config.json": "27d61fa1ba917a35f4f1f449e4631beeb895b5a9c9365532d648ac251a198f63",
+        "run_key.json": "5ad45caf694df5b5d58742db4945791eb8530b43f5bef41cb8371835a6a7a4ed",
+        "trainer_state.json": "a4e8c2e14a0dc487f83e9696e6c0d95136fa06afd9414e5cf104608d527e99b1",
+        "training_run.json": "21fa8afea69d359a6bef581daa327da99a868e89da5fc7e514cf58b7478467ee"
+      },
+      "path": "SurfaceProblem/runs/side_info_nohq",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "side_info_nohq"
+    },
+    "SurfaceProblem/two_scale": {
+      "files_sha256": {
+        "config.json": "45b06fda30bae63777d1568f1c4d0375704e6044d576e17e6d8aad7b6737a7b4",
+        "run_key.json": "9e1956aef90ca60e9a47f07b6c9cc7b9354ad671dfd4a77e1ca348de98419144",
+        "trainer_state.json": "5069b4031fc7507ef0f5dd5e7db671f2ad3c36e97f3cba5f94af7886aef6a128",
+        "training_run.json": "974b1d993ce2873d0236d6773959238e8d10f3b555ffc0492547f1440b47e02d"
+      },
+      "path": "SurfaceProblem/runs/two_scale",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "SurfaceProblem/two_scale-s43": {
+      "files_sha256": {
+        "config.json": "45b06fda30bae63777d1568f1c4d0375704e6044d576e17e6d8aad7b6737a7b4",
+        "run_key.json": "41aab2777f5baab8499290438b568fa4b539c740683976e222ae3a83286e3566",
+        "trainer_state.json": "59c1195eae47f5bcc59f5efeeec177bcc7b6a43971ed489bee87b5c85103027c",
+        "training_run.json": "e25122f7350da92be7def39dfad43f5a682028138c4db4778801221e653303cd"
+      },
+      "path": "SurfaceProblem/runs/two_scale-s43",
+      "problem": null,
+      "seed": 43,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "SurfaceProblem/two_scale-s44": {
+      "files_sha256": {
+        "config.json": "45b06fda30bae63777d1568f1c4d0375704e6044d576e17e6d8aad7b6737a7b4",
+        "run_key.json": "438f731591bb9d1f5ad60e3b5016aeab96e3da5dc78b95057fc357054d817a89",
+        "trainer_state.json": "8ef67bc13c3bab9997c9e78af57896b94a08e2785bce4f492c2a345e45d889a7",
+        "training_run.json": "7a48308803658214b35e45fb70e47b0b02af2937321d3bb21d56046dc6655fb5"
+      },
+      "path": "SurfaceProblem/runs/two_scale-s44",
+      "problem": null,
+      "seed": 44,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "SurfaceProblem/two_scale-s45": {
+      "files_sha256": {
+        "config.json": "45b06fda30bae63777d1568f1c4d0375704e6044d576e17e6d8aad7b6737a7b4",
+        "run_key.json": "73623f61c3a8dae84e8bc7d3feb06c62be4c229afc3cd86f10bdb990913c348e",
+        "trainer_state.json": "e1a030476ca6a474d6daa817325c11a7e268e065309f4c1d5827f6b2ab6c3334",
+        "training_run.json": "890b59cccffd907285aba35132ca5e207606a8e9437c9dcc9af6ead496f5d3fa"
+      },
+      "path": "SurfaceProblem/runs/two_scale-s45",
+      "problem": null,
+      "seed": 45,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "SurfaceProblem/two_scale-s46": {
+      "files_sha256": {
+        "config.json": "45b06fda30bae63777d1568f1c4d0375704e6044d576e17e6d8aad7b6737a7b4",
+        "run_key.json": "d67c7743d532ef050b3bc098695c1866e0594cdb28e2f4e446cc1ce33cb762b4",
+        "trainer_state.json": "4ec4a123cc1108cc820a64a7e57c023113677a293535f129e06f61c1d8135475",
+        "training_run.json": "cfd2b48ba37e4be8316796f345aef067eac0fd4f5daba63ad4b1bc2dec3af670"
+      },
+      "path": "SurfaceProblem/runs/two_scale-s46",
+      "problem": null,
+      "seed": 46,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "two_scale"
+    },
+    "SurfaceProblem/view_heatmap": {
+      "files_sha256": {
+        "config.json": "030fa749fab77dc9d486b191eac8089ced521e895a937fafd83412c56f222144",
+        "run_key.json": "5fc5548b30b5ae72d0fe956f024ceebcc9b3b0d0b005a58db79f84fcc3fd009b",
+        "trainer_state.json": "2345523aa704a970f807d54c9b3f1ebbfc0c828a0e16307a7efb4e9a023aced2",
+        "training_run.json": "fe8d2eca0c93d3114f884093e521ac9654e7db83505184cebece3b7e10137b7b"
+      },
+      "path": "SurfaceProblem/runs/view_heatmap",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "view_heatmap"
+    },
+    "SurfaceProblem/view_heatmap-r448": {
+      "files_sha256": {
+        "config.json": "7ed7c10a364e137e66aa811d6618fe1decf27f3659d59f4a3714ecb3ab0fea9d",
+        "run_key.json": "ed49709d6b5ec5bb6e8848df3eb72c46e76ca3c054d0520dd43eccc82c9ae92f",
+        "trainer_state.json": "7637daa5ef6ede2f86b25244b8b12ba9f8961e95508ecde8f74b6333e0e9d6a3",
+        "training_run.json": "baa5c1019eb3b029068f86c4543404ea94e3b664dad74d659bf15f13fa47e150"
+      },
+      "path": "SurfaceProblem/runs/view_heatmap-r448",
+      "problem": null,
+      "seed": 42,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "view_heatmap-r448"
+    },
+    "SurfaceProblem/view_heatmap-s43": {
+      "files_sha256": {
+        "config.json": "030fa749fab77dc9d486b191eac8089ced521e895a937fafd83412c56f222144",
+        "run_key.json": "4ba25b38f20e05eb4da5ceb3a1a53cea271717cca94d14c41b185f4f90401dcd",
+        "trainer_state.json": "1332795a72abcf0f73bea34fb55992c54700c36639487b770d158cf6e613aa7d",
+        "training_run.json": "872af22cd3c1f044938c0d959681aae7d2c55328a29f4007f0b412d275caf2dc"
+      },
+      "path": "SurfaceProblem/runs/view_heatmap-s43",
+      "problem": null,
+      "seed": 43,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "view_heatmap"
+    },
+    "SurfaceProblem/view_heatmap-s44": {
+      "files_sha256": {
+        "config.json": "030fa749fab77dc9d486b191eac8089ced521e895a937fafd83412c56f222144",
+        "run_key.json": "1af46033faa1a06f8a8db47c9951a5c52d085be0658b50090bbd233a3328c991",
+        "trainer_state.json": "c3a06f32a514bc0c76671a4ae4c4a9de788fa5fe4ef67269ecfdf55adc8973f1",
+        "training_run.json": "f796f7f477f2c96b8be72d286f24dc507432279ed9ed2fdcf3a8f8d59fe7aca2"
+      },
+      "path": "SurfaceProblem/runs/view_heatmap-s44",
+      "problem": null,
+      "seed": 44,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "view_heatmap"
+    },
+    "SurfaceProblem/view_heatmap-s45": {
+      "files_sha256": {
+        "config.json": "030fa749fab77dc9d486b191eac8089ced521e895a937fafd83412c56f222144",
+        "run_key.json": "39289c3d9de70da23f0809e3d4944390cdb95d757c4d4fe271fa87cf028cab4c",
+        "trainer_state.json": "8f1cff0a77237b9c014fc70fc5bc5a971eb9cd85fac049dd18f280f463a3ae13",
+        "training_run.json": "027462b9bef29a7411fb1547043676e0eadbcdd96e957b8ace4521b3541264f9"
+      },
+      "path": "SurfaceProblem/runs/view_heatmap-s45",
+      "problem": null,
+      "seed": 45,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "view_heatmap"
+    },
+    "SurfaceProblem/view_heatmap-s46": {
+      "files_sha256": {
+        "config.json": "030fa749fab77dc9d486b191eac8089ced521e895a937fafd83412c56f222144",
+        "run_key.json": "aa66a94c86ab63872eb912e65262dde77617548c5f98ea09247621b26fba6d60",
+        "trainer_state.json": "9455230bf53ead6c7257c54b417ac21f3ba6d00fb49a158fc0641c75ec6d8428",
+        "training_run.json": "949e5290e7e4ec410dcc8c51f881e97f1c143e8cbf67a18061f46b8d0c6ebabe"
+      },
+      "path": "SurfaceProblem/runs/view_heatmap-s46",
+      "problem": null,
+      "seed": 46,
+      "split_sha256": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+      "status": "ok",
+      "variant": "view_heatmap"
+    }
+  },
+  "shadow_run_sha256": "993585ca489af6e0eb98b1a248541bd496cab49d916dc5a8c8b3cb095d31bc2e",
+  "shares_sha256": "6e49c523755de5a5d5075f9395c44ddcf12caa7f296f6dd07201581c3a940045"
+}
