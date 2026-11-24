@@ -1183,7 +1183,8 @@ def report(args):
         f.write(clipping_markdown(clip))
     with open(os.path.join(args.out, "provenance.json"), "w") as f:
         json.dump({"files_sha256": dict(sorted(prov.items())), "public_cities_source": public_source,
-                   "arguments": {k: v for k, v in vars(args).items() if k != "func"},
+                   "arguments": {k: (portable_path(v) if k in PATH_ARGUMENTS else v)
+                                 for k, v in vars(args).items() if k != "func"},
                    "bootstrap": {"seed": args.seed, "n_boot": args.n_boot, "decision_boot": args.decision_boot},
                    "decision_rule": DECISION_RULE, **_git_state(),
                    "shares_sha256": sha256_file(args.shares),
@@ -1217,6 +1218,28 @@ SIDE_SHARE_COLUMNS = ("severity", "image_capture_date", "depth_m")
 BASE_COLUMNS = ("label_uid", "city", "pano_id", "label_class", "crop_path", "split")
 #: The run record a training job copies next to its outputs (``<data>/<type>/runs/<tag>/``), before any delete.
 RECORD_FILES = ("training_run.json", "run_key.json", "trainer_state.json", "config.json")
+
+
+#: The repository root (``portable_path`` writes paths inside it relative to it).
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+#: ``report``'s path arguments, written to provenance.json through ``portable_path``.
+PATH_ARGUMENTS = ("data_dir", "out", "shares", "public_cities")
+
+
+def portable_path(path, root=REPO_ROOT):
+    """``path`` as provenance.json records it: relative to the repository root when it lies inside it (compared
+    after resolving symlinks, since a temporary directory can resolve through one), else only its last component;
+    None stays None. The content of every file read is pinned by its sha256, so the location adds nothing, and a
+    local absolute path must never land in a committed output.
+
+    >>> portable_path(os.path.join(REPO_ROOT, "docs", "x.json")), portable_path("/elsewhere/data/")
+    ('docs/x.json', 'data')
+    """
+    if path is None:
+        return None
+    if _real_inside(path, root):
+        return os.path.relpath(os.path.realpath(path), os.path.realpath(root))
+    return os.path.basename(os.path.normpath(path))
 
 
 def _real_inside(path, root):

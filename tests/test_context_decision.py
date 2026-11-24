@@ -386,6 +386,37 @@ def test_power_markdown_captions_with_the_tables_rule(pilot):
     assert "The rule reads 5" not in md
 
 
+def test_power_markdown_one_note_per_distinct_rule(pilot):
+    """#130 review nit 4: two tables under the same rule print its note once; tables under two rules print both."""
+    root, _ = pilot
+    three = {**ca.DECISION_RULE, "seeds_confirmatory": [42, 43, 44]}
+    t5 = ca.power_table(str(root), "Toy", "baseline", n_boot=40, n_sim=200)
+    t3 = ca.power_table(str(root), "Toy", "baseline", n_boot=40, n_sim=200, rule=three)
+    same = ca.power_markdown({"Toy": t5, "Toy2": t5})
+    assert same.count("The rule reads 5 confirmatory arm seeds") == 1
+    both = ca.power_markdown({"Toy": t5, "Toy3": t3})
+    assert both.count("The rule reads 5 confirmatory arm seeds") == 1
+    assert both.count("The rule reads 3 confirmatory arm seeds") == 1
+
+
+def test_portable_path():
+    """#130 review finding 1: a path inside the repository is written relative to its root, any other by its last
+    component, so a committed provenance.json never carries a local absolute path."""
+    assert ca.portable_path(ca.SHARES) == "docs/deployment-prior-2026-11/shares.json"
+    assert ca.portable_path("/some/where/else/data") == "data"
+    assert ca.portable_path("/some/where/else/data/") == "data"
+    assert ca.portable_path(os.path.join(ca.REPO_ROOT, "docs", "context-arms-2026-11")) == "docs/context-arms-2026-11"
+    assert ca.portable_path(None) is None
+
+
+def test_report_provenance_arguments_hold_no_absolute_path(pilot):
+    root, _ = pilot
+    prov = json.load(open(run_report(root) / "provenance.json"))
+    args = prov["arguments"]
+    assert not [k for k, v in args.items() if isinstance(v, str) and os.path.isabs(v)], args
+    assert args["data_dir"] == root.name and args["shares"] == "shares.json" and args["public_cities"] == "public.txt"
+
+
 # ---------------------------------------------------------------------------------------------------- fix round 1
 
 def test_only_the_rules_seeds_enter_the_verdict(pilot):
