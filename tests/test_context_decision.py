@@ -409,12 +409,40 @@ def test_portable_path():
     assert ca.portable_path(None) is None
 
 
+def test_portable_path_resolves_symlinks(tmp_path):
+    """#130 review round 2, nit 3: inside-or-outside is decided on realpaths, so a root or a path reached through a
+    symlink still comes back relative to the root."""
+    real = tmp_path / "repo"
+    (real / "docs" / "out").mkdir(parents=True)
+    link = tmp_path / "repo-link"
+    link.symlink_to(real, target_is_directory=True)
+    assert ca.portable_path(str(real / "docs" / "out"), root=str(link)) == os.path.join("docs", "out")
+    assert ca.portable_path(str(link / "docs" / "out"), root=str(real)) == os.path.join("docs", "out")
+    assert ca.portable_path(str(tmp_path / "elsewhere" / "data"), root=str(link)) == "data"
+
+
 def test_report_provenance_arguments_hold_no_absolute_path(pilot):
     root, _ = pilot
     prov = json.load(open(run_report(root) / "provenance.json"))
     args = prov["arguments"]
     assert not [k for k, v in args.items() if isinstance(v, str) and os.path.isabs(v)], args
     assert args["data_dir"] == root.name and args["shares"] == "shares.json" and args["public_cities"] == "public.txt"
+
+
+def test_report_outputs_never_contain_the_local_root(pilot):
+    """#130 review round 2, finding 1: no output file of a report run carries the absolute path it ran in (the
+    public-cities source given as a file, an arm's missing metrics file, or anything else)."""
+    root, _ = pilot
+    out = run_report(root)
+    roots = {str(root), os.path.realpath(root)}
+    hits = {f.name: [r for r in roots if r in f.read_text()] for f in out.iterdir() if f.is_file()}
+    assert not {k: v for k, v in hits.items() if v}, hits
+    prov = json.load(open(out / "provenance.json"))
+    assert prov["public_cities_source"] == "public.txt"
+    arms = json.load(open(out / "arms.json"))
+    assert arms["_public_cities_source"] == "public.txt"
+    missing = [r["missing"] for r in arms["Toy"]["arms"] if "missing" in r]
+    assert missing and all(not os.path.isabs(m) and m.startswith("Toy" + os.sep) for m in missing), missing
 
 
 # ---------------------------------------------------------------------------------------------------- fix round 1

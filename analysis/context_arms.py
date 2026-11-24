@@ -70,6 +70,8 @@ def arm_row(data_dir, label_type, name, preds, within_min_n=10):
     """``confident_learning.metric_row`` plus macro F1 and recall at precision 0.92 and 0.95 for both classes."""
     r = cl.metric_row(data_dir, label_type, name, preds, within_min_n)
     if "missing" in r:
+        # relative to the data directory, so arms.json never carries a local absolute path
+        r["missing"] = os.path.relpath(r["missing"], data_dir)
         return r
     with open(cl.metrics_path(data_dir, label_type, name)) as f:
         m = json.load(f)
@@ -1074,6 +1076,8 @@ def report(args):
     label_types = [t.strip() for t in args.label_types.split(",") if t.strip()]
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
     public, public_source = rr.public_cities(args.public_cities)
+    if not str(public_source).startswith(("http://", "https://")):   # a file given with --public-cities
+        public_source = portable_path(public_source)
     os.makedirs(args.out, exist_ok=True)
     everything = {"_public_cities_source": public_source, "_arms": arms}
     prov = {}
@@ -1229,7 +1233,8 @@ PATH_ARGUMENTS = ("data_dir", "out", "shares", "public_cities")
 def portable_path(path, root=REPO_ROOT):
     """``path`` as provenance.json records it: relative to the repository root when it lies inside it (compared
     after resolving symlinks, since a temporary directory can resolve through one), else only its last component;
-    None stays None. The content of every file read is pinned by its sha256, so the location adds nothing, and a
+    None stays None. A relative ``path`` is resolved against the current directory, so the result depends on where
+    the command runs: unchanged when run from the repository root, its last component when run from outside it. The content of every file read is pinned by its sha256, so the location adds nothing, and a
     local absolute path must never land in a committed output.
 
     >>> portable_path(os.path.join(REPO_ROOT, "docs", "x.json")), portable_path("/elsewhere/data/")
