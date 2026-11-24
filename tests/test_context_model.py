@@ -95,6 +95,61 @@ def test_frame_columns_cover_what_the_arms_read():
         assert {"label_uid", "split"} <= set(cols)
     assert {"severity", "tags", "image_capture_date", "depth_m", "high_quality_user", "clipped"} <= set(
         cm.FRAME_COLUMNS["side_info"])
+    # the ablation reads everything side_info reads except the high-quality flag
+    assert set(cm.FRAME_COLUMNS["side_info_nohq"]) == set(cm.FRAME_COLUMNS["side_info"]) - {"high_quality_user"}
+
+
+def test_arm_predicates_partition_the_arms():
+    assert set(cm.ARMS) == set(cm.CONTEXT_ARMS) | set(cm.SIDE_ARMS)
+    assert not set(cm.CONTEXT_ARMS) & set(cm.SIDE_ARMS)
+    assert [a for a in cm.ARMS if cm.needs_context(a)] == list(cm.CONTEXT_ARMS)
+    assert [a for a in cm.ARMS if cm.is_side_arm(a)] == list(cm.SIDE_ARMS)
+    assert not cm.needs_context("none") and not cm.is_side_arm("none")
+    with pytest.raises(ValueError):
+        cm.side_columns("two_scale")
+
+
+def test_fine_tune_offers_every_arm():
+    """The one-line hook in fine_tune_classifier.py: --context-arm accepts every arm this module defines."""
+    import re
+    src = open(cm.__file__.replace("context_model.py", "fine_tune_classifier.py")).read()
+    choices = re.search(r"'--context-arm', choices=\[([^\]]*)\]", src).group(1)
+    assert [c.strip().strip("'") for c in choices.split(",")] == ["none", *cm.ARMS]
+
+
+def test_side_info_nohq_features_leave_out_the_high_quality_flag():
+    cols = cm.side_columns("side_info_nohq")
+    assert cols == [c for c in cm.SIDE_COLUMNS if c != "high_quality_user"] and len(cols) == 8
+    df = side_df().drop(columns="high_quality_user")   # the arm's frame has no such column at all
+    f = cm.side_feature_frame(df, columns=cols)
+    assert list(f.columns) == cols
+    stats = cm.fit_normaliser(f, cols)
+    assert stats["columns"] == cols and "high_quality_user" not in stats["columns"]
+    full = side_df()
+    x = cm.normalise(cm.side_feature_frame(full, columns=cols), stats)
+    permuted = full.assign(high_quality_user=full["high_quality_user"].iloc[::-1].values)
+    assert np.array_equal(x, cm.normalise(cm.side_feature_frame(permuted, columns=cols), stats))
+    assert x.shape == (4, 8)
+
+
+def test_backbone_guard_refuses_other_families():
+    cm.check_backbone("dinov2", "facebook/dinov2-large")
+    with pytest.raises(SystemExit, match="dinov2"):
+        cm.check_backbone("dinov3_vit", "facebook/some-other-model")
+    with pytest.raises(SystemExit):
+        cm.check_backbone(None, "/no/model_type")
+
+
+def test_from_base_refuses_a_non_dinov2_base_directory(tmp_path):
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    base = tmp_path / "vit-base"
+    base.mkdir()
+    (base / "config.json").write_text(json.dumps({"model_type": "vit", "hidden_size": 32}))
+    _, model_cls = cm.build_classes()
+    with pytest.raises(SystemExit, match="'vit'"):
+        model_cls.from_base(str(base), "side_info_nohq", ID2LABEL, LABEL2ID,
+                            side_features=cm.side_columns("side_info_nohq"))
 
 
 def test_point_mapping_matches_torchvision_resized_crop():
@@ -149,8 +204,8 @@ def tiny_processor():
 
 def build(base, arm, **fields):
     _, model_cls = cm.build_classes()
-    if arm == "side_info":
-        fields.setdefault("side_features", list(cm.SIDE_COLUMNS))
+    if cm.is_side_arm(arm):
+        fields.setdefault("side_features", cm.side_columns(arm))
     return model_cls.from_base(base, arm, ID2LABEL, LABEL2ID, **fields)
 
 
@@ -161,8 +216,8 @@ def inputs_for(arm, n=2, res=56, side=None):
                                       res if arm == "view_heatmap" else CROP, generator=g)}
     if arm == "two_scale":
         kw["pixel_values_wide"] = torch.randn(n, 3, CROP, CROP, generator=g)
-    if arm == "side_info":
-        kw["side_features"] = torch.randn(n, len(cm.SIDE_COLUMNS), generator=g)
+    if cm.is_side_arm(arm):
+        kw["side_features"] = torch.randn(n, len(cm.side_columns(arm)), generator=g)
     return kw
 
 
@@ -172,7 +227,9 @@ def test_model_round_trip_head_and_loss(tmp_path, arm):
     base = tiny_base(tmp_path)
     m = build(base, arm).eval()
     assert m.config.model_type == cm.MODEL_TYPE
-    assert m.classifier.in_features == {"two_scale": 128, "view_heatmap": 64, "side_info": 64 + 9}[arm]
+    assert m.classifier.in_features == {"two_scale": 128, "view_heatmap": 64, "side_info": 64 + 9,
+                                        "side_info_nohq": 64 + 8}[arm]
+    assert m.config.base_checkpoint == base
     kw = inputs_for(arm)
     out = m(**kw, labels=torch.tensor([0, 1]))
     assert out.logits.shape == (2, 2) and out.loss.ndim == 0 and torch.isfinite(out.loss)
@@ -284,10 +341,11 @@ def test_build_for_training_collate(tmp_path, arm):
         assert hm.max() > 0.9 and abs(np.unravel_index(hm.argmax(), hm.shape)[0] - 27.5) <= 0.5  # centred
         assert model.config.num_channels == 4 and model.config.index_sha256
     else:
-        assert b1["side_features"].shape == (2, len(cm.SIDE_COLUMNS))
+        assert b1["side_features"].shape == (2, len(cm.side_columns(arm)))
         assert torch.equal(v1["side_features"], v2["side_features"])
         cfg = model.config
-        assert cfg.side_stats["columns"] == cm.SIDE_COLUMNS and cfg.age_reference_date == "2021-05"
+        assert cfg.side_stats["columns"] == cm.side_columns(arm) and cfg.age_reference_date == "2021-05"
+        assert cfg.side_features == cm.side_columns(arm)
     with torch.no_grad():
         out = model(**{k: v for k, v in b1.items()})
     assert out.logits.shape == (2, 2) and torch.isfinite(out.loss)

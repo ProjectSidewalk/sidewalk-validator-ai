@@ -1,24 +1,37 @@
 # More context for the validator: two-scale crops, whole view with a point heatmap, side information (November 2026)
 
-Issue [#14](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/14). Three ways to show the round-3
+Issue [#14](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/14). Four ways (three arms and one ablation) to show the round-3
 DINOv2-L validator more than its tight, depth-sized crop, each trained with the round-3 recipe on the round-3 split
 and scored on the same rows as the round-3 model.
 
 ## Status
 
-**Not yet run.** The code, the tests and the klone job files are in place; no arm has been trained and no number
-below is a result. What exists:
+**Smoke-tested on klone 2026-11-19; the pilot's trainings finished by the morning of 2026-11-20 (job IDs below), and
+no report has been run on them yet; the two image arms are not yet run.**
+No number in this document is a result of the arms. The image arms (`two_scale`, `view_heatmap`) need their
+context images re-rendered from the panoramas, and the round-3 panorama store on klone is gone: about 450 GB
+(39,240 panoramas for the three target types) has to be restaged first (see [Launch checklist](#launch-checklist)).
+
+| stage | what | jobs | state |
+|---|---|---|---|
+| smoke | NoCurbRamp on the 217 round-3 rows whose panorama is in the one surviving staged store; 1 epoch; every arm and the baseline rerun | 43403247 (backfill), 43403248 to 43403253 (six trainings), 43403800 (a resubmit of a finished run) | all completed, 2026-11-19 17:20 to 17:48 PST: `check-run` ok for all six tags, every checkpoint deleted after its record was copied, the backfill's `--verify 50` passed (below), the resubmit exited with "already evaluated" in 28 s. `report` on the smoke shadow was run before the three image-arm jobs had finished, so its image-arm rows read "not run"; rerun locally on all six runs it exits 0 with every row `INCOMPLETE` (subset shadow). The klone clone was fast-forwarded once while a smoke job ran (harmless here; the checklist says not to) |
+| pilot | target types x (`baseline-rerun` seeds 42 to 46, `side_info` and `side_info_nohq` at seed 42); full round-3 recipe; **pilot code: 9dace0c** | 43404266, 43404267, 43404269 to 43404287 (21 jobs, ids and commands in `context_jobs_pilot.txt` in the scratch clone; copy it and `context_jobs_smoke.txt` to `$KEEP` when the pilot ends, scratch is purged) | all 21 completed (submitted 2026-11-19, first job started 17:49 PST per the job accounting; the last ended by the morning of 2026-11-20); no `report` has been run on the pilot yet (the only `report` job so far is the smoke's), so no decision file exists |
+| A | confirmatory arms x target types x seeds 42 to 46 (`A5=1`; Jon's decision J5, 2026-11-20, before stage A was submitted; see [Deviations](#deviations)), `view_heatmap-r448` at seed 42, 3 backfills | 36 | needs the restage and Jon's go |
+| B | only for an arm with a `WIN` in stage A: that arm (the rule's confirmatory seeds, 42 to 46) and `baseline-rerun` (seeds 42 to 46) on CurbRamp and Crosswalk | 11 per guard type with a backfill | needs a `WIN` |
+
+What exists:
 
 - `context_crops.py`: cuts the two context images (a 4x wider crop and the whole view at 448 px) from the same
   label-centred view the training crop comes from; `context_crops.py backfill` writes them for an existing dataset;
   `data_generation.py --context-crops` writes them for a new one.
-- `context_model.py`: the three arm models, their input transforms, and `predict` (writes
-  `predictions_<tag>.csv` for `evaluate.py --skip-inference --tag`).
-- `fine_tune_classifier.py --context-arm two_scale|view_heatmap|side_info [--context-view-res 224|448]
-  [--batch-size N]`.
-- `analysis/context_arms.py report`, `analysis/context_arms.slurm`, `analysis/context_submit.sh`.
-
-The exact commands are in [How to run](#how-to-run).
+- `context_model.py`: the arm models, their input transforms, and `predict` (writes `predictions_<tag>.csv` for
+  `evaluate.py --skip-inference --tag`). It refuses any base checkpoint that is not DINOv2
+  ([Rerunning an arm on another backbone](#rerunning-an-arm-on-another-backbone)).
+- `fine_tune_classifier.py --context-arm two_scale|view_heatmap|side_info|side_info_nohq
+  [--context-view-res 224|448] [--batch-size N]`.
+- `analysis/context_arms.py`: `shadow` and `preflight` (login node, no torch), `check-run`, `power` and `report`
+  (the pre-registered decision); `analysis/context_arms.slurm` (one job per backfill or training);
+  `analysis/context_submit.sh` (the stage launcher).
 
 ## Why
 
@@ -34,26 +47,32 @@ ramp and obstacle judgments need.
 The types this targets are the three weakest in round 3 on the deployments never seen in training
 ([`retrain-2026-10.md`](retrain-2026-10.md)):
 
-| type | test AUC | unseen-deployment AUC | within-city AUC, unseen |
-|---|---:|---:|---:|
-| NoCurbRamp | 0.934 | 0.881 | 0.861 |
-| Obstacle | 0.883 | 0.868 | 0.788 |
-| SurfaceProblem | 0.896 | 0.710 | 0.682 |
+| type | test AUC, seed 42 | unseen-deployment AUC, seed 42 | within-city AUC unseen, seed 42 | within-city AUC unseen, mean ± sd over seeds 42/43/44 |
+|---|---:|---:|---:|---:|
+| NoCurbRamp | 0.934 | 0.881 | 0.861 | 0.885 ± 0.024 |
+| Obstacle | 0.883 | 0.868 | 0.788 | 0.782 ± 0.009 |
+| SurfaceProblem | 0.896 | 0.710 | 0.682 | 0.706 ± 0.021 |
 
-CurbRamp and Crosswalk are run as well (the same chain costs little more), but they are not where a gain is
-expected.
+The last column is from [`confident-learning-2026-10/seeds.md`](confident-learning-2026-10/seeds.md). Seed 42 is
+the low draw for NoCurbRamp and SurfaceProblem, which is one reason the comparison below is against a seed mean,
+not against the round-3 model.
 
-## The three arms
+CurbRamp and Crosswalk are the guard types: they are trained only for an arm that wins on a target type (stage B),
+to check it does no harm there.
+
+## The arms
 
 | arm | input | head | what it tests |
 |---|---|---|---|
 | `two_scale` | the tight crop and a crop 4x wider around the same point; one shared backbone, `[CLS, mean(patches)]` of each, concatenated | 4 x 1024 | does nearby context ("is it blocking the path") help? |
 | `view_heatmap` | the whole 90-degree label-centred view, downsampled (stored at 448 px, trained at 224 by default), plus a 4th channel: a Gaussian at the label point | 2 x 1024 | RampNet-style point conditioning on the full view |
 | `side_info` | the tight crop plus 9 normalised non-image features from `split.csv` | 2 x 1024 + 9 | Weld et al.-style side information |
-| baseline | round 3 as trained (seed 42) and its seed-43/44 replicates from the confident-learning batch | | not retrained |
+| `side_info_nohq` | `side_info` without `high_quality_user` (8 features) | 2 x 1024 + 8 | the ablation: how much of a `side_info` gain is the labeler's own validation record (see Threats) |
+| `baseline-rerun` | the tight crop, `--context-arm none`, trained in this chain on the same code and environment as the arms, seeds 42 to 46 | 1024 (stock) | the baseline every arm is compared with |
+| `baseline` | October's round-3 model (seed 42) and its seed-43/44 replicates, as trained | | the drift row only; not retrained |
 
 Every arm pools like `Dinov2ForImageClassification` and trains with the round-3 recipe: DINOv2-L, 25 epochs,
-seed 42, learning rate 1e-5, warm-up 10%, effective batch 32, hard targets, best checkpoint by validation macro-F1.
+learning rate 1e-5, warm-up 10%, effective batch 32, hard targets, best checkpoint by validation macro-F1.
 The models are never registered with `AutoModel` (`model_type` `context_dinov2`), so `evaluate.py` and
 sidewalk-ai-api cannot load one by accident, and `--context-arm` refuses to run without `--output-dir`, so an arm
 never lands in `<Type>/dinov2/` where `evaluate.py` and `publish_to_hf.py` look by default.
@@ -97,83 +116,349 @@ never lands in `<Type>/dinov2/` where `evaluate.py` and `publish_to_hf.py` look 
   alongside the wide crop's, each with its own `RandomResizedCrop` but one shared horizontal flip, so the two
   streams are never mirrored against each other (they never are at evaluation; tested).
 
+## Pre-registered design and decision rule (2026-11-19; J5 decided 2026-11-20; the rest as proposed)
+
+Written before any arm was trained on the round-3 data. `analysis/context_arms.py report` applies it mechanically
+and writes `decision.md` / `decision.json`; nothing below is changed after a result is seen without an entry under
+[Deviations](#deviations).
+
+Edits to the proposal before any arm was trained (review fix round 1 and its follow-ups, 2026-11-19 PST; the
+constants are unchanged): stage B trains the baseline at all five rule seeds; only the rule's seed lists are read; a
+record must also match its tag's arm, view resolution, the recipe's epochs and the knobs the job file pins (best
+metric, target, per-device batch); a verdict needs at least 200 kept bootstrap resamples.
+
+One constant changed after the proposal, before stage A was submitted (no confirmatory arm had been trained beyond
+the 1-epoch smoke), but after the pilot's trainings had finished: **five confirmatory seeds**, `seeds_confirmatory`
+from `[42, 43, 44]` to `[42, 43, 44, 45, 46]`, Jon's decision J5 on 2026-11-20, following the power table below. The
+timing is recorded under [Deviations](#deviations). The other constants are unchanged.
+
+**Data and recipe.** Round-3 dataset, split and recipe, unchanged (DINOv2-L, 25 epochs, lr 1e-5, effective batch 32,
+hard targets, best checkpoint by validation macro-F1).
+
+**Baseline.** `baseline-rerun`: the tight-crop model retrained in this chain on the same code and environment as the
+arms, seeds 42 to 46. October's round-3 model and its seed-43/44 replicates are reported beside it as the drift row.
+If the rerun's seed mean differs from October's by more than two of October's seed sds on the primary endpoint for
+a type, that is stated at the top of the report, and the decision still uses the rerun.
+
+**Arms.** Confirmatory: `two_scale` (4x), `view_heatmap` (224). Exploratory (reported; can never produce a `WIN`):
+`view_heatmap-r448`, `side_info`, `side_info_nohq`.
+
+**Types.** Target: NoCurbRamp, Obstacle, SurfaceProblem. Guard: CurbRamp, Crosswalk.
+
+**Stages.**
+- Pilot (submitted 2026-11-19; trainings finished by the morning of 2026-11-20; no report run yet): baseline reruns x
+  5 seeds and the two side arms at seed 42, target types.
+- Stage A (needs the panorama restage): confirmatory arms x target types x seeds 42 to 46 (30 trainings; Jon took
+  the five-seed recommendation of the power table below, decision J5, 2026-11-20), `view_heatmap-r448` at seed 42
+  (3 trainings), 3 backfills: 36 jobs, launched with `A5=1`.
+- Stage B (only for an arm with a `WIN` in stage A): that arm at the rule's confirmatory seeds and `baseline-rerun`
+  at seeds 42 to 46 (the rule's baseline seeds on every type; with three, a guard-type `REGRESSION` could never be
+  read) x guard types, plus 2 backfills.
+- Only the rule's seeds are read: `seeds_baseline` for the baseline, `seeds_confirmatory` for a confirmatory arm. A
+  seed trained beyond those lists is listed in `decision.md` as "on disk, not used" and enters nothing, so a partly
+  finished or extended stage cannot move a verdict. The launcher hands each stage preset's seed lists to `preflight`,
+  which refuses a list the rule does not read (the rule reads five confirmatory seeds, so a stage-A or stage-B
+  launch without `A5=1`, which trains three, is refused before any `sbatch`).
+- No other run is added after looking at results without an entry under Deviations.
+
+**Primary endpoint.** `D` = mean over the arm's seeds minus mean over the baseline's seeds of the **within-city AUC
+on `test_heldout`**. Its 95% interval is `D ± t · se`, with
+`se² = s_arm²/n_arm + s_base²/n_base + var_boot(D)`: the sample variance across seeds of each group, and the
+variance of `D` over a joint bootstrap of panoramas within deployment applied to every run (the same resample for
+every run; a deployment whose resample loses a class is redrawn up to 20 times, then the resample is dropped, and
+the report counts both). `t` is the Welch t quantile for the two seed terms. Arm and baseline both have five seeds;
+the Welch form is kept because the two groups' seed variances need not be equal.
+
+**Verdict per type x confirmatory arm.** `WIN` when all of:
+1. `D >= +0.02`;
+2. the interval's lower bound is above 0;
+3. every arm seed is above the baseline's seed mean;
+4. the seed-mean difference is positive in at least 2 of the 3 held-out deployments (those meeting the minimum-n
+   rule; if fewer than 3 qualify, in all that qualify);
+5. no harm in distribution: the lower bound of the same interval for the within-city AUC on `test` is above
+   **-0.02**.
+
+`REGRESSION` when the upper bound of the interval for `D` is below 0, or the upper bound of the `test` interval is
+below -0.01. `INCOMPLETE` when a required run, record or gate block is missing; when a run's record does not match
+its tag (seed, split hash, context arm, view resolution, epochs other than the recipe's 25, or a best metric,
+target or per-device batch other than the job file's `macro_f1`, hard and 8); when the joint
+bootstrap kept fewer than 200 resamples on test or on held-out (without the bootstrap term the interval would be too
+narrow; `report` refuses `--decision-boot` below 200); or when the data is a subset shadow.
+Otherwise `NO GAIN`, worded in every output as "no gain detected at this power", next to the power table.
+
+**The gate is reported, not a criterion.** Agree and uncapped Disagree coverage, precision and gated n at 0.92 under
+the **majority2** deployment prior ([`decisions.md`](decisions.md), 2026-11-12), with the margin prior beside it,
+the confidence where each map first clears and the share of verdicts at exactly 1.0 (`gate.md`). Reason: for
+Obstacle 46% of test Agree verdicts sit at exactly 1.0, so coverage at the gate tracks float saturation of a new
+head, not discrimination. Any proposal to ship an arm must show this table, and Jon reads it then.
+
+**What each outcome triggers.**
+- `WIN` on a target type, and after stage B no `REGRESSION` for that arm on the guard types: the arm is **proposed
+  for that type** (types are separate models). A `REGRESSION` on one target type does not veto another type. Next
+  steps for a proposed arm: rerun on the [#119](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/119)
+  backbone and the round-4 recipe, then serving parity, before any serving work.
+- Both arms win on a type: prefer `view_heatmap` (one backbone pass) unless `two_scale`'s `D` is larger by at least
+  0.01.
+- No `WIN` anywhere: [#14](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/14) is closed as "no gain
+  detected under the round-3 recipe at the stated power", and the arms are not carried into round 4. An exploratory
+  arm that looks good earns a new pre-registered confirmatory run, not a verdict.
+
+**Always reported** (per type x arm, beside the baseline rerun and October's round 3): test and held-out AUC;
+within-city AUC on both with the interval above; the same-seed table (description only); per held-out deployment
+(private ones lettered); macro F1; the gate block; type x severity and type x tag slices with training rows and the
+thin flag, per seed and seed mean (`slices_seeds.md`, with October's round-3 AUC beside); clipping share (image
+arms); analytic cost and measured training throughput.
+
+**Known limits, stated up front.** Six confirmatory tests with no multiplicity correction; criteria 1, 3 and 4 are
+the protection, and the simulated false-`WIN` rate is printed. Even with five arm seeds the power is low (table
+below). Three held-out deployments, two private, 138 to 1,812 labels per type: the interval covers label sampling
+and training seed, not "which deployments were held out". Five arm seeds narrow the interval, so the simulated null
+rates are slightly higher than with three (table below: false `WIN` at 0 from 0.005 to 0.011 at three arm seeds to
+0.009 to 0.012 at five; `REGRESSION` at 0 from 0.005 to 0.010 to 0.009 to 0.016). These are per-test rates,
+and there are six uncorrected tests. The held-out split is not a fresh test set. The Tier-A gold set cannot score
+these models.
+
+Constants (`DECISION_RULE` in `analysis/context_arms.py` must equal this block; a test compares them):
+
+```json
+{"all_seeds_above_baseline_mean": true, "baseline_variant": "baseline-rerun", "gate": "report_only", "level": 0.95, "min_delta": 0.02, "min_positive_deployments": 2, "prior_rule": "majority2", "regression_test_upper": -0.01, "seeds_baseline": [42, 43, 44, 45, 46], "seeds_confirmatory": [42, 43, 44, 45, 46], "test_no_harm_lower": -0.02}
+```
+
+### Operating characteristics
+
+From `analysis/context_arms.py power` (simulation of criteria 1 to 3 and the held-out `REGRESSION` test, 4,000 draws;
+criteria 4 and 5 are not simulated, so the `WIN` rates are upper bounds). Inputs: the within-city held-out seed sd
+of October's trio and the bootstrap sd of a difference between two of its seeds (1,000 joint panorama resamples).
+The pilot's five baseline seeds replace October's sds in the table `report` prints; the pilot's trainings have
+finished, but `report` has not been run on them yet.
+The bootstrap sd of D comes from one seed pair at one bootstrap seed: at another bootstrap seed the review measured
+0.0107 / 0.0137 against 0.0099 / 0.0151 (Obstacle / SurfaceProblem), which moves Obstacle's power at +0.03 with three
+seeds from 0.41 to about 0.36. The conclusion below does not change; `power` now also prints the sd over every seed
+pair.
+
+| type | seed sd | bootstrap sd of D | arm seeds | false WIN at 0 | REGRESSION at 0 | power +0.02 | +0.03 | +0.05 | effect at 80% power | recommended arm seeds |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| NoCurbRamp | 0.024 | 0.012 | 3 | 0.011 | 0.010 | 0.07 | 0.14 | 0.38 | +0.085 | 5 |
+| NoCurbRamp | 0.024 | 0.012 | 5 | 0.012 | 0.016 | 0.10 | 0.22 | 0.58 | +0.065 |  |
+| Obstacle | 0.009 | 0.010 | 3 | 0.005 | 0.005 | 0.16 | 0.41 | 0.87 | +0.050 | 5 |
+| Obstacle | 0.009 | 0.010 | 5 | 0.009 | 0.009 | 0.26 | 0.59 | 0.97 | +0.040 |  |
+| SurfaceProblem | 0.021 | 0.015 | 3 | 0.005 | 0.007 | 0.06 | 0.12 | 0.37 | +0.085 | 5 |
+| SurfaceProblem | 0.021 | 0.015 | 5 | 0.010 | 0.013 | 0.09 | 0.19 | 0.55 | +0.070 |  |
+
+The rule reads 5 confirmatory arm seeds (`seeds_confirmatory`, J5), so the 5-arm-seed rows are the ones that apply;
+the 3-arm-seed rows and the "recommended arm seeds" column are the comparison that J5 was taken from. `report` and
+`power` print the same note under their tables.
+
+Klone job 43403551 (2026-11-19), on the full shadow of the round-3 data: `analysis/context_arms.py power
+--data-dir $WORK/data --variant baseline`, bootstrap pair `baseline-s43` minus `baseline-s44`, seed 0.
+
+**What this means.** The rule is strict, and three seeds are not enough for the effects this experiment could
+plausibly find. At three arm seeds a real +0.03 is detected 12% to 41% of the time; at five, 19% to 59%. The
+smallest effect detected with 80% power is +0.065 to +0.085 for NoCurbRamp and SurfaceProblem, and +0.04 to +0.05 for
+Obstacle. The false-`WIN` rate stays at or under about 1% in every row. Following the sign-off rule (five arm seeds
+for any type whose power at +0.03 with three seeds is below 0.5), the **recommended default for stage A is five arm
+seeds (`A5=1`) for all three target types**: 30 trainings instead of 18. Even then a `NO GAIN` rules out only
+large gains, which is why every output words it as "no gain detected at this power". **Decided (J5, Jon,
+2026-11-20, before stage A was submitted; timing under [Deviations](#deviations)): five arm seeds**, so
+`seeds_confirmatory` is `[42, 43, 44, 45, 46]`; no other criterion was relaxed.
+
+### Deviations
+
+- **J5, five confirmatory seeds (2026-11-20): taken after the pilot's trainings had finished.** The five-seed
+  recommendation (the sign-off rule: five arm seeds where power at +0.03 with three is below 0.5) was computed from
+  October's baseline trio by the job `context-arms-launch-power-october`, which ended 2026-11-19 17:33 PST, before the
+  pilot was submitted (its first job started 17:49 PST the same day). The pilot's 21 trainings all completed, the last
+  by the morning of 2026-11-20. Jon confirmed five seeds (J5) on 2026-11-20, after that, so the pilot's
+  `baseline-rerun` per-run outputs (each run's evaluate files) were on disk when J5 was confirmed. No pilot `report`
+  or decision had been generated: the only `report` job run so far is the smoke's (2026-11-19 17:39 PST), and no
+  decision file exists in the work or keep directories. Whether any individual pilot run's metrics were looked at before J5 was confirmed is not
+  recorded. The change adds seeds and relaxes no criterion; stage A had not been submitted when it was made.
+
 ## Setup
 
 | | |
 |---|---|
-| Data | the round-3 dataset on klone (`retrain-2026-10/<Type>/`): crops, manifest and `split.csv` unchanged; the backfill adds only `<Type>/context/` |
-| Split | the round-3 `split.csv` (panorama-grouped, three deployments held out); every arm trains on its train rows and is scored on its val/test/test_heldout rows |
+| Data | the round-3 dataset on klone (`retrain-2026-10/<Type>/`), **read only**. Every job reads and writes a shadow of it on `/gscratch/scrubbed` instead (below) |
+| Split | the round-3 `split.csv` (panorama-grouped, three deployments held out), byte-identical in the shadow; every run trains on its train rows and is scored on its val/test/test_heldout rows |
 | Recipe | round 3 (above); `--batch-size` only moves the split between per-device batch and gradient accumulation, effective batch 32 either way |
-| Seeds | 42 for every arm; 43 and 44 for any arm whose held-out Δ interval excludes zero (the baseline's seed-43/44 runs exist already as `metrics_baseline-s43.json` / `-s44`) |
-| Evaluation | `context_model.py predict` then `evaluate.py --skip-inference --tag <arm> --per-city`; report by `analysis/context_arms.py` |
-| Compute | 5 types x 3 arms at seed 42 = 15 GPU trainings on `ckpt-all` (A40/L40/L40S/A100/H200), plus 5 backfills; `two_scale` makes two backbone passes per step |
-| Storage | about 100 KB per label (a 448 px view of about 40 KB and a 640 px wide crop of about 60 KB at WebP q95), about 6.5 GB for all five types beside the crops on `/gscratch/makelab` (87 GB free on 2026-10-28); checkpoints on `/gscratch/scrubbed` |
+| Seeds | `baseline-rerun` 42 to 46 (pilot); confirmatory arms 42 to 46 (stages A and B, `A5=1`; J5); exploratory arms 42 |
+| Evaluation | the baseline rerun: `evaluate.py --checkpoint <best> --tag <tag> --per-city`; an arm: `context_model.py predict`, then `evaluate.py --skip-inference --tag <tag> --per-city`; the decision by `analysis/context_arms.py report` |
+| Missing side features | share of rows with no severity / no imagery date / no depth, from `preflight`: NoCurbRamp 5.5% / 0.0% / 0.0% (18,162 rows); Obstacle 6.2% / 0.0% / 0.0% (16,894); SurfaceProblem 5.9% / 0.0% / 0.0% (15,852) |
+| Storage | the shadow and checkpoints on `/gscratch/scrubbed/$USER/context-arms-launch-2026-11/` (purged after 21 days unread); small durable artifacts (each run's records, metrics, predictions) on `/gscratch/makelab/$USER/context-arms-launch-2026-11-keep/` |
 
-## How to run
+**The shadow data directory.** `evaluate.py`, `context_model.py predict` and the backfill write next to the split
+they read. So that nothing is written into the round-3 directory, `analysis/context_arms.py shadow` builds a
+directory on scratch whose `<Type>/split.csv`, `manifest.csv` and `generation_run.json` are byte-identical copies
+(the split hash recorded by every run equals the round-3 baseline's), whose `correct/` and `incorrect/` are symlinks
+to the round-3 crops, and which holds copies of October's outputs (`metrics.json`, `predictions.csv`, the
+seed-43/44 files) for the drift row. `shadow_run.json` records the source path, the sha256 of every copied file, the
+rawLabels snapshot the backfill must use and the git commit. `--only-staged STORE` keeps only the rows whose panorama
+is in a staged store (the smoke shadow) and marks the shadow a subset, which the report never decides on.
+`analysis/context_submit.sh` refuses a `DATA` without `shadow_run.json`.
 
-On klone, from a checkout of this branch, with the round-3 data and its rawLabels snapshot beside it
-(`$DATA/../rawlabels`, as `cl_submit.sh` assumes):
+**Each run's record.** Every training job copies `training_run.json`, `run_key.json`, the best checkpoint's
+`trainer_state.json` and `config.json` and a `job.txt` (job id, node, GPU, start and end times, best checkpoint,
+`KEEP_CKPT`) to
+`<shadow>/<Type>/runs/<tag>/`, then writes the finished marker `.evaluated` there, before deleting the checkpoint
+(`KEEP_CKPT=0`, the default; `best` keeps the best one), and copies the record, metrics and predictions to `$KEEP`.
+`check-run` verifies a finished run (record present, seed, split hash, the context arm and view resolution the tag
+stands for, `--epochs` when given, the best metric, target and per-device batch the job file pins, so a hand-submitted
+`BATCH=4` run never counts as a seed, predictions covering exactly the shadow's val/test/test_heldout rows, one per
+`label_uid`), and the report marks a decision `INCOMPLETE` when a record is missing or does not match (the same
+checks, epochs fixed at 25). October's seed-42 model
+predates run records; its `training_run.json` and `run_key.json`, and those of its seed-43/44 replicates, were pinned
+on 2026-11-19 under `$KEEP/baseline-records/<Type>/` with a `SHA256SUMS` file (57 files, 1.7 MB).
+
+## Launch checklist
+
+On klone, in a clone of this branch on scratch (the jobs run the code of the clone they were submitted from; do not
+pull into it while jobs are queued). Login-node steps import pandas only; never import torch or transformers on a
+login node (see [`running-on-hyak.md`](running-on-hyak.md)).
 
 ```
-DATA=/gscratch/makelab/$USER/sidewalk-validator-ai/retrain-2026-10 \
-RUNS=/gscratch/scrubbed/$USER/context-2026-11 \
-PANO_STORE=/path/to/Panoramas \
-    analysis/context_submit.sh NoCurbRamp Obstacle SurfaceProblem CurbRamp Crosswalk
+CLONE=/gscratch/scrubbed/$USER/sva-context-arms-launch
+WORK=/gscratch/scrubbed/$USER/context-arms-launch-2026-11
+KEEP=/gscratch/makelab/$USER/context-arms-launch-2026-11-keep
+SRC=/gscratch/makelab/$USER/sidewalk-validator-ai/retrain-2026-10
+ENV=/gscratch/makelab/$USER/envs/sidewalk-validator-ai
+cd $CLONE
+
+# 1. shadows (seconds): the full one for the pilot and stage A, and the smoke subset
+$ENV/bin/python analysis/context_arms.py shadow --src $SRC --dest $WORK/data --types NoCurbRamp,Obstacle,SurfaceProblem
+$ENV/bin/python analysis/context_arms.py shadow --src $SRC --dest $WORK/smoke/data --types NoCurbRamp \
+    --only-staged /gscratch/scrubbed/$USER/pano-stage/NoSidewalk
+
+# 2. smoke (7 jobs, 1 epoch): every code path once; the launcher runs the preflight first
+STAGE=smoke DATA=$WORK/smoke/data RUNS=$WORK/smoke/runs PANO_STORE=/gscratch/scrubbed/$USER/pano-stage/NoSidewalk \
+    analysis/context_submit.sh NoCurbRamp
+$ENV/bin/python analysis/context_arms.py check-run --data $WORK/smoke/data --label-type NoCurbRamp --seed-from-tag \
+    --tags baseline-rerun,two_scale,view_heatmap,view_heatmap-r448,side_info,side_info_nohq
+
+# 3. pilot (21 jobs, no panoramas needed)
+STAGE=pilot DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP analysis/context_submit.sh NoCurbRamp Obstacle SurfaceProblem
+
+# 4. stage A: first the restage (Jon's decision; below), then a dry run (never refused by the session cap)
+STAGE=A A5=1 DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP PANO_STORE=<staged store> DRY_RUN=1 \
+    analysis/context_submit.sh NoCurbRamp Obstacle SurfaceProblem      # read it; then, once Jon has approved:
+STAGE=A A5=1 DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP PANO_STORE=<staged store> ALLOW_OVER_SESSION_CAP=1 \
+    analysis/context_submit.sh NoCurbRamp Obstacle SurfaceProblem      # the smoke and pilot logs hold 29 jobs
+
+# 5. the decision (no GPU; anywhere with the shadow)
+$ENV/bin/python analysis/context_arms.py report --data-dir $WORK/data --label-types NoCurbRamp,Obstacle,SurfaceProblem \
+    --out docs/context-arms-2026-11
 ```
 
-Per type this submits the backfill (GPU; `context_crops.py backfill --verify 50`) and, after it, the
-`two_scale` and `view_heatmap` trainings; `side_info` reads only `split.csv` and starts at once. Each training job
-scores its best checkpoint with `context_model.py predict` and runs `evaluate.py --skip-inference --tag <arm>
---per-city`, so `metrics_<arm>.json` and `predictions_<arm>.csv` land next to the baseline's. Job ids go to
-`context_jobs.txt`. Single steps:
+`A5=1` (five confirmatory seeds) is required for stages A and B: `seeds_confirmatory` is `[42, 43, 44, 45, 46]` in
+`DECISION_RULE` and in the json block above (J5, 2026-11-20), and a launch without it trains three seeds, which the
+preflight refuses before any `sbatch`.
+
+Every invocation of the launcher appends its job ids and each job's full command to `context_jobs_<stage>.txt` in
+the clone, refuses more than 40 jobs per invocation (`MAX_JOBS`) and, except under `DRY_RUN=1`, more than 40 summed
+over every `context_jobs_*.txt` (`SESSION_MAX_JOBS`; `ALLOW_OVER_SESSION_CAP=1` overrides deliberately), refuses a
+label type or tag listed twice and (where `squeue` exists) a type and tag already queued or running, stops at the
+first `sbatch` that fails without retrying, and runs `preflight` before any `sbatch`. Single jobs:
 
 ```
-STEP=backfill LT=NoCurbRamp DATA=$DATA PANO_STORE=/path/to/Panoramas sbatch analysis/context_arms.slurm
-STEP=train LT=NoCurbRamp ARM=view_heatmap DATA=$DATA RUNS=$RUNS sbatch analysis/context_arms.slurm
-STEP=train LT=NoCurbRamp ARM=view_heatmap RES=448 TAG=view_heatmap-r448 DATA=$DATA RUNS=$RUNS \
+STEP=train LT=NoCurbRamp ARM=side_info_nohq SEED=43 TAG=side_info_nohq-s43 DATA=$WORK/data RUNS=$WORK/runs KEEP=$KEEP \
     sbatch analysis/context_arms.slurm
-STEP=train LT=NoCurbRamp ARM=two_scale SEED=43 TAG=two_scale-s43 KEEP_CKPT=0 DATA=$DATA RUNS=$RUNS \
-    sbatch analysis/context_arms.slurm
+STEP=backfill LT=NoCurbRamp DATA=$WORK/data PANO_STORE=<store> sbatch analysis/context_arms.slurm
 ```
 
-The backfill re-renders each ok row's view from the pano store with the pose its crop was cut under (pano points
-from the rawLabels snapshot, the pose from `crop_pose.pose_for_row` exactly as the generator builds it, checked
-against the manifest's pose columns; round-3 rows predate those columns, so their `tilt_beta` and `tilt_applied` are
-checked instead) and refuses on any mismatch. `--verify 50` re-cuts 50 tight crops from the re-rendered views and
-fails above a mean absolute difference of 12 grey levels against the stored WebPs (WebP q95 alone accounts for a
-few). It is resumable and writes `context/context_run.json` (factor, view size, renderer, a hash of the
-generation settings); a later backfill under other settings refuses rather than mixing two geometries in one index.
+`STEP=train` refuses an empty `TAG` and the tags `baseline` and `baseline-s<seed>` (October's files); a run whose
+`<shadow>/<Type>/runs/<tag>/.evaluated` exists exits at once ("already evaluated", after redoing the `$KEEP` copy
+and finishing any checkpoint delete a preemption cut short, with the `KEEP_CKPT` and best checkpoint that run recorded
+in its `job.txt`), so a resubmitted job never overwrites a finished one. The job holds two exclusive locks for the
+whole step: `<shadow>/<Type>/.train-<tag>.lock`, beside the outputs, and `$RUNS/<Type>/<tag>/.train.lock`, on the
+checkpoints. A second job with the same type and tag (a stage resubmitted after an `sbatch` timeout, or the same run
+under another `RUNS`) exits instead of writing the same predictions and record or training into the same directory.
 
-Then, anywhere with the outputs (no GPU):
+**Time limit.** The jobs request 16 h, but the `ckpt-gpu` QOS caps them: `scontrol show job` reported
+`TimeLimit=09:05:00` on every pilot job. The pilot's runs (about 4 h) fit. `view_heatmap-r448` at about 3x the step
+time may not: a `TIMEOUT` is not requeued, so watch the first r448 run and resubmit the same command if it times out
+(it resumes from its last checkpoint).
+
+**The panorama restage (stage A).** The image arms' backfill re-renders each row's view from its panorama, and the
+round-3 store on klone is gone. `analysis/context_arms.py stage-list` writes each type's missing list as
+`<shadow>/<Type>/stage_files.txt` (the format `analysis/ai_labels_stage.slurm` reads) and one deduplicated list for
+all types in `--out` (created), with a size estimate; a store that does not exist yet lacks everything, so it sizes
+the restage before any launcher run. `preflight --backfill` writes the per-type lists too, marked store or not:
+
+| type | unique panoramas | at 11.4 MB each |
+|---|---:|---:|
+| NoCurbRamp | 13,666 | about 156 GB |
+| Obstacle | 13,971 | about 159 GB |
+| SurfaceProblem | 13,630 | about 155 GB |
+| three target types, deduplicated | 39,240 | about 450 GB |
 
 ```
-python analysis/context_arms.py report --data-dir $DATA --public-cities cities.json \
-    --arms two_scale,view_heatmap,side_info --out docs/context-arms-2026-11
+$ENV/bin/python analysis/context_arms.py stage-list --data $WORK/data --types NoCurbRamp,Obstacle,SurfaceProblem \
+    --pano-store /gscratch/scrubbed/$USER/pano-stage/context-arms --out $WORK/stage
+RUN=$WORK/stage DEST=/gscratch/scrubbed/$USER/pano-stage/context-arms sbatch analysis/ai_labels_stage.slurm
 ```
 
-`--public-cities` takes a saved `/v3/api/cities` response (default: the live API at report time); only public
-deployments are named, private held-out deployments are lettered as in the round-3 report.
+`DEST` is a new store (or this one, to resume it), never an existing marked store: the stage job removes
+`.pano-store` at its start and writes it back only after the pull, so a stopped pull would leave that store unmarked.
+
+The stage job pulls sequential 1,000-file batches over one connection each and stops on the first connection error
+without retrying (the makelab hosts ban a source that reconnects too fast); a resubmit resumes. The backfill then
+runs per type inside stage A. Stage A should be launched within the scratch purge window of the shadow; if the shadow
+has been purged, rebuilding it takes seconds, but the context images need the panoramas again.
+
+## Cost
+
+| stage | trainings | backfills | GPU-hours (estimate) |
+|---|---:|---:|---:|
+| smoke | 6 (1 epoch, 217 rows) | 1 | under 1 |
+| pilot | 21 | 0 | about 21 x 2.5 = 50 |
+| A | 33 | 3 | about 110, `two_scale` and `view_heatmap-r448` at about 2x and 3x the step time |
+| B | 10 per guard type | 1 per guard type | about 33 |
+
+Estimates from October's tight-crop runs (0:10 to 2:41 h per run on `ckpt-all`, NoCurbRamp 2:41) times the arm's
+backbone passes and tokens. All on klone's free `ckpt-all` partition. Measured smoke throughput (1 epoch on 217
+rows, so dominated by start-up; read it as a lower bound on the full-run cost per step):
+
+| run (smoke, NoCurbRamp, 1 epoch, 135 train rows) | GPU | seconds per step (5 steps of 32) | train_runtime (s) | peak GPU memory |
+|---|---|---:|---:|---:|
+| `baseline-rerun` | A40 | 6.4 | 105 | 9.2 GB |
+| `side_info` | A100 80 GB | 6.8 | 126 | 9.3 GB |
+| `side_info_nohq` | L40 | 5.8 | 117 | 9.3 GB |
+| `two_scale` | A40 | 5.6 | 113 | 13.2 GB |
+| `view_heatmap` (224) | A40 | 5.0 | 103 | 9.1 GB |
+| `view_heatmap-r448` | A100 80 GB | 10.0 | 173 | 20.2 GB |
+
+Peak memory is Slurm's `gres/gpumem` (`sacct TRESUsageInMax`), at batch 8 per device. Five steps on a cold cache
+are dominated by reading crops from GPFS (GPU utilisation 4% to 37%), so the step times do not show the arms'
+compute ratio; the pilot's full runs measure the steady state of the tight-crop and side arms, and stage A's
+`TIME` for `view_heatmap-r448` should be set from those. What the smoke does show: every arm fits at batch 8 on a
+48 GB card with room to spare, `two_scale` included (the threat about running it at batch 4 does not arise).
+
+**Backfill.** 217 rows in 268 s on an A40 (about 1.2 s per row, mostly reading the 11 MB panoramas from scratch);
+at that rate a full type takes about 5 to 6 hours. `--verify 50`: re-cut tight crops against the stored round-3
+WebPs, mean absolute difference 1.33 grey levels (worst crop 2.16; limit 12), max pixel difference 39. The smoke
+read panoramas from a store staged separately from the round-3 one (for the NoSidewalk study), so a mismatch could
+have come from source-image drift as well as from the renderer; none was seen.
 
 ## Results
 
 Not yet run. The report writes, under [`context-arms-2026-11/`](context-arms-2026-11/):
 
-- `arms.md` / `arms.json`: per type x arm, test and held-out AUC with the paired panorama-bootstrap Δ against
-  the baseline on the same rows, within-city AUC, macro F1 at the model's verdict, incorrect and correct recall at
-  precision 0.92 and 0.95, and the held-out deployments one by one.
-- `seeds.md`: replicates paired with the same-seed baseline.
-- `slices.md`: type x severity and type x tag, each arm against the baseline, with the slice's training rows and
-  the thin flag.
+- `decision.md` / `decision.json`: the verdict per type x confirmatory arm with every criterion and its value, the
+  exploratory arms' intervals (never a verdict), the drift row, the operating characteristics recomputed from the
+  baseline rerun's seeds, and the bootstrap's redraw and drop counts.
+- `gate.md`: the report-only gate block per run.
+- `slices_seeds.md`: type x severity and type x tag across seeds, with training rows, the thin flag and October's
+  round-3 AUC beside.
+- `arms.md` / `arms.json`, `seeds.md`, `slices.md`: per-run tables against October's seed-42 model (descriptive).
 - `clipping.md`: the share of wide crops capped at the whole view, per type, and `wide_half_px` quantiles.
-- `provenance.json`: sha256 of every file read.
+- `provenance.json`: sha256 of every file read, the arguments, the bootstrap seed, the git commit, the decision
+  rule, the shares and shadow hashes, and each run's record status.
 
-| type | arm | test AUC (Δ) | held-out AUC (Δ) | within-city held-out |
-|---|---|---:|---:|---:|
-| NoCurbRamp | two_scale / view_heatmap / side_info | not yet run | not yet run | not yet run |
-| Obstacle | two_scale / view_heatmap / side_info | not yet run | not yet run | not yet run |
-| SurfaceProblem | two_scale / view_heatmap / side_info | not yet run | not yet run | not yet run |
-| CurbRamp | two_scale / view_heatmap / side_info | not yet run | not yet run | not yet run |
-| Crosswalk | two_scale / view_heatmap / side_info | not yet run | not yet run | not yet run |
+| type | arm | verdict | D within-city held-out [95% CI] |
+|---|---|---|---:|
+| NoCurbRamp | two_scale / view_heatmap | not yet run | not yet run |
+| Obstacle | two_scale / view_heatmap | not yet run | not yet run |
+| SurfaceProblem | two_scale / view_heatmap | not yet run | not yet run |
+| target types | side_info / side_info_nohq (exploratory) | trained (pilot); report not yet run | report not yet run |
 
 ## What could ship
 
@@ -195,27 +480,57 @@ files without loading them, so it does not refuse an arm checkpoint pointed at e
 `training_run.json`'s `context_arm` (as it already refuses `fixed_crop_half_px`) belongs with any proposal to ship
 one.
 
+## Rerunning an arm on another backbone
+
+The arms are written for DINOv2 and `context_model.from_base` refuses any other base checkpoint
+(`check_backbone`: the base's `config.json` `model_type` must be `dinov2`), so an arm can never be silently built
+on a backbone it was not written for. What a port to another backbone (for example the one chosen in
+[#119](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/119)) has to supply:
+
+- **Pooled feature.** The head reads `[CLS, mean(patch tokens)]`, so the port needs the number of prefix tokens
+  (CLS plus any register tokens) to skip before the patch mean, or the backbone's own pooled output in their place.
+- **The fourth channel** (`view_heatmap`): the first projection's weight (the patch embedding's convolution, or a
+  ConvNet's stem) gets one extra input channel initialised to zero, and the step-0 identity test (the 4-channel model
+  computes exactly the pretrained function before training) must pass on the new backbone.
+- **The processor**: its mean, std and input size (the view arm bypasses the centre crop and resizes to `res`), and
+  the patch size (448 = 2 x 224 is chosen to be a whole number of DINOv2 patches).
+- **The baseline** for such a rerun is that backbone's own tight-crop run on the same recipe, never the DINOv2-L
+  numbers here.
+
+The backbone name recorded in each arm's `config.json` (`base_checkpoint`) is what a later reader checks.
+
 ## Threats to validity
 
-- **Seed noise.** The baseline's held-out AUC varies across seeds 42/43/44 with a sample sd of 0.006 (CurbRamp),
-  0.008 (Obstacle), 0.010 (SurfaceProblem), 0.014 (Crosswalk) and 0.021 (NoCurbRamp)
-  ([`confident-learning-2026-10/seeds.md`](confident-learning-2026-10/seeds.md)). A single-seed Δ of that size is
-  not a finding; that is why replicates follow any arm whose interval excludes zero.
+- **Seed noise.** The baseline's within-city held-out AUC varies across seeds 42/43/44 with a sample sd of 0.024
+  (NoCurbRamp), 0.009 (Obstacle) and 0.021 (SurfaceProblem)
+  ([`confident-learning-2026-10/seeds.md`](confident-learning-2026-10/seeds.md)). The decision therefore compares
+  seed means and puts the seed variance into the interval; a single-seed Δ of that size is not a finding.
+- **Seed 42 is the low draw** of October's trio for NoCurbRamp and SurfaceProblem; a comparison against October's
+  seed-42 model alone would flatter any arm. The decision uses the five-seed rerun.
+- **The held-out split has been read** by earlier studies (round 3, confident learning, the deployment gate), so it
+  is not a fresh test set; the pre-registration limits what is chosen after seeing it, it does not make it fresh.
+- **Gold rows in train.** The round-3 split's train rows include 131 items decided in the masked re-label rounds, so
+  these models cannot be scored on the Tier-A gold set.
 - **The wide crop is often the whole view** at 4x (see the decisions above), so `two_scale` partly tests "tight
   crop plus whole view at 224", not a graded context ring.
 - **Detail at 224.** The view arm sees the scene at 1/9 of the rendered resolution; a null result at 224 does not
   rule out the arm, which is what the 448 run is for.
-- **Batch size.** If `two_scale` runs with `--batch-size 4` (it should fit at 8 on a 48 GB card in fp32, untested),
-  the effective batch is unchanged but the per-step noise and batch statistics are not identical to the baseline.
+- **Batch size.** Every arm ran at batch 8 per device in the smoke (`two_scale` peaked at 13.2 GB, `view_heatmap-r448`
+  at 20.2 GB), so no arm needs a smaller per-device batch than the baseline.
 - **Backfill fidelity.** The context images are re-rendered, not saved at generation time. `--verify` bounds the
   difference on the tight crop, and on the synthetic test store the hook and the backfill write byte-identical
   files; a GPU backfill of a numpy-rendered dataset (or the reverse) differs by rounding and prints a warning.
 - **Side features are what the crowd saw**: severity, tags and the high-quality flag come from the labeler, so
   `side_info` can learn labeler habits that do not transfer to new deployments; the held-out deployments are the
   check.
+- **Severity and tags are post-edit values.** rawLabels carries the label's current severity and tags, and
+  validators edit them in the same screen where they cast the vote that sets the target: the 46 public labelEdits
+  exports of 2026-11-05 hold 13,274 edits, almost all tag and severity edits
+  ([`retype-2026-11.md`](retype-2026-11.md)). An edit can therefore carry the validator's judgment back into the
+  features. The share of round-3 rows of the three target types with such an edit was not measured. Both side arms
+  are upper bounds for this reason too.
 - **`high_quality_user` is partly circular with the target.** The rawLabels flag is derived from the labeler's
   validation record, which includes the very validations that set this label's class, on the evaluation rows as
   much as on the train rows. Part of any `side_info` gain can therefore be the label's own votes leaking back in.
-  Before reading the arm as an upper bound, run the ablation `side_info-nohq` (the same arm with
-  `high_quality_user` dropped from `SIDE_FEATURES`; not implemented as an option yet, a one-line change) and
-  report both.
+  The ablation `side_info_nohq` (the same arm with `high_quality_user` dropped; `--context-arm side_info_nohq`)
+  runs beside it in the pilot, and both are reported.
