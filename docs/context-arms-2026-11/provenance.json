@@ -4,14 +4,14 @@
     "base_seed": 42,
     "baseline_variant": "baseline-rerun",
     "cmd": "report",
-    "data_dir": "/Users/jonfroehlich/Data/sidewalk-validator-ai-context-arms-2026-11/data",
+    "data_dir": "data",
     "decision_boot": 1000,
     "label_types": "NoCurbRamp,Obstacle,SurfaceProblem",
     "n_boot": null,
-    "out": "docs/context-arms-2026-11",
+    "out": "regen-aad8ad2",
     "public_cities": null,
     "seed": 0,
-    "shares": "/private/tmp/claude-501/-Users-jonfroehlich-Git-sidewalk-validator-ai/7abfdf5d-d3e2-4a8e-bfba-bfb7e4f7890c/scratchpad/14-context-stage-a-results/docs/deployment-prior-2026-11/shares.json",
+    "shares": "docs/deployment-prior-2026-11/shares.json",
     "slice_min_n": null,
     "within_min_n": 10
   },
@@ -180,7 +180,7 @@
     "SurfaceProblem/predictions_view_heatmap.csv": "aa3567afa4314960be3763d050e09d041dff9b62b5a579476296cb03431a35fd",
     "SurfaceProblem/split.csv": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd"
   },
-  "git_commit": "87098916b1a38d12926b8796e0ae75ba47220430",
+  "git_commit": "aad8ad207e57744cc18e462dafa675e6a8b01ef0",
   "git_dirty": false,
   "public_cities_source": "https://sidewalk-teaneck.cs.washington.edu/v3/api/cities",
   "runs": {

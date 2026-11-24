@@ -617,7 +617,11 @@ report-only and no arm is proposed, so nobody needs to read it for a ship decisi
   is unchanged. Only `analysis/context_arms.py`, the job file's bookkeeping (locks, the "already evaluated" path,
   checkpoint pruning, the `$KEEP` copy), the launcher and tests changed. One visible consequence: the pilot's job file
   wrote the `.evaluated` marker beside the checkpoints, not in the run record, so the pilot's records have none. The
-  report does not read the marker.
+  report does not read the marker. The job file's `STEP=train` invocation is the same at both commits (checked with
+  `git diff 9dace0c aa8ef24 -- analysis/context_arms.slurm`): the `fine_tune_classifier.py` command and its
+  arguments, the defaults it takes (seed 42, 25 epochs, view resolution 224, batch 8), the `--context-arm` /
+  `--context-view-res` arguments, the best-checkpoint lookup, the `evaluate.py` and `context_model.py predict`
+  commands, and the backfill's `context_crops.py` call are byte-identical.
 - **Run records.** Before the report, each of the 54 runs (15 `baseline-rerun`, 30 confirmatory, 3
   `view_heatmap-r448`, 6 side-arm) was checked with `check-run`'s checks (seed from the tag, split hash, arm and view
   resolution, 25 epochs, best metric, target and batch, predictions covering exactly the val, test and held-out rows),
@@ -648,7 +652,17 @@ report-only and no arm is proposed, so nobody needs to read it for a ship decisi
   images were not copied, and `report` reads none. The public-city list came from the live cities API, so the two
   private held-out deployments are lettered. The code was commit 8709891: master at b2a61d7 plus the `power_markdown` caption fix, which `report`
   does not call. A first attempt stopped before invoking `report`, because the context indexes had not been copied
-  yet. It produced no output, and no number was seen before the one run. `provenance.json` holds the sha256 of every file read.
+  yet. It produced no output, and no number was seen before the one run. `provenance.json` holds the sha256 of every
+  file read.
+- **`provenance.json` regenerated, 2026-11-24.** The file first committed (from the run at 8709891) recorded local
+  absolute paths in two of its arguments. `report` now writes its path arguments relative to the repository root,
+  or by their last component when outside it (commit 1a74e80). The same command was re-run with that code, at commit
+  aad8ad2 on a clean tree, into a scratch directory. All nine other outputs (`decision.md`, `decision.json`,
+  `gate.md`, `slices_seeds.md`, `arms.md`, `arms.json`, `seeds.md`, `slices.md`, `clipping.md`) came out
+  byte-identical to the committed files. Only `provenance.json` was replaced. It differs from the first only in
+  `arguments.data_dir`, `arguments.shares`, `arguments.out` (which names that scratch directory, `regen-aad8ad2`)
+  and `git_commit`; all 132 file hashes and 63 run entries are unchanged. So the committed outputs other than
+  `provenance.json` come from the report code at 8709891, and `provenance.json` comes from aad8ad2.
 
 ## What could ship
 
