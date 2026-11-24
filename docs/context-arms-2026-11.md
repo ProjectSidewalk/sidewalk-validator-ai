@@ -597,8 +597,11 @@ Obstacle, -0.075 [-0.122, -0.028] for SurfaceProblem), and the upper bound of th
 **Exploratory arms (no verdict, one seed each).** `view_heatmap-r448`, `side_info` and `side_info_nohq` have their
 intervals in the table above; the rule reads none of them. Their intervals omit the arm's seed variance (one seed),
 so they are narrower than a five-seed interval would be. The largest held-out D among them is `side_info_nohq` on
-Obstacle, +0.029 [-0.002, +0.060]; the smallest is `side_info` on SurfaceProblem, -0.025 [-0.067, +0.018]. Under the
-rule an exploratory arm that looks good earns a new pre-registered confirmatory run, not a verdict.
+Obstacle, +0.029 [-0.002, +0.060]; the smallest is `side_info` on SurfaceProblem, -0.025 [-0.067, +0.018]. On `test`,
+`view_heatmap-r448` on SurfaceProblem has an interval wholly below -0.01 (-0.047 [-0.077, -0.018]); it is the only
+exploratory row that would meet either regression test (held-out upper bound below 0, or test upper bound below
+-0.01), and no exploratory interval lies wholly above 0. Under the rule an exploratory arm
+that looks good earns a new pre-registered confirmatory run, not a verdict.
 
 **What the rule says to do next.** There is no `WIN` on any type, so there is no stage-B `WINNER` and no guard type
 to train. The rule's outcome for "No `WIN` anywhere" applies:
@@ -626,7 +629,14 @@ report-only and no arm is proposed, so nobody needs to read it for a ship decisi
   continues the same recipe from the checkpoint's weights, optimizer and scheduler state, but it is not guaranteed to
   be bit-identical to an unbroken run, and the logged final train loss of a resumed run is not comparable with an
   unbroken one. All ten passed the record checks and count as
-  ordinary seeds.
+  ordinary seeds. The resumes are not spread evenly across arms. They hit 8 of the 15 `two_scale` runs, 1 of 15
+  `baseline-rerun`, 0 of 15 `view_heatmap`, 1 of 3 `view_heatmap-r448` and 0 of 6 side-arm runs, so for `two_scale`
+  resumption is partly confounded with the arm. As description only, not a finding: the resumed `two_scale` seeds
+  are not systematically high or low against the unbroken ones (held-out within-city AUC, NoCurbRamp resumed 0.897
+  and 0.911 against unbroken 0.900, 0.906 and 0.924; Obstacle resumed 0.794, 0.785 and 0.787 against 0.784 and
+  0.768). One outlier is SurfaceProblem `two_scale` seed 42 (0.642, resumed once; the other four seeds are 0.699 to
+  0.709). The rule reads all five seeds, and D without that seed would be about +0.011, still under +0.02, so this
+  changes no verdict.
 - **Panoramas.** 39,231 were restaged from the lab store on 2026-11-23, and 9 came from an earlier copy on klone, the
   one round 3's own crops had been cut from (4 / 3 / 2 for NoCurbRamp / Obstacle / SurfaceProblem; 9 rows: 4
   `train`, 5 `test_heldout`; see [Deviations](#deviations)). The stage-A backfills' `--verify` output was not copied
