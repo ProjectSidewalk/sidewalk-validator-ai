@@ -59,6 +59,13 @@ three context arms (needs ``--output-dir``; the two image arms need ``context_cr
 ``--batch-size`` trades the per-device batch for gradient accumulation at the same effective batch of 32. Both are
 recorded in ``run_key.json`` and ``training_run.json``; without them both files are exactly as before.
 
+Backbone comparison (issue #119, ``backbones.py``, docs/backbone-2026-11.md): ``--backbone <key>`` fine-tunes another
+registry encoder (DINOv2 with registers, ConvNeXt V2, RampNet's converted ConvNeXt V2, DINOv3) with the same recipe
+and preprocessing, and ``--learning-rate`` overrides the round-3 rate; both need ``--output-dir``. A non-default value
+enters ``run_key.json``; the default run key is unchanged. ``training_run.json`` gains additive fields for every run: a
+``backbone`` block (key, pinned and resolved revision, parameters, preprocessing, weights hash), ``learning_rate``,
+``model_accepts_loss_kwargs`` and ``peak_gpu_memory_bytes``.
+
 Usage::
 
     python fine_tune_classifier.py --label_type CurbRamp [--data-dir .] [--seed 42] [--epochs 25] \
@@ -79,6 +86,8 @@ from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
+
+import backbones
 
 CHECKPOINT = "facebook/dinov2-large"
 # Explicit and stable: the API reads index 0 as "correct". (imagefolder's alphabetical order gave the same.)
@@ -427,6 +436,23 @@ def init_settings(args):
 
 BATCH_TOTAL = 32  # effective train batch: per-device batch x gradient accumulation (8 x 4 by default)
 DEFAULT_BATCH_SIZE = 8  # --batch-size default; hf_cards.TRAIN_BATCH_SIZE copies it (a test checks)
+DEFAULT_LEARNING_RATE = 1e-5  # --learning-rate default, the round-3 recipe (the model card states it; hf_cards.py)
+
+
+def backbone_run_settings(args):
+    """``{}`` for the default backbone and learning rate (so the default run key is unchanged); else the backbone
+    key and its pinned revision, and/or the learning rate, and ``random_init`` for a random-weight smoke test
+    (issue #119)."""
+    out = {}
+    key = getattr(args, "backbone", backbones.DEFAULT)
+    if key != backbones.DEFAULT:
+        out.update(backbone=key, backbone_revision=backbones.get(key).revision)
+        if backbones.is_random_init():
+            out["random_init"] = True
+    lr = getattr(args, "learning_rate", DEFAULT_LEARNING_RATE)
+    if lr != DEFAULT_LEARNING_RATE:
+        out["learning_rate"] = lr
+    return out
 
 
 def context_settings(args):
@@ -471,6 +497,8 @@ def build_model(args, base, id2label, label2id, train_df=None, val_df=None, coll
         import context_model
         return context_model.build_for_training(args, base, train_df, val_df, id2label, label2id, collate_fn,
                                                 image_processor)
+    if getattr(args, "backbone", backbones.DEFAULT) != backbones.DEFAULT:  # issue #119
+        return backbones.build_classifier(args.backbone, id2label, label2id, args.backbone_dir), collate_fn
     from transformers import Dinov2ForImageClassification
     model = Dinov2ForImageClassification.from_pretrained(
         base, num_labels=len(id2label), id2label=id2label, label2id=label2id, ignore_mismatched_sizes=True)
@@ -494,12 +522,14 @@ def run_key(label_type, data_dir, args):
     if os.path.exists(path):
         with open(path, "rb") as f:
             split_sha256 = hashlib.sha256(f.read()).hexdigest()
+    key = getattr(args, "backbone", backbones.DEFAULT)
+    base = CHECKPOINT if key == backbones.DEFAULT else backbones.get(key).source
     return {"label_type": label_type, "split_sha256": split_sha256, "seed": args.seed, "epochs": args.epochs,
-            "best_metric": args.best_metric, "base_checkpoint": CHECKPOINT,
+            "best_metric": args.best_metric, "base_checkpoint": base,
             **{k: v for k, v in target_settings(args).items() if k != "vote_weights"},
             **{k: v for k, v in {**region_settings(args), **init_settings(args)}.items()
                if k not in ("cities_json", "init_from")},
-            **context_settings(args)}
+            **context_settings(args), **backbone_run_settings(args)}
 
 
 def resume_checkpoint(output_dir, key):
@@ -582,7 +612,26 @@ def main(argv=None):
     parser.add_argument('--batch-size', type=int, default=DEFAULT_BATCH_SIZE,
                         help=f'per-device train batch; gradient accumulation is {BATCH_TOTAL} // batch size, so the '
                              f'effective batch stays {BATCH_TOTAL} (two_scale runs two backbone passes per step)')
+    parser.add_argument('--backbone', choices=list(backbones.REGISTRY), default=backbones.DEFAULT,
+                        help='pretrained encoder (backbones.py registry; issue #119); a non-default one needs '
+                             '--output-dir and cannot be combined with --context-arm, --region-conditioning or '
+                             '--init-from')
+    parser.add_argument('--backbone-dir', default=os.environ.get(backbones.BACKBONE_DIR_ENV),
+                        help='directory holding converted backbones (backbones.py convert-rampnet); default env '
+                             f'{backbones.BACKBONE_DIR_ENV}')
+    parser.add_argument('--learning-rate', type=float, default=DEFAULT_LEARNING_RATE,
+                        help=f'peak learning rate (default {DEFAULT_LEARNING_RATE}, the round-3 recipe); a '
+                             'non-default value needs --output-dir')
     args = parser.parse_args(argv)
+    if args.backbone != backbones.DEFAULT and (args.context_arm != 'none' or args.region_conditioning != 'none'
+                                               or args.init_from):
+        parser.error('--backbone is compared on the plain model only; it cannot be combined with --context-arm, '
+                     '--region-conditioning or --init-from')
+    if (args.backbone != backbones.DEFAULT or args.learning_rate != DEFAULT_LEARNING_RATE) and not args.output_dir:
+        parser.error('a non-default --backbone or --learning-rate needs --output-dir (an experiment must not land in '
+                     'the production dinov2/ directory)')
+    if backbones.is_random_init() and args.backbone == backbones.DEFAULT:
+        parser.error(f'{backbones.RANDOM_INIT_ENV}=1 applies to a non-default --backbone only (smoke tests)')
     if args.region_conditioning != 'none' and not args.cities_json:
         parser.error('--region-conditioning needs --cities-json')
     if args.init_from and not os.path.isfile(os.path.join(args.init_from, 'config.json')):
@@ -607,7 +656,7 @@ def main(argv=None):
     from datasets import Dataset, DatasetDict, load_dataset
     from sklearn.metrics import f1_score
     from torchvision.transforms import Compose, Normalize, RandomHorizontalFlip, RandomResizedCrop, ToTensor
-    from transformers import AutoImageProcessor, Trainer, TrainingArguments
+    from transformers import Trainer, TrainingArguments
 
     if not torch.cuda.is_available():
         if not args.allow_cpu:
@@ -649,7 +698,7 @@ def main(argv=None):
 
     # The slow (PIL) BitImageProcessor, as evaluate.py and sidewalk-ai-api (backend="pil") use; the fast torchvision
     # processor resizes slightly differently.
-    image_processor = AutoImageProcessor.from_pretrained(CHECKPOINT, use_fast=False)
+    image_processor = backbones.build_image_processor(args.backbone)  # the default key: exactly this call, as before
     crop = image_processor.crop_size
     size = (crop["height"], crop["width"]) if "height" in crop else crop["shortest_edge"]
     train_tf = Compose([
@@ -690,6 +739,9 @@ def main(argv=None):
     model, collate_fn = build_model(args, args.init_from or CHECKPOINT, ID2LABEL, LABEL2ID,
                                     *(frames if frames is not None else (None, None)), collate_fn,
                                     image_processor=image_processor)
+    # The Trainer divides the loss by the accumulation steps, as transformers 4.55.0 did for the round-3 runs; see
+    # docs/backbone-2026-11.md (a no-op under 4.55.0; under 4.56 it keeps the round-3 loss scaling for every model).
+    model.accepts_loss_kwargs = False
     model.to("cuda" if torch.cuda.is_available() else "cpu")  # CPU only reachable with --allow-cpu
 
     def compute_metrics(pred):
@@ -706,7 +758,7 @@ def main(argv=None):
 
         remove_unused_columns=False,
 
-        learning_rate=1e-5,
+        learning_rate=args.learning_rate,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=BATCH_TOTAL // args.batch_size,
         per_device_eval_batch_size=8,
@@ -750,7 +802,7 @@ def main(argv=None):
     from data_generation import package_source
     versions["sidewalk-panorama-tools"] = package_source("sidewalk-panorama-tools")
     best = trainer.state.best_model_checkpoint
-    run = {"label_type": label_type, "seed": args.seed, "epochs": args.epochs, "base_checkpoint": CHECKPOINT,
+    run = {"label_type": label_type, "seed": args.seed, "epochs": args.epochs, "base_checkpoint": key["base_checkpoint"],
            "best_model_checkpoint": os.path.basename(best) if best else None,
            "best_metric": args.best_metric,
            "best_metric_value": trainer.state.best_metric, "id2label": ID2LABEL,
@@ -759,6 +811,9 @@ def main(argv=None):
            **({"split_path": os.path.abspath(args.split), "split_sha256": key["split_sha256"]} if args.split else {}),
            **target_settings(args), **region_settings(args), **init_settings(args), **context_settings(args),
            **run_provenance(started_at, started, resume),
+           "backbone": backbones.backbone_settings(args.backbone, model, args.backbone_dir),
+           "learning_rate": args.learning_rate, "model_accepts_loss_kwargs": trainer.model_accepts_loss_kwargs,
+           "peak_gpu_memory_bytes": torch.cuda.max_memory_allocated() if torch.cuda.is_available() else None,
            "versions": versions}
     with open(os.path.join(output_dir, "training_run.json"), "w") as f:
         json.dump(run, f, indent=2)

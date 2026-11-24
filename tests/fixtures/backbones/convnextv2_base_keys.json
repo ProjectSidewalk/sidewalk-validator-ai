@@ -1,0 +1,1544 @@
+{
+"convnextv2.embeddings.layernorm.bias": [
+128
+],
+"convnextv2.embeddings.layernorm.weight": [
+128
+],
+"convnextv2.embeddings.patch_embeddings.bias": [
+128
+],
+"convnextv2.embeddings.patch_embeddings.weight": [
+128,
+3,
+4,
+4
+],
+"convnextv2.encoder.stages.0.layers.0.dwconv.bias": [
+128
+],
+"convnextv2.encoder.stages.0.layers.0.dwconv.weight": [
+128,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.0.layers.0.grn.bias": [
+1,
+1,
+1,
+512
+],
+"convnextv2.encoder.stages.0.layers.0.grn.weight": [
+1,
+1,
+1,
+512
+],
+"convnextv2.encoder.stages.0.layers.0.layernorm.bias": [
+128
+],
+"convnextv2.encoder.stages.0.layers.0.layernorm.weight": [
+128
+],
+"convnextv2.encoder.stages.0.layers.0.pwconv1.bias": [
+512
+],
+"convnextv2.encoder.stages.0.layers.0.pwconv1.weight": [
+512,
+128
+],
+"convnextv2.encoder.stages.0.layers.0.pwconv2.bias": [
+128
+],
+"convnextv2.encoder.stages.0.layers.0.pwconv2.weight": [
+128,
+512
+],
+"convnextv2.encoder.stages.0.layers.1.dwconv.bias": [
+128
+],
+"convnextv2.encoder.stages.0.layers.1.dwconv.weight": [
+128,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.0.layers.1.grn.bias": [
+1,
+1,
+1,
+512
+],
+"convnextv2.encoder.stages.0.layers.1.grn.weight": [
+1,
+1,
+1,
+512
+],
+"convnextv2.encoder.stages.0.layers.1.layernorm.bias": [
+128
+],
+"convnextv2.encoder.stages.0.layers.1.layernorm.weight": [
+128
+],
+"convnextv2.encoder.stages.0.layers.1.pwconv1.bias": [
+512
+],
+"convnextv2.encoder.stages.0.layers.1.pwconv1.weight": [
+512,
+128
+],
+"convnextv2.encoder.stages.0.layers.1.pwconv2.bias": [
+128
+],
+"convnextv2.encoder.stages.0.layers.1.pwconv2.weight": [
+128,
+512
+],
+"convnextv2.encoder.stages.0.layers.2.dwconv.bias": [
+128
+],
+"convnextv2.encoder.stages.0.layers.2.dwconv.weight": [
+128,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.0.layers.2.grn.bias": [
+1,
+1,
+1,
+512
+],
+"convnextv2.encoder.stages.0.layers.2.grn.weight": [
+1,
+1,
+1,
+512
+],
+"convnextv2.encoder.stages.0.layers.2.layernorm.bias": [
+128
+],
+"convnextv2.encoder.stages.0.layers.2.layernorm.weight": [
+128
+],
+"convnextv2.encoder.stages.0.layers.2.pwconv1.bias": [
+512
+],
+"convnextv2.encoder.stages.0.layers.2.pwconv1.weight": [
+512,
+128
+],
+"convnextv2.encoder.stages.0.layers.2.pwconv2.bias": [
+128
+],
+"convnextv2.encoder.stages.0.layers.2.pwconv2.weight": [
+128,
+512
+],
+"convnextv2.encoder.stages.1.downsampling_layer.0.bias": [
+128
+],
+"convnextv2.encoder.stages.1.downsampling_layer.0.weight": [
+128
+],
+"convnextv2.encoder.stages.1.downsampling_layer.1.bias": [
+256
+],
+"convnextv2.encoder.stages.1.downsampling_layer.1.weight": [
+256,
+128,
+2,
+2
+],
+"convnextv2.encoder.stages.1.layers.0.dwconv.bias": [
+256
+],
+"convnextv2.encoder.stages.1.layers.0.dwconv.weight": [
+256,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.1.layers.0.grn.bias": [
+1,
+1,
+1,
+1024
+],
+"convnextv2.encoder.stages.1.layers.0.grn.weight": [
+1,
+1,
+1,
+1024
+],
+"convnextv2.encoder.stages.1.layers.0.layernorm.bias": [
+256
+],
+"convnextv2.encoder.stages.1.layers.0.layernorm.weight": [
+256
+],
+"convnextv2.encoder.stages.1.layers.0.pwconv1.bias": [
+1024
+],
+"convnextv2.encoder.stages.1.layers.0.pwconv1.weight": [
+1024,
+256
+],
+"convnextv2.encoder.stages.1.layers.0.pwconv2.bias": [
+256
+],
+"convnextv2.encoder.stages.1.layers.0.pwconv2.weight": [
+256,
+1024
+],
+"convnextv2.encoder.stages.1.layers.1.dwconv.bias": [
+256
+],
+"convnextv2.encoder.stages.1.layers.1.dwconv.weight": [
+256,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.1.layers.1.grn.bias": [
+1,
+1,
+1,
+1024
+],
+"convnextv2.encoder.stages.1.layers.1.grn.weight": [
+1,
+1,
+1,
+1024
+],
+"convnextv2.encoder.stages.1.layers.1.layernorm.bias": [
+256
+],
+"convnextv2.encoder.stages.1.layers.1.layernorm.weight": [
+256
+],
+"convnextv2.encoder.stages.1.layers.1.pwconv1.bias": [
+1024
+],
+"convnextv2.encoder.stages.1.layers.1.pwconv1.weight": [
+1024,
+256
+],
+"convnextv2.encoder.stages.1.layers.1.pwconv2.bias": [
+256
+],
+"convnextv2.encoder.stages.1.layers.1.pwconv2.weight": [
+256,
+1024
+],
+"convnextv2.encoder.stages.1.layers.2.dwconv.bias": [
+256
+],
+"convnextv2.encoder.stages.1.layers.2.dwconv.weight": [
+256,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.1.layers.2.grn.bias": [
+1,
+1,
+1,
+1024
+],
+"convnextv2.encoder.stages.1.layers.2.grn.weight": [
+1,
+1,
+1,
+1024
+],
+"convnextv2.encoder.stages.1.layers.2.layernorm.bias": [
+256
+],
+"convnextv2.encoder.stages.1.layers.2.layernorm.weight": [
+256
+],
+"convnextv2.encoder.stages.1.layers.2.pwconv1.bias": [
+1024
+],
+"convnextv2.encoder.stages.1.layers.2.pwconv1.weight": [
+1024,
+256
+],
+"convnextv2.encoder.stages.1.layers.2.pwconv2.bias": [
+256
+],
+"convnextv2.encoder.stages.1.layers.2.pwconv2.weight": [
+256,
+1024
+],
+"convnextv2.encoder.stages.2.downsampling_layer.0.bias": [
+256
+],
+"convnextv2.encoder.stages.2.downsampling_layer.0.weight": [
+256
+],
+"convnextv2.encoder.stages.2.downsampling_layer.1.bias": [
+512
+],
+"convnextv2.encoder.stages.2.downsampling_layer.1.weight": [
+512,
+256,
+2,
+2
+],
+"convnextv2.encoder.stages.2.layers.0.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.0.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.0.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.0.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.0.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.0.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.0.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.0.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.0.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.0.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.1.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.1.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.1.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.1.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.1.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.1.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.1.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.1.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.1.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.1.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.10.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.10.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.10.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.10.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.10.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.10.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.10.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.10.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.10.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.10.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.11.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.11.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.11.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.11.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.11.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.11.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.11.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.11.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.11.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.11.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.12.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.12.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.12.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.12.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.12.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.12.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.12.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.12.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.12.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.12.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.13.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.13.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.13.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.13.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.13.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.13.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.13.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.13.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.13.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.13.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.14.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.14.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.14.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.14.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.14.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.14.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.14.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.14.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.14.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.14.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.15.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.15.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.15.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.15.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.15.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.15.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.15.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.15.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.15.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.15.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.16.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.16.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.16.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.16.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.16.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.16.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.16.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.16.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.16.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.16.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.17.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.17.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.17.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.17.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.17.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.17.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.17.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.17.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.17.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.17.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.18.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.18.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.18.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.18.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.18.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.18.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.18.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.18.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.18.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.18.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.19.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.19.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.19.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.19.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.19.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.19.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.19.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.19.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.19.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.19.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.2.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.2.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.2.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.2.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.2.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.2.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.2.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.2.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.2.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.2.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.20.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.20.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.20.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.20.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.20.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.20.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.20.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.20.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.20.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.20.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.21.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.21.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.21.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.21.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.21.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.21.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.21.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.21.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.21.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.21.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.22.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.22.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.22.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.22.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.22.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.22.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.22.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.22.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.22.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.22.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.23.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.23.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.23.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.23.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.23.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.23.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.23.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.23.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.23.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.23.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.24.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.24.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.24.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.24.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.24.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.24.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.24.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.24.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.24.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.24.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.25.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.25.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.25.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.25.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.25.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.25.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.25.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.25.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.25.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.25.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.26.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.26.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.26.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.26.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.26.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.26.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.26.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.26.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.26.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.26.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.3.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.3.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.3.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.3.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.3.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.3.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.3.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.3.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.3.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.3.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.4.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.4.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.4.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.4.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.4.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.4.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.4.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.4.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.4.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.4.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.5.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.5.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.5.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.5.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.5.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.5.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.5.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.5.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.5.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.5.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.6.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.6.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.6.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.6.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.6.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.6.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.6.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.6.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.6.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.6.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.7.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.7.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.7.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.7.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.7.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.7.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.7.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.7.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.7.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.7.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.8.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.8.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.8.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.8.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.8.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.8.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.8.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.8.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.8.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.8.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.2.layers.9.dwconv.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.9.dwconv.weight": [
+512,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.2.layers.9.grn.bias": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.9.grn.weight": [
+1,
+1,
+1,
+2048
+],
+"convnextv2.encoder.stages.2.layers.9.layernorm.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.9.layernorm.weight": [
+512
+],
+"convnextv2.encoder.stages.2.layers.9.pwconv1.bias": [
+2048
+],
+"convnextv2.encoder.stages.2.layers.9.pwconv1.weight": [
+2048,
+512
+],
+"convnextv2.encoder.stages.2.layers.9.pwconv2.bias": [
+512
+],
+"convnextv2.encoder.stages.2.layers.9.pwconv2.weight": [
+512,
+2048
+],
+"convnextv2.encoder.stages.3.downsampling_layer.0.bias": [
+512
+],
+"convnextv2.encoder.stages.3.downsampling_layer.0.weight": [
+512
+],
+"convnextv2.encoder.stages.3.downsampling_layer.1.bias": [
+1024
+],
+"convnextv2.encoder.stages.3.downsampling_layer.1.weight": [
+1024,
+512,
+2,
+2
+],
+"convnextv2.encoder.stages.3.layers.0.dwconv.bias": [
+1024
+],
+"convnextv2.encoder.stages.3.layers.0.dwconv.weight": [
+1024,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.3.layers.0.grn.bias": [
+1,
+1,
+1,
+4096
+],
+"convnextv2.encoder.stages.3.layers.0.grn.weight": [
+1,
+1,
+1,
+4096
+],
+"convnextv2.encoder.stages.3.layers.0.layernorm.bias": [
+1024
+],
+"convnextv2.encoder.stages.3.layers.0.layernorm.weight": [
+1024
+],
+"convnextv2.encoder.stages.3.layers.0.pwconv1.bias": [
+4096
+],
+"convnextv2.encoder.stages.3.layers.0.pwconv1.weight": [
+4096,
+1024
+],
+"convnextv2.encoder.stages.3.layers.0.pwconv2.bias": [
+1024
+],
+"convnextv2.encoder.stages.3.layers.0.pwconv2.weight": [
+1024,
+4096
+],
+"convnextv2.encoder.stages.3.layers.1.dwconv.bias": [
+1024
+],
+"convnextv2.encoder.stages.3.layers.1.dwconv.weight": [
+1024,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.3.layers.1.grn.bias": [
+1,
+1,
+1,
+4096
+],
+"convnextv2.encoder.stages.3.layers.1.grn.weight": [
+1,
+1,
+1,
+4096
+],
+"convnextv2.encoder.stages.3.layers.1.layernorm.bias": [
+1024
+],
+"convnextv2.encoder.stages.3.layers.1.layernorm.weight": [
+1024
+],
+"convnextv2.encoder.stages.3.layers.1.pwconv1.bias": [
+4096
+],
+"convnextv2.encoder.stages.3.layers.1.pwconv1.weight": [
+4096,
+1024
+],
+"convnextv2.encoder.stages.3.layers.1.pwconv2.bias": [
+1024
+],
+"convnextv2.encoder.stages.3.layers.1.pwconv2.weight": [
+1024,
+4096
+],
+"convnextv2.encoder.stages.3.layers.2.dwconv.bias": [
+1024
+],
+"convnextv2.encoder.stages.3.layers.2.dwconv.weight": [
+1024,
+1,
+7,
+7
+],
+"convnextv2.encoder.stages.3.layers.2.grn.bias": [
+1,
+1,
+1,
+4096
+],
+"convnextv2.encoder.stages.3.layers.2.grn.weight": [
+1,
+1,
+1,
+4096
+],
+"convnextv2.encoder.stages.3.layers.2.layernorm.bias": [
+1024
+],
+"convnextv2.encoder.stages.3.layers.2.layernorm.weight": [
+1024
+],
+"convnextv2.encoder.stages.3.layers.2.pwconv1.bias": [
+4096
+],
+"convnextv2.encoder.stages.3.layers.2.pwconv1.weight": [
+4096,
+1024
+],
+"convnextv2.encoder.stages.3.layers.2.pwconv2.bias": [
+1024
+],
+"convnextv2.encoder.stages.3.layers.2.pwconv2.weight": [
+1024,
+4096
+],
+"convnextv2.layernorm.bias": [
+1024
+],
+"convnextv2.layernorm.weight": [
+1024
+]
+}

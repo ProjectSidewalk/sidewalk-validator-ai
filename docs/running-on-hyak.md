@@ -144,6 +144,10 @@ best and the latest. The best is named in the latest checkpoint's
 labels (`--target soft|weighted`) write to `<label_type>/dinov2-<target>` instead
 ([`training-data.md`](training-data.md#training-targets)).
 
+`--backbone <key>` (registry in [`backbones.py`](../backbones.py)) and `--learning-rate` train another backbone or
+rate and require `--output-dir`; the default run is unchanged. The comparison's own chain and its overlay env are in
+[`backbone-2026-11.md`](backbone-2026-11.md#how-to-run).
+
 ### 3. Evaluate and calibrate
 
 ```bash
