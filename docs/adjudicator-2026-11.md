@@ -245,6 +245,10 @@ _No variants yet: `relabel` and `variants` run only for pairs that clear the bar
 
 ## Retrain plan
 
+The gold-free retrain and the scoring of every candidate on the gold set moved to
+[`round4-2026-11.md`](round4-2026-11.md) (#74): it drops the gold items **and their scenes** from training, cuts
+uniform crops for all gold items (`adjudicator.py crops --all`), and applies the pre-registered Disagree bar.
+
 Each variant trains with the confident-learning job and is scored on the round-3 rows with `evaluate.py --tag`, so
 the comparison is the #76 report path:
 

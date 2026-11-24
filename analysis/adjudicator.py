@@ -514,7 +514,9 @@ def cmd_crops(args):
     os.makedirs(args.out_dir, exist_ok=True)
     items[have][["label_uid", "label_type", "crop_path_r3"]].to_csv(
         os.path.join(args.out_dir, "existing_crops.csv"), index=False)
-    todo = items[~have]
+    # --all (issue #74, round 4): cut every item with geometry, the ones round 3 has a crop for too, so every gold
+    # score comes from one crop source (round-3 crops and fresh ones are not interchangeable on this set).
+    todo = items if getattr(args, "all", False) else items[~have]
     lp = pd.read_csv(args.label_points, dtype=str, keep_default_na=False) if args.label_points else None
     rows, missing = label_geometry(todo, args.rawlabels, lp)
     crop_labels(rows).to_csv(os.path.join(args.out_dir, "labels.csv"), index=False)
@@ -1697,6 +1699,8 @@ def build_parser():
     c.add_argument("--rawlabels", required=True, help="rawLabels cache dir (<city_id>.csv)")
     c.add_argument("--label-points", default=None, help="pull_label_points.sh output for the rest")
     c.add_argument("--out-dir", required=True)
+    c.add_argument("--all", action="store_true",
+                   help="cut every item with geometry, also those with a round-3 crop (one crop source; #74)")
     c.set_defaults(func=cmd_crops)
     sg = sub.add_parser("stage-list", help="panoramas and GB a pool run would stage")
     sg.add_argument("--pool", required=True)
