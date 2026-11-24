@@ -390,8 +390,8 @@ exit 0. Task file `$OUT/smoke/tasks_smoke.tsv` (sha256 `9d3fe6e62488…`); smoke
 The smoke runs' wall time per step (28.8 s for DINOv2-L down to 2 s for RampNet's ConvNeXt) is dominated by model
 loading and the first, cold read of the crops, so it does not restate the pilot's cost. The plan's estimate stands:
 from round 3's timing (25 epochs on CurbRamp in 2.5 to 3 h on an L40S), about 3.5 to 4 h per ViT-L CurbRamp run and
-5.5 to 6 h per SurfaceProblem run, less for ConvNeXt V2-B; roughly 140 GPU-hours on free `ckpt`. `cost.md` will
-give the measured rate.
+5.5 to 6 h per SurfaceProblem run, less for ConvNeXt V2-B; roughly 140 GPU-hours on free `ckpt`. The measured
+rate is in [`cost.md`](backbone-2026-11/cost.md).
 
 **Pilot: submitted 2026-11-19 (02:45 UTC on 11-20), all 30 elements finished on 2026-11-20 (the last at 14:41 UTC);
 read 2026-11-24.** Job `43406096`, one array `--array=1-30%8`,
@@ -505,12 +505,13 @@ This applies the rule as `decision.md` states it; nothing here changes a status.
   `lr.md` notes that the threshold was set for a three-seed mean and is applied here to one paired run. For context,
   from the same tables: `convnextv2-base` is explanatory, so it would need the doubled bar (+0.032) to be promoted,
   and its 3e-5 held-out AUC on SurfaceProblem (0.670) is below the in-env baseline's at 1e-5, seed 42 (0.728,
-  `env.md`). The launcher plans 3e-5 rows at seed 42 only, so a follow-up would need its own PR and cap jobs. No other
+  `env.md`). The launcher plans 3e-5 rows at seed 42 only, so a follow-up would need its own PR and cap jobs; it is
+  open as decision J18 (default: not run). No other
   arm is recipe-limited. `dinov2-large` at 3e-5 is below its own 1e-5 run on both types (−0.024 CurbRamp, −0.070
   SurfaceProblem).
 - **Environment readout** (`env.md`, not a gate): the mean in-env minus round-3 difference is +0.004 held-out and
   −0.000 test on CurbRamp, and −0.015 held-out and −0.004 test on SurfaceProblem. Each is within twice round 3's
-  seed sd (0.012, 0.020), so none is called out. On SurfaceProblem, seed 44 alone is lower in-env by −0.042
+  seed sd (sd 0.006 and 0.010, so the bars are 0.012 and 0.020), so none is called out. On SurfaceProblem, seed 44 alone is lower in-env by −0.042
   [−0.061, −0.024] held-out.
 - **Multiplicity.** Six arms were compared (three eligible, three explanatory) plus six learning-rate rows, with no
   correction. The expected number of null winners under this rule is 0.021 to 0.056 (`null.md`). With no winner,
@@ -526,7 +527,19 @@ This applies the rule as `decision.md` states it; nothing here changes a status.
   with no winner the confirmation stage that would run them was not triggered.
 - **Three seeds.** The in-env baseline's own held-out seed sd was 0.004 on CurbRamp and 0.020 on SurfaceProblem
   (`seeds.md`). With three seeds, a true gain smaller than that seed noise could go undetected, on SurfaceProblem
-  especially.
+  especially. The SurfaceProblem bar (+0.016) was set from round 3's seed sd of 0.010, which gives a paired per-seed
+  sd of 0.014. The in-env baseline's sd is 0.020, and the per-seed paired Δ of `dinov2-reg-large` on SurfaceProblem
+  (−0.002, +0.009, +0.048) has sd 0.026. On SurfaceProblem, then, the bar is nearer one standard error of a
+  three-seed mean than two. No status changes because of this, but it is how to read the +0.018 near-miss and the
+  one-seed "recipe-limited" flag: both sit within the observed seed noise.
+- **Score column (sensitivity note from review).** The prediction files store float32 probabilities, so saturated
+  scores tie, and the report ranks `p_incorrect`, as the pre-registered mechanics and round 3 do. The PR #128
+  reviewer found that ranking `p_correct` (or a tie-free combination) moves individual AUCs by up to about 0.005,
+  with no status change and the same seeds-above-zero counts. Two clause-level statements in the Reading sit on the
+  −0.005 line. Recomputed for this note under `p_correct`, they are `dinov2-reg-large`'s CurbRamp within-city Δ
+  held-out (−0.0055 as reported, −0.0039) and `dinov3-vitl16`'s CurbRamp Δ test (−0.0056 as reported, −0.0047).
+  Both arms also fail condition 2 on other clauses (Reading). The reported numbers and statuses are those of the
+  pre-registered `p_incorrect` ranking.
 - **Three held-out deployments** (546 CurbRamp and 847 SurfaceProblem rows; two are private and lettered in the
   tables). The same deployments were read by the context-arms, confident-learning and region-transfer studies
   (threat 7). Per-deployment Δ in `arms.md` varies widely between them, for example −0.12 to −0.14 for
@@ -554,8 +567,9 @@ python analysis/backbone_comparison.py report --split-dir ~/Data/sidewalk-valida
 ```
 
 The run took about 12 minutes on a laptop (Python 3.12, pandas 2.3.1, 1,000 bootstrap draws, seed 0). The bootstrap
-is seeded, so a rerun on the same inputs should give the same numbers (not rerun to check). If the live public-city
-list changes, the held-out deployments' names or letters, and so the output hashes, can change.
+is seeded. The PR #128 reviewer reran this command from the PR head, and 12 of the 13 files came out byte-identical.
+`provenance.json` differed only in the report commit it records. If the live public-city list changes, the held-out
+deployments' names or letters, and so the output hashes, can change.
 
 ## What a different backbone would need downstream
 
@@ -675,3 +689,11 @@ Listed with the default this branch uses; none blocks the pilot. Numbered as in 
   clause is named; the 0.92 floor reads the mean over every shared seed; the shared-seed count is printed beside
   condition 3; the partial-seed precision mark fires on a loss only (arm below baseline by more than 0.01), as
   PR #120's mark does.
+- **J18. Three-seed follow-up of `convnextv2-base` at 3e-5 on SurfaceProblem** (open; from the pilot's learning-rate
+  rows, PR #128 review S1). **Default: not run.** By the rule's wording, the arm's SurfaceProblem result is
+  "recipe-limited": its 3e-5 run beats its 1e-5 run by +0.035 [+0.011, +0.060] held-out at seed 42, above the
+  +0.016 threshold, so the rule proposes the follow-up for Jon. Against it: that is one seed, and the bar was set
+  for a three-seed mean (`lr.md`). `convnextv2-base` is explanatory, so it could only be promoted by the doubled bar
+  (+0.032) with no eligible winner. Its 3e-5 held-out AUC (0.670) is also below the in-env baseline's at 1e-5, seed
+  42 (0.728). Running it needs its own PR (the launcher plans 3e-5 rows at seed 42 only) and cap jobs (6 of 63
+  left).
