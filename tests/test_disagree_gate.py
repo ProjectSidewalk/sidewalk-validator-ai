@@ -1451,80 +1451,113 @@ def test_p5_report_block_not_run_and_with_an_answer():
     assert blk and blk.group(1) == dgt.P5_NOT_RUN_TEXT
 
 
-def p5_r4_layout(tmp_path, t="CurbRamp"):
-    """``$R4/<t>/`` with split.csv (vote columns) and predictions for every rebalanced run: val / test rows from
-    ``predictions(0)``, test_heldout from the P5 fixture; ``symmetric-rb`` better on every seed."""
-    d = tmp_path / "r4" / t
-    d.mkdir(parents=True)
+def p5_layout(tmp_path, gold_n=160, n_rb_gold=None, extra_seed=None, rb=True):
+    """One stage-2 layout under ``tmp_path``, as the runbook has it (``maps --r4 $PRED``, ``gold --pred-dir $PRED``):
+    ``r4/<Type>/`` for CurbRamp and Crosswalk with split.csv, the rebalanced runs' ``predictions_<tag>.csv``
+    (``symmetric-rb`` better on every seed) and every run's ``gold_predictions_uniform_<tag>.csv``; ``maps/`` with
+    baseline / cl-drop maps (so ``gold`` computes P4); ``gold.csv`` for both types; ``shares.json``.
+    ``n_rb_gold`` keeps only the first rows of every rebalanced gold file alike; ``extra_seed`` adds a rebalanced
+    run of another seed in both file kinds; ``rb=False`` writes no rebalanced file at all (the pilot)."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    r4, maps = tmp_path / "r4", tmp_path / "maps"
+    maps.mkdir()
     vt = predictions(0)
     vt = vt[vt["split"] != "test_heldout"]
-    for s in SEEDS3:
-        for v, better in (("matched-rb", 0.0), ("symmetric-rb", 0.1)):
-            pd.concat([vt, p5_pred(s, better=better)]).to_csv(d / f"predictions_{dgt.run_tag(v, s)}.csv", index=False)
-    other = pd.DataFrame({"label_uid": vt["label_uid"], "city": "c", "pano_id": [f"V{i}" for i in range(len(vt))],
-                          "split": vt["split"], "label_class": vt["true"], "class_source": "margin",
-                          "human_agree": "", "human_disagree": ""})
-    pd.concat([other, p5_split()]).to_csv(d / "split.csv", index=False)
-    shares = tmp_path / "shares.json"
-    shares.write_text(json.dumps({"types": {t: {"rules": {"majority2": {"correct": 80, "incorrect": 20},
-                                                          "margin": {"correct": 70, "incorrect": 30}}}}}))
-    return tmp_path / "r4", shares
+    golds = []
+    seeds = SEEDS3 + ((extra_seed,) if extra_seed else ())
+    for t in dgt.RB_TYPES:
+        d = r4 / t
+        d.mkdir(parents=True)
+        other = pd.DataFrame({"label_uid": vt["label_uid"], "city": "c", "pano_id": [f"V{i}" for i in range(len(vt))],
+                              "split": vt["split"], "label_class": vt["true"], "class_source": "margin",
+                              "human_agree": "", "human_disagree": ""})
+        pd.concat([other, p5_split()]).to_csv(d / "split.csv", index=False)
+        gold = real_gold(gold_n, t)
+        gold["label_uid"] = gold["label_uid"].str.replace("c:", f"{t[:2].lower()}:")      # unique across types
+        golds.append(gold)
+        y = (gold["expert"] == "incorrect").to_numpy()
+        for k, s in enumerate(seeds):
+            e = np.random.default_rng(k).normal(0, 0.25, len(y))
+            for v, bonus in (("baseline", 0.0), ("cl-drop", 0.02), ("matched-rb", 0.0), ("symmetric-rb", 0.15)):
+                if (v in ("baseline", "cl-drop") and s not in SEEDS3) or (v.endswith("-rb") and not rb):
+                    continue
+                tag = dgt.run_tag(v, s)
+                if v.endswith("-rb"):
+                    pd.concat([vt, p5_pred(min(s, 44), better=0.1 if v == "symmetric-rb" else 0.0)]).to_csv(
+                        d / f"predictions_{tag}.csv", index=False)
+                p = np.where(y, 0.6 + bonus, 0.4) + e
+                g = pd.DataFrame({"label_uid": gold["label_uid"], "p_correct": 1 - p, "p_incorrect": p})
+                if v.endswith("-rb") and n_rb_gold:
+                    g = g.iloc[:n_rb_gold]
+                g.to_csv(d / f"gold_predictions_uniform_{tag}.csv", index=False)
+                if v in ("baseline", "cl-drop"):
+                    (maps / f"{t}_{tag}.json").write_text(json.dumps(dgt.fit_map(predictions(k), PI)))
+    gold_path, shares = tmp_path / "gold.csv", tmp_path / "shares.json"
+    pd.concat(golds).to_csv(gold_path, index=False)
+    rules = {"majority2": {"correct": 80, "incorrect": 20}, "margin": {"correct": 70, "incorrect": 30}}
+    shares.write_text(json.dumps({"types": {t: {"rules": rules} for t in dgt.RB_TYPES}}))
+    return {"r4": r4, "maps": maps, "gold": gold_path, "shares": shares}
 
 
-def test_p5_end_to_end_maps_gold_decide_report(tmp_path):
-    r4, shares = p5_r4_layout(tmp_path)
+def p5_run_maps(lay, out, *extra, types="CurbRamp,Crosswalk", n_boot=10):
+    rc = dgt.main(["maps", "--r4", str(lay["r4"]), "--shares", str(lay["shares"]), "--types", types,
+                   "--n-boot", str(n_boot), "--out", str(out), *extra])
+    return rc, (json.loads((out / "maps.json").read_text()) if rc == 0 else None)
+
+
+def p5_run_gold(lay, out, *extra, types="CurbRamp,Crosswalk", n_boot=20, maps=None):
+    rc = dgt.main(["gold", "--gold", str(lay["gold"]), "--pred-dir", str(lay["r4"]), "--maps",
+                   str(maps or lay["maps"]), "--types", types, "--crops", "uniform", "--n-boot", str(n_boot),
+                   "--out", str(out), *extra])
+    return rc, (json.loads((out / "gold.json").read_text()) if rc == 0 else None)
+
+
+@pytest.fixture
+def allow_test_boot(monkeypatch):
+    """The tests' explicit override: maps / gold run a complete rebalanced set with fewer than 2,000 resamples."""
+    monkeypatch.setattr(dgt, "TEST_ONLY_ALLOW_UNREGISTERED_BOOT", True)
+
+
+def test_p5_end_to_end_maps_gold_decide_report(tmp_path, allow_test_boot):
+    lay = p5_layout(tmp_path)
     gate = tmp_path / "gate"
     # default --runs: the rebalanced runs are read without being named
-    assert dgt.main(["maps", "--r4", str(r4), "--shares", str(shares), "--types", "CurbRamp", "--n-boot", "40",
-                     "--out", str(gate)]) == 0
-    m = json.loads((gate / "maps.json").read_text())
+    rc, m = p5_run_maps(lay, gate, n_boot=40)
+    assert rc == 0
     leg = m["CurbRamp"]["contrasts"]["symmetric-rb"]
     assert leg["error"] is None and leg["seeds"] == {"matched-rb": [42, 43, 44], "symmetric-rb": [42, 43, 44]}
     assert leg["test_heldout_agreed"]["n"] == int((~P5_DIS2).sum()) and leg["test_heldout"]["n"] == len(P5_UIDS)
     assert leg["test_heldout_agreed"]["registered"]["mean"] > 0                    # symmetric-rb minus matched-rb
     assert leg["test_heldout_agreed"]["hierarchical"]["n_replicates"] == 40
+    assert len(leg["present"]) == 24 and not leg["missing"] and not leg["mismatched"]
     assert {"symmetric-rb", "matched-rb-s44"} <= set(m["CurbRamp"]["runs"])
-    assert str(r4 / "CurbRamp" / "split.csv") in m["_provenance"]["inputs_sha256"]
-    # gold: the rebalanced runs have uniform gold predictions but no map; P5 (b) is computed anyway
-    gold = real_gold(80, "CurbRamp")
-    gold_path, pred = tmp_path / "gold.csv", tmp_path / "pred" / "CurbRamp"
-    gold.to_csv(gold_path, index=False)
-    pred.mkdir(parents=True)
-    y = (gold["expert"] == "incorrect").to_numpy()
-    for k, s in enumerate(SEEDS3):
-        e = np.random.default_rng(k).normal(0, 0.25, len(y))
-        for v, bonus in (("matched-rb", 0.0), ("symmetric-rb", 0.15)):
-            p = np.where(y, 0.6 + bonus, 0.4) + e
-            pd.DataFrame({"label_uid": gold["label_uid"], "p_correct": 1 - p, "p_incorrect": p}).to_csv(
-                pred / f"gold_predictions_uniform_{dgt.run_tag(v, s)}.csv", index=False)
-    (tmp_path / "maps").mkdir()
+    assert str(lay["r4"] / "CurbRamp" / "split.csv") in m["_provenance"]["inputs_sha256"]
+    gold_file = lay["r4"] / "Crosswalk" / "gold_predictions_uniform_symmetric-rb.csv"     # maps reads its ids
+    assert str(gold_file) in m["_provenance"]["inputs_sha256"]
+    # gold: the rebalanced runs have uniform gold predictions but no map; P5 (b) is computed anyway, on P4's rows
     out = tmp_path / "goldout"
-    assert dgt.main(["gold", "--gold", str(gold_path), "--pred-dir", str(tmp_path / "pred"), "--maps",
-                     str(tmp_path / "maps"), "--types", "CurbRamp", "--crops", "uniform", "--n-boot", "40",
-                     "--out", str(out)]) == 0
-    g = json.loads((out / "gold.json").read_text())
+    rc, g = p5_run_gold(lay, out, n_boot=40)
+    assert rc == 0
     p5 = g["CurbRamp"]["p5"]
     assert p5["error"] is None and p5["registered"]["seeds"] == [42, 43, 44] and p5["registered"]["mean"] > 0
-    assert p5["n"] == int(((gold["ai_vote"] == "Disagree")).sum()) and p5["hierarchical"]["n_replicates"] == 40
+    assert p5["n"] == g["CurbRamp"]["p4"]["n"] and p5["hierarchical"]["n_replicates"] == 40
     assert g["CurbRamp"]["runs"]["symmetric-rb"] == {"missing": True}            # no map: no gate statistics
-    # decide and report: Crosswalk has no rebalanced output here, so the answer is unestimable, with the cause
     bar = gate / "bar.json"
     assert dgt.main(["decide", "--maps", str(gate / "maps.json"), "--gold", str(out / "gold.json"),
                      "--out", str(bar)]) == 0
     b = json.loads(bar.read_text())
-    assert b["p5"]["answer"] == dgt.P5_WITHHELD          # Crosswalk has no rebalanced output: not an answer
-    assert any(c.startswith("Crosswalk (a): maps.json has no P5 entry") for c in b["p5"]["causes"])
     # decide refuses intervals not computed at the registered 2,000 resamples (this test used 40)
+    assert b["p5"]["answer"] == dgt.P5_UNESTIMABLE
     assert "CurbRamp (a): registered interval computed with 40 resamples and bootstrap seed 0, not the registered " \
            "2,000 and 0" in b["p5"]["causes"]
-    cr = dgt.p5_decision(m, g, types=("CurbRamp",), registered_n_boot=40)      # the tests-only override
-    assert not cr["causes"] and cr["answer"] in (dgt.P5_YES, dgt.P5_NO)
+    d40 = dgt.p5_decision(m, g, registered_n_boot=40)                             # the tests-only override
+    assert not d40["causes"] and d40["answer"] in (dgt.P5_YES, dgt.P5_NO)
     doc = tmp_path / "doc.md"
     doc.write_text("".join(f"{dgt.BEGIN.format(name=n)}\nold\n{dgt.END.format(name=n)}\n"
                            for n in ("maps", "bar", "p5")))
     args = dgt.build_parser().parse_args(["report", "--dir", str(gate), "--doc", str(doc)])
     assert dgt.cmd_report(args, {"public": set(), "non_public_terms": set()}) == 0
-    assert f"**Answer: {dgt.P5_WITHHELD}.**" in doc.read_text()
+    assert f"**Answer: {dgt.P5_UNESTIMABLE}.**" in doc.read_text()
 
 
 def test_p5_coprimary_paths_to_a_wrong_yes_are_pinned():
@@ -1586,118 +1619,178 @@ def test_p5_scored_rows_must_be_exactly_the_split_rows():
                                                              "of split.csv"
 
 
-def p5_gold_layout(tmp_path, n_rb=None, gold_n=160, extra_seed=None):
-    """Gold predictions for baseline / cl-drop (with maps, so P4 runs) and the rebalanced runs (no maps), on uniform
-    crops; ``n_rb`` keeps only the first rows of every rebalanced file alike."""
-    gold = real_gold(gold_n, "CurbRamp")
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    gold_path, pred, maps = tmp_path / "gold.csv", tmp_path / "pred" / "CurbRamp", tmp_path / "maps"
-    gold.to_csv(gold_path, index=False)
-    pred.mkdir(parents=True)
-    maps.mkdir()
-    y = (gold["expert"] == "incorrect").to_numpy()
-    seeds = SEEDS3 + ((extra_seed,) if extra_seed else ())
-    for k, s in enumerate(seeds):
-        e = np.random.default_rng(k).normal(0, 0.25, len(y))
-        for v, bonus in (("baseline", 0.0), ("cl-drop", 0.02), ("matched-rb", 0.0), ("symmetric-rb", 0.15)):
-            if v in ("baseline", "cl-drop") and s not in SEEDS3:
-                continue
-            p = np.where(y, 0.6 + bonus, 0.4) + e
-            d = pd.DataFrame({"label_uid": gold["label_uid"], "p_correct": 1 - p, "p_incorrect": p})
-            if v.endswith("-rb") and n_rb:
-                d = d.iloc[:n_rb]
-            d.to_csv(pred / f"gold_predictions_uniform_{dgt.run_tag(v, s)}.csv", index=False)
-            if v in ("baseline", "cl-drop"):
-                (maps / f"CurbRamp_{dgt.run_tag(v, s)}.json").write_text(json.dumps(dgt.fit_map(predictions(k), PI)))
-    return gold_path, tmp_path / "pred", maps
-
-
-def run_gold_cr(gold_path, pred, maps, out, *extra):
-    assert dgt.main(["gold", "--gold", str(gold_path), "--pred-dir", str(pred), "--maps", str(maps), "--types",
-                     "CurbRamp", "--crops", "uniform", "--n-boot", "20", "--out", str(out), *extra]) == 0
-    return json.loads((out / "gold.json").read_text())["CurbRamp"]
-
-
-def test_p5_gold_items_must_be_p4s_items(tmp_path):
+def test_p5_gold_items_must_be_p4s_items(tmp_path, allow_test_boot):
     # S1 (b): the rebalanced gold files truncated alike pass the cross-run check; P5 (b) must still be on P4's rows
-    g = run_gold_cr(*p5_gold_layout(tmp_path, n_rb=100), tmp_path / "out")
-    n4 = g["p4"]["n"]
-    assert g["p5"]["error"].startswith(f"P5 (b) has ") and f"items and P4 {n4} " in g["p5"]["error"]
-    assert "registered" not in g["p5"]
-    ok = run_gold_cr(*p5_gold_layout(tmp_path / "full"), tmp_path / "out2")
-    assert ok["p5"]["error"] is None and ok["p5"]["n"] == n4 and ok["p5"]["registered"]["n_boot"] == 20
-    assert ok["p5"]["registered"]["boot_seed"] == 0 and ok["p5"]["registered"]["n_valid"] == 20
+    rc, g = p5_run_gold(p5_layout(tmp_path / "t", n_rb_gold=100), tmp_path / "out")
+    n4 = g["CurbRamp"]["p4"]["n"]
+    err = g["CurbRamp"]["p5"]["error"]
+    assert err.startswith("P5 (b) has ") and f"items and P4 {n4} " in err
+    assert "registered" not in g["CurbRamp"]["p5"]
+    lay = p5_layout(tmp_path / "full")
+    rc, ok = p5_run_gold(lay, tmp_path / "out2")
+    p5 = ok["CurbRamp"]["p5"]
+    assert p5["error"] is None and p5["n"] == n4 and p5["registered"]["n_boot"] == 20
+    assert p5["registered"]["boot_seed"] == 0 and p5["registered"]["n_valid"] == 20
+    # N-b: without P4 (no baseline / cl-drop gold rows) (b)'s rows cannot be checked: an error, no numbers
+    rc, nop4 = p5_run_gold(lay, tmp_path / "out4", "--runs", "matched-rb,symmetric-rb")
+    leg = nop4["CurbRamp"]["p5"]
+    assert leg["error"].startswith("P4 was not computed") and "registered" not in leg
     # P5 (b) is a uniform-crop statistic: gold on round-3 crops writes no P5 entry at all
-    assert "p5" not in run_gold_cr(*p5_gold_layout(tmp_path / "r3"), tmp_path / "out3", "--crops", "r3crops")
+    rc, r3 = p5_run_gold(lay, tmp_path / "out3", "--crops", "r3crops")
+    assert "p5" not in r3["CurbRamp"]
 
 
-def test_p5_incomplete_rebalanced_set_is_withheld_in_maps(tmp_path):
-    # S2: one rebalanced prediction file missing -> nothing of the rebalanced runs is computed or written
-    r4, shares = p5_r4_layout(tmp_path)
-    (r4 / "CurbRamp" / f"predictions_{dgt.run_tag('symmetric-rb', 44)}.csv").unlink()
+def test_p5_registered_resample_settings_are_refused_not_computed(tmp_path):
+    # R2: a complete rebalanced set with a non-registered --n-boot or --seed: non-zero exit, nothing written
+    lay = p5_layout(tmp_path)
+    for extra in (("--n-boot", "40"), ("--seed", "1")):
+        out = tmp_path / ("m" + extra[0])
+        assert dgt.main(["maps", "--r4", str(lay["r4"]), "--shares", str(lay["shares"]), "--types", "CurbRamp",
+                         *extra, "--out", str(out)]) == 2
+        assert not out.exists()
+        gout = tmp_path / ("g" + extra[0])
+        assert dgt.main(["gold", "--gold", str(lay["gold"]), "--pred-dir", str(lay["r4"]), "--maps", str(lay["maps"]),
+                         "--types", "CurbRamp", "--crops", "uniform", *extra, "--out", str(gout)]) == 2
+        assert not gout.exists()
+    # an incomplete set is withheld, so other settings are harmless there and run
+    (lay["r4"] / "Crosswalk" / "gold_predictions_uniform_matched-rb.csv").unlink()
+    assert p5_run_maps(lay, tmp_path / "inc", n_boot=40)[0] == 0
+    assert p5_run_gold(lay, tmp_path / "incg", n_boot=40)[0] == 0
+
+
+def p5_has_number(obj):
+    """Whether a JSON value holds any non-bool number."""
+    if isinstance(obj, dict):
+        return any(p5_has_number(v) for v in obj.values())
+    if isinstance(obj, list):
+        return any(p5_has_number(v) for v in obj)
+    return isinstance(obj, (int, float)) and not isinstance(obj, bool)
+
+
+def test_p5_incomplete_unit_is_withheld_in_both_commands_and_both_types(tmp_path):
+    # R1: one failed GOLD scoring job of the OTHER type withholds every rebalanced number of maps too, for both types
+    lay = p5_layout(tmp_path)
+    (lay["r4"] / "Crosswalk" / "gold_predictions_uniform_symmetric-rb-s44.csv").unlink()
     gate = tmp_path / "gate"
-    assert dgt.main(["maps", "--r4", str(r4), "--shares", str(shares), "--types", "CurbRamp", "--n-boot", "10",
-                     "--out", str(gate)]) == 0
-    m = json.loads((gate / "maps.json").read_text())
-    leg = m["CurbRamp"]["contrasts"]["symmetric-rb"]
-    assert leg["withheld"] and leg["missing"] == ["symmetric-rb-s44"] and len(leg["present"]) == 5
-    assert set(leg) == {"a", "b", "withheld", "present", "missing", "mismatched", "seeds_not_used"}   # no numbers
-    rb_runs = {k: v for k, v in m["CurbRamp"]["runs"].items() if "-rb" in k}
-    assert len(rb_runs) == 6 and all(set(v) <= {"variant", "seed", "withheld", "missing"} for v in rb_runs.values())
-    assert rb_runs["symmetric-rb-s44"]["missing"] and rb_runs["matched-rb"]["withheld"]
-    assert not list((gate / "maps").glob("CurbRamp_*-rb*.json"))                 # no rebalanced map either
+    rc, m = p5_run_maps(lay, gate)
+    assert rc == 0
+    for t in dgt.RB_TYPES:
+        leg = m[t]["contrasts"]["symmetric-rb"]
+        assert leg["withheld"] and leg["missing"] == ["Crosswalk/gold_predictions_uniform_symmetric-rb-s44.csv"]
+        assert set(leg) == {"a", "b", "withheld", "present", "missing", "mismatched", "seeds_not_used"}
+        assert len(leg["present"]) == 23
+        rb_runs = {k: v for k, v in m[t]["runs"].items() if "-rb" in k}
+        assert len(rb_runs) == 6 and all(v == {"variant": v["variant"], "seed": v["seed"], "withheld": True}
+                                         for v in rb_runs.values())
+        assert not p5_has_number({k: {kk: vv for kk, vv in v.items() if kk != "seed"} for k, v in rb_runs.items()})
+    assert not list((gate / "maps").glob("*-rb*.json"))                         # no rebalanced map
     text = dgt.maps_markdown(m)
-    assert "withheld (rebalanced runs incomplete)" in text
-    assert not [ln for ln in text.splitlines() if "-rb" in ln and ln.count("|") == 5]        # no AUC row
-    dgt.main(["decide", "--maps", str(gate / "maps.json"), "--out", str(gate / "bar.json")])
-    bar = json.loads((gate / "bar.json").read_text())
-    assert bar["p5"]["answer"] == dgt.P5_WITHHELD
-    assert "CurbRamp (a): rebalanced runs incomplete: missing symmetric-rb-s44" in bar["p5"]["causes"]
-    assert "resubmit the missing runs" in dgt.p5_markdown(bar)
-    # one run scored on other rows: withheld too, and the mismatch is named
-    r4b, _ = p5_r4_layout(tmp_path / "b")
-    f = r4b / "CurbRamp" / f"predictions_{dgt.run_tag('matched-rb', 43)}.csv"
+    assert not [ln for ln in text.splitlines() if "-rb" in ln and re.search(r"\d\.\d", ln)]   # no AUC on any rb row
+    out = tmp_path / "goldout"
+    rc, g = p5_run_gold(lay, out)
+    for t in dgt.RB_TYPES:
+        assert g[t]["p5"]["withheld"] and not p5_has_number(g[t]["p5"])
+        assert all(not p5_has_number({kk: vv for kk, vv in v.items() if kk != "seed"})
+                   for k, v in g[t]["runs"].items() if "-rb" in k)
+        assert not any("-rb" in v for v in g[t]["ensemble"])
+    assert "-rb" not in dgt.gold_markdown(g)
+    bar = gate / "bar.json"
+    dgt.main(["decide", "--maps", str(gate / "maps.json"), "--gold", str(out / "gold.json"), "--out", str(bar)])
+    b = json.loads(bar.read_text())
+    assert b["p5"]["answer"] == dgt.P5_WITHHELD and not p5_has_number(b["p5"])
+    assert "CurbRamp (a): rebalanced runs incomplete: missing Crosswalk/gold_predictions_uniform_symmetric-rb-s44.csv" \
+        in b["p5"]["causes"]
+    block = dgt.p5_markdown(b)
+    assert "resubmit the missing runs" in block and not re.search(r"[+-]\d\.\d{3}", block)
+    # decide: one withheld leg among three complete ones writes no number of any leg
+    maps_ok, gold_ok = p5_files()
+    maps_ok["Crosswalk"]["contrasts"]["symmetric-rb"] = m["Crosswalk"]["contrasts"]["symmetric-rb"]
+    d = dgt.p5_decision(maps_ok, gold_ok)
+    assert d["answer"] == dgt.P5_WITHHELD and not p5_has_number(d["rows"]) and len(d["rows"]) == 4
+
+
+def test_p5_mismatched_ids_are_withheld_in_maps_and_gold(tmp_path):
+    # one rebalanced prediction file scored on other rows: withheld, and the mismatch is named
+    lay = p5_layout(tmp_path / "a")
+    f = lay["r4"] / "CurbRamp" / "predictions_matched-rb-s43.csv"
     pd.read_csv(f).iloc[1:].to_csv(f, index=False)
-    assert dgt.main(["maps", "--r4", str(r4b), "--shares", str(shares), "--types", "CurbRamp", "--n-boot", "10",
-                     "--out", str(tmp_path / "gb")]) == 0
-    legb = json.loads((tmp_path / "gb" / "maps.json").read_text())["CurbRamp"]["contrasts"]["symmetric-rb"]
-    assert legb["withheld"] and not legb["missing"] and "matched-rb-s43 scored" in legb["mismatched"]
-    assert "scored on different rows" in dgt.p5_coprimary(legb, "test_heldout_agreed", "a")["causes"][0]
+    rc, m = p5_run_maps(lay, tmp_path / "ga")
+    leg = m["CurbRamp"]["contrasts"]["symmetric-rb"]
+    assert leg["withheld"] and not leg["missing"] and "matched-rb-s43 scored" in leg["mismatched"][0]
+    assert "scored on different rows" in dgt.p5_coprimary(leg, "test_heldout_agreed", "a")["causes"][0]
+    # N-a: one rebalanced GOLD file with different ids: gold withholds (not a final error), and so does maps
+    lay = p5_layout(tmp_path / "b")
+    f = lay["r4"] / "Crosswalk" / "gold_predictions_uniform_symmetric-rb.csv"
+    pd.read_csv(f).iloc[1:].to_csv(f, index=False)
+    rc, g = p5_run_gold(lay, tmp_path / "gb")
+    for t in dgt.RB_TYPES:
+        assert g[t]["p5"]["withheld"] and "error" not in g[t]["p5"]
+        assert g[t]["p5"]["mismatched"][0].startswith("Crosswalk gold_predictions_uniform_*.csv: symmetric-rb scored")
+        assert all(set(v) == {"variant", "seed", "withheld"} for k, v in g[t]["runs"].items() if "-rb" in k)
+    rc, m = p5_run_maps(lay, tmp_path / "gbm")
+    assert m["CurbRamp"]["contrasts"]["symmetric-rb"]["withheld"]
 
 
-def test_p5_incomplete_rebalanced_set_is_withheld_in_gold(tmp_path):
-    gold_path, pred, maps = p5_gold_layout(tmp_path)
-    (pred / "CurbRamp" / "gold_predictions_uniform_matched-rb-s43.csv").unlink()
-    for v in ("matched-rb", "symmetric-rb"):                      # with maps, a complete set would get gold rows
-        for s in SEEDS3:
-            (maps / f"CurbRamp_{dgt.run_tag(v, s)}.json").write_text(json.dumps(dgt.fit_map(predictions(0), PI)))
-    out = tmp_path / "out"
-    g = run_gold_cr(gold_path, pred, maps, out)
-    assert g["p5"]["withheld"] and g["p5"]["missing"] == ["matched-rb-s43"]
-    assert "registered" not in g["p5"] and "n" not in g["p5"]
-    assert g["runs"]["symmetric-rb"] == {"variant": "symmetric-rb", "seed": 42, "withheld": True}
-    assert "matched-rb" not in g["ensemble"] and "symmetric-rb" not in g["ensemble"]
-    text = dgt.gold_markdown(json.loads((out / "gold.json").read_text()))
-    assert "-rb" not in text and "**P4**" in text
-
-
-def test_p5_uses_exactly_the_registered_seeds(tmp_path):
-    # N3: a seed-45 run on disk (and --seeds naming it) is listed as not used; the intervals use 42, 43, 44
-    r4, shares = p5_r4_layout(tmp_path)
-    for v in ("matched-rb", "symmetric-rb"):
-        p5_pred(44, better=0.5 if v == "symmetric-rb" else 0.0).assign(split="test_heldout").to_csv(
-            r4 / "CurbRamp" / f"predictions_{v}-s45.csv", index=False)
+def test_p5_no_rebalanced_file_is_not_run(tmp_path, capsys):
+    # N-a and N-c: the pilot layout (no rebalanced file at all): decide on the real maps.json says "not run", and
+    # maps / gold print no P5 WITHHELD line
+    lay = p5_layout(tmp_path, rb=False)
     gate = tmp_path / "gate"
-    assert dgt.main(["maps", "--r4", str(r4), "--shares", str(shares), "--types", "CurbRamp", "--seeds",
-                     "42,43,44,45", "--n-boot", "10", "--out", str(gate)]) == 0
-    leg = json.loads((gate / "maps.json").read_text())["CurbRamp"]["contrasts"]["symmetric-rb"]
-    assert leg["seeds_not_used"] == ["matched-rb-s45", "symmetric-rb-s45"]
+    rc, m = p5_run_maps(lay, gate)
+    rc, g = p5_run_gold(lay, tmp_path / "gold")
+    assert "P5 WITHHELD" not in capsys.readouterr().err
+    dgt.main(["decide", "--maps", str(gate / "maps.json"), "--gold", str(tmp_path / "gold" / "gold.json"),
+              "--out", str(gate / "bar.json")])
+    b = json.loads((gate / "bar.json").read_text())
+    assert b["p5"]["answer"] == dgt.P5_NOT_RUN and dgt.p5_markdown(b) == dgt.P5_NOT_RUN_TEXT
+    # one rebalanced file is enough for "withheld", and for the stderr line
+    pd.DataFrame({"label_uid": ["x"]}).to_csv(lay["r4"] / "CurbRamp" / "predictions_matched-rb.csv", index=False)
+    rc, m = p5_run_maps(lay, tmp_path / "one")
+    assert "P5 WITHHELD" in capsys.readouterr().err
+    assert dgt.p5_decision(m, None)["answer"] == dgt.P5_WITHHELD
+
+
+def test_p5_defined_replicate_counters(tmp_path):
+    # N-a: both counters of the registered intervals' defined replicates, against an independent count
+    assert dgt._registered_valid_panoramas(np.zeros(6, int), [f"p{i}" for i in range(6)], 50, 0) == 0
+    assert dgt._registered_valid_panoramas(np.r_[1, 0, 0, 1], ["a", "b", "c", "d"], 50, 0) == 50
+
+    def rows(n_c, n_i, seed):
+        y = np.r_[np.zeros(n_c, bool), np.ones(n_i, bool)]
+        p = 0.5 + np.where(y, .15, -.15) + np.random.default_rng(seed).normal(0, .3, len(y))
+        return pd.DataFrame({"label_uid": [f"g:{i:03d}" for i in range(len(y))], "ai_vote": "Disagree",
+                             "expert": np.where(y, "incorrect", "correct"), "round": [str(1 + i % 2) for i in
+                                                                                     range(len(y))],
+                             "p_incorrect": p}).sample(frac=1, random_state=9)
+
+    for n_c, n_i in ((3, 3), (40, 2), (10, 10)):
+        ra = {s: rows(n_c, n_i, s) for s in SEEDS3}
+        rb = {s: rows(n_c, n_i, s + 7) for s in SEEDS3}
+        ref = ra[42]
+        y, r = (ref["expert"] == "incorrect").astype(int).to_numpy(), ref["round"].to_numpy()
+        rng, n = np.random.default_rng(0), 0
+        for _ in range(500):                                   # paired_gold_delta's loop; a defined AUC is not NaN
+            idx = rng.integers(0, len(y), len(y))
+            n += not np.isnan(dgt.stratified_auc(y[idx], ref["p_incorrect"].to_numpy()[idx], r[idx]))
+        assert dgt._registered_valid_items(ra, rb, 500, 0) == n
+        if (n_c, n_i) == (40, 2):
+            assert n < 500                                     # the thin case does drop replicates
+
+
+def test_p5_uses_exactly_the_registered_seeds(tmp_path, allow_test_boot):
+    # N3: seed-45 runs on disk (and --seeds naming 45) are listed as not used; the intervals use 42, 43, 44
+    lay = p5_layout(tmp_path, extra_seed=45)
+    rc, m = p5_run_maps(lay, tmp_path / "gate", "--seeds", "42,43,44,45")
+    leg = m["CurbRamp"]["contrasts"]["symmetric-rb"]
+    assert "CurbRamp/predictions_matched-rb-s45.csv" in leg["seeds_not_used"]
+    assert "Crosswalk/gold_predictions_uniform_symmetric-rb-s45.csv" in leg["seeds_not_used"]
+    assert len(leg["seeds_not_used"]) == 8
     assert leg["seeds"] == {"matched-rb": [42, 43, 44], "symmetric-rb": [42, 43, 44]}
     assert leg["test_heldout_agreed"]["registered"]["seeds"] == [42, 43, 44]
     assert leg["test_heldout_agreed"]["hierarchical"]["seeds"] == [42, 43, 44]
-    g = run_gold_cr(*p5_gold_layout(tmp_path / "g", extra_seed=45), tmp_path / "gout", "--seeds", "42,43,44,45")
-    assert g["p5"]["seeds_not_used"] == ["matched-rb-s45", "symmetric-rb-s45"]
-    assert g["p5"]["registered"]["seeds"] == [42, 43, 44]
+    rc, g = p5_run_gold(lay, tmp_path / "gout", "--seeds", "42,43,44,45")
+    assert g["CurbRamp"]["p5"]["seeds_not_used"] == leg["seeds_not_used"]
+    assert g["CurbRamp"]["p5"]["registered"]["seeds"] == [42, 43, 44]
 
 
 def test_doctests():

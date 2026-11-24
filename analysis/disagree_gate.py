@@ -109,8 +109,8 @@ P5_YES = "yes, test `symmetric` on a fresh pull"
 P5_NO = "no, the training rule stays `margin`"
 P5_UNESTIMABLE = "no (unestimable)"
 P5_NOT_RUN = "not run"
-# Not an answer: some of the six rebalanced runs (two arms x seeds 42, 43, 44) of a type are missing or were scored
-# on different rows, so maps / gold withheld every P5 number of that type (decision rule of 2026-11-23, S2).
+# Not an answer: the rebalanced unit (rb_unit_status: 24 files, both types x both arms x seeds 42, 43, 44 x both
+# file kinds) is incomplete, so maps / gold / decide withheld every P5 number (decision rule of 2026-11-23).
 P5_WITHHELD = "withheld (rebalanced runs incomplete; not an answer)"
 # maps and gold read every arm by default, so stage 2's rebalanced runs are never left out by a forgotten flag.
 DEFAULT_RUNS = ",".join(("baseline", "cl-drop", "round3") + RB_VARIANTS)
@@ -750,13 +750,10 @@ def rb_unused_tags(directory, prefix):
 
 
 def rb_set_status(ids, not_used=()):
-    """Whether one type's rebalanced set is complete: ``ids`` is ``{tag: set of label ids, or None for a missing
-    run}`` over the six registered runs (``rb_tags``). Complete only when all six are present with the same ids.
-
-    The decision rule of 2026-11-23 (docs/round4-2026-11.md, "Decision rules"): ``maps`` and ``gold`` withhold every
-    rebalanced number of a type whose set is not complete (no per-run record, no map, no AUC, no delta, no
-    interval) and write only which runs are missing or mismatched. A failed training or scoring job can then be
-    resubmitted without an interim look, and the first ``decide`` on a complete set is P5's answer.
+    """Whether one type's six rebalanced files of one kind are complete: ``ids`` is ``{tag: set of label ids, or
+    None for a missing file}`` over the six registered runs (``rb_tags``). Complete only when all six are present
+    with the same ids. ``rb_unit_status`` combines the four (type, file kind) groups into the one unit that the
+    decision rule of 2026-11-23 withholds as a whole.
 
     >>> st = rb_set_status({"matched-rb": {"a", "b"}, "symmetric-rb": None, "symmetric-rb-s43": {"a"}})
     >>> st["complete"], st["missing"], st["mismatched"]
@@ -774,10 +771,73 @@ def rb_set_status(ids, not_used=()):
             "mismatched": mismatched, "seeds_not_used": sorted(not_used)}
 
 
-def rb_withheld_leg(status):
-    """The leg ``maps`` / ``gold`` write for a type whose rebalanced set is incomplete: which runs, nothing else."""
+RB_FILE_KINDS = ("predictions_", "gold_predictions_uniform_")   # P5 (a)'s input and P5 (b)'s, per run tag
+# Tests only: lets maps / gold run a complete rebalanced set with fewer resamples. Never set outside the tests.
+TEST_ONLY_ALLOW_UNREGISTERED_BOOT = False
+
+
+def rb_unit_status(directory, inputs=None):
+    """The rebalanced set as ONE unit (decision rule of 2026-11-23, under "Decision rules"): both types
+    (``RB_TYPES``) x both arms x seeds 42, 43, 44, in both file kinds (``RB_FILE_KINDS``: the 12
+    ``predictions_<tag>.csv`` and the 12 ``gold_predictions_uniform_<tag>.csv`` under ``<directory>/<Type>/``).
+    Complete only when all 24 files are present and, within each type and file kind, the six runs' ids are equal.
+    Only the ``label_uid`` column is read (no gold.csv is needed). ``maps`` (``--r4``) and ``gold`` (``--pred-dir``)
+    read the same directory in the runbook, so both judge the same unit; neither writes a rebalanced number unless
+    it is complete. ``any`` is False when none of the 24 files exists (P5 not run). ``inputs`` collects sha256s.
+
+    ``present`` / ``missing`` are ``<Type>/<file>`` names; ``mismatched`` lists each type and file kind whose six
+    runs scored different ids; ``seeds_not_used`` the files of other seeds, never read into P5."""
+    present, missing, mismatched, not_used = [], [], [], []
+    for t in RB_TYPES:
+        for kind in RB_FILE_KINDS:
+            ids = {}
+            for _, _, tag in rb_tags():
+                path = os.path.join(directory, t, f"{kind}{tag}.csv")
+                if not os.path.exists(path):
+                    ids[tag] = None
+                    missing.append(f"{t}/{kind}{tag}.csv")
+                    continue
+                if inputs is not None:
+                    inputs[path] = sha256_file(path)
+                ids[tag] = set(pd.read_csv(path, usecols=["label_uid"], dtype=str, keep_default_na=False)["label_uid"])
+                present.append(f"{t}/{kind}{tag}.csv")
+            st = rb_set_status(ids)
+            if st["mismatched"]:
+                mismatched.append(f"{t} {kind}*.csv: {st['mismatched']}")
+            not_used += [f"{t}/{kind}{x}.csv" for x in rb_unused_tags(os.path.join(directory, t), kind)]
+    return {"complete": not missing and not mismatched, "any": bool(present), "present": present, "missing": missing,
+            "mismatched": mismatched, "seeds_not_used": sorted(not_used)}
+
+
+def rb_withheld_leg(unit):
+    """The leg ``maps`` / ``gold`` write while the rebalanced unit is incomplete: which files, nothing else."""
     return {"a": P5_A, "b": P5_B, "withheld": True,
-            **{k: status[k] for k in ("present", "missing", "mismatched", "seeds_not_used")}}
+            **{k: unit[k] for k in ("present", "missing", "mismatched", "seeds_not_used")}}
+
+
+def rb_unit_fields(unit):
+    return {k: unit[k] for k in ("present", "missing", "mismatched", "seeds_not_used")}
+
+
+def rb_print_unit(unit):
+    """The one line ``maps`` / ``gold`` print about the rebalanced unit: nothing when no rebalanced file exists (P5
+    not run, the pilot), the withholding when it is incomplete, and any seed on disk that is not used."""
+    if not unit or not unit["any"]:
+        return
+    if not unit["complete"]:
+        print(f"P5 WITHHELD ({p5_withheld_text(unit)}); no rebalanced number written", file=sys.stderr)
+    if unit["seeds_not_used"]:
+        print(f"P5 uses seeds 42, 43, 44 only; not used: {', '.join(unit['seeds_not_used'])}")
+
+
+def refuse_unregistered_boot(args, cmd):
+    """The refusal message when the complete rebalanced unit is in the plan and ``--n-boot`` / ``--seed`` are not
+    the registered 2,000 and 0, else None. A complete set is P5's answer (the first ``decide`` on it is final), so
+    it is never computed at other settings (``TEST_ONLY_ALLOW_UNREGISTERED_BOOT`` is for the tests)."""
+    if TEST_ONLY_ALLOW_UNREGISTERED_BOOT or (args.n_boot == N_BOOT and args.seed == P5_BOOT_SEED):
+        return None
+    return (f"{cmd}: refused, nothing written: the complete rebalanced set is in the plan, so P5 must be computed "
+            f"with the registered --n-boot {N_BOOT} and --seed {P5_BOOT_SEED} (got {args.n_boot} and {args.seed})")
 
 
 def _registered_valid_panoramas(y, g, n_boot, seed):
@@ -961,7 +1021,8 @@ def p5_withheld_text(leg):
     if leg.get("missing"):
         parts.append(f"missing {', '.join(leg['missing'])}")
     if leg.get("mismatched"):
-        parts.append(f"scored on different rows ({leg['mismatched']})")
+        mm = leg["mismatched"]
+        parts.append(f"scored on different rows ({mm if isinstance(mm, str) else '; '.join(mm)})")
     return "rebalanced runs incomplete: " + ("; ".join(parts) or "unknown")
 
 
@@ -969,8 +1030,8 @@ def p5_coprimary(leg, part_key, coprimary, registered_n_boot=N_BOOT):
     """One co-primary's result from its leg (``maps.json`` ``contrasts.symmetric-rb`` for (a), with ``part_key``
     ``test_heldout_agreed``; ``gold.json`` ``p5`` for (b), ``part_key`` None).
 
-    - ``withheld`` when the leg is missing or ``maps`` / ``gold`` withheld it (the type's six rebalanced runs are
-      not all present with equal ids): not an answer; the missing runs may be resubmitted.
+    - ``withheld`` when the leg is missing or ``maps`` / ``gold`` withheld it (the rebalanced unit,
+      ``rb_unit_status``, is incomplete): not an answer; the missing runs may be resubmitted.
     - ``unestimable``, with each cause named, when the leg is an error, when either arm has fewer than the three
       registered seeds, when the rows hold fewer than ``P5_MIN_CLASS`` of either class, or when an interval is
       missing, was not computed at the registered ``N_BOOT`` resamples and bootstrap seed ``P5_BOOT_SEED``, or
@@ -1037,8 +1098,9 @@ def p5_decision(maps, gold=None, types=RB_TYPES, registered_n_boot=N_BOOT):
     """P5's one answer across types (amendment items 3 to 5), from ``maps.json`` and ``gold.json``:
 
     - ``P5_NOT_RUN`` when no leg of any type holds a rebalanced run (the pilot);
-    - ``P5_WITHHELD`` when any co-primary is ``withheld`` (some type's six rebalanced runs are not all present with
-      equal ids, or a leg was not computed): not an answer (decision rule of 2026-11-23);
+    - ``P5_WITHHELD`` when any co-primary is ``withheld`` (the rebalanced unit, ``rb_unit_status``, is incomplete,
+      or a leg was not computed): not an answer (decision rule of 2026-11-23), and the rows then carry no number of
+      any leg, only each co-primary's state and causes;
     - ``P5_YES`` only when all four co-primaries ((a) and (b) for CurbRamp and Crosswalk) are ``positive``
       (``p5_coprimary``); adoption is one global rule, so this is an intersection-union test and needs no
       multiplicity correction;
@@ -1069,6 +1131,9 @@ def p5_decision(maps, gold=None, types=RB_TYPES, registered_n_boot=N_BOOT):
                 rows.append({"label_type": t, "coprimary": "a, every row", "role": "descriptive",
                              "result": "descriptive", "causes": [], **_p5_summary(a["test_heldout"])})
     results = [r["result"] for r in rows if r["role"] == "co-primary"]
+    if "withheld" in results:      # not an answer: no number of any leg is written (decision rule of 2026-11-23)
+        rows = [{k: r[k] for k in ("label_type", "coprimary", "role", "result", "causes")} for r in rows
+                if r["role"] == "co-primary"]
     answer = (P5_WITHHELD if "withheld" in results else
               P5_YES if all(r == "positive" for r in results) else
               P5_UNESTIMABLE if "unestimable" in results else P5_NO)
@@ -1122,6 +1187,14 @@ def cmd_maps(args):
     inputs = {args.shares: sha256_file(args.shares)}
     if args.priors:
         inputs[args.priors] = sha256_file(args.priors)
+    # The rebalanced runs (P5) are one unit across both types and both file kinds (rb_unit_status): nothing of them
+    # is computed or written unless the unit is complete; otherwise only which files are present / missing.
+    unit = (rb_unit_status(args.r4, inputs) if any(v in runs for v in RB_VARIANTS) and set(types) & set(RB_TYPES)
+            else None)
+    if unit and unit["complete"] and (msg := refuse_unregistered_boot(args, "maps")):
+        print(msg, file=sys.stderr)
+        return 2
+    rb_print_unit(unit)
     os.makedirs(os.path.join(args.out, "maps"), exist_ok=True)
     for t in types:
         pi = load_shares_prior(args.shares, t, args.prior_rule)
@@ -1133,18 +1206,13 @@ def cmd_maps(args):
         plan = [(variant, s) for variant in runs if variant not in RB_VARIANTS
                 and not (variant == "cl-drop" and t not in CL_DROP_TYPES)
                 for s in ([SHIP_SEED] if variant == "round3" else seeds)]
-        # The rebalanced runs (P5): only seeds 42, 43, 44, and nothing of them is computed or written unless all six
-        # are present with equal ids (decision rule of 2026-11-23); otherwise only which runs are missing.
-        rb_wanted, rb_status, rb_loaded = t in RB_TYPES and any(v in runs for v in RB_VARIANTS), None, {}
-        if rb_wanted:
-            rb_loaded = {tag: load_run_predictions(args.r4, t, tag, inputs) for _, _, tag in rb_tags()}
-            rb_status = rb_set_status({tag: None if p is None else set(p["label_uid"]) for tag, p in rb_loaded.items()},
-                                      rb_unused_tags(os.path.join(args.r4, t), "predictions_"))
-            if rb_status["complete"]:
-                plan += [(v, s) for v, s, _ in rb_tags()]
+        # Seeds 42, 43, 44 only (rb_tags), and only when the whole unit is complete.
+        rb_wanted = unit is not None and t in RB_TYPES
+        if rb_wanted and unit["complete"]:
+            plan += [(v, s) for v, s, _ in rb_tags()]
         for variant, s in plan:
             tag = run_tag(variant, s)
-            pred = rb_loaded[tag] if variant in RB_VARIANTS else load_run_predictions(args.r4, t, tag, inputs)
+            pred = load_run_predictions(args.r4, t, tag, inputs)
             if pred is None:
                 rec["runs"][tag] = {"variant": variant, "seed": s, "missing": True}
                 continue
@@ -1155,13 +1223,13 @@ def cmd_maps(args):
             rec["runs"][tag] = {"variant": variant, "seed": s, **r}
             with open(os.path.join(args.out, "maps", f"{t}_{tag}.json"), "w") as f:
                 json.dump(amap, f, indent=1)
-        if rb_wanted and not rb_status["complete"]:
+        if rb_wanted and not unit["complete"]:
             for v, s, tag in rb_tags():
-                rec["runs"][tag] = {"variant": v, "seed": s, **({"missing": True} if rb_loaded[tag] is None
-                                                                else {"withheld": True})}
+                rec["runs"][tag] = {"variant": v, "seed": s, **({"withheld": True} if f"{t}/predictions_{tag}.csv"
+                                                                in unit["present"] else {"missing": True})}
         split_path = os.path.join(args.r4, t, "split.csv")
         sp = None
-        needs_split = ("baseline" in preds and "cl-drop" in preds) or bool(rb_wanted and rb_status["complete"])
+        needs_split = ("baseline" in preds and "cl-drop" in preds) or bool(rb_wanted and unit["complete"])
         if needs_split and os.path.exists(split_path):
             inputs[split_path] = sha256_file(split_path)
             sp = pd.read_csv(split_path, dtype=str, keep_default_na=False)
@@ -1179,17 +1247,14 @@ def cmd_maps(args):
         if rb_wanted:
             # P5 (a), amended 2026-11-23: symmetric-rb minus matched-rb on the agreed test_heldout rows (co-primary)
             # and on every test_heldout row (descriptive); decide combines it with gold's P5 (b).
-            if rb_status["complete"]:
+            if unit["complete"]:
                 leg = p5_maps_leg(preds[P5_A], preds[P5_B], sp, args.n_boot, args.seed)
-                leg.update({k: rb_status[k] for k in ("present", "missing", "mismatched", "seeds_not_used")})
+                leg.update(rb_unit_fields(unit))
             else:
-                leg = rb_withheld_leg(rb_status)
-                print(f"{t}: P5 WITHHELD ({p5_withheld_text(leg)}); no rebalanced number written", file=sys.stderr)
+                leg = rb_withheld_leg(unit)
             rec.setdefault("contrasts", {})[P5_B] = leg
             if leg.get("error"):
                 print(f"{t}: P5 ERROR (P5 reads as unestimable): {leg['error']}", file=sys.stderr)
-            if leg["seeds_not_used"]:
-                print(f"{t}: P5 uses seeds 42, 43, 44 only; not used: {', '.join(leg['seeds_not_used'])}")
         out[t] = rec
         print(f"{t}: {sum(1 for r in rec['runs'].values() if not r.get('missing') and not r.get('withheld'))} runs "
               "with predictions")
@@ -1482,6 +1547,14 @@ def cmd_gold(args):
     runs = [r for r in args.runs.split(",") if r]
     res = {"_crops": args.crops, "_caption": R3CROPS_CAPTION if args.crops == "r3crops" else None,
            "_pool_rounds": sorted(pools)}
+    # The rebalanced unit (rb_unit_status), judged on the same files as maps: nothing rebalanced is computed or
+    # written unless all 24 files are present with equal ids per type and file kind.
+    unit = (rb_unit_status(args.pred_dir, inputs) if any(v in runs for v in RB_VARIANTS) and set(types) & set(RB_TYPES)
+            else None)
+    if unit and unit["complete"] and (msg := refuse_unregistered_boot(args, "gold")):
+        print(msg, file=sys.stderr)
+        return 2
+    rb_print_unit(unit)
     for t in types:
         g = gold[gold["label_type"] == t]
         _, head = gold_population(g)
@@ -1492,20 +1565,10 @@ def cmd_gold(args):
         plan = [(variant, s) for variant in runs if variant not in RB_VARIANTS
                 and not (variant == "cl-drop" and t not in CL_DROP_TYPES)
                 for s in ([SHIP_SEED] if variant == "round3" else seeds)]
-        # The rebalanced runs: seeds 42, 43, 44 only, and nothing of them is computed or written unless all six gold
-        # prediction files of these crops are present with equal ids (decision rule of 2026-11-23).
-        rb_wanted, rb_status, rb_pred = t in RB_TYPES and any(v in runs for v in RB_VARIANTS), None, {}
-        if rb_wanted:
-            for _, _, tag in rb_tags():
-                pp = os.path.join(args.pred_dir, t, f"gold_predictions_{args.crops}_{tag}.csv")
-                if os.path.exists(pp):
-                    inputs[pp] = sha256_file(pp)
-                    rb_pred[tag] = pd.read_csv(pp, dtype={"label_uid": str})
-            rb_status = rb_set_status({tag: set(rb_pred[tag]["label_uid"]) if tag in rb_pred else None
-                                       for _, _, tag in rb_tags()},
-                                      rb_unused_tags(os.path.join(args.pred_dir, t), f"gold_predictions_{args.crops}_"))
-            if rb_status["complete"]:
-                plan += [(v, s) for v, s, _ in rb_tags()]
+        # Seeds 42, 43, 44 only (rb_tags), and only when the whole unit is complete.
+        rb_wanted = unit is not None and t in RB_TYPES
+        if rb_wanted and unit["complete"]:
+            plan += [(v, s) for v, s, _ in rb_tags()]
         for variant, s in plan:
             tag = run_tag(variant, s)
             pp = os.path.join(args.pred_dir, t, f"gold_predictions_{args.crops}_{tag}.csv")
@@ -1531,25 +1594,31 @@ def cmd_gold(args):
                 if os.path.exists(rp):
                     inputs[rp] = sha256_file(rp)
                     tr["runs"][tag]["parity"] = crop_parity(pd.read_csv(rp, dtype={"label_uid": str}), pred, amap)
-        if rb_wanted and not rb_status["complete"]:
+        if rb_wanted and not unit["complete"]:
             for v, s, tag in rb_tags():
-                tr["runs"][tag] = {"variant": v, "seed": s, **({"withheld": True} if tag in rb_pred
-                                                               else {"missing": True})}
+                tr["runs"][tag] = {"variant": v, "seed": s, **({"withheld": True} if
+                                                               f"{t}/gold_predictions_uniform_{tag}.csv" in
+                                                               unit["present"] else {"missing": True})}
         tr["ensemble"] = {v: e for v, by_seed in joined.items() if (e := ensemble_stats(by_seed))}
         if "baseline" in joined and "cl-drop" in joined and args.crops == "uniform":
             tr["p4"] = paired_gold_delta(joined["baseline"], joined["cl-drop"], args.n_boot, args.seed)
         if rb_wanted and args.crops == "uniform":
             # P5 (b), amended 2026-11-23: the rebalanced runs joined without a map (the AUC needs none), on P4's rows;
             # differing item sets are an error, never intersected.
-            if rb_status["complete"]:
+            if unit["complete"] and not tr.get("p4"):
+                leg = {"a": P5_A, "b": P5_B, "seeds": _p5_seeds(SEEDS, SEEDS), **rb_unit_fields(unit),
+                       "error": "P4 was not computed (no baseline and cl-drop gold rows), so (b)'s rows cannot be "
+                                "checked against P4's"}
+            elif unit["complete"]:
+                rb_pred = {tag: pd.read_csv(os.path.join(args.pred_dir, t, f"gold_predictions_uniform_{tag}.csv"),
+                                            dtype={"label_uid": str}) for _, _, tag in rb_tags()}
                 p5_rows = {v: {s: p5_gold_join(populations["headline"], rb_pred[run_tag(v, s)]) for s in SEEDS}
                            for v in RB_VARIANTS}
-                p4_items = p4_item_ids(joined["baseline"], joined["cl-drop"]) if tr.get("p4") else None
-                leg = p5_gold_leg(p5_rows[P5_A], p5_rows[P5_B], args.n_boot, args.seed, p4_items)
-                leg.update({k: rb_status[k] for k in ("present", "missing", "mismatched", "seeds_not_used")})
+                leg = p5_gold_leg(p5_rows[P5_A], p5_rows[P5_B], args.n_boot, args.seed,
+                                  p4_item_ids(joined["baseline"], joined["cl-drop"]))
+                leg.update(rb_unit_fields(unit))
             else:
-                leg = rb_withheld_leg(rb_status)
-                print(f"{t}: P5 WITHHELD ({p5_withheld_text(leg)}); no rebalanced number written", file=sys.stderr)
+                leg = rb_withheld_leg(unit)
             tr["p5"] = leg
             if leg.get("error"):
                 print(f"{t}: P5 ERROR (P5 reads as unestimable): {leg['error']}", file=sys.stderr)
@@ -2211,9 +2280,10 @@ def p5_markdown(bar):
         lines += ["", ("Withheld or unestimable: " if p5["answer"] == P5_WITHHELD else "Unestimable: ")
                   + "; ".join(p5["causes"]) + "."]
     if p5["answer"] == P5_WITHHELD:
-        lines[0] = (f"**Answer: {p5['answer']}.** Some type's six rebalanced runs (two arms, seeds 42, 43, 44) are not "
-                    "all present with equal ids, so its P5 numbers were withheld; resubmit the missing runs. The "
-                    "first `decide` on a complete set is the answer (decision rule of 2026-11-23).")
+        lines[0] = (f"**Answer: {p5['answer']}.** The rebalanced runs are one unit (both types, both arms, seeds 42, "
+                    "43, 44, prediction and uniform gold-prediction files), and it is incomplete, so every P5 number "
+                    "was withheld; resubmit the missing runs. The first `decide` on a complete unit is the answer "
+                    "(decision rule of 2026-11-23).")
     lines += ["", "| Type | rows | n (correct / incorrect) | panoramas | mean [registered 95%] | hierarchical 95% | "
               "per seed | result |", "|---|---|---:|---:|---:|---:|---|---|"]
     for r in p5.get("rows") or []:
