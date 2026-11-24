@@ -2086,10 +2086,12 @@ def test_p5_f1_guard_edges(tmp_path, allow_test_boot):
     lay2 = p5_layout(tmp_path / "two")
     for tag in ("baseline", "baseline-s43", "baseline-s44"):
         (lay2["r4"] / "Crosswalk" / f"gold_predictions_uniform_{tag}.csv").unlink()
-    (lay2["r4"] / "CurbRamp" / "gold_predictions_uniform_matched-rb.csv").unlink()      # unit incomplete
+    (lay2["r4"] / "Crosswalk" / "gold_predictions_uniform_matched-rb.csv").unlink()     # unit incomplete
     rc, g2 = p5_run_gold(lay2, tmp_path / "g2")
-    assert g2["CurbRamp"]["runs"]["matched-rb"] == {"variant": "matched-rb", "seed": 42, "missing": True}
-    assert g2["Crosswalk"]["runs"]["matched-rb"] == {"variant": "matched-rb", "seed": 42, "withheld": True}
+    # the incomplete unit's record of which file is missing survives the no-P4 branch (that branch is for a
+    # complete unit only)
+    assert g2["Crosswalk"]["runs"]["matched-rb"] == {"variant": "matched-rb", "seed": 42, "missing": True}
+    assert g2["Crosswalk"]["runs"]["matched-rb-s43"] == {"variant": "matched-rb", "seed": 43, "withheld": True}
     rc, g3 = p5_run_gold(p5_layout(tmp_path / "three"), tmp_path / "g3", "--crops", "r3crops")
     assert all(v == {"missing": True} for k, v in g3["CurbRamp"]["runs"].items() if "-rb" in k)
 
