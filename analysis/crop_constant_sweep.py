@@ -65,7 +65,7 @@ SWEPT = (4000, 8000)
 STAGE1_TYPES = ("CurbRamp", "SurfaceProblem")
 STAGE2_TYPES = ("NoCurbRamp", "Obstacle", "Crosswalk")
 ALL_TYPES = STAGE1_TYPES + STAGE2_TYPES
-REGISTERED_SEEDS = (42, 43, 44, 45, 46)     # PROVISIONAL (decision 2 for Jon): five seeds recommended, three possible.
+REGISTERED_SEEDS = (42, 43, 44, 45, 46)     # Five seeds: Jon's decision 2, decided 2026-11-25 (doc, section 7).
 # The registration itself: the submit script trains exactly these (``registered-seeds``) and ``compare`` reads exactly
 # these, so changing the seed count is a commit, made before the first training job. There is no CLI override.
 M_ARMS = 2                                  # m in the level 1 - 0.05 / m, fixed at 2 for every type and stage

@@ -15,11 +15,12 @@
 #      DATA=$W/c<C> and RUNS=$W/runs/c<C> (one RUNS directory per arm), TAG=s<seed>, KEEP_CKPT=0.
 #
 # Everything is written under W=/gscratch/scrubbed/$USER/crop-constant-2026-11 (fixed). Settings, all optional:
-#   TYPES       label types (default "CurbRamp SurfaceProblem": stage 1)                     PROVISIONAL (decision 1)
-# The seeds are not a setting: they are REGISTERED_SEEDS in analysis/crop_constant_sweep.py (42 to 46, PROVISIONAL,
-# decision 2), read here through `registered-seeds`, and compare reads the same constant. Changing them is a commit.
+#   TYPES       label types (default "CurbRamp SurfaceProblem": stage 1)                decided 2026-11-25 (decision 1)
+# The seeds are not a setting: they are REGISTERED_SEEDS in analysis/crop_constant_sweep.py (42 to 46, decided
+# 2026-11-25, decision 2), read here through `registered-seeds`, and compare reads the same constant. Changing them is a commit.
 #   ARMS        arms to train (default "4000 6100 8000"; stage 2: "<the passing arm> 6100"; must include 6100)
-#   RESTAGE     1 (default) stages into DEST; 0 reads PANO_STORE as it is (a shared store)  PROVISIONAL (decision 3)
+#   RESTAGE     1 (default) stages into DEST; 0 reads PANO_STORE as it is (a shared store). Decision 3 (2026-11-25)
+#               reuses a shared store for SurfaceProblem only, which needs a change first (doc, section 7)
 #   DEST        the stage destination (default $W/store); refused unless it is inside $W
 #   PANO_STORE  the store the re-cut reads (default DEST)
 #   STAGE_TIME  the stage job's --time (default 24:00:00; about 215 to 260 GB for stage 1)

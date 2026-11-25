@@ -7,9 +7,9 @@ Code: [`analysis/crop_constant_sweep.py`](../analysis/crop_constant_sweep.py),
 [`analysis/crop_constant_recrop.slurm`](../analysis/crop_constant_recrop.slurm),
 [`analysis/crop_constant_submit.sh`](../analysis/crop_constant_submit.sh).
 
-**Status: designed and pre-registered; nothing has been run.** The restage, the re-cut and the trainings wait for
-Jon's go. The choices marked *provisional* in section 7 are implemented as recommended and can be changed with one
-setting each before the run.
+**Status: designed and pre-registered; nothing has been run.** Jon decided the five open choices on 2026-11-25
+(section 7) and gave the go. The restage that decision 3 asks for needs a launcher change that is not made yet
+(section 7, decision 3), so the run cannot be launched from this branch as it stands.
 
 ## 1. The question
 
@@ -53,8 +53,7 @@ run is read from its log.
 **Rows.** A row lost in the re-cut (missing panorama, a native size other than the recorded `pano_native_w/h`, a
 Panoramax skip, an error) is removed from every arm.
 
-**Seeds.** 42 to 46, each arm paired with c6100 at the same seed (*provisional*, decision 2; three seeds is the
-alternative). **The registration is committed**: `REGISTERED_SEEDS` in `analysis/crop_constant_sweep.py`. The submit
+**Seeds.** 42 to 46, each arm paired with c6100 at the same seed (decision 2, decided 2026-11-25). **The registration is committed**: `REGISTERED_SEEDS` in `analysis/crop_constant_sweep.py`. The submit
 script trains exactly those seeds (it refuses a `SEEDS` setting) and `compare` reads exactly those (it has no seed
 option), so changing `k` is a commit made before the first training job, and every run records that commit. A cell
 is unestimable when a seed is missing on either side, or when predictions or a run record exist for a seed outside
@@ -172,20 +171,52 @@ and the default here in one reviewed PR (with a CLI flag if one is wanted). It l
 - Preconditions, both still to be checked: klone can reach the panorama store (to be tested with one connection; not
   tested yet), and klone is free of the other runs now using it.
 
-## 7. Decisions for Jon (recommendations are provisional and implemented as recommended)
+## 7. Decisions (Jon, 2026-11-25)
 
-1. **Scope.** Recommended: stage 1 only, stage 2 triggered by a single-arm pass on both types (`TYPES`, default
-   `CurbRamp SurfaceProblem`). Alternatives: all five at once, or CurbRamp only (a candidate at most).
-2. **Seeds: three or five.** Recommended: five (`REGISTERED_SEEDS`, now `42,43,44,45,46`; three is a one-line commit
-   before the first training job; about 53 GPU-h for stage 1
-   against 32). On SurfaceProblem the seed noise in a Δ is about the size of the effect #51 found, so three seeds
-   would probably miss a true +0.01. With five the guard is four of five.
-3. **The restage.** A store of our own on scrubbed (`RESTAGE=1`, the default; about 215 to 260 GB for stage 1), or
-   sharing the SurfaceProblem panoramas another study restages anyway (`RESTAGE=0 PANO_STORE=<that store>`), which
-   leaves CurbRamp's 9,343 as the only extra. Recommended: share, if that store keeps the pano-store layout. Either
-   way, reachability of the panorama store from klone is confirmed first.
-4. **The go** for the klone run, once the PR is reviewed and klone is free.
-5. **Ticking two boxes on the issue**: clipping and the publish-guard backstop. Recommended: tick both.
+1. **Scope** (decided 2026-11-25). Stage 1 only: CurbRamp and SurfaceProblem (`TYPES`, default
+   `CurbRamp SurfaceProblem`). Stage 2 (NoCurbRamp, Obstacle, Crosswalk) runs only if the staging rule triggers it:
+   exactly one arm passes for both stage-1 types (section 2).
+2. **Seeds** (decided 2026-11-25). Five, 42 to 46, as registered; `REGISTERED_SEEDS` is unchanged. The seed guard is
+   four of five.
+3. **The restage** (decided 2026-11-25). Reuse the SurfaceProblem panoramas already on klone from the context-arms
+   restage (issue #14), in the store `/gscratch/scrubbed/$USER/pano-stage/context-arms`, and restage only CurbRamp,
+   into this study's own working directory (`$W/store`). That store is purged around 2026-12-14, so the trainings must
+   finish before then.
+
+   **Not supported by the launchers yet**, so no launch settings are given here. What is missing:
+   - `preflight` and `recrop` (and `SMOKE=1`) read exactly one store (`--pano-store`, which `crop_constant_submit.sh`
+     and `crop_constant_recrop.slurm` set from one `PANO_STORE` for every type). There is no per-type store and no
+     way to read SurfaceProblem from the context-arms store and CurbRamp from `$W/store` in one run. With
+     `PANO_STORE` set to either store alone, the other type's panoramas are missing and `preflight` stops on G2.
+   - `stage-list --exclude-store` only *counts* the panoramas already in a store; the list it writes still holds
+     every panorama of `TYPES`. With `RESTAGE=1`, the stage job would pull SurfaceProblem's panoramas again, because
+     rsync skips only files already in `DEST`.
+   - The workarounds are worse than the change: two submissions (one per type) collide on `preflight.json`,
+     `gates.json` and the arm directories; staging CurbRamp into the context-arms store is outside this study's
+     working directory (the submit script refuses that), and the stage job removes that store's `.pano-store`
+     marker while it pulls.
+
+   The smallest change (proposed, not made):
+   - `crop_constant_sweep.py`: `--pano-store` takes a colon-separated list (a colon passes through sbatch
+     `--export`, a comma does not). Each panorama is read from the first store that holds its file, and from the
+     first store when none does, so it is `no_pano`. `preflight` checks every store's marker and records the list.
+     Optionally, a `read_store` column in the recrop output, so G3 can be reported per store actually read.
+   - `stage-list --exclude-store` leaves the files already in that store out of the list, instead of only counting
+     them. The stage-2 use against the stage-1 store is unchanged, since rsync skipped those files anyway.
+   - `crop_constant_submit.sh`: an optional `SHARED_STORE`. When it is set, `stage-list` gets
+     `--exclude-store "$SHARED_STORE"`, and `PANO_STORE` defaults to `$DEST:$SHARED_STORE`.
+
+   With that change, the launch would be
+   `RESTAGE=1 SHARED_STORE=/gscratch/scrubbed/$USER/pano-stage/context-arms R3=$R3 analysis/crop_constant_submit.sh`,
+   with `DEST` left at `$W/store`. The stage list then holds CurbRamp's panoramas that the shared store lacks (at
+   most CurbRamp's 9,343). Any
+   SurfaceProblem panorama missing from that store would also be pulled, which is better than losing its rows to G2.
+   Before launch: confirm that the shared store carries its `.pano-store` marker (absent while a pull into it is
+   running), and read `stage_list.json`'s `to_transfer` count.
+4. **The go** (decided 2026-11-25). Given. The run starts after issue #3's Stage 0 (PR #126, merged) has run and
+   klone is free. The session that launches it tells Jon before submitting anything.
+5. **The issue's two boxes** (decided 2026-11-25). Jon agreed that the clipping item and the publish-guard backstop
+   are answered. That is recorded on issue #21, not in this PR.
 
 Made under the standing statistics delegation, listed for visibility: the three R3 amendments, the seed guard by seed
 count, m = 2, the staging rule, sizing from the recorded depth, the G2 and G3 thresholds, no manifest column and no
@@ -231,7 +262,7 @@ env are only read.
 1. **Login node:** a real write test (`dd` 8 MiB into `$W`, then remove it) and `hyakstorage /gscratch/scrubbed`.
    Clone this branch into `$W/sidewalk-validator-ai` (no submodule is needed) and `mkdir -p $W/logs`. Confirm with
    one connection that klone can reach the panorama store.
-2. **Stage** (decision 3; skip when sharing a store): from the clone,
+2. **Stage** (decision 3 reuses a shared store, which needs the change in section 7 first): from the clone,
    `python analysis/crop_constant_sweep.py stage-list --root $R3 --types CurbRamp,SurfaceProblem --out $W/stage_files.txt`,
    then `sbatch --chdir=$W --time=24:00:00 --export=ALL,RUN=$W,DEST=$W/store analysis/ai_labels_stage.slurm`. On a
    timeout or any rsync error other than 23, stop and do not resubmit.
