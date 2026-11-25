@@ -38,3 +38,6 @@ phase0/
 predictions.csv
 /rawlabels/
 /rawlabels.tmp/
+
+# compare.json of the crop-constant sweep lists every deployment id, public or not (compare refuses an --out here too)
+docs/crop-constant-2026-11/compare.json

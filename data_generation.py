@@ -1054,11 +1054,12 @@ def render_view_torch(pano_rgb, view, tilt, device, dtype=None):
     return out[0].permute(1, 2, 0).round().clamp(0, 255).to(torch.uint8).cpu().numpy()
 
 
-def depth_sized_crop(view_img, depth_m):
+def depth_sized_crop(view_img, depth_m, constant=CROP_DEPTH_CONSTANT):
     """Cut the depth-sized crop around the view centre and resize its long side to ``CROP_LONG_SIDE``.
 
     Returns ``(crop, crop_half_px, clipped)``; ``clipped`` is True when the square touched a frame edge and was
-    cut short (near features: ``crop_half_px > size / 2``). The resize rule is sidewalk-ai-api's.
+    cut short (near features: ``crop_half_px > size / 2``). The resize rule is sidewalk-ai-api's. The half-width is
+    ``int(constant / depth_m)``; serving uses the default, and only issue #21's constant sweep passes another.
 
     >>> crop, half, clipped = depth_sized_crop(np.zeros((2048, 2048, 3), np.uint8), 10.0)
     >>> crop.shape, half, clipped
@@ -1066,7 +1067,7 @@ def depth_sized_crop(view_img, depth_m):
     """
     if not np.isfinite(depth_m) or depth_m <= 0:
         raise ValueError(f"bad depth {depth_m}")
-    return centre_crop(view_img, int(CROP_DEPTH_CONSTANT / depth_m))
+    return centre_crop(view_img, int(constant / depth_m))
 
 
 def centre_crop(view_img, crop_half):
