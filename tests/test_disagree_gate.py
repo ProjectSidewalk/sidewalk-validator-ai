@@ -5,6 +5,7 @@ import json
 import math
 import os
 import re
+import shutil
 import warnings
 
 import numpy as np
@@ -1443,12 +1444,13 @@ def test_p5_report_block_not_run_and_with_an_answer():
     # S3: the (b) rows print n only (P4's rows' expert-verdict split stays in bar.json); (a) rows keep the counts
     assert "| CurbRamp | (b) gold, P4's rows | 110 | 200 |" in text and "| CurbRamp | (a) agreed test_heldout rows | " \
            "400 (300 / 100) | 200 |" in text
-    # the doc carries the block, in its not-run state, so report can splice it once stage 2 has outputs
+    # the doc carries the block, either in its not-run state or as report spliced it from bar.json (stage 2's
+    # results were spliced on 2026-11-24; `report --check` against $GATE, outside the repo, pins its content)
     with open(os.path.join(dgt.REPO_DIR, "docs", "round4-2026-11.md")) as f:
         doc = f.read()
     blk = re.search(re.escape(dgt.BEGIN.format(name="p5")) + r"\n\n(.*?)\n\n" + re.escape(dgt.END.format(name="p5")),
                     doc, re.S)
-    assert blk and blk.group(1) == dgt.P5_NOT_RUN_TEXT
+    assert blk and (blk.group(1) == dgt.P5_NOT_RUN_TEXT or blk.group(1).startswith("**Answer: "))
 
 
 def p5_layout(tmp_path, gold_n=160, n_rb_gold=None, extra_seed=None, rb=True):
@@ -1631,10 +1633,11 @@ def test_p5_gold_items_must_be_p4s_items(tmp_path, allow_test_boot):
     p5 = ok["CurbRamp"]["p5"]
     assert p5["error"] is None and p5["n"] == n4 and p5["registered"]["n_boot"] == 20
     assert p5["registered"]["boot_seed"] == 0 and p5["registered"]["n_valid"] == 20
-    # N-b: without P4 (no baseline / cl-drop gold rows) (b)'s rows cannot be checked: an error, no numbers
+    # N-b, then F1 (final review of #123): without P4 (no baseline / cl-drop gold rows) (b)'s rows cannot be
+    # checked: withheld, no numbers (not a final error)
     rc, nop4 = p5_run_gold(lay, tmp_path / "out4", "--runs", "matched-rb,symmetric-rb")
     leg = nop4["CurbRamp"]["p5"]
-    assert leg["error"].startswith("P4 was not computed") and "registered" not in leg
+    assert leg["withheld"] and leg["not_computed"].startswith("P4 was not computed") and not p5_has_number(leg)
     # P5 (b) is a uniform-crop statistic: gold on round-3 crops writes no P5 entry at all
     rc, r3 = p5_run_gold(lay, tmp_path / "out3", "--crops", "r3crops")
     assert "p5" not in r3["CurbRamp"]
@@ -1791,6 +1794,436 @@ def test_p5_uses_exactly_the_registered_seeds(tmp_path, allow_test_boot):
     rc, g = p5_run_gold(lay, tmp_path / "gout", "--seeds", "42,43,44,45")
     assert g["CurbRamp"]["p5"]["seeds_not_used"] == leg["seeds_not_used"]
     assert g["CurbRamp"]["p5"]["registered"]["seeds"] == [42, 43, 44]
+
+
+def test_p5_complete_unit_without_p4_is_withheld_not_final(tmp_path, allow_test_boot):
+    """Final review of #123, F1: with a complete rebalanced unit, a type whose P4 was not computed (no baseline or
+    cl-drop gold rows on uniform crops) is an incomplete state: withheld, no number of any leg, never the final "no
+    (unestimable)". The baseline and cl-drop gold files are outside the 24-file unit, so a missing one has to be
+    rescored before P5 is answered, not turned into a final answer."""
+    lay = p5_layout(tmp_path)
+    gate = tmp_path / "gate"
+    rc, m = p5_run_maps(lay, gate)
+    assert rc == 0 and m["CurbRamp"]["contrasts"]["symmetric-rb"]["error"] is None
+    for tag in ("baseline", "baseline-s43", "baseline-s44"):          # one type loses P4's inputs
+        (lay["r4"] / "Crosswalk" / f"gold_predictions_uniform_{tag}.csv").unlink()
+    for f in (gate / "maps").glob("*-rb*.json"):                       # the rebalanced maps that maps wrote
+        shutil.copy(f, lay["maps"] / f.name)
+    rc, g = p5_run_gold(lay, tmp_path / "gold")
+    assert rc == 0 and "p4" not in g["Crosswalk"] and "p4" in g["CurbRamp"]
+    # the type without P4 writes no rebalanced gold row; the other type keeps its descriptive rows
+    assert all(v == {"variant": v["variant"], "seed": v["seed"], "withheld": True}
+               for k, v in g["Crosswalk"]["runs"].items() if "-rb" in k)
+    assert not any("-rb" in v for v in g["Crosswalk"]["ensemble"])
+    assert not any("-rb" in k for k in g["Crosswalk"]["sensitivity"])
+    assert "symmetric-rb" in g["CurbRamp"]["ensemble"]
+    leg = g["Crosswalk"]["p5"]
+    assert leg.get("withheld") and not leg.get("error") and not p5_has_number(leg)
+    assert leg["not_computed"].startswith("P4 was not computed")
+    assert len(leg["present"]) == 24 and not leg["missing"] and not leg["mismatched"]
+    st = dgt.p5_coprimary(leg, None, "b")
+    assert st["result"] == "withheld" and "P4 was not computed" in st["causes"][0]
+    assert "incomplete" not in st["causes"][0]
+    dgt.main(["decide", "--maps", str(gate / "maps.json"), "--gold", str(tmp_path / "gold" / "gold.json"),
+              "--out", str(gate / "bar.json")])
+    b = json.loads((gate / "bar.json").read_text())
+    assert b["p5"]["answer"] == dgt.P5_WITHHELD and not p5_has_number(b["p5"])
+    assert any(c.startswith("Crosswalk (b): ") and "P4 was not computed" in c for c in b["p5"]["causes"])
+
+
+def test_p5_withheld_headline_names_a_leg_not_computed():
+    """Final review of #123, N2: a complete unit with a leg not computed (decide before gold, or gold without P4)
+    is withheld, and the block's first line must not say that the unit is incomplete."""
+    maps, _ = p5_files()
+    d = dgt.p5_decision(maps, None)                                   # decide run before gold
+    assert d["answer"] == dgt.P5_WITHHELD
+    head = dgt.p5_markdown({"p5": d}).splitlines()[0]
+    assert "or a leg was not computed" in head and "and it is incomplete" not in head
+    assert "not computed" in dgt.P5_WITHHELD
+
+
+def test_p5_gold_plan_skips_an_incomplete_unit_even_with_rebalanced_maps_on_disk(tmp_path):
+    """Final review of #123, N1: gold must not add an incomplete unit's runs to its plan. With rebalanced map files
+    on disk (a stray or earlier maps output), such runs would otherwise be joined and reach the ensemble and the
+    seed-42 sensitivity rows."""
+    lay = p5_layout(tmp_path)
+    for k, s in enumerate(SEEDS3):
+        for v in dgt.RB_VARIANTS:
+            (lay["maps"] / f"CurbRamp_{dgt.run_tag(v, s)}.json").write_text(json.dumps(dgt.fit_map(predictions(k),
+                                                                                                    PI)))
+    (lay["r4"] / "Crosswalk" / "predictions_matched-rb-s44.csv").unlink()         # the unit is incomplete
+    rc, g = p5_run_gold(lay, tmp_path / "gold")
+    assert rc == 0
+    tr = g["CurbRamp"]
+    assert tr["p5"]["withheld"] and not p5_has_number(tr["p5"])
+    assert not any("-rb" in v for v in tr["ensemble"]) and not any("-rb" in k for k in tr["sensitivity"])
+    assert all(set(v) == {"variant", "seed", "withheld"} for k, v in tr["runs"].items() if "-rb" in k)
+    assert "-rb" not in dgt.gold_markdown(g)
+
+
+def test_p5_maps_leg_records_the_counted_defined_replicates(monkeypatch):
+    """Final review of #123, N1: (a)'s registered interval records the defined replicates counted on the rows it
+    is computed on (``_registered_valid_panoramas``), not ``n_boot``, so ``decide``'s floor reads a real count."""
+    calls = []
+
+    def spy(y, g, n_boot, seed):
+        calls.append((len(y), int(np.sum(y)), len(set(g)), n_boot, seed))
+        return 3
+    monkeypatch.setattr(dgt, "_registered_valid_panoramas", spy)
+    a = {s: p5_pred(s) for s in SEEDS3}
+    b = {s: p5_pred(s, better=0.1) for s in SEEDS3}
+    leg = dgt.p5_maps_leg(a, b, p5_split(), n_boot=20, seed=0)
+    part = leg["test_heldout_agreed"]
+    assert part["registered"]["n_valid"] == 3 and leg["test_heldout"]["registered"]["n_valid"] == 3
+    assert (part["n"], part["n_incorrect"], part["n_panoramas"], 20, 0) in calls
+    st = dgt.p5_coprimary(leg, "test_heldout_agreed", "a", registered_n_boot=20)
+    assert st == {"result": "unestimable", "causes": ["registered interval: 3 of 20 replicates defined (fewer than "
+                                                      "50%)"]}
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Complementary suppression of the gold blocks (review of #129, S1)
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _sc(n, k):
+    """A gated-Disagree cell as gold.json stores it."""
+    return {"n": n, "confirmed": k, "overturned": n - k, "share": k / n if n else float("nan"), "lo": 0.1,
+            "hi": 0.9, "share_pool_weighted": 0.5, "weighting": "pool stratum (per round)"}
+
+
+def _srun(tot, seed=42, rounds=None, strata=None):
+    return {"variant": "x", "seed": seed, "gated_disagree": _sc(*tot), "false_alarm_gated": 0.019,
+            "false_alarm_any": 0.5, "auc_round_stratified": 0.8, "auc_pooled": 0.8, "round_flag": False,
+            "by_round": {r: {"n": 50, "gated_disagree": _sc(*v), "auc": 0.8} for r, v in (rounds or {}).items()},
+            "by_stratum": {k: {"n": 20, "gated_disagree": _sc(*v)} for k, v in (strata or {}).items()}}
+
+
+def suppression_fixture():
+    """One synthetic gold.json with each pattern of the review (cell values are made up):
+    a: total minus the sibling round; b: a round minus its printed strata; c: strata whose masked sum is forced
+    (all confirmed); d: the val-items-back row minus the headline row; round3: the headline minus its
+    not-train-rows row; e: an all-confirmed total, which forces every part; f: two masked rounds whose sum is not
+    forced (nothing extra to hide); g: a masked headline row of another seed."""
+    runs = {
+        "a": _srun((15, 13), rounds={"1": (3, 3), "2": (12, 10)}),
+        "b": _srun((30, 25), rounds={"1": (10, 8), "2": (20, 17)},
+                   strata={"1/x": (10, 8), "2/x": (17, 14), "2/y": (3, 3)}),
+        "c": _srun((12, 9), rounds={"1": (12, 9)}, strata={"1/x": (7, 4), "1/y": (2, 2), "1/z": (3, 3)}),
+        "d": _srun((15, 12)),
+        "round3": _srun((20, 18)),
+        "e": _srun((15, 15), rounds={"1": (3, 3), "2": (12, 12)}),
+        "f": _srun((20, 15), rounds={"1": (2, 1), "2": (3, 2), "3": (15, 12)}),
+        "g": _srun((3, 2), seed=43),
+    }
+    sens = {"d": {"val_back": {"gated_disagree": _sc(19, 15)}, "consensus_back": {"gated_disagree": _sc(15, 12)}},
+            "round3_not_train_rows": {"gated_disagree": _sc(17, 15)}}
+    return {"_crops": "uniform", "Crosswalk": {"runs": runs, "sensitivity": sens}}
+
+
+def _shown(md):
+    """Every count cell gold_markdown printed: {key: (n, confirmed or None when only the size is shown)}."""
+    out, section = {}, None
+    for ln in md.splitlines():
+        if ln.startswith("| Type | run | gated Disagree confirmed"):
+            section = "run"
+        elif ln.startswith("| Type | run | group |"):
+            section = "group"
+        elif ln.startswith("| Type | row | gated"):
+            section = "sens"
+        elif not ln.startswith("|") or ln.startswith("|---"):
+            if not ln.startswith("|---"):
+                section = None if not ln.startswith("|") else section
+            continue
+        if section is None or ln.startswith("| Type"):
+            continue
+        c = [x.strip() for x in ln.strip("|").split("|")]
+        if section == "group" and c[2] == "round flag":
+            continue
+        cell = c[4] if section == "group" else c[2]
+        val = (int(cell[2:]), None) if cell.startswith("n=") else tuple(int(x) for x in reversed(cell.split("/")))
+        if section == "run":
+            key = ("run", c[0], c[1])
+        elif section == "group":
+            key = ("round", c[0], c[1], c[2][6:]) if c[2].startswith("round ") else ("stratum", c[0], c[1], c[2])
+        else:
+            key = ("sens", c[0], *[x.strip() for x in c[1].split(",")])
+        out[key] = val
+    return out
+
+
+def _component(k):
+    """The run a printed cell belongs to: cells of different runs share no sum."""
+    if k[0] == "sens":
+        return (k[1], "round3" if k[2] == "round3_not_train_rows" else k[2])
+    return (k[1], k[2])
+
+
+def _feasible(shown, relations):
+    """Brute force, independent of the module, one run at a time: every assignment of the hidden counts (0..n
+    each) under which every relation ``parent = sum(children) + remainder`` holds with the remainder a valid cell.
+    Returns {key: set of feasible values} for the hidden cells and the remainders."""
+    feas = {}
+    for comp in {_component(k) for k in shown}:
+        sub = {k: v for k, v in shown.items() if _component(k) == comp}
+        rel = [(i, p, ch) for i, (p, ch) in enumerate(relations) if _component(p) == comp]
+        _feasible_one(sub, rel, feas)
+    return feas
+
+
+def _feasible_one(shown, relations, feas):
+    import itertools
+    hidden = sorted(k for k, (n, v) in shown.items() if v is None and n > 0)
+    for combo in itertools.product(*[range(shown[k][0] + 1) for k in hidden]):
+        val = {k: v for k, (n, v) in shown.items() if v is not None or n == 0}
+        val.update({k: 0 for k, (n, v) in shown.items() if n == 0})
+        val.update(dict(zip(hidden, combo)))
+        rems, ok = {}, True
+        for i, p, ch in relations:
+            n_rem = shown[p][0] - sum(shown[c][0] for c in ch)
+            k_rem = val[p] - sum(val[c] for c in ch)
+            if not 0 <= k_rem <= n_rem:
+                ok = False
+                break
+            rems[("rem", i)] = (n_rem, k_rem)
+        if not ok:
+            continue
+        for k in hidden:
+            feas.setdefault(k, set()).add(val[k])
+        for k, (n, v) in rems.items():
+            feas.setdefault(k, set()).add(v)
+            feas.setdefault(("rem-n", k), {n})
+
+
+def _relations(shown):
+    """The sums, written here from the block's own structure (not the module's): headline over rounds, round over
+    its strata, val/consensus rows over the headline, round3 over its not-train rows."""
+    rel = []
+    for k in shown:
+        if k[0] == "run" and any(x[0] == "round" and x[1:3] == k[1:3] for x in shown):
+            rel.append((k, [x for x in shown if x[0] == "round" and x[1:3] == k[1:3]]))
+        if k[0] == "round":
+            rel.append((k, [x for x in shown if x[0] == "stratum" and x[1:3] == k[1:3]
+                            and x[3].split("/")[0] == k[3]]))
+        if k[0] == "sens" and len(k) == 4 and ("run", k[1], k[2]) in shown:
+            rel.append((k, [("run", k[1], k[2])]))
+        if k == ("sens", k[1], "round3_not_train_rows"):
+            rel.append((("run", k[1], "round3"), [k]))
+    return rel
+
+
+def test_gold_masked_cells_cannot_be_worked_out_by_subtraction():
+    """Review of #129, S1: no masked cell (under 5) and no unprinted remainder under 5 follows from the printed
+    cells by subtraction or a forced sum; checked by brute force over every assignment of the hidden counts."""
+    gold = suppression_fixture()
+    md = dgt.gold_markdown(gold)
+    shown = _shown(md)
+    rel = _relations(shown)
+    feas = _feasible(shown, rel)
+    thin = [k for k, (n, v) in shown.items() if 0 < n < dgt.PRIVACY_MIN_CELL]
+    rems = [k for k in feas if k[0] == "rem" and 0 < next(iter(feas[("rem-n", k)])) < dgt.PRIVACY_MIN_CELL]
+    assert len(thin) == 8 and len(rems) == 6             # every pattern of the fixture is in play
+    for k in thin + rems:
+        assert len(feas[k]) >= 2, (k, feas[k])
+    # each pattern, by the cell the old code printed and the suppression now hides
+    assert shown[("round", "Crosswalk", "a", "2")] == (12, None)                    # total minus sibling round
+    assert shown[("run", "Crosswalk", "a")] == (15, 13)                             # the headline stays
+    assert shown[("stratum", "Crosswalk", "b", "2/x")] == (17, None)                # round minus printed strata
+    assert shown[("stratum", "Crosswalk", "c", "1/x")] == (7, None)                 # forced sum
+    assert shown[("sens", "Crosswalk", "d", "val_back")] == (19, None)              # val items back minus headline
+    assert shown[("sens", "Crosswalk", "d", "consensus_back")] == (15, 12)          # nothing added: printed
+    assert shown[("sens", "Crosswalk", "round3_not_train_rows")] == (17, None)
+    assert shown[("run", "Crosswalk", "e")] == (15, None)                           # all confirmed: total hidden
+    assert shown[("round", "Crosswalk", "f", "3")] == (15, 12)                      # not forced: nothing extra
+    # the masked headline row's gated false-alarm rate would give its overturned count: masked with it
+    g_row = next(ln for ln in md.splitlines() if ln.startswith("| Crosswalk | g |"))
+    assert "— / 0.500" in g_row and "0.019" not in g_row
+    assert "worked out by subtraction" in md
+
+
+def test_gold_suppression_is_minimal_and_generic():
+    """Nothing is hidden beyond the thin cells when no subtraction applies, and the result depends only on the
+    values, not on key names or the order of the rows."""
+    gold = {"Crosswalk": {"runs": {"z": _srun((20, 15), rounds={"1": (2, 1), "2": (3, 2), "3": (15, 12)})}}}
+    assert dgt.gold_suppressed(gold) == {("round", "Crosswalk", "z", "1"), ("round", "Crosswalk", "z", "2")}
+    a = suppression_fixture()
+    b = copy.deepcopy(a)
+    b["Crosswalk"]["runs"] = dict(reversed(list(b["Crosswalk"]["runs"].items())))
+    assert dgt.gold_suppressed(a) == dgt.gold_suppressed(b)
+
+# Pool-weighted shares and the round flag (review of #129, round 2, R1). Strata are the leaves: each stratum has
+# its printed item count, its pool count (public: the pools and the stratum rule are in the repo) and its gated
+# cell; rounds and the headline are sums of their strata, and every pool-weighted share is recomputed from them,
+# as gold_run_stats does (item weight = pool count / item count of its stratum, per round).
+PW_STRATA = {   # run -> {"<round>/<stratum>": (items, pool count, gated n, confirmed)}
+    "p": {"1/a": (40, 400, 20, 15), "2/x": (10, 300, 3, 2), "2/y": (10, 100, 3, 3), "2/z": (10, 50, 4, 3)},
+    "q": {"1/a": (6, 60, 2, 2), "2/x": (20, 100, 7, 7)},
+}
+
+
+def _pw(strata, k):
+    """Pool-weighted confirmed share over ``strata`` with confirmed counts ``k`` (by stratum)."""
+    num = sum(pc / it * k[s] for s, (it, pc, n, _) in strata.items())
+    den = sum(pc / it * n for s, (it, pc, n, _) in strata.items())
+    return num / den if den else float("nan")
+
+
+def _pw_flag(rounds):
+    """gold_run_stats' round flag from ``{round: (n, confirmed)}``."""
+    rates = [(n - k) / n for n, k in rounds.values() if n]
+    return bool(len(rates) == 2 and max(rates) > 0 and max(rates) >= dgt.ROUND_FLAG_RATIO * min(rates))
+
+
+def pw_fixture():
+    runs = {}
+    for tag, strata in PW_STRATA.items():
+        k = {s: v[3] for s, v in strata.items()}
+        by_round = {}
+        for r in sorted({s.split("/")[0] for s in strata}):
+            sub = {s: v for s, v in strata.items() if s.split("/")[0] == r}
+            n, c = sum(v[2] for v in sub.values()), sum(v[3] for v in sub.values())
+            cell = _sc(n, c)
+            cell["share_pool_weighted"] = _pw(sub, k)
+            by_round[r] = {"n": sum(v[0] for v in sub.values()), "gated_disagree": cell, "auc": 0.8}
+        tot = _sc(sum(v[2] for v in strata.values()), sum(v[3] for v in strata.values()))
+        tot["share_pool_weighted"] = _pw(strata, k)
+        runs[tag] = {"variant": tag, "seed": 42, "gated_disagree": tot, "false_alarm_gated": 0.019,
+                     "false_alarm_any": 0.5, "auc_round_stratified": 0.8, "auc_pooled": 0.8,
+                     "round_flag": _pw_flag({r: (b["gated_disagree"]["n"], b["gated_disagree"]["confirmed"])
+                                             for r, b in by_round.items()}),
+                     "by_round": by_round,
+                     "by_stratum": {s: {"n": v[0], "gated_disagree": _sc(v[2], v[3])} for s, v in strata.items()}}
+    return {"_crops": "uniform", "Crosswalk": {"runs": runs}}
+
+
+def _printed_pw_and_flags(md):
+    """{("run", t, tag) | ("round", t, tag, r): printed pool-weighted text} and {(t, tag): round-flag text}."""
+    pw, flags, section = {}, {}, None
+    for ln in md.splitlines():
+        if ln.startswith("| Type | run | gated Disagree confirmed"):
+            section = "run"
+            continue
+        if ln.startswith("| Type | run | group |"):
+            section = "group"
+            continue
+        if not ln.startswith("|"):
+            section = None if ln.strip() else section
+            continue
+        if ln.startswith("|---") or section is None:
+            continue
+        c = [x.strip() for x in ln.strip("|").split("|")]
+        if section == "run":
+            pw[("run", c[0], c[1])] = c[4]
+        elif c[2] == "round flag":
+            flags[(c[0], c[1])] = c[4]
+        elif c[2].startswith("round "):
+            pw[("round", c[0], c[1], c[2][6:])] = c[6]
+    return pw, flags
+
+
+def test_gold_pool_weighted_share_and_round_flag_pin_no_masked_cell():
+    """Review of #129 round 2, R1: with the pool weights known to the reader, no masked cell under 5 follows from
+    the printed counts, the printed pool-weighted shares and the round-flag line together (brute force over every
+    assignment of the masked strata's confirmed counts)."""
+    import itertools
+    gold = pw_fixture()
+    md = dgt.gold_markdown(gold)
+    shown = _shown(md)
+    pw, flags = _printed_pw_and_flags(md)
+    for tag, strata in PW_STRATA.items():
+        skey = {s: ("stratum", "Crosswalk", tag, s) for s in strata}
+        free = [s for s in strata if shown[skey[s]][1] is None and strata[s][2] > 0]
+        feas = {}
+        for combo in itertools.product(*[range(strata[s][2] + 1) for s in free]):
+            k = {s: (shown[skey[s]][1] if shown[skey[s]][1] is not None else 0) for s in strata}
+            k.update(dict(zip(free, combo)))
+            cells = {skey[s]: (strata[s][2], k[s]) for s in strata}
+            rounds = {}
+            for r in sorted({s.split("/")[0] for s in strata}):
+                sub = [s for s in strata if s.split("/")[0] == r]
+                rounds[r] = (sum(strata[s][2] for s in sub), sum(k[s] for s in sub))
+                cells[("round", "Crosswalk", tag, r)] = rounds[r]
+            cells[("run", "Crosswalk", tag)] = (sum(v[2] for v in strata.values()), sum(k.values()))
+            if any(shown[c][1] is not None and shown[c][1] != v[1] for c, v in cells.items()):
+                continue                                        # disagrees with a printed count
+            ok = True
+            for key, text in pw.items():
+                if key[2] != tag or text == "—":
+                    continue
+                sub = strata if key[0] == "run" else {s: v for s, v in strata.items() if s.split("/")[0] == key[3]}
+                ok &= f"{_pw(sub, k):.3f}" == text
+            flag = flags.get(("Crosswalk", tag))
+            if flag is None:
+                ok &= not _pw_flag(rounds)
+            elif not flag.startswith("masked"):
+                ok &= _pw_flag(rounds)
+            if not ok:
+                continue
+            for c, (n, v) in cells.items():
+                feas.setdefault(c, set()).add(v)
+        thin = [c for c in feas if 0 < shown[c][0] < dgt.PRIVACY_MIN_CELL]
+        assert thin
+        for c in thin:
+            assert len(feas[c]) >= 2, (c, feas[c])
+    # the two patterns of the review: a round's printed weighted share over masked strata, and a missing flag line
+    assert pw[("round", "Crosswalk", "p", "2")] == "—" and pw[("run", "Crosswalk", "p")] == "—"
+    assert pw[("round", "Crosswalk", "p", "1")] != "—"
+    assert flags[("Crosswalk", "q")].startswith("masked") and ("Crosswalk", "p") not in flags
+
+
+def test_gold_false_alarm_rate_masked_on_hidden_and_thin_rows():
+    """Review of #129 round 2, nit: the gated false-alarm rate is masked on a row hidden by the suppression (``e``,
+    15 gated, all confirmed) and on a thin row (``g``, 3 gated), and printed on an ordinary row (``a``)."""
+    first_table = dgt.gold_markdown(suppression_fixture()).split("\n\n")[0]    # the headline rows
+    row = {c[1]: c for c in ([x.strip() for x in ln.strip("|").split("|")] for ln in first_table.splitlines()
+                             if ln.startswith("| Crosswalk | "))}
+    assert row["e"][2] == "n=15" and row["e"][5] == "— / 0.500"
+    assert row["g"][2] == "n=3" and row["g"][5] == "— / 0.500"
+    assert row["a"][5] == "0.019 / 0.500"
+
+
+def test_bar_block_masks_a_thin_a3_count():
+    bar = {"types": [{"label_type": "Crosswalk", "recipe": "cl-drop", "recipe_status": "decided",
+                      "status": "hold_back", "reason": "A3: thin: 1 of 3 overturned",
+                      "criteria": [{"id": "A3", "result": "fail", "detail": "thin: 1 of 3 overturned"}]}]}
+    text = dgt.bar_markdown(bar)
+    assert "1 of 3" not in text and "thin: 3 gated, some overturned" in text
+
+
+def test_p5_caveat_states_the_bound_for_the_hierarchical_interval():
+    """Review of #129, S3: the printed caveat agrees with P5 item 6 as corrected on 2026-11-24."""
+    assert "each interval" not in dgt.P5_CAVEAT
+    assert "the hierarchical interval's false-yes rate is about 12.5% at most" in dgt.P5_CAVEAT
+    assert "two-interval rule" in dgt.P5_CAVEAT
+
+
+def test_p5_f1_guard_edges(tmp_path, allow_test_boot):
+    """Review of #129, N4: (1) baseline and cl-drop present with no seed in common: P4 is None, so the leg and the
+    rebalanced descriptive rows are both withheld; (2) an incomplete unit without P4 keeps its missing records;
+    (3) gold on round-3 crops keeps the rebalanced runs as missing (they have no round-3-crop predictions)."""
+    lay = p5_layout(tmp_path / "one")
+    gate = tmp_path / "gate"
+    p5_run_maps(lay, gate)
+    for f in (gate / "maps").glob("*-rb*.json"):
+        shutil.copy(f, lay["maps"] / f.name)
+    for tag in ("baseline-s43", "baseline-s44", "cl-drop"):                 # baseline {42}, cl-drop {43, 44}
+        (lay["r4"] / "Crosswalk" / f"gold_predictions_uniform_{tag}.csv").unlink()
+    rc, g = p5_run_gold(lay, tmp_path / "g1")
+    tr = g["Crosswalk"]
+    assert tr.get("p4") is None and tr["p5"]["withheld"] and tr["p5"]["not_computed"]
+    assert all(v == {"variant": v["variant"], "seed": v["seed"], "withheld": True}
+               for k, v in tr["runs"].items() if "-rb" in k)
+    assert not any("-rb" in v for v in tr["ensemble"])
+    lay2 = p5_layout(tmp_path / "two")
+    for tag in ("baseline", "baseline-s43", "baseline-s44"):
+        (lay2["r4"] / "Crosswalk" / f"gold_predictions_uniform_{tag}.csv").unlink()
+    (lay2["r4"] / "Crosswalk" / "gold_predictions_uniform_matched-rb.csv").unlink()     # unit incomplete
+    rc, g2 = p5_run_gold(lay2, tmp_path / "g2")
+    # the incomplete unit's record of which file is missing survives the no-P4 branch (that branch is for a
+    # complete unit only)
+    assert g2["Crosswalk"]["runs"]["matched-rb"] == {"variant": "matched-rb", "seed": 42, "missing": True}
+    assert g2["Crosswalk"]["runs"]["matched-rb-s43"] == {"variant": "matched-rb", "seed": 43, "withheld": True}
+    rc, g3 = p5_run_gold(p5_layout(tmp_path / "three"), tmp_path / "g3", "--crops", "r3crops")
+    assert all(v == {"missing": True} for k, v in g3["CurbRamp"]["runs"].items() if "-rb" in k)
 
 
 def test_doctests():
