@@ -110,8 +110,9 @@ P5_NO = "no, the training rule stays `margin`"
 P5_UNESTIMABLE = "no (unestimable)"
 P5_NOT_RUN = "not run"
 # Not an answer: the rebalanced unit (rb_unit_status: 24 files, both types x both arms x seeds 42, 43, 44 x both
-# file kinds) is incomplete, so maps / gold / decide withheld every P5 number (decision rule of 2026-11-23).
-P5_WITHHELD = "withheld (rebalanced runs incomplete; not an answer)"
+# file kinds) is incomplete, or a leg of a complete unit was not computed (decide before gold, or gold without P4),
+# so maps / gold / decide withheld every P5 number (decision rule of 2026-11-23).
+P5_WITHHELD = "withheld (rebalanced runs incomplete or a leg not computed; not an answer)"
 # maps and gold read every arm by default, so stage 2's rebalanced runs are never left out by a forgotten flag.
 DEFAULT_RUNS = ",".join(("baseline", "cl-drop", "round3") + RB_VARIANTS)
 PRIVACY_MIN_CELL = 5     # a gold cell under 5 items shows its size only
@@ -1012,10 +1013,13 @@ P5_MISSING = {"a": "maps.json has no P5 entry for this type (run maps with the r
 
 
 def p5_withheld_text(leg):
-    """Why a leg was withheld: the missing runs, the mismatch, and any seed on disk that is not used.
+    """Why a leg was withheld: the missing runs and the mismatch (the unit is incomplete), or, on a complete unit,
+    the leg that was not computed (``not_computed``: gold without P4, final review of #123, F1).
 
     >>> p5_withheld_text({"withheld": True, "missing": ["symmetric-rb-s44"], "mismatched": None})
     'rebalanced runs incomplete: missing symmetric-rb-s44'
+    >>> p5_withheld_text({"withheld": True, "missing": [], "mismatched": [], "not_computed": "P4 was not computed"})
+    'leg not computed: P4 was not computed'
     """
     parts = []
     if leg.get("missing"):
@@ -1023,7 +1027,10 @@ def p5_withheld_text(leg):
     if leg.get("mismatched"):
         mm = leg["mismatched"]
         parts.append(f"scored on different rows ({mm if isinstance(mm, str) else '; '.join(mm)})")
-    return "rebalanced runs incomplete: " + ("; ".join(parts) or "unknown")
+    out = ["rebalanced runs incomplete: " + "; ".join(parts)] if parts else []
+    if leg.get("not_computed"):
+        out.append(f"leg not computed: {leg['not_computed']}")
+    return "; ".join(out) or "rebalanced runs incomplete: unknown"
 
 
 def p5_coprimary(leg, part_key, coprimary, registered_n_boot=N_BOOT):
@@ -1031,7 +1038,8 @@ def p5_coprimary(leg, part_key, coprimary, registered_n_boot=N_BOOT):
     ``test_heldout_agreed``; ``gold.json`` ``p5`` for (b), ``part_key`` None).
 
     - ``withheld`` when the leg is missing or ``maps`` / ``gold`` withheld it (the rebalanced unit,
-      ``rb_unit_status``, is incomplete): not an answer; the missing runs may be resubmitted.
+      ``rb_unit_status``, is incomplete, or ``gold`` found no P4 to check (b)'s rows against): not an answer; the
+      missing runs may be resubmitted, or the missing leg computed.
     - ``unestimable``, with each cause named, when the leg is an error, when either arm has fewer than the three
       registered seeds, when the rows hold fewer than ``P5_MIN_CLASS`` of either class, or when an interval is
       missing, was not computed at the registered ``N_BOOT`` resamples and bootstrap seed ``P5_BOOT_SEED``, or
@@ -1599,16 +1607,28 @@ def cmd_gold(args):
                 tr["runs"][tag] = {"variant": v, "seed": s, **({"withheld": True} if
                                                                f"{t}/gold_predictions_uniform_{tag}.csv" in
                                                                unit["present"] else {"missing": True})}
-        tr["ensemble"] = {v: e for v, by_seed in joined.items() if (e := ensemble_stats(by_seed))}
         if "baseline" in joined and "cl-drop" in joined and args.crops == "uniform":
             tr["p4"] = paired_gold_delta(joined["baseline"], joined["cl-drop"], args.n_boot, args.seed)
+        if rb_wanted and unit["complete"] and args.crops == "uniform" and not tr.get("p4"):
+            # F1 (final review of #123; amended 2026-11-24): no P4 for this type (no baseline or cl-drop gold rows,
+            # or no seed they share), so P5 is withheld; so are the rebalanced runs' descriptive gold rows (per
+            # run, sensitivity, ensemble), as for an incomplete unit. One test for both (#129 review, N4).
+            for v, s, tag in rb_tags():
+                tr["runs"][tag] = {"variant": v, "seed": s, "withheld": True}
+                tr["sensitivity"].pop(tag, None)
+            for v in RB_VARIANTS:
+                joined.pop(v, None)
+        tr["ensemble"] = {v: e for v, by_seed in joined.items() if (e := ensemble_stats(by_seed))}
         if rb_wanted and args.crops == "uniform":
             # P5 (b), amended 2026-11-23: the rebalanced runs joined without a map (the AUC needs none), on P4's rows;
             # differing item sets are an error, never intersected.
             if unit["complete"] and not tr.get("p4"):
-                leg = {"a": P5_A, "b": P5_B, "seeds": _p5_seeds(SEEDS, SEEDS), **rb_unit_fields(unit),
-                       "error": "P4 was not computed (no baseline and cl-drop gold rows), so (b)'s rows cannot be "
-                                "checked against P4's"}
+                # Final review of #123, F1: the baseline / cl-drop gold files are outside the 24-file unit, so P4
+                # missing is an incomplete state (withheld, no number), never a final "no (unestimable)".
+                leg = {**rb_withheld_leg(unit), "not_computed": "P4 was not computed (no baseline and cl-drop gold "
+                                                                "rows on uniform crops), so (b)'s rows cannot be "
+                                                                "checked against P4's"}
+                print(f"{t}: P5 WITHHELD ({p5_withheld_text(leg)}); no rebalanced number written", file=sys.stderr)
             elif unit["complete"]:
                 rb_pred = {tag: pd.read_csv(os.path.join(args.pred_dir, t, f"gold_predictions_uniform_{tag}.csv"),
                                             dtype={"label_uid": str}) for _, _, tag in rb_tags()}
@@ -2237,14 +2257,27 @@ def _crit_text(c):
     return f"{i} {res}"
 
 
+def mask_a3_text(text, min_cell=PRIVACY_MIN_CELL):
+    """A3's thin wording (``thin: k of n overturned``) prints a gold count; under ``min_cell`` gated items only
+    the size is shown, as in the gold blocks.
+
+    >>> mask_a3_text("A3: thin: 1 of 3 overturned"), mask_a3_text("A3: thin: 2 of 15 overturned")
+    ('A3: thin: 3 gated, some overturned (count under 5 masked)', 'A3: thin: 2 of 15 overturned')
+    """
+    def sub(m):
+        n = int(m.group(2))
+        return m.group(0) if n >= min_cell else f"thin: {n} gated, some overturned (count under {min_cell} masked)"
+    return re.sub(r"thin: (\d+) of (\d+) overturned", sub, text)
+
+
 def bar_markdown(bar):
     """``bar`` is ``bar.json`` (``{"_provenance", "types"}``) or the bare list of type records."""
     types = bar["types"] if isinstance(bar, dict) else bar
     lines = ["| Type | recipe | recipe status | status | reason | criteria |", "|---|---|---|---|---|---|"]
     for r in types:
-        crit = "<br>".join(_crit_text(c) for c in r["criteria"])
-        lines.append(f"| {r['label_type']} | {r['recipe']} | {r['recipe_status']} | {r['status']} | {r['reason']} | "
-                     f"{crit} |")
+        crit = "<br>".join(mask_a3_text(_crit_text(c)) for c in r["criteria"])
+        lines.append(f"| {r['label_type']} | {r['recipe']} | {r['recipe_status']} | {r['status']} | "
+                     f"{mask_a3_text(r['reason'])} | {crit} |")
     commit = _get(bar, "_provenance", "git_commit") if isinstance(bar, dict) else None
     if commit:
         lines += ["", f"`bar.json` written at commit `{commit[:7]}`; input sha256 in its `_provenance`."]
@@ -2254,8 +2287,9 @@ def bar_markdown(bar):
 P5_NOT_RUN_TEXT = "Not yet run (stage 2): no `symmetric-rb` or `matched-rb` output has been read."
 P5_CAVEAT = ("**Few seeds.** With three seeds the hierarchical interval's lower end sits near the worst seed's delta "
              "(a replicate draws one seed three times with probability 1/27, more than 2.5%). Under a null with "
-             "symmetric seed noise, each interval's false-yes rate is about 12.5% at most ((1/2)^3), and lower "
-             "jointly. The error to guard against here is a false yes, not a false no. Fewer than three seeds for "
+             "symmetric seed noise, the hierarchical interval's false-yes rate is about 12.5% at most ((1/2)^3), and "
+             "so is the two-interval rule's, which needs it above 0 as well as the registered interval; the answer "
+             "across the four co-primaries is lower. The error to guard against here is a false yes, not a false no. Fewer than three seeds for "
              "either arm is unestimable, never a yes.")
 P5_COPRIMARY_NAME = {"a": "(a) agreed test_heldout rows", "a, every row": "every test_heldout row (descriptive)",
                      "b": "(b) gold, P4's rows"}
@@ -2281,9 +2315,10 @@ def p5_markdown(bar):
                   + "; ".join(p5["causes"]) + "."]
     if p5["answer"] == P5_WITHHELD:
         lines[0] = (f"**Answer: {p5['answer']}.** The rebalanced runs are one unit (both types, both arms, seeds 42, "
-                    "43, 44, prediction and uniform gold-prediction files), and it is incomplete, so every P5 number "
-                    "was withheld; resubmit the missing runs. The first `decide` on a complete unit is the answer "
-                    "(decision rule of 2026-11-23).")
+                    "43, 44, prediction and uniform gold-prediction files). Either it is incomplete or a leg was not "
+                    "computed (the causes below), so every P5 number was withheld: resubmit the missing runs, or "
+                    "compute the missing leg (`maps`, `gold` on uniform crops with P4's inputs). The first `decide` "
+                    "on a complete unit with every leg computed is the answer (decision rule of 2026-11-23).")
     lines += ["", "| Type | rows | n (correct / incorrect) | panoramas | mean [registered 95%] | hierarchical 95% | "
               "per seed | result |", "|---|---|---:|---:|---:|---:|---|---|"]
     for r in p5.get("rows") or []:
@@ -2314,14 +2349,176 @@ def p5_markdown(bar):
     return "\n".join(lines)
 
 
-def _gated_cells(g):
-    """``(confirmed/n, share [95%], pool-weighted)`` with thin cells masked."""
-    thin = g["n"] < PRIVACY_MIN_CELL
-    return (mask_thin(g["n"], g["confirmed"]), "—" if thin else f"{_f(g['share'])} [{_f(g['lo'])}, {_f(g['hi'])}]",
-            "—" if thin else _f(g.get("share_pool_weighted")))
+def _gated_cells(g, hidden=False, masked_below=False):
+    """``(confirmed/n, share [95%], pool-weighted)`` with thin cells masked, and with any cell ``hidden`` by the
+    complementary suppression (``gold_suppressed``) shown by its size only (``n=12``). ``masked_below``: a cell
+    beneath this row is masked, so its pool-weighted share is masked too (the weights can be rebuilt from public
+    pools and the printed item counts, and the weighted share would then pin the masked split; review of #129,
+    R1)."""
+    thin = g["n"] < PRIVACY_MIN_CELL or (hidden and g["n"] > 0)
+    n_cell = f"n={g['n']}" if hidden and g["n"] > 0 else mask_thin(g["n"], g["confirmed"])
+    return (n_cell, "—" if thin else f"{_f(g['share'])} [{_f(g['lo'])}, {_f(g['hi'])}]",
+            "—" if thin or masked_below else _f(g.get("share_pool_weighted")))
+
+
+def _shown_masked(g, hidden):
+    """True when a gated cell is printed by its size only and its count is not otherwise known (``n`` > 0)."""
+    return g["n"] > 0 and (g["n"] < PRIVACY_MIN_CELL or hidden)
+
+
+def gold_masked_below(gold, hidden):
+    """Rows of the seed-42 runs with a masked cell beneath them: ``{("run", t, tag)}`` when any of the run's round
+    or stratum cells is masked, ``{("round", t, tag, r)}`` when any of round ``r``'s strata is."""
+    out = set()
+    for t in LABEL_TYPES:
+        for tag, r in ((gold.get(t) or {}).get("runs") or {}).items():
+            if r.get("missing") or r.get("withheld") or r.get("seed") != SHIP_SEED:
+                continue
+            for name, b in (r.get("by_stratum") or {}).items():
+                if _shown_masked(b["gated_disagree"], ("stratum", t, tag, name) in hidden):
+                    out |= {("run", t, tag), ("round", t, tag, name.split("/", 1)[0])}
+            for name, b in (r.get("by_round") or {}).items():
+                if _shown_masked(b["gated_disagree"], ("round", t, tag, name) in hidden):
+                    out.add(("run", t, tag))
+    return out
+
+
+# Kinds of gold cell, in the order complementary suppression hides them: a sensitivity row first, a run's
+# headline row (the first table, and the row A3 reads) last.
+SUPPRESS_ORDER = {"sens": 0, "stratum": 1, "round": 2, "run": 3}
+
+
+def gold_cells(gold):
+    """The gated-Disagree count cells ``gold_markdown`` prints, and the sums that tie them together.
+
+    Returns ``(cells, sums)``: ``cells`` maps a key (``("run", type, tag)``, ``("round", type, tag, round)``,
+    ``("stratum", type, tag, "<round>/<stratum>")``, ``("sens", type, row[, population])``) to ``(n, confirmed)``;
+    ``sums`` lists ``(parent, children)`` where the parent's items are the children's plus a remainder that is not
+    printed: a seed-42 run's headline over its rounds, a round over its strata, a sensitivity row that adds items
+    back (``val_back``, ``consensus_back``) over the run's headline, and ``round3``'s headline over its rows that
+    were not round-3 train rows. A pair whose remainder is not a valid cell (negative ``n``, or ``confirmed``
+    outside ``0..n``) is not a sum and is left out."""
+    cells, sums = {}, []
+    gd = lambda b: (int(b["gated_disagree"]["n"]), int(b["gated_disagree"]["confirmed"]))  # noqa: E731
+    for t in LABEL_TYPES:
+        tr = gold.get(t) or {}
+        runs = tr.get("runs") or {}
+        for tag, r in runs.items():
+            if r.get("missing") or r.get("withheld"):
+                continue
+            cells[("run", t, tag)] = gd(r)
+            if r.get("seed") != SHIP_SEED:
+                continue
+            rounds = {name: ("round", t, tag, name) for name in (r.get("by_round") or {})}
+            for name, b in (r.get("by_round") or {}).items():
+                cells[rounds[name]] = gd(b)
+            strata = {name: ("stratum", t, tag, name) for name in (r.get("by_stratum") or {})}
+            for name, b in (r.get("by_stratum") or {}).items():
+                cells[strata[name]] = gd(b)
+            sums.append((("run", t, tag), list(rounds.values())))
+            for name, key in rounds.items():
+                sums.append((key, [v for k, v in strata.items() if k.split("/", 1)[0] == name]))
+        for k, v in (tr.get("sensitivity") or {}).items():
+            if "gated_disagree" in v:              # round3 on items that were not its train rows: inside round3
+                cells[("sens", t, k)] = gd(v)
+                if k == "round3_not_train_rows" and ("run", t, "round3") in cells:
+                    sums.append((("run", t, "round3"), [("sens", t, k)]))
+                continue
+            for kk, vv in v.items():               # val_back / consensus_back: the run's headline plus items
+                cells[("sens", t, k, kk)] = gd(vv)
+                if ("run", t, k) in cells:
+                    sums.append((("sens", t, k, kk), [("run", t, k)]))
+    valid = []
+    for parent, children in sums:
+        if not children:                           # a round without strata: nothing to subtract
+            continue
+        n_rem = cells[parent][0] - sum(cells[c][0] for c in children)
+        k_rem = cells[parent][1] - sum(cells[c][1] for c in children)
+        if n_rem >= 0 and 0 <= k_rem <= n_rem:
+            valid.append((parent, children))
+    return cells, valid
+
+
+def _derivable(cells, sums, hidden):
+    """Every cell value (printed or not) that follows from the printed cells and the sums: one unknown in a sum,
+    or several whose known total is 0 or all of their items (each is then 0 or all). Remainders (``("rem",
+    parent, i)``) are never printed. Returns ``(values, how, cells, sums)``: the derivable values by key, the index
+    of the sum that gave each derived one, and the cells and sums with the remainders added."""
+    vals, how, eqs = {}, {}, []
+    full = dict(cells)
+    for i, (parent, children) in enumerate(sums):
+        members = list(children)
+        n_rem = cells[parent][0] - sum(cells[c][0] for c in children)
+        if n_rem:
+            rem = ("rem", parent, i)
+            full[rem] = (n_rem, cells[parent][1] - sum(cells[c][1] for c in children))
+            members.append(rem)
+        eqs.append((parent, members))
+    for key, (n, k) in full.items():
+        if key[0] != "rem" and key not in hidden or n == 0:
+            vals[key] = k
+    changed = True
+    while changed:
+        changed = False
+        for i, (parent, members) in enumerate(eqs):
+            unknown = [m for m in members if m not in vals]
+            if parent in vals and unknown:
+                rest = vals[parent] - sum(vals[m] for m in members if m in vals)
+                total = sum(full[m][0] for m in unknown)
+                if len(unknown) == 1 or rest in (0, total):
+                    for m in unknown:
+                        vals[m] = rest if len(unknown) == 1 else (0 if rest == 0 else full[m][0])
+                        how[m] = i
+                    changed = True
+            elif parent not in vals and not unknown:
+                vals[parent] = sum(vals[m] for m in members)
+                how[parent] = i
+                changed = True
+    return vals, how, full, eqs
+
+
+def gold_suppressed(gold, min_cell=PRIVACY_MIN_CELL):
+    """The gold count cells that ``gold_markdown`` shows by their size only: every cell under ``min_cell`` items
+    (the doc's rule), plus the fewest further cells, chosen in ``SUPPRESS_ORDER`` and then by size, so that no cell
+    under ``min_cell`` (printed or a remainder that is never printed) can be worked out by subtraction from the
+    printed ones (complementary suppression; final review of #129, S1). Generic: it reads only the structure of
+    ``gold.json`` (``gold_cells``), never which cells happen to be thin.
+
+    >>> g = {"Crosswalk": {"runs": {"cl-drop": {"seed": 42, "gated_disagree": {"n": 15, "confirmed": 13},
+    ...      "by_round": {"1": {"gated_disagree": {"n": 3, "confirmed": 3}},
+    ...                   "2": {"gated_disagree": {"n": 12, "confirmed": 10}}}}}}}
+    >>> sorted(gold_suppressed(g))
+    [('round', 'Crosswalk', 'cl-drop', '1'), ('round', 'Crosswalk', 'cl-drop', '2')]
+    """
+    cells, sums = gold_cells(gold)
+    hidden = {k for k, (n, _) in cells.items() if 0 < n < min_cell}
+    for _ in range(len(cells) + 1):
+        vals, how, full, eqs = _derivable(cells, sums, hidden)
+        leaks = sorted((k for k, (n, _) in full.items() if 0 < n < min_cell and (k in hidden or k[0] == "rem")
+                        and k in vals), key=str)
+        if not leaks:
+            return hidden
+        # Hide a printed cell of the sum that gave the leak; when that sum holds none (the leak came through cells
+        # that were themselves derived), follow those cells back to the sums that gave them.
+        pool, frontier, seen = [], [leaks[0]], set()
+        while frontier and not pool:
+            x = frontier.pop(0)
+            if x in seen or x not in how:
+                continue
+            seen.add(x)
+            parent, members = eqs[how[x]]
+            pool = [m for m in (parent, *members) if m not in seen and m[0] != "rem" and m not in hidden
+                    and full[m][0] > 0]
+            frontier += [m for m in (parent, *members) if m in how and m not in seen]
+        if not pool:
+            raise RuntimeError(f"complementary suppression cannot protect {leaks[0]}")
+        hidden.add(min(pool, key=lambda m: (SUPPRESS_ORDER[m[0]], full[m][0], str(m))))
+    raise RuntimeError("complementary suppression did not converge")
 
 
 def gold_markdown(gold):
+    hidden = gold_suppressed(gold)
+    below = gold_masked_below(gold, hidden)
     lines = []
     if gold.get("_caption"):
         lines += [gold["_caption"], ""]
@@ -2331,9 +2528,12 @@ def gold_markdown(gold):
         for tag, r in (gold.get(t) or {}).get("runs", {}).items():
             if r.get("missing") or r.get("withheld"):
                 continue
-            n_cell, share, pw = _gated_cells(r["gated_disagree"])
+            key = ("run", t, tag)
+            n_cell, share, pw = _gated_cells(r["gated_disagree"], key in hidden, key in below)
+            # a masked row's gated false-alarm rate would give its overturned count, so it is masked with it
+            masked = _shown_masked(r["gated_disagree"], key in hidden)
             lines.append(f"| {t} | {tag} | {n_cell} | {share} | {pw} | "
-                         f"{_f(r['false_alarm_gated'])} / {_f(r['false_alarm_any'])} | "
+                         f"{'—' if masked else _f(r['false_alarm_gated'])} / {_f(r['false_alarm_any'])} | "
                          f"{_f(r['auc_round_stratified'])} | {_f(r['auc_pooled'])} |")
     # P4 (uniform crops only) and the three-seed ensemble rows.
     p4_rows = [(t, (gold.get(t) or {}).get("p4")) for t in LABEL_TYPES if (gold.get(t) or {}).get("p4")]
@@ -2352,7 +2552,8 @@ def gold_markdown(gold):
             lines.append(f"| {t} | {v} | {e['n']} | {_f(e['auc_round_stratified'])} | {_f(e['auc_pooled'])} |")
     # Per round and per stratum, seed-42 runs only (the rest are in gold.json).
     lines += ["", "**By round and by stratum** (seed-42 runs; gated Disagrees; a cell under "
-              f"{PRIVACY_MIN_CELL} shows its size only).", "",
+              f"{PRIVACY_MIN_CELL} shows its size only, and so does any cell from which one could be worked out by "
+              "subtraction; a pool-weighted share and the round flag are masked when a cell beneath them is).", "",
               "| Type | run | group | items | gated Disagree confirmed | share [95%] | pool-weighted | AUC |",
               "|---|---|---|---:|---:|---:|---:|---:|"]
     for t in LABEL_TYPES:
@@ -2360,13 +2561,19 @@ def gold_markdown(gold):
             if r.get("missing") or r.get("withheld") or r.get("seed") != SHIP_SEED:
                 continue
             for name, b in (r.get("by_round") or {}).items():
-                n_cell, share, pw = _gated_cells(b["gated_disagree"])
+                key = ("round", t, tag, name)
+                n_cell, share, pw = _gated_cells(b["gated_disagree"], key in hidden, key in below)
                 lines.append(f"| {t} | {tag} | round {name} | {mask_thin(b.get('n', 0))} | {n_cell} | {share} | {pw} "
                              f"| {_f(b.get('auc'))} |")
             for name, b in (r.get("by_stratum") or {}).items():
-                n_cell, share, _ = _gated_cells(b["gated_disagree"])
+                n_cell, share, _ = _gated_cells(b["gated_disagree"], ("stratum", t, tag, name) in hidden)
                 lines.append(f"| {t} | {tag} | {name} | {mask_thin(b['n'])} | {n_cell} | {share} | — | |")
-            if r.get("round_flag"):
+            # With a round cell masked, the flag (or its absence) would bound the masked count: print it as masked
+            # either way, so that the line carries no information (review of #129, R1).
+            if any(_shown_masked(b["gated_disagree"], ("round", t, tag, name) in hidden)
+                   for name, b in (r.get("by_round") or {}).items()):
+                lines.append(f"| {t} | {tag} | round flag | | masked (a round cell is masked) | | | |")
+            elif r.get("round_flag"):
                 lines.append(f"| {t} | {tag} | round flag | | one round overturned at twice the other's rate | | | |")
     par = [(t, tag, r["parity"]) for t in LABEL_TYPES for tag, r in ((gold.get(t) or {}).get("runs") or {}).items()
            if not r.get("missing") and r.get("parity")]
@@ -2384,9 +2591,10 @@ def gold_markdown(gold):
                   "| Type | row | gated Disagree confirmed | share [95%] | round-stratified AUC |",
                   "|---|---|---:|---:|---:|"]
         for t, k, v in sens:
-            blocks = [(k, v)] if "gated_disagree" in v else [(f"{k}, {kk}", vv) for kk, vv in v.items()]
-            for name, b in blocks:
-                n_cell, share, _ = _gated_cells(b["gated_disagree"])
+            blocks = ([(k, v, ("sens", t, k))] if "gated_disagree" in v else
+                      [(f"{k}, {kk}", vv, ("sens", t, k, kk)) for kk, vv in v.items()])
+            for name, b, key in blocks:
+                n_cell, share, _ = _gated_cells(b["gated_disagree"], key in hidden)
                 lines.append(f"| {t} | {name} | {n_cell} | {share} | {_f(b.get('auc_round_stratified'))} |")
     return "\n".join(lines)
 
