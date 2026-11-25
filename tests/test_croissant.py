@@ -535,3 +535,15 @@ def test_city_mix_and_vote_statistics_say_only_what_the_files_show(tmp_path):
     assert "unequal" not in rai["rai:dataBiases"] and "Crops per city: chicago 4, oradell 2, teaneck 6." in \
         rai["rai:dataBiases"]
     assert "volunteers" not in json.dumps(rai) and "where Project Sidewalk users chose" in rai["rai:dataLimitations"]
+
+
+def test_ai_vote_sentence_says_targets_are_human_only(tmp_path):
+    """The fixed AI-vote sentence in ``rai:dataBiases`` (wording decided 2026-11-25): the targets use human votes only,
+    and whether AI votes count elsewhere depends on the downstream use."""
+    _, d = _stage(tmp_path)
+    biases = _croissant(d)["rai:dataBiases"]
+    text = " ".join(biases) if isinstance(biases, list) else biases
+    assert ("This dataset's correct/incorrect targets use human votes only; votes by the AI validator account are "
+            "excluded. Project Sidewalk records every vote as human or AI, and whether AI votes are counted depends "
+            "on the downstream use.") in text
+    assert "are not counted, but they can affect" not in text

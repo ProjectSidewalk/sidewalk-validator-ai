@@ -78,7 +78,11 @@ PERSONAL_SENSITIVE = ("Crops are street-level imagery that can show pedestrians,
 SOCIAL_IMPACT = ("The data is for training and evaluating validators of crowdsourced sidewalk accessibility labels. "
                  "A validator's errors can hide correct labels or keep wrong ones in the accessibility data built "
                  "from them, so it is one input to label quality, not a replacement for human validation.")
-AI_VOTES_BIAS = "Votes by the AI validator account are not counted, but they can affect which labels people are later shown."
+AI_VOTES_BIAS = ("This dataset's correct/incorrect targets use human votes only; votes by the AI validator account are "
+                 "excluded. Project Sidewalk records every vote as human or AI, and whether AI votes are counted "
+                 "depends on the downstream use.")
+"""Both target rules count only ``validator_type == "Human"`` votes (``data_generation.human_vote_counts`` and
+``expert_verdict``)."""
 
 
 # ---------------------------------------------------------------------------------------------------------------------
