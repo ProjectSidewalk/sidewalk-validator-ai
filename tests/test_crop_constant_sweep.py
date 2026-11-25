@@ -1179,3 +1179,186 @@ def test_submit_takes_no_seed_setting_and_tests_a_real_write_first(tmp_path):
     assert "dd if=/dev/zero" in text and "bs=1M count=8" in text
     assert text.index("dd if=/dev/zero") < text.index("sb --chdir")        # before the first submission
     assert 'JOB=$("${SBATCH[@]}" "$@")' in text and 'echo "${SBATCH[*]} $*"' in text   # one argument list
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Several stores (decision 3): the study's own restage first, then a shared store it only reads
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _named_store(base, name, files=(), cities=(), marker=True):
+    """A store at ``<base>/<name>`` holding ``files`` (``(city, pano_id)``) and an empty directory per ``cities``."""
+    store = os.path.join(str(base), name)
+    os.makedirs(store, exist_ok=True)
+    if marker:
+        with open(os.path.join(store, dg.PANO_STORE_MARKER), "w") as f:
+            f.write(f"{name}\n")
+    for c in cities:
+        os.makedirs(os.path.join(store, c), exist_ok=True)
+    for c, p in files:
+        path = dg.pano_store_path(store, c, p)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(b"jpg")
+    return store
+
+
+def _listing(*stores):
+    return {s: sorted((os.path.relpath(os.path.join(d, n), s), os.path.getmtime(os.path.join(d, n)))
+                      for d, _, ns in os.walk(s) for n in ns) for s in stores}
+
+
+def test_several_stores_read_each_panorama_from_the_first_store_that_holds_it(r3, tmp_path):
+    root, frame = r3
+    panos = frame[["city", "pano_id"]].drop_duplicates()
+    every = list(panos.itertuples(index=False, name=None))
+    own_only = [x for x in every if x[1] in ("AApano1", "BBpano3")]
+    both = [x for x in every if x[1] == "CCpano5"]
+    shared_only = [x for x in every if x[1] not in ("AApano1", "BBpano3", "CCpano5")]
+    own = _named_store(tmp_path, "own", own_only + both)
+    shared = _named_store(tmp_path, "shared", shared_only + both)
+    before = _listing(own, shared)
+    work = str(tmp_path / "w")
+    _, reader = run_recrop(root, frame, work, pano_store=f"{own}:{shared}")
+    read_from = {p: s for s, _, p in reader.calls}
+    assert len(reader.calls) == len(read_from) == len(every)            # still one read per panorama
+    assert {p for p, s in read_from.items() if s == own} == {"AApano1", "BBpano3", "CCpano5"}   # first store wins
+    assert {p for p, s in read_from.items() if s == shared} == {p for _, p in shared_only}
+    rec = cc.load_recrop(work).merge(frame[["label_uid", "pano_id"]], on="label_uid", validate="one_to_one")
+    assert (rec.read_store == rec.pano_id.map(read_from)).all()          # the store actually read, per row
+    assert set(rec.store_root) == {"/stores/r3/CurbRamp", "/stores/r3/SurfaceProblem"}   # round 3's, unchanged
+    assert _listing(own, shared) == before                               # nothing is written into any store
+
+
+def test_a_panorama_missing_from_every_store_reads_no_pano(r3, tmp_path):
+    """The real reader: a file in no store is ``no_pano``, read where its city has a directory (here only the second
+    store has one), so a store that holds none of a city's panoramas is not mistaken for an outage."""
+    root, frame = r3
+    target = frame[frame.pano_id == "DDpano7"]
+    own = _named_store(tmp_path, "own", cities=["secret-town"])
+    shared = _named_store(tmp_path, "shared", cities=["pub-a"])
+    work = str(tmp_path / "w")
+    cc.recrop(target, work, 0, 1000, pano_store=f"{own}:{shared}", stored_root=root, device=None,
+              pano_reader=dg.read_store_panorama, render=FakeRender())
+    rec = cc.load_recrop(work)
+    assert len(rec) == len(target) and set(rec.status) == {"no_pano"}
+    assert set(rec.read_store) == {shared}
+    os.remove(os.path.join(shared, dg.PANO_STORE_MARKER))               # a store that went away is never no_pano
+    with pytest.raises(dg.PanoStoreUnavailable):
+        cc.recrop(target, str(tmp_path / "w2"), 0, 1000, pano_store=f"{own}:{shared}", stored_root=root,
+                  device=None, pano_reader=dg.read_store_panorama, render=FakeRender())
+
+
+def test_one_store_records_the_store_it_read(r3, tmp_path):
+    root, frame = r3
+    work = str(tmp_path / "w")
+    _, reader = run_recrop(root, frame, work, pano_store="/scrubbed/store")
+    assert {s for s, _, _ in reader.calls} == {"/scrubbed/store"}
+    rec = cc.load_recrop(work)
+    assert set(rec.read_store[rec.status.isin(["ok", "native_mismatch", "no_pano"])]) == {"/scrubbed/store"}
+    g = cc.gate_g3(rec)
+    assert set(g["by_read_store"]) == {"/scrubbed/store"}               # G3 per store actually read
+
+
+def test_preflight_checks_the_marker_of_every_store(r3_400, tmp_path):
+    root, panos = r3_400
+    own = _named_store(tmp_path, "own", panos[:100])
+    shared = _named_store(tmp_path, "shared", panos[100:])
+    rec = _preflight(root, f"{own}:{shared}")
+    assert rec["store"]["passed"] and rec["store"]["missing_panoramas"] == 0
+    assert rec["store"]["pano_stores"] == [own, shared]
+    assert rec["store"]["markers"] == {own: "own", shared: "shared"}
+    assert rec["store"]["panoramas_by_store"] == {own: 100, shared: 300}
+    os.remove(os.path.join(shared, dg.PANO_STORE_MARKER))
+    bad = _preflight(root, f"{own}:{shared}")
+    assert not bad["store"]["passed"]
+    assert len(bad["store"]["failures"]) == 1 and shared in bad["store"]["failures"][0]
+    assert own not in bad["store"]["failures"][0]
+
+
+def test_the_preflight_command_refuses_a_store_without_its_marker_among_several(r3_400, tmp_path):
+    root, panos = r3_400
+    own = _named_store(tmp_path, "own", panos[:100])
+    shared = _named_store(tmp_path, "shared", panos[100:], marker=False)
+    out = str(tmp_path / "preflight.json")
+    with pytest.raises(SystemExit) as e:
+        cc.main(["preflight", "--root", root, "--rawlabels-dir", os.path.join(root, "rawlabels"), "--types",
+                 "CurbRamp", "--pano-store", f"{own}:{shared}", "--out", out])
+    assert "preflight failed" in str(e.value.code)
+    with open(out) as f:
+        store = json.load(f)["store"]
+    assert store["pano_stores"] == [own, shared] and shared in store["failures"][0]
+
+
+def test_stage_list_exclude_store_leaves_out_what_is_already_staged(r3, tmp_path):
+    root, frame = r3
+    files = cc.stage_files(frame)
+    every = list(frame[["city", "pano_id"]].drop_duplicates().itertuples(index=False, name=None))
+    own = _named_store(tmp_path, "own", every[:1])
+    shared = _named_store(tmp_path, "shared", every[1:3] + every[:1])
+    before = _listing(own, shared)
+    out = str(tmp_path / "list" / "stage_files.txt")
+    cc.main(["stage-list", "--root", root, "--types", ",".join(TYPES), "--out", out, "--exclude-store", own,
+             "--exclude-store", shared])
+    with open(out) as f:
+        listed = f.read().split()
+    present = {f"{c}/{p[:2]}/{p}.jpg" for c, p in every[:3]}
+    assert listed == [f for f in files if f not in present] and len(listed) == len(files) - 3
+    with open(os.path.join(tmp_path, "list", "stage_files.json")) as f:
+        rec = json.load(f)
+    assert rec["panoramas"] == len(files) and rec["already_in_store"] == 3 and rec["to_transfer"] == len(files) - 3
+    assert rec["exclude_stores"] == [own, shared] and rec["already_by_store"] == {own: 1, shared: 2}
+    assert rec["stage_files_sha256"] == cc.sha256_file(out)
+    assert _listing(own, shared) == before
+    cc.main(["stage-list", "--root", root, "--types", ",".join(TYPES), "--out", out, "--exclude-store",
+             f"{own}:{shared}"])                                         # a colon-separated list is the same
+    with open(out) as f:
+        assert f.read().split() == listed
+
+
+def test_a_chunk_file_from_before_the_read_store_column_is_refused(r3, tmp_path):
+    """Appending rows with a new column to a chunk written without it would shift every later column."""
+    root, frame = r3
+    work = str(tmp_path / "w")
+    old = [f for f in cc.RECROP_FIELDS if f != "read_store"]
+    os.makedirs(os.path.join(work, "recrop"))
+    pd.DataFrame([{"label_uid": frame.label_uid.iloc[0], "status": "error:X"}], columns=old).to_csv(
+        cc.chunk_path(work, 0), index=False)
+    with pytest.raises(ValueError, match="columns"):
+        run_recrop(root, frame, work)
+
+
+SHARED = "/gscratch/scrubbed/tester/pano-stage/context-arms"
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+def test_submit_dry_run_with_a_shared_store(tmp_path):
+    W = "/gscratch/scrubbed/tester/crop-constant-2026-11"
+    r = _dry_run(tmp_path, SHARED_STORE=SHARED)
+    assert r.returncode == 0, r.stderr
+    lines = r.stdout.splitlines()
+    sl_ = [line for line in lines if " stage-list " in line]
+    assert len(sl_) == 1 and f"--exclude-store {W}/store" in sl_[0] and f"--exclude-store {SHARED}" in sl_[0]
+    sb = [line for line in lines if line.startswith("sbatch")]
+    stage = [line for line in sb if "ai_labels_stage.slurm" in line]
+    assert len(stage) == 1 and f"DEST={W}/store" in stage[0] and SHARED not in stage[0]   # the pull writes only DEST
+    steps = [line for line in sb if "crop_constant_recrop.slurm" in line]
+    assert len(steps) == 3 and all(f"PANO_STORE={W}/store:{SHARED}," in line for line in steps)
+    train = [line for line in sb if "confident_learning.slurm" in line]
+    assert len(train) == 3 * 2 * 5 and not any(SHARED in line for line in train)
+    for line in lines:                         # the shared store is only ever an excluded or a read store
+        rest = line.replace(f"--exclude-store {SHARED}", "").replace(f"PANO_STORE={W}/store:{SHARED},", "")
+        assert SHARED not in rest, line
+    explicit = _dry_run(tmp_path, SHARED_STORE=SHARED, PANO_STORE=f"{SHARED}:{W}/store")
+    assert explicit.returncode == 0 and f"PANO_STORE={SHARED}:{W}/store," in explicit.stdout   # PANO_STORE still wins
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+@pytest.mark.parametrize("shared", ["/gscratch/scrubbed/tester/crop-constant-2026-11/store2",
+                                    "/mmfs1/gscratch/scrubbed/tester/crop-constant-2026-11/x",
+                                    "/gscratch/scrubbed/tester/crop-constant-2026-11",
+                                    "/gscratch/scrubbed/tester", "/gscratch/scrubbed/tester/",
+                                    "relative/store", "/gscratch/scrubbed/tester/a/../crop-constant-2026-11/x",
+                                    "/a:/b", "/a,b"])
+def test_submit_refuses_a_shared_store_the_study_would_write_into(tmp_path, shared):
+    r = _dry_run(tmp_path, SHARED_STORE=shared)
+    assert r.returncode == 2 and "refusing" in r.stderr and "SHARED_STORE" in r.stderr and "sbatch" not in r.stdout
