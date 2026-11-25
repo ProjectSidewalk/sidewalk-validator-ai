@@ -278,7 +278,7 @@ def proximity_report(df, coords, radii_m=PROXIMITY_RADII_M):
 
 
 def assign_splits(manifest, seed=42, holdout_cities=(), merge_radius_m=0.0, coords=None, return_stats=False,
-                  group_col="pano_id"):
+                  group_col="pano_id", return_group=False):
     """Return the ``status == ok`` rows of ``manifest`` (sorted by ``label_uid``) with a ``split`` column.
 
     With ``merge_radius_m > 0``, ``coords`` (``latitude``/``longitude`` indexed by ``label_uid``, see
@@ -287,7 +287,10 @@ def assign_splits(manifest, seed=42, holdout_cities=(), merge_radius_m=0.0, coor
     train/val/test, and the largest group among them), ``heldout_pulled_in`` (rows of non-held-out cities sent to
     ``test_heldout`` because their group touches a held-out city) and ``heldout_pulled_in_by_merge`` (the part of
     those that a shared panorama alone would not have pulled in). ``group_col="face_id"`` starts from
-    :func:`face_pano_groups` instead of panoramas alone (the rest of the method is unchanged).
+    :func:`face_pano_groups` instead of panoramas alone (the rest of the method is unchanged). With ``return_group``,
+    the merged group key of every row (a Series aligned with ``df``) is appended to the return value, as
+    ``(df, group)`` or ``(df, stats, group)``; ``analysis/split_leak.py`` (issue #3) scatters whole-type labels
+    among the rows of multi-member groups with it.
 
     Pure function of its inputs: same manifest and seed, same assignment. See the module docstring for the method.
     """
@@ -338,7 +341,10 @@ def assign_splits(manifest, seed=42, holdout_cities=(), merge_radius_m=0.0, coor
             assignment[gid] = best
             filled[best] += members.at[gid, "n"]
     df.loc[rest, "split"] = group[rest].map(assignment)
-    return (df, stats) if return_stats else df
+    out = (df, stats) if return_stats else (df,)
+    if return_group:
+        out += (group,)
+    return out if len(out) > 1 else df
 
 
 def add_hard(df, hard_uids):

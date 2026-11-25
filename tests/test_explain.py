@@ -642,3 +642,11 @@ def test_key_guard_covers_every_checkout_of_this_repo(tmp_path):
         pytest.skip("not a git checkout")
     main_checkout = os.path.dirname(os.path.realpath(os.path.join(here, common.stdout.strip())))
     assert explain.inside_this_repo(os.path.join(main_checkout, "k.csv"))   # the main checkout from a worktree
+
+
+@pytest.mark.parametrize("config", [{"model_type": "convnextv2"}, {"model_type": "sidewalk_dinov3_classifier"}, {}])
+def test_require_dinov2_refuses_other_backbones(config):
+    """Issue #119: a checkpoint of the backbone comparison on another encoder is refused, not explained wrongly."""
+    with pytest.raises(SystemExit, match="DINOv2 checkpoints only"):
+        explain.require_dinov2(config, "ck")
+    assert explain.require_dinov2({"model_type": "dinov2"}, "ck") is None

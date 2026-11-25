@@ -34,7 +34,7 @@ TARGET="${TARGET:-hard}"  # soft for analysis/adjudicator.py's adj-soft variant 
 module load conda
 eval "$(conda shell.bash hook)"
 conda activate "$ENV"
-export HF_HOME="${HF_HOME:-/gscratch/makelab/$USER/hf_cache}" HF_HUB_OFFLINE=1
+export HF_HOME="${HF_HOME:-/gscratch/makelab/$USER/hf_cache}" HF_HUB_OFFLINE=1 HF_HUB_DISABLE_XET=1
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 # TAG names the run and the evaluate.py outputs (default: the variant). A seed replicate sets SEED and a TAG such
 # as cl-drop-s43 so it does not overwrite the seed-42 run; VARIANT=baseline trains on the round-3 split itself.
@@ -42,6 +42,14 @@ TAG="${TAG:-$VARIANT}"
 if [ "$VARIANT" = baseline ]; then SPLIT="$DATA/$LT/split.csv"; else SPLIT="$DATA/$LT/cl/$VARIANT/split.csv"; fi
 RUN="$RUNS/$LT/$TAG"
 KEEP_CKPT="${KEEP_CKPT:-1}"  # 0: delete the checkpoints after evaluation (seed replicates: the metrics are the product)
+# KEEP_BEST=1 (analysis/round4_submit.sh): before the KEEP_CKPT=0 delete, copy the best checkpoint's weights, config,
+# image processor and trainer state (no optimizer or scheduler state) to $RUN/best/, via a temporary directory and
+# one mv, so a preempted copy is never taken for complete. The early-exit guard then also requires best/.
+KEEP_BEST="${KEEP_BEST:-0}"
+# EXTRA_TRAIN_ARGS: appended to the training line. Scope: a backbone option only. A model that does not load through
+# AutoModelForImageClassification with a saved image processor (context arms, region conditioning) would train here
+# and then fail in evaluate.py and in analysis/round4.py score-gold.
+EXTRA_TRAIN_ARGS="${EXTRA_TRAIN_ARGS:-}"
 [ -f "$SPLIT" ] || { echo "no $SPLIT (run confident_learning.py folds / rules / flag first)" >&2; exit 2; }
 mkdir -p "$RUN"
 case "$VARIANT" in
@@ -52,13 +60,15 @@ case "$VARIANT" in
     fi ;;
   *)  # likewise with KEEP_CKPT=0: once the evaluation report is written and the weights are deleted, it is done
     if [ "$KEEP_CKPT" = 0 ] && [ -f "$RUN/training_run.json" ] \
-       && [ "$DATA/$LT/report_$TAG.txt" -nt "$RUN/training_run.json" ] && ! ls -d "$RUN"/checkpoint-* >/dev/null 2>&1; then
+       && [ "$DATA/$LT/report_$TAG.txt" -nt "$RUN/training_run.json" ] && ! ls -d "$RUN"/checkpoint-* >/dev/null 2>&1 \
+       && { [ "$KEEP_BEST" != 1 ] || [ -f "$RUN/best/model.safetensors" ]; }; then
       echo "$(date) $LT $TAG already evaluated ($DATA/$LT/report_$TAG.txt); nothing to do"; exit 0
     fi ;;
 esac
 echo "$(date) train $LT $VARIANT on $SPLIT -> $RUN"
 python -u fine_tune_classifier.py --label_type "$LT" --data-dir "$DATA" --split "$SPLIT" --output-dir "$RUN" \
-    --seed "$SEED" --epochs "$EPOCHS" --num-workers 7 --target "$TARGET" || { echo "training failed" >&2; exit 1; }
+    --seed "$SEED" --epochs "$EPOCHS" --num-workers 7 --target "$TARGET" $EXTRA_TRAIN_ARGS \
+    || { echo "training failed" >&2; exit 1; }
 case "$VARIANT" in
   fold*)
     K="${VARIANT#fold}"
@@ -77,6 +87,14 @@ case "$VARIANT" in
     python -u evaluate.py --label_type "$LT" --data-dir "$DATA" --checkpoint "$BEST" --tag "$TAG" --per-city \
         || { echo "evaluate failed" >&2; exit 1; }
     cat "$DATA/$LT/report_$TAG.txt"
+    if [ "$KEEP_BEST" = 1 ]; then
+      rm -rf "$RUN/best.tmp" && mkdir -p "$RUN/best.tmp" || { echo "KEEP_BEST: cannot make $RUN/best.tmp" >&2; exit 1; }
+      for f in model.safetensors config.json preprocessor_config.json trainer_state.json; do
+        cp "$BEST/$f" "$RUN/best.tmp/$f" || { echo "KEEP_BEST: copying $BEST/$f failed" >&2; exit 1; }
+      done
+      rm -rf "$RUN/best" && mv "$RUN/best.tmp" "$RUN/best" || { echo "KEEP_BEST: mv failed" >&2; exit 1; }
+      echo "kept $BEST -> $RUN/best"
+    fi
     if [ "$KEEP_CKPT" = 0 ]; then
       cp "$BEST/trainer_state.json" "$RUN/trainer_state.best.json" 2>/dev/null || true
       rm -rf "$RUN"/checkpoint-*; echo "removed $RUN/checkpoint-*"

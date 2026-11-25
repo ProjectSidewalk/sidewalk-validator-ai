@@ -20,7 +20,8 @@ script writes to), builds two folders under ``<out>/<label_type>/publish/``:
     Crops as ``<split>/<class>/<city>_<label_id>.webp``, driven by ``split.csv`` (never a directory listing), hard
     linked or copied (``--link-mode``), never moved; ``split.csv`` (``crop_path`` rewritten to the repo layout),
     ``manifest.csv``, this label type's ``deployment_priors.json`` entry, ``generation_run.json``,
-    ``dataset_info.json``, ``SHA256SUMS`` (sha256 of every crop, sorted by path), ``croissant.json`` and a
+    ``dataset_info.json``, ``SHA256SUMS`` (sha256 of every crop, sorted by path), ``croissant.json`` (Croissant 1.1
+    with the RAI 1.0 fields from ``hf_croissant.py``, validated with ``mlcroissant`` when it is installed) and a
     generated ``README.md`` card that records the overall content hash (sha256 of ``SHA256SUMS``). The absolute
     pano-store paths (``pano_path``, ``pano_store``) and the store marker text are dropped from the published copies.
 
@@ -33,8 +34,11 @@ staged label type's; neither ``generation_run.json`` nor ``dinov2/training_run.j
 neither record names a depth encoder other than the served ``vitb``/``vkitti``; and, whatever the records
 say, every row of ``split.csv`` and every ``ok`` row of ``manifest.csv`` has a positive ``depth_m`` and a
 ``crop_half_px`` within 1 px of ``int(6100 / depth_m)`` (issue #21; checked again on the staged copies before
-``--push-staged``). A whole-view or fixed-size model needs a serving change before it can be published. A train-size
-cross-check against ``trainer_state.json`` and out-of-order file times only warn.
+``--push-staged``). A whole-view or fixed-size model needs a serving change before it can be published. A model
+trained on a label-level split (issue #3, analysis/split_leak.py) is never published: ``split.csv`` must not hold a
+``pano_id`` in two of its four splits, and ``dinov2/training_run.json`` must not record ``split_mode`` (both checked
+again before ``--push-staged``). A train-size cross-check against ``trainer_state.json`` and out-of-order file times
+only warn.
 
 **Card overrides.** Facts the pipeline does not record (per-type failure modes, the split seed, the dataset
 license, DOIs) go in ``<out>/<label_type>/card_overrides.json`` (keys in ``hf_cards.OVERRIDE_KEYS``); anything still
@@ -107,6 +111,7 @@ import numpy as np
 import pandas as pd
 
 import hf_cards
+import hf_croissant
 from data_generation import DEPTH_DATASET, PANO_ID_DTYPE
 
 LABEL_TYPES = ("CurbRamp", "NoCurbRamp", "Obstacle", "SurfaceProblem", "Crosswalk")
@@ -689,6 +694,60 @@ def check_depth_sized(root, label_type):
             check_depth_rows(_rows_to_check(path), path)
 
 
+CANONICAL_SPLITS = ("train", "val", "test", "test_heldout")
+"""split_data.py's four splits: a panorama in more than one of them means a label-level split (issue #3)."""
+
+
+def check_grouped_split(root, label_type):
+    """Raise ``PublishError`` if ``<root>/<label_type>``'s model was trained on, or its ``split.csv`` is, a
+    label-level split (issue #3, analysis/split_leak.py): first structurally, needing no marker, when a ``pano_id``
+    sits in more than one of the four canonical splits of ``split.csv`` (blank ids are skipped: a row without a
+    panorama is its own group); then when ``dinov2/training_run.json`` records ``split_mode``
+    (:func:`hf_cards.require_grouped_split`). Checked where :func:`check_depth_sized` is: before anything is
+    staged, and again before ``--push-staged``."""
+    base = os.path.join(root, label_type)
+    path = os.path.join(base, "split.csv")
+    if os.path.exists(path):          # a missing split.csv is reported by read_dataset_context with its own message
+        df = pd.read_csv(path, usecols=["pano_id", "split"], dtype=str, keep_default_na=False)
+        df = df[(df["pano_id"].str.strip() != "") & df["split"].isin(CANONICAL_SPLITS)]
+        per_pano = df.groupby("pano_id")["split"].nunique()
+        shared = per_pano[per_pano > 1]
+        if len(shared):
+            raise PublishError(f"{path}: {len(shared)} panorama(s) sit in more than one split (e.g. "
+                               f"{list(shared.index[:3])}): a label-level split (issue #3), whose test numbers are "
+                               f"inflated by design. Only a split_data.py split, grouped by panorama, is published")
+    try:
+        hf_cards.require_grouped_split(_read_json(os.path.join(base, "dinov2", "training_run.json")))
+    except ValueError as e:
+        raise PublishError(f"{base}: {e}. Retrain on split_data.py's grouped split to publish") from e
+
+
+def check_backbone(root, label_type):
+    """Raise ``PublishError`` if the model under ``<root>/<label_type>/dinov2/`` is not the round-3 recipe on
+    ``facebook/dinov2-large`` (issue #119): ``training_run.json`` records a non-default ``backbone.key`` or
+    ``learning_rate``, or the best checkpoint's ``config.json`` has a ``model_type`` other than ``dinov2``. The run
+    record is optional (older runs have none of these fields); the checkpoint's config is not. The model cards,
+    ``explain.py`` and sidewalk-ai-api assume DINOv2-L at 1e-5 (docs/backbone-2026-11.md)."""
+    import backbones
+    from fine_tune_classifier import DEFAULT_LEARNING_RATE
+    base = os.path.join(root, label_type, "dinov2")
+    run = _read_json(os.path.join(base, "training_run.json")) or {}
+    key = (run.get("backbone") or {}).get("key", backbones.DEFAULT)
+    if key != backbones.DEFAULT:
+        raise PublishError(f"{base}/training_run.json: backbone {key!r} is a comparison run (issue #119); only "
+                           f"{backbones.DEFAULT} is published")
+    lr = run.get("learning_rate", DEFAULT_LEARNING_RATE)
+    if lr != DEFAULT_LEARNING_RATE:
+        raise PublishError(f"{base}/training_run.json: learning_rate {lr} is not the published recipe's "
+                           f"{DEFAULT_LEARNING_RATE} (issue #119)")
+    best_dir, _ = resolve_checkpoints(root, label_type)
+    config = _read_json(os.path.join(best_dir, "config.json"))
+    model_type = (config or {}).get("model_type")
+    if model_type != "dinov2":
+        raise PublishError(f"{best_dir}/config.json: model_type {model_type!r}, not 'dinov2'; only DINOv2 "
+                           "checkpoints are published (issue #119)")
+
+
 NOT_SERVED = (f"Serving sizes every crop by int({SERVED_CROP_DEPTH_CONSTANT} / depth_m) with the {SERVED_DEPTH_ENCODER}/"
               f"{SERVED_DEPTH_DATASET} depth model; a fixed-size, whole-view or job-window model needs a serving "
               f"change in sidewalk-ai-api, and then a reviewed change to this check (docs/publishing.md), before it "
@@ -938,20 +997,59 @@ CROISSANT_FIELDS = {
     "city": ("sc:Text", "Project Sidewalk deployment (city_id)."),
     "label_id": ("sc:Integer", "Label id within its city; NOT unique across cities."),
     "pano_id": ("sc:Text", "Panorama id in its imagery provider's namespace (see pano_source); unique only with it."),
+    "face_id": ("sc:Text", "Block face <city>:<street_edge_id>:<side> when classes were decided per face; blank "
+                           "otherwise."),
+    "label_type": ("sc:Text", "Project Sidewalk label type."),
     "label_class": ("sc:Text", "correct or incorrect, from human validation votes."),
+    "class_source": ("sc:Text", "The rule that set label_class: margin, expert, face_margin or face_expert; blank on "
+                                "older rows."),
+    "author": ("sc:Text", "Who placed the label: human, or ai for the SidewalkAI account."),
     "human_agree": ("sc:Integer", "Human Agree votes."),
     "human_disagree": ("sc:Integer", "Human Disagree votes."),
+    "severity": ("sc:Integer", "Severity the labeler gave (Project Sidewalk's scale); blank when none."),
+    "tags": ("sc:Text", "Tags the labeler chose, as exported by Project Sidewalk; blank when none."),
+    "high_quality_user": ("sc:Text", "Project Sidewalk's high-quality-user flag for the labeler, as exported."),
     "image_capture_date": ("sc:Text", "Capture date of the panorama."),
+    "pano_source": ("sc:Text", "Imagery provider of the panorama (e.g. gsv)."),
+    "pano_native_w": ("sc:Integer", "Width in pixels of the stored panorama before the resize to 8192x4096."),
+    "pano_native_h": ("sc:Integer", "Height in pixels of the stored panorama before the resize."),
+    "camera_pitch": ("sc:Float", "Camera pitch as stored by Project Sidewalk, in the provider's own sign."),
+    "camera_roll": ("sc:Float", "Camera roll as stored by Project Sidewalk, in the provider's own sign."),
+    "tilt_applied": ("sc:Integer", "1 if a rig-tilt correction was applied to the view, else 0."),
+    "tilt_beta": ("sc:Float", "Tilt-correction beta the crop was rendered with."),
+    "pose_source": ("sc:Text", "Where the crop's panorama pose came from (e.g. gsv_db, rig_frame); blank on older "
+                               "rows."),
+    "pose_pitch": ("sc:Float", "Panorama pitch used for the view, degrees, positive nose down; blank when unknown."),
+    "pose_roll": ("sc:Float", "Panorama roll used for the view, degrees; blank when unknown."),
+    "click_lat_offset_deg": ("sc:Float", "Degrees subtracted from the stored click latitude before rendering (0 "
+                                         "for most rows)."),
     "depth_m": ("sc:Float", "Depth Anything V2 metric depth at the label, metres."),
+    "crop_half_px": ("sc:Integer", "Crop half-width in view pixels, int(6100 / depth_m) clipped to the view."),
+    "clipped": ("sc:Integer", "1 if the crop half-width was clipped to the view, else 0."),
     "hard": ("sc:Integer", "1 if the label is in the hard-example list."),
     "split": ("sc:Text", "train, val, test or test_heldout."),
     "crop_path": ("sc:Text", "Path of the crop within this repository."),
+    "status": ("sc:Text", "Generator status of the row (ok for every row of split.csv)."),
 }
+"""A description and Croissant type for every column a published ``split.csv`` can hold (``MANIFEST_COLUMNS`` minus
+``PRIVATE_COLUMNS``, plus ``hard`` and ``split``; a test keeps it complete). No ``sc:Boolean``: ``mlcroissant`` reads
+"f" and "no" as True."""
 
 
-def build_croissant(summary, label_type, repo_id, split_sha256, columns, license_id=None, date_published=None):
+def undescribed_columns(columns):
+    """The columns of a published ``split.csv`` that have no ``CROISSANT_FIELDS`` entry (left out of the record set).
+
+    >>> undescribed_columns(["label_uid", "new_column"])
+    ['new_column']
+    """
+    return [c for c in columns if c not in CROISSANT_FIELDS]
+
+
+def build_croissant(summary, label_type, repo_id, split_sha256, columns, license_id=None, date_published=None,
+                    rai=None):
     """A hand-built Croissant 1.1 description of a staged dataset: ``split.csv`` as the ``labels`` record set and
-    the crops as the ``crops`` record set (image, split and class read from the path).
+    the crops as the ``crops`` record set (image, split and class read from the path). ``conformsTo`` names
+    Croissant 1.1 and the RAI 1.0 extension; ``rai`` (``hf_croissant.rai_metadata`` output) adds the RAI fields.
 
     Args:
         summary: ``dataset_summary`` output.
@@ -979,7 +1077,7 @@ def build_croissant(summary, label_type, repo_id, split_sha256, columns, license
         "description": (f"Label-centred street-level crops of Project Sidewalk {label_type} labels, marked correct or "
                         f"incorrect from human validation votes. {summary['n']} crops; content hash "
                         f"{summary['content_hash']}."),
-        "conformsTo": "http://mlcommons.org/croissant/1.1",
+        "conformsTo": list(hf_croissant.CONFORMS_TO),
         "url": base_url,
         "version": f"1.0.0+{summary['content_hash'][:12]}",
         "citeAs": hf_cards.CITATION_BIBTEX,
@@ -1011,20 +1109,24 @@ def build_croissant(summary, label_type, repo_id, split_sha256, columns, license
         doc["license"] = license_id
     if date_published:
         doc["datePublished"] = date_published
+    doc.update(rai or {})
     return doc
 
 
 def validate_croissant(path):
-    """Validate ``path`` with ``mlcroissant`` if it is installed. Returns ``(validated, message)``."""
+    """Validate ``path`` with ``mlcroissant`` if it is installed. Returns ``(validated, message, warnings)``, the
+    last being the library's warnings (e.g. no ``license``, which Croissant 1.1 requires but staging writes only when
+    the operator passes one). Raises ``PublishError`` if the file does not validate."""
     try:
         import mlcroissant as mlc
     except ImportError:
-        return False, "mlcroissant not installed; croissant.json written but not validated"
+        return False, "mlcroissant not installed; croissant.json written but not validated", []
     try:
-        mlc.Dataset(jsonld=path)
+        dataset = mlc.Dataset(jsonld=path)
     except Exception as e:  # mlcroissant raises its own ValidationError and others
         raise PublishError(f"{path} does not validate: {e}") from e
-    return True, "croissant.json validated with mlcroissant"
+    warnings = [str(w) for w in sorted(dataset.metadata.ctx.issues.warnings)]
+    return True, f"croissant.json validated with mlcroissant ({len(warnings)} warnings)", warnings
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1242,6 +1344,41 @@ def _is_crop_path(rel, remote=False):
     return len(parts) == 3 and parts[0] in splits and parts[1] in CLASSES and parts[2].endswith(".webp")
 
 
+def stage_croissant(dataset_dir, ds_ctx, dataset_license=None):
+    """Write ``<dataset_dir>/croissant.json`` for a staged dataset, with the RAI fields, and return what
+    ``staging.json`` records about it (``croissant_validated``, ``croissant_warnings``,
+    ``croissant_undescribed_columns``).
+
+    Everything is read from the staged ``split.csv`` and ``manifest.csv`` and from ``ds_ctx`` (the dataset card's
+    context, with the redacted summary). The ``rai`` entry of ``card_overrides.json`` replaces generated values.
+    Refuses (``PublishError``) on any ``hf_croissant.lint`` problem; warns on a ``split.csv`` column with no
+    ``CROISSANT_FIELDS`` entry (it is left out of the record set).
+    """
+    split_csv = os.path.join(dataset_dir, "split.csv")
+    split_df = pd.read_csv(split_csv, dtype=PANO_ID_DTYPE)
+    manifest_df = pd.read_csv(os.path.join(dataset_dir, "manifest.csv"), dtype=PANO_ID_DTYPE)
+    undescribed = undescribed_columns(list(split_df.columns))
+    if undescribed:
+        print(f"WARNING: split.csv columns with no description in CROISSANT_FIELDS, left out of croissant.json: "
+              f"{', '.join(undescribed)}")
+    rai, problems = hf_croissant.apply_overrides(hf_croissant.rai_metadata(ds_ctx, split_df, manifest_df),
+                                                 (ds_ctx.get("overrides") or {}).get("rai"))
+    croissant = build_croissant(ds_ctx["dataset"], ds_ctx["label_type"], ds_ctx["dataset_repo"],
+                                sha256_file(split_csv), list(split_df.columns), dataset_license,
+                                date_published=(ds_ctx.get("generation_run") or {}).get("started"), rai=rai)
+    problems += hf_croissant.lint(croissant)
+    if problems:
+        raise PublishError("croissant.json: " + "; ".join(problems))
+    croissant_path = os.path.join(dataset_dir, "croissant.json")
+    _write_json(croissant_path, croissant)
+    validated, message, warnings = validate_croissant(croissant_path)
+    print(message)
+    for w in warnings:
+        print(f"  mlcroissant warning: {w}")
+    return {"croissant_validated": validated, "croissant_warnings": warnings,
+            "croissant_undescribed_columns": undescribed}
+
+
 def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_path=None, dataset_license=None,
           what="both", public=None, lists=None):
     """Stage ``<root>/<label_type>/publish/{dataset,model}/`` with cards. Returns ``(model_dir, dataset_dir)``.
@@ -1264,6 +1401,8 @@ def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_pat
         raise PublishError(f"stage: --what must be both, model or dataset, not {what!r}")
     validate_prefix(prefix)
     check_depth_sized(root, label_type)
+    check_grouped_split(root, label_type)
+    check_backbone(root, label_type)
     pub = os.path.join(root, label_type, "publish")
     dataset_dir, model_dir = os.path.join(pub, "dataset"), os.path.join(pub, "model")
     m_repo, d_repo = model_repo_id(label_type, prefix), dataset_repo_id(label_type, prefix)
@@ -1312,17 +1451,11 @@ def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_pat
         print(f"WARNING: train-size cross-check failed: {msg}. Check that this dataset is the one the model was "
               f"trained on (the binding checks passed, so the split file is the training one).")
 
+    croissant_record = {}
     if dataset_dir is not None:
-        split_csv = os.path.join(dataset_dir, "split.csv")
-        croissant = build_croissant(summary, label_type, d_repo, sha256_file(split_csv),
-                                    list(pd.read_csv(split_csv, nrows=0).columns), dataset_license,
-                                    date_published=gen.get("started"))
-        croissant_path = os.path.join(dataset_dir, "croissant.json")
-        _write_json(croissant_path, croissant)
-        print(validate_croissant(croissant_path)[1])
-
         ds_ctx = {"label_type": label_type, "dataset_repo": d_repo, "model_repo": m_repo, "dataset": summary,
                   "prior": prior, "generation_run": gen, "code_commit": commit, "overrides": overrides}
+        croissant_record = stage_croissant(dataset_dir, ds_ctx, dataset_license)
         with open(os.path.join(dataset_dir, "README.md"), "w") as f:
             f.write(hf_cards.dataset_card(ds_ctx, dataset_license))
     m_ctx = {"label_type": label_type, "model_repo": m_repo, "dataset_repo": d_repo, "dataset": summary,
@@ -1340,7 +1473,8 @@ def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_pat
     _write_json(os.path.join(pub, STAGING_RECORD),
                 {"label_type": label_type, "prefix": prefix, "what": stage_what,
                  "content_hash": summary["content_hash"], "best_checkpoint": os.path.basename(model["best_dir"]),
-                 "cities": record_city_lists(lists), "files": _staged_record(model_dir, dataset_dir)})
+                 "cities": record_city_lists(lists), "files": _staged_record(model_dir, dataset_dir),
+                 **croissant_record})
     return model_dir, dataset_dir
 
 
@@ -1357,6 +1491,8 @@ def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None, what="
     ``--what model`` (a full staging can be pushed with any ``--what``).
     """
     check_depth_sized(root, label_type)
+    check_grouped_split(root, label_type)
+    check_backbone(root, label_type)
     pub = os.path.join(root, label_type, "publish")
     dataset_dir, model_dir = os.path.join(pub, "dataset"), os.path.join(pub, "model")
     record = _read_json(os.path.join(pub, STAGING_RECORD))
@@ -1428,6 +1564,7 @@ def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None, what="
     content_hash = sha256_file(os.path.join(dataset_dir, "SHA256SUMS"))
     if content_hash != record["content_hash"]:
         raise PublishError("SHA256SUMS changed since staging; restage")
+    check_staged_croissant(dataset_dir, record)
     hash_line = f"- **Content hash:** `{content_hash}`"
     with open(os.path.join(dataset_dir, "README.md")) as f:
         if not any(line.startswith(hash_line) for line in f):
@@ -1441,6 +1578,23 @@ def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None, what="
     for w in check_bindings(root, label_type, best_dir, map_path, report):
         print(f"WARNING: {w}")
     return model_dir, dataset_dir
+
+
+def check_staged_croissant(dataset_dir, record):
+    """Before ``--push-staged``: re-run ``hf_croissant.lint`` on the staged ``croissant.json`` (a rule tightened since
+    staging covers the old staging too; refuses with "restage"), then print whether staging validated it with
+    ``mlcroissant`` and which ``split.csv`` columns it does not describe."""
+    path = os.path.join(dataset_dir, "croissant.json")
+    doc = _read_json(path, required=True)
+    problems = hf_croissant.lint(doc)
+    if problems:
+        raise PublishError(f"{path}: " + "; ".join(problems) + "; restage")
+    validated = record.get("croissant_validated")
+    print(f"croissant_validated: {'not recorded (staged before it was)' if validated is None else validated}"
+          + ("" if validated else " (run `mlcroissant validate --jsonld " + path + "` on a machine that has it)"))
+    undescribed = record.get("croissant_undescribed_columns") or []
+    if undescribed:
+        print(f"WARNING: split.csv columns not described in croissant.json: {', '.join(undescribed)}")
 
 
 # ---------------------------------------------------------------------------------------------------------------------

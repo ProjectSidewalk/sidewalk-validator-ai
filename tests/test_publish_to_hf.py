@@ -72,7 +72,7 @@ def make_root(tmp_path, label_type=T, rows=ROWS, max_steps=2, epochs=2, pano_sou
         ck = dinov2 / f"checkpoint-{step}"
         ck.mkdir(parents=True)
         (ck / "model.safetensors").write_bytes(f"weights-{step}".encode())
-        (ck / "config.json").write_text(json.dumps({"architectures": ["Dinov2ForImageClassification"],
+        (ck / "config.json").write_text(json.dumps({"architectures": ["Dinov2ForImageClassification"], "model_type": "dinov2",
                                                     "id2label": {"0": "correct", "1": "incorrect"}}))
         (ck / "preprocessor_config.json").write_text(json.dumps({"image_processor_type": "BitImageProcessor"}))
         for junk in ("optimizer.pt", "scheduler.pt", "rng_state.pth", "training_args.bin", "scaler.pt"):
@@ -372,10 +372,11 @@ def test_missing_crop_fails(tmp_path):
 def test_croissant(staged):
     with open(os.path.join(staged["dataset"], "croissant.json")) as f:
         doc = json.load(f)
-    assert doc["conformsTo"] == "http://mlcommons.org/croissant/1.1"
+    assert doc["conformsTo"] == ["http://mlcommons.org/croissant/1.1", "http://mlcommons.org/croissant/RAI/1.0"]
     fields = {f["name"] for f in doc["recordSet"][0]["field"]}
     assert {"label_uid", "label_class", "split", "crop_path"} <= fields
-    pytest.importorskip("mlcroissant")
+    from conftest import require_mlcroissant
+    require_mlcroissant()
     assert pub.validate_croissant(os.path.join(staged["dataset"], "croissant.json"))[0]
 
 
@@ -702,6 +703,78 @@ def test_cards_refuse_fixed_crop_runs(staged):
     model_run = json.loads(_read(os.path.join(staged["model"], "training_run.json")))
     gen_run = json.loads(_read(os.path.join(staged["dataset"], "generation_run.json")))
     assert hf_cards.fixed_crop_half_px(model_run, gen_run) is None  # the depth-sized fixture publishes
+
+
+# Issue 3: a model trained on a label-level (leaky) split is never published
+
+def _edit_split(root, fn):
+    path = os.path.join(root, T, "split.csv")
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    fn(df)
+    df.to_csv(path, index=False)
+
+
+def _move_pano_into_test(df):
+    df.loc[df.label_uid == "teaneck:12", "pano_id"] = "pano4"     # a val row on the test rows' panorama
+
+
+def _mark_split_mode(root):
+    path = os.path.join(root, T, "dinov2", "training_run.json")
+    run = json.loads(_read(path))
+    run["split_mode"] = "label_level"
+    with open(path, "w") as f:
+        json.dump(run, f)
+
+
+def test_a_panorama_in_two_splits_is_never_staged(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    _edit_split(root, _move_pano_into_test)
+    with pytest.raises(pub.PublishError, match=r"more than one split \(e.g. \[.pano4.\]\)"):
+        pub.stage(root, T)
+    assert not os.path.exists(os.path.join(root, T, "publish"))  # refused before anything is staged
+    assert pub.main(["--label_type", T, "--out", root]) == pub.EXIT_ERROR
+    assert "label-level" in capsys.readouterr().err
+
+
+def test_blank_pano_ids_in_two_splits_are_not_a_shared_panorama(tmp_path):
+    root, *_ = make_root(tmp_path)
+
+    def blank(df):
+        df.loc[df.label_uid.isin(["teaneck:12", "teaneck:14"]), "pano_id"] = ""   # one val row, one test row
+    _edit_split(root, blank)
+    pub.check_grouped_split(root, T)                      # no refusal: a blank id is no panorama
+
+
+def test_a_training_run_recording_split_mode_is_never_staged(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _mark_split_mode(root)
+    with pytest.raises(pub.PublishError, match="label-level"):
+        pub.stage(root, T)
+    assert not os.path.exists(os.path.join(root, T, "publish"))
+
+
+@pytest.mark.parametrize("change", ["pano", "split_mode"])
+def test_push_staged_refuses_a_leaky_split_or_run(tmp_path, change):
+    root, *_ = make_root(tmp_path)
+    pub.stage(root, T)
+    if change == "pano":
+        _edit_split(root, _move_pano_into_test)
+    else:
+        _mark_split_mode(root)
+    with pytest.raises(pub.PublishError, match="label-level"):
+        pub.verify_staged(root, T)
+
+
+def test_cards_refuse_a_label_level_run(staged):
+    ctx = {"label_type": T, "model_repo": "m", "dataset_repo": "d", "dataset": {}, "code_commit": None,
+           "overrides": {}, "training_run": {"split_mode": "label_level"}}
+    with pytest.raises(ValueError, match="label-level"):
+        hf_cards.model_card(ctx)
+    with pytest.raises(ValueError, match="label-level"):
+        hf_cards.dataset_card(ctx)
+    with pytest.raises(ValueError, match="label-level"):
+        hf_cards.require_grouped_split({"settings": {"split_mode": "label_level"}})
+    hf_cards.require_grouped_split({"seed": 42}, None)     # a grouped run passes
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -2107,3 +2180,55 @@ def test_a_file_without_a_size_column_is_refused_even_with_no_rows():
     manifest = pd.DataFrame({"status": ["no_pano"], "depth_m": [None]})   # no ok row, and no size column
     with pytest.raises(pub.PublishError, match="manifest.csv has no crop_half_px column"):
         pub.check_depth_rows(pub._ok_rows(manifest), "manifest.csv")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Issue #119: only the round-3 recipe on DINOv2-L is published (backbone comparison runs are refused)
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _edit_json(path, **changes):
+    d = json.loads(path.read_text())
+    d.update(changes)
+    path.write_text(json.dumps(d))
+
+
+def test_check_backbone_passes_a_dinov2_model_with_or_without_the_record(tmp_path):
+    root, *_ = make_root(tmp_path)
+    pub.check_backbone(root, T)    # record without backbone fields, config with model_type dinov2
+    os.remove(os.path.join(root, T, "dinov2", "training_run.json"))
+    pub.check_backbone(root, T)
+    _edit_json(tmp_path / "out" / T / "dinov2" / "checkpoint-2" / "config.json", model_type="dinov2")
+    pub.check_backbone(root, T)
+
+
+@pytest.mark.parametrize("record, match", [
+    ({"backbone": {"key": "convnextv2-base"}}, "comparison run"),
+    ({"learning_rate": 3e-5}, "learning_rate"),
+])
+def test_check_backbone_refuses_a_comparison_run(tmp_path, record, match):
+    root, *_ = make_root(tmp_path)
+    _edit_json(tmp_path / "out" / T / "dinov2" / "training_run.json", **record)
+    with pytest.raises(pub.PublishError, match=match):
+        pub.check_backbone(root, T)
+    with pytest.raises(pub.PublishError, match=match):
+        pub.stage(root, T)
+    assert not os.path.exists(os.path.join(root, T, "publish"))
+
+
+def test_check_backbone_refuses_a_non_dinov2_checkpoint_without_a_record(tmp_path):
+    root, *_ = make_root(tmp_path)
+    os.remove(os.path.join(root, T, "dinov2", "training_run.json"))
+    _edit_json(tmp_path / "out" / T / "dinov2" / "checkpoint-2" / "config.json", model_type="convnextv2")
+    with pytest.raises(pub.PublishError, match="model_type 'convnextv2'"):
+        pub.check_backbone(root, T)
+    _edit_json(tmp_path / "out" / T / "dinov2" / "checkpoint-2" / "config.json", model_type=None)
+    with pytest.raises(pub.PublishError, match="not 'dinov2'"):
+        pub.check_backbone(root, T)
+
+
+def test_push_staged_refuses_a_backbone_run_retrained_after_staging(tmp_path):
+    root, *_ = make_root(tmp_path)
+    pub.stage(root, T)
+    _edit_json(tmp_path / "out" / T / "dinov2" / "training_run.json", backbone={"key": "dinov2-reg-large"})
+    with pytest.raises(pub.PublishError, match="comparison run"):
+        pub.verify_staged(root, T)

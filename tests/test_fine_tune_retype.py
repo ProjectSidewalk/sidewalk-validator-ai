@@ -130,7 +130,9 @@ def test_recipe_constants_match_round_3():
     assert ftc.DEFAULT_BATCH_SIZE == 8 and fr.TRAIN_BATCH_SIZE == 8
     assert ftc.BATCH_TOTAL // ftc.DEFAULT_BATCH_SIZE == 4 and fr.GRAD_ACCUM == 4
     assert re.search(r"gradient_accumulation_steps=BATCH_TOTAL // args\.batch_size", src)
-    assert re.search(r"learning_rate=1e-5\b", src) and fr.LEARNING_RATE == 1e-5
+    # the validator's rate is `--learning-rate` (default DEFAULT_LEARNING_RATE, the round-3 1e-5; issue #119)
+    assert ftc.DEFAULT_LEARNING_RATE == 1e-5 and fr.LEARNING_RATE == 1e-5
+    assert re.search(r"learning_rate=args\.learning_rate\b", src)
     assert re.search(r"warmup_ratio=0.1\b", src) and fr.WARMUP_RATIO == 0.1
     own = open(os.path.join(REPO, "fine_tune_retype.py")).read()
     assert "use_fast=False" in own and "remove_unused_columns=False" in own and "label_names=LABEL_NAMES" in own

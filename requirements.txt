@@ -19,5 +19,6 @@ sidewalk-panorama-tools @ git+https://github.com/ProjectSidewalk/sidewalk-panora
 # Only for publish_to_hf.py --push --yes / --prune-remote --yes (staging, dry runs and --audit do not need it).
 # create_commit is a single commit in both versions checked (0.34.4, environment.yml's pin, and 2.2.0).
 huggingface_hub>=0.34.4
-# Optional: publish_to_hf.py validates croissant.json with it when installed.
+# Optional: publish_to_hf.py validates croissant.json with it when installed (CI installs mlcroissant==1.1.1; it is
+# kept out of environment.yml, so a klone staging records croissant_validated: false).
 # mlcroissant

@@ -35,6 +35,8 @@ OVERRIDE_KEYS = {
     "dataset_license": "Hub license id for the dataset (same as --dataset-license)",
     "doi": "the dataset's DOI, once minted",
     "model_doi": "the model's DOI, once minted",
+    "rai": "object: Croissant RAI text that replaces generated values, keyed 'rai:<property>' (hf_croissant); "
+           "applied at the next staging",
 }
 """Keys allowed in ``<out>/<label_type>/card_overrides.json``: facts the pipeline's files do not record."""
 ENCODER_NAMES = {"vits": "ViT-S", "vitb": "ViT-B", "vitl": "ViT-L"}
@@ -119,6 +121,23 @@ def require_depth_sized(*runs):
         raise ValueError(f"the crops were cut at a fixed half-width of {half} px (--fixed-crop-half-px, the issue #21 "
                          f"ablation), but serving sizes each crop by depth ({dg.CROP_DEPTH_CONSTANT} / depth_m): "
                          f"this is an ablation-only model or dataset, and it is not published")
+
+
+def require_grouped_split(*runs):
+    """Raise ``ValueError`` if any of ``runs`` (``training_run.json`` dicts, top level or under ``settings``) records
+    ``split_mode``: fine_tune_classifier.py records it only for a label-level split (analysis/split_leak.py, issue
+    #3), which puts labels of one panorama on both sides of the split on purpose. Such a model's test numbers are
+    inflated by design, and it is never published.
+
+    >>> require_grouped_split({"seed": 42}, None)
+    """
+    for run in runs:
+        run = run or {}
+        for d in (run, run.get("settings") or {}):
+            if d.get("split_mode"):
+                raise ValueError(f"the model was trained on a label-level split (split_mode={d['split_mode']}, "
+                                 f"analysis/split_leak.py, issue #3): labels of one panorama sit in train and test, "
+                                 f"so it is an experiment-only model and it is not published")
 
 
 _BARE = re.compile(r"^[A-Za-z][A-Za-z0-9_./-]*$")
@@ -455,10 +474,12 @@ def model_card(ctx):
 
     Raises:
         ValueError: if ``training_run`` or ``generation_run`` records ``fixed_crop_half_px`` (the card's crop
-            description would be wrong; see :func:`require_depth_sized`).
+            description would be wrong; see :func:`require_depth_sized`), or ``training_run`` records a label-level
+            ``split_mode`` (:func:`require_grouped_split`).
     """
     t = ctx["label_type"]
     require_depth_sized(ctx.get("training_run"), ctx.get("generation_run"))
+    require_grouped_split(ctx.get("training_run"))
     overrides = ctx.get("overrides") or {}
     metrics = ctx.get("metrics") or {}
     trainer = ctx.get("trainer") or {}
@@ -694,6 +715,100 @@ def imagery_sentence(pano_sources, settings):
             "panorama). The manifest's `pose_source` says which pose each crop used. ")
 
 
+VOTE_SOURCE_TEXT = ("Every label of this type and its validations are pulled from each deployment's public "
+                    "`/v3/api/rawLabels` export. Only **human** votes are counted: each vote carries a "
+                    "`validator_type`, and votes cast by the `SidewalkAI` account are excluded, so the model is never "
+                    "trained on its own output.")
+"""Where the dataset card's classes come from (also the Croissant ``rai:dataAnnotationProtocol``, ``hf_croissant``)."""
+
+
+def vote_rules(n_experts):
+    """The dataset card's class rules as ``(class, rule over human votes)`` rows, the expert row only when
+    ``n_experts`` is set (the order the card's table prints them).
+
+    >>> [c for c, _ in vote_rules(0)]
+    ['`incorrect`', '`correct`', '(dropped)']
+    >>> vote_rules(2)[2][0]
+    'either'
+    """
+    rows = [("`incorrect`", "disagree − agree > 1"), ("`correct`", "agree − disagree > 2, then randomly downsampled")]
+    if n_experts:
+        rows.append(("either", "otherwise, the class an expert account voted for, if every expert vote on the label "
+                               "agrees and no other human voted the other way"))
+    rows.append(("(dropped)", "unvalidated, unsure, or contested"))
+    return rows
+
+
+def expert_text(n_experts, source_counts):
+    """The dataset card's sentence on expert votes (empty when ``n_experts`` is 0), with the ``class_source`` counts
+    of the selection when the generation run records them."""
+    if not n_experts:
+        return ""
+    return (f"Expert votes came from {n_experts} project-team account{'s' if n_experts != 1 else ''}; the "
+            "manifest's `class_source` column says which rule decided each label (`margin` or `expert`)"
+            + (f": {fmt(source_counts.get('margin', 0))} margin and {fmt(source_counts.get('expert', 0))} "
+               "expert in the selection." if source_counts else "."))
+
+
+def ai_labels_text(include_ai):
+    """Whether labels placed by the AI account are in the dataset, as the dataset card words it (no end stop)."""
+    return (f"Labels placed by the `SidewalkAI` account are "
+            f"{'included (tagged `author = ai` in the manifest)' if include_ai else 'excluded'}")
+
+
+def downsample_text(gen):
+    """The dataset card's sentence on downsampling the ``correct`` class (``gen``: ``generation_run.json``)."""
+    return (f"The `correct` class is then downsampled to {dg.CORRECT_PROPORTION:.0%} of the dataset by a seeded hash "
+            f"of `label_uid` (seed {gen.get('seed', dg.SEED)}), a training-balance choice, not the real class mix.")
+
+
+def crop_text(ds, gen):
+    """The dataset card's "How a crop is made" paragraph (``ds``: ``dataset_summary`` output, ``gen``:
+    ``generation_run.json``). A missing tilt beta or depth encoder is written as ``TODO:``."""
+    settings = gen.get("settings") or {}
+    return (f"The panorama is read from the lab's panorama store and resized to 8192×4096. A {dg.VIEW_SIZE}² "
+            f"perspective view with a {dg.VIEW_FOV_DEG:g}° field of view is rendered centred on the label with "
+            f"rig-tilt correction (beta = {settings.get('tilt_beta', gen.get('tilt_beta', TODO + ' tilt beta'))}"
+            f"{' for GSV' if non_gsv_count(ds.get('pano_sources') or {}) else ''}). "
+            f"Depth Anything V2 (metric, "
+            f"{str(settings.get('depth_dataset', dg.DEPTH_DATASET)).upper()}, "
+            f"{ENCODER_NAMES.get(settings.get('depth_encoder', gen.get('depth_encoder')), TODO + ' encoder')}) estimates "
+            f"the depth at the view centre, the crop half-width is `{dg.CROP_DEPTH_CONSTANT} / depth_m` pixels "
+            f"(clipped to the view; `clipped = 1` in the manifest), and the crop's long side is resized to "
+            f"{dg.CROP_LONG_SIDE} px and saved as WebP quality {dg.WEBP_QUALITY}.")
+
+
+def split_text(heldout, split_seed):
+    """The dataset card's paragraph on how ``split_data.py`` made the splits. An unknown ``split_seed`` is written as
+    ``TODO:``."""
+    return ("`split_data.py` groups labels by panorama so that no panorama appears in two splits (overlapping crops "
+            "of one corner would otherwise leak), bins the groups by class ratio and fills train/val/test 70/15/15 "
+            "of rows per bin with a seeded shuffle"
+            + (f"; every label from {', '.join(heldout)} is in `test_heldout`" if heldout else
+               "; no cities were held out")
+            + (f" (split seed {split_seed})" if split_seed is not None else
+               f". {TODO} split seed (split_data.py does not record it; its default is 42; add `split_seed` to "
+               "card_overrides.json)")
+            + ". The Hub config maps "
+              "`val` to the `validation` split.")
+
+
+def intended_use_text(label_type):
+    """The dataset card's intended-use paragraph: what the data is for, then what it is not suitable for."""
+    return (f"Training and evaluating validators for Project Sidewalk {label_type} labels, and research on crowd label "
+            "quality. Not suitable for estimating how common a feature is in a city: labels exist where volunteers "
+            "chose to label, and the classes are rebalanced.")
+
+
+def versioning_text(selection, doi):
+    """The dataset card's versioning paragraph (``selection``: the generation run's ``selection_sha256``, written as
+    ``TODO:`` when missing; ``doi``: the dataset DOI or None)."""
+    return ("Each upload is a commit of this repo; the content hash above identifies the crops exactly, and "
+            f"`generation_run.json` records the selection hash (`{selection or TODO + ' selection hash'}`), which "
+            "changes when any label enters, leaves or changes class. A regenerated dataset is uploaded as a new "
+            "commit with a new card. " + _doi_sentence(doi, "dataset"))
+
+
 def dataset_card(ctx, license_id=None):
     """The dataset repo's ``README.md``.
 
@@ -706,10 +821,12 @@ def dataset_card(ctx, license_id=None):
             is guessed, and no ``TODO:`` is written, so an unset license does not block a push.
 
     Raises:
-        ValueError: if ``generation_run`` records ``fixed_crop_half_px`` (see :func:`require_depth_sized`).
+        ValueError: if ``generation_run`` records ``fixed_crop_half_px`` (see :func:`require_depth_sized`), or a
+            ``training_run`` in ``ctx`` records a label-level ``split_mode`` (:func:`require_grouped_split`).
     """
     t = ctx["label_type"]
     require_depth_sized(ctx.get("generation_run"))
+    require_grouped_split(ctx.get("training_run"))
     overrides = ctx.get("overrides") or {}
     license_id = license_id or overrides.get("dataset_license")
     split_seed = overrides.get("split_seed")
@@ -736,14 +853,8 @@ def dataset_card(ctx, license_id=None):
                  else f"{TODO} no image_capture_date values in the manifest")
     include_ai = settings.get("include_ai_labels", gen.get("include_ai_labels"))
     n_experts = gen.get("n_experts") or 0
-    expert_row = ("| either | otherwise, the class an expert account voted for, if every expert vote on the label agrees "
-                  "and no other human voted the other way |\n")
     source_counts = gen.get("class_source_counts") or {}
     imagery_text = imagery_sentence(ds.get("pano_sources") or {}, settings)
-    expert_text = (f"\nExpert votes came from {n_experts} project-team account{'s' if n_experts != 1 else ''}; the "
-                   "manifest's `class_source` column says which rule decided each label (`margin` or `expert`)"
-                   + (f": {fmt(source_counts.get('margin', 0))} margin and {fmt(source_counts.get('expert', 0))} "
-                      "expert in the selection." if source_counts else ".") + "\n")
     prior_text = (prior_sentence(prior, n_experts) if prior
                   else f"{TODO} deployment_priors.json has no entry for {t}.")
     heldout = ds.get("heldout_cities") or []
@@ -762,44 +873,16 @@ def dataset_card(ctx, license_id=None):
              "crop by path; recompute it to check an upload).\n"
              + (f"- **License:** {license_id}.\n" if license_id else ""),
              "## How labels become correct or incorrect\n",
-             "Every label of this type and its validations are pulled from each deployment's public "
-             "`/v3/api/rawLabels` export. Only **human** votes are counted: each vote carries a `validator_type`, and "
-             "votes cast by the `SidewalkAI` account are excluded, so the model is never trained on its own output.\n",
+             VOTE_SOURCE_TEXT + "\n",
              "| class | rule (human votes) |\n|---|---|\n"
-             "| `incorrect` | disagree − agree > 1 |\n"
-             "| `correct` | agree − disagree > 2, then randomly downsampled |\n"
-             + (expert_row if n_experts else "")
-             + "| (dropped) | unvalidated, unsure, or contested |\n"
-             + (expert_text if n_experts else ""),
-             f"Labels placed by the `SidewalkAI` account are "
-             f"{'included (tagged `author = ai` in the manifest)' if include_ai else 'excluded'}; "
-             + imagery_text
-             + f"The `correct` class is then downsampled to {dg.CORRECT_PROPORTION:.0%} of the dataset by a seeded hash "
-             f"of `label_uid` (seed {gen.get('seed', dg.SEED)}), a training-balance choice, not the real class mix. "
-             + prior_text + "\n",
+             + "".join(f"| {cls} | {rule} |\n" for cls, rule in vote_rules(n_experts))
+             + (f"\n{expert_text(n_experts, source_counts)}\n" if n_experts else ""),
+             ai_labels_text(include_ai) + "; " + imagery_text + downsample_text(gen) + " " + prior_text + "\n",
              "## How a crop is made\n",
-             f"The panorama is read from the lab's panorama store and resized to 8192×4096. A {dg.VIEW_SIZE}² "
-             f"perspective view with a {dg.VIEW_FOV_DEG:g}° field of view is rendered centred on the label with "
-             f"rig-tilt correction (beta = {settings.get('tilt_beta', gen.get('tilt_beta', TODO + ' tilt beta'))}"
-             f"{' for GSV' if non_gsv_count(ds.get('pano_sources') or {}) else ''}). "
-             f"Depth Anything V2 (metric, "
-             f"{str(settings.get('depth_dataset', dg.DEPTH_DATASET)).upper()}, "
-             f"{ENCODER_NAMES.get(settings.get('depth_encoder', gen.get('depth_encoder')), TODO + ' encoder')}) estimates "
-             f"the depth at the view centre, the crop half-width is `{dg.CROP_DEPTH_CONSTANT} / depth_m` pixels "
-             f"(clipped to the view; `clipped = 1` in the manifest), and the crop's long side is resized to "
-             f"{dg.CROP_LONG_SIDE} px and saved as WebP quality {dg.WEBP_QUALITY}.\n",
+             crop_text(ds, gen) + "\n",
              "## Splits\n",
              _counts_table(ds),
-             "`split_data.py` groups labels by panorama so that no panorama appears in two splits (overlapping crops "
-             "of one corner would otherwise leak), bins the groups by class ratio and fills train/val/test 70/15/15 "
-             "of rows per bin with a seeded shuffle"
-             + (f"; every label from {', '.join(heldout)} is in `test_heldout`" if heldout else
-                "; no cities were held out")
-             + (f" (split seed {split_seed})" if split_seed is not None else
-                f". {TODO} split seed (split_data.py does not record it; its default is 42; add `split_seed` to "
-                "card_overrides.json)")
-             + ". The Hub config maps "
-               "`val` to the `validation` split.\n",
+             split_text(heldout, split_seed) + "\n",
              "## Cities\n",
              _cities_table(ds),
              "## Files\n",
@@ -813,18 +896,13 @@ def dataset_card(ctx, license_id=None):
              "| `generation_run.json` | generator settings and the selection hash |\n"
              "| `dataset_info.json` | the counts on this card, machine-readable |\n"
              "| `SHA256SUMS` | sha256 of every crop |\n"
-             "| `croissant.json` | Croissant 1.1 metadata |\n",
+             "| `croissant.json` | Croissant 1.1 metadata with RAI 1.0 fields |\n",
              "The absolute panorama-store paths recorded at generation time (`pano_path`, `pano_store`, `pano_store_marker`) are "
              "removed from the published copies.\n",
              "## Intended use\n",
-             f"Training and evaluating validators for Project Sidewalk {t} labels, and research on crowd label "
-             "quality. Not suitable for estimating how common a feature is in a city: labels exist where volunteers "
-             "chose to label, and the classes are rebalanced.\n",
+             intended_use_text(t) + "\n",
              "## Versioning\n",
-             "Each upload is a commit of this repo; the content hash above identifies the crops exactly, and "
-             f"`generation_run.json` records the selection hash (`{selection or TODO + ' selection hash'}`), which "
-             "changes when any label enters, leaves or changes class. A regenerated dataset is uploaded as a new "
-             "commit with a new card. " + _doi_sentence(overrides.get("doi"), "dataset") + "\n",
+             versioning_text(selection, overrides.get("doi")) + "\n",
              "## Citation\n",
              "There is no paper for this dataset yet. Please cite Project Sidewalk and link the repository:\n",
              "```bibtex\n" + CITATION_BIBTEX + "\n```\n",
