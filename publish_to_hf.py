@@ -34,8 +34,11 @@ staged label type's; neither ``generation_run.json`` nor ``dinov2/training_run.j
 neither record names a depth encoder other than the served ``vitb``/``vkitti``; and, whatever the records
 say, every row of ``split.csv`` and every ``ok`` row of ``manifest.csv`` has a positive ``depth_m`` and a
 ``crop_half_px`` within 1 px of ``int(6100 / depth_m)`` (issue #21; checked again on the staged copies before
-``--push-staged``). A whole-view or fixed-size model needs a serving change before it can be published. A train-size
-cross-check against ``trainer_state.json`` and out-of-order file times only warn.
+``--push-staged``). A whole-view or fixed-size model needs a serving change before it can be published. A model
+trained on a label-level split (issue #3, analysis/split_leak.py) is never published: ``split.csv`` must not hold a
+``pano_id`` in two of its four splits, and ``dinov2/training_run.json`` must not record ``split_mode`` (both checked
+again before ``--push-staged``). A train-size cross-check against ``trainer_state.json`` and out-of-order file times
+only warn.
 
 **Card overrides.** Facts the pipeline does not record (per-type failure modes, the split seed, the dataset
 license, DOIs) go in ``<out>/<label_type>/card_overrides.json`` (keys in ``hf_cards.OVERRIDE_KEYS``); anything still
@@ -684,6 +687,34 @@ def check_depth_sized(root, label_type):
         path = os.path.join(base, name)
         if os.path.exists(path):          # a missing file is reported by read_dataset_context with its own message
             check_depth_rows(_rows_to_check(path), path)
+
+
+CANONICAL_SPLITS = ("train", "val", "test", "test_heldout")
+"""split_data.py's four splits: a panorama in more than one of them means a label-level split (issue #3)."""
+
+
+def check_grouped_split(root, label_type):
+    """Raise ``PublishError`` if ``<root>/<label_type>``'s model was trained on, or its ``split.csv`` is, a
+    label-level split (issue #3, analysis/split_leak.py): first structurally, needing no marker, when a ``pano_id``
+    sits in more than one of the four canonical splits of ``split.csv`` (blank ids are skipped: a row without a
+    panorama is its own group); then when ``dinov2/training_run.json`` records ``split_mode``
+    (:func:`hf_cards.require_grouped_split`). Checked where :func:`check_depth_sized` is: before anything is
+    staged, and again before ``--push-staged``."""
+    base = os.path.join(root, label_type)
+    path = os.path.join(base, "split.csv")
+    if os.path.exists(path):          # a missing split.csv is reported by read_dataset_context with its own message
+        df = pd.read_csv(path, usecols=["pano_id", "split"], dtype=str, keep_default_na=False)
+        df = df[(df["pano_id"].str.strip() != "") & df["split"].isin(CANONICAL_SPLITS)]
+        per_pano = df.groupby("pano_id")["split"].nunique()
+        shared = per_pano[per_pano > 1]
+        if len(shared):
+            raise PublishError(f"{path}: {len(shared)} panorama(s) sit in more than one split (e.g. "
+                               f"{list(shared.index[:3])}): a label-level split (issue #3), whose test numbers are "
+                               f"inflated by design. Only a split_data.py split, grouped by panorama, is published")
+    try:
+        hf_cards.require_grouped_split(_read_json(os.path.join(base, "dinov2", "training_run.json")))
+    except ValueError as e:
+        raise PublishError(f"{base}: {e}. Retrain on split_data.py's grouped split to publish") from e
 
 
 def check_backbone(root, label_type):
@@ -1339,6 +1370,7 @@ def stage(root, label_type, prefix=DEFAULT_PREFIX, link_mode="hardlink", map_pat
         raise PublishError(f"stage: --what must be both, model or dataset, not {what!r}")
     validate_prefix(prefix)
     check_depth_sized(root, label_type)
+    check_grouped_split(root, label_type)
     check_backbone(root, label_type)
     pub = os.path.join(root, label_type, "publish")
     dataset_dir, model_dir = os.path.join(pub, "dataset"), os.path.join(pub, "model")
@@ -1428,6 +1460,7 @@ def verify_staged(root, label_type, prefix=DEFAULT_PREFIX, map_path=None, what="
     ``--what model`` (a full staging can be pushed with any ``--what``).
     """
     check_depth_sized(root, label_type)
+    check_grouped_split(root, label_type)
     check_backbone(root, label_type)
     pub = os.path.join(root, label_type, "publish")
     dataset_dir, model_dir = os.path.join(pub, "dataset"), os.path.join(pub, "model")

@@ -509,3 +509,26 @@ def test_radius_zero_never_applies_the_group_guard(tmp_path):
     m.to_csv(tmp_path / "Toy" / "manifest.csv", index=False)
     assert split_data.main(["--label_type", "Toy", "--out", str(tmp_path), "--merge-radius-m", "0"]) == 0
     assert split_data.main(["--label_type", "Toy", "--out", str(tmp_path)]) == 2
+
+
+def test_return_group_gives_the_merged_group_key_and_leaves_the_default_alone(toy):
+    """Issue #3 (analysis/split_leak.py): ``return_group=True`` also returns the merged group key per row; the
+    default return value, the stats and the CLI output are exactly what they were."""
+    m = pd.read_csv(toy / "Toy" / "manifest.csv", dtype=str, keep_default_na=False)
+    coords = toy_coords(toy)
+    plain = split_data.assign_splits(m, seed=42, merge_radius_m=3, coords=coords)
+    df, group = split_data.assign_splits(m, seed=42, merge_radius_m=3, coords=coords, return_group=True)
+    pd.testing.assert_frame_equal(df, plain)
+    assert isinstance(group, pd.Series) and group.index.equals(df.index)
+    assert (df.groupby(group).split.nunique() == 1).all()           # a group is never split
+    near = [(f"pano{a:03d}", f"pano{b:03d}") for a, b in NEAR_PAIRS]
+    by_pano = pd.Series(group.to_numpy(), index=df.pano_id).groupby(level=0).first()
+    merged = [(a, b) for a, b in near if a in by_pano and b in by_pano]
+    assert merged and all(by_pano[a] == by_pano[b] for a, b in merged)  # the 3 m merge, not the panorama alone
+    df2, stats, group2 = split_data.assign_splits(m, seed=42, merge_radius_m=3, coords=coords, return_stats=True,
+                                                  return_group=True)
+    _, stats_plain = split_data.assign_splits(m, seed=42, merge_radius_m=3, coords=coords, return_stats=True)
+    assert stats == stats_plain and group2.equals(group)
+    pd.testing.assert_frame_equal(df2, plain)
+    before = run(toy)
+    assert run(toy) == before                                          # the CLI output is unchanged

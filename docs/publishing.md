@@ -55,7 +55,12 @@ staged folder for them again before upload. It also refuses:
 - a `predictions.csv` with duplicate rows or that does not cover exactly the split's `val`/`test`/`test_heldout`
   rows (metrics and map from another split); this check runs only when `metrics.json` or a map exists, since
   without them the card has no evaluation to tie to the split;
-- a dataset whose content hash (the sha256 of `SHA256SUMS`) equals another staged label type's.
+- a dataset whose content hash (the sha256 of `SHA256SUMS`) equals another staged label type's;
+- a label-level split ([#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3),
+  `analysis/split_leak.py`): a `split.csv` with a non-blank `pano_id` in more than one of `train`, `val`, `test` and
+  `test_heldout` (structural, no marker needed), or a `dinov2/training_run.json` that records `split_mode`. Such a
+  model's test numbers are inflated by design. Both are checked again before `--push-staged`, and the cards refuse
+  a recorded `split_mode` too.
 
 Two weaker checks only warn: file times out of order (weights newer than predictions, predictions newer than
 metrics or map), and the `train` split against the images per epoch implied by `trainer_state.json` (steps per

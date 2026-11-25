@@ -705,6 +705,78 @@ def test_cards_refuse_fixed_crop_runs(staged):
     assert hf_cards.fixed_crop_half_px(model_run, gen_run) is None  # the depth-sized fixture publishes
 
 
+# Issue 3: a model trained on a label-level (leaky) split is never published
+
+def _edit_split(root, fn):
+    path = os.path.join(root, T, "split.csv")
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    fn(df)
+    df.to_csv(path, index=False)
+
+
+def _move_pano_into_test(df):
+    df.loc[df.label_uid == "teaneck:12", "pano_id"] = "pano4"     # a val row on the test rows' panorama
+
+
+def _mark_split_mode(root):
+    path = os.path.join(root, T, "dinov2", "training_run.json")
+    run = json.loads(_read(path))
+    run["split_mode"] = "label_level"
+    with open(path, "w") as f:
+        json.dump(run, f)
+
+
+def test_a_panorama_in_two_splits_is_never_staged(tmp_path, capsys):
+    root, *_ = make_root(tmp_path)
+    _edit_split(root, _move_pano_into_test)
+    with pytest.raises(pub.PublishError, match=r"more than one split \(e.g. \[.pano4.\]\)"):
+        pub.stage(root, T)
+    assert not os.path.exists(os.path.join(root, T, "publish"))  # refused before anything is staged
+    assert pub.main(["--label_type", T, "--out", root]) == pub.EXIT_ERROR
+    assert "label-level" in capsys.readouterr().err
+
+
+def test_blank_pano_ids_in_two_splits_are_not_a_shared_panorama(tmp_path):
+    root, *_ = make_root(tmp_path)
+
+    def blank(df):
+        df.loc[df.label_uid.isin(["teaneck:12", "teaneck:14"]), "pano_id"] = ""   # one val row, one test row
+    _edit_split(root, blank)
+    pub.check_grouped_split(root, T)                      # no refusal: a blank id is no panorama
+
+
+def test_a_training_run_recording_split_mode_is_never_staged(tmp_path):
+    root, *_ = make_root(tmp_path)
+    _mark_split_mode(root)
+    with pytest.raises(pub.PublishError, match="label-level"):
+        pub.stage(root, T)
+    assert not os.path.exists(os.path.join(root, T, "publish"))
+
+
+@pytest.mark.parametrize("change", ["pano", "split_mode"])
+def test_push_staged_refuses_a_leaky_split_or_run(tmp_path, change):
+    root, *_ = make_root(tmp_path)
+    pub.stage(root, T)
+    if change == "pano":
+        _edit_split(root, _move_pano_into_test)
+    else:
+        _mark_split_mode(root)
+    with pytest.raises(pub.PublishError, match="label-level"):
+        pub.verify_staged(root, T)
+
+
+def test_cards_refuse_a_label_level_run(staged):
+    ctx = {"label_type": T, "model_repo": "m", "dataset_repo": "d", "dataset": {}, "code_commit": None,
+           "overrides": {}, "training_run": {"split_mode": "label_level"}}
+    with pytest.raises(ValueError, match="label-level"):
+        hf_cards.model_card(ctx)
+    with pytest.raises(ValueError, match="label-level"):
+        hf_cards.dataset_card(ctx)
+    with pytest.raises(ValueError, match="label-level"):
+        hf_cards.require_grouped_split({"settings": {"split_mode": "label_level"}})
+    hf_cards.require_grouped_split({"seed": 42}, None)     # a grouped run passes
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Audit and listings (mocked API, no network)
 # ---------------------------------------------------------------------------------------------------------------------
