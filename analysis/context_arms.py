@@ -70,6 +70,8 @@ def arm_row(data_dir, label_type, name, preds, within_min_n=10):
     """``confident_learning.metric_row`` plus macro F1 and recall at precision 0.92 and 0.95 for both classes."""
     r = cl.metric_row(data_dir, label_type, name, preds, within_min_n)
     if "missing" in r:
+        # relative to the data directory, so arms.json never carries a local absolute path
+        r["missing"] = os.path.relpath(r["missing"], data_dir)
         return r
     with open(cl.metrics_path(data_dir, label_type, name)) as f:
         m = json.load(f)
@@ -1000,7 +1002,8 @@ def power_table(data_dir, label_type, variant=OCTOBER, n_boot=1000, seed=0, with
     preds = {n: p for n, p in preds.items() if p is not None}
     names = [n for n in runs.values() if n in preds]
     if len(names) < 2:
-        return {"variant": variant, "seeds": sorted(runs), "error": "fewer than two seeds with predictions"}
+        return {"variant": variant, "seeds": sorted(runs), "error": "fewer than two seeds with predictions",
+                "rule": rule}
     b = within_city_boot(preds, "test_heldout", names, within_min_n, n_boot, seed)
     sd_seed = _mean_sd([b["point"][n] for n in names])[1]
     sd_boot = boot_var_of_delta(b["boot"], names, names[1:2], names[2:3] or names[:1]) ** 0.5
@@ -1010,7 +1013,7 @@ def power_table(data_dir, label_type, variant=OCTOBER, n_boot=1000, seed=0, with
     n_base = len(rule["seeds_baseline"])
     return {"variant": variant, "seeds": sorted(runs), "within_city_heldout": {n: b["point"][n] for n in names},
             "sd_seed": sd_seed, "sd_boot": sd_boot, "sd_boot_pair": [names[1], (names[2:3] or names[:1])[0]],
-            "sd_boot_all_pairs": all_pairs,
+            "sd_boot_all_pairs": all_pairs, "rule": rule,
             "n_boot": n_boot, "kept": int(len(b["boot"])),
             "arm_seeds_3": operating_characteristics(sd_seed, sd_boot, 3, n_base, rule, n_sim, seed),
             "arm_seeds_5": operating_characteristics(sd_seed, sd_boot, 5, n_base, rule, n_sim, seed)}
@@ -1018,7 +1021,9 @@ def power_table(data_dir, label_type, variant=OCTOBER, n_boot=1000, seed=0, with
 
 def power_markdown(tables):
     """The doc's operating-characteristics table; the recommendation follows A7 of the sign-off: five arm seeds for
-    a type whose power at +0.03 with three is below 0.5."""
+    a type whose power at +0.03 with three is below 0.5. The note naming the row that applies is computed from the
+    rule each table was built with (``power_table``'s ``rule``, kept in the table; ``DECISION_RULE`` for a table
+    without one), one note per distinct rule."""
     lines = ["| type | seed sd | bootstrap sd of D | arm seeds | false WIN at 0 | REGRESSION at 0 | power +0.02 | "
              "+0.03 | +0.05 | effect at 80% power | recommended arm seeds |",
              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
@@ -1033,7 +1038,13 @@ def power_markdown(tables):
             lines.append(f"| {lt} | {t['sd_seed']:.3f} | {t['sd_boot']:.3f} | {o['n_arm']} | {o['false_win']:.3f} | "
                          f"{o['null_regression']:.3f} | {o['power']['0.02']:.2f} | {o['power']['0.03']:.2f} | "
                          f"{o['power']['0.05']:.2f} | {mde} | {rec if k == 'arm_seeds_3' else ''} |")
-    lines += ["", rule_row_note() + " The recommendation column is the sign-off's rule, read from the three-seed row."]
+    rules = []
+    for t in tables.values():
+        r = t.get("rule", DECISION_RULE)
+        if r not in rules:
+            rules.append(r)
+    lines += [""] + [rule_row_note(r) for r in rules or [DECISION_RULE]]
+    lines[-1] += " The recommendation column is the sign-off's rule, read from the three-seed row."
     spread = [f"{lt} {min(t['sd_boot_all_pairs'].values()):.4f} to {max(t['sd_boot_all_pairs'].values()):.4f} "
               f"over {len(t['sd_boot_all_pairs'])} pairs" for lt, t in tables.items() if t.get("sd_boot_all_pairs")]
     if spread:
@@ -1065,6 +1076,8 @@ def report(args):
     label_types = [t.strip() for t in args.label_types.split(",") if t.strip()]
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
     public, public_source = rr.public_cities(args.public_cities)
+    if not str(public_source).startswith(("http://", "https://")):   # a file given with --public-cities
+        public_source = portable_path(public_source)
     os.makedirs(args.out, exist_ok=True)
     everything = {"_public_cities_source": public_source, "_arms": arms}
     prov = {}
@@ -1174,7 +1187,8 @@ def report(args):
         f.write(clipping_markdown(clip))
     with open(os.path.join(args.out, "provenance.json"), "w") as f:
         json.dump({"files_sha256": dict(sorted(prov.items())), "public_cities_source": public_source,
-                   "arguments": {k: v for k, v in vars(args).items() if k != "func"},
+                   "arguments": {k: (portable_path(v) if k in PATH_ARGUMENTS else v)
+                                 for k, v in vars(args).items() if k != "func"},
                    "bootstrap": {"seed": args.seed, "n_boot": args.n_boot, "decision_boot": args.decision_boot},
                    "decision_rule": DECISION_RULE, **_git_state(),
                    "shares_sha256": sha256_file(args.shares),
@@ -1208,6 +1222,29 @@ SIDE_SHARE_COLUMNS = ("severity", "image_capture_date", "depth_m")
 BASE_COLUMNS = ("label_uid", "city", "pano_id", "label_class", "crop_path", "split")
 #: The run record a training job copies next to its outputs (``<data>/<type>/runs/<tag>/``), before any delete.
 RECORD_FILES = ("training_run.json", "run_key.json", "trainer_state.json", "config.json")
+
+
+#: The repository root (``portable_path`` writes paths inside it relative to it).
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+#: ``report``'s path arguments, written to provenance.json through ``portable_path``.
+PATH_ARGUMENTS = ("data_dir", "out", "shares", "public_cities")
+
+
+def portable_path(path, root=REPO_ROOT):
+    """``path`` as provenance.json records it: relative to the repository root when it lies inside it (compared
+    after resolving symlinks, since a temporary directory can resolve through one), else only its last component;
+    None stays None. A relative ``path`` is resolved against the current directory, so the result depends on where
+    the command runs: unchanged when run from the repository root, its last component when run from outside it. The content of every file read is pinned by its sha256, so the location adds nothing, and a
+    local absolute path must never land in a committed output.
+
+    >>> portable_path(os.path.join(REPO_ROOT, "docs", "x.json")), portable_path("/elsewhere/data/")
+    ('docs/x.json', 'data')
+    """
+    if path is None:
+        return None
+    if _real_inside(path, root):
+        return os.path.relpath(os.path.realpath(path), os.path.realpath(root))
+    return os.path.basename(os.path.normpath(path))
 
 
 def _real_inside(path, root):
