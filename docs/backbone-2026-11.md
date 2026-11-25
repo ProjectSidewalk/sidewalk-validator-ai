@@ -8,8 +8,9 @@ baseline retrained in the same environment, and decides with a rule written befo
 ## Status
 
 **Pilot read (2026-11-24). Decision under the pre-registered rule: keep `facebook/dinov2-large` (no arm met the
-rule).** All 48 runs were counted and none was incomplete: the 30 pilot rows (job `43406096`, the 8 RampNet rows
-being the J16 reruns of job `43479837`) and the 18 DINOv3 rows (job `43409815`). Every arm, the three eligible ones
+rule).** Jon decided J18 on 2026-11-25 (not run), so no follow-up is open and #119 closes with "keep dinov2-large;
+no arm met the rule". All 48 runs were counted and none was incomplete: the 30 pilot rows (job `43406096`, the 8
+RampNet rows being the J16 reruns of job `43479837`) and the 18 DINOv3 rows (job `43409815`). Every arm, the three eligible ones
 included, fails condition 2 (non-inferiority) on at least one pilot type, and none meets condition 1 on either type.
 The environment readout is not called out: the in-env baseline is within twice round 3's seed sd of round 3's own
 baseline on both types. See [Results](#results) and its [Reading](#reading). The GPU smoke test passed (job
@@ -505,8 +506,8 @@ This applies the rule as `decision.md` states it; nothing here changes a status.
   `lr.md` notes that the threshold was set for a three-seed mean and is applied here to one paired run. For context,
   from the same tables: `convnextv2-base` is explanatory, so it would need the doubled bar (+0.032) to be promoted,
   and its 3e-5 held-out AUC on SurfaceProblem (0.670) is below the in-env baseline's at 1e-5, seed 42 (0.728,
-  `env.md`). The launcher plans 3e-5 rows at seed 42 only, so a follow-up would need its own PR and cap jobs; it is
-  open as decision J18 (default: not run). No other
+  `env.md`). The launcher plans 3e-5 rows at seed 42 only, so a follow-up would need its own PR and cap jobs; Jon
+  decided on 2026-11-25 not to run it (J18). No other
   arm is recipe-limited. `dinov2-large` at 3e-5 is below its own 1e-5 run on both types (−0.024 CurbRamp, −0.070
   SurfaceProblem).
 - **Environment readout** (`env.md`, not a gate): the mean in-env minus round-3 difference is +0.004 held-out and
@@ -689,8 +690,9 @@ Listed with the default this branch uses; none blocks the pilot. Numbered as in 
   clause is named; the 0.92 floor reads the mean over every shared seed; the shared-seed count is printed beside
   condition 3; the partial-seed precision mark fires on a loss only (arm below baseline by more than 0.01), as
   PR #120's mark does.
-- **J18. Three-seed follow-up of `convnextv2-base` at 3e-5 on SurfaceProblem** (open; from the pilot's learning-rate
-  rows, PR #128 review S1). **Default: not run.** By the rule's wording, the arm's SurfaceProblem result is
+- **J18. Three-seed follow-up of `convnextv2-base` at 3e-5 on SurfaceProblem** (from the pilot's learning-rate
+  rows, PR #128 review S1). **Decided 2026-11-25: not run.** #119 closes with "keep dinov2-large; no arm met the
+  rule". By the rule's wording, the arm's SurfaceProblem result is
   "recipe-limited": its 3e-5 run beats its 1e-5 run by +0.035 [+0.011, +0.060] held-out at seed 42, above the
   +0.016 threshold, so the rule proposes the follow-up for Jon. Against it: that is one seed, and the bar was set
   for a three-seed mean (`lr.md`). `convnextv2-base` is explanatory, so it could only be promoted by the doubled bar
