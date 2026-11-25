@@ -152,6 +152,8 @@ def run_inference(manifest, checkpoint_dir, revision=None, splits=EVAL_SPLITS):
     from tqdm import tqdm
     from transformers import AutoImageProcessor, AutoModelForImageClassification
 
+    import backbones
+    backbones.register_auto()  # a DINOv3 checkpoint of the backbone comparison (issue #119) loads like any other
     device = "cuda" if torch.cuda.is_available() else "cpu"
     # Slow (PIL) BitImageProcessor, matching fine_tune_classifier.py and sidewalk-ai-api's backend="pil".
     image_processor = AutoImageProcessor.from_pretrained(checkpoint_dir, revision=revision, use_fast=False)

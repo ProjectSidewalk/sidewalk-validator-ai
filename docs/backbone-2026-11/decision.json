@@ -1,0 +1,541 @@
+{
+  "decision": {
+    "arms": {
+      "convnextv2-base": {
+        "status": "worse",
+        "thresholds": {
+          "CurbRamp": 0.02,
+          "SurfaceProblem": 0.032
+        },
+        "condition_1_types": [],
+        "pooled_bar_types": [],
+        "condition_2": false,
+        "condition_3": false,
+        "condition_3_by_type": {
+          "CurbRamp": {
+            "result": "pass",
+            "precision_floor": "pass",
+            "coverage": "pass",
+            "precision_drop": "pass",
+            "notes": {},
+            "flags": [
+              "seed 43: \u0394 coverage -0.110, below -0.06"
+            ],
+            "shared_seeds": 3
+          },
+          "SurfaceProblem": {
+            "result": "fail",
+            "precision_floor": "pass",
+            "coverage": "fail",
+            "precision_drop": "pass",
+            "notes": {},
+            "flags": [
+              "seed 42: \u0394 coverage -0.177, below -0.06",
+              "seed 44: \u0394 coverage -0.354, below -0.06"
+            ],
+            "shared_seeds": 3
+          }
+        },
+        "non_inferior_small": false,
+        "eligible": false
+      },
+      "dinov2-reg-large": {
+        "status": "worse",
+        "thresholds": {
+          "CurbRamp": 0.01,
+          "SurfaceProblem": 0.016
+        },
+        "condition_1_types": [],
+        "pooled_bar_types": [],
+        "condition_2": false,
+        "condition_3": true,
+        "condition_3_by_type": {
+          "CurbRamp": {
+            "result": "pass",
+            "precision_floor": "pass",
+            "coverage": "pass",
+            "precision_drop": "pass",
+            "notes": {},
+            "flags": [],
+            "shared_seeds": 3
+          },
+          "SurfaceProblem": {
+            "result": "pass",
+            "precision_floor": "pass",
+            "coverage": "pass",
+            "precision_drop": "pass",
+            "notes": {},
+            "flags": [
+              "seed 42: \u0394 coverage -0.127, below -0.06"
+            ],
+            "shared_seeds": 3
+          }
+        },
+        "non_inferior_small": false,
+        "eligible": true
+      },
+      "dinov3-vitb16": {
+        "status": "worse",
+        "thresholds": {
+          "CurbRamp": 0.02,
+          "SurfaceProblem": 0.032
+        },
+        "condition_1_types": [],
+        "pooled_bar_types": [],
+        "condition_2": false,
+        "condition_3": true,
+        "condition_3_by_type": {
+          "CurbRamp": {
+            "result": "pass",
+            "precision_floor": "pass",
+            "coverage": "pass",
+            "precision_drop": "pass",
+            "notes": {},
+            "flags": [],
+            "shared_seeds": 3
+          },
+          "SurfaceProblem": {
+            "result": "pass",
+            "precision_floor": "pass",
+            "coverage": "pass",
+            "precision_drop": "pass",
+            "notes": {},
+            "flags": [],
+            "shared_seeds": 3
+          }
+        },
+        "non_inferior_small": false,
+        "eligible": false
+      },
+      "dinov3-vitl16": {
+        "status": "worse",
+        "thresholds": {
+          "CurbRamp": 0.01,
+          "SurfaceProblem": 0.016
+        },
+        "condition_1_types": [],
+        "pooled_bar_types": [],
+        "condition_2": false,
+        "condition_3": true,
+        "condition_3_by_type": {
+          "CurbRamp": {
+            "result": "pass",
+            "precision_floor": "pass",
+            "coverage": "pass",
+            "precision_drop": "pass",
+            "notes": {},
+            "flags": [],
+            "shared_seeds": 3
+          },
+          "SurfaceProblem": {
+            "result": "pass",
+            "precision_floor": "pass",
+            "coverage": "pass",
+            "precision_drop": "pass",
+            "notes": {},
+            "flags": [
+              "seed 42: \u0394 coverage -0.203, below -0.06"
+            ],
+            "shared_seeds": 3
+          }
+        },
+        "non_inferior_small": false,
+        "eligible": true
+      },
+      "dinov3-vitl16-256": {
+        "status": "worse",
+        "thresholds": {
+          "CurbRamp": 0.02,
+          "SurfaceProblem": 0.032
+        },
+        "condition_1_types": [],
+        "pooled_bar_types": [],
+        "condition_2": false,
+        "condition_3": true,
+        "condition_3_by_type": {
+          "CurbRamp": {
+            "result": "pass",
+            "precision_floor": "pass",
+            "coverage": "pass",
+            "precision_drop": "pass",
+            "notes": {},
+            "flags": [],
+            "shared_seeds": 3
+          },
+          "SurfaceProblem": {
+            "result": "pass",
+            "precision_floor": "pass",
+            "coverage": "pass",
+            "precision_drop": "pass",
+            "notes": {},
+            "flags": [],
+            "shared_seeds": 3
+          }
+        },
+        "non_inferior_small": false,
+        "eligible": false
+      },
+      "rampnet-convnextv2-base": {
+        "status": "worse",
+        "thresholds": {
+          "CurbRamp": 0.01,
+          "SurfaceProblem": 0.016
+        },
+        "condition_1_types": [],
+        "pooled_bar_types": [],
+        "condition_2": false,
+        "condition_3": true,
+        "condition_3_by_type": {
+          "CurbRamp": {
+            "result": "pass",
+            "precision_floor": "pass",
+            "coverage": "pass",
+            "precision_drop": "pass",
+            "notes": {},
+            "flags": [],
+            "shared_seeds": 3
+          },
+          "SurfaceProblem": {
+            "result": "pass",
+            "precision_floor": "pass",
+            "coverage": "pass",
+            "precision_drop": "pass",
+            "notes": {},
+            "flags": [
+              "seed 43: \u0394 coverage -0.164, below -0.06",
+              "seed 44: \u0394 coverage -0.092, below -0.06"
+            ],
+            "shared_seeds": 3
+          }
+        },
+        "non_inferior_small": false,
+        "eligible": true
+      }
+    },
+    "winners": [],
+    "promoted": [],
+    "incomplete": [],
+    "not_run": [],
+    "choice": null,
+    "recommendation": "keep dinov2-large among the arms run (no arm met the rule)"
+  },
+  "null": [
+    {
+      "expected_winners": 0.02125,
+      "p_any_winner": 0.0212,
+      "n_arms": 3,
+      "n_sims": 20000,
+      "seed": 0,
+      "rho": 0.0,
+      "delta_sd": {
+        "CurbRamp": 0.0085,
+        "SurfaceProblem": 0.0141
+      },
+      "thresholds": {
+        "CurbRamp": 0.01,
+        "SurfaceProblem": 0.016
+      }
+    },
+    {
+      "expected_winners": 0.04335,
+      "p_any_winner": 0.0428,
+      "n_arms": 3,
+      "n_sims": 20000,
+      "seed": 0,
+      "rho": 0.5,
+      "delta_sd": {
+        "CurbRamp": 0.0085,
+        "SurfaceProblem": 0.0141
+      },
+      "thresholds": {
+        "CurbRamp": 0.01,
+        "SurfaceProblem": 0.016
+      }
+    },
+    {
+      "expected_winners": 0.0559,
+      "p_any_winner": 0.05505,
+      "n_arms": 3,
+      "n_sims": 20000,
+      "seed": 0,
+      "rho": 1.0,
+      "delta_sd": {
+        "CurbRamp": 0.0085,
+        "SurfaceProblem": 0.0141
+      },
+      "thresholds": {
+        "CurbRamp": 0.01,
+        "SurfaceProblem": 0.016
+      }
+    },
+    {
+      "expected_winners": 5e-05,
+      "p_any_winner": 5e-05,
+      "n_arms": 3,
+      "n_sims": 20000,
+      "seed": 0,
+      "rho": 0.0,
+      "delta_sd": {
+        "CurbRamp": 0.0085,
+        "SurfaceProblem": 0.0141
+      },
+      "thresholds": {
+        "CurbRamp": 0.02,
+        "SurfaceProblem": 0.032
+      }
+    },
+    {
+      "expected_winners": 5e-05,
+      "p_any_winner": 5e-05,
+      "n_arms": 3,
+      "n_sims": 20000,
+      "seed": 0,
+      "rho": 0.5,
+      "delta_sd": {
+        "CurbRamp": 0.0085,
+        "SurfaceProblem": 0.0141
+      },
+      "thresholds": {
+        "CurbRamp": 0.02,
+        "SurfaceProblem": 0.032
+      }
+    },
+    {
+      "expected_winners": 5e-05,
+      "p_any_winner": 5e-05,
+      "n_arms": 3,
+      "n_sims": 20000,
+      "seed": 0,
+      "rho": 1.0,
+      "delta_sd": {
+        "CurbRamp": 0.0085,
+        "SurfaceProblem": 0.0141
+      },
+      "thresholds": {
+        "CurbRamp": 0.02,
+        "SurfaceProblem": 0.032
+      }
+    }
+  ],
+  "thresholds": {
+    "CurbRamp": 0.01,
+    "SurfaceProblem": 0.016
+  },
+  "delta_sd": {
+    "CurbRamp": 0.0085,
+    "SurfaceProblem": 0.0141
+  },
+  "submitted_rows": [
+    [
+      "CurbRamp",
+      "convnextv2-base",
+      42
+    ],
+    [
+      "CurbRamp",
+      "convnextv2-base",
+      43
+    ],
+    [
+      "CurbRamp",
+      "convnextv2-base",
+      44
+    ],
+    [
+      "CurbRamp",
+      "dinov2-large",
+      42
+    ],
+    [
+      "CurbRamp",
+      "dinov2-large",
+      43
+    ],
+    [
+      "CurbRamp",
+      "dinov2-large",
+      44
+    ],
+    [
+      "CurbRamp",
+      "dinov2-reg-large",
+      42
+    ],
+    [
+      "CurbRamp",
+      "dinov2-reg-large",
+      43
+    ],
+    [
+      "CurbRamp",
+      "dinov2-reg-large",
+      44
+    ],
+    [
+      "CurbRamp",
+      "dinov3-vitb16",
+      42
+    ],
+    [
+      "CurbRamp",
+      "dinov3-vitb16",
+      43
+    ],
+    [
+      "CurbRamp",
+      "dinov3-vitb16",
+      44
+    ],
+    [
+      "CurbRamp",
+      "dinov3-vitl16",
+      42
+    ],
+    [
+      "CurbRamp",
+      "dinov3-vitl16",
+      43
+    ],
+    [
+      "CurbRamp",
+      "dinov3-vitl16",
+      44
+    ],
+    [
+      "CurbRamp",
+      "dinov3-vitl16-256",
+      42
+    ],
+    [
+      "CurbRamp",
+      "dinov3-vitl16-256",
+      43
+    ],
+    [
+      "CurbRamp",
+      "dinov3-vitl16-256",
+      44
+    ],
+    [
+      "CurbRamp",
+      "rampnet-convnextv2-base",
+      42
+    ],
+    [
+      "CurbRamp",
+      "rampnet-convnextv2-base",
+      43
+    ],
+    [
+      "CurbRamp",
+      "rampnet-convnextv2-base",
+      44
+    ],
+    [
+      "SurfaceProblem",
+      "convnextv2-base",
+      42
+    ],
+    [
+      "SurfaceProblem",
+      "convnextv2-base",
+      43
+    ],
+    [
+      "SurfaceProblem",
+      "convnextv2-base",
+      44
+    ],
+    [
+      "SurfaceProblem",
+      "dinov2-large",
+      42
+    ],
+    [
+      "SurfaceProblem",
+      "dinov2-large",
+      43
+    ],
+    [
+      "SurfaceProblem",
+      "dinov2-large",
+      44
+    ],
+    [
+      "SurfaceProblem",
+      "dinov2-reg-large",
+      42
+    ],
+    [
+      "SurfaceProblem",
+      "dinov2-reg-large",
+      43
+    ],
+    [
+      "SurfaceProblem",
+      "dinov2-reg-large",
+      44
+    ],
+    [
+      "SurfaceProblem",
+      "dinov3-vitb16",
+      42
+    ],
+    [
+      "SurfaceProblem",
+      "dinov3-vitb16",
+      43
+    ],
+    [
+      "SurfaceProblem",
+      "dinov3-vitb16",
+      44
+    ],
+    [
+      "SurfaceProblem",
+      "dinov3-vitl16",
+      42
+    ],
+    [
+      "SurfaceProblem",
+      "dinov3-vitl16",
+      43
+    ],
+    [
+      "SurfaceProblem",
+      "dinov3-vitl16",
+      44
+    ],
+    [
+      "SurfaceProblem",
+      "dinov3-vitl16-256",
+      42
+    ],
+    [
+      "SurfaceProblem",
+      "dinov3-vitl16-256",
+      43
+    ],
+    [
+      "SurfaceProblem",
+      "dinov3-vitl16-256",
+      44
+    ],
+    [
+      "SurfaceProblem",
+      "rampnet-convnextv2-base",
+      42
+    ],
+    [
+      "SurfaceProblem",
+      "rampnet-convnextv2-base",
+      43
+    ],
+    [
+      "SurfaceProblem",
+      "rampnet-convnextv2-base",
+      44
+    ]
+  ],
+  "dropped_arms": []
+}

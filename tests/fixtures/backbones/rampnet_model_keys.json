@@ -1,0 +1,1340 @@
+{
+"model.feature_extractor.0.0.bias": [
+128
+],
+"model.feature_extractor.0.0.weight": [
+128,
+3,
+4,
+4
+],
+"model.feature_extractor.0.1.bias": [
+128
+],
+"model.feature_extractor.0.1.weight": [
+128
+],
+"model.feature_extractor.1.0.blocks.0.conv_dw.bias": [
+128
+],
+"model.feature_extractor.1.0.blocks.0.conv_dw.weight": [
+128,
+1,
+7,
+7
+],
+"model.feature_extractor.1.0.blocks.0.mlp.fc1.bias": [
+512
+],
+"model.feature_extractor.1.0.blocks.0.mlp.fc1.weight": [
+512,
+128
+],
+"model.feature_extractor.1.0.blocks.0.mlp.fc2.bias": [
+128
+],
+"model.feature_extractor.1.0.blocks.0.mlp.fc2.weight": [
+128,
+512
+],
+"model.feature_extractor.1.0.blocks.0.mlp.grn.bias": [
+512
+],
+"model.feature_extractor.1.0.blocks.0.mlp.grn.weight": [
+512
+],
+"model.feature_extractor.1.0.blocks.0.norm.bias": [
+128
+],
+"model.feature_extractor.1.0.blocks.0.norm.weight": [
+128
+],
+"model.feature_extractor.1.0.blocks.1.conv_dw.bias": [
+128
+],
+"model.feature_extractor.1.0.blocks.1.conv_dw.weight": [
+128,
+1,
+7,
+7
+],
+"model.feature_extractor.1.0.blocks.1.mlp.fc1.bias": [
+512
+],
+"model.feature_extractor.1.0.blocks.1.mlp.fc1.weight": [
+512,
+128
+],
+"model.feature_extractor.1.0.blocks.1.mlp.fc2.bias": [
+128
+],
+"model.feature_extractor.1.0.blocks.1.mlp.fc2.weight": [
+128,
+512
+],
+"model.feature_extractor.1.0.blocks.1.mlp.grn.bias": [
+512
+],
+"model.feature_extractor.1.0.blocks.1.mlp.grn.weight": [
+512
+],
+"model.feature_extractor.1.0.blocks.1.norm.bias": [
+128
+],
+"model.feature_extractor.1.0.blocks.1.norm.weight": [
+128
+],
+"model.feature_extractor.1.0.blocks.2.conv_dw.bias": [
+128
+],
+"model.feature_extractor.1.0.blocks.2.conv_dw.weight": [
+128,
+1,
+7,
+7
+],
+"model.feature_extractor.1.0.blocks.2.mlp.fc1.bias": [
+512
+],
+"model.feature_extractor.1.0.blocks.2.mlp.fc1.weight": [
+512,
+128
+],
+"model.feature_extractor.1.0.blocks.2.mlp.fc2.bias": [
+128
+],
+"model.feature_extractor.1.0.blocks.2.mlp.fc2.weight": [
+128,
+512
+],
+"model.feature_extractor.1.0.blocks.2.mlp.grn.bias": [
+512
+],
+"model.feature_extractor.1.0.blocks.2.mlp.grn.weight": [
+512
+],
+"model.feature_extractor.1.0.blocks.2.norm.bias": [
+128
+],
+"model.feature_extractor.1.0.blocks.2.norm.weight": [
+128
+],
+"model.feature_extractor.1.1.blocks.0.conv_dw.bias": [
+256
+],
+"model.feature_extractor.1.1.blocks.0.conv_dw.weight": [
+256,
+1,
+7,
+7
+],
+"model.feature_extractor.1.1.blocks.0.mlp.fc1.bias": [
+1024
+],
+"model.feature_extractor.1.1.blocks.0.mlp.fc1.weight": [
+1024,
+256
+],
+"model.feature_extractor.1.1.blocks.0.mlp.fc2.bias": [
+256
+],
+"model.feature_extractor.1.1.blocks.0.mlp.fc2.weight": [
+256,
+1024
+],
+"model.feature_extractor.1.1.blocks.0.mlp.grn.bias": [
+1024
+],
+"model.feature_extractor.1.1.blocks.0.mlp.grn.weight": [
+1024
+],
+"model.feature_extractor.1.1.blocks.0.norm.bias": [
+256
+],
+"model.feature_extractor.1.1.blocks.0.norm.weight": [
+256
+],
+"model.feature_extractor.1.1.blocks.1.conv_dw.bias": [
+256
+],
+"model.feature_extractor.1.1.blocks.1.conv_dw.weight": [
+256,
+1,
+7,
+7
+],
+"model.feature_extractor.1.1.blocks.1.mlp.fc1.bias": [
+1024
+],
+"model.feature_extractor.1.1.blocks.1.mlp.fc1.weight": [
+1024,
+256
+],
+"model.feature_extractor.1.1.blocks.1.mlp.fc2.bias": [
+256
+],
+"model.feature_extractor.1.1.blocks.1.mlp.fc2.weight": [
+256,
+1024
+],
+"model.feature_extractor.1.1.blocks.1.mlp.grn.bias": [
+1024
+],
+"model.feature_extractor.1.1.blocks.1.mlp.grn.weight": [
+1024
+],
+"model.feature_extractor.1.1.blocks.1.norm.bias": [
+256
+],
+"model.feature_extractor.1.1.blocks.1.norm.weight": [
+256
+],
+"model.feature_extractor.1.1.blocks.2.conv_dw.bias": [
+256
+],
+"model.feature_extractor.1.1.blocks.2.conv_dw.weight": [
+256,
+1,
+7,
+7
+],
+"model.feature_extractor.1.1.blocks.2.mlp.fc1.bias": [
+1024
+],
+"model.feature_extractor.1.1.blocks.2.mlp.fc1.weight": [
+1024,
+256
+],
+"model.feature_extractor.1.1.blocks.2.mlp.fc2.bias": [
+256
+],
+"model.feature_extractor.1.1.blocks.2.mlp.fc2.weight": [
+256,
+1024
+],
+"model.feature_extractor.1.1.blocks.2.mlp.grn.bias": [
+1024
+],
+"model.feature_extractor.1.1.blocks.2.mlp.grn.weight": [
+1024
+],
+"model.feature_extractor.1.1.blocks.2.norm.bias": [
+256
+],
+"model.feature_extractor.1.1.blocks.2.norm.weight": [
+256
+],
+"model.feature_extractor.1.1.downsample.0.bias": [
+128
+],
+"model.feature_extractor.1.1.downsample.0.weight": [
+128
+],
+"model.feature_extractor.1.1.downsample.1.bias": [
+256
+],
+"model.feature_extractor.1.1.downsample.1.weight": [
+256,
+128,
+2,
+2
+],
+"model.feature_extractor.1.2.blocks.0.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.0.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.0.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.0.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.0.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.0.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.0.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.0.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.0.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.0.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.1.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.1.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.1.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.1.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.1.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.1.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.1.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.1.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.1.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.1.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.10.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.10.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.10.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.10.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.10.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.10.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.10.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.10.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.10.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.10.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.11.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.11.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.11.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.11.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.11.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.11.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.11.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.11.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.11.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.11.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.12.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.12.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.12.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.12.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.12.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.12.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.12.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.12.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.12.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.12.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.13.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.13.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.13.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.13.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.13.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.13.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.13.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.13.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.13.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.13.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.14.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.14.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.14.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.14.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.14.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.14.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.14.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.14.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.14.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.14.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.15.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.15.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.15.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.15.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.15.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.15.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.15.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.15.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.15.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.15.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.16.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.16.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.16.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.16.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.16.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.16.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.16.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.16.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.16.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.16.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.17.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.17.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.17.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.17.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.17.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.17.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.17.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.17.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.17.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.17.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.18.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.18.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.18.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.18.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.18.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.18.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.18.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.18.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.18.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.18.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.19.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.19.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.19.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.19.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.19.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.19.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.19.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.19.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.19.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.19.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.2.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.2.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.2.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.2.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.2.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.2.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.2.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.2.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.2.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.2.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.20.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.20.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.20.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.20.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.20.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.20.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.20.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.20.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.20.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.20.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.21.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.21.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.21.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.21.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.21.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.21.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.21.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.21.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.21.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.21.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.22.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.22.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.22.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.22.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.22.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.22.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.22.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.22.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.22.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.22.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.23.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.23.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.23.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.23.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.23.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.23.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.23.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.23.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.23.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.23.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.24.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.24.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.24.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.24.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.24.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.24.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.24.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.24.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.24.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.24.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.25.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.25.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.25.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.25.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.25.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.25.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.25.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.25.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.25.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.25.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.26.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.26.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.26.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.26.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.26.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.26.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.26.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.26.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.26.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.26.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.3.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.3.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.3.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.3.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.3.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.3.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.3.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.3.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.3.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.3.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.4.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.4.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.4.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.4.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.4.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.4.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.4.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.4.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.4.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.4.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.5.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.5.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.5.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.5.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.5.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.5.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.5.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.5.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.5.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.5.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.6.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.6.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.6.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.6.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.6.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.6.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.6.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.6.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.6.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.6.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.7.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.7.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.7.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.7.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.7.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.7.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.7.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.7.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.7.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.7.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.8.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.8.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.8.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.8.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.8.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.8.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.8.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.8.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.8.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.8.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.blocks.9.conv_dw.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.9.conv_dw.weight": [
+512,
+1,
+7,
+7
+],
+"model.feature_extractor.1.2.blocks.9.mlp.fc1.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.9.mlp.fc1.weight": [
+2048,
+512
+],
+"model.feature_extractor.1.2.blocks.9.mlp.fc2.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.9.mlp.fc2.weight": [
+512,
+2048
+],
+"model.feature_extractor.1.2.blocks.9.mlp.grn.bias": [
+2048
+],
+"model.feature_extractor.1.2.blocks.9.mlp.grn.weight": [
+2048
+],
+"model.feature_extractor.1.2.blocks.9.norm.bias": [
+512
+],
+"model.feature_extractor.1.2.blocks.9.norm.weight": [
+512
+],
+"model.feature_extractor.1.2.downsample.0.bias": [
+256
+],
+"model.feature_extractor.1.2.downsample.0.weight": [
+256
+],
+"model.feature_extractor.1.2.downsample.1.bias": [
+512
+],
+"model.feature_extractor.1.2.downsample.1.weight": [
+512,
+256,
+2,
+2
+],
+"model.feature_extractor.1.3.blocks.0.conv_dw.bias": [
+1024
+],
+"model.feature_extractor.1.3.blocks.0.conv_dw.weight": [
+1024,
+1,
+7,
+7
+],
+"model.feature_extractor.1.3.blocks.0.mlp.fc1.bias": [
+4096
+],
+"model.feature_extractor.1.3.blocks.0.mlp.fc1.weight": [
+4096,
+1024
+],
+"model.feature_extractor.1.3.blocks.0.mlp.fc2.bias": [
+1024
+],
+"model.feature_extractor.1.3.blocks.0.mlp.fc2.weight": [
+1024,
+4096
+],
+"model.feature_extractor.1.3.blocks.0.mlp.grn.bias": [
+4096
+],
+"model.feature_extractor.1.3.blocks.0.mlp.grn.weight": [
+4096
+],
+"model.feature_extractor.1.3.blocks.0.norm.bias": [
+1024
+],
+"model.feature_extractor.1.3.blocks.0.norm.weight": [
+1024
+],
+"model.feature_extractor.1.3.blocks.1.conv_dw.bias": [
+1024
+],
+"model.feature_extractor.1.3.blocks.1.conv_dw.weight": [
+1024,
+1,
+7,
+7
+],
+"model.feature_extractor.1.3.blocks.1.mlp.fc1.bias": [
+4096
+],
+"model.feature_extractor.1.3.blocks.1.mlp.fc1.weight": [
+4096,
+1024
+],
+"model.feature_extractor.1.3.blocks.1.mlp.fc2.bias": [
+1024
+],
+"model.feature_extractor.1.3.blocks.1.mlp.fc2.weight": [
+1024,
+4096
+],
+"model.feature_extractor.1.3.blocks.1.mlp.grn.bias": [
+4096
+],
+"model.feature_extractor.1.3.blocks.1.mlp.grn.weight": [
+4096
+],
+"model.feature_extractor.1.3.blocks.1.norm.bias": [
+1024
+],
+"model.feature_extractor.1.3.blocks.1.norm.weight": [
+1024
+],
+"model.feature_extractor.1.3.blocks.2.conv_dw.bias": [
+1024
+],
+"model.feature_extractor.1.3.blocks.2.conv_dw.weight": [
+1024,
+1,
+7,
+7
+],
+"model.feature_extractor.1.3.blocks.2.mlp.fc1.bias": [
+4096
+],
+"model.feature_extractor.1.3.blocks.2.mlp.fc1.weight": [
+4096,
+1024
+],
+"model.feature_extractor.1.3.blocks.2.mlp.fc2.bias": [
+1024
+],
+"model.feature_extractor.1.3.blocks.2.mlp.fc2.weight": [
+1024,
+4096
+],
+"model.feature_extractor.1.3.blocks.2.mlp.grn.bias": [
+4096
+],
+"model.feature_extractor.1.3.blocks.2.mlp.grn.weight": [
+4096
+],
+"model.feature_extractor.1.3.blocks.2.norm.bias": [
+1024
+],
+"model.feature_extractor.1.3.blocks.2.norm.weight": [
+1024
+],
+"model.feature_extractor.1.3.downsample.0.bias": [
+512
+],
+"model.feature_extractor.1.3.downsample.0.weight": [
+512
+],
+"model.feature_extractor.1.3.downsample.1.bias": [
+1024
+],
+"model.feature_extractor.1.3.downsample.1.weight": [
+1024,
+512,
+2,
+2
+],
+"model.head.0.bias": [
+256
+],
+"model.head.0.weight": [
+256,
+1024,
+3,
+3
+],
+"model.head.3.bias": [
+1
+],
+"model.head.3.weight": [
+1,
+256,
+1,
+1
+]
+}

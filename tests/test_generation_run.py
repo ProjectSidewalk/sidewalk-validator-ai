@@ -239,6 +239,28 @@ def test_aborts_after_consecutive_errors(stubbed, monkeypatch):
         run_main(stubbed["tmp"])
 
 
+def test_non_fatal_errors_are_counted_by_category_with_their_traceback(stubbed, monkeypatch, capsys):
+    """Issue #9 item 6: a non-fatal exception while cutting one label's crop becomes an ``error:<ExceptionType>`` row
+    and prints its traceback, the run goes on, and the end-of-run summary counts each category next to ``ok``."""
+    real = dg.create_perspective_crop
+    failures = [ValueError("bad depth"), IndexError("row out of range")]
+
+    def flaky(*a, **k):
+        if failures:
+            raise failures.pop(0)
+        return real(*a, **k)
+    monkeypatch.setattr(dg, "create_perspective_crop", flaky)
+    m = run_main(stubbed["tmp"])
+    out, err = capsys.readouterr()
+    counts = m.status.value_counts().to_dict()
+    assert counts.pop("error:ValueError") == 1 and counts.pop("error:IndexError") == 1
+    assert set(counts) == {"ok"}
+    assert "ValueError: bad depth" in err and "IndexError: row out of range" in err  # traceback.print_exc
+    summary = next(line for line in out.splitlines() if line.startswith("  status counts:"))
+    assert "'error:ValueError': 1" in summary and "'error:IndexError': 1" in summary
+    assert f"'ok': {counts['ok']}" in summary
+
+
 # ---------------------------------------------------------------- the store reader
 
 def test_pano_size_is_the_serving_size():

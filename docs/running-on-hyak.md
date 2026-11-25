@@ -144,6 +144,10 @@ best and the latest. The best is named in the latest checkpoint's
 labels (`--target soft|weighted`) write to `<label_type>/dinov2-<target>` instead
 ([`training-data.md`](training-data.md#training-targets)).
 
+`--backbone <key>` (registry in [`backbones.py`](../backbones.py)) and `--learning-rate` train another backbone or
+rate and require `--output-dir`; the default run is unchanged. The comparison's own chain and its overlay env are in
+[`backbone-2026-11.md`](backbone-2026-11.md#how-to-run).
+
 ### 3. Evaluate and calibrate
 
 ```bash
@@ -188,6 +192,22 @@ than 50 rows, so it never trips on a smoke test). For a smoke test add `--limit 
 reads saved `<city_id>.csv` exports and the `cities.json` listing instead of the API (a missing listing is fetched
 once and saved there). Runs with `--limit` or `--cities` write `deployment_priors.partial.json`, never the real
 `deployment_priors.json`.
+
+### Experiments on an existing dataset: a shadow data directory
+
+`evaluate.py`, `context_model.py predict` and the context backfill write their outputs next to the split they read
+(`<data>/<Type>/predictions_<tag>.csv`, `metrics_<tag>.json`, `context/`). For an experiment on the round-3 dataset,
+point them at a **shadow** on scratch instead of the round-3 directory: `python analysis/context_arms.py shadow
+--src <round-3 dir> --dest <scratch>/data --types ...` symlinks the crops, copies `split.csv` (byte-identical, so the
+split hash in `run_key.json` matches the baseline's), `manifest.csv`, `generation_run.json` and the baseline's
+outputs, and records their sha256 in `shadow_run.json`. Nothing is written into the round-3 directory, and
+`/gscratch/makelab`'s file count does not move. `analysis/context_submit.sh` refuses a `DATA` without
+`shadow_run.json` ([`context-arms-2026-11.md`](context-arms-2026-11.md)).
+
+**Never import torch or transformers on a login node.** On 2026-11-19 importing torch from the project env on a
+klone login node did not finish in 7 minutes (two sessions). Login-node helpers (`shadow`, `preflight`) import
+pandas only and read package versions with `importlib.metadata`; anything that needs torch goes through `sbatch`
+(a 1-CPU `ckpt` job is fine for a small step). If even pandas stalls, run the helper in such a job.
 
 ## Held-out-city benchmark
 
@@ -298,3 +318,25 @@ about 1 GPU-h). The ViT-L checkpoint is `depth_anything_v2_metric_vkitti_vitl.pt
 job refuses to start until `VITL_REV` (a 40-hex commit) and `VITL_SHA256` (verified against the file) are set: read
 the commit on a login node and pin both here and in the job file. Recipe and expected outputs:
 [`depth-ablation-2026-11.md`](depth-ablation-2026-11.md), "Reproduce".
+
+## Round-4 recipe launch (issue #74)
+
+From the stream's own clone of the branch (never the shared clone), with `$WORK/gold_uids.csv` copied from the Mac:
+
+```bash
+cd /gscratch/scrubbed/$USER/sva-round4-disagree
+STAGE=smoke analysis/round4_submit.sh           # 1 CPU + 2 GPU jobs; then round4.py verify-smoke and STAGE=smoke-rerun
+STAGE=pilot analysis/round4_submit.sh           # 1 CPU prep, 27 trainings, 2 scoring jobs, 1 CPU collect
+```
+
+The launcher's preflight (login node, each step under `timeout`) refuses a dirty or unpushed checkout, missing
+inputs, a failed real 8 MiB write to scrubbed or to the keep directory, under 5 GB or 2,000 files free on
+`/gscratch/makelab`, `facebook/dinov2-large` missing from `HF_HOME` (it prints the `HF_HUB_DISABLE_XET=1` download
+line) and a pandas other than 2.x. Outputs: the mirror and evaluation files in
+`/gscratch/scrubbed/$USER/round4-disagree-2026-11/data`, runs and the kept `best/` weights in `.../runs` (scrubbed
+purges after 21 days), small artifacts in `/gscratch/makelab/$USER/round4-disagree-2026-11-keep`. Every job id is
+in `round4_jobs.txt` with its full, shell-quoted command (pasting a line resubmits that one job); `MAX_GPU_JOBS`
+(40) caps this stream across stages, and stage 2 or a pilot rerun needs it raised. Resume by resubmitting:
+trainings resume from their last complete checkpoint, a finished run exits "already evaluated", and a gold-scoring
+job that hit its 4-hour limit skips the outputs it already wrote (`collect` lists any gold predictions still
+missing). Details: [`round4-2026-11.md`](round4-2026-11.md).

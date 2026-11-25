@@ -1,0 +1,1716 @@
+{
+  "rule": {
+    "min_delta": 0.02,
+    "level": 0.95,
+    "min_positive_deployments": 2,
+    "all_seeds_above_baseline_mean": true,
+    "test_no_harm_lower": -0.02,
+    "regression_test_upper": -0.01,
+    "prior_rule": "majority2",
+    "gate": "report_only",
+    "baseline_variant": "baseline-rerun",
+    "seeds_confirmatory": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "seeds_baseline": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ]
+  },
+  "subset_shadow": false,
+  "types": {
+    "NoCurbRamp": {
+      "rows": [
+        {
+          "arm": "two_scale",
+          "kind": "confirmatory",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 5,
+            "n_base": 5,
+            "arm_values": [
+              0.8967390625585433,
+              0.8996552973060735,
+              0.9055127452572157,
+              0.9243777242128663,
+              0.9111766101737252
+            ],
+            "base_values": [
+              0.893516841724013,
+              0.8904444916259726,
+              0.9026089997377262,
+              0.891830795938503,
+              0.8923740773582785
+            ],
+            "delta": 0.013337246624786192,
+            "se": 0.008577057893024036,
+            "nu": 5.513044416438132,
+            "t": 2.500269853950252,
+            "lo": -0.008107712660727871,
+            "hi": 0.034782205910300255,
+            "n_above": 5,
+            "var_boot": 4.4871927305698745e-05,
+            "single_arm_seed": false,
+            "s_arm": 0.010950582815318247,
+            "s_base": 0.004853319480293101,
+            "base_mean": 0.8941550412768986
+          },
+          "test": {
+            "n_arm": 5,
+            "n_base": 5,
+            "arm_values": [
+              0.9170524156664911,
+              0.9223789856880191,
+              0.9218199961194112,
+              0.9215843889458658,
+              0.9182212120372167
+            ],
+            "base_values": [
+              0.9045259676063235,
+              0.907062209533313,
+              0.9086098252811117,
+              0.9225429867598008,
+              0.9027242656909757
+            ],
+            "delta": 0.011118348717095827,
+            "se": 0.005235949885479276,
+            "nu": 4.742993379005146,
+            "t": 2.613047795664624,
+            "lo": -0.002563438589366234,
+            "hi": 0.02480013602355789,
+            "n_above": 5,
+            "var_boot": 1.3925700647223434e-05,
+            "single_arm_seed": false,
+            "s_arm": 0.0024037022476963298,
+            "s_base": 0.007852997407649812,
+            "base_mean": 0.9090930509743049
+          },
+          "deployments": {
+            "private city B (US)": 0.01336165478177287,
+            "tucson-az": 0.0233265720081135,
+            "private city A (outside the US)": -0.0008264462809918216
+          },
+          "verdict": "NO GAIN",
+          "criteria": [
+            {
+              "criterion": "1. D >= min_delta",
+              "value": 0.013337246624786192,
+              "pass": false
+            },
+            {
+              "criterion": "2. interval lower bound > 0",
+              "value": -0.008107712660727871,
+              "pass": false
+            },
+            {
+              "criterion": "3. every arm seed above the baseline seed mean",
+              "value": "5 of 5",
+              "pass": true
+            },
+            {
+              "criterion": "4. positive in >= 2 of 3 held-out deployments",
+              "value": 2,
+              "pass": true
+            },
+            {
+              "criterion": "5. test lower bound > -0.02",
+              "value": -0.002563438589366234,
+              "pass": true
+            },
+            {
+              "criterion": "REGRESSION: held-out upper bound < 0",
+              "value": 0.034782205910300255,
+              "pass": false
+            },
+            {
+              "criterion": "REGRESSION: test upper bound < -0.01",
+              "value": 0.02480013602355789,
+              "pass": false
+            }
+          ],
+          "reason": "no gain detected at this power"
+        },
+        {
+          "arm": "view_heatmap",
+          "kind": "confirmatory",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 5,
+            "n_base": 5,
+            "arm_values": [
+              0.7792841174487005,
+              0.7670259401266407,
+              0.8045560703892892,
+              0.7955201139017597,
+              0.7844546578575977
+            ],
+            "base_values": [
+              0.893516841724013,
+              0.8904444916259726,
+              0.9026089997377262,
+              0.891830795938503,
+              0.8923740773582785
+            ],
+            "delta": -0.10798686133210111,
+            "se": 0.018052055600343044,
+            "nu": 4.883787794219866,
+            "t": 2.5890892764414577,
+            "lo": -0.15472524490467426,
+            "hi": -0.06124847775952798,
+            "n_above": 0,
+            "var_boot": 0.0002790495192331516,
+            "single_arm_seed": false,
+            "s_arm": 0.014511417947458909,
+            "s_base": 0.004853319480293101,
+            "base_mean": 0.8941550412768986
+          },
+          "test": {
+            "n_arm": 5,
+            "n_base": 5,
+            "arm_values": [
+              0.8508421801517125,
+              0.8529811237076254,
+              0.8662652105219392,
+              0.8780294000794596,
+              0.8617216878713123
+            ],
+            "base_values": [
+              0.9045259676063235,
+              0.907062209533313,
+              0.9086098252811117,
+              0.9225429867598008,
+              0.9027242656909757
+            ],
+            "delta": -0.04712513050789502,
+            "se": 0.011090919750453296,
+            "nu": 7.248227624014816,
+            "t": 2.348306659625412,
+            "lo": -0.07317001121925551,
+            "hi": -0.02108024979653453,
+            "n_above": 0,
+            "var_boot": 8.662243359376239e-05,
+            "single_arm_seed": false,
+            "s_arm": 0.01096634708102969,
+            "s_base": 0.007852997407649812,
+            "base_mean": 0.9090930509743049
+          },
+          "deployments": {
+            "private city B (US)": -0.1083067819754212,
+            "tucson-az": -0.21460446247464504,
+            "private city A (outside the US)": 0.05289256198347092
+          },
+          "verdict": "REGRESSION",
+          "criteria": [
+            {
+              "criterion": "1. D >= min_delta",
+              "value": -0.10798686133210111,
+              "pass": false
+            },
+            {
+              "criterion": "2. interval lower bound > 0",
+              "value": -0.15472524490467426,
+              "pass": false
+            },
+            {
+              "criterion": "3. every arm seed above the baseline seed mean",
+              "value": "0 of 5",
+              "pass": false
+            },
+            {
+              "criterion": "4. positive in >= 2 of 3 held-out deployments",
+              "value": 1,
+              "pass": false
+            },
+            {
+              "criterion": "5. test lower bound > -0.02",
+              "value": -0.07317001121925551,
+              "pass": false
+            },
+            {
+              "criterion": "REGRESSION: held-out upper bound < 0",
+              "value": -0.06124847775952798,
+              "pass": true
+            },
+            {
+              "criterion": "REGRESSION: test upper bound < -0.01",
+              "value": -0.02108024979653453,
+              "pass": true
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "arm": "view_heatmap-r448",
+          "kind": "exploratory",
+          "seeds": [
+            42
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.8748579350310357
+            ],
+            "base_values": [
+              0.893516841724013,
+              0.8904444916259726,
+              0.9026089997377262,
+              0.891830795938503,
+              0.8923740773582785
+            ],
+            "delta": -0.019297106245862894,
+            "se": 0.014334736009369976,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.05909671387338072,
+            "hi": 0.02050250138165493,
+            "n_above": 0,
+            "var_boot": 0.00020077371446276977,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.004853319480293101,
+            "base_mean": 0.8941550412768986
+          },
+          "test": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.8925839177315187
+            ],
+            "base_values": [
+              0.9045259676063235,
+              0.907062209533313,
+              0.9086098252811117,
+              0.9225429867598008,
+              0.9027242656909757
+            ],
+            "delta": -0.016509133242786245,
+            "se": 0.009286142295973908,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.0422915975666132,
+            "hi": 0.009273331081040712,
+            "n_above": 0,
+            "var_boot": 7.389852508416461e-05,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.007852997407649812,
+            "base_mean": 0.9090930509743049
+          },
+          "deployments": {
+            "private city B (US)": -0.01936226166995414,
+            "tucson-az": -0.0866125760649088,
+            "private city A (outside the US)": 0.05991735537190079
+          },
+          "verdict": "exploratory",
+          "reason": "exploratory arms never produce a WIN"
+        },
+        {
+          "arm": "side_info",
+          "kind": "exploratory",
+          "seeds": [
+            42
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.8860919956537486
+            ],
+            "base_values": [
+              0.893516841724013,
+              0.8904444916259726,
+              0.9026089997377262,
+              0.891830795938503,
+              0.8923740773582785
+            ],
+            "delta": -0.008063045623149967,
+            "se": 0.0092241075933292,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.03367327400046662,
+            "hi": 0.01754718275416669,
+            "n_above": 0,
+            "var_boot": 8.037321889775493e-05,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.004853319480293101,
+            "base_mean": 0.8941550412768986
+          },
+          "test": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.9083326403710582
+            ],
+            "base_values": [
+              0.9045259676063235,
+              0.907062209533313,
+              0.9086098252811117,
+              0.9225429867598008,
+              0.9027242656909757
+            ],
+            "delta": -0.0007604106032467195,
+            "se": 0.006153694580760098,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.01784580580088028,
+            "hi": 0.016324984594386843,
+            "n_above": 0,
+            "var_boot": 2.5534043336365265e-05,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.007852997407649812,
+            "base_mean": 0.9090930509743049
+          },
+          "deployments": {
+            "private city B (US)": -0.007900925504475964,
+            "tucson-az": -0.044016227180527445,
+            "private city A (outside the US)": 0.0020661157024792765
+          },
+          "verdict": "exploratory",
+          "reason": "exploratory arms never produce a WIN"
+        },
+        {
+          "arm": "side_info_nohq",
+          "kind": "exploratory",
+          "seeds": [
+            42
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.8847056913412182
+            ],
+            "base_values": [
+              0.893516841724013,
+              0.8904444916259726,
+              0.9026089997377262,
+              0.891830795938503,
+              0.8923740773582785
+            ],
+            "delta": -0.009449349935680362,
+            "se": 0.00949510681199689,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.03581199276717935,
+            "hi": 0.016913292895818628,
+            "n_above": 0,
+            "var_boot": 8.544611137567123e-05,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.004853319480293101,
+            "base_mean": 0.8941550412768986
+          },
+          "test": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.9076211991019209
+            ],
+            "base_values": [
+              0.9045259676063235,
+              0.907062209533313,
+              0.9086098252811117,
+              0.9225429867598008,
+              0.9027242656909757
+            ],
+            "delta": -0.0014718518723840779,
+            "se": 0.007418967347338455,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.02207020744952419,
+            "hi": 0.019126503704756034,
+            "n_above": 0,
+            "var_boot": 4.270716284396326e-05,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.007852997407649812,
+            "base_mean": 0.9090930509743049
+          },
+          "deployments": {
+            "private city B (US)": -0.009772164062105015,
+            "tucson-az": -0.01561866125760658,
+            "private city A (outside the US)": 0.04958677685950408
+          },
+          "verdict": "exploratory",
+          "reason": "exploratory arms never produce a WIN"
+        }
+      ],
+      "drift": {
+        "october_seeds": [
+          42,
+          43,
+          44
+        ],
+        "rerun_seeds": [
+          42,
+          43,
+          44,
+          45,
+          46
+        ],
+        "heldout": {
+          "rerun_mean": 0.8941550412768986,
+          "rerun_sd": 0.004853319480293101,
+          "october_mean": 0.8852010973868372,
+          "october_sd": 0.0244112675699487,
+          "difference": 0.008953943890061433
+        },
+        "test": {
+          "rerun_mean": 0.9090930509743049,
+          "rerun_sd": 0.007852997407649812,
+          "october_mean": 0.9062645329588257,
+          "october_sd": 0.00290463571937694,
+          "difference": 0.002828518015479231
+        },
+        "flag": false
+      },
+      "oc": {
+        "sd_seed_source": "baseline-rerun, 5 seeds",
+        "sd_boot_source": "paired bootstrap of baseline-rerun - baseline-rerun-s43",
+        "arm_seeds_3": {
+          "sd_seed": 0.004853319480293101,
+          "sd_boot": 0.01099730630108328,
+          "n_arm": 3,
+          "n_base": 5,
+          "n_sim": 4000,
+          "power": {
+            "0.00": 0.004,
+            "0.02": 0.16025,
+            "0.03": 0.4405,
+            "0.05": 0.90275
+          },
+          "false_win": 0.004,
+          "null_regression": 0.0045,
+          "mde80": 0.045
+        },
+        "arm_seeds_5": {
+          "sd_seed": 0.004853319480293101,
+          "sd_boot": 0.01099730630108328,
+          "n_arm": 5,
+          "n_base": 5,
+          "n_sim": 4000,
+          "power": {
+            "0.00": 0.00725,
+            "0.02": 0.2595,
+            "0.03": 0.596,
+            "0.05": 0.97125
+          },
+          "false_win": 0.00725,
+          "null_regression": 0.008,
+          "mde80": 0.04
+        }
+      },
+      "boot": {
+        "test_heldout": {
+          "deployments": 3,
+          "n_boot": 1000,
+          "kept": 1000,
+          "dropped": 0,
+          "redraws": {
+            "private city B (US)": 0,
+            "tucson-az": 0,
+            "private city A (outside the US)": 13
+          }
+        },
+        "test": {
+          "deployments": 18,
+          "n_boot": 1000,
+          "kept": 1000,
+          "dropped": 0,
+          "redraws": 46
+        }
+      }
+    },
+    "Obstacle": {
+      "rows": [
+        {
+          "arm": "two_scale",
+          "kind": "confirmatory",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 5,
+            "n_base": 5,
+            "arm_values": [
+              0.7939947858031641,
+              0.7854091366949102,
+              0.7870593114890088,
+              0.7836404574272678,
+              0.7681726610179535
+            ],
+            "base_values": [
+              0.7927001244296972,
+              0.7782662795520531,
+              0.7850180719322154,
+              0.7600402915210049,
+              0.7763939088700599
+            ],
+            "delta": 0.005171535225454882,
+            "se": 0.009945631375003438,
+            "nu": 7.56451375582599,
+            "t": 2.3293177421093345,
+            "lo": -0.01799500039281988,
+            "hi": 0.028338070843729645,
+            "n_above": 4,
+            "var_boot": 5.138262898554412e-05,
+            "single_arm_seed": false,
+            "s_arm": 0.009503690522496326,
+            "s_base": 0.012138559995409536,
+            "base_mean": 0.778483735261006
+          },
+          "test": {
+            "n_arm": 5,
+            "n_base": 5,
+            "arm_values": [
+              0.8631344855838633,
+              0.873054114158636,
+              0.8690648043384963,
+              0.868786820646873,
+              0.8681918380086614
+            ],
+            "base_values": [
+              0.870159669930943,
+              0.8683649682025673,
+              0.8687112285903789,
+              0.8625004876906871,
+              0.8660484374390387
+            ],
+            "delta": 0.0012894541765828826,
+            "se": 0.004529157456066948,
+            "nu": 7.786556209465409,
+            "t": 2.31705347379951,
+            "lo": -0.00920484584038199,
+            "hi": 0.011783754193547755,
+            "n_above": 4,
+            "var_boot": 1.6222595526105464e-05,
+            "single_arm_seed": false,
+            "s_arm": 0.003535907821245875,
+            "s_base": 0.002991774483205421,
+            "base_mean": 0.867156958370723
+          },
+          "deployments": {
+            "private city B (US)": 0.001667611489040044,
+            "tucson-az": 0.00895191409897278,
+            "private city A (outside the US)": 0.008670726863498013
+          },
+          "verdict": "NO GAIN",
+          "criteria": [
+            {
+              "criterion": "1. D >= min_delta",
+              "value": 0.005171535225454882,
+              "pass": false
+            },
+            {
+              "criterion": "2. interval lower bound > 0",
+              "value": -0.01799500039281988,
+              "pass": false
+            },
+            {
+              "criterion": "3. every arm seed above the baseline seed mean",
+              "value": "4 of 5",
+              "pass": false
+            },
+            {
+              "criterion": "4. positive in >= 2 of 3 held-out deployments",
+              "value": 3,
+              "pass": true
+            },
+            {
+              "criterion": "5. test lower bound > -0.02",
+              "value": -0.00920484584038199,
+              "pass": true
+            },
+            {
+              "criterion": "REGRESSION: held-out upper bound < 0",
+              "value": 0.028338070843729645,
+              "pass": false
+            },
+            {
+              "criterion": "REGRESSION: test upper bound < -0.01",
+              "value": 0.011783754193547755,
+              "pass": false
+            }
+          ],
+          "reason": "no gain detected at this power"
+        },
+        {
+          "arm": "view_heatmap",
+          "kind": "confirmatory",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 5,
+            "n_base": 5,
+            "arm_values": [
+              0.7130503051490193,
+              0.7176453161106832,
+              0.7182141375836938,
+              0.7279226165787759,
+              0.7425756947324762
+            ],
+            "base_values": [
+              0.7927001244296972,
+              0.7782662795520531,
+              0.7850180719322154,
+              0.7600402915210049,
+              0.7763939088700599
+            ],
+            "delta": -0.05460212123007635,
+            "se": 0.019632422793193164,
+            "nu": 7.992404617646143,
+            "t": 2.306385642790153,
+            "lo": -0.0998820592934832,
+            "hi": -0.009322183166669488,
+            "n_above": 0,
+            "var_boot": 0.0003282567315786077,
+            "single_arm_seed": false,
+            "s_arm": 0.011769954417849584,
+            "s_base": 0.012138559995409536,
+            "base_mean": 0.778483735261006
+          },
+          "test": {
+            "n_arm": 5,
+            "n_base": 5,
+            "arm_values": [
+              0.8175256525301393,
+              0.8228585501931255,
+              0.8199275291639031,
+              0.8184181264874566,
+              0.8093275720806835
+            ],
+            "base_values": [
+              0.870159669930943,
+              0.8683649682025673,
+              0.8687112285903789,
+              0.8625004876906871,
+              0.8660484374390387
+            ],
+            "delta": -0.04954547227966133,
+            "se": 0.009331274845518432,
+            "nu": 6.496661670464601,
+            "t": 2.4022745928976317,
+            "lo": -0.07196175676039503,
+            "hi": -0.027129187798927628,
+            "n_above": 0,
+            "var_boot": 8.017369709758122e-05,
+            "single_arm_seed": false,
+            "s_arm": 0.005054132088376793,
+            "s_base": 0.002991774483205421,
+            "base_mean": 0.867156958370723
+          },
+          "deployments": {
+            "private city B (US)": -0.07315995842781553,
+            "tucson-az": -0.125968720821662,
+            "private city A (outside the US)": -0.025702369919237467
+          },
+          "verdict": "REGRESSION",
+          "criteria": [
+            {
+              "criterion": "1. D >= min_delta",
+              "value": -0.05460212123007635,
+              "pass": false
+            },
+            {
+              "criterion": "2. interval lower bound > 0",
+              "value": -0.0998820592934832,
+              "pass": false
+            },
+            {
+              "criterion": "3. every arm seed above the baseline seed mean",
+              "value": "0 of 5",
+              "pass": false
+            },
+            {
+              "criterion": "4. positive in >= 2 of 3 held-out deployments",
+              "value": 0,
+              "pass": false
+            },
+            {
+              "criterion": "5. test lower bound > -0.02",
+              "value": -0.07196175676039503,
+              "pass": false
+            },
+            {
+              "criterion": "REGRESSION: held-out upper bound < 0",
+              "value": -0.009322183166669488,
+              "pass": true
+            },
+            {
+              "criterion": "REGRESSION: test upper bound < -0.01",
+              "value": -0.027129187798927628,
+              "pass": true
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "arm": "view_heatmap-r448",
+          "kind": "exploratory",
+          "seeds": [
+            42
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.7776026545002074
+            ],
+            "base_values": [
+              0.7927001244296972,
+              0.7782662795520531,
+              0.7850180719322154,
+              0.7600402915210049,
+              0.7763939088700599
+            ],
+            "delta": -0.0008810807607986249,
+            "se": 0.017203691105418025,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.04864618472177132,
+            "hi": 0.04688402320017407,
+            "n_above": 0,
+            "var_boot": 0.00026649805989820786,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.012138559995409536,
+            "base_mean": 0.778483735261006
+          },
+          "test": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.8632807927899809
+            ],
+            "base_values": [
+              0.870159669930943,
+              0.8683649682025673,
+              0.8687112285903789,
+              0.8625004876906871,
+              0.8660484374390387
+            ],
+            "delta": -0.003876165580742108,
+            "se": 0.007537157482024282,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.02480266957881335,
+            "hi": 0.017050338417329135,
+            "n_above": 0,
+            "var_boot": 5.5018599997162794e-05,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.002991774483205421,
+            "base_mean": 0.867156958370723
+          },
+          "deployments": {
+            "private city B (US)": 0.002475434618291694,
+            "tucson-az": -0.050490196078431526,
+            "private city A (outside the US)": 0.0009837150801005334
+          },
+          "verdict": "exploratory",
+          "reason": "exploratory arms never produce a WIN"
+        },
+        {
+          "arm": "side_info",
+          "kind": "exploratory",
+          "seeds": [
+            42
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.7739319784321859
+            ],
+            "base_values": [
+              0.7927001244296972,
+              0.7782662795520531,
+              0.7850180719322154,
+              0.7600402915210049,
+              0.7763939088700599
+            ],
+            "delta": -0.0045517568288201415,
+            "se": 0.009936954925111333,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.03214116669121661,
+            "hi": 0.023037653033576324,
+            "n_above": 0,
+            "var_boot": 6.927414543126301e-05,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.012138559995409536,
+            "base_mean": 0.778483735261006
+          },
+          "test": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.8553216807771838
+            ],
+            "base_values": [
+              0.870159669930943,
+              0.8683649682025673,
+              0.8687112285903789,
+              0.8625004876906871,
+              0.8660484374390387
+            ],
+            "delta": -0.011835277593539195,
+            "se": 0.005838006103223594,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.02804418106294919,
+            "hi": 0.0043736258758707985,
+            "n_above": 0,
+            "var_boot": 3.229217234960413e-05,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.002991774483205421,
+            "base_mean": 0.867156958370723
+          },
+          "deployments": {
+            "private city B (US)": -0.023306405895691662,
+            "tucson-az": 0.03558590102707737,
+            "private city A (outside the US)": 0.011919766980007962
+          },
+          "verdict": "exploratory",
+          "reason": "exploratory arms never produce a WIN"
+        },
+        {
+          "arm": "side_info_nohq",
+          "kind": "exploratory",
+          "seeds": [
+            42
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.8075487349647449
+            ],
+            "base_values": [
+              0.7927001244296972,
+              0.7782662795520531,
+              0.7850180719322154,
+              0.7600402915210049,
+              0.7763939088700599
+            ],
+            "delta": 0.02906499970373888,
+            "se": 0.011268736329724884,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.0022220281206903197,
+            "hi": 0.06035202752816808,
+            "n_above": 1,
+            "var_boot": 9.751549071643011e-05,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.012138559995409536,
+            "base_mean": 0.778483735261006
+          },
+          "test": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.8545364987710194
+            ],
+            "base_values": [
+              0.870159669930943,
+              0.8683649682025673,
+              0.8687112285903789,
+              0.8625004876906871,
+              0.8660484374390387
+            ],
+            "delta": -0.012620459599703593,
+            "se": 0.00648330692628447,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.03062100538068106,
+            "hi": 0.005380086181273874,
+            "n_above": 0,
+            "var_boot": 4.024312578873636e-05,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.002991774483205421,
+            "base_mean": 0.867156958370723
+          },
+          "deployments": {
+            "private city B (US)": 0.005947656840513904,
+            "tucson-az": 0.10024509803921555,
+            "private city A (outside the US)": 0.046905865219118215
+          },
+          "verdict": "exploratory",
+          "reason": "exploratory arms never produce a WIN"
+        }
+      ],
+      "drift": {
+        "october_seeds": [
+          42,
+          43,
+          44
+        ],
+        "rerun_seeds": [
+          42,
+          43,
+          44,
+          45,
+          46
+        ],
+        "heldout": {
+          "rerun_mean": 0.778483735261006,
+          "rerun_sd": 0.012138559995409536,
+          "october_mean": 0.7822816061306314,
+          "october_sd": 0.009209742119381718,
+          "difference": -0.0037978708696253527
+        },
+        "test": {
+          "rerun_mean": 0.867156958370723,
+          "rerun_sd": 0.002991774483205421,
+          "october_mean": 0.8630117500942869,
+          "october_sd": 0.006972511183151436,
+          "difference": 0.004145208276436163
+        },
+        "flag": false
+      },
+      "oc": {
+        "sd_seed_source": "baseline-rerun, 5 seeds",
+        "sd_boot_source": "paired bootstrap of baseline-rerun - baseline-rerun-s43",
+        "arm_seeds_3": {
+          "sd_seed": 0.012138559995409536,
+          "sd_boot": 0.010079439766508169,
+          "n_arm": 3,
+          "n_base": 5,
+          "n_sim": 4000,
+          "power": {
+            "0.00": 0.005,
+            "0.02": 0.1355,
+            "0.03": 0.3355,
+            "0.05": 0.78225
+          },
+          "false_win": 0.005,
+          "null_regression": 0.00525,
+          "mde80": 0.055
+        },
+        "arm_seeds_5": {
+          "sd_seed": 0.012138559995409536,
+          "sd_boot": 0.010079439766508169,
+          "n_arm": 5,
+          "n_base": 5,
+          "n_sim": 4000,
+          "power": {
+            "0.00": 0.01025,
+            "0.02": 0.217,
+            "0.03": 0.49875,
+            "0.05": 0.92325
+          },
+          "false_win": 0.01025,
+          "null_regression": 0.012,
+          "mde80": 0.045
+        }
+      },
+      "boot": {
+        "test_heldout": {
+          "deployments": 3,
+          "n_boot": 1000,
+          "kept": 1000,
+          "dropped": 0,
+          "redraws": {
+            "private city B (US)": 0,
+            "tucson-az": 0,
+            "private city A (outside the US)": 0
+          }
+        },
+        "test": {
+          "deployments": 18,
+          "n_boot": 1000,
+          "kept": 1000,
+          "dropped": 0,
+          "redraws": 683
+        }
+      }
+    },
+    "SurfaceProblem": {
+      "rows": [
+        {
+          "arm": "two_scale",
+          "kind": "confirmatory",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 5,
+            "n_base": 5,
+            "arm_values": [
+              0.6421370776722946,
+              0.6987190419343224,
+              0.7019309116404222,
+              0.7092926307013055,
+              0.7004907812707256
+            ],
+            "base_values": [
+              0.6769844428021905,
+              0.7033615674682129,
+              0.700822390237432,
+              0.6755632615163056,
+              0.7018361662213632
+            ],
+            "delta": -0.0011994770052867754,
+            "se": 0.01653208437024985,
+            "nu": 5.994981303619803,
+            "t": 2.4474084820282305,
+            "lo": -0.041660240518642595,
+            "hi": 0.039261286508069045,
+            "n_above": 4,
+            "var_boot": 8.385674405123845e-05,
+            "single_arm_seed": false,
+            "s_arm": 0.02734121583777261,
+            "s_base": 0.014132348155258457,
+            "base_mean": 0.6917135656491009
+          },
+          "test": {
+            "n_arm": 5,
+            "n_base": 5,
+            "arm_values": [
+              0.8540081243245258,
+              0.8616703313084635,
+              0.8665262922520777,
+              0.8608728058733649,
+              0.8482540155778333
+            ],
+            "base_values": [
+              0.8625013975328886,
+              0.8640219133156933,
+              0.8499273282897924,
+              0.8604628628927068,
+              0.8615846159579622
+            ],
+            "delta": -0.0014333097305556652,
+            "se": 0.006201859742250041,
+            "nu": 7.57107010344539,
+            "t": 2.328943625138696,
+            "lo": -0.015877091441273215,
+            "hi": 0.013010471980161883,
+            "n_above": 3,
+            "var_boot": 2.190545001010757e-05,
+            "single_arm_seed": false,
+            "s_arm": 0.007158677836267483,
+            "s_base": 0.00561617333232367,
+            "base_mean": 0.8596996235978086
+          },
+          "deployments": {
+            "private city B (US)": -0.0014742014742015197,
+            "tucson-az": 0.029398034398034456,
+            "private city A (outside the US)": -0.009266815848361198
+          },
+          "verdict": "NO GAIN",
+          "criteria": [
+            {
+              "criterion": "1. D >= min_delta",
+              "value": -0.0011994770052867754,
+              "pass": false
+            },
+            {
+              "criterion": "2. interval lower bound > 0",
+              "value": -0.041660240518642595,
+              "pass": false
+            },
+            {
+              "criterion": "3. every arm seed above the baseline seed mean",
+              "value": "4 of 5",
+              "pass": false
+            },
+            {
+              "criterion": "4. positive in >= 2 of 3 held-out deployments",
+              "value": 1,
+              "pass": false
+            },
+            {
+              "criterion": "5. test lower bound > -0.02",
+              "value": -0.015877091441273215,
+              "pass": true
+            },
+            {
+              "criterion": "REGRESSION: held-out upper bound < 0",
+              "value": 0.039261286508069045,
+              "pass": false
+            },
+            {
+              "criterion": "REGRESSION: test upper bound < -0.01",
+              "value": 0.013010471980161883,
+              "pass": false
+            }
+          ],
+          "reason": "no gain detected at this power"
+        },
+        {
+          "arm": "view_heatmap",
+          "kind": "confirmatory",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 5,
+            "n_base": 5,
+            "arm_values": [
+              0.613713451954598,
+              0.6406116764254448,
+              0.6051010933621359,
+              0.6284463646182707,
+              0.5966308528982623
+            ],
+            "base_values": [
+              0.6769844428021905,
+              0.7033615674682129,
+              0.700822390237432,
+              0.6755632615163056,
+              0.7018361662213632
+            ],
+            "delta": -0.07481287779735857,
+            "se": 0.02020814663567617,
+            "nu": 7.623082734690335,
+            "t": 2.3260021722106177,
+            "lo": -0.12181707076829203,
+            "hi": -0.02780868482642511,
+            "n_above": 0,
+            "var_boot": 0.0003056361004245068,
+            "single_arm_seed": false,
+            "s_arm": 0.017718413747877644,
+            "s_base": 0.014132348155258457,
+            "base_mean": 0.6917135656491009
+          },
+          "test": {
+            "n_arm": 5,
+            "n_base": 5,
+            "arm_values": [
+              0.768501472067976,
+              0.7736145790630939,
+              0.7845749636641449,
+              0.7767599597510528,
+              0.7675027018969179
+            ],
+            "base_values": [
+              0.8625013975328886,
+              0.8640219133156933,
+              0.8499273282897924,
+              0.8604628628927068,
+              0.8615846159579622
+            ],
+            "delta": -0.08550888830917136,
+            "se": 0.011912593893811645,
+            "nu": 7.672583182845155,
+            "t": 2.323245761026349,
+            "lo": -0.11318477157579764,
+            "hi": -0.057833005042545085,
+            "n_above": 0,
+            "var_boot": 0.00012600848390254143,
+            "single_arm_seed": false,
+            "s_arm": 0.006925723354493857,
+            "s_base": 0.00561617333232367,
+            "base_mean": 0.8596996235978086
+          },
+          "deployments": {
+            "private city B (US)": -0.12332748332748333,
+            "tucson-az": -0.03549140049140043,
+            "private city A (outside the US)": -0.06260365933921286
+          },
+          "verdict": "REGRESSION",
+          "criteria": [
+            {
+              "criterion": "1. D >= min_delta",
+              "value": -0.07481287779735857,
+              "pass": false
+            },
+            {
+              "criterion": "2. interval lower bound > 0",
+              "value": -0.12181707076829203,
+              "pass": false
+            },
+            {
+              "criterion": "3. every arm seed above the baseline seed mean",
+              "value": "0 of 5",
+              "pass": false
+            },
+            {
+              "criterion": "4. positive in >= 2 of 3 held-out deployments",
+              "value": 0,
+              "pass": false
+            },
+            {
+              "criterion": "5. test lower bound > -0.02",
+              "value": -0.11318477157579764,
+              "pass": false
+            },
+            {
+              "criterion": "REGRESSION: held-out upper bound < 0",
+              "value": -0.02780868482642511,
+              "pass": true
+            },
+            {
+              "criterion": "REGRESSION: test upper bound < -0.01",
+              "value": -0.057833005042545085,
+              "pass": true
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "arm": "view_heatmap-r448",
+          "kind": "exploratory",
+          "seeds": [
+            42
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.6750232126276694
+            ],
+            "base_values": [
+              0.6769844428021905,
+              0.7033615674682129,
+              0.700822390237432,
+              0.6755632615163056,
+              0.7018361662213632
+            ],
+            "delta": -0.016690353021431514,
+            "se": 0.021934108209414598,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.0775892003963394,
+            "hi": 0.04420849435347638,
+            "n_above": 0,
+            "var_boot": 0.0004411604500660214,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.014132348155258457,
+            "base_mean": 0.6917135656491009
+          },
+          "test": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.8124697201207468
+            ],
+            "base_values": [
+              0.8625013975328886,
+              0.8640219133156933,
+              0.8499273282897924,
+              0.8604628628927068,
+              0.8615846159579622
+            ],
+            "delta": -0.047229903477061796,
+            "se": 0.010677837343007819,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.07687633270215406,
+            "hi": -0.017583474251969527,
+            "n_above": 0,
+            "var_boot": 0.00010770792974399157,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.00561617333232367,
+            "base_mean": 0.8596996235978086
+          },
+          "deployments": {
+            "private city B (US)": -0.06405756405756413,
+            "tucson-az": 0.01890663390663394,
+            "private city A (outside the US)": -0.004021324206923804
+          },
+          "verdict": "exploratory",
+          "reason": "exploratory arms never produce a WIN"
+        },
+        {
+          "arm": "side_info",
+          "kind": "exploratory",
+          "seeds": [
+            42
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.6670361738009967
+            ],
+            "base_values": [
+              0.6769844428021905,
+              0.7033615674682129,
+              0.700822390237432,
+              0.6755632615163056,
+              0.7018361662213632
+            ],
+            "delta": -0.024677391848104246,
+            "se": 0.015283410133978586,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.06711094110531944,
+            "hi": 0.017756157409110948,
+            "n_above": 0,
+            "var_boot": 0.0001936379724471119,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.014132348155258457,
+            "base_mean": 0.6917135656491009
+          },
+          "test": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.8499757760965975
+            ],
+            "base_values": [
+              0.8625013975328886,
+              0.8640219133156933,
+              0.8499273282897924,
+              0.8604628628927068,
+              0.8615846159579622
+            ],
+            "delta": -0.009723847501211136,
+            "se": 0.007202427444573825,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.029720991925240383,
+            "hi": 0.010273296922818111,
+            "n_above": 0,
+            "var_boot": 4.5566680514609525e-05,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.00561617333232367,
+            "base_mean": 0.8596996235978086
+          },
+          "deployments": {
+            "private city B (US)": -0.0022113022113022796,
+            "tucson-az": -0.09288697788697786,
+            "private city A (outside the US)": -0.016937606950111816
+          },
+          "verdict": "exploratory",
+          "reason": "exploratory arms never produce a WIN"
+        },
+        {
+          "arm": "side_info_nohq",
+          "kind": "exploratory",
+          "seeds": [
+            42
+          ],
+          "baseline_seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "seeds_not_used": [],
+          "baseline_seeds_not_used": [],
+          "heldout": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.6871790498929377
+            ],
+            "base_values": [
+              0.6769844428021905,
+              0.7033615674682129,
+              0.700822390237432,
+              0.6755632615163056,
+              0.7018361662213632
+            ],
+            "delta": -0.00453451575616326,
+            "se": 0.013233989021204462,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.04127795979632772,
+            "hi": 0.0322089282840012,
+            "n_above": 0,
+            "var_boot": 0.00013519381253707279,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.014132348155258457,
+            "base_mean": 0.6917135656491009
+          },
+          "test": {
+            "n_arm": 1,
+            "n_base": 5,
+            "arm_values": [
+              0.8584280550068945
+            ],
+            "base_values": [
+              0.8625013975328886,
+              0.8640219133156933,
+              0.8499273282897924,
+              0.8604628628927068,
+              0.8615846159579622
+            ],
+            "delta": -0.0012715685909141516,
+            "se": 0.005747343903634951,
+            "nu": 4.0,
+            "t": 2.7764451051977934,
+            "lo": -0.01722875344004979,
+            "hi": 0.014685616258221488,
+            "n_above": 0,
+            "var_boot": 2.672368136690913e-05,
+            "single_arm_seed": true,
+            "s_arm": 0.0,
+            "s_base": 0.00561617333232367,
+            "base_mean": 0.8596996235978086
+          },
+          "deployments": {
+            "private city B (US)": 0.005124605124605108,
+            "tucson-az": 0.012579852579852613,
+            "private city A (outside the US)": -0.013646834276688113
+          },
+          "verdict": "exploratory",
+          "reason": "exploratory arms never produce a WIN"
+        }
+      ],
+      "drift": {
+        "october_seeds": [
+          42,
+          43,
+          44
+        ],
+        "rerun_seeds": [
+          42,
+          43,
+          44,
+          45,
+          46
+        ],
+        "heldout": {
+          "rerun_mean": 0.6917135656491009,
+          "rerun_sd": 0.014132348155258457,
+          "october_mean": 0.7063428899879357,
+          "october_sd": 0.02105132842834227,
+          "difference": -0.014629324338834793
+        },
+        "test": {
+          "rerun_mean": 0.8596996235978086,
+          "rerun_sd": 0.00561617333232367,
+          "october_mean": 0.8625399073280414,
+          "october_sd": 0.014051286065231696,
+          "difference": -0.0028402837302328177
+        },
+        "flag": false
+      },
+      "oc": {
+        "sd_seed_source": "baseline-rerun, 5 seeds",
+        "sd_boot_source": "paired bootstrap of baseline-rerun - baseline-rerun-s43",
+        "arm_seeds_3": {
+          "sd_seed": 0.014132348155258457,
+          "sd_boot": 0.01529720135663918,
+          "n_arm": 3,
+          "n_base": 5,
+          "n_sim": 4000,
+          "power": {
+            "0.00": 0.00475,
+            "0.02": 0.06225,
+            "0.03": 0.15425,
+            "0.05": 0.48275
+          },
+          "false_win": 0.00475,
+          "null_regression": 0.0055,
+          "mde80": 0.07
+        },
+        "arm_seeds_5": {
+          "sd_seed": 0.014132348155258457,
+          "sd_boot": 0.01529720135663918,
+          "n_arm": 5,
+          "n_base": 5,
+          "n_sim": 4000,
+          "power": {
+            "0.00": 0.00925,
+            "0.02": 0.111,
+            "0.03": 0.2445,
+            "0.05": 0.669
+          },
+          "false_win": 0.00925,
+          "null_regression": 0.00925,
+          "mde80": 0.06
+        }
+      },
+      "boot": {
+        "test_heldout": {
+          "deployments": 3,
+          "n_boot": 1000,
+          "kept": 1000,
+          "dropped": 0,
+          "redraws": {
+            "private city B (US)": 0,
+            "tucson-az": 0,
+            "private city A (outside the US)": 0
+          }
+        },
+        "test": {
+          "deployments": 21,
+          "n_boot": 1000,
+          "kept": 1000,
+          "dropped": 0,
+          "redraws": 2079
+        }
+      }
+    }
+  }
+}
