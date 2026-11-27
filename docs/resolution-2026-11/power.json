@@ -1,114 +1,176 @@
 {
   "rows": [
     {
-      "type": "Obstacle",
       "seeds": 3,
-      "sd_seed": 0.009,
-      "sd_boot": 0.01,
-      "0.000": 0.001,
-      "0.015": 0.03875,
-      "0.030": 0.26425,
-      "0.050": 0.77475,
-      "mde80": 0.055
+      "effect": 0.0,
+      "Obstacle_crit12": 0.0247,
+      "SurfaceProblem_crit12": 0.024,
+      "NoCurbRamp_crit12": 0.0252,
+      "Obstacle_win": 0.02465,
+      "SurfaceProblem_win": 0.02395,
+      "NoCurbRamp_win": 0.0252,
+      "guard": 0.9893,
+      "texture": 0.96825,
+      "study_crit12": 0.0021,
+      "study_win": 0.002
     },
     {
-      "type": "SurfaceProblem",
       "seeds": 3,
-      "sd_seed": 0.021,
-      "sd_boot": 0.015,
-      "0.000": 0.0015,
-      "0.015": 0.01675,
-      "0.030": 0.06625,
-      "0.050": 0.23125,
-      "mde80": 0.095
+      "effect": 0.015,
+      "Obstacle_crit12": 0.20975,
+      "SurfaceProblem_crit12": 0.08475,
+      "NoCurbRamp_crit12": 0.08385,
+      "Obstacle_win": 0.20965,
+      "SurfaceProblem_win": 0.08465,
+      "NoCurbRamp_win": 0.08385,
+      "guard": 0.9893,
+      "texture": 0.96825,
+      "study_crit12": 0.03915,
+      "study_win": 0.03755
     },
     {
-      "type": "NoCurbRamp",
       "seeds": 3,
-      "sd_seed": 0.024,
-      "sd_boot": 0.012,
-      "0.000": 0.00525,
-      "0.015": 0.02525,
-      "0.030": 0.079,
-      "0.050": 0.2505,
-      "mde80": 0.1
+      "effect": 0.03,
+      "Obstacle_crit12": 0.6326,
+      "SurfaceProblem_crit12": 0.2187,
+      "NoCurbRamp_crit12": 0.19685,
+      "Obstacle_win": 0.6322,
+      "SurfaceProblem_win": 0.21845,
+      "NoCurbRamp_win": 0.1968,
+      "guard": 0.9893,
+      "texture": 0.96825,
+      "study_crit12": 0.25005,
+      "study_win": 0.2393
     },
     {
-      "type": "study (>= 2 of 3)",
       "seeds": 3,
-      "0.000": 1.4609250000000002e-05,
-      "0.015": 0.00201765984375,
-      "0.030": 0.040850025625,
-      "0.050": 0.3414043078125001
+      "effect": 0.05,
+      "Obstacle_crit12": 0.9671,
+      "SurfaceProblem_crit12": 0.49995,
+      "NoCurbRamp_crit12": 0.446,
+      "Obstacle_win": 0.9662,
+      "SurfaceProblem_win": 0.4993,
+      "NoCurbRamp_win": 0.4458,
+      "guard": 0.9893,
+      "texture": 0.96825,
+      "study_crit12": 0.7065,
+      "study_win": 0.67575
     },
     {
-      "type": "Obstacle",
       "seeds": 5,
-      "sd_seed": 0.009,
-      "sd_boot": 0.01,
-      "0.000": 0.009,
-      "0.015": 0.14475,
-      "0.030": 0.591,
-      "0.050": 0.96825,
-      "mde80": 0.04
+      "effect": 0.0,
+      "Obstacle_crit12": 0.02445,
+      "SurfaceProblem_crit12": 0.02395,
+      "NoCurbRamp_crit12": 0.02415,
+      "Obstacle_win": 0.02445,
+      "SurfaceProblem_win": 0.0239,
+      "NoCurbRamp_win": 0.02415,
+      "guard": 0.9919,
+      "texture": 0.96835,
+      "study_crit12": 0.0014,
+      "study_win": 0.0012
     },
     {
-      "type": "SurfaceProblem",
       "seeds": 5,
-      "sd_seed": 0.021,
-      "sd_boot": 0.015,
-      "0.000": 0.01,
-      "0.015": 0.0595,
-      "0.030": 0.1945,
-      "0.050": 0.55525,
-      "mde80": 0.07
+      "effect": 0.015,
+      "Obstacle_crit12": 0.2534,
+      "SurfaceProblem_crit12": 0.10625,
+      "NoCurbRamp_crit12": 0.10695,
+      "Obstacle_win": 0.25315,
+      "SurfaceProblem_win": 0.1062,
+      "NoCurbRamp_win": 0.10695,
+      "guard": 0.9919,
+      "texture": 0.96835,
+      "study_crit12": 0.0591,
+      "study_win": 0.0563
     },
     {
-      "type": "NoCurbRamp",
       "seeds": 5,
-      "sd_seed": 0.024,
-      "sd_boot": 0.012,
-      "0.000": 0.0115,
-      "0.015": 0.06675,
-      "0.030": 0.2215,
-      "0.050": 0.586,
-      "mde80": 0.065
+      "effect": 0.03,
+      "Obstacle_crit12": 0.731,
+      "SurfaceProblem_crit12": 0.30475,
+      "NoCurbRamp_crit12": 0.3114,
+      "Obstacle_win": 0.7303,
+      "SurfaceProblem_win": 0.30445,
+      "NoCurbRamp_win": 0.3113,
+      "guard": 0.9919,
+      "texture": 0.96835,
+      "study_crit12": 0.4077,
+      "study_win": 0.3898
     },
     {
-      "type": "study (>= 2 of 3)",
       "seeds": 5,
-      "0.000": 0.00030642999999999995,
-      "0.015": 0.0210965270625,
-      "0.030": 0.2380151215,
-      "0.050": 0.80030022025
+      "effect": 0.05,
+      "Obstacle_crit12": 0.9908,
+      "SurfaceProblem_crit12": 0.68185,
+      "NoCurbRamp_crit12": 0.6808,
+      "Obstacle_win": 0.98995,
+      "SurfaceProblem_win": 0.681,
+      "NoCurbRamp_win": 0.68065,
+      "guard": 0.9919,
+      "texture": 0.96835,
+      "study_crit12": 0.89425,
+      "study_win": 0.85755
     }
   ],
   "effects": [
-    "0.000",
-    "0.015",
-    "0.030",
-    "0.050"
+    0.0,
+    0.015,
+    0.03,
+    0.05
   ],
-  "n_sim": 4000,
+  "n_sim": 20000,
   "seed": 0,
   "inputs": {
-    "NoCurbRamp": [
-      0.024,
-      0.012
-    ],
-    "Obstacle": [
-      0.009,
+    "targets_within_city_heldout": {
+      "NoCurbRamp": [
+        0.024,
+        0.012
+      ],
+      "Obstacle": [
+        0.009,
+        0.01
+      ],
+      "SurfaceProblem": [
+        0.021,
+        0.015
+      ]
+    },
+    "test_auc": {
+      "NoCurbRamp": [
+        0.0023,
+        0.0032
+      ],
+      "Obstacle": [
+        0.0021,
+        0.0038
+      ],
+      "SurfaceProblem": [
+        0.004,
+        0.004
+      ],
+      "CurbRamp": [
+        0.0019,
+        0.0039
+      ]
+    },
+    "guard_within_city_heldout": [
+      0.011,
       0.01
     ],
-    "SurfaceProblem": [
-      0.021,
-      0.015
-    ]
+    "texture": {
+      "SurfaceProblem:test": 0.028,
+      "SurfaceProblem:test_heldout": 0.024,
+      "CurbRamp:test": 0.01,
+      "CurbRamp:test_heldout": 0.024,
+      "Crosswalk:test": 0.018,
+      "Crosswalk:test_heldout": 0.025
+    }
   },
   "rule": {
     "endpoint": "within-city AUC on test_heldout",
     "statistic": "seed mean of the arm minus seed mean of the in-env 224 rerun",
-    "interval": "welch_t_seed_variance_plus_panorama_bootstrap",
+    "interval": "t_seed_variances_plus_panorama_bootstrap_satterthwaite_all_terms",
     "level": 0.95,
     "min_delta": 0.015,
     "min_target_wins": 2,
@@ -120,6 +182,7 @@
     "target_test_auc_floor": -0.005,
     "guard_type": "CurbRamp",
     "guard_floor": -0.005,
+    "floors_fail_when": "interval_wholly_below_floor",
     "texture_slices": [
       [
         "SurfaceProblem",
@@ -141,11 +204,14 @@
       "test",
       "test_heldout"
     ],
+    "texture_level": 0.99,
     "texture_fails_when": "interval_wholly_below_zero",
     "seeds": [
       42,
       43,
-      44
+      44,
+      45,
+      46
     ],
     "baseline_res": 224,
     "arms": [
@@ -157,6 +223,8 @@
     "prefer_larger_res_margin": 0.01,
     "within_min_n": 10,
     "slice_min_n": 30,
-    "slice_min_class": 8
+    "slice_min_class": 8,
+    "min_boot": 200,
+    "amended": "2026-11-27"
   }
 }

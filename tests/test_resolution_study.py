@@ -37,15 +37,18 @@ def test_the_docs_rule_block_equals_the_constant():
 
 
 def test_registered_constants():
-    assert rs.SEEDS == (42, 43, 44)
+    assert rs.SEEDS == (42, 43, 44, 45, 46)   # J1, decided 2026-11-27
     assert rs.DECISION_RULE["min_delta"] == 0.015 and rs.DECISION_RULE["min_target_wins"] == 2
-    assert rs.DECISION_RULE["guard_floor"] == -0.005
+    assert rs.DECISION_RULE["guard_floor"] == -0.005 and rs.DECISION_RULE["target_test_auc_floor"] == -0.005
+    assert rs.DECISION_RULE["floors_fail_when"] == "interval_wholly_below_floor"
+    assert rs.DECISION_RULE["texture_level"] == 0.99 and rs.DECISION_RULE["min_boot"] == 200
     assert set(rs.TARGET_TYPES) == {"Obstacle", "SurfaceProblem", "NoCurbRamp"} and rs.GUARD_TYPE == "CurbRamp"
     assert {s for _, _, s in rs.TEXTURE_SLICES} == {"brick/cobblestone", "missing tactile warning", "paint fading"}
     assert rs.ARMS == (448,) and rs.LATER_ARMS == (518,) and rs.BASELINE_RES == 224
+    assert "preprocessor_config.json" in rs.KEEP_FILES
 
 
-@pytest.mark.parametrize("res,seed", [(224, 42), (448, 43), (518, 44)])
+@pytest.mark.parametrize("res,seed", [(224, 42), (448, 43), (518, 44), (448, 46)])
 def test_tags_round_trip(res, seed):
     assert rs.parse_tag(rs.make_tag(res, seed)) == {"res": res, "seed": seed}
     assert rs.parse_tag(rs.make_tag(res, seed, "smoke-res-"), "smoke-res-") == {"res": res, "seed": seed}
@@ -58,19 +61,62 @@ def test_the_texture_slices_exist_in_the_repos_tag_vocabulary():
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# the interval (2026-11-27 amendment) and the context study's, unchanged
+# ---------------------------------------------------------------------------------------------------------------------
+
+def test_the_context_studys_interval_is_unchanged():
+    """The default ``seed_mean_delta`` is the decided context-arms study's; these are its outputs before the
+    resolution study's ``df="all_terms"`` option was added (recorded 2026-11-27)."""
+    from analysis import context_arms as ca
+    want = [((0.040000000000000036, 0.010477748045597611, 0.06952225195440245, 3.234449760765564, 3.0558433961940974),
+             ([0.92, 0.93, 0.94], [0.88, 0.89, 0.90, 0.89, 0.89], 0.00005)),
+            ((0.019999999999999907, -0.012611823228941797, 0.05261182322894161, 8.0, 2.306004135204166),
+             ([0.80, 0.82, 0.79, 0.81, 0.83], [0.78, 0.80, 0.79, 0.77, 0.81], 0.0001)),
+            ((0.006666666666666599, -0.06504421216249105, 0.07837754549582425, 2.0, 4.302652729749462),
+             ([0.7], [0.68, 0.69, 0.71], 0.0002))]
+    for expected, args in want:
+        for r in (ca.seed_mean_delta(*args), ca.seed_mean_delta(*args, df="seed_terms")):
+            assert (r["delta"], r["lo"], r["hi"], r["nu"], r["t"]) == pytest.approx(expected, rel=1e-12)
+    with pytest.raises(ValueError):
+        ca.seed_mean_delta([0.9, 0.91], [0.9, 0.9], 0.0, df="welch")
+
+
+def test_the_all_terms_interval_counts_the_bootstrap_terms_degrees_of_freedom():
+    from analysis import context_arms as ca
+    a, b, vb = [0.80, 0.82, 0.79, 0.81, 0.83], [0.78, 0.80, 0.79, 0.77, 0.81], 0.0001
+    old, new = ca.seed_mean_delta(a, b, vb), ca.seed_mean_delta(a, b, vb, df="all_terms")
+    assert new["delta"] == old["delta"] and new["se"] == old["se"]   # same point and standard error
+    assert new["nu"] > old["nu"] and new["t"] < old["t"] and new["lo"] > old["lo"]
+    va, vb_ = np.var(a, ddof=1), np.var(b, ddof=1)
+    nu = (va / 5 + vb_ / 5 + vb) ** 2 / ((va / 5) ** 2 / 4 + (vb_ / 5) ** 2 / 4)
+    assert new["nu"] == pytest.approx(nu)
+    flat = ca.seed_mean_delta([0.8] * 5, [0.79] * 5, 0.0001, df="all_terms")   # no seed variance: normal quantile
+    assert flat["nu"] == float("inf") and flat["t"] == pytest.approx(1.959964, rel=1e-6)
+
+
+def test_the_all_terms_interval_is_calibrated():
+    """One-sided error at a true effect of 0 near the nominal 2.5% (the registered seed-terms interval was 0.2-1%;
+    PR #133 review B1.1)."""
+    rng = np.random.default_rng(1)
+    for n in (3, 5):
+        _, lo, _ = rs.simulate_check(0.0, 0.021, 0.015, n, 40000, rng, 0.95)
+        assert 0.018 < (lo > 0).mean() < 0.032
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # the rule
 # ---------------------------------------------------------------------------------------------------------------------
 
-def cmp_(delta=0.03, lo=0.005, hi=0.05, test=0.0, complete=True, texture=()):
-    return {"complete": complete, "heldout": {"delta": delta, "lo": lo, "hi": hi}, "mean_d_test_auc": test,
-            "texture": list(texture), "arm_res": 448}
+def cmp_(delta=0.03, lo=0.005, hi=0.05, test_hi=0.004, complete=True, texture=()):
+    return {"complete": complete, "heldout": {"delta": delta, "lo": lo, "hi": hi},
+            "test_auc": {"delta": 0.0, "lo": test_hi - 0.008, "hi": test_hi}, "texture": list(texture), "arm_res": 448}
 
 
-def per_type(targets=("win", "win", "win"), guard=0.0, falls=False):
+def per_type(targets=("win", "win", "win"), guard_hi=0.01, guard_test_hi=0.004, falls=False):
     shapes = {"win": cmp_(), "none": cmp_(0.01, -0.01, 0.03), "reg": cmp_(-0.03, -0.05, -0.01),
               "inc": cmp_(complete=False)}
-    out = {t: shapes[s] for t, s in zip(rs.TARGET_TYPES, targets)}
-    out[rs.GUARD_TYPE] = cmp_(guard, guard - 0.02, guard + 0.02,
+    out = {t: dict(shapes[s]) for t, s in zip(rs.TARGET_TYPES, targets)}
+    out[rs.GUARD_TYPE] = cmp_(guard_hi - 0.02, guard_hi - 0.04, guard_hi, test_hi=guard_test_hi,
                               texture=[{"type": rs.GUARD_TYPE, "slice": "missing tactile warning", "split": "test",
                                         "evaluable": True, "falls": falls}])
     out[rs.TEXTURE_TYPE] = cmp_(0.0, -0.02, 0.02)
@@ -82,10 +128,36 @@ def test_decide_branches():
     assert rs.decide_arm(per_type(("win", "win", "none")))["status"] == "WIN"
     d = rs.decide_arm(per_type(("win", "none", "none")))
     assert d["status"] == "NO WIN" and "1 of 3" in d["reasons"][0]
-    assert rs.decide_arm(per_type(guard=-0.006))["status"] == "NO WIN"
-    assert rs.decide_arm(per_type(guard=-0.005))["status"] == "WIN"   # the floor itself passes
     d = rs.decide_arm(per_type(falls=True))
     assert d["status"] == "NO WIN" and "missing tactile warning" in d["reasons"][0]
+
+
+def test_the_guard_is_interval_non_inferiority():
+    # a point estimate below the floor no longer vetoes: only an interval wholly below it does
+    p = per_type(guard_hi=0.004)
+    assert p[rs.GUARD_TYPE]["heldout"]["delta"] < -0.005 and rs.decide_arm(p)["status"] == "WIN"
+    assert rs.decide_arm(per_type(guard_hi=-0.0049))["status"] == "WIN"
+    d = rs.decide_arm(per_type(guard_hi=-0.0051))
+    assert d["status"] == "NO WIN" and "guard" in d["reasons"][0]
+    assert rs.decide_arm(per_type(guard_test_hi=-0.0051))["status"] == "NO WIN"   # its test AUC check too
+
+
+def test_the_target_test_floor_is_interval_non_inferiority():
+    assert rs.target_verdict(cmp_(test_hi=-0.0049))[0] == "WIN"
+    assert rs.target_verdict(cmp_(test_hi=-0.0051))[0] == "NO GAIN"
+    assert rs.target_verdict(cmp_(0.0149))[0] == "NO GAIN"
+    assert rs.target_verdict(cmp_(0.03, 0.0, 0.06))[0] == "NO GAIN"   # the interval must exclude zero
+
+
+def test_a_withheld_interval_is_incomplete_never_a_verdict():
+    """PR #133 review S1: too few bootstrap resamples withhold the interval; no target wins on seed variance alone."""
+    c = cmp_()
+    c["heldout"].update(lo=None, hi=None)
+    assert rs.target_verdict(c)[0] == "INCOMPLETE"
+    p = per_type()
+    p[rs.GUARD_TYPE]["test_auc"]["hi"] = None
+    d = rs.decide_arm(p)
+    assert d["status"] == "HELD" and rs.GUARD_TYPE in d["incomplete"] and d["guard"]["passes"] is None
 
 
 def test_incomplete_holds_only_while_a_win_is_still_possible():
@@ -94,8 +166,7 @@ def test_incomplete_holds_only_while_a_win_is_still_possible():
     p = per_type()
     p[rs.GUARD_TYPE]["complete"] = False
     assert rs.decide_arm(p)["status"] == "HELD"
-    p = per_type(("win", "inc", "win"), guard=-0.01)
-    assert rs.decide_arm(p)["status"] == "NO WIN"   # the guard already failed
+    assert rs.decide_arm(per_type(("win", "inc", "win"), guard_hi=-0.01))["status"] == "NO WIN"   # guard failed
 
 
 def test_a_win_proposes_448_except_for_a_regressing_type():
@@ -103,13 +174,11 @@ def test_a_win_proposes_448_except_for_a_regressing_type():
     assert d["status"] == "WIN"
     assert d["proposal"][rs.TARGET_TYPES[2]] == 224 and d["proposal"][rs.TARGET_TYPES[0]] == 448
     assert d["proposal"][rs.GUARD_TYPE] == 448
-
-
-def test_the_target_test_floor_removes_a_win():
-    assert rs.target_verdict(cmp_(test=-0.005))[0] == "WIN"
-    assert rs.target_verdict(cmp_(test=-0.0051))[0] == "NO GAIN"
-    assert rs.target_verdict(cmp_(0.0149))[0] == "NO GAIN"
-    assert rs.target_verdict(cmp_(0.03, 0.0, 0.06))[0] == "NO GAIN"   # the interval must exclude zero
+    p = per_type()
+    p[rs.TEXTURE_TYPE]["test_auc"]["hi"] = -0.006   # Crosswalk keeps 224 only on an interval, not a coin flip
+    assert rs.decide_arm(p)["proposal"][rs.TEXTURE_TYPE] == 224
+    p[rs.TEXTURE_TYPE]["test_auc"]["hi"] = 0.001
+    assert rs.decide_arm(p)["proposal"][rs.TEXTURE_TYPE] == 448
 
 
 def test_recommend_prefers_448_unless_518_clears_the_margin():
@@ -128,13 +197,24 @@ def test_recommend_prefers_448_unless_518_clears_the_margin():
     assert rs.recommend({448: rs.decide_arm(per_type(("win", "inc", "win")))}).startswith("held")
 
 
-def test_power_rates_rise_with_seeds_and_effect():
-    p = rs.power_table(n_sim=400)
-    rows = {(r["type"], r["seeds"]): r for r in p["rows"]}
-    for t in rs.TARGET_TYPES:
-        assert rows[(t, 3)]["0.000"] < 0.05   # the rule's false-win rate at no effect
-        assert rows[(t, 5)]["0.050"] >= rows[(t, 3)]["0.050"] >= rows[(t, 3)]["0.015"]
-    assert "| study (>= 2 of 3) |" in rs.power_markdown(p)
+def test_full_rule_power_rises_with_seeds_and_effect_and_never_exceeds_criteria_1_2():
+    p = rs.power_table(n_sim=3000)
+    rows = {(r["seeds"], r["effect"]): r for r in p["rows"]}
+    for n in (3, 5):
+        assert rows[(n, 0.0)]["study_win"] < 0.01   # the study's false-win rate
+        for t in rs.TARGET_TYPES:
+            assert rows[(n, 0.0)][f"{t}_win"] < 0.04   # about one-sided 2.5% per type
+        for e in p["effects"]:
+            assert rows[(n, e)]["study_win"] <= rows[(n, e)]["study_crit12"]
+        assert 0.95 < rows[(n, 0.0)]["guard"] and 0.9 < rows[(n, 0.0)]["texture"]
+    assert rows[(5, 0.05)]["study_win"] > rows[(3, 0.05)]["study_win"] > rows[(3, 0.015)]["study_win"]
+    assert "**study: full rule**" in rs.power_markdown(p)
+
+
+def test_the_committed_power_table_is_the_full_rules_at_five_seeds():
+    p = json.load(open(os.path.join(REPO, "docs", "resolution-2026-11", "power.json")))
+    assert p["rule"] == rs.DECISION_RULE
+    assert {r["seeds"] for r in p["rows"]} == {3, 5} and all("study_win" in r for r in p["rows"])
 
 
 def test_at_least():
@@ -175,7 +255,7 @@ def make_pred(split, rng, signal, shared=None):
                          "p_correct": 1 - p, "p_incorrect": p})
 
 
-def write_run(keep, lt, tag, split_sha, seed, res, pred, **edits):
+def write_run(keep, lt, tag, split_sha, seed, res, pred, saved_res=None, **edits):
     from backbones import preprocess_sha256, preprocess_spec
     d = keep / lt / "runs" / tag
     d.mkdir(parents=True)
@@ -197,6 +277,8 @@ def write_run(keep, lt, tag, split_sha, seed, res, pred, **edits):
     (d / "training_run.json").write_text(json.dumps(run))
     (d / "trainer_state.json").write_text(json.dumps({"max_steps": 600, "log_history": []}))
     (d / "gpu.txt").write_text("NVIDIA L40S, 46068 MiB\n")
+    sr = res if saved_res is None else saved_res   # the scoring checkpoint's processor, as the job copies it
+    (d / "preprocessor_config.json").write_text(json.dumps({"crop_size": {"height": sr, "width": sr}}))
     return d
 
 
@@ -245,19 +327,45 @@ def test_consistency_flags_size_hash_and_recipe(synthetic):
                          (lambda r: r["backbone"].update(key="dinov2-reg-large"), "backbone dinov2-reg-large"),
                          (lambda r: r["backbone"].update(random_init=True), "random_init"),
                          (lambda r: r.update(model_accepts_loss_kwargs=True), "model_accepts_loss_kwargs"),
-                         (lambda r: r.update(versions={"transformers": "4.55.0"}), "transformers 4.55.0")):
+                         (lambda r: r.update(versions={"transformers": "4.55.0"}), "transformers 4.55.0"),
+                         (lambda r: r.update(gradient_checkpointing=True), "gradient checkpointing")):
         rec = json.loads(orig)
         edit(rec)
         path.write_text(json.dumps(rec))
         got = rs.consistency(run_dir, "res-r448-s44", rs.parse_tag("res-r448-s44"), s["CurbRamp"])
         path.write_text(orig)
         assert len(got) == 1 and got[0].startswith(reason), (reason, got)
+    # PR #133 review S2: the processor that scored the run is checked, and its absence is a missing record
+    proc = run_dir / "preprocessor_config.json"
+    proc.write_text(json.dumps({"crop_size": {"height": 224, "width": 224}}))
+    got = rs.consistency(run_dir, "res-r448-s44", rs.parse_tag("res-r448-s44"), s["CurbRamp"])
+    assert got == ["the saved processor that scored the run crops 224x224, not 448"]
+    proc.unlink()
+    assert rs.consistency(run_dir, "res-r448-s44", rs.parse_tag("res-r448-s44"),
+                          s["CurbRamp"]) == ["missing preprocessor_config.json"]
+
+
+def test_a_checkpointed_run_counts_only_with_allow_gc(synthetic):
+    import shutil
+    keep = synthetic["keep"]
+    d = keep / "CurbRamp" / "runs" / "res-r448-s45"
+    rec = json.loads((d / "training_run.json").read_text())
+    rec["gradient_checkpointing"] = True
+    (d / "training_run.json").write_text(json.dumps(rec))
+    out = synthetic["tmp"] / "out"
+    assert run_report(synthetic, out) == 0
+    d1 = json.loads((out / "decision.json").read_text())
+    assert any(tag == "res-r448-s45" and "gradient checkpointing" in why for _, tag, why in d1["incomplete"])
+    shutil.rmtree(out)
+    assert run_report(synthetic, out, "--allow-gc") == 0
+    d2 = json.loads((out / "decision.json").read_text())
+    assert not any(tag == "res-r448-s45" for _, tag, _ in d2["incomplete"])
 
 
 def run_report(synthetic, out, *extra):
     return rs.main(["report", "--split-dir", str(synthetic["split_dir"]), "--runs-dir", str(synthetic["keep"]),
                     "--inputs", str(synthetic["inputs"]), "--public-cities", str(synthetic["public"]),
-                    "--out", str(out), "--n-boot", "40", *extra])
+                    "--out", str(out), "--n-boot", "40", "--min-boot", "20", *extra])
 
 
 EXPECTED = {"decision.md", "decision.json", "runs.md", "slices.md", "cost.md", "env.md", "gate.md", "provenance.json"}
@@ -306,6 +414,14 @@ def test_report_holds_with_a_missing_seed(synthetic):
     assert run_report(synthetic, out) == 0
     d = json.loads((out / "decision.json").read_text())
     assert d["decisions"]["448"]["status"] == "HELD" and d["recommendation"].startswith("held")
+
+
+def test_too_few_bootstrap_resamples_hold_the_decision(synthetic):
+    out = synthetic["tmp"] / "out"
+    assert run_report(synthetic, out, "--min-boot", "1000") == 0   # 40 resamples kept, 1000 required
+    d = json.loads((out / "decision.json").read_text())["decisions"]["448"]
+    assert d["status"] == "HELD" and all(v["verdict"] == "INCOMPLETE" for v in d["targets"].values())
+    assert not any(x["evaluable"] for x in d["texture"])
 
 
 def test_report_refuses_a_split_that_is_not_pinned(synthetic):

@@ -2,7 +2,7 @@
 runs offline in the backbone study's env; run_one passes --input-res, refuses an empty field or a size outside the
 study, keeps the records and the best weights (checking the saved processor crops the run's size) before deleting
 checkpoints, and stops at its done guard; the launcher writes the planned rows with resolution_study's tags, refuses
-518 without ALLOW_518, a smoke tag outside the smoke job and the 51st GPU job, and resumes only started, unfinished,
+518 without ALLOW_518, a smoke tag outside the smoke job and the 93rd GPU job, and resumes only started, unfinished,
 not-in-flight rows. Everything runs against stubs (sbatch, squeue, hyakstorage, df, curl and a fake python)."""
 import json
 import os
@@ -42,7 +42,7 @@ def test_slurm_header_env_and_offline():
     submit = read("resolution_submit.sh")
     names = re.findall(r'--job-name="([^"]+)"', submit)
     assert names and all(n.startswith("$SLUG-") for n in names) and "SLUG=resolution-study" in submit
-    assert "JOB_CAP=56" in submit and "analysis/resolution_inputs.json" in submit
+    assert "JOB_CAP=92" in submit and "analysis/resolution_inputs.json" in submit
 
 
 @pytest.mark.parametrize("name", SCRIPTS)
@@ -76,6 +76,7 @@ elif [ "$1" = -c ]; then
 elif [ "$1" = - ]; then
   shift; exec "$REAL_PY" - "$@"
 elif [ "$1" = -u ] && [ "$2" = evaluate.py ]; then
+  [ -z "${EVAL_FAIL:-}" ] || exit 1
   lt=$(echo "$*" | sed -E 's/.*--label_type ([^ ]+).*/\1/'); tag=$(echo "$*" | sed -E 's/.*--tag ([^ ]+).*/\1/')
   data=$(echo "$*" | sed -E 's/.*--data-dir ([^ ]+).*/\1/')
   for f in "metrics_$tag.json" "predictions_$tag.csv" "per_city_$tag.md" "slices_$tag.md" "report_$tag.txt"; do
@@ -142,10 +143,13 @@ def test_the_memory_fallbacks_reach_the_training_command(job):
     assert "--input-res 518" in c and "--batch-size 4" in c and "--gradient-checkpointing" in c
 
 
-def test_a_processor_at_the_wrong_size_leaves_every_checkpoint(job):
+def test_a_processor_at_the_wrong_size_is_never_scored(job):
+    """PR #133 review S2: the check runs before evaluate.py, so no predictions of a wrong-size run reach $KEEP."""
     call, tmp = job
     r = call("Obstacle", "448", "42", "res-r448", WRONG_RES="224")
     assert r.returncode != 0 and "does not crop 448" in r.stderr
+    assert not [ln for ln in calls(tmp) if "evaluate.py" in ln]
+    assert not list((tmp / "keep" / "Obstacle" / "runs" / "res-r448").glob("predictions_*"))
     run = tmp / "runs" / "Obstacle" / "res-r448"
     assert len(list(run.glob("checkpoint-*"))) == 2
     assert not (tmp / "keep" / "Obstacle" / "runs" / "res-r448" / "done").exists()
@@ -156,6 +160,37 @@ def test_a_failed_copy_leaves_every_checkpoint(job):
     r = call("Obstacle", "448", "42", "res-r448", DROP="config.json")
     assert r.returncode != 0
     assert len(list((tmp / "runs" / "Obstacle" / "res-r448").glob("checkpoint-*"))) == 2
+
+
+def test_a_requeue_after_training_scores_without_retraining(job):
+    """PR #133 review S6: preempted (here: evaluate.py failed) after training finished, the requeued element scores
+    the run without re-running the Trainer, which would rewrite training_run.json from a zero-step attempt."""
+    call, tmp = job
+    assert call("Obstacle", "448", "42", "res-r448", EVAL_FAIL="1").returncode != 0
+    run = tmp / "runs" / "Obstacle" / "res-r448"
+    assert (run / "trained").exists() and not (run / "evaluated").exists()
+    before = len([ln for ln in calls(tmp) if "fine_tune_classifier.py" in ln])
+    r = call("Obstacle", "448", "42", "res-r448")
+    assert r.returncode == 0, r.stderr
+    assert len([ln for ln in calls(tmp) if "fine_tune_classifier.py" in ln]) == before == 1
+    assert (tmp / "keep" / "Obstacle" / "runs" / "res-r448" / "preprocessor_config.json").exists()
+
+
+def test_memory_check_needs_sdpa_and_a_peak_under_the_ceiling(tmp_path):
+    def run(records, **env):
+        for i, rec in enumerate(records):
+            d = tmp_path / "keep" / "CurbRamp" / "runs" / f"r{i}"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "training_run.json").write_text(json.dumps(rec))
+        cmd = f'source "{os.path.join(ANALYSIS, "resolution.slurm")}"; PY="{sys.executable}"; memory_check "{tmp_path / "keep"}"'
+        return subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, env={**os.environ, **env})
+    ok = {"input_res": 448, "attn_implementation": "sdpa", "peak_gpu_memory_bytes": 18 * 2**30}
+    assert run([ok]).returncode == 0
+    assert run([ok, {**ok, "attn_implementation": "eager"}]).returncode != 0
+    shutil.rmtree(tmp_path / "keep")
+    assert run([{**ok, "peak_gpu_memory_bytes": 40 * 2**30}]).returncode != 0
+    shutil.rmtree(tmp_path / "keep")
+    assert run([{**ok, "peak_gpu_memory_bytes": 40 * 2**30}], MEM_CEILING_GB="44").returncode == 0
 
 
 def test_a_requeue_after_best_was_copied_finishes_the_run(job):
@@ -213,22 +248,22 @@ def rows(path):
     return [ln.split("\t") for ln in open(path).read().splitlines() if ln and not ln.startswith("#")]
 
 
-def test_main_writes_thirty_rows_with_the_studys_tags_and_one_throttled_array(launcher):
+def test_main_writes_fifty_rows_with_the_studys_tags_and_one_throttled_array(launcher):
     from analysis import resolution_study as rs
     r = launcher["run"]("main")
     assert r.returncode == 0, r.stderr
     t = rows(sorted(launcher["out"].glob("tasks_main_*.tsv"))[0])
-    assert len(t) == 30
+    assert len(t) == 50
     assert {(x[0], x[1], x[2]) for x in t} == {(lt, str(res), str(s)) for lt in TYPES for res in (224, 448)
                                                for s in rs.SEEDS}
     for lt, res, seed, tag in t:
         assert tag == rs.make_tag(int(res), int(seed))
     assert {x[2] for x in t[:10]} == {"42"}   # seed 42 of every row first, so a partial study is still paired
     sb = launcher["log"].read_text()
-    assert "--job-name=resolution-study-main" in sb and "--array=1-30%8" in sb and "STEP=train" in sb
+    assert "--job-name=resolution-study-main" in sb and "--array=1-50%8" in sb and "STEP=train" in sb
     assert "EPOCHS=25" in sb and "BATCH=8" in sb
     ledger = rows(launcher["out"] / "resolution_jobs.txt")
-    assert ledger[0][1:4] == ["4242", "30", "main"] and len(ledger[0][6]) == 64
+    assert ledger[0][1:4] == ["4242", "50", "main"] and len(ledger[0][6]) == 64
     assert (launcher["keep"] / "resolution_jobs.txt").exists()
 
 
@@ -238,15 +273,15 @@ def test_518_needs_jons_word(launcher):
     r = launcher["run"]("r518", ALLOW_518="1")
     assert r.returncode == 0, r.stderr
     t = rows(sorted(launcher["out"].glob("tasks_r518_*.tsv"))[0])
-    assert len(t) == 15 and {x[1] for x in t} == {"518"}
+    assert len(t) == 25 and {x[1] for x in t} == {"518"}
 
 
-def test_the_job_cap_refuses_the_57th_element(launcher):
+def test_the_job_cap_refuses_the_93rd_element(launcher):
     out = launcher["out"]
-    (out / "resolution_jobs.txt").write_text("t\t1\t27\tsmoke\tc\t-\t-\n")
+    (out / "resolution_jobs.txt").write_text("t\t1\t43\tsmoke\tc\t-\t-\n")
     r = launcher["run"]("main")
     assert r.returncode != 0 and "cap" in r.stderr and not launcher["log"].exists()
-    (out / "resolution_jobs.txt").write_text("t\t1\t26\tsmoke\tc\t-\t-\n")
+    (out / "resolution_jobs.txt").write_text("t\t1\t42\tsmoke\tc\t-\t-\n")
     assert launcher["run"]("main").returncode == 0
 
 

@@ -8,8 +8,8 @@
 #   analysis/resolution_submit.sh view smoke    # $OUT/smoke/data: a seeded class-balanced CurbRamp subsample
 #   analysis/resolution_submit.sh smoke         # ONE job: 224/448/518 one-epoch runs, guards, torch tests, bench, report
 #   analysis/resolution_submit.sh bench         # ONE job on an A40 (the serving GPU class): latency per crop per size
-#   MAX_PARALLEL=8 analysis/resolution_submit.sh main     # one array: 5 types x {224, 448} x 3 seeds = 30 elements
-#   ALLOW_518=1 analysis/resolution_submit.sh r518        # 15 elements; only on Jon's word (cost; doc, J3)
+#   MAX_PARALLEL=8 analysis/resolution_submit.sh main     # one array: 5 types x {224, 448} x 5 seeds = 50 elements
+#   ALLOW_518=1 analysis/resolution_submit.sh r518        # 25 elements; only on Jon's word (cost; doc, J3)
 #   analysis/resolution_submit.sh resume        # every planned row with no done marker that is not queued or running
 #                                               # (a run past the QOS time limit, or a failed one): continues from its
 #                                               # last epoch checkpoint; counts against the cap
@@ -40,10 +40,10 @@ MAX_PARALLEL="${MAX_PARALLEL:-8}"
 SBATCH="${SBATCH:-sbatch}"
 SQUEUE="${SQUEUE:-squeue}"
 CITIES_URL="${CITIES_URL:-https://sidewalk-columbus.cs.washington.edu/v3/api/cities}"
-# Proposed cap for this stream (doc, J2): smoke 1 + bench 1 + main 30 + 21 resumes (the nine 448 rows of the three
-# large types may need two each past the QOS's 9:05 limit, CurbRamp's three one each) + 3 spare. The 518 stage needs
-# a raise (15 rows and their resumes). Raise it only on Jon's word.
-JOB_CAP=56
+# Cap for this stream (doc, J2; 2026-11-27, five seeds): smoke 1 + bench 1 + main 50 + 35 resumes (the fifteen 448
+# rows of the three large types may need two each past the QOS's 9:05 limit, CurbRamp's five one each) + 5 spare.
+# The 518 stage needs a raise (25 rows and their resumes). Raise it only on Jon's word.
+JOB_CAP=92
 EPOCHS_MAIN=25
 ALL_TYPES="Obstacle SurfaceProblem NoCurbRamp CurbRamp Crosswalk"
 MAIN_RES="224 448"
@@ -186,7 +186,7 @@ taskfile() { mkdir -p "$OUT"; local f="$OUT/tasks_$1_$(date -u +%Y%m%dT%H%M%SZ).
 
 planned() {   # planned RES_LIST -> rows "LT RES SEED" of a stage, seed-major so seed 42 of every row starts first
   local seed lt res
-  for seed in ${SEEDS:-42 43 44}; do
+  for seed in ${SEEDS:-42 43 44 45 46}; do
     for lt in ${TYPES:-$ALL_TYPES}; do
       for res in $1; do printf '%s\t%s\t%s\n' "$lt" "$res" "$seed"; done
     done

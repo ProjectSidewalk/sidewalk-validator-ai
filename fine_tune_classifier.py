@@ -79,8 +79,9 @@ and every later reader of the checkpoint resize the shortest edge to ``res * 256
 (pretrained on a 37 x 37 grid, i.e. 518 px) to every input in ``forward``, so no model change is needed.
 ``--gradient-checkpointing`` trades compute for activation memory (off by default; DINOv2-L has no dropout, so it
 does not change the arithmetic). A non-default resolution needs ``--output-dir``, cannot be combined with
-``--backbone``, ``--context-arm``, ``--region-conditioning`` or ``--init-from``, and enters ``run_key.json``; the
-default key is unchanged. ``training_run.json`` gains ``input_res``, ``gradient_checkpointing`` and
+``--backbone``, ``--context-arm``, ``--region-conditioning`` or ``--init-from``, and enters ``run_key.json``, as does
+``--gradient-checkpointing`` when set; the default key is unchanged. ``training_run.json`` gains ``input_res`` (the
+model input actually used, also for another backbone row), ``gradient_checkpointing`` and
 ``attn_implementation`` for every run, and its ``backbone`` block describes the preprocessing actually used.
 
 Usage::
@@ -542,6 +543,19 @@ def resolution_settings(args):
     return {} if res == DEFAULT_INPUT_RES else {"input_res": res}
 
 
+def recorded_input_res(args):
+    """The model input a run used, for ``training_run.json``: ``--input-res`` on the default backbone, else the
+    backbone row's own crop (a DINOv3 row crops 256 at the default ``--input-res``; PR #133 review S3).
+
+    >>> from types import SimpleNamespace
+    >>> [recorded_input_res(SimpleNamespace(backbone=k, input_res=r))
+    ...  for k, r in (("dinov2-large", 224), ("dinov2-large", 448), ("dinov3-vitl16-256", 224))]
+    [224, 448, 256]
+    """
+    res = getattr(args, "input_res", DEFAULT_INPUT_RES)
+    return backbones.input_sizes(args.backbone, res if resolution_settings(args) else None)[1]
+
+
 def make_image_processor(args):
     """The run's processor: exactly ``backbones.build_image_processor(args.backbone)`` at the default input size, the
     call this script always made; else the same processor at ``args.input_res`` (resize ``res * 256 / 224``, centre
@@ -645,7 +659,9 @@ def run_key(label_type, data_dir, args):
             **{k: v for k, v in target_settings(args).items() if k != "vote_weights"},
             **{k: v for k, v in {**region_settings(args), **init_settings(args)}.items()
                if k not in ("cities_json", "init_from")},
-            **context_settings(args), **backbone_run_settings(args), **resolution_settings(args)}
+            **context_settings(args), **backbone_run_settings(args), **resolution_settings(args),
+            # a run never mixes attempts with and without checkpointing (the record keeps only the last attempt's)
+            **({"gradient_checkpointing": True} if getattr(args, "gradient_checkpointing", False) else {})}
 
 
 def resume_checkpoint(output_dir, key):
@@ -942,7 +958,8 @@ def main(argv=None):
            **run_provenance(started_at, started, resume),
            "backbone": backbones.backbone_settings(args.backbone, model, args.backbone_dir,
                                                    **({"input_res": args.input_res} if resolution_settings(args) else {})),
-           "input_res": args.input_res, "gradient_checkpointing": bool(args.gradient_checkpointing),
+           "input_res": recorded_input_res(args),
+           "gradient_checkpointing": bool(args.gradient_checkpointing),
            "attn_implementation": getattr(getattr(model, "config", None), "_attn_implementation", None),
            "learning_rate": args.learning_rate, "model_accepts_loss_kwargs": trainer.model_accepts_loss_kwargs,
            "peak_gpu_memory_bytes": torch.cuda.max_memory_allocated() if torch.cuda.is_available() else None,

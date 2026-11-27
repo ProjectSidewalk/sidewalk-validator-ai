@@ -49,6 +49,30 @@ def test_a_non_default_input_res_adds_exactly_its_key_and_blocks_a_resume(tmp_pa
         resume_checkpoint(str(out), _key(tmp_path, input_res=518))
 
 
+def test_gradient_checkpointing_enters_the_key_only_when_set(tmp_path):
+    """PR #133 review S4: a run never mixes attempts with and without checkpointing."""
+    base = _key(tmp_path, input_res=448)
+    assert _key(tmp_path, input_res=448, gradient_checkpointing=False) == base
+    gc = _key(tmp_path, input_res=448, gradient_checkpointing=True)
+    assert set(gc) - set(base) == {"gradient_checkpointing"}
+    out = tmp_path / "gc"
+    assert resume_checkpoint(str(out), gc) is None   # the first attempt writes the key
+    (out / "checkpoint-330").mkdir()
+    (out / "checkpoint-330" / "trainer_state.json").write_text("{}")
+    assert resume_checkpoint(str(out), gc).endswith("checkpoint-330")
+    with pytest.raises(SystemExit, match="gradient_checkpointing"):
+        resume_checkpoint(str(out), base)
+
+
+def test_the_recorded_input_res_is_the_model_input_of_any_backbone_row():
+    """PR #133 review S3: a DINOv3 row at the default --input-res recorded 224 beside a processor that crops 256."""
+    assert ftc.recorded_input_res(SimpleNamespace(backbone="dinov2-large", input_res=224)) == 224
+    assert ftc.recorded_input_res(SimpleNamespace(backbone="dinov2-large", input_res=518)) == 518
+    assert ftc.recorded_input_res(SimpleNamespace(backbone="dinov3-vitl16-256", input_res=224)) == 256
+    assert ftc.recorded_input_res(SimpleNamespace(backbone="convnextv2-base", input_res=224)) == \
+        bb.get("convnextv2-base").crop_px
+
+
 def test_the_default_processor_is_the_call_the_script_always_made(monkeypatch):
     seen = []
     monkeypatch.setattr(bb, "build_image_processor", lambda *a, **k: seen.append((a, k)) or "processor")

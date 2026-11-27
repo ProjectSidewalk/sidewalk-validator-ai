@@ -12,13 +12,14 @@
 # run_one LT RES SEED TAG (requeue-safe; ckpt may preempt at any point, and a run longer than the QOS time limit is
 # continued by the launcher's `resume` stage from its last epoch checkpoint):
 #   1. returns 0 at once when $KEEP/<LT>/runs/<TAG>/done exists;
-#   2. fine_tune_classifier.py --input-res RES --seed SEED into $RUNS/<LT>/<TAG> (resumes through run_key.json), then
-#      evaluate.py --checkpoint <best> --tag TAG --per-city on $DATA (the view, so the tagged outputs land there; the
-#      checkpoint's saved processor gives evaluate.py the run's input size); marker <run>/evaluated;
+#   2. fine_tune_classifier.py --input-res RES --seed SEED into $RUNS/<LT>/<TAG> (resumes through run_key.json;
+#      marker <run>/trained, so a requeue after training never re-runs the Trainer); checks that the best
+#      checkpoint's saved processor crops RES and copies it to $KEEP; then evaluate.py --checkpoint <best> --tag TAG
+#      --per-city on $DATA (the view, so the tagged outputs land there; that processor gives evaluate.py the run's
+#      input size); marker <run>/evaluated;
 #   3. copies the run's small records to $KEEP/<LT>/runs/<TAG>/;
 #   4. copies the best checkpoint's model.safetensors, config.json, preprocessor_config.json and trainer_state.json to
-#      <run>/best/, checks the sizes and that the saved processor crops RES, and only then deletes every
-#      checkpoint-* (marker <run>/slimmed);
+#      <run>/best/, checks the sizes, and only then deletes every checkpoint-* (marker <run>/slimmed);
 #   5. touches $KEEP/<LT>/runs/<TAG>/done.
 #   An empty field is refused before anything runs.
 #
@@ -33,7 +34,9 @@
 #   EPOCHS   [25]; the smoke job sets 1
 #   BATCH    [8] per-device batch (gradient accumulation 32 / BATCH keeps the effective batch); a value other than 8
 #            is a deviation the doc records, and the report counts it only with --allow-batch
-#   GC       [0] 1 adds --gradient-checkpointing (memory fallback; recorded in training_run.json)
+#   GC       [0] 1 adds --gradient-checkpointing (memory fallback; in the run key and training_run.json; the
+#            report counts it only with --allow-gc)
+#   MEM_CEILING_GB [36] (smoke) the peak GPU memory every smoke run must stay under
 #   BASE_ENV, VENV, HF_HOME as in analysis/backbone_env.sh and analysis/backbone_prefetch.sh
 #SBATCH --account=makelab
 #SBATCH --partition=ckpt-all
@@ -88,17 +91,30 @@ run_one() {
   mkdir -p "$RUN" "$K"
   command -v nvidia-smi >/dev/null && nvidia-smi --query-gpu=name,memory.total --format=csv,noheader >> "$RUN/gpu.txt"
   if [ ! -f "$RUN/evaluated" ]; then
-    local EXTRA=()
-    [ "${BATCH:-8}" = 8 ] || EXTRA+=(--batch-size "$BATCH")
-    [ "${GC:-0}" = 1 ] && EXTRA+=(--gradient-checkpointing)
-    echo "$(date) train $LT res $RES seed $SEED -> $RUN"
-    "$PY" -u fine_tune_classifier.py --label_type "$LT" --data-dir "$DATA" --output-dir "$RUN" \
-        --input-res "$RES" --seed "$SEED" --epochs "${EPOCHS:-25}" --num-workers 7 ${EXTRA[@]+"${EXTRA[@]}"} \
-        || { echo "training failed: $LT $TAG" >&2; return 1; }
+    if [ ! -f "$RUN/trained" ]; then
+      local EXTRA=()
+      [ "${BATCH:-8}" = 8 ] || EXTRA+=(--batch-size "$BATCH")
+      [ "${GC:-0}" = 1 ] && EXTRA+=(--gradient-checkpointing)
+      echo "$(date) train $LT res $RES seed $SEED -> $RUN"
+      "$PY" -u fine_tune_classifier.py --label_type "$LT" --data-dir "$DATA" --output-dir "$RUN" \
+          --input-res "$RES" --seed "$SEED" --epochs "${EPOCHS:-25}" --num-workers 7 ${EXTRA[@]+"${EXTRA[@]}"} \
+          || { echo "training failed: $LT $TAG" >&2; return 1; }
+      # A requeue from here on scores the finished run; re-running the Trainer would be a zero-step attempt that
+      # rewrites training_run.json with an inference-only peak memory and timestamps (PR #133 review S6).
+      touch "$RUN/trained"
+    fi
     local BEST
     BEST=$("$PY" -c "import evaluate,sys; print(evaluate.best_checkpoint_in(sys.argv[1]))" "$RUN") \
         || { echo "no best checkpoint in $RUN" >&2; return 1; }
     [ -n "$BEST" ] && [ -d "$BEST" ] || { echo "no best checkpoint in $RUN" >&2; return 1; }
+    # The processor evaluate.py will score with (and export_onnx.py and serving read): checked before scoring, and
+    # kept beside the records so the report checks it too (PR #133 review S2).
+    "$PY" - "$BEST/preprocessor_config.json" "$RES" <<'PYRES' || { echo "saved processor does not crop $RES" >&2; return 1; }
+import json, sys
+c = json.load(open(sys.argv[1]))["crop_size"]
+sys.exit(0 if c.get("height") == int(sys.argv[2]) == c.get("width") else f"crop_size {c}")
+PYRES
+    cp "$BEST/preprocessor_config.json" "$K/preprocessor_config.json" || return 1
     "$PY" -u evaluate.py --label_type "$LT" --data-dir "$DATA" --checkpoint "$BEST" --tag "$TAG" \
         --per-city || { echo "evaluate failed: $LT $TAG" >&2; return 1; }
     echo "$BEST" > "$RUN/best_checkpoint.txt"
@@ -124,14 +140,7 @@ run_one() {
       cp "$BEST/$f" "$RUN/best/$f" || return 1
       [ "$(wc -c < "$BEST/$f")" = "$(wc -c < "$RUN/best/$f")" ] || { echo "copy of $f differs in size" >&2; return 1; }
     done
-    # The size every later reader (evaluate.py, export_onnx.py, serving) takes from the checkpoint.
-    "$PY" - "$RUN/best/preprocessor_config.json" "$RES" <<'PYRES' || { echo "saved processor does not crop $RES" >&2; return 1; }
-import json, sys
-c = json.load(open(sys.argv[1]))["crop_size"]
-sys.exit(0 if c.get("height") == int(sys.argv[2]) == c.get("width") else f"crop_size {c}")
-PYRES
     cp "$RUN/best/trainer_state.json" "$K/trainer_state.json" || return 1
-    cp "$RUN/best/preprocessor_config.json" "$K/preprocessor_config.json" || return 1
     touch "$RUN/best_copied"
     rm -rf "$RUN"/checkpoint-*
     touch "$RUN/slimmed"
@@ -151,6 +160,27 @@ run_line() {
   local LT RES SEED TAG
   IFS=$'\t' read -r LT RES SEED TAG <<< "$1"
   run_one "$LT" "$RES" "$SEED" "$TAG"
+}
+
+# memory_check KEEP: every smoke run trained with SDPA attention (eager attention stores the attention maps, about
+# 26 GB more at 448 and batch 8) and peaked under MEM_CEILING_GB (default 36, so a 40 GB A100 in the constraint
+# fits too); prints each run's size, attention and peak (PR #133 review S5).
+memory_check() {
+  local f bad=0
+  echo "peak GPU memory per smoke run (GB; batch ${BATCH:-8}; ceiling ${MEM_CEILING_GB:-36}):"
+  for f in "$1"/*/runs/*/training_run.json; do
+    [ -f "$f" ] || continue
+    "$PY" - "$f" "${MEM_CEILING_GB:-36}" <<'PYMEM' || bad=1
+import json, sys
+r = json.load(open(sys.argv[1]))
+gb = (r.get("peak_gpu_memory_bytes") or 0) / 2 ** 30
+print(r.get("input_res"), r.get("attn_implementation"), round(gb, 1))
+bad = [m for m, ok in (("attention is not sdpa", r.get("attn_implementation") == "sdpa"),
+                       (f"peak {gb:.1f} GB is over {sys.argv[2]} GB", gb < float(sys.argv[2]))) if not ok]
+sys.exit("; ".join(bad) if bad else 0)
+PYMEM
+  done
+  return "$bad"
 }
 
 bench() {
@@ -197,16 +227,18 @@ main() {
       "$PY" -m pytest -q -p no:cacheprovider tests/test_input_resolution.py tests/test_backbones.py \
           && echo "SMOKE PASS pytest" || { echo "SMOKE FAIL pytest"; fails=$((fails + 1)); }
       bench && echo "SMOKE PASS bench" || { echo "SMOKE FAIL bench"; fails=$((fails + 1)); }
-      "$PY" -u analysis/resolution_study.py report --split-dir "$DATA" --runs-dir "$KEEP" \
-          --inputs "$OUT/smoke/resolution_inputs_smoke.json" --public-cities "$OUT/cities.json" \
-          --label-types CurbRamp --tag-prefix smoke-res- --n-boot 50 --epochs "$EPOCHS" --arms 448 \
-          $(for b in "$KEEP"/bench_*.json; do [ -f "$b" ] && printf -- '--bench %s ' "$b"; done) \
-          --out "$OUT/smoke/report" \
-          && echo "SMOKE PASS report" || { echo "SMOKE FAIL report"; fails=$((fails + 1)); }
-      echo "peak GPU memory per smoke run (GB; batch ${BATCH:-8}):"
-      for f in "$KEEP"/*/runs/*/training_run.json; do
-        [ -f "$f" ] && "$PY" -c "import json,sys; r=json.load(open(sys.argv[1])); print(r['input_res'], r.get('attn_implementation'), round((r.get('peak_gpu_memory_bytes') or 0)/2**30, 1))" "$f"
-      done
+      if [ ! -f "$OUT/cities.json" ]; then
+        echo "SMOKE FAIL report: $OUT/cities.json is missing (the curl in 'view' failed); save it and rerun"
+        fails=$((fails + 1))
+      else
+        "$PY" -u analysis/resolution_study.py report --split-dir "$DATA" --runs-dir "$KEEP" \
+            --inputs "$OUT/smoke/resolution_inputs_smoke.json" --public-cities "$OUT/cities.json" \
+            --label-types CurbRamp --tag-prefix smoke-res- --n-boot 50 --min-boot 20 --epochs "$EPOCHS" --arms 448 \
+            $(for b in "$KEEP"/bench_*.json; do [ -f "$b" ] && printf -- '--bench %s ' "$b"; done) \
+            --out "$OUT/smoke/report" \
+            && echo "SMOKE PASS report" || { echo "SMOKE FAIL report"; fails=$((fails + 1)); }
+      fi
+      memory_check "$KEEP" && echo "SMOKE PASS memory" || { echo "SMOKE FAIL memory"; fails=$((fails + 1)); }
       echo "written under the round-3 directory since the smoke job was submitted (expected: nothing of ours):"
       find "$R" -maxdepth 2 -newer "$OUT/smoke/.start" | head -20
       echo "SMOKE FAILURES $fails"
