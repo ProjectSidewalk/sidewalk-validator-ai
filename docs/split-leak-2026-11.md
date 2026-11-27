@@ -1,10 +1,11 @@
 # The panorama leak in isolation (November 2026)
 
-**Status: Run held, no result exists.** This page is the design and the pre-registered rule for the remaining item
-of [#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3). It goes in with the code
-(`analysis/split_leak.py`, its job files and tests) before any job runs. Stage 0's three planning figures will be
-added here before Stage 1 is submitted. Results, with sha256s, job ids and the commit, come in a later PR. The
-run-time choices (seeds, stages, caps) are provisional until Jon decides J1–J3 (the plan on #3).
+**Status (2026-11-26): Stage 0 has run; Stages 1 and 2 are submitted after this page records its figures.** This
+page is the design and the pre-registered rule for the remaining item of
+[#3](https://github.com/ProjectSidewalk/sidewalk-validator-ai/issues/3). It went in with the code
+(`analysis/split_leak.py`, its job files and tests) before any job ran. Stage 0's three planning figures are below
+([Stage 0 figures](#stage-0-figures)), committed before any Stage 1 job starts. Jon decided J1–J3 on 2026-11-26
+([Decisions](#decisions-jon-2026-11-26)). Results, with sha256s, job ids and the commit, come in a later PR.
 
 ## Question
 
@@ -58,12 +59,12 @@ with a panorama in two of its four splits (no marker needed).
 `check` compares the exposed val/test rows with the iid expectation, the sum of 1 − 0.3^k over val/test rows
 with k ≥ 1. It stops when the count falls under 90% of that.
 
-### Arms and seeds (provisional pending J1)
+### Arms and seeds (J1 decided 2026-11-26)
 
 | | Label-level arm (L) | Grouped arm (G) |
 |---|---|---|
 | Split | one leaky file per training seed (scatter seed = training seed) | round 3's `split.csv` (seed 42) |
-| Seeds | 42 (Stage 1), then 43 and 44 (Stage 2) | the stored round-3 runs for 42/43/44, or fresh if Jon chooses |
+| Seeds | 42 (Stage 1), then 43 and 44 (Stage 2) | the stored round-3 runs for 42/43/44 (J1: no fresh G arm) |
 | Recipe | round 3 unchanged: DINOv2-L, 25 epochs, best by val macro-F1, hard targets | same |
 | Weights | always deleted after scoring | deleted after scoring if fresh |
 
@@ -166,7 +167,7 @@ The labels in quotes are the exact strings `rule_outcome()` prints.
   marked provisional.
 - The constants live in `analysis/split_leak.py`, and a test checks that this page quotes them.
 
-## Stages (all held; provisional pending J1–J3)
+## Stages (J1–J3 decided 2026-11-26)
 
 | Stage | Needs | Does |
 |---|---|---|
@@ -187,9 +188,50 @@ page before Stage 1:
 - The minimum detectable error-rate difference for the confirmatory contrast at three seeds (power 0.8; it ignores
   clustering, so it is optimistic).
 
+### Decisions (Jon, 2026-11-26)
+
+- **J1, scope.** Stages 1 and 2: the L arm at three seeds (42, then 43 and 44), five types, about 90 GPU-h. No fresh
+  G arm (`FRESH_G=0`), so the inflation against the grouped models compares with round 3's stored runs and reads
+  "descriptive: runs from different dates and environments", as the rule already says.
+- **J2, launch.** Go now, `MAX_PARALLEL=4` on `ckpt-all`. Checkpoints are written under `/gscratch/scrubbed` (`$RUNS`)
+  and deleted after scoring; the small outputs (`$RUNS/report/`, predictions, training records, logs) are copied to
+  `/gscratch/makelab/$USER/split-leak-2026-11/` when the report job ends, so the 21-day scrubbed purge cannot take them.
+- **J3, run despite power.** Stage 0 says the ±0.006 band cannot be reached at three seeds (below). Jon chose to run
+  anyway because the memorisation bound, +0.0227 pooled, is well above 0.006: a leak of that size is detectable. The
+  consequence is fixed here in advance: **a null reads "unresolved", not "no material inflation"**, and the
+  confirmatory contrast can see only error-rate differences of about 0.027 pooled (MDD below) or larger.
+
 ### Stage 0 figures
 
-To be added before Stage 1 is submitted (`$RUNS/report/bound.md`).
+Run 2026-11-26 on klone: job `43570213` (CPU, 5 min, exit 0), commit `ee2f046`, clean tree; written to
+`$RUNS/report/bound.md`. `design.json` sha256 `2c6202de20fe4de9bca6346b71f59d751c437f36d4240b0eced3c71080a90d0a`,
+`bound.json` sha256 `897bff44eb56cd8914d0d3c5297fee157f16c0034840f32282ed1083ad01410b`. The exposure census passed for
+every type and seed (observed against iid expectation, 0.95 to 1.03). The rawLabels cache read is round 3's 54-file
+cache; it matches the pin in [`depth-ablation-2026-11.md`](depth-ablation-2026-11.md) (`42c0dcfa…`) only when the
+file list is sorted bytewise (`LC_ALL=C`), which is how `shasum *.csv` orders it on macOS. Under klone's default
+`en_US.UTF-8` collation the same 54 files hash to `0794af6e…`; the contents are identical.
+
+| Type | grouped test AUC | memorisation bound | companion bound | half-width (3 seeds) | ±0.006 band reachable | MDD |
+|---|---:|---:|---:|---:|---|---:|
+| CurbRamp | 0.9676 | +0.0100 | -0.0099 | 0.0071 | no | 0.0598 |
+| NoCurbRamp | 0.9336 | +0.0318 | -0.0162 | 0.0111 | no | 0.0377 |
+| Obstacle | 0.8828 | +0.0358 | +0.0030 | 0.0114 | no | 0.0687 |
+| SurfaceProblem | 0.8956 | +0.0285 | -0.0054 | 0.0188 | no | 0.0647 |
+| Crosswalk | 0.9799 | +0.0071 | +0.0014 | 0.0158 | no | (blank: under 30 unexposed) |
+| pooled (macro) | | +0.0227 | -0.0054 | 0.0060 | no | 0.0274 |
+
+Reading, fixed before Stage 1:
+
+- **The memorisation bound is above 0.006 for every type and pooled** (+0.007 to +0.036; +0.0227 pooled). If round 3
+  memorised scattered companions as much as this allows, the inflation would be several times the band.
+- **The band is not reachable at three seeds for any type**, and only borderline pooled (half-width 0.0060 against a
+  ±0.006 band). So "no material inflation" is out of reach; a result inside the band reads **"unresolved"**.
+- **The confirmatory contrast is underpowered for small effects.** At three seeds it detects an exposed − unexposed
+  error difference of 0.027 pooled and 0.038 to 0.069 per type, optimistically (clustering ignored). Crosswalk's
+  stratum is blank (fewer than 30 unexposed rows).
+- The companion column (memorising the train companions' class instead of a perfect score) is near zero or negative,
+  so how much a leak inflates AUC depends on whether companions share the label's class.
+- `cross_type_test_share` (a test row whose panorama also carries a test row of another type): 2.1% to 5.6%.
 
 ## Results
 
