@@ -740,7 +740,9 @@ def render_primary(j):
                                  a["primary"]))
         out.append(_contrast_row("decisive items (the not-worse part of the rule)", a["decisive"]))
         r = a["rule"]
-        parts = "; ".join(f"{k.replace('_', ' ')}: {'yes' if v else 'no'}" for k, v in r["parts"].items())
+        order = ("gain_at_least", "label_interval_excludes_0", "cluster_interval_excludes_0", "not_worse_on_decisive")
+        names = {"gain_at_least": f"gain >= +{100 * RULE_MIN_GAIN:.0f} pts"}
+        parts = "; ".join(f"{names.get(k, k.replace('_', ' '))}: {'yes' if r['parts'][k] else 'no'}" for k in order)
         out.append("")
         out.append(f"Rule ({'applies' if arm == PRIMARY_ARM else 'reported only; this arm cannot license a training arm'}): "
                    f"**{'met' if r['met'] else 'not met'}** ({parts}).")
