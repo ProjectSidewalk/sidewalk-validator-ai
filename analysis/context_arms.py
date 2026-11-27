@@ -355,17 +355,41 @@ def welch_df(v_a, n_a, v_b, n_b):
     return float(num / den) if den > 0 else float(sum(d for _, d in terms))
 
 
-def seed_mean_delta(arm_vals, base_vals, var_boot=0.0, level=0.95):
+def satterthwaite_all_df(v_a, n_a, v_b, n_b, var_boot):
+    """Satterthwaite degrees of freedom of ``v_a / n_a + v_b / n_b + var_boot`` with the bootstrap term's own
+    degrees of freedom taken as infinite (it is estimated from about a thousand resamples): ``(sum of the three
+    terms)^2 / sum over the seed terms of term^2 / (n - 1)``. Infinite when no seed term has variance; None when
+    neither group has two seeds. Used by the resolution study (docs/resolution-2026-11.md, 2026-11-27 amendment);
+    ``welch_df`` (the seed terms only) stays the context study's.
+
+    >>> round(satterthwaite_all_df(0.01 ** 2, 5, 0.01 ** 2, 5, 0.01 ** 2), 1), round(welch_df(0.01 ** 2, 5, 0.01 ** 2, 5), 1)
+    (98.0, 8.0)
+    """
+    terms = [(v / n, n - 1) for v, n in ((v_a, n_a), (v_b, n_b)) if n > 1 and v is not None]
+    if not terms:
+        return None
+    den = sum(t ** 2 / d for t, d in terms)
+    return float((sum(t for t, _ in terms) + (var_boot or 0.0)) ** 2 / den) if den > 0 else float("inf")
+
+
+def seed_mean_delta(arm_vals, base_vals, var_boot=0.0, level=0.95, df="seed_terms"):
     """``D`` = mean(arm seeds) - mean(baseline seeds) with the interval ``D +/- t(level, nu) * se``,
     ``se^2 = s_arm^2 / n_arm + s_base^2 / n_base + var_boot`` (sample variances across seeds; ``var_boot`` the
     bootstrap variance of ``D`` on the evaluation rows), ``nu`` the Welch-Satterthwaite degrees of freedom of the two
-    seed terms. A single arm seed has no seed variance to add (``single_arm_seed``: the interval then understates the
-    spread; exploratory rows only). ``n_above``: arm seeds above the baseline's seed mean.
+    seed terms (``df="seed_terms"``, the default and the context study's registered interval). ``df="all_terms"``
+    (the resolution study, opt-in) takes ``nu`` from ``satterthwaite_all_df`` instead, so the bootstrap term is not
+    treated as if it had the seed terms' few degrees of freedom. A single arm seed has no seed variance to add
+    (``single_arm_seed``: the interval then understates the spread; exploratory rows only). ``n_above``: arm seeds
+    above the baseline's seed mean.
 
     >>> r = seed_mean_delta([0.92, 0.93, 0.94], [0.88, 0.89, 0.90, 0.89, 0.89], var_boot=0.00005)
     >>> round(r["delta"], 3), r["n_above"], r["lo"] > 0, round(r["nu"], 1)
     (0.04, 3, True, 3.2)
+    >>> round(seed_mean_delta([0.92, 0.93, 0.94], [0.88, 0.89, 0.90, 0.89, 0.89], 0.00005, df="all_terms")["nu"], 1)
+    15.0
     """
+    if df not in ("seed_terms", "all_terms"):
+        raise ValueError(f"df must be 'seed_terms' or 'all_terms', got {df!r}")
     from scipy.stats import t as student_t
     a = [float(v) for v in arm_vals if v is not None and np.isfinite(v)]
     b = [float(v) for v in base_vals if v is not None and np.isfinite(v)]
@@ -382,8 +406,14 @@ def seed_mean_delta(arm_vals, base_vals, var_boot=0.0, level=0.95):
     nu = welch_df(va, len(a), vb, len(b))
     if nu is None:
         return out
+    if df == "all_terms":
+        nu = satterthwaite_all_df(va, len(a), vb, len(b), var_boot)
     se = (va / len(a) + vb / len(b) + (var_boot or 0.0)) ** 0.5
-    t = float(student_t.ppf(0.5 + level / 2, nu))
+    if np.isinf(nu):
+        from scipy.stats import norm
+        t = float(norm.ppf(0.5 + level / 2))
+    else:
+        t = float(student_t.ppf(0.5 + level / 2, nu))
     out.update(se=se, nu=nu, t=t, lo=out["delta"] - t * se, hi=out["delta"] + t * se)
     return out
 

@@ -2195,6 +2195,8 @@ def _edit_json(path, **changes):
 def test_check_backbone_passes_a_dinov2_model_with_or_without_the_record(tmp_path):
     root, *_ = make_root(tmp_path)
     pub.check_backbone(root, T)    # record without backbone fields, config with model_type dinov2
+    _edit_json(tmp_path / "out" / T / "dinov2" / "training_run.json", input_res=224)   # every run records it now
+    pub.check_backbone(root, T)
     os.remove(os.path.join(root, T, "dinov2", "training_run.json"))
     pub.check_backbone(root, T)
     _edit_json(tmp_path / "out" / T / "dinov2" / "checkpoint-2" / "config.json", model_type="dinov2")
@@ -2204,6 +2206,7 @@ def test_check_backbone_passes_a_dinov2_model_with_or_without_the_record(tmp_pat
 @pytest.mark.parametrize("record, match", [
     ({"backbone": {"key": "convnextv2-base"}}, "comparison run"),
     ({"learning_rate": 3e-5}, "learning_rate"),
+    ({"input_res": 448}, "resolution-study run"),
 ])
 def test_check_backbone_refuses_a_comparison_run(tmp_path, record, match):
     root, *_ = make_root(tmp_path)

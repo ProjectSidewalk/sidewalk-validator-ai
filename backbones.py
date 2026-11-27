@@ -164,38 +164,71 @@ def is_random_init(env=None):
 # Preprocessing (held fixed across backbones)
 # ---------------------------------------------------------------------------------------------------------------------
 
-def preprocess_spec(b):
+def input_sizes(b, input_res=None):
+    """``(resize_px, crop_px)`` of row ``b`` (a ``Backbone`` or a key) at model input ``input_res`` (the resolution
+    study, docs/resolution-2026-11.md). ``None`` or the row's own ``crop_px`` gives the row's sizes unchanged;
+    another value scales the resize with it, ``round(input_res * resize_px / crop_px)``, so the centre crop keeps the
+    same share of the image (224/256 = 448/512 = 518/592 = 87.5%), i.e. the same field of view at more pixels.
+
+    >>> input_sizes("dinov2-large"), input_sizes("dinov2-large", 448), input_sizes("dinov2-large", 518)
+    ((256, 224), (512, 448), (592, 518))
+    """
+    b = get(b) if isinstance(b, str) else b
+    if input_res is None or input_res == b.crop_px:
+        return b.resize_px, b.crop_px
+    if input_res < 1:
+        raise ValueError(f"input_res must be positive, got {input_res}")
+    return int(round(input_res * b.resize_px / b.crop_px)), int(input_res)
+
+
+def tokens_at(b, input_res=None):
+    """Patch tokens row ``b`` sees at ``input_res`` (default: its own ``crop_px``; prefix tokens not counted).
+
+    >>> tokens_at("dinov2-large"), tokens_at("dinov2-large", 448), tokens_at("dinov2-large", 518)
+    (256, 1024, 1369)
+    """
+    b = get(b) if isinstance(b, str) else b
+    return (input_sizes(b, input_res)[1] // (b.patch_size or 32)) ** 2
+
+
+def preprocess_spec(b, input_res=None):
     """The slow ``BitImageProcessor`` config for registry row ``b`` (a ``Backbone`` or a key): shortest edge
     ``resize_px`` bicubic, centre crop ``crop_px``, rescale 1/255, ImageNet mean and std, RGB. For ``dinov2-large``
-    it equals the hub's ``preprocessor_config.json``.
+    it equals the hub's ``preprocessor_config.json``. ``input_res`` scales both sizes (``input_sizes``); without it
+    the spec is exactly what it always was.
 
     >>> s = preprocess_spec("dinov2-large")
     >>> s["size"], s["crop_size"], s["resample"]
     ({'shortest_edge': 256}, {'height': 224, 'width': 224}, 3)
+    >>> preprocess_spec("dinov2-large", 448)["size"], preprocess_spec("dinov2-large", 448)["crop_size"]
+    ({'shortest_edge': 512}, {'height': 448, 'width': 448})
     """
     b = get(b) if isinstance(b, str) else b
-    return {"do_resize": True, "size": {"shortest_edge": b.resize_px}, "resample": 3,
-            "do_center_crop": True, "crop_size": {"height": b.crop_px, "width": b.crop_px},
+    resize_px, crop_px = input_sizes(b, input_res)
+    return {"do_resize": True, "size": {"shortest_edge": resize_px}, "resample": 3,
+            "do_center_crop": True, "crop_size": {"height": crop_px, "width": crop_px},
             "do_rescale": True, "rescale_factor": 1 / 255,
             "do_normalize": True, "image_mean": list(IMAGENET_MEAN), "image_std": list(IMAGENET_STD),
             "do_convert_rgb": True}
 
 
-def preprocess_sha256(b):
-    """sha256 of ``preprocess_spec(b)`` as sorted JSON (stable across runs and Python versions)."""
-    return hashlib.sha256(json.dumps(preprocess_spec(b), sort_keys=True).encode()).hexdigest()
+def preprocess_sha256(b, input_res=None):
+    """sha256 of ``preprocess_spec(b, input_res)`` as sorted JSON (stable across runs and Python versions)."""
+    return hashlib.sha256(json.dumps(preprocess_spec(b, input_res), sort_keys=True).encode()).hexdigest()
 
 
-def build_image_processor(key):
-    """The processor a run trains, evaluates and serves with. The default key keeps the call
+def build_image_processor(key, input_res=None):
+    """The processor a run trains, evaluates and serves with. The default key at its own input size keeps the call
     ``fine_tune_classifier.py`` always made (``AutoImageProcessor.from_pretrained("facebook/dinov2-large",
-    use_fast=False)``); every other key builds ``BitImageProcessor(**preprocess_spec(key))`` with no hub access."""
+    use_fast=False)``); every other key, and the default key at another ``input_res`` (the resolution study), builds
+    ``BitImageProcessor(**preprocess_spec(key, input_res))`` with no hub access. The checkpoint saves the processor,
+    so evaluate.py, export_onnx.py and serving read the same sizes back."""
     b = get(key)
-    if key == DEFAULT:
+    if key == DEFAULT and input_sizes(b, input_res) == (b.resize_px, b.crop_px):
         from transformers import AutoImageProcessor
         return AutoImageProcessor.from_pretrained(b.source, use_fast=False)
     from transformers import BitImageProcessor
-    return BitImageProcessor(**preprocess_spec(b))
+    return BitImageProcessor(**preprocess_spec(b, input_res))
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -379,14 +412,15 @@ def _snapshot_sha(path):
     return m.group(1) if m else None
 
 
-def backbone_settings(key, model=None, backbone_dir=None):
+def backbone_settings(key, model=None, backbone_dir=None, input_res=None):
     """The ``backbone`` block of ``training_run.json`` for a run on ``key`` with the built ``model``: registry facts,
     the revision the load resolved to, the parameter count of the built model, the preprocessing and its hash, the
     hash of the row's weights file as the load resolved it (None, with a warning, if it cannot be located; never a
     guess), the DINOv3 positional-augmentation values, and for a converted row the content of its ``conversion.json``.
     For a run started from ``--init-from`` (default key only; the study refuses ``--backbone`` with it) the hash is
     still the hub file's, not the checkpoint the run actually loaded; ``training_run.json``'s ``init_from_sha256``
-    records that one.
+    records that one. ``input_res`` (the resolution study) is the model input the run used: ``preprocess``,
+    ``preprocess_sha256`` and ``tokens_per_image`` describe that size; without it they are the row's own.
 
     >>> s = backbone_settings("convnextv2-base")
     >>> s["key"], s["tokens_per_image"], s["pos_embed"], s["random_init"]
@@ -397,11 +431,11 @@ def backbone_settings(key, model=None, backbone_dir=None):
     out = {"key": b.key, "source": b.source, "revision": b.revision, "resolved_revision": None, "family": b.family,
            "model_class": type(model).__name__ if model is not None else MODEL_CLASS[b.family],
            "pooling": POOLING[b.family], "patch_size": b.patch_size, "num_prefix_tokens": b.num_prefix_tokens,
-           "tokens_per_image": b.tokens_per_image,
+           "tokens_per_image": tokens_at(b, input_res),
            "params": int(sum(p.numel() for p in model.parameters())) if model is not None else None,
            "accepts_loss_kwargs": getattr(model, "accepts_loss_kwargs", None) if model is not None else None,
-           "random_init": random_init, "pos_embed": None, "preprocess": preprocess_spec(b),
-           "preprocess_sha256": preprocess_sha256(b), "weights_sha256": None, "conversion": None}
+           "random_init": random_init, "pos_embed": None, "preprocess": preprocess_spec(b, input_res),
+           "preprocess_sha256": preprocess_sha256(b, input_res), "weights_sha256": None, "conversion": None}
     if model is not None and b.family == "dinov3_vit":
         cfg = model.config
         out["pos_embed"] = {k.replace("pos_embed_", ""): getattr(cfg, k, None) for k in POS_EMBED_KEYS}

@@ -1,0 +1,53 @@
+{
+  "_source": "analysis/backbone_inputs.json (sha256sum on klone, 2026-11-19, of retrain-2026-10/ at 838287d) plus, for Obstacle, NoCurbRamp and Crosswalk, the manifest, generation record and round-3 seed-42 outputs, hashed on 2026-11-26 from a laptop copy of retrain-2026-10/ whose five split.csv files and every pinned CurbRamp and SurfaceProblem file equal the klone pins (docs/resolution-2026-11.md). 'view' refuses on any mismatch, so a pin that differs on klone stops the launcher before a GPU job is spent.",
+  "files": {
+    "Crosswalk/generation_run.json": "10526adaabdb42fb0e77e81d24ab60fe2421c321dae07b6990792bdf1dd23831",
+    "Crosswalk/manifest.csv": "bc2f28911a730986025fae78809eb7508bfe6a9c5db4a28cd68741de51131e0d",
+    "Crosswalk/metrics.json": "63ca9226aa47830bb1bdee031839b43a0a658ee2c720715a4d1ff84c96e732d3",
+    "Crosswalk/predictions.csv": "03a26249990fdbd7167c4d8644d5edb73ad85ad4830f1e07a76dbc41f637e58e",
+    "Crosswalk/split.csv": "91001f64b778ec3d59b381d50911c6bd8ea35449052574d97eb4c9380d37f00f",
+    "CurbRamp/generation_run.json": "5557a3658ba35d9e96da3471e3e2e4183c1b381f4593bee79d13619d6b2e0efe",
+    "CurbRamp/manifest.csv": "65f7853174cbbcf633cbb585017f7767bca8b3ef83152d3d6e46383555b901ac",
+    "CurbRamp/metrics.json": "cf82bd180818f0f7bf3b014b685f5f2b42f7b1bb316a52683b3586158cc321f5",
+    "CurbRamp/metrics_baseline-s43.json": "92e3e231172b6f443a46b0c42c287779d664b3cae5f91910a26e909d22b84710",
+    "CurbRamp/metrics_baseline-s44.json": "dbfe35b54c97f9a5f72f0d4de009410e48e7115fe09bf08e176a3dca134d6fa8",
+    "CurbRamp/predictions.csv": "843673183aba9c4187aca382c56f62bdee5eaaf7fd6fbb6c89891edb4f255689",
+    "CurbRamp/predictions_baseline-s43.csv": "572b649c532f90f229d9f482efe6f2613f1ffc011d31cf77b953f7a288b342dd",
+    "CurbRamp/predictions_baseline-s44.csv": "cac30650de7c83e8c1cc6e4a6df970ce434a852a59a8964ef5679997be8d8746",
+    "CurbRamp/split.csv": "f2ec89f8032c9b6b7c1533bea7ac82d82b7c139847b14286dd53d932a2195610",
+    "NoCurbRamp/generation_run.json": "02f904d95983cc4dd94b7a3d343c23aa181b81e2631ecb17ca28fd40eb54670a",
+    "NoCurbRamp/manifest.csv": "c98a5dc4dff5bed2f9cc9341d09865117218849add7556efbc091f910488035e",
+    "NoCurbRamp/metrics.json": "55eda9942bbc02f843eca76703992cc87fda21f781a475ff9c56cce7041964ea",
+    "NoCurbRamp/predictions.csv": "8a0cfd85047b0428f81aa8b361eb6db6bac87f20ce56c14769a8acb8fc283cee",
+    "NoCurbRamp/split.csv": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+    "Obstacle/generation_run.json": "c98b2eb1b5856a4578966d5c5e2595fb77cb540acc2cf3fc5c5d754f484fe514",
+    "Obstacle/manifest.csv": "51e78138da3701509f0b4a97d227704f721d2c25627511623dbfcabf800fce13",
+    "Obstacle/metrics.json": "a1344094b8f2839c9e9ede5066d9736a2d322be2573f7c293c1f2b5b153232c2",
+    "Obstacle/predictions.csv": "96c936a996c37268c77489490c1ca39f37c748fd6f23d19171eaf7cdd074a14a",
+    "Obstacle/split.csv": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+    "SurfaceProblem/generation_run.json": "faddbd582f8679528ad27d22a9613976e982c066dc12e0574e14518a12248dcb",
+    "SurfaceProblem/manifest.csv": "38bbab35a8897ce29b6826c8aaca95781ce10c0b9908ff2c67ff56163a9cfb64",
+    "SurfaceProblem/metrics.json": "8ed939331d3171f3f2f37b3fbf60c9f19dc5e2c129e73657ed3f731cc4ee1dd7",
+    "SurfaceProblem/metrics_baseline-s43.json": "32e014cc9007a334bbe53890c1d93e763a3e1152e397bac150b285f89016c2af",
+    "SurfaceProblem/metrics_baseline-s44.json": "d43d75555fa7e86ff1fcd9f52557db69e454f1390c159e120c40b006c1a52942",
+    "SurfaceProblem/predictions.csv": "9201b2f111bb51e55deac4da18825405c8931293d5263a6e3351e245f2ef2a95",
+    "SurfaceProblem/predictions_baseline-s43.csv": "30c4ef038a7636345827e8f1524cf0216d59e046f727f2c0a79674d34aaac092",
+    "SurfaceProblem/predictions_baseline-s44.csv": "52f5f94591ca6d0e01a1b8c633f77a36b0e1a0e238b330cca293b2a19f34ab4c",
+    "SurfaceProblem/split.csv": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+    "deployment_priors.json": "80d4e685bbce500643c4e3a0c7ed615f769052ec0021c7947a5be4efeb0b01a9"
+  },
+  "split_sha256": {
+    "CurbRamp": "f2ec89f8032c9b6b7c1533bea7ac82d82b7c139847b14286dd53d932a2195610",
+    "SurfaceProblem": "c48cac6c889b1df2c125238401f8f886904ae2a28c8e43628f5e2e799abd8fdd",
+    "NoCurbRamp": "fbb1e53bd121bdd5eaca8b12d8fcf5a6ec3f6102920f1f68735eb78c9703ce33",
+    "Obstacle": "d41e865f45b5f0b91d3bc81c1a60dae5e3effea2d30dd92c7883207feb87e8aa",
+    "Crosswalk": "91001f64b778ec3d59b381d50911c6bd8ea35449052574d97eb4c9380d37f00f"
+  },
+  "rows": {
+    "CurbRamp": {"train": 6925, "val": 1487, "test": 1479, "test_heldout": 546},
+    "SurfaceProblem": {"train": 10500, "val": 2250, "test": 2255, "test_heldout": 847},
+    "Obstacle": {"train": 10554, "val": 2262, "test": 2266, "test_heldout": 1812},
+    "NoCurbRamp": {"train": 12199, "val": 2607, "test": 2613, "test_heldout": 743},
+    "Crosswalk": {"train": 2089, "val": 448, "test": 445, "test_heldout": 138}
+  }
+}

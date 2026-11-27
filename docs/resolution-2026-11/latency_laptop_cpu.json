@@ -1,0 +1,35 @@
+{
+  "device": "cpu",
+  "device_name": "arm",
+  "torch": "2.7.1",
+  "threads": 4,
+  "warmup": 3,
+  "reps": 7,
+  "attn_implementation": "sdpa",
+  "rows": [
+    {
+      "res": 224,
+      "batch": 1,
+      "tokens": 256,
+      "preprocess_ms": 4.013333935290575,
+      "forward_ms_per_crop": 236.46700009703636,
+      "total_ms_per_crop": 240.48033403232694
+    },
+    {
+      "res": 448,
+      "batch": 1,
+      "tokens": 1024,
+      "preprocess_ms": 7.90416682139039,
+      "forward_ms_per_crop": 1067.5907079130411,
+      "total_ms_per_crop": 1075.4948747344315
+    },
+    {
+      "res": 518,
+      "batch": 1,
+      "tokens": 1369,
+      "preprocess_ms": 11.60895824432373,
+      "forward_ms_per_crop": 1605.3533754311502,
+      "total_ms_per_crop": 1616.962333675474
+    }
+  ]
+}
