@@ -51,18 +51,22 @@ export PYTHONDONTWRITEBYTECODE=1
 echo "commit $(git -C "$REPO" rev-parse HEAD) step $STEP smoke ${SMOKE:-0} task ${SLURM_ARRAY_TASK_ID:-none}"
 CC=(python -u "$REPO/analysis/crop_constant_sweep.py")
 COMMON=(--root "$R3" --rawlabels-dir "$RAWLABELS" --types "$TYPES")
+# With a shared store (decision 3): preflight and each recrop task check its marker and age again when they start,
+# and a recrop task stops (PanoStoreUnavailable) on a no_pano of a COMPLETE_TYPES type rather than record it.
+SHARED=()
+[ -z "${SHARED_STORE:-}" ] || SHARED=(--shared-store "$SHARED_STORE" --shared-staged "${SHARED_STAGED:?set by the submit script}")
+[ -z "${COMPLETE_TYPES:-}" ] || SHARED+=(--complete-types "$COMPLETE_TYPES")
 case "$STEP" in
   preflight)
-    "${CC[@]}" preflight "${COMMON[@]}" --pano-store "$PANO_STORE" --out "$W/preflight.json" \
-        ${COMPLETE_TYPES:+--complete-types "$COMPLETE_TYPES"} ;;
+    "${CC[@]}" preflight "${COMMON[@]}" --pano-store "$PANO_STORE" --out "$W/preflight.json" ${SHARED[@]+"${SHARED[@]}"} ;;
   recrop)
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
     if [ "${SMOKE:-0}" = 1 ]; then
       "${CC[@]}" recrop "${COMMON[@]}" --work "$W/smoke" --chunk 0 --time-limit "$TIME_LIMIT" \
-          --pano-store "$PANO_STORE" --limit 20
+          --pano-store "$PANO_STORE" --limit 20 ${SHARED[@]+"${SHARED[@]}"}
     else
       "${CC[@]}" recrop "${COMMON[@]}" --work "$W" --chunk "${SLURM_ARRAY_TASK_ID:?submit as an array}" \
-          --time-limit "$TIME_LIMIT" --pano-store "$PANO_STORE"
+          --time-limit "$TIME_LIMIT" --pano-store "$PANO_STORE" ${SHARED[@]+"${SHARED[@]}"}
     fi ;;
   gates)
     "${CC[@]}" gates "${COMMON[@]}" --work "$W" ;;

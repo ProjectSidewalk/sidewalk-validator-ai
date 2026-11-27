@@ -14,7 +14,7 @@ This module tests whether another constant validates better. One re-cut pass ren
 subcommand      where   what
 ==============  ======  ===========================================================================================
 ``stage-list``  Mac     the deduplicated panorama list for the chosen types (``analysis/ai_labels_stage.slurm``)
-``chunks``    login   how many array tasks ``recrop`` needs so that a chunk fits ``--time`` at 3.5 s per label
+``chunks``      login   how many array tasks ``recrop`` needs so that a chunk fits ``--time`` at 3.5 s per label
 ``preflight``   CPU     G0: round 3's pins, the panorama-tools commit, the environment's versions; the store
 ``recrop``      GPU     one chunk of panoramas: one read and one render per label, three crops; resumable
 ``gates``       CPU     G2 (row loss) and G3 (re-cut parity); writes the three arm directories when both pass
@@ -27,7 +27,7 @@ study staged before it is read in place: its marker, its stage date (at most 20 
 shared types' panoramas it lacks. ``--pano-store`` takes a colon-separated search path (this study's restage, then
 the shared store); each panorama is read from the first store that holds it. Decision 3, doc section 7.
 
-Nothing here edits a hot file:``data_generation``, ``crop_pose`` and ``analysis/depth_agreement`` are imported.
+Nothing here edits a hot file: ``data_generation``, ``crop_pose`` and ``analysis/depth_agreement`` are imported.
 
 Example (the doc's "Reproduce" section)::
 
@@ -197,8 +197,22 @@ def stage_files(frame):
 
 
 def present_in_store(files, store):
-    """The members of ``files`` already present under ``store`` (stage 2 against the stage-1 store)."""
-    return {f for f in files if os.path.exists(os.path.join(store, f))}
+    """The members of ``files`` already present under ``store`` (stage 2 against the stage-1 store). A stat error other
+    than a missing file raises :class:`data_generation.PanoStoreUnavailable` (:func:`held`)."""
+    return {f for f in files if held(os.path.join(store, f))}
+
+
+def held(path):
+    """True when ``path`` exists, False when it (or a parent) is missing; any other stat error (a permission error, a
+    dropped mount) raises :class:`data_generation.PanoStoreUnavailable`, so an unreadable file is never taken for a
+    missing one (``os.path.exists`` returns False for every ``OSError``)."""
+    try:
+        os.stat(path)
+        return True
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError as e:
+        raise dg.PanoStoreUnavailable(f"pano store stat failed for {path}: {e}") from e
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -206,9 +220,14 @@ def present_in_store(files, store):
 # ---------------------------------------------------------------------------------------------------------------------
 
 MAX_SHARED_STORE_AGE_DAYS = 20
-"""The launcher refuses a shared store staged more than this many days before the launch (scrubbed purges after 21
-days; the context-arms store, staged 2026-11-23, is purged around 2026-12-14)."""
+"""A shared store is never read when it was staged more than this many days earlier (scrubbed purges after 21 days;
+the context-arms store, staged 2026-11-23, is purged around 2026-12-14)."""
 SCRUBBED_PURGE_DAYS = 21
+CHAIN_DAYS = 2
+"""The worst-case wall time from submission to the end of the re-cut, in days, which the launcher adds to the store's
+age: the stage job's 24 h ``--time``, the preflight's 2 h, the recrop array's 8 h, and about 14 h for the queue and a
+``ckpt-all`` requeue (34 h, rounded up to whole days). So the launcher refuses a store older than 18 days, and
+``preflight`` and every ``recrop`` task check the store again when they start (:func:`require_fresh_shared_store`)."""
 
 
 def pano_stores(value):
@@ -226,9 +245,10 @@ def pano_stores(value):
 
 
 def locate_store(stores, city, pano_id):
-    """The first store of ``stores`` that holds ``<city>/<pano_id[:2]>/<pano_id>.jpg``, or None."""
+    """The first store of ``stores`` that holds ``<city>/<pano_id[:2]>/<pano_id>.jpg``, or None. A stat error other
+    than a missing file raises :class:`data_generation.PanoStoreUnavailable` (:func:`held`)."""
     for s in stores:
-        if os.path.exists(dg.pano_store_path(s, city, pano_id)):
+        if held(dg.pano_store_path(s, city, pano_id)):
             return s
     return None
 
@@ -240,7 +260,9 @@ def read_from_stores(stores, city, pano_id, pano_reader=dg.read_store_panorama):
     store holding the file is read; when none does, every store's marker must still be there (a vanished marker is
     an outage, :class:`data_generation.PanoStoreUnavailable`, never ``no_pano``), and the panorama is read from the
     first store with the city's directory (``no_pano`` by the reader's own rules), or is ``no_pano`` outright when no
-    store has that city (a store that never held a city is normal when two stores split the panoramas).
+    store has that city (a store that never held a city is normal when two stores split the panoramas). An
+    unreadable file in any store is an outage too (:func:`locate_store`). The first store holding the file is the
+    only one read: a ``bad_pano`` there does not fall back to a later store's copy.
     """
     if len(stores) == 1:
         return (*pano_reader(stores[0], city, pano_id), stores[0])
@@ -274,15 +296,37 @@ def store_stage_date(store, files=()):
     return datetime.date.fromtimestamp(min(times))
 
 
+def require_fresh_shared_store(store, staged=None, files=(), max_age_days=MAX_SHARED_STORE_AGE_DAYS, today=None):
+    """Raise :class:`data_generation.PanoStoreUnavailable` unless the shared ``store`` still has its marker and was
+    staged at most ``max_age_days`` before ``today``; return its stage date. The stage date is the earlier of
+    ``staged`` (the date the launcher measured, ``SHARED_STAGED``) and :func:`store_stage_date` now, so a marker
+    rewritten since the launch cannot make the store look younger. Run when ``preflight`` and each ``recrop`` task
+    start, so a store that is purged or being re-pulled stops the job instead of turning rows into ``no_pano``."""
+    today = today or datetime.date.today()
+    marker = os.path.join(store, dg.PANO_STORE_MARKER)
+    if not os.path.isfile(marker):
+        raise dg.PanoStoreUnavailable(f"shared pano store marker {marker} is gone (purged, or a pull into it is "
+                                      f"running); stopping rather than reading rows as no_pano")
+    date = store_stage_date(store, files)
+    if staged:
+        date = min(date, datetime.date.fromisoformat(str(staged)))
+    age = (today - date).days
+    if age > max_age_days:
+        raise dg.PanoStoreUnavailable(f"shared pano store {store} was staged on {date.isoformat()}, {age} days before "
+                                      f"{today.isoformat()}: more than {max_age_days} (scrubbed purges after "
+                                      f"{SCRUBBED_PURGE_DAYS} days)")
+    return date
+
+
 def shared_store_check(root, types, shared_store, shared_types, search_stores=None,
-                       max_age_days=MAX_SHARED_STORE_AGE_DAYS, today=None):
+                       max_age_days=MAX_SHARED_STORE_AGE_DAYS, chain_days=CHAIN_DAYS, today=None):
     """The launcher's check of a store another study staged (``SHARED_STORE``), before anything is submitted.
 
     Fails (``failures``) when the store has no ``.pano-store`` marker (absent while a pull into it runs), when its
-    stage date (:func:`store_stage_date`) is more than ``max_age_days`` before ``today``, or when a type of
-    ``shared_types`` is not in ``types``. ``missing`` lists the panoramas of ``shared_types`` found in none of
-    ``search_stores`` (default: the shared store alone), store-relative and sorted; the caller decides whether that
-    is fatal (``RESTAGE=0``) or a list to restage into this study's own store (``RESTAGE=1``). Never writes into the
+    stage date (:func:`store_stage_date`) plus ``chain_days`` (the chain's worst case through the re-cut,
+    :data:`CHAIN_DAYS`) is more than ``max_age_days`` after it was staged, or when a type of ``shared_types`` is not
+    in ``types``. ``missing`` lists the panoramas of ``shared_types`` found in none of ``search_stores`` (default: the
+    shared store alone), store-relative and sorted; the launcher refuses when it is not empty. Never writes into the
     shared store. ``per_type`` counts, for every type, its panoramas and how many the shared store already holds.
     """
     today = today or datetime.date.today()
@@ -296,25 +340,26 @@ def shared_store_check(root, types, shared_store, shared_types, search_stores=No
     except SystemExit as e:
         failures.append(str(e))
     frame = read_splits(root, types)
-    per_type, wanted, held = {}, {}, set()
+    per_type, wanted, in_any = {}, {}, set()
     for t in types:
         files = stage_files(frame[frame.label_type == t])
         in_shared = present_in_store(files, shared_store) if marker is not None else set()
-        held |= in_shared
+        in_any |= in_shared
         per_type[t] = {"panoramas": len(files), "in_shared_store": len(in_shared)}
         wanted[t] = files
     stage_date = age = purge = None
     if marker is not None:
-        stage_date = store_stage_date(shared_store, sorted(held))
+        stage_date = store_stage_date(shared_store, sorted(in_any))
         age = (today - stage_date).days
         purge = (stage_date + datetime.timedelta(days=SCRUBBED_PURGE_DAYS)).isoformat()
-        if age > max_age_days:
+        if age + chain_days > max_age_days:
             failures.append(f"the shared store was staged on {stage_date.isoformat()}, {age} days before "
-                            f"{today.isoformat()}: more than {max_age_days} (scrubbed purges after "
-                            f"{SCRUBBED_PURGE_DAYS} days, around {purge})")
+                            f"{today.isoformat()}; with up to {chain_days} days of jobs before the re-cut ends it "
+                            f"would be read at {age + chain_days} days, more than {max_age_days} (scrubbed purges "
+                            f"after {SCRUBBED_PURGE_DAYS} days, around {purge})")
     search = pano_stores(search_stores) or (shared_store,)
     missing = sorted({f for t in shared_types if t in wanted for f in wanted[t]
-                      if not any(os.path.exists(os.path.join(s, f)) for s in search)})
+                      if not any(held(os.path.join(s, f)) for s in search)})
     lost = set(missing)
     for t in shared_types:
         if t in wanted:
@@ -322,7 +367,7 @@ def shared_store_check(root, types, shared_store, shared_types, search_stores=No
     return {"stage": "shared-store-check", "date": today.isoformat(), "types": list(types),
             "shared_types": list(shared_types), "shared_store": os.path.basename(os.path.normpath(shared_store)),
             "marker": marker, "stage_date": stage_date.isoformat() if stage_date else None, "age_days": age,
-            "max_age_days": max_age_days, "purge_around": purge, "per_type": per_type,
+            "max_age_days": max_age_days, "chain_days": chain_days, "purge_around": purge, "per_type": per_type,
             "search_stores": [os.path.basename(os.path.normpath(s)) for s in search],
             "missing": missing, "passed": not failures, "failures": failures}
 
@@ -360,14 +405,15 @@ def round3_package_sources(root, types):
 
 
 def preflight(root, rawlabels_dir, types, pano_store, package=dg.package_source, versions=None,
-              expected_pins=da.ROUND3_PINS, complete_types=()):
+              expected_pins=da.ROUND3_PINS, complete_types=(), shared_store=None, shared_staged=None, today=None):
     """G0 and the store check, as a record (``preflight.json``). ``g0.passed`` needs: every input pin of
     ``expected_pins`` matching, round 3's ``package_source`` equal to this environment's, and the versions of
     :data:`REQUIRED_VERSIONS` recorded. Every store of ``pano_store`` (one path or a colon-separated search path,
     :func:`pano_stores`) must carry its marker, and the panoramas missing from all of them must not break G2 on their
     own (a missing panorama loses its rows; G2 itself is read after the re-cut). For a type of ``complete_types``
     (the types a shared store is meant to cover), any panorama in no store fails the check. ``store.missing_files``
-    lists the missing panoramas, store-relative; ``store.read_from`` counts the panoramas each store will serve."""
+    lists the missing panoramas, store-relative; ``store.read_from`` counts the panoramas each store will serve.
+    With ``shared_store``, :func:`require_fresh_shared_store` runs again here (marker, at most 20 days old)."""
     failures = []
     pins, _ = da.input_pins(root, rawlabels_dir, types)
     bad = da.check_pins(pins, expected_pins)
@@ -403,13 +449,19 @@ def preflight(root, rawlabels_dir, types, pano_store, package=dg.package_source,
         n = sum(files[(c, p)] is None for c, p in set(zip(sub.city, sub.pano_id)))
         if n:
             store_failures.append(f"{t}: {n} panoramas in no store (it must be complete; see store.missing_files)")
+    shared_date = None
+    if shared_store:
+        try:
+            shared_date = require_fresh_shared_store(shared_store, shared_staged, today=today).isoformat()
+        except dg.PanoStoreUnavailable as e:
+            store_failures.append(str(e))
     commit, dirty = da.git_commit()
     return {"stage": "preflight", "date": datetime.date.today().isoformat(), "git_commit": commit, "git_dirty": dirty,
             "types": list(types), "g0": {"passed": not failures, "failures": failures},
             "store": {"passed": not store_failures, "failures": store_failures, "pano_store": pano_store,
                       "marker": markers[0] if len(markers) == 1 else markers,
                       "read_from": {s: sum(v == s for v in files.values()) for s in stores},
-                      "complete_types": list(complete_types),
+                      "complete_types": list(complete_types), "shared_stage_date": shared_date,
                       "panoramas": len(files), "missing_panoramas": len(missing_files),
                       "missing_files": missing_files, "missing_rows": g2["by_type"]},
             "pins": pins, "package_source": {"now": now, "round3": r3}, "versions": vers}
@@ -465,13 +517,16 @@ def _native_match(info, row):
 
 
 def recrop(frame, work, chunk, max_labels, pano_store=None, stored_root=None, device=None, gsv_beta=GSV_BETA,
-           pano_reader=dg.read_store_panorama, render=dg.render_label_view, limit=None):
+           pano_reader=dg.read_store_panorama, render=dg.render_label_view, limit=None, complete_types=()):
     """Re-cut one chunk (:func:`chunk_plan`) of ``frame`` (:func:`load_frame`): append-only and resumable.
 
     Per panorama, one ``pano_reader(store, city, pano_id)`` (``read_store_panorama``; ``store`` is the row's own
     recorded store root unless ``pano_store`` overrides it, and with a colon-separated ``pano_store`` the first store
-    that holds the file, :func:`read_from_stores`; the store read is the row's ``read_store``); a native size other than the row's ``pano_native_w/h``
-    is ``native_mismatch`` (lost). Per label, the pose of ``crop_pose.pose_for_row(row, gsv_beta)``, the centre row
+    that holds the file, :func:`read_from_stores`; the store read is the row's ``read_store``); a native size other
+    than the row's ``pano_native_w/h`` is ``native_mismatch`` (lost). A ``no_pano`` for a type of ``complete_types``
+    (preflight confirmed every one of its panoramas present) raises
+    :class:`data_generation.PanoStoreUnavailable`: the store changed under the run, and a final ``no_pano`` row would
+    never be retried. A chunk file with another header (an older version's columns) is refused. Per label, the pose of ``crop_pose.pose_for_row(row, gsv_beta)``, the centre row
     of ``crop_pose.rig_y_norm`` (a Panoramax skip is decided first, as data_generation does), and one ``render``;
     then the three crops into ``<work>/c<C>/<type>/<crop_path>``, and the c6100 crop's mean absolute difference from
     round 3's stored crop at ``<stored_root>/<type>/<crop_path>`` after the same q95 WebP round trip. Returns
@@ -492,6 +547,12 @@ def recrop(frame, work, chunk, max_labels, pano_store=None, stored_root=None, de
         return {"processed": 0, "seconds": 0.0, "statuses": {}}
     renderer = "torch" if device is not None else "numpy"
     new = not os.path.exists(out) or not os.path.getsize(out)
+    if not new:
+        with open(out, newline="") as f:
+            header = next(csv.reader(f), [])
+        if header != list(RECROP_FIELDS):
+            raise ValueError(f"{out} has another header than this version's ({len(header)} vs {len(RECROP_FIELDS)} "
+                             f"columns); remove it (an older run's chunk) before resuming")
     last = (None, None, None, None)
     with open(out, "a", newline="") as f:
         wr = csv.DictWriter(f, fieldnames=RECROP_FIELDS)
@@ -517,6 +578,10 @@ def recrop(frame, work, chunk, max_labels, pano_store=None, stored_root=None, de
                         last = (key, read if isinstance(read, str) else rgb, info, used)
                     pano, info = last[1], last[2]
                     rec["read_store"] = last[3]
+                    if isinstance(pano, str) and pano == "no_pano" and r["label_type"] in complete_types:
+                        raise dg.PanoStoreUnavailable(
+                            f"{r['city']}/{r['pano_id']} ({r['label_type']}) is in no store, though preflight found "
+                            f"every {r['label_type']} panorama; the store changed under the run (purged?)")
                     if isinstance(pano, str):
                         rec["status"] = pano
                     elif not _native_match(info, r):
@@ -1417,8 +1482,12 @@ def cmd_stage_list(args):
 
 def cmd_shared_store_check(args):
     types = split_types(args.types)
-    rec = shared_store_check(args.root, types, args.shared_store, split_types(args.shared_types),
-                             search_stores=args.search_store, max_age_days=args.max_age_days)
+    try:
+        rec = shared_store_check(args.root, types, args.shared_store, split_types(args.shared_types),
+                                 search_stores=args.search_store, max_age_days=args.max_age_days,
+                                 chain_days=args.chain_days)
+    except dg.PanoStoreUnavailable as e:
+        sys.exit(f"shared store check failed: {e}")
     missing = rec["missing"]
     if args.missing_out:
         os.makedirs(os.path.dirname(os.path.abspath(args.missing_out)), exist_ok=True)
@@ -1427,24 +1496,24 @@ def cmd_shared_store_check(args):
     if args.out:
         write_json(args.out, {**rec, "missing": len(missing),
                               "missing_sha256": sha256_file(args.missing_out) if args.missing_out else None})
-    print(f"shared store {args.shared_store}: marker {rec['marker']!r}, staged {rec['stage_date']} "
-          f"({rec['age_days']} days ago; the launcher refuses above {rec['max_age_days']}), purged around "
-          f"{rec['purge_around']}")
-    for t, v in rec["per_type"].items():
-        print(f"  {t}: {v['in_shared_store']} of {v['panoramas']} panoramas in the shared store"
-              + (f", {v['missing_from_search_stores']} in no store searched" if "missing_from_search_stores" in v
-                 else ""))
-    if missing:
-        where = args.missing_out or "(pass --missing-out to write the list)"
-        print(f"{'ERROR' if args.require_complete else 'WARNING'}: {len(missing)} panoramas of "
-              f"{', '.join(rec['shared_types'])} are in no store searched; the list: {where}", file=sys.stderr)
-        for m in missing[:20]:
-            print(f"  missing {m}", file=sys.stderr)
-        if not args.require_complete:
-            print("  RESTAGE=1 pulls them into this study's own store, never into the shared one", file=sys.stderr)
+    if rec["marker"] is not None:
+        print(f"shared store {args.shared_store}: marker {rec['marker']!r}, staged {rec['stage_date']} "
+              f"({rec['age_days']} days ago; with {rec['chain_days']} days of jobs, refused above "
+              f"{rec['max_age_days'] - rec['chain_days']}), purged around {rec['purge_around']}")
+        for t, v in rec["per_type"].items():
+            print(f"  {t}: {v['in_shared_store']} of {v['panoramas']} panoramas in the shared store"
+                  + (f", {v['missing_from_search_stores']} in no store searched"
+                     if "missing_from_search_stores" in v else ""))
+        if missing:
+            where = args.missing_out or "(pass --missing-out to write the list)"
+            print(f"{'ERROR' if args.require_complete else 'WARNING'}: {len(missing)} panoramas of "
+                  f"{', '.join(rec['shared_types'])} are in no store searched; the list: {where}", file=sys.stderr)
+            for m in missing[:20]:
+                print(f"  missing {m}", file=sys.stderr)
     failures = rec["failures"] + ([f"{len(missing)} panoramas missing"] if missing and args.require_complete else [])
     if failures:
         sys.exit("shared store check failed: " + "; ".join(failures))
+    print(f"stage_date={rec['stage_date']}")              # read back by the launcher as SHARED_STAGED
 
 
 def cmd_chunks(args):
@@ -1465,7 +1534,8 @@ def cmd_registered_seeds(args):
 def cmd_preflight(args):
     types = split_types(args.types)
     rec = preflight(args.root, args.rawlabels_dir, types, args.pano_store,
-                    complete_types=split_types(args.complete_types or ""))
+                    complete_types=split_types(args.complete_types or ""), shared_store=args.shared_store,
+                    shared_staged=args.shared_staged)
     write_json(args.out, rec)
     missing = rec["store"]["missing_files"]
     missing_out = os.path.splitext(args.out)[0] + "_missing.txt"
@@ -1483,11 +1553,14 @@ def cmd_recrop(args):
     types = split_types(args.types)
     for s in pano_stores(args.pano_store):
         dg.check_pano_store_marker(s)
+    if args.shared_store:                    # again at every task's start: raises PanoStoreUnavailable, never no_pano
+        date = require_fresh_shared_store(args.shared_store, args.shared_staged)
+        print(f"shared store {args.shared_store}: marker present, staged {date.isoformat()}")
     frame = load_frame(args.root, args.rawlabels_dir, types)
     device = dg.resolve_device(args.allow_cpu)
     out = recrop(frame, args.work, args.chunk, max_labels_for(args.time_limit), pano_store=args.pano_store,
                  stored_root=args.stored_root or args.root, device=device, gsv_beta=_gsv_beta(args.root, types),
-                 limit=args.limit)
+                 limit=args.limit, complete_types=split_types(args.complete_types or ""))
     per = out["seconds"] / out["processed"] if out["processed"] else float("nan")
     print(f"recrop chunk {args.chunk}: {out['processed']} labels in {out['seconds']:.0f} s ({per:.2f} s per label); "
           f"statuses {out['statuses']}")
@@ -1611,7 +1684,7 @@ def main(argv=None):
     s = sub.add_parser("stage-list", help="the deduplicated panorama list for ai_labels_stage.slurm")
     s.add_argument("--root", required=True, help="round 3's data root (<type>/split.csv)")
     s.add_argument("--types", default=",".join(STAGE1_TYPES))
-    s.add_argument("--out", required=True, help="stage_files.txt (a stage_list.json record is written beside it)")
+    s.add_argument("--out", required=True, help="stage_files.txt (a stage_files.json record is written beside it)")
     s.add_argument("--exclude-store", default=None, help="count the files already in this store (stage 2)")
     s.add_argument("--skip-store", default=None,
                    help="a shared store read in place: leave the files it holds out of the list (needs its marker)")
@@ -1627,6 +1700,8 @@ def main(argv=None):
                    help="colon-separated stores the missing list is read against (default: the shared store)")
     s.add_argument("--require-complete", action="store_true", help="exit non-zero when a panorama is missing")
     s.add_argument("--max-age-days", type=int, default=MAX_SHARED_STORE_AGE_DAYS)
+    s.add_argument("--chain-days", type=int, default=CHAIN_DAYS,
+                   help="worst-case days of jobs before the re-cut ends, added to the store's age")
     s.add_argument("--missing-out", default=None, help="write the missing panoramas, one per line")
     s.add_argument("--out", default=None, help="write the record (shared_store_check.json)")
     s.set_defaults(func=cmd_shared_store_check)
@@ -1647,6 +1722,8 @@ def main(argv=None):
     s.add_argument("--pano-store", required=True, help="one store, or a colon-separated search path")
     s.add_argument("--complete-types", default=None,
                    help="types whose every panorama must be in some store (the shared store's types)")
+    s.add_argument("--shared-store", default=None, help="check this shared store's marker and age again")
+    s.add_argument("--shared-staged", default=None, help="the stage date the launcher measured (YYYY-MM-DD)")
     s.add_argument("--out", required=True)
     s.set_defaults(func=cmd_preflight)
 
@@ -1661,6 +1738,10 @@ def main(argv=None):
                    help="override every row's recorded store root (a fresh restage); a colon-separated list is "
                         "searched in order, each panorama read from the first store holding it")
     s.add_argument("--stored-root", default=None, help="round 3's crops (<type>/<crop_path>); default --root")
+    s.add_argument("--shared-store", default=None, help="check this shared store's marker and age at the start")
+    s.add_argument("--shared-staged", default=None, help="the stage date the launcher measured (YYYY-MM-DD)")
+    s.add_argument("--complete-types", default=None,
+                   help="types preflight found complete: a no_pano for one stops the task (PanoStoreUnavailable)")
     s.add_argument("--limit", type=int, default=None, help="at most this many labels (SMOKE=1: 20)")
     s.add_argument("--allow-cpu", action="store_true", help="numpy render on a CPU (smoke tests only)")
     s.set_defaults(func=cmd_recrop)

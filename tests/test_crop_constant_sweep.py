@@ -1325,10 +1325,10 @@ def test_shared_store_check_refuses_a_store_staged_more_than_20_days_ago(r3, tmp
     shared = mkstore(tmp_path / "shared", files_of(frame, "SurfaceProblem"))
     staged = cc.store_stage_date(shared, files_of(frame))
     assert cc.MAX_SHARED_STORE_AGE_DAYS == 20
-    day20 = cc.shared_store_check(root, TYPES, shared, ("SurfaceProblem",), today=staged + days(20))
+    day20 = cc.shared_store_check(root, TYPES, shared, ("SurfaceProblem",), today=staged + days(20), chain_days=0)
     assert day20["passed"] and day20["age_days"] == 20
     assert day20["purge_around"] == (staged + days(21)).isoformat()
-    day21 = cc.shared_store_check(root, TYPES, shared, ("SurfaceProblem",), today=staged + days(21))
+    day21 = cc.shared_store_check(root, TYPES, shared, ("SurfaceProblem",), today=staged + days(21), chain_days=0)
     assert not day21["passed"] and "more than 20" in day21["failures"][0]
 
 
@@ -1397,16 +1397,17 @@ def _shared_fixture(tmp_path, drop_first_sp=False):
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
 def test_submit_with_a_shared_store_restages_only_the_rest(tmp_path):
-    shared = _shared_fixture(tmp_path, drop_first_sp=True)
+    shared = _shared_fixture(tmp_path)
     before = snapshot(shared)
-    r = _dry_run(tmp_path, SHARED_STORE=shared)
+    r = _dry_run(tmp_path, SHARED_STORE=shared + "/")                         # a trailing slash is normalised (S5)
     assert r.returncode == 0, r.stderr
     W = "/gscratch/scrubbed/tester/crop-constant-2026-11"
     lines = r.stdout.splitlines()
     check = [line for line in lines if "shared-store-check" in line]
-    assert len(check) == 1 and f"--shared-store {shared}" in check[0] and "--shared-types SurfaceProblem" in check[0]
-    assert "--require-complete" not in check[0]                              # RESTAGE=1: missing ones are pulled
-    assert "1 panoramas of SurfaceProblem are in no store searched" in r.stderr
+    assert len(check) == 1 and f"--shared-store {shared} " in check[0] and "--shared-types SurfaceProblem" in check[0]
+    assert "--require-complete" in check[0] and f"--search-store {W}/store:{shared} " in check[0]
+    staged = cc.store_stage_date(shared, ()).isoformat()
+    assert f"stage_date={staged}" in lines
     stage_list = [line for line in lines if " stage-list " in line]
     assert len(stage_list) == 1 and f"--skip-store {shared}" in stage_list[0]
     assert f"--exclude-store {W}/store" in stage_list[0]
@@ -1416,8 +1417,20 @@ def test_submit_with_a_shared_store_restages_only_the_rest(tmp_path):
     for step in ("preflight", "recrop", "gates"):
         line = [x for x in sb if f"STEP={step}" in x][0]
         assert f"PANO_STORE={W}/store:{shared}," in line and "COMPLETE_TYPES=SurfaceProblem" in line
+        assert f"SHARED_STORE={shared}," in line and f"SHARED_STAGED={staged}" in line   # the jobs check again
     assert len([x for x in sb if "confident_learning.slurm" in x]) == 30
     assert snapshot(shared) == before
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+def test_submit_refuses_a_shared_type_panorama_in_no_store_before_any_pull(tmp_path):
+    """S1: with RESTAGE=1 too, a SurfaceProblem panorama the shared store lacks refuses at submit, not after the
+    CurbRamp pull (the context-arms pull already asked makelab2 for it)."""
+    shared = _shared_fixture(tmp_path, drop_first_sp=True)
+    r = _dry_run(tmp_path, SHARED_STORE=shared)
+    assert r.returncode == 2 and "ERROR: 1 panoramas of SurfaceProblem" in r.stderr
+    assert "sbatch" not in r.stdout and " stage-list " not in r.stdout
+    assert "staged into DEST first" in r.stderr
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
@@ -1449,11 +1462,38 @@ def test_submit_without_restage_refuses_a_shared_type_panorama_in_no_store(tmp_p
     ({"SHARED_STORE": "/gscratch/scrubbed/tester/crop-constant-2026-11/store/x"}, "inside DEST"),
     ({"SHARED_STORE": "relative/store"}, "absolute"),
     ({"SHARED_STORE": "/a:/b"}, "':'"),
+    ({"SHARED_STORE": "/a,b"}, "','"),
     ({"SHARED_STORE": "/gscratch/scrubbed/tester/pano-stage/context-arms", "PANO_STORE": "/x/store"}, "does not list"),
+    # S4: aliases that string comparison let through
+    ({"SHARED_STORE": "/mmfs1/gscratch/scrubbed/tester/crop-constant-2026-11/store"}, "inside it"),
+    ({"SHARED_STORE": "/gscratch/scrubbed/tester//crop-constant-2026-11/store"}, "inside it"),
+    ({"DEST": "/gscratch/scrubbed/tester/crop-constant-2026-11/store/",
+      "SHARED_STORE": "/gscratch/scrubbed/tester/crop-constant-2026-11/store/x"}, "inside DEST"),
 ])
 def test_submit_refuses_a_shared_store_it_could_write_into_or_would_not_read(tmp_path, env, word):
     r = _dry_run(tmp_path, **env)
     assert r.returncode == 2 and word in r.stderr and "sbatch" not in r.stdout
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+def test_submit_resolves_a_symlinked_shared_store_before_the_containment_guard(tmp_path):
+    """S4: a shared store reached through a symlink that points at the working directory (so DEST lies inside it)
+    passes every string comparison; resolved, it is refused."""
+    link = tmp_path / "looks-elsewhere"
+    os.symlink("/gscratch/scrubbed/tester/crop-constant-2026-11", link)
+    r = _dry_run(tmp_path, SHARED_STORE=str(link))
+    assert r.returncode == 2 and "is the shared store" in r.stderr and "sbatch" not in r.stdout
+    link2 = tmp_path / "into-dest"
+    os.symlink("/gscratch/scrubbed/tester/crop-constant-2026-11/store/sub", link2)
+    r = _dry_run(tmp_path, SHARED_STORE=str(link2))
+    assert r.returncode == 2 and "inside DEST" in r.stderr and "sbatch" not in r.stdout
+
+
+def test_the_submit_script_runs_the_full_shared_store_check_before_any_submission():
+    """S1/S2 wiring (st_ctime cannot be set back, so the age itself is tested on the Python check below)."""
+    text = read_launcher("crop_constant_submit.sh")
+    assert text.index("shared-store-check") < text.index("sb --chdir")
+    assert "--require-complete" in text and 'SHARED_STAGED=$(printf' in text
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
@@ -1467,6 +1507,105 @@ def test_submit_without_a_shared_store_is_unchanged(tmp_path):
     assert re.search(rf"PANO_STORE={re.escape(W)}/store\s", pre)                  # one store, the last variable
 
 
-def test_the_preflight_step_passes_the_complete_types():
+def test_the_preflight_and_recrop_steps_pass_the_shared_store_checks():
     text = read_launcher("crop_constant_recrop.slurm")
-    assert '${COMPLETE_TYPES:+--complete-types "$COMPLETE_TYPES"}' in text
+    assert 'SHARED=(--shared-store "$SHARED_STORE" --shared-staged' in text
+    assert 'SHARED+=(--complete-types "$COMPLETE_TYPES")' in text
+    assert text.count('${SHARED[@]+"${SHARED[@]}"}') == 3                    # preflight, smoke, recrop
+
+
+# S2: the jobs check the shared store again; S3: an unreadable file is an outage
+
+def test_require_fresh_shared_store_raises_on_a_gone_marker_or_an_old_store(tmp_path):
+    shared = mkstore(tmp_path / "shared", ["pub-a/CC/CCpano5.jpg"])
+    today = datetime.date.today()
+    assert cc.require_fresh_shared_store(shared, today.isoformat()) == today
+    assert cc.require_fresh_shared_store(shared, (today - days(20)).isoformat()) == today - days(20)
+    with pytest.raises(dg.PanoStoreUnavailable, match="more than 20"):        # the launcher's date wins if earlier
+        cc.require_fresh_shared_store(shared, (today - days(21)).isoformat())
+    with pytest.raises(dg.PanoStoreUnavailable, match="more than 20"):
+        cc.require_fresh_shared_store(shared, None, today=today + days(21))
+    os.remove(os.path.join(shared, dg.PANO_STORE_MARKER))
+    with pytest.raises(dg.PanoStoreUnavailable, match="gone"):
+        cc.require_fresh_shared_store(shared, today.isoformat())
+
+
+def test_shared_store_check_adds_the_chain_days(r3, tmp_path):
+    root, frame = r3
+    shared = mkstore(tmp_path / "shared", files_of(frame, "SurfaceProblem"))
+    staged = cc.store_stage_date(shared, files_of(frame))
+    assert cc.CHAIN_DAYS == 2
+    ok = cc.shared_store_check(root, TYPES, shared, ("SurfaceProblem",), today=staged + days(18))
+    assert ok["passed"] and ok["chain_days"] == 2
+    late = cc.shared_store_check(root, TYPES, shared, ("SurfaceProblem",), today=staged + days(19))
+    assert not late["passed"] and "read at 21 days" in late["failures"][0]
+
+
+def test_preflight_rechecks_the_shared_store(r3_400, tmp_path):
+    root, panos = r3_400
+    files = [f"{c}/{p[:2]}/{p}.jpg" for c, p in panos]
+    shared = mkstore(tmp_path / "shared", files)
+    today = datetime.date.today()
+    fresh = _preflight(root, shared, shared_store=shared, shared_staged=today.isoformat())
+    assert fresh["store"]["passed"] and fresh["store"]["shared_stage_date"] == today.isoformat()
+    stale = _preflight(root, shared, shared_store=shared, shared_staged=(today - days(21)).isoformat())
+    assert not stale["store"]["passed"] and "more than 20" in stale["store"]["failures"][-1]
+
+
+def test_the_recrop_command_stops_when_the_shared_store_is_gone(r3, tmp_path):
+    root, frame = r3
+    own = mkstore(tmp_path / "own", files_of(frame, "CurbRamp"))
+    shared = mkstore(tmp_path / "shared", files_of(frame, "SurfaceProblem"))
+    os.remove(os.path.join(shared, dg.PANO_STORE_MARKER))
+    args = ["recrop", "--root", root, "--rawlabels-dir", os.path.join(root, "rawlabels"), "--types",
+            "CurbRamp,SurfaceProblem", "--work", str(tmp_path / "w"), "--chunk", "0", "--time-limit", "8:00:00",
+            "--pano-store", own, "--shared-store", shared, "--shared-staged", datetime.date.today().isoformat(),
+            "--allow-cpu"]
+    with pytest.raises(dg.PanoStoreUnavailable, match="gone"):
+        cc.main(args)
+    assert not os.path.exists(str(tmp_path / "w" / "recrop"))                # nothing recorded as no_pano
+
+
+def test_recrop_stops_on_a_no_pano_of_a_complete_type(r3, tmp_path):
+    root, frame = r3
+    work = str(tmp_path / "w")
+    reader = FakeReader()
+    sp = frame[frame.label_type == "SurfaceProblem"].assign(pano_id=lambda d: "MISS" + d.pano_id)
+    with pytest.raises(dg.PanoStoreUnavailable, match="changed under the run"):
+        cc.recrop(sp, work, 0, 1000, pano_store="/s", stored_root=root, pano_reader=reader, render=FakeRender(),
+                  complete_types=("SurfaceProblem",))
+    run_recrop(root, frame, str(tmp_path / "w2"))                             # without it: an ordinary no_pano row
+    assert (cc.load_recrop(str(tmp_path / "w2")).status == "no_pano").any()
+
+
+def test_recrop_refuses_a_chunk_file_with_an_older_header(r3, tmp_path):
+    root, frame = r3
+    work = str(tmp_path / "w")
+    path = cc.chunk_path(work, 0)
+    os.makedirs(os.path.dirname(path))
+    old = [f for f in cc.RECROP_FIELDS if f != "read_store"]                  # #127's columns
+    with open(path, "w") as f:
+        f.write(",".join(old) + "\n")
+    with pytest.raises(ValueError, match="another header"):
+        run_recrop(root, frame, work)
+
+
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads unreadable directories")
+def test_an_unreadable_file_is_an_outage_not_a_missing_panorama(tmp_path):
+    """S3: os.path.exists is False for EACCES, which made an unreadable shared-store file a final no_pano read from
+    the other store; now any stat error but a missing file raises PanoStoreUnavailable."""
+    dest = mkstore(tmp_path / "dest", ["pub-a/AA/AApano1.jpg"])
+    shared = mkstore(tmp_path / "shared", ["pub-a/CC/CCpano5.jpg"])
+    locked = os.path.join(shared, "pub-a", "CC")
+    os.chmod(locked, 0)
+    try:
+        with pytest.raises(dg.PanoStoreUnavailable):
+            dg.read_store_panorama(shared, "pub-a", "CCpano5")               # the one-store reader's rule
+        with pytest.raises(dg.PanoStoreUnavailable):
+            cc.read_from_stores((dest, shared), "pub-a", "CCpano5", dg.read_store_panorama)
+        with pytest.raises(dg.PanoStoreUnavailable):
+            cc.present_in_store(["pub-a/CC/CCpano5.jpg"], shared)
+        assert not cc.held(os.path.join(dest, "pub-a", "ZZ", "ZZ9.jpg"))      # a missing file is still just absent
+        assert not cc.held(os.path.join(dest, "pub-a", "AA", "AApano1.jpg", "x"))   # NotADirectoryError: absent
+    finally:
+        os.chmod(locked, 0o755)

@@ -23,12 +23,14 @@
 #   DEST        the stage destination (default $W/store); refused unless it is inside $W
 #   SHARED_STORE a store another study staged, read in place and never written (decision 3, 2026-11-25: the
 #               context-arms store, /gscratch/scrubbed/$USER/pano-stage/context-arms). When set: before anything is
-#               submitted, `shared-store-check` refuses a store without its .pano-store marker or staged more than
-#               20 days ago (scrubbed purges at 21), and lists the SHARED_TYPES panoramas it lacks
-#               ($W/shared_store_missing.txt); with RESTAGE=1 the stage list leaves out every file the shared store
-#               holds, so DEST receives only the rest (CurbRamp's, plus any missing SurfaceProblem panorama); with
-#               RESTAGE=0 a missing SHARED_TYPES panorama refuses the launch. PANO_STORE defaults to
-#               DEST:SHARED_STORE, and preflight requires every SHARED_TYPES panorama to be in one of them.
+#               submitted, `shared-store-check` refuses a store without its .pano-store marker, one that would be
+#               more than 20 days old by the end of the re-cut (its age plus 2 days of jobs; scrubbed purges at 21),
+#               and any SHARED_TYPES panorama in neither DEST nor the shared store (listed in
+#               $W/shared_store_missing.txt), with RESTAGE=1 too. With RESTAGE=1 the stage list leaves out every file
+#               the shared store holds, so DEST receives only the rest (CurbRamp's). PANO_STORE defaults to
+#               DEST:SHARED_STORE; preflight requires every SHARED_TYPES panorama in one of them, and preflight and
+#               each recrop task re-check the store's marker and age when they start. Paths are compared with
+#               symlinks resolved.
 #   SHARED_TYPES the types the shared store is meant to cover (default SurfaceProblem); only with SHARED_STORE
 #   PANO_STORE  the store the re-cut reads (default DEST, or DEST:SHARED_STORE); a colon-separated list is searched
 #               in order, each panorama read from the first store that holds it
@@ -47,8 +49,16 @@ RAWLABELS="${RAWLABELS:-$R3/rawlabels}"
 TYPES="${TYPES:-CurbRamp SurfaceProblem}"; ARMS="${ARMS:-4000 6100 8000}"
 RESTAGE="${RESTAGE:-1}"; DEST="${DEST:-$W/store}"; SHARED_STORE="${SHARED_STORE:-}"
 SHARED_TYPES="${SHARED_TYPES:-SurfaceProblem}"
+strip_slashes() { local p="$1"; while [ "${#p}" -gt 1 ] && [ "${p%/}" != "$p" ]; do p="${p%/}"; done; echo "$p"; }
+DEST=$(strip_slashes "$DEST"); SHARED_STORE=$(strip_slashes "$SHARED_STORE")   # before PANO_STORE is built from them
 if [ -n "$SHARED_STORE" ]; then PANO_STORE="${PANO_STORE:-$DEST:$SHARED_STORE}"; else PANO_STORE="${PANO_STORE:-$DEST}"; fi
 STAGE_TIME="${STAGE_TIME:-24:00:00}"; RECROP_TIME="${RECROP_TIME:-8:00:00}"; PARTITION_ARGS="${PARTITION_ARGS:-}"
+# A path with every symlink resolved, without klone's /mmfs1 prefix (/gscratch and /mmfs1/gscratch are one tree), so
+# an alias, a doubled slash or a symlink cannot get past the containment guards below. Missing parts are kept as
+# written (os.path.realpath is not strict), so this also works before DEST exists.
+canon() {
+  "$PYTHON" -c 'import os, sys; p = os.path.realpath(sys.argv[1]); print(p[6:] if p.startswith("/mmfs1/") else p)' "$1"
+}
 # The stage job's own default destination is the lab's durable store, which cannot take this volume: DEST is always
 # passed, and only inside the working directory.
 case "$DEST" in
@@ -56,17 +66,25 @@ case "$DEST" in
   "$W"/*) ;;
   *) echo "refusing: DEST=$DEST is outside $W" >&2; exit 2 ;;
 esac
+[ ! -L "$DEST" ] || { echo "refusing: DEST=$DEST is a symlink (the stage job would write wherever it points)" >&2; exit 2; }
 # A shared store belongs to another study: it is read in place and never staged into (the stage job removes DEST's
-# marker while it pulls), so DEST may be neither the shared store nor inside it, nor the other way round.
+# marker while it pulls), so DEST may be neither the shared store nor inside it, nor the other way round, after every
+# symlink is resolved.
 if [ -n "$SHARED_STORE" ]; then
   case "$SHARED_STORE" in
     /*) ;;
     *) echo "refusing: SHARED_STORE=$SHARED_STORE must be an absolute path" >&2; exit 2 ;;
   esac
-  case "$SHARED_STORE" in *..*|*:*) echo "refusing: SHARED_STORE=$SHARED_STORE contains '..' or ':'" >&2; exit 2 ;; esac
-  SHARED_STORE="${SHARED_STORE%/}"
-  case "$DEST/" in "$SHARED_STORE"/*) echo "refusing: DEST=$DEST is the shared store or inside it" >&2; exit 2 ;; esac
-  case "$SHARED_STORE/" in "$DEST"/*) echo "refusing: SHARED_STORE=$SHARED_STORE is inside DEST" >&2; exit 2 ;; esac
+  case "$SHARED_STORE" in
+    *..*|*:*|*,*|*" "*) echo "refusing: SHARED_STORE=$SHARED_STORE contains '..', ':', ',' or a space" >&2; exit 2 ;;
+  esac
+  CDEST=$(canon "$DEST"); CSHARED=$(canon "$SHARED_STORE")
+  case "$CDEST/" in
+    "$CSHARED"/*) echo "refusing: DEST=$DEST ($CDEST) is the shared store ($CSHARED) or inside it" >&2; exit 2 ;;
+  esac
+  case "$CSHARED/" in
+    "$CDEST"/*) echo "refusing: SHARED_STORE=$SHARED_STORE ($CSHARED) is inside DEST ($CDEST)" >&2; exit 2 ;;
+  esac
   [[ ":$PANO_STORE:" == *":$SHARED_STORE:"* ]] \
     || { echo "refusing: PANO_STORE=$PANO_STORE does not list SHARED_STORE=$SHARED_STORE" >&2; exit 2; }
 fi
@@ -99,14 +117,25 @@ CPU=(--gpus=0 --constraint= --cpus-per-task=2 --mem=16G --time=2:00:00)
 
 SKIP=()  # the stage list's --skip-store, only with a shared store
 if [ -n "$SHARED_STORE" ]; then
-  # Read-only, so it runs under DRY_RUN=1 too: a stale or unmarked shared store refuses the dry run as well.
+  # Read-only, so it runs under DRY_RUN=1 too: a stale or unmarked shared store refuses the dry run as well. A
+  # SHARED_TYPES panorama in neither DEST nor the shared store refuses the launch here, before any pull, with RESTAGE=1
+  # as well: the context-arms pull already asked makelab2 for it, so it is most likely missing there too, and pulling
+  # the rest (about 107 GB) first would only end in preflight's refusal. The age check adds CHAIN_DAYS (2) of jobs.
   CHECK=(analysis/crop_constant_sweep.py shared-store-check --root "$R3" --types "$TYPES_CSV"
-         --shared-store "$SHARED_STORE" --shared-types "${SHARED_TYPES// /,}")
-  [ "$RESTAGE" = 1 ] || CHECK+=(--search-store "$PANO_STORE" --require-complete)
+         --shared-store "$SHARED_STORE" --shared-types "${SHARED_TYPES// /,}" --search-store "$PANO_STORE"
+         --require-complete)
   [ "$DRY_RUN" = 1 ] || CHECK+=(--missing-out "$W/shared_store_missing.txt" --out "$W/shared_store_check.json")
   echo "$PYTHON ${CHECK[*]}"
-  "$PYTHON" "${CHECK[@]}" || { echo "refusing: the shared store check failed; nothing submitted" >&2; exit 2; }
-  ENVS="$ENVS,COMPLETE_TYPES=${SHARED_TYPES// /:}"
+  CHECK_OUT=$("$PYTHON" "${CHECK[@]}") || {
+    [ -z "$CHECK_OUT" ] || echo "$CHECK_OUT"
+    echo "refusing: the shared store check failed; nothing submitted. A missing $SHARED_TYPES panorama has to be" \
+         "found on makelab2 by hand and staged into DEST first (or its rows dropped by Jon's decision)" >&2
+    exit 2
+  }
+  echo "$CHECK_OUT"
+  SHARED_STAGED=$(printf '%s\n' "$CHECK_OUT" | sed -n 's/^stage_date=//p')
+  # preflight and every recrop task check the store again (marker, age) and stop with PanoStoreUnavailable.
+  ENVS="$ENVS,COMPLETE_TYPES=${SHARED_TYPES// /:},SHARED_STORE=$SHARED_STORE,SHARED_STAGED=$SHARED_STAGED"
   SKIP=(--skip-store "$SHARED_STORE")
 fi
 
@@ -116,7 +145,11 @@ if [ "$RESTAGE" = 1 ]; then
       --exclude-store "$DEST" ${SKIP[@]+"${SKIP[@]}"}
   if [ "$DRY_RUN" != 1 ] && [ ! -s "$W/stage_files.txt" ]; then
     # The stage job cannot take an empty list (no batch to pull, and no marker written for DEST).
-    echo "refusing: nothing to stage (the shared store holds every panorama); use RESTAGE=0 PANO_STORE=$SHARED_STORE" >&2
+    if [ -n "$SHARED_STORE" ]; then
+      echo "refusing: nothing to stage (the shared store holds every panorama); use RESTAGE=0 PANO_STORE=$SHARED_STORE" >&2
+    else
+      echo "refusing: the stage list $W/stage_files.txt is empty" >&2
+    fi
     exit 2
   fi
   sb --chdir="$W" --job-name=cc-stage --time="$STAGE_TIME" --export="ALL,RUN=$W,DEST=$DEST" \
