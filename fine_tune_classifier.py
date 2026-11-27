@@ -71,6 +71,18 @@ enters ``run_key.json``; the default run key is unchanged. ``training_run.json``
 ``backbone`` block (key, pinned and resolved revision, parameters, preprocessing, weights hash), ``learning_rate``,
 ``model_accepts_loss_kwargs`` and ``peak_gpu_memory_bytes``.
 
+Input resolution (docs/resolution-2026-11.md): ``--input-res 448|518`` trains the plain DINOv2-L model at that input
+size instead of 224. The train augmentation crops to it (``RandomResizedCrop(res, scale=(0.7, 1.0))``) and val, test
+and every later reader of the checkpoint resize the shortest edge to ``res * 256 / 224`` (512, 592) and centre-crop
+``res``, the same field of view as at 224 (``backbones.input_sizes``); the checkpoint saves that processor, so
+``evaluate.py``, ``export_onnx.py`` and serving read the same sizes. HF's DINOv2 interpolates its position embeddings
+(pretrained on a 37 x 37 grid, i.e. 518 px) to every input in ``forward``, so no model change is needed.
+``--gradient-checkpointing`` trades compute for activation memory (off by default; DINOv2-L has no dropout, so it
+does not change the arithmetic). A non-default resolution needs ``--output-dir``, cannot be combined with
+``--backbone``, ``--context-arm``, ``--region-conditioning`` or ``--init-from``, and enters ``run_key.json``; the
+default key is unchanged. ``training_run.json`` gains ``input_res``, ``gradient_checkpointing`` and
+``attn_implementation`` for every run, and its ``backbone`` block describes the preprocessing actually used.
+
 Usage::
 
     python fine_tune_classifier.py --label_type CurbRamp [--data-dir .] [--seed 42] [--epochs 25] \
@@ -514,6 +526,51 @@ def backbone_run_settings(args):
     return out
 
 
+DEFAULT_INPUT_RES = 224  # the round-3 model input; backbones.get(backbones.DEFAULT).crop_px
+INPUT_RES_CHOICES = (224, 448, 518)  # 16, 32 and 37 DINOv2 patches a side (518: the pretraining grid)
+
+
+def resolution_settings(args):
+    """``{}`` at the default input size (so the default run key and provenance are unchanged), else
+    ``{"input_res": <px>}`` (docs/resolution-2026-11.md).
+
+    >>> from types import SimpleNamespace
+    >>> resolution_settings(SimpleNamespace(input_res=224)), resolution_settings(SimpleNamespace(input_res=448))
+    ({}, {'input_res': 448})
+    """
+    res = getattr(args, "input_res", DEFAULT_INPUT_RES)
+    return {} if res == DEFAULT_INPUT_RES else {"input_res": res}
+
+
+def make_image_processor(args):
+    """The run's processor: exactly ``backbones.build_image_processor(args.backbone)`` at the default input size, the
+    call this script always made; else the same processor at ``args.input_res`` (resize ``res * 256 / 224``, centre
+    crop ``res``). The train transform reads its size from this processor's ``crop_size``."""
+    res = getattr(args, "input_res", DEFAULT_INPUT_RES)
+    if res == DEFAULT_INPUT_RES:
+        return backbones.build_image_processor(args.backbone)
+    return backbones.build_image_processor(args.backbone, input_res=res)
+
+
+def train_crop_size(image_processor):
+    """The ``RandomResizedCrop`` size for ``image_processor``: ``(height, width)`` of its ``crop_size``, or its
+    ``shortest_edge`` (an int) when the processor gives only that."""
+    crop = image_processor.crop_size
+    return (crop["height"], crop["width"]) if "height" in crop else crop["shortest_edge"]
+
+
+def build_train_transform(image_processor):
+    """The train augmentation of every run: ``RandomResizedCrop(<crop size>, scale=(0.7, 1.0))``, a horizontal flip,
+    ``ToTensor`` and the processor's mean and std (issue #5)."""
+    from torchvision.transforms import Compose, Normalize, RandomHorizontalFlip, RandomResizedCrop, ToTensor
+    return Compose([
+        RandomResizedCrop(train_crop_size(image_processor), scale=(0.7, 1.0), antialias=True),
+        RandomHorizontalFlip(),
+        ToTensor(),
+        Normalize(mean=image_processor.image_mean, std=image_processor.image_std),
+    ])
+
+
 def context_settings(args):
     """``{}`` for the default run (no ``--context-arm``, batch 8), so its run key and provenance are unchanged; else
     the context arm and view resolution (issue #14) and any non-default per-device batch size."""
@@ -588,7 +645,7 @@ def run_key(label_type, data_dir, args):
             **{k: v for k, v in target_settings(args).items() if k != "vote_weights"},
             **{k: v for k, v in {**region_settings(args), **init_settings(args)}.items()
                if k not in ("cities_json", "init_from")},
-            **context_settings(args), **backbone_run_settings(args)}
+            **context_settings(args), **backbone_run_settings(args), **resolution_settings(args)}
 
 
 def resume_checkpoint(output_dir, key):
@@ -681,7 +738,22 @@ def main(argv=None):
     parser.add_argument('--learning-rate', type=float, default=DEFAULT_LEARNING_RATE,
                         help=f'peak learning rate (default {DEFAULT_LEARNING_RATE}, the round-3 recipe); a '
                              'non-default value needs --output-dir')
+    parser.add_argument('--input-res', type=int, choices=list(INPUT_RES_CHOICES), default=DEFAULT_INPUT_RES,
+                        help=f'model input in pixels (default {DEFAULT_INPUT_RES}, the round-3 recipe): train crops to '
+                             'it, val/test resize to res*256/224 and centre-crop it (docs/resolution-2026-11.md); a '
+                             'non-default value needs --output-dir and the plain model')
+    parser.add_argument('--gradient-checkpointing', action='store_true',
+                        help='recompute activations in the backward pass (less GPU memory, about a third more '
+                             'compute); for a high --input-res on a smaller GPU')
     args = parser.parse_args(argv)
+    if args.input_res != DEFAULT_INPUT_RES:
+        if not args.output_dir:
+            parser.error('a non-default --input-res needs --output-dir (an experiment must not land in the '
+                         'production dinov2/ directory)')
+        if (args.backbone != backbones.DEFAULT or args.context_arm != 'none' or args.region_conditioning != 'none'
+                or args.init_from):
+            parser.error('--input-res is compared on the plain dinov2-large model only; it cannot be combined with '
+                         '--backbone, --context-arm, --region-conditioning or --init-from')
     if args.backbone != backbones.DEFAULT and (args.context_arm != 'none' or args.region_conditioning != 'none'
                                                or args.init_from):
         parser.error('--backbone is compared on the plain model only; it cannot be combined with --context-arm, '
@@ -715,7 +787,6 @@ def main(argv=None):
     import transformers
     from datasets import Dataset, DatasetDict, load_dataset
     from sklearn.metrics import f1_score
-    from torchvision.transforms import Compose, Normalize, RandomHorizontalFlip, RandomResizedCrop, ToTensor
     from transformers import Trainer, TrainingArguments
 
     if not torch.cuda.is_available():
@@ -758,15 +829,9 @@ def main(argv=None):
 
     # The slow (PIL) BitImageProcessor, as evaluate.py and sidewalk-ai-api (backend="pil") use; the fast torchvision
     # processor resizes slightly differently.
-    image_processor = backbones.build_image_processor(args.backbone)  # the default key: exactly this call, as before
-    crop = image_processor.crop_size
-    size = (crop["height"], crop["width"]) if "height" in crop else crop["shortest_edge"]
-    train_tf = Compose([
-        RandomResizedCrop(size, scale=(0.7, 1.0), antialias=True),
-        RandomHorizontalFlip(),
-        ToTensor(),
-        Normalize(mean=image_processor.image_mean, std=image_processor.image_std),
-    ])
+    # The default key at the default --input-res: exactly backbones.build_image_processor(args.backbone), as before.
+    image_processor = make_image_processor(args)
+    train_tf = build_train_transform(image_processor)
 
     def train_transforms(examples):
         examples["pixel_values"] = [train_tf(img.convert("RGB")) for img in examples["image"]]
@@ -833,6 +898,9 @@ def main(argv=None):
         push_to_hub=False,
         report_to="none",
         use_cpu=not torch.cuda.is_available(),
+        # Only when asked, so the default run's arguments are exactly as before.
+        **({"gradient_checkpointing": True, "gradient_checkpointing_kwargs": {"use_reentrant": False}}
+           if args.gradient_checkpointing else {}),
     )
 
     trainer = select_trainer(args.target, Trainer)(
@@ -872,7 +940,10 @@ def main(argv=None):
            **split_settings(split_path(label_type, args.data_dir, args.split)),
            **target_settings(args), **region_settings(args), **init_settings(args), **context_settings(args),
            **run_provenance(started_at, started, resume),
-           "backbone": backbones.backbone_settings(args.backbone, model, args.backbone_dir),
+           "backbone": backbones.backbone_settings(args.backbone, model, args.backbone_dir,
+                                                   **({"input_res": args.input_res} if resolution_settings(args) else {})),
+           "input_res": args.input_res, "gradient_checkpointing": bool(args.gradient_checkpointing),
+           "attn_implementation": getattr(getattr(model, "config", None), "_attn_implementation", None),
            "learning_rate": args.learning_rate, "model_accepts_loss_kwargs": trainer.model_accepts_loss_kwargs,
            "peak_gpu_memory_bytes": torch.cuda.max_memory_allocated() if torch.cuda.is_available() else None,
            "versions": versions}

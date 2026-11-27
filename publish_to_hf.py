@@ -740,6 +740,12 @@ def check_backbone(root, label_type):
     if lr != DEFAULT_LEARNING_RATE:
         raise PublishError(f"{base}/training_run.json: learning_rate {lr} is not the published recipe's "
                            f"{DEFAULT_LEARNING_RATE} (issue #119)")
+    from fine_tune_classifier import DEFAULT_INPUT_RES
+    res = run.get("input_res", DEFAULT_INPUT_RES)
+    if res != DEFAULT_INPUT_RES:
+        raise PublishError(f"{base}/training_run.json: input_res {res} is a resolution-study run "
+                           f"(docs/resolution-2026-11.md); the cards, explain.py and serving parity assume "
+                           f"{DEFAULT_INPUT_RES} px")
     best_dir, _ = resolve_checkpoints(root, label_type)
     config = _read_json(os.path.join(best_dir, "config.json"))
     model_type = (config or {}).get("model_type")
