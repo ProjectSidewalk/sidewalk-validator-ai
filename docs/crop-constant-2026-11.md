@@ -8,8 +8,8 @@ Code: [`analysis/crop_constant_sweep.py`](../analysis/crop_constant_sweep.py),
 [`analysis/crop_constant_submit.sh`](../analysis/crop_constant_submit.sh).
 
 **Status: designed and pre-registered; nothing has been run.** Jon decided the five open choices on 2026-11-25
-(section 7) and gave the go. The restage that decision 3 asks for needs a launcher change that is not made yet
-(section 7, decision 3), so the run cannot be launched from this branch as it stands.
+(section 7) and gave the go. The launcher change that decision 3 needed (read SurfaceProblem from the context-arms
+store, restage only the rest) was made on 2026-11-26 (section 7, decision 3), so stage 1 can be launched.
 
 ## 1. The question
 
@@ -71,7 +71,7 @@ chance of a false change.
 
 | gate | rule |
 |---|---|
-| G0 inputs | Round 3's `split.csv` and rawLabels pins match (section 9); `sidewalk-panorama-tools` equals round 3's commit; the versions of torch, torchvision, transformers, opencv and pillow are recorded. Checked by `preflight`, which also requires the store's marker and stops early if the panoramas missing from the store would already break G2. |
+| G0 inputs | Round 3's `split.csv` and rawLabels pins match (section 9); `sidewalk-panorama-tools` equals round 3's commit; the versions of torch, torchvision, transformers, opencv and pillow are recorded. Checked by `preflight`, which also requires every store's marker and stops early if the panoramas missing from all stores would already break G2 (or, for a type the shared store covers, if any is missing; section 7, decision 3). |
 | G2 row loss | Per type, at most 0.5 % of rows lost, and at most 1 % of its `test` rows and of its `test_heldout` rows. A row never attempted fails the gate. |
 | G3 re-cut parity | Per type, the c6100 re-cut against round 3's stored crop after the same WebP q95 encode and decode: per-row mean absolute difference at most 3.0 grey levels on at least 99.5 % of rows, and no row above 12. A missing stored crop or a different size counts as above 12. Reported per source store too. |
 
@@ -149,7 +149,7 @@ and the default here in one reviewed PR (with a CLI flag if one is wanted). It l
 
 | item | stage 1 (CurbRamp + SurfaceProblem) | stage 2 (other three types, only if triggered) |
 |---|---|---|
-| restage of panoramas | about 215 to 260 GB, about 22,500 panoramas | at most about 370 GB more (`stage-list --exclude-store` against the stage-1 store gives the real figure) |
+| restage of panoramas | about 215 to 260 GB, about 22,500 panoramas, without the shared store; with it (decision 3), at most CurbRamp's 9,343 (about 107 GB at 11.4 MB each) plus any SurfaceProblem panorama the shared store lacks | at most about 370 GB more (`stage-list --exclude-store` against the stage-1 store gives the real figure) |
 | re-cut | 26,289 labels; 6 to 26 h of job time | 38,176 labels; 8 to 37 h |
 | training, 3 seeds | 18 runs, about 32 GPU-h | 18 runs, about 32 GPU-h |
 | training, 5 seeds | 30 runs, about 53 GPU-h | 30 runs, about 53 GPU-h |
@@ -180,39 +180,46 @@ and the default here in one reviewed PR (with a CLI flag if one is wanted). It l
    four of five.
 3. **The restage** (decided 2026-11-25). Reuse the SurfaceProblem panoramas already on klone from the context-arms
    restage (issue #14), in the store `/gscratch/scrubbed/$USER/pano-stage/context-arms`, and restage only CurbRamp,
-   into this study's own working directory (`$W/store`). That store is purged around 2026-12-14, so the trainings must
-   finish before then.
+   into this study's own working directory (`$W/store`). That store was staged on 2026-11-23 and is purged around
+   **2026-12-14** (21 days), so the trainings must finish before then. Another study owns it: this one reads it in
+   place and never writes into it.
 
-   **Not supported by the launchers yet**, so no launch settings are given here. What is missing:
-   - `preflight` and `recrop` (and `SMOKE=1`) read exactly one store (`--pano-store`, which `crop_constant_submit.sh`
-     and `crop_constant_recrop.slurm` set from one `PANO_STORE` for every type). There is no per-type store and no
-     way to read SurfaceProblem from the context-arms store and CurbRamp from `$W/store` in one run. With
-     `PANO_STORE` set to either store alone, the other type's panoramas are missing and `preflight` stops on G2.
-   - `stage-list --exclude-store` only *counts* the panoramas already in a store; the list it writes still holds
-     every panorama of `TYPES`. With `RESTAGE=1`, the stage job would pull SurfaceProblem's panoramas again, because
-     rsync skips only files already in `DEST`.
-   - The workarounds are worse than the change: two submissions (one per type) collide on `preflight.json`,
-     `gates.json` and the arm directories; staging CurbRamp into the context-arms store is outside this study's
-     working directory (the submit script refuses that), and the stage job removes that store's `.pano-store`
-     marker while it pulls.
-
-   The smallest change (proposed, not made):
-   - `crop_constant_sweep.py`: `--pano-store` takes a colon-separated list (a colon passes through sbatch
-     `--export`, a comma does not). Each panorama is read from the first store that holds its file, and from the
-     first store when none does, so it is `no_pano`. `preflight` checks every store's marker and records the list.
-     Optionally, a `read_store` column in the recrop output, so G3 can be reported per store actually read.
-   - `stage-list --exclude-store` leaves the files already in that store out of the list, instead of only counting
-     them. The stage-2 use against the stage-1 store is unchanged, since rsync skipped those files anyway.
-   - `crop_constant_submit.sh`: an optional `SHARED_STORE`. When it is set, `stage-list` gets
-     `--exclude-store "$SHARED_STORE"`, and `PANO_STORE` defaults to `$DEST:$SHARED_STORE`.
-
-   With that change, the launch would be
+   **The launch** (supported since 2026-11-26):
    `RESTAGE=1 SHARED_STORE=/gscratch/scrubbed/$USER/pano-stage/context-arms R3=$R3 analysis/crop_constant_submit.sh`,
-   with `DEST` left at `$W/store`. The stage list then holds CurbRamp's panoramas that the shared store lacks (at
-   most CurbRamp's 9,343). Any
-   SurfaceProblem panorama missing from that store would also be pulled, which is better than losing its rows to G2.
-   Before launch: confirm that the shared store carries its `.pano-store` marker (absent while a pull into it is
-   running), and read `stage_list.json`'s `to_transfer` count.
+   with `DEST` left at `$W/store` and `SHARED_TYPES` at its default, `SurfaceProblem`. Run it with `DRY_RUN=1` first.
+   What happens, in order, before anything is submitted:
+   - The submit script refuses a `SHARED_STORE` that is relative, holds `:` or `..`, is `DEST` or contains it, or
+     lies inside `DEST`, and a `PANO_STORE` (when set by hand) that does not list it.
+   - `shared-store-check` (on the login node, also under `DRY_RUN=1`, read-only) refuses the launch when the shared
+     store has no `.pano-store` marker (it is absent while a pull into that store runs), or when its stage date is
+     more than **20 days** before the launch day. The stage date is the earliest change time (`st_ctime`) of the
+     marker and of the panoramas this run needs from the store: the stage job copies with `rsync -a`, which keeps
+     the lab store's modification times, so `st_mtime` would date the source, not the copy. For a store staged on
+     2026-11-23 the last launch day is 2026-12-13, which leaves no time to train: in practice launch well before.
+     It prints, per type, how many panoramas the shared store already holds, and lists the SurfaceProblem panoramas
+     it lacks in `$W/shared_store_missing.txt` (record in `$W/shared_store_check.json`, the store named by its last
+     path component only).
+   - With `RESTAGE=1`, `stage-list --skip-store "$SHARED_STORE"` leaves out every file the shared store holds, so
+     the stage job pulls into `$W/store` only CurbRamp's panoramas that the shared store lacks (at most CurbRamp's
+     9,343) plus any SurfaceProblem panorama it lacks (a loud warning names them; they go to `$W/store`, never into
+     the shared store). `stage_files.json` records `panoramas`, `in_shared_store`, `listed` and `to_transfer`.
+     `--exclude-store "$DEST"` still only counts what `DEST` already holds, exactly as before.
+   - With `RESTAGE=0`, nothing is pulled, so any SurfaceProblem panorama in neither `DEST` nor the shared store
+     refuses the launch, with the list.
+
+   Then, in the jobs: `PANO_STORE` defaults to `$W/store:$SHARED_STORE` (a colon passes through `sbatch --export`, a
+   comma does not). `preflight`, `recrop` and `SMOKE=1` read each panorama from the first store that holds its file.
+   A panorama in no store is `no_pano` (lost under G2) once every store's marker is confirmed present; a vanished
+   marker stops the run. `preflight` checks every store's marker, records `read_from` (panoramas per store) and
+   writes `preflight_missing.txt`, and with `COMPLETE_TYPES=SurfaceProblem` (set by the submit script) it fails if
+   **any** SurfaceProblem panorama is in no store, not only when G2 would break. CurbRamp keeps the G2 allowance.
+   Each recrop row records the store it was read from (`read_store`), and G3 is also reported per store read
+   (`by_read_store` in `gates.json`).
+
+   Without `SHARED_STORE`, every command the submit script prints is unchanged, and so is `RESTAGE=1`. Not verified
+   from the Mac (no klone connection was made for this change): the marker's contents and change time on the
+   context-arms store, and how many of the needed panoramas it holds. Read them from the dry run's output, and
+   `stage_files.json`'s `to_transfer`, before the real submission.
 4. **The go** (decided 2026-11-25). Given. The run starts after issue #3's Stage 0 (PR #126, merged) has run and
    klone is free. The session that launches it tells Jon before submitting anything.
 5. **The issue's two boxes** (decided 2026-11-25). Jon agreed that the clipping item and the publish-guard backstop
@@ -262,16 +269,21 @@ env are only read.
 1. **Login node:** a real write test (`dd` 8 MiB into `$W`, then remove it) and `hyakstorage /gscratch/scrubbed`.
    Clone this branch into `$W/sidewalk-validator-ai` (no submodule is needed) and `mkdir -p $W/logs`. Confirm with
    one connection that klone can reach the panorama store.
-2. **Stage** (decision 3 reuses a shared store, which needs the change in section 7 first): from the clone,
-   `python analysis/crop_constant_sweep.py stage-list --root $R3 --types CurbRamp,SurfaceProblem --out $W/stage_files.txt`,
-   then `sbatch --chdir=$W --time=24:00:00 --export=ALL,RUN=$W,DEST=$W/store analysis/ai_labels_stage.slurm`. On a
-   timeout or any rsync error other than 23, stop and do not resubmit.
-3. **Smoke:** `cd $W && SMOKE=1 REPO=$W/sidewalk-validator-ai R3=$R3 PANO_STORE=$W/store sbatch --array=0
-   $W/sidewalk-validator-ai/analysis/crop_constant_recrop.slurm`. It cuts 20 labels into `$W/smoke/` and prints the
-   seconds per label; if that is above 3.5 s, raise `RECROP_TIME` before step 4.
-4. **Submit** from the clone: `DRY_RUN=1 RESTAGE=0 R3=$R3 analysis/crop_constant_submit.sh` to read the commands,
-   then the same without `DRY_RUN`. It chains preflight → recrop (array) → gates → the trainings
-   (`RESTAGE=1` puts the stage job in front instead of step 2). Job ids go to `$W/crop_constant_jobs.txt`.
+2. **Stage** (decision 3: SurfaceProblem from the shared store, the rest into `$W/store`). Set
+   `S=/gscratch/scrubbed/$USER/pano-stage/context-arms`. Either let step 4 stage (`RESTAGE=1`, the default), or by
+   hand from the clone: `python analysis/crop_constant_sweep.py shared-store-check --root $R3 --shared-store $S
+   --missing-out $W/shared_store_missing.txt`, then `python analysis/crop_constant_sweep.py stage-list --root $R3
+   --types CurbRamp,SurfaceProblem --out $W/stage_files.txt --skip-store $S`, then `sbatch --chdir=$W
+   --time=24:00:00 --export=ALL,RUN=$W,DEST=$W/store analysis/ai_labels_stage.slurm`. On a timeout or any rsync
+   error other than 23, stop and do not resubmit.
+3. **Smoke** (after the stage): `cd $W && SMOKE=1 REPO=$W/sidewalk-validator-ai R3=$R3 PANO_STORE=$W/store:$S
+   sbatch --array=0 $W/sidewalk-validator-ai/analysis/crop_constant_recrop.slurm`. It cuts 20 labels into
+   `$W/smoke/` and prints the seconds per label; if that is above 3.5 s, raise `RECROP_TIME` before step 4.
+4. **Submit** from the clone: `DRY_RUN=1 SHARED_STORE=$S R3=$R3 analysis/crop_constant_submit.sh` to read the
+   shared-store check and the commands, then the same without `DRY_RUN`. With `RESTAGE=1` (the default) it puts the
+   stage job in front; after a hand stage (step 2) pass `RESTAGE=0`. It chains preflight → recrop (array) → gates →
+   the trainings. Job ids go to `$W/crop_constant_jobs.txt`. The launch refuses a shared store staged more than 20
+   days earlier (section 7, decision 3).
 5. **Mac:** copy each arm's `split.csv` and `predictions_s*.csv`, `runs/*/*/*/training_run.json`, the logs,
    `preflight.json`, `gates.json` and `recrop_parity.csv` into `~/Data/sidewalk-validator-ai-crop-constant-2026-11/w`,
    then `compare --work <that copy> --control-root $R3 --logs-dir <logs> [--fixed238 <#51's CurbRamp predictions>]

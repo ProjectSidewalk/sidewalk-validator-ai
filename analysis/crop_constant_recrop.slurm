@@ -25,6 +25,10 @@
 #   cd $W && SMOKE=1 REPO=$W/sidewalk-validator-ai R3=<round 3 root> PANO_STORE=$W/store \
 #       sbatch --array=0 $W/sidewalk-validator-ai/analysis/crop_constant_recrop.slurm
 #
+# PANO_STORE may be a colon-separated search path (decision 3: $W/store:/gscratch/scrubbed/$USER/pano-stage/
+# context-arms); each panorama is read from the first store that holds it. COMPLETE_TYPES (colon-separated, set by the
+# submit script with SHARED_STORE) makes preflight fail when any panorama of those types is in no store.
+#
 # The array's chunking depends on TIME_LIMIT, which must equal this job's --time: a chunk holds at most
 # --time / (3.5 s x 1.5) labels, so a slow node (3.5 s per label, the decode-bound seg-prior rate) still finishes a
 # chunk inside --time and a preempted task does not time out in a requeue loop.
@@ -49,7 +53,8 @@ CC=(python -u "$REPO/analysis/crop_constant_sweep.py")
 COMMON=(--root "$R3" --rawlabels-dir "$RAWLABELS" --types "$TYPES")
 case "$STEP" in
   preflight)
-    "${CC[@]}" preflight "${COMMON[@]}" --pano-store "$PANO_STORE" --out "$W/preflight.json" ;;
+    "${CC[@]}" preflight "${COMMON[@]}" --pano-store "$PANO_STORE" --out "$W/preflight.json" \
+        ${COMPLETE_TYPES:+--complete-types "$COMPLETE_TYPES"} ;;
   recrop)
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
     if [ "${SMOKE:-0}" = 1 ]; then

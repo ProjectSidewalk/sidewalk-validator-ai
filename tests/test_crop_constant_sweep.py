@@ -1,6 +1,7 @@
 """Tests for analysis/crop_constant_sweep.py and its two klone launchers (issue #21). CPU only, synthetic data, no
 network: a fake panorama reader and renderer stand in for the store and the torch render, so nothing here needs a
 GPU, torch or the panorama store."""
+import datetime
 import doctest
 import json
 import os
@@ -1179,3 +1180,293 @@ def test_submit_takes_no_seed_setting_and_tests_a_real_write_first(tmp_path):
     assert "dd if=/dev/zero" in text and "bs=1M count=8" in text
     assert text.index("dd if=/dev/zero") < text.index("sb --chdir")        # before the first submission
     assert 'JOB=$("${SBATCH[@]}" "$@")' in text and 'echo "${SBATCH[*]} $*"' in text   # one argument list
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Decision 3: SurfaceProblem read in place from a store another study staged, only the rest restaged (doc section 7)
+# ---------------------------------------------------------------------------------------------------------------------
+
+def mkstore(path, files=(), marker=True):
+    """A fixture pano store at ``path`` holding the store-relative ``files`` (empty files; the fake reader never
+    decodes them), with its ``.pano-store`` marker unless ``marker`` is False."""
+    os.makedirs(path, exist_ok=True)
+    if marker:
+        with open(os.path.join(path, dg.PANO_STORE_MARKER), "w") as f:
+            f.write("Project Sidewalk pano store; see docs/ops.md#the-store-marker\n")
+    for rel in files:
+        p = os.path.join(path, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        open(p, "w").close()
+    return str(path)
+
+
+def files_of(frame, t=None):
+    return cc.stage_files(frame if t is None else frame[frame.label_type == t])
+
+
+def snapshot(path):
+    """Every file under ``path`` with its size and modification time: a store that must stay untouched."""
+    out = {}
+    for d, _, fs in os.walk(path):
+        for f in fs:
+            st = os.stat(os.path.join(d, f))
+            out[os.path.relpath(os.path.join(d, f), path)] = (st.st_size, st.st_mtime_ns)
+    return out
+
+
+def days(n):
+    return datetime.timedelta(days=n)
+
+
+def test_read_from_stores_takes_the_first_store_holding_the_file(tmp_path):
+    a = mkstore(tmp_path / "a", ["pub-a/AA/AA1.jpg", "pub-a/BB/BB2.jpg"])
+    b = mkstore(tmp_path / "b", ["pub-a/BB/BB2.jpg", "pub-a/CC/CC3.jpg"])
+    reader = FakeReader()
+    assert cc.read_from_stores((a, b), "pub-a", "CC3", reader)[2] == b
+    assert cc.read_from_stores((a, b), "pub-a", "BB2", reader)[2] == a         # in both: the first wins
+    assert [s for s, _, _ in reader.calls] == [b, a]
+
+
+def test_read_from_stores_on_a_panorama_in_no_store(tmp_path):
+    a = mkstore(tmp_path / "a", ["pub-a/AA/AA1.jpg"])
+    b = mkstore(tmp_path / "b", ["other/CC/CC3.jpg"])
+    read, info, used = cc.read_from_stores((a, b), "other", "ZZ9", dg.read_store_panorama)
+    assert read == "no_pano" and used == b and info["pano_path"] is None      # the store with the city answers
+    reader = FakeReader()
+    read, _, used = cc.read_from_stores((a, b), "nowhere", "ZZ9", reader)
+    assert read == "no_pano" and used is None and not reader.calls            # no store has the city
+    os.remove(os.path.join(b, dg.PANO_STORE_MARKER))
+    with pytest.raises(dg.PanoStoreUnavailable):                              # a vanished marker is an outage
+        cc.read_from_stores((a, b), "other", "ZZ9", dg.read_store_panorama)
+
+
+def test_one_store_keeps_the_readers_own_rules(tmp_path):
+    a = mkstore(tmp_path / "a", ["pub-a/AA/AA1.jpg"])
+    with pytest.raises(dg.PanoStoreUnavailable):                              # no city directory: fatal, as before
+        cc.read_from_stores((a,), "nowhere", "ZZ9", dg.read_store_panorama)
+
+
+def test_recrop_reads_each_panorama_from_the_first_store_holding_it(r3, tmp_path):
+    root, frame = r3
+    shared = mkstore(tmp_path / "shared", files_of(frame, "SurfaceProblem") + ["pub-a/AA/AApano1.jpg"])
+    own = mkstore(tmp_path / "own", [f for f in files_of(frame, "CurbRamp")
+                                     if f != "pub-a/AA/AApano1.jpg" and "MISS" not in f])
+    work = str(tmp_path / "w")
+    _, reader = run_recrop(root, frame, work, pano_store=f"{own}:{shared}")
+    assert {s for s, _, _ in reader.calls} == {own, shared}
+    rec = cc.load_recrop(work).merge(frame[["label_uid", "pano_id"]], on="label_uid", validate="one_to_one")
+    by = rec.set_index("label_uid")
+    sp = frame[frame.label_type == "SurfaceProblem"].label_uid
+    assert (by.loc[sp, "read_store"] == shared).all()
+    assert (by.loc[frame[frame.pano_id == "AApano1"].label_uid, "read_store"] == shared).all()
+    assert (by.loc[frame[frame.pano_id == "ABpano2"].label_uid, "read_store"] == own).all()
+    miss = frame[frame.pano_id.str.startswith("MISS")].label_uid
+    assert (by.loc[miss, "status"] == "no_pano").all()                        # in neither store: lost, not fatal
+    assert (by.loc[frame[frame.pano_id == "CCpano5"].label_uid, "status"] == "ok").all()
+    g3 = cc.gate_g3(cc.load_recrop(work))
+    assert set(g3["by_read_store"]) == {own, shared}                          # G3 reported per store read
+
+
+def test_preflight_searches_every_store_and_requires_the_complete_types(r3_400, tmp_path):
+    root, panos = r3_400
+    files = [f"{c}/{p[:2]}/{p}.jpg" for c, p in panos]
+    own = mkstore(tmp_path / "own", files[:150])
+    shared = mkstore(tmp_path / "shared", files[150:])
+    rec = _preflight(root, f"{own}:{shared}", complete_types=("CurbRamp",))
+    assert rec["store"]["passed"] and rec["store"]["missing_panoramas"] == 0
+    assert rec["store"]["read_from"] == {own: 150, shared: 250}
+    os.remove(os.path.join(shared, files[-1]))
+    within = _preflight(root, f"{own}:{shared}")                              # 1 of 400: within G2
+    assert within["store"]["passed"] and within["store"]["missing_files"] == [files[-1]]
+    strict = _preflight(root, f"{own}:{shared}", complete_types=("CurbRamp",))
+    assert not strict["store"]["passed"] and "1 panoramas in no store" in strict["store"]["failures"][0]
+    os.remove(os.path.join(own, dg.PANO_STORE_MARKER))
+    assert not _preflight(root, f"{own}:{shared}")["store"]["passed"]         # every store needs its marker
+
+
+def test_the_preflight_command_writes_the_missing_list(r3_400, tmp_path, monkeypatch):
+    root, panos = r3_400
+    files = [f"{c}/{p[:2]}/{p}.jpg" for c, p in panos]
+    store = mkstore(tmp_path / "s", files[1:])
+    rec = _preflight(root, store, complete_types=("CurbRamp",))
+    monkeypatch.setattr(cc, "preflight", lambda *a, **k: rec)
+    out = str(tmp_path / "preflight.json")
+    with pytest.raises(SystemExit):
+        cc.main(["preflight", "--root", root, "--rawlabels-dir", os.path.join(root, "rawlabels"), "--types",
+                 "CurbRamp", "--pano-store", store, "--complete-types", "CurbRamp", "--out", out])
+    with open(str(tmp_path / "preflight_missing.txt")) as f:
+        assert f.read().split() == [files[0]]
+
+
+def test_shared_store_check_lists_what_the_shared_types_lack(r3, tmp_path):
+    root, frame = r3
+    sp = files_of(frame, "SurfaceProblem")
+    shared = mkstore(tmp_path / "shared", sp[1:] + ["pub-a/AA/AApano1.jpg"])
+    rec = cc.shared_store_check(root, TYPES, shared, ("SurfaceProblem",))
+    assert rec["passed"] and rec["missing"] == [sp[0]] and rec["age_days"] == 0
+    assert rec["per_type"]["CurbRamp"] == {"panoramas": 4, "in_shared_store": 1}
+    assert rec["per_type"]["SurfaceProblem"]["missing_from_search_stores"] == 1
+    assert rec["shared_store"] == "shared" and rec["search_stores"] == ["shared"]   # no absolute path recorded
+    own = mkstore(tmp_path / "own", sp[:1])
+    assert cc.shared_store_check(root, TYPES, shared, ("SurfaceProblem",),
+                                 search_stores=f"{own}:{shared}")["missing"] == []
+    assert not cc.shared_store_check(root, ("CurbRamp",), shared, ("SurfaceProblem",))["passed"]
+
+
+def test_shared_store_check_refuses_a_store_without_its_marker(r3, tmp_path):
+    root, frame = r3
+    shared = mkstore(tmp_path / "shared", files_of(frame, "SurfaceProblem"), marker=False)
+    rec = cc.shared_store_check(root, TYPES, shared, ("SurfaceProblem",))
+    assert not rec["passed"] and "marker" in rec["failures"][0]
+
+
+def test_shared_store_check_refuses_a_store_staged_more_than_20_days_ago(r3, tmp_path):
+    root, frame = r3
+    shared = mkstore(tmp_path / "shared", files_of(frame, "SurfaceProblem"))
+    staged = cc.store_stage_date(shared, files_of(frame))
+    assert cc.MAX_SHARED_STORE_AGE_DAYS == 20
+    day20 = cc.shared_store_check(root, TYPES, shared, ("SurfaceProblem",), today=staged + days(20))
+    assert day20["passed"] and day20["age_days"] == 20
+    assert day20["purge_around"] == (staged + days(21)).isoformat()
+    day21 = cc.shared_store_check(root, TYPES, shared, ("SurfaceProblem",), today=staged + days(21))
+    assert not day21["passed"] and "more than 20" in day21["failures"][0]
+
+
+def test_the_stage_date_is_the_copy_time_not_the_sources_modification_time(r3, tmp_path):
+    """rsync -a keeps the lab store's mtimes, so an old mtime must not date a fresh copy: the date is the change
+    time, which nothing can set back."""
+    root, frame = r3
+    shared = mkstore(tmp_path / "shared", files_of(frame, "SurfaceProblem"))
+    old = 1_500_000_000                                                       # 2017
+    for d, _, fs in os.walk(shared):
+        for f in fs:
+            os.utime(os.path.join(d, f), (old, old))
+    assert cc.store_stage_date(shared, files_of(frame)) == datetime.date.today()
+
+
+def test_the_shared_store_check_command_never_writes_into_the_shared_store(r3, tmp_path):
+    root, frame = r3
+    sp = files_of(frame, "SurfaceProblem")
+    shared = mkstore(tmp_path / "shared", sp[1:])
+    before = snapshot(shared)
+    out, miss = str(tmp_path / "w" / "check.json"), str(tmp_path / "w" / "missing.txt")
+    cc.main(["shared-store-check", "--root", root, "--types", "CurbRamp,SurfaceProblem", "--shared-store", shared,
+             "--missing-out", miss, "--out", out])                           # missing allowed: restaged elsewhere
+    with open(miss) as f:
+        assert f.read().split() == [sp[0]]
+    with pytest.raises(SystemExit) as e:
+        cc.main(["shared-store-check", "--root", root, "--types", "CurbRamp,SurfaceProblem", "--shared-store",
+                 shared, "--require-complete"])
+    assert "1 panoramas missing" in str(e.value.code)
+    assert snapshot(shared) == before
+    with open(out) as f:
+        rec = json.load(f)
+    assert rec["missing"] == 1 and rec["missing_sha256"] == cc.sha256_file(miss)
+    assert str(tmp_path) not in json.dumps(rec)                               # no absolute local path recorded
+
+
+def test_stage_list_skips_what_the_shared_store_holds(r3, tmp_path):
+    root, frame = r3
+    shared = mkstore(tmp_path / "shared", files_of(frame, "SurfaceProblem") + ["pub-a/AA/AApano1.jpg"])
+    out = str(tmp_path / "w" / "stage_files.txt")
+    cc.main(["stage-list", "--root", root, "--types", "CurbRamp,SurfaceProblem", "--out", out,
+             "--exclude-store", str(tmp_path / "w" / "store"), "--skip-store", shared])
+    with open(out) as f:
+        listed = f.read().split()
+    assert listed == [f for f in files_of(frame, "CurbRamp") if f != "pub-a/AA/AApano1.jpg"]
+    with open(str(tmp_path / "w" / "stage_files.json")) as f:
+        rec = json.load(f)
+    assert rec["panoramas"] == 7 and rec["listed"] == 3 and rec["in_shared_store"] == 4 and rec["to_transfer"] == 3
+    assert rec["shared_store"] == "shared"
+    cc.main(["stage-list", "--root", root, "--types", "CurbRamp,SurfaceProblem", "--out", out])
+    with open(out) as f:                                                      # without it: every panorama, as before
+        assert f.read().split() == files_of(frame)
+    with open(str(tmp_path / "w" / "stage_files.json")) as f:
+        assert "listed" not in json.load(f)
+    os.remove(os.path.join(shared, dg.PANO_STORE_MARKER))
+    with pytest.raises(SystemExit):
+        cc.main(["stage-list", "--root", root, "--types", "CurbRamp", "--out", out, "--skip-store", shared])
+
+
+def _shared_fixture(tmp_path, drop_first_sp=False):
+    root = str(tmp_path / "round3")
+    frame = make_round3(root, write_stored=False)
+    sp = files_of(frame, "SurfaceProblem")
+    return mkstore(tmp_path / "shared", (sp[1:] if drop_first_sp else sp) + ["pub-a/AA/AApano1.jpg"])
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+def test_submit_with_a_shared_store_restages_only_the_rest(tmp_path):
+    shared = _shared_fixture(tmp_path, drop_first_sp=True)
+    before = snapshot(shared)
+    r = _dry_run(tmp_path, SHARED_STORE=shared)
+    assert r.returncode == 0, r.stderr
+    W = "/gscratch/scrubbed/tester/crop-constant-2026-11"
+    lines = r.stdout.splitlines()
+    check = [line for line in lines if "shared-store-check" in line]
+    assert len(check) == 1 and f"--shared-store {shared}" in check[0] and "--shared-types SurfaceProblem" in check[0]
+    assert "--require-complete" not in check[0]                              # RESTAGE=1: missing ones are pulled
+    assert "1 panoramas of SurfaceProblem are in no store searched" in r.stderr
+    stage_list = [line for line in lines if " stage-list " in line]
+    assert len(stage_list) == 1 and f"--skip-store {shared}" in stage_list[0]
+    assert f"--exclude-store {W}/store" in stage_list[0]
+    sb = [line for line in lines if line.startswith("sbatch")]
+    stage = [line for line in sb if "ai_labels_stage.slurm" in line]
+    assert len(stage) == 1 and f"DEST={W}/store" in stage[0] and shared not in stage[0]   # never into the shared one
+    for step in ("preflight", "recrop", "gates"):
+        line = [x for x in sb if f"STEP={step}" in x][0]
+        assert f"PANO_STORE={W}/store:{shared}," in line and "COMPLETE_TYPES=SurfaceProblem" in line
+    assert len([x for x in sb if "confident_learning.slurm" in x]) == 30
+    assert snapshot(shared) == before
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+def test_submit_refuses_an_unmarked_shared_store(tmp_path):
+    shared = _shared_fixture(tmp_path)
+    os.remove(os.path.join(shared, dg.PANO_STORE_MARKER))
+    r = _dry_run(tmp_path, SHARED_STORE=shared)
+    assert r.returncode == 2 and "shared store check failed" in r.stderr and "sbatch" not in r.stdout
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+def test_submit_without_restage_refuses_a_shared_type_panorama_in_no_store(tmp_path):
+    shared = _shared_fixture(tmp_path, drop_first_sp=True)
+    r = _dry_run(tmp_path, SHARED_STORE=shared, RESTAGE="0")
+    assert r.returncode == 2 and "ERROR: 1 panoramas" in r.stderr and "sbatch" not in r.stdout
+    full = tmp_path / "full"
+    shared = _shared_fixture(full)
+    r = _dry_run(full, SHARED_STORE=shared, RESTAGE="0")
+    assert r.returncode == 0, r.stderr
+    assert "ai_labels_stage.slurm" not in r.stdout and " stage-list " not in r.stdout
+    check = [line for line in r.stdout.splitlines() if "shared-store-check" in line][0]
+    assert "--require-complete" in check
+    assert f"--search-store /gscratch/scrubbed/tester/crop-constant-2026-11/store:{shared}" in check
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+@pytest.mark.parametrize("env, word", [
+    ({"SHARED_STORE": "/gscratch/scrubbed/tester/crop-constant-2026-11"}, "inside it"),      # DEST in the shared one
+    ({"SHARED_STORE": "/gscratch/scrubbed/tester/crop-constant-2026-11/store/x"}, "inside DEST"),
+    ({"SHARED_STORE": "relative/store"}, "absolute"),
+    ({"SHARED_STORE": "/a:/b"}, "':'"),
+    ({"SHARED_STORE": "/gscratch/scrubbed/tester/pano-stage/context-arms", "PANO_STORE": "/x/store"}, "does not list"),
+])
+def test_submit_refuses_a_shared_store_it_could_write_into_or_would_not_read(tmp_path, env, word):
+    r = _dry_run(tmp_path, **env)
+    assert r.returncode == 2 and word in r.stderr and "sbatch" not in r.stdout
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash")
+def test_submit_without_a_shared_store_is_unchanged(tmp_path):
+    r = _dry_run(tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert "shared-store-check" not in r.stdout and "--skip-store" not in r.stdout
+    assert "COMPLETE_TYPES" not in r.stdout
+    W = "/gscratch/scrubbed/tester/crop-constant-2026-11"
+    pre = [line for line in r.stdout.splitlines() if "STEP=preflight" in line][0]
+    assert re.search(rf"PANO_STORE={re.escape(W)}/store\s", pre)                  # one store, the last variable
+
+
+def test_the_preflight_step_passes_the_complete_types():
+    text = read_launcher("crop_constant_recrop.slurm")
+    assert '${COMPLETE_TYPES:+--complete-types "$COMPLETE_TYPES"}' in text
