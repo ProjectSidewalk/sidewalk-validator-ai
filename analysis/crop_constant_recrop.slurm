@@ -44,6 +44,10 @@ PANO_STORE="${PANO_STORE:-$W/store}"; TIME_LIMIT="${TIME_LIMIT:-8:00:00}"
 # A real write, not touch: scrubbed has refused data writes while a 0-byte touch succeeded (running-on-hyak.md).
 if ! dd if=/dev/zero of="$W/.write_test.$$" bs=1M count=8 status=none; then echo "refusing to run: cannot write 8 MiB under $W"; exit 2; fi
 rm -f "$W/.write_test.$$"
+# sbatch --export=ALL carries the submitting shell's CONDA_PREFIX (the submit script runs with the env active), and
+# Lmod then refuses `module load conda` ("Conda is already active"), which set -e makes fatal: job 43577059 stopped
+# here on 2026-11-27 and took the whole chain with it. Clear it; `conda activate` below sets it again.
+unset CONDA_PREFIX
 module load conda
 eval "$(conda shell.bash hook)"
 conda activate "${ENV:-/gscratch/makelab/$USER/envs/sidewalk-validator-ai}"
