@@ -36,7 +36,8 @@
 #               in order, each panorama read from the first store that holds it
 #   STAGE_TIME  the stage job's --time (default 24:00:00; about 215 to 260 GB for stage 1)
 #   RECROP_TIME the recrop array's --time (default 8:00:00); it also fixes the chunking (labels x 3.5 s x 1.5)
-#   RAWLABELS   round 3's rawLabels cache (default $R3/rawlabels)
+#   RAWLABELS   round 3's rawLabels cache (default $(dirname $R3)/rawlabels: on klone it sits beside retrain-2026-10,
+#               not inside it; its pin is section 9 of the doc, and preflight checks it)
 #   PARTITION_ARGS extra sbatch arguments for the trainings; PYTHON (default python)
 set -euo pipefail
 DRY_RUN="${DRY_RUN:-0}"; PYTHON="${PYTHON:-python}"
@@ -44,7 +45,9 @@ DRY_RUN="${DRY_RUN:-0}"; PYTHON="${PYTHON:-python}"
 REPO=$(pwd -P)
 W="/gscratch/scrubbed/${USER:?}/crop-constant-2026-11"
 R3="${R3:?set R3 (round 3 data root: <type>/split.csv, generation_run.json, the stored crops)}"
-RAWLABELS="${RAWLABELS:-$R3/rawlabels}"
+RAWLABELS="${RAWLABELS:-$(dirname "$R3")/rawlabels}"
+# Fail here, not in preflight after the chain is queued: an empty glob hashes to e3b0c442... and fails G0 (2026-11-28).
+compgen -G "$RAWLABELS/*.csv" >/dev/null || { echo "refusing: no rawLabels CSVs in $RAWLABELS (set RAWLABELS)" >&2; exit 2; }
 [ -z "${SEEDS:-}" ] || { echo "refusing: SEEDS is not a setting; edit REGISTERED_SEEDS and commit" >&2; exit 2; }
 TYPES="${TYPES:-CurbRamp SurfaceProblem}"; ARMS="${ARMS:-4000 6100 8000}"
 RESTAGE="${RESTAGE:-1}"; DEST="${DEST:-$W/store}"; SHARED_STORE="${SHARED_STORE:-}"

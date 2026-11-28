@@ -39,7 +39,7 @@ W=$(pwd -P)
   echo "refusing to run in $W: submit from /gscratch/scrubbed/$USER/crop-constant-2026-11 (sbatch --chdir)"; exit 2; }
 STEP="${STEP:-recrop}"
 REPO="${REPO:?set REPO (the clone this run uses)}"; R3="${R3:?set R3 (round 3 data root)}"
-RAWLABELS="${RAWLABELS:-$R3/rawlabels}"; TYPES="${TYPES:-CurbRamp:SurfaceProblem}"
+RAWLABELS="${RAWLABELS:-$(dirname "$R3")/rawlabels}"; TYPES="${TYPES:-CurbRamp:SurfaceProblem}"
 PANO_STORE="${PANO_STORE:-$W/store}"; TIME_LIMIT="${TIME_LIMIT:-8:00:00}"
 # A real write, not touch: scrubbed has refused data writes while a 0-byte touch succeeded (running-on-hyak.md).
 if ! dd if=/dev/zero of="$W/.write_test.$$" bs=1M count=8 status=none; then echo "refusing to run: cannot write 8 MiB under $W"; exit 2; fi
