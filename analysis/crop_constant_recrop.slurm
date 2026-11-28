@@ -25,6 +25,10 @@
 #   cd $W && SMOKE=1 REPO=$W/sidewalk-validator-ai R3=<round 3 root> PANO_STORE=$W/store \
 #       sbatch --array=0 $W/sidewalk-validator-ai/analysis/crop_constant_recrop.slurm
 #
+# PANO_STORE may be a colon-separated search path (decision 3: $W/store:/gscratch/scrubbed/$USER/pano-stage/
+# context-arms); each panorama is read from the first store that holds it. COMPLETE_TYPES (colon-separated, set by the
+# submit script with SHARED_STORE) makes preflight fail when any panorama of those types is in no store.
+#
 # The array's chunking depends on TIME_LIMIT, which must equal this job's --time: a chunk holds at most
 # --time / (3.5 s x 1.5) labels, so a slow node (3.5 s per label, the decode-bound seg-prior rate) still finishes a
 # chunk inside --time and a preempted task does not time out in a requeue loop.
@@ -35,11 +39,15 @@ W=$(pwd -P)
   echo "refusing to run in $W: submit from /gscratch/scrubbed/$USER/crop-constant-2026-11 (sbatch --chdir)"; exit 2; }
 STEP="${STEP:-recrop}"
 REPO="${REPO:?set REPO (the clone this run uses)}"; R3="${R3:?set R3 (round 3 data root)}"
-RAWLABELS="${RAWLABELS:-$R3/rawlabels}"; TYPES="${TYPES:-CurbRamp:SurfaceProblem}"
+RAWLABELS="${RAWLABELS:-$(dirname "$R3")/rawlabels}"; TYPES="${TYPES:-CurbRamp:SurfaceProblem}"
 PANO_STORE="${PANO_STORE:-$W/store}"; TIME_LIMIT="${TIME_LIMIT:-8:00:00}"
 # A real write, not touch: scrubbed has refused data writes while a 0-byte touch succeeded (running-on-hyak.md).
 if ! dd if=/dev/zero of="$W/.write_test.$$" bs=1M count=8 status=none; then echo "refusing to run: cannot write 8 MiB under $W"; exit 2; fi
 rm -f "$W/.write_test.$$"
+# sbatch --export=ALL carries the submitting shell's CONDA_PREFIX (the submit script runs with the env active), and
+# Lmod then refuses `module load conda` ("Conda is already active"), which set -e makes fatal: job 43577059 stopped
+# here on 2026-11-27 and took the whole chain with it. Clear it; `conda activate` below sets it again.
+unset CONDA_PREFIX
 module load conda
 eval "$(conda shell.bash hook)"
 conda activate "${ENV:-/gscratch/makelab/$USER/envs/sidewalk-validator-ai}"
@@ -47,17 +55,22 @@ export PYTHONDONTWRITEBYTECODE=1
 echo "commit $(git -C "$REPO" rev-parse HEAD) step $STEP smoke ${SMOKE:-0} task ${SLURM_ARRAY_TASK_ID:-none}"
 CC=(python -u "$REPO/analysis/crop_constant_sweep.py")
 COMMON=(--root "$R3" --rawlabels-dir "$RAWLABELS" --types "$TYPES")
+# With a shared store (decision 3): preflight and each recrop task check its marker and age again when they start,
+# and a recrop task stops (PanoStoreUnavailable) on a no_pano of a COMPLETE_TYPES type rather than record it.
+SHARED=()
+[ -z "${SHARED_STORE:-}" ] || SHARED=(--shared-store "$SHARED_STORE" --shared-staged "${SHARED_STAGED:?set by the submit script}")
+[ -z "${COMPLETE_TYPES:-}" ] || SHARED+=(--complete-types "$COMPLETE_TYPES")
 case "$STEP" in
   preflight)
-    "${CC[@]}" preflight "${COMMON[@]}" --pano-store "$PANO_STORE" --out "$W/preflight.json" ;;
+    "${CC[@]}" preflight "${COMMON[@]}" --pano-store "$PANO_STORE" --out "$W/preflight.json" ${SHARED[@]+"${SHARED[@]}"} ;;
   recrop)
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
     if [ "${SMOKE:-0}" = 1 ]; then
       "${CC[@]}" recrop "${COMMON[@]}" --work "$W/smoke" --chunk 0 --time-limit "$TIME_LIMIT" \
-          --pano-store "$PANO_STORE" --limit 20
+          --pano-store "$PANO_STORE" --limit 20 ${SHARED[@]+"${SHARED[@]}"}
     else
       "${CC[@]}" recrop "${COMMON[@]}" --work "$W" --chunk "${SLURM_ARRAY_TASK_ID:?submit as an array}" \
-          --time-limit "$TIME_LIMIT" --pano-store "$PANO_STORE"
+          --time-limit "$TIME_LIMIT" --pano-store "$PANO_STORE" ${SHARED[@]+"${SHARED[@]}"}
     fi ;;
   gates)
     "${CC[@]}" gates "${COMMON[@]}" --work "$W" ;;
